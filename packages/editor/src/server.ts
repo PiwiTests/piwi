@@ -231,6 +231,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
+  DRIVE_STOP_REQUEST,
   PAGE_FRAME_NOTIFICATION,
   PICK_AT_REQUEST,
   HUB_REQUEST,
@@ -294,6 +295,7 @@ import {
   type RunControlParams,
   type ShareRunParams,
   type HoldRunParams,
+  type DriveStopParams,
   type RunControlResult,
   type StopRunParams,
   type SetBreakpointsParams,
@@ -3908,6 +3910,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ? clientLaneView!.input(params)
       : clientPageView!.input(params),
   );
+  // Interact takes the stop, and Esc gives it back, as the view that shows it, the one its input comes through.
+  connection.onRequest(DRIVE_STOP_REQUEST, (params: DriveStopParams): RunControlResult => {
+    const at = { ref: params?.ref, worker: params?.worker, since: params?.since, events: [] };
+    const view = !clientPageView!.takes(at) && clientLaneView!.takes(at) ? clientLaneView! : clientPageView!;
+    return runSessions.driveStop(at, view.viewer, params?.on === true);
+  });
   connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
     answersStops
       ? clientLaneView!.watch(params)

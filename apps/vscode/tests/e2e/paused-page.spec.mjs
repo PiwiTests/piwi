@@ -62,7 +62,7 @@ test('watch and interaction are opt-in, help stays closed, and clicks still pick
   await page.screenshot({ path: testInfo.outputPath('paused-page.png') });
 });
 
-test('plays scaled input only after interaction, keeps focus through frames, and releases it with Escape', async ({
+test('plays scaled input only after interaction, keeps focus through frames, and Escape turns Interact off', async ({
   page,
 }) => {
   const { view, state } = await preview(page);
@@ -102,8 +102,15 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeFocused();
   await expect(page.getByRole('status')).toHaveText('Live');
   await page.keyboard.press('Escape');
-  await expect(page.getByLabel('Watch live')).toBeFocused();
-  expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'release', shown: 7 });
+  // Escape lets go of the input held, turns Interact off and gives the stop back.
+  await expect(page.getByLabel('Interact', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Interact', { exact: true })).not.toBeChecked();
+  const messages = await page.evaluate(() => window.messages);
+  expect(messages).toContainEqual({ type: 'release', shown: 7 });
+  expect(messages).toContainEqual({ type: 'interact', shown: 7, on: false });
+  expect(messages.findIndex((m) => m.type === 'interact' && !m.on)).toBeGreaterThan(
+    messages.findIndex((m) => m.type === 'release'),
+  );
   await page.keyboard.down('Shift');
   await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 40, y: 30 } });
   await page.keyboard.up('Shift');
@@ -153,10 +160,11 @@ test('Escape cancels queued input and a double click keeps its click count', asy
     );
     picture.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   });
-  await expect(page.getByLabel('Watch live')).toBeFocused();
+  await expect(page.getByLabel('Interact', { exact: true })).toBeFocused();
   // Past the batch interval: a cancelled down must not arrive after the release.
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => window.messages.filter((m) => m.type === 'input'))).toEqual([]);
+  expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'interact', shown: 7, on: false });
 });
 
 test('the worker panel watches its slot, dims an image of what the worker left, and offers Interact at a stop alone', async ({
@@ -189,6 +197,15 @@ test('the worker panel watches its slot, dims an image of what the worker left, 
   view.stale = false;
   await state();
   await expect(page.getByRole('img', { name: image })).not.toHaveClass(/stale/);
+  // Interact stays on while the worker runs to its next stop: shown off while it runs, on again at the stop.
+  view.live.interacting = true;
+  view.live.input = false;
+  await state();
+  await expect(page.getByLabel('Interact', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Interact', { exact: true })).not.toBeChecked();
+  view.live.input = true;
+  await state();
+  await expect(page.getByLabel('Interact', { exact: true })).toBeChecked();
   await page.getByLabel('Watch', { exact: true }).uncheck();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 7, on: false });
 });

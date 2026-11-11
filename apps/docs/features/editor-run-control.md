@@ -93,10 +93,10 @@ opens it at any stop.
 Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: the locator replaces
 the one on the stopped line, and the tab shows the result or refusal.
 
-**Watch live** updates the paused page in the same tab. Choose **Interact** separately to click, scroll or type on
-the page; **Escape** releases the keyboard, and **Shift+click** picks a locator. Watching stops when you hide or close
-the tab, resume the test or switch stops. Interact starts off at each stop. The caption names who drives and watches the
-stop: input or a pick takes it from an agent ([driving a stop](/guide/concepts#presence-driving-a-stop)).
+**Watch live** updates the paused page in the same tab. Choose [**Interact**](./watch-running-test#interact)
+separately to click, scroll or type on the page; it goes off when you hide or close the tab or it shows another
+worker's stop. Watching stops when you hide or close the tab, resume the test or switch stops. The caption names who
+drives and watches the stop ([driving a stop](/guide/concepts#presence-driving-a-stop)).
 The preview needs no Picker installation, pairing, project live-view setting or extra port forwarding: it uses the
 editor's connection. Reporters without live-view support keep the still image. To watch a test while it runs, before
 it stops: [Watch a running test](./watch-running-test).

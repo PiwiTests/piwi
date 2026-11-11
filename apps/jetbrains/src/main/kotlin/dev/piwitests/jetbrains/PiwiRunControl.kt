@@ -187,6 +187,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageStop: String? = null
     /** The Paused Page tab's caption of its stop as last drawn (`Glue.stopCaption`), which a note may follow. */
     private var pageCaption = ""
+    /** The worker slot of the stop the Paused Page tab showed last (a run's ref, a parallel index), which Interact is for. */
+    private var pageSlot: Pair<String, Int>? = null
     @Volatile private var watchingPage: PageViewParams? = null
 
     /** When a control from the IDE last answered a stop: Resume's key stays Piwi's `Glue.RESUMED_MILLIS` after. */
@@ -245,6 +247,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 ?.pageView(params)?.orNull()
 
         override fun pageInput(params: PageInputParams) = server()?.pageInput(params)?.orNull()
+
+        override fun driveStop(params: DriveStopParams) = server()?.driveStop(params)?.orNull()
 
         override fun laneView(params: LaneViewParams) =
             (if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server())
@@ -748,7 +752,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             window.show(null)
         }
         val panel = content.component as PausedPagePanel
-        panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks")) { on -> watchPage(stop, on) }
+        // The same slot's next stop keeps Interact while Watch live stays on; another slot's, or one taking no input, turns it off.
+        val keep = Glue.keepsInteract(panel.interacting, pageSlot, stop, panel.liveWanted)
+        pageSlot = stop.ref to stop.slot
+        panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks"), keep) { on -> watchPage(stop, on) }
+        panel.interactChanged = { on -> driveStop(stop, on) }
         panel.viewport = null
         panel.input = { events ->
             if (Glue.actsOnPage(events) && shownStops.acted(stop)) draw()
@@ -783,7 +791,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 val hasFrame = watching && panel.image != null
                 panel.show(pageCaption, if (watching) panel.image ?: picture else picture, pick, watching)
                 if (!hasFrame) panel.viewport = image
-                panel.watching(watching)
+                panel.watching(watching, keepInteract = true)
                 if (panel.liveWanted && !watching) watchPage(stop, true)
             }, gone)
         }
@@ -831,7 +839,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         stopPageView()
         pageInputs.clear()
         val panel = livePage()?.component as? PausedPagePanel ?: return
-        panel.watching(false)
+        // Interact goes off with Watch live, and stays on, unusable, until the new watch is accepted.
+        panel.watching(false, keepInteract = on)
         if (!on || !panel.isShowing || pageStop != Glue.stopKey(stop)) return
         val params = PageViewParams(stop.ref, stop.worker, stop.stop.since ?: return, true)
         watchingPage = params
@@ -847,6 +856,28 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 panel.liveWanted = false
             }
         }
+    }
+
+    /**
+     * The person takes the stop the Paused Page tab shows (Interact turned on) or gives it back (Interact turned off,
+     * Escape), after the watches asked before it; a refusal is said under the caption. On the event thread.
+     */
+    private fun driveStop(stop: Glue.ShownStop, on: Boolean) {
+        val params = DriveStopParams(stop.ref, stop.worker, stop.stop.since ?: return, on)
+        val key = Glue.stopKey(stop)
+        requestDriveStop(params) { result ->
+            if (result?.ok != true && pageStop == key) {
+                (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
+            }
+        }
+    }
+
+    @Synchronized private fun requestDriveStop(params: DriveStopParams, answered: (RunControlResult?) -> Unit) {
+        viewCalls = viewCalls.handle { _, _ -> Unit }.thenApplyAsync({
+            val result = runCatching { remote.driveStop(params) }.getOrNull()
+            ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
+            Unit
+        }, AppExecutorUtil.getAppExecutorService())
     }
 
     /** The Worker tab while the tool window holds it: closing it removes it. */
@@ -1574,6 +1605,9 @@ internal interface RunRemote {
 
     fun pageInput(params: PageInputParams): RunControlResult?
 
+    /** The person takes a stop (Interact turned on) or gives it back (Interact turned off, Escape). */
+    fun driveStop(params: DriveStopParams): RunControlResult?
+
     fun laneView(params: LaneViewParams): RunControlResult?
 
     fun pickAt(params: PickAtParams): PickAtResult?
@@ -1606,19 +1640,24 @@ private const val CLICK_SLOP = 4.0
  * on the image picks, a hint says so above it and the cursor is a crosshair over it; what the pick came to shows
  * under the caption. For a stop that takes `view`, **Watch live** replaces the image with the page's frames, and
  * **Interact**, once the watch is accepted, sends the mouse and the keyboard to the page: a click then picks only with
- * Shift.
+ * Shift. Turning Interact on takes control of the stop, and turning it off or Escape gives it back
+ * (`interactChanged`); it stays selected for the next stop of the same worker slot while Watch live stays on.
  */
 internal class PausedPagePanel : JPanel(BorderLayout()) {
     var viewport: PausedImage? = null
     var input: ((List<PageInput>) -> Unit)? = null
     var releaseInput: (() -> Unit)? = null
     var visibilityChanged: ((Boolean) -> Unit)? = null
+    /** The person turned Interact on or off, with its checkbox or Escape. */
+    var interactChanged: ((Boolean) -> Unit)? = null
     private var changedLive: ((Boolean) -> Unit)? = null
     private val live = JCheckBox("Watch live").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
-    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the paused page. Escape releases focus; Shift+click picks a locator."; isEnabled = false }
+    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the paused page, and take control of the stop. Escape turns it off and gives the stop back; Shift+click picks a locator."; isEnabled = false }
     var liveWanted: Boolean
         get() = live.isSelected
         set(value) { live.isSelected = value }
+    /** Interact is selected: input goes to the page while the watch is accepted. */
+    val interacting: Boolean get() = interact.isSelected
     private var isWatching = false
     private var captured = false
     private var held: Pair<String, Pair<Double, Double>>? = null
@@ -1698,22 +1737,33 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         live.toolTipText = "Show the page of the test this worker runs, a few images a second, through its tests and stops. Nothing is stored or shared."
     }
 
-    fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, changed: (Boolean) -> Unit) {
+    /** The live view of a stop: Interact stays selected only with `keepInteract`, for a stop that takes input. */
+    fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, keepInteract: Boolean = false, changed: (Boolean) -> Unit) {
         live.isVisible = available
         interact.isVisible = available && acceptsInput
         if (!available) liveWanted = false
         changedLive = changed
         clickCounts = acceptsClickCounts
-        watching(false)
+        watching(false, keepInteract && available && acceptsInput)
     }
 
-    fun watching(on: Boolean) {
+    /**
+     * The watch is accepted (`on`), or not: Interact is enabled only while it is, and goes off with it unless
+     * `keepInteract`, kept selected while the next watch is asked.
+     */
+    fun watching(on: Boolean, keepInteract: Boolean = false) {
         isWatching = on
         interact.isEnabled = on
         if (!on) {
-            interact.isSelected = false; captured = false; held = null; modifiers = emptyList()
+            if (!keepInteract) interact.isSelected = false
+            captured = false; held = null; modifiers = emptyList()
             pressed = null; clickWaiting = null; clickTimer.stop()
         }
+        drawPick()
+    }
+
+    /** The hint and the crosshair show where a click picks: everywhere but while interacting. */
+    private fun drawPick() {
         hint.isVisible = picks && !active()
         picture.cursor = if (picks && !active()) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor()
     }
@@ -1728,6 +1778,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         interact.isVisible = false
         changedLive = null
         visibilityChanged = null
+        interactChanged = null
         show(caption, null)
     }
 
@@ -1784,7 +1835,11 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
 
     init {
         live.addActionListener { release(); changedLive?.invoke(liveWanted) }
-        interact.addActionListener { release(); hint.isVisible = picks && !active(); picture.cursor = if (picks && !active()) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor() }
+        interact.addActionListener {
+            release()
+            drawPick()
+            interactChanged?.invoke(interact.isSelected)
+        }
         addHierarchyListener { visibilityChanged?.invoke(isShowing) }
         val header = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -1881,7 +1936,16 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             override fun keyPressed(e: KeyEvent) {
                 if (e.keyCode == KeyEvent.VK_TAB && (!active() || !captured)) { if (e.isShiftDown) picture.transferFocusBackward() else picture.transferFocus(); e.consume(); return }
                 if (!active()) return
-                if (e.keyCode == KeyEvent.VK_ESCAPE) { release(); live.requestFocusInWindow(); e.consume(); return }
+                if (e.keyCode == KeyEvent.VK_ESCAPE) {
+                    // Escape turns Interact off: the input held is let go, and the stop is given back.
+                    release()
+                    interact.isSelected = false
+                    drawPick()
+                    interactChanged?.invoke(false)
+                    interact.requestFocusInWindow()
+                    e.consume()
+                    return
+                }
                 val mac = com.intellij.openapi.util.SystemInfo.isMac
                 val primary = if (mac) e.isMetaDown else e.isControlDown
                 if (primary && !e.isAltDown && e.keyCode == KeyEvent.VK_V && !(mac && e.isControlDown) && !(!mac && e.isMetaDown)) {
@@ -1917,15 +1981,15 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         )
     }
 
+    /** What the tab shows; Interact stays as it is, `configureLive` and the watch deciding it. */
     fun show(caption: String, image: BufferedImage?, pick: ((Int, Int) -> Unit)? = null, preserveWatching: Boolean = false) {
-        if (!preserveWatching) watching(false)
+        if (!preserveWatching) watching(false, keepInteract = true)
         this.caption = caption
         this.image = image
         this.pick = pick.takeIf { image != null }
         label.text = caption
         picture.icon = image?.let { ImageIcon(it) }
-        hint.isVisible = picks && !active()
-        picture.cursor = if (picks && !active()) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor()
+        drawPick()
         note(null)
     }
 

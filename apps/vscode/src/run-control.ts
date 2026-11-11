@@ -10,6 +10,7 @@
  * as it stands and back.
  */
 import type {
+  DriveStopParams,
   EditorBreakpoint,
   LocatorAtCaretParams,
   LocatorAtCaretResult,
@@ -1715,6 +1716,39 @@ function imageSource(image: PausedImage | null): string | null {
 /** The hint above an image a click picks on. */
 export const PICK_HINT = 'Click the image to pick a locator: it replaces the one on the stopped line.';
 
+/** The worker slot a view's Interact is on for: a run's ref and its worker's parallel index (`ShownStop.slot`). */
+export interface InteractSlot {
+  ref: string;
+  slot: number;
+}
+
+/**
+ * Whether the paused page keeps Interact on as it shows `stop`: Interact is on for the stops of its worker slot
+ * (`on`), and the new stop takes input on a live view. Interact goes off with Watch live, so the caller keeps `on` only
+ * while Watch live is on.
+ */
+export function keepsInteract(on: InteractSlot | null, stop: ShownStop): boolean {
+  return (
+    !!on && on.ref === stop.ref && on.slot === stop.slot && stop.takes.includes('view') && stop.takes.includes('input')
+  );
+}
+
+/**
+ * Whether the worker panel keeps Interact as what its slot does changes: through a new stop that takes input, and
+ * while the worker runs between two stops; off at a stop that takes none.
+ */
+export function laneKeepsInteract(interacting: boolean, stop: ShownStop | null): boolean {
+  return interacting && (!stop || stop.takes.includes('input'));
+}
+
+/**
+ * `piwi/driveStop` for the stop a view shows: the person takes it (`on`, as Interact turns on) or gives it back
+ * (Interact turned off, `Esc`).
+ */
+export function driveStopParams(stop: ShownStop, on: boolean): DriveStopParams {
+  return { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on };
+}
+
 /**
  * What a change of the paused page panel's view state does to its live watch: only a change of visibility ends it
  * (`end`) or starts it again for a panel that wants it (`watch`); focus moving in or out of the panel does nothing.
@@ -1751,8 +1785,8 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.lane
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page and takes control of the stop; it stays on through the worker's next stops while Watch is on. Escape turns it off and gives the stop back; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page and takes control of the stop; it stays on through this worker's next stops while Watch live is on. Escape turns it off and gives the stop back; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live

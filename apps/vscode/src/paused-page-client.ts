@@ -121,9 +121,12 @@ picture.addEventListener('keydown', (e) => {
     { mac: /Mac/.test(navigator.platform), captured },
   );
   if (key === 'leave') {
+    // Escape turns Interact off: the input held is let go, and the stop is given back.
     e.preventDefault();
     release();
-    live.focus();
+    interact.checked = false;
+    post({ type: 'interact', on: false });
+    interact.focus();
   } else if (typeof key === 'object') {
     e.preventDefault();
     input.key(key.send);

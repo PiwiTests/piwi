@@ -1302,6 +1302,25 @@ class GlueTest {
     }
 
     @Test
+    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch live stays on`() {
+        val live = listOf("view", "input", "pick-at")
+        fun at(ref: String, slot: Int, takes: List<String>, line: Int = 7) =
+            Glue.ShownStop(ref, slot + 4, stopAt(specUri, line), runTest(), takes, slot = slot)
+        val shown = "ed-1" to 1
+        // The slot's next stop, the worker Playwright starts in its place included.
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live, 8), watchLive = true))
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live).copy(worker = 11), watchLive = true))
+        // Interact or Watch live off, another slot or run, or a stop that takes no input on a live view: off.
+        assertFalse(Glue.keepsInteract(false, shown, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, live), watchLive = false))
+        assertFalse(Glue.keepsInteract(true, null, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 2, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-2", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("view", "pick-at")), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("input")), watchLive = true))
+    }
+
+    @Test
     fun `a new page selects the Paused Page tab unless the Worker tab is selected in a tool window that shows`() {
         assertFalse(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = true))
         assertTrue(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = false))

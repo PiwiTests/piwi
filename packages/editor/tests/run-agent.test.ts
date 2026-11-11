@@ -459,6 +459,16 @@ describe("an agent's tools for the runs of the editor window", () => {
       expect((await call('run_control', { run, action: 'resume', stop: since, wait: 0 })).piwi).toMatchObject({
         ok: false,
       });
+      // Esc gives it back while the panel still watches, and Interact takes it again.
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: false })).toMatchObject({
+        ok: true,
+        message: 'You gave this stop back: an agent may act on it.',
+      });
+      expect(await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver ? undefined : true))).toBe(true);
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: true })).toMatchObject({ ok: true });
+      expect(
+        await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver?.kind === 'editor' ? true : undefined)),
+      ).toBe(true);
       // The panel no longer watches it: the agent hears it is given back, and may act again.
       await ide.client.sendRequest('piwi/pageView', { ...at, on: false });
       const given = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });

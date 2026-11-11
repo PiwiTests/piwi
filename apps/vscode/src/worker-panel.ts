@@ -4,16 +4,18 @@
  * worker Playwright starts in its place, the last image kept, dimmed, until the next one comes. At a stop of its test,
  * Interact sends clicks and keys to the page (`piwi/pageInput`) and Shift+click picks the element under it
  * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is drawn anew, so a
- * message of the panel names the stop it was drawn for, and Interact starts off. One slot at a time; a stop elsewhere
- * never takes it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the
- * wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the
- * paused page as new ones (`hooks`). The pure half is `run-control.ts`.
+ * message of the panel names the stop it was drawn for. Interact takes control of the stop (`piwi/driveStop`), `Esc`
+ * gives it back, and it stays on through the slot's next stops while the watch goes on. One slot at a time; a stop
+ * elsewhere never takes it over. The view ends while the panel is hidden and starts again as it shows. A press, a key,
+ * text, the wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops
+ * to the paused page as new ones (`hooks`). The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
 import {
+  DRIVE_STOP_REQUEST,
   LANE_FRAME_NOTIFICATION,
   LANE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
@@ -28,8 +30,10 @@ import {
 } from '@piwitests/editor/protocol';
 import {
   actsOnPage,
+  driveStopParams,
   frameIsCurrent,
   imageClickOf,
+  laneKeepsInteract,
   laneShown,
   pagePoint,
   pausedPageHtml,
@@ -86,6 +90,7 @@ export function createWorkerPanel(
   /** What the last pick or input came to; why the worker sends no image now, until one comes. */
   let note: string | null = null;
   let refused: string | null = null;
+  /** Interact is on: kept through the slot's next stops while the watch goes on, off at a stop that takes no input. */
   let interacting = false;
   let view: PausedPageView | null = null;
   /** The extension disposes of the panel: nothing is shown again. */
@@ -99,7 +104,7 @@ export function createWorkerPanel(
     const stop = lane.stop;
     const input = !!stop && stop.takes.includes('input');
     const current = !!imageOf && frameIsCurrent(imageOf, lane.worker);
-    if (!input) interacting = false;
+    interacting = laneKeepsInteract(interacting, stop);
     view = {
       image,
       caption: lane.caption,
@@ -128,6 +133,8 @@ export function createWorkerPanel(
 
   const watch = async (on: boolean): Promise<RunControlResult> => {
     stopWatching();
+    // Each watch starts with Interact off, and Interact goes off with the watch.
+    interacting = false;
     const slot = target;
     if (!on || !slot || !panel?.visible) {
       draw();
@@ -138,18 +145,35 @@ export function createWorkerPanel(
     watching = params;
     note = null;
     refused = null;
-    // Each watch starts with Interact off.
-    interacting = false;
     draw();
     const answer = await lc.sendRequest<RunControlResult>(LANE_VIEW_REQUEST, params).catch(() => null);
     if (watching !== params) return answer ?? { ok: false, message: NO_ANSWER };
     if (!answer?.ok) {
       watching = null;
+      // Interact turned on while the watch was asked gives the stop back.
+      if (interacting && lane.stop) {
+        void lc.sendRequest(DRIVE_STOP_REQUEST, driveStopParams(lane.stop, false)).catch(() => undefined);
+      }
+      interacting = false;
       note = answer?.message ?? NO_ANSWER;
       draw();
       hooks.changed();
     }
     return answer ?? { ok: false, message: NO_ANSWER };
+  };
+
+  /**
+   * The person takes the stop shown (Interact turned on) or gives it back (Interact turned off, `Esc`); a refusal is
+   * said under the caption.
+   */
+  const drive = async (stop: ShownStop, on: boolean) => {
+    const at = shown;
+    const answer = await lc
+      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, driveStopParams(stop, on))
+      .catch(() => null);
+    if (answer?.ok || at !== shown) return;
+    note = answer?.message ?? NO_ANSWER;
+    draw();
   };
 
   /** A click on the image at a stop: the element under it picked on the stopped page, as on the paused page. */
@@ -178,8 +202,11 @@ export function createWorkerPanel(
       return void watch(m.on);
     }
     if (m.type === 'interact' && typeof m.on === 'boolean') {
-      interacting = m.on;
-      return draw();
+      interacting = m.on && !!watching;
+      draw();
+      const stop = lane.stop;
+      if (stop && watching && interacting === m.on) void drive(stop, m.on);
+      return;
     }
     if (m.type === 'pick') return pick(raw);
     const refused = () => {
@@ -285,12 +312,14 @@ export function createWorkerPanel(
       if (!target) return;
       const before = lane.stop?.stop.since ?? null;
       lane = laneShown(now.get(target.ref), target.lane, at);
-      // The service ends the view with the run.
-      if (!now.has(target.ref)) watching = null;
+      // The service ends the view with the run, and Interact with it.
+      if (!now.has(target.ref)) {
+        watching = null;
+        interacting = false;
+      }
       if ((lane.stop?.stop.since ?? null) === before) return draw();
-      // A new stop, or the worker going on, is drawn anew: Interact off, and no message of the view before reaches it.
+      // A new stop, or the worker going on, is drawn anew, Interact kept: no message of the view before reaches it.
       shown++;
-      interacting = false;
       note = null;
       draw(true);
     },

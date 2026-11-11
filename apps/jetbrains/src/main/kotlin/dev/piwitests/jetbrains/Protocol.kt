@@ -953,6 +953,14 @@ data class PageInput(
 
 data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
 
+/**
+ * `piwi/driveStop`: the IDE's person takes the stop `since` names (`on`, as **Interact** turns on: an agent's actions
+ * there are refused until it is given back) or gives it back (Escape, or **Interact** turned off), as the IDE's view
+ * that shows the stop (its paused page, else its lane's panel). Answered with `RunControlResult`; giving back a stop the
+ * IDE did not drive changes nothing.
+ */
+data class DriveStopParams(val ref: String, val worker: Int, val since: String, val on: Boolean)
+
 data class PageFrame(val ref: String, val worker: Int, val since: String, val data: String? = null, val width: Int? = null, val height: Int? = null, val refused: String? = null)
 
 /**
@@ -1196,6 +1204,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pageInput")
     fun pageInput(params: PageInputParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/driveStop")
+    fun driveStop(params: DriveStopParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/laneView")
     fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>

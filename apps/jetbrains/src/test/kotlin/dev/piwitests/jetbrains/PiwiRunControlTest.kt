@@ -34,11 +34,13 @@ import com.intellij.openapi.ui.TestDialog
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.UIUtil
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XBreakpointProperties
 import com.intellij.xdebugger.breakpoints.XBreakpointType
 import com.intellij.xdebugger.breakpoints.XLineBreakpointType
+import java.awt.event.KeyEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -46,6 +48,9 @@ import java.lang.reflect.Proxy
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.ImageIO
+import javax.swing.ImageIcon
+import javax.swing.JCheckBox
+import javax.swing.JLabel
 
 /**
  * A run's client side, driven by the sessions the editor service would send: the execution point and the inlay above
@@ -67,6 +72,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var count: (LocatorAtCaretParams) -> LocatorAtCaretResult = { LocatorAtCaretResult(true, "The outline is gone.", null, null) }
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
+    private val drives = CopyOnWriteArrayList<DriveStopParams>()
     private val binds = CopyOnWriteArrayList<StopBindParams>()
     private val shares = CopyOnWriteArrayList<ShareRunParams>()
     private val holds = CopyOnWriteArrayList<HoldRunParams>()
@@ -108,6 +114,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun pageView(params: PageViewParams) = RunControlResult(true, "Watching.")
 
             override fun pageInput(params: PageInputParams) = RunControlResult(true, "Played.")
+
+            override fun driveStop(params: DriveStopParams): RunControlResult {
+                drives += params
+                return RunControlResult(true, if (params.on) "You drive this stop." else "You gave this stop back.")
+            }
 
             override fun laneView(params: LaneViewParams): RunControlResult {
                 lanes += params
@@ -832,6 +843,55 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(2, picks.size)
             hear(RunSession("ed-8", ended = true))
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Interact takes control of the stop the Paused Page tab shows and Escape gives it back; Interact stays selected for
+     * the next stop of the same worker slot while Watch live stays on, and goes off at another slot's.
+     */
+    fun testInteractTakesTheStopAndStaysOnForTheSlotsNextStop() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(1280, 800, BufferedImage.TYPE_INT_RGB), "jpg", it) }
+            image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()), 1280, 800)
+            val pageObject = file("tests/pages/drive.page.ts", page)
+            val live = listOf("view", "input", "pick-at")
+            fun at(since: String, line: Int = 3) = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), line, 4, null, false, since)
+            val first = "2026-10-28T10:00:01.000Z"
+            hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "stopped", test(), at(first), takes = live))))
+            waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
+            val interact = UIUtil.findComponentsOfType(panel, JCheckBox::class.java).single { it.text == "Interact" }
+            // A tool window out of sight watches no page: Watch live on and the watch accepted are played here.
+            panel.liveWanted = true
+            panel.watching(true)
+            interact.doClick()
+            assertEquals(DriveStopParams("ed-9", 0, first, true), waitFor("Interact taking the stop") { drives.lastOrNull() })
+            // The worker goes on and stops again: Interact stays selected, unusable until the next watch is accepted.
+            hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "running", test()))))
+            val second = "2026-10-28T10:00:02.000Z"
+            hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "stopped", test(), at(second, 4), takes = live))))
+            waitFor("the next stop's page") { sessions.shown().takeIf { it.pageImage != null && it.pageCaption?.contains("drive.page.ts:5") == true } }
+            assertTrue(panel.interacting)
+            assertFalse(interact.isEnabled)
+            assertEquals(1, drives.size)
+            // Escape, once watched, gives the stop back and turns Interact off.
+            panel.watching(true)
+            val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
+            picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
+            assertFalse(panel.interacting)
+            assertEquals(DriveStopParams("ed-9", 0, second, false), waitFor("Escape giving the stop back") { drives.getOrNull(1) })
+            // Another slot's stop turns it off.
+            interact.doClick()
+            waitFor("Interact taking the stop again") { drives.getOrNull(2) }
+            val third = "2026-10-28T10:00:03.000Z"
+            hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "running", test()), RunWorker(1, 1, "stopped", test(), at(third), takes = live))))
+            waitFor("the other slot's page") { pages.lastOrNull()?.takeIf { it.worker == 1 } }
+            assertFalse(panel.interacting)
+            hear(RunSession("ed-9", ended = true))
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

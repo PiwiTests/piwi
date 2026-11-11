@@ -1883,6 +1883,21 @@ export type PageFrame = Omit<PageViewParams, 'on'> &
 
 export const PAGE_VIEW_REQUEST = 'piwi/pageView';
 export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
+
+/**
+ * `piwi/driveStop`: the editor's person takes the stop `since` names (`on`, as **Interact** turns on: an agent's actions
+ * there are refused until it is given back) or gives it back (`Esc`, or **Interact** turned off), as the editor's view
+ * that shows the stop (its paused page, else its lane's panel). Answered with `RunControlResult`; giving back a stop the
+ * editor did not drive changes nothing.
+ */
+export interface DriveStopParams {
+  ref: string;
+  worker: number;
+  since: string;
+  on: boolean;
+}
+
+export const DRIVE_STOP_REQUEST = 'piwi/driveStop';
 export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
 
 /**

@@ -34,6 +34,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
+  DRIVE_STOP_REQUEST,
   PAGE_FRAME_NOTIFICATION,
   type PageFrame,
   type PageViewParams,
@@ -85,8 +86,10 @@ import {
   accessibleLabel,
   controlItems,
   controlState,
+  driveStopParams,
   heardSession,
   imageClickOf,
+  keepsInteract,
   lineEditOf,
   linesAbove,
   liveItem,
@@ -125,6 +128,7 @@ import {
   workerName,
   writtenLines,
   type CaretShown,
+  type InteractSlot,
   type PausedPageView,
   type RunBreakpoint,
   type RunBreakpoints,
@@ -175,6 +179,8 @@ export interface RunControl extends vscode.Disposable {
   workerView(): PausedPageView | null;
   /** A message of the worker panel's script, as it posts it, which the integration suite sends. */
   workerMessage(message: unknown): Promise<void>;
+  /** A message of the paused page's script, as it posts it, which the integration suite sends. */
+  pageMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
@@ -272,6 +278,11 @@ export function registerRunControl(
   let pickable = 0;
   let wantLive = false;
   let watchingPage: PageViewParams | null = null;
+  /**
+   * The worker slot Interact is on for: the paused page keeps it on for the slot's next stops while Watch live stays
+   * on, and their input goes to each once its watch is accepted. Null while Interact is off.
+   */
+  let interactSlot: InteractSlot | null = null;
 
   const stopPageView = () => {
     const previous = watchingPage;
@@ -493,6 +504,7 @@ export function registerRunControl(
 
   const watchPage = async (on: boolean) => {
     stopPageView();
+    if (!on) interactSlot = null;
     const stop = pageShows;
     const current = page;
     if (!stop || !current?.live || !panel?.visible) return;
@@ -504,13 +516,32 @@ export function registerRunControl(
     const answer = await lc.sendRequest<RunControlResult>(PAGE_VIEW_REQUEST, params).catch(() => null);
     if (page?.live?.shown !== shown || watchingPage !== params) return;
     if (!answer?.ok) {
+      // Interact turned on while the watch was asked gives the stop back.
+      if (page.live.interacting)
+        void lc.sendRequest(DRIVE_STOP_REQUEST, driveStopParams(stop, false)).catch(() => undefined);
+      interactSlot = null;
       stopPageView();
       showPage({
         ...page,
         live: { ...page.live, on: false, interacting: false },
         note: answer?.message ?? 'The editor service did not answer.',
       });
+    } else if (!page.live.interacting && keepsInteract(interactSlot, stop)) {
+      // Interact stays on for the slot: the new stop's input goes to its page at once.
+      showPage({ ...page, live: { ...page.live, interacting: true } });
     }
+  };
+
+  /**
+   * The person takes the stop the paused page shows (Interact turned on) or gives it back (Interact turned off,
+   * `Esc`); a refusal is said under the caption.
+   */
+  const driveStop = async (stop: ShownStop, on: boolean) => {
+    const answer = await lc
+      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, driveStopParams(stop, on))
+      .catch(() => null);
+    if (answer?.ok || !page || pageStop !== stopKey(stop)) return;
+    showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
   const pageMessage = async (message: unknown) => {
@@ -522,7 +553,11 @@ export function registerRunControl(
       return watchPage(m.on);
     }
     if (m.type === 'interact' && typeof m.on === 'boolean' && page.live.on) {
-      showPage({ ...page, live: { ...page.live, interacting: m.on && page.live.input } });
+      const stop = pageShows;
+      const on = m.on && page.live.input && !!stop;
+      showPage({ ...page, live: { ...page.live, interacting: on } });
+      interactSlot = on && stop ? { ref: stop.ref, slot: stop.slot } : null;
+      if (stop && on === m.on) void driveStop(stop, on);
       return;
     }
     if (m.type === 'pick') return pickOnPage(message);
@@ -554,6 +589,8 @@ export function registerRunControl(
   const openPage = async (stop: ShownStop) => {
     const key = stopKey(stop);
     stopPageView();
+    // Another slot's stop, or one that takes no input, turns Interact off; the same slot's keeps it.
+    if (!keepsInteract(interactSlot, stop)) interactSlot = null;
     pageStop = key;
     pageShows = stop;
     stopsShown.view(stop);
@@ -572,12 +609,14 @@ export function registerRunControl(
         visible = panel.visible;
         if (change === 'end') {
           stopPageView();
+          interactSlot = null;
           if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
         } else if (change === 'watch') void watchPage(true);
       });
       panel.onDidDispose(() => {
         stopPageView();
         wantLive = false;
+        interactSlot = null;
         panel = null;
         page = null;
         pageStop = null;
@@ -1294,6 +1333,7 @@ export function registerRunControl(
     pausedPage: () => (panel ? page : null),
     workerView: () => workerPanel.view(),
     workerMessage: (message) => workerPanel.message(message),
+    pageMessage,
     pickOnPage,
     write,
     caretCount: () => caretShown,
