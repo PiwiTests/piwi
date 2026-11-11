@@ -66,6 +66,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PUT /api/desktop/run-target/key', // desktop build only; the shell hands the kept key back after each start
   'DELETE /api/desktop/run-target/key', // desktop build only; the shell disconnects from the team instance
   'PUT /api/desktop/run-target/links', // desktop build only; the folders the shell links for the instance's projects
+  'PUT /api/desktop/run-target/local-runs', // desktop build only; the folders the shell's own local runs are going in
   'POST /api/desktop/run-target/requests/:id/answer', // desktop build only; the person's answer in the window
   'POST /api/desktop/run-target/requests/:id/plan', // desktop build only; the checks again once a folder is linked
   'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
