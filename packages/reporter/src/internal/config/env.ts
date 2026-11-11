@@ -92,7 +92,6 @@ export const PIWI_ENV_KEYS = {
   checkBaseUrl: 'PIWI_CHECK_BASE_URL',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
-  shareLive: 'PIWI_SHARE_LIVE',
   outputFile: 'PIWI_OUTPUT_FILE',
   aiMode: 'PIWI_AI',
   aiDir: 'PIWI_AI_DIR',
@@ -252,6 +251,13 @@ export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
  */
 export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
 
+/**
+ * `PIWI_SHARE_LIVE=1` shares a run outside CI that no editor or app follows (no run channel) live from its start, the
+ * person's own choice for that run, set where they start it: never an option a config file sets for everyone. The
+ * reporter sets it to `true` for the workers, which open their live view stream at once, or removes it. Not an option.
+ */
+export const PIWI_SHARE_LIVE_ENV = 'PIWI_SHARE_LIVE';
+
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
@@ -339,7 +345,6 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'checkBaseUrl', env: PIWI_ENV_KEYS.checkBaseUrl, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
-  { option: 'shareLive', env: PIWI_ENV_KEYS.shareLive, kind: 'bool' },
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
 ];
 

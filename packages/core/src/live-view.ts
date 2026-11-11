@@ -563,6 +563,13 @@ export interface LiveAskAnswer {
   answer: 'not-now';
 }
 
+/**
+ * The field of the bodies of a run's stream requests (events, heartbeat) by which its reporter says it takes asks
+ * (`true`): the instance takes an ask to watch a run only once its reporter said so, since an older one would never
+ * put it to the developer.
+ */
+export const TAKES_ASKS_FIELD = 'takesAsks';
+
 /** The least time between two asks of one person on one run, in milliseconds. */
 export const ASK_TO_WATCH_MS = 5 * 60_000;
 
@@ -577,16 +584,21 @@ export const LIVE_VIEW_AFTER_PARAM = 'after';
 
 const ASK_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** An ask as the instance sent it, its name on one line; null when it is not one. */
+/**
+ * An ask as the instance sent it; null when it is not one. Its name is plain text on one line: control and direction
+ * characters go, and so do the characters a notification would read as a link or as markup (`[]()<>` and backticks),
+ * cut to `MAX_ASK_BY` characters, never inside one.
+ */
 export function parseLiveAsk(value: unknown): LiveAsk | null {
   if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id) || typeof value.by !== 'string') {
     return null;
   }
-  const by = value.by
+  const plain = value.by
     .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
+    .replace(/[[\]()<>`]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_ASK_BY);
+    .trim();
+  const by = Array.from(plain).slice(0, MAX_ASK_BY).join('').trim();
   return by ? { id: value.id, by } : null;
 }
 

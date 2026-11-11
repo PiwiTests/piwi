@@ -439,8 +439,8 @@ describe('StreamManager idle heartbeat', () => {
     await wait(400);
     (sm as any).stopHeartbeat();
     // The first heartbeat failed and the next carried the answer again; once taken, none carries it.
-    expect(bodies[0]).toEqual({ streamToken: 'tok', askAnswer: { id: 'a1', answer: 'not-now' } });
-    expect(bodies[1]).toEqual({ streamToken: 'tok', askAnswer: { id: 'a1', answer: 'not-now' } });
+    expect(bodies[0]).toEqual({ streamToken: 'tok', takesAsks: true, askAnswer: { id: 'a1', answer: 'not-now' } });
+    expect(bodies[1]).toEqual({ streamToken: 'tok', takesAsks: true, askAnswer: { id: 'a1', answer: 'not-now' } });
     expect(bodies.slice(2).every((body) => !('askAnswer' in body))).toBe(true);
     expect(asks).toHaveLength(1);
   });

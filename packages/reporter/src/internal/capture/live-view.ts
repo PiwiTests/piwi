@@ -28,7 +28,7 @@ import {
 } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
-import { PIWI_ENV_KEYS, PIWI_RUN_LOG_ENV } from '../config/env.js';
+import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
@@ -288,8 +288,8 @@ export function openLiveView(
     retries: 0,
     ended: false,
     refused: null,
-    // A run outside CI shares from its start when it was asked to (`shareLive`), as a CI run does.
-    sharing: ci || env[PIWI_ENV_KEYS.shareLive] === 'true',
+    // A run outside CI shares from its start when it was asked to (`PIWI_SHARE_LIVE`), as a CI run does.
+    sharing: ci || env[PIWI_SHARE_LIVE_ENV] === 'true',
     after: null,
     ci,
     lost: null,

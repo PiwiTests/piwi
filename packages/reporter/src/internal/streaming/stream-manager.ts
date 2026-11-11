@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { parseLiveAsk, type LiveAsk, type LiveAskAnswer } from '@piwitests/core/live-view';
+import { TAKES_ASKS_FIELD, parseLiveAsk, type LiveAsk, type LiveAskAnswer } from '@piwitests/core/live-view';
 import { errorMessage } from '../support/errors.js';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
@@ -501,7 +501,12 @@ export class StreamManager {
       try {
         const response = await this.httpClient.postJSON(
           `/api/test-runs/${this._runId}/events`,
-          { streamToken: this._token, testCases: chunk, ...(carried ? { askAnswer: carried } : {}) },
+          {
+            streamToken: this._token,
+            testCases: chunk,
+            [TAKES_ASKS_FIELD]: true,
+            ...(carried ? { askAnswer: carried } : {}),
+          },
           this._auth,
           undefined,
           { headers: runTokenHeaders(this._token) },
@@ -710,7 +715,7 @@ export class StreamManager {
     try {
       const response = await this.httpClient.postJSON(
         `/api/test-runs/${this._runId}/heartbeat`,
-        { streamToken: this._token, ...(carried ? { askAnswer: carried } : {}) },
+        { streamToken: this._token, [TAKES_ASKS_FIELD]: true, ...(carried ? { askAnswer: carried } : {}) },
         this._auth,
       );
       this.noteWatched(response);

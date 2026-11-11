@@ -21,6 +21,8 @@ import {
   ignoredEnvValues,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
+  PIWI_SHARE_LIVE_ENV,
+  readBool,
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
   type IgnoredEnvValue,
@@ -634,11 +636,14 @@ export class PiwiDashboardReporter {
     );
     if (this.streamManager) {
       this.streamManager.onOpened = (runId, runUrl) => this.hubLink?.page(runId, runUrl);
-      // A teammate asks to watch the run: the hub's tool asks the developer, else the run's terminal says so.
+      // A teammate asks to watch the run: the hub's tool asks the developer, and the run's terminal says so, whether a
+      // tool showed it or not.
       this.streamManager.onAsk = (ask) => {
-        if (this.hubLink?.ask(ask)) return;
+        const asked = this.hubLink?.ask(ask) ?? false;
         this.logger.info(
-          `${ask.by} asks to watch this run live on the dashboard. A run that no editor or Piwi Picker follows is shared from its start with PIWI_SHARE_LIVE=1.`,
+          asked
+            ? `${ask.by} asks to watch this run live on the dashboard: share it from the editor or the app that follows it.`
+            : `${ask.by} asks to watch this run live on the dashboard. A run that no editor or app follows is shared from its start with PIWI_SHARE_LIVE=1.`,
         );
       };
       if (this.hubLink) this.hubLink.onAskAnswer = (answer) => this.streamManager?.answerAsk(answer);
@@ -680,10 +685,11 @@ export class PiwiDashboardReporter {
     if (this.mergingReports) return;
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
-    // `shareLive` shares a run outside CI from its start; the workers read it as they open their live view.
-    const shareLive = !ci && this.options.shareLive === true;
-    if (shareLive) process.env[PIWI_ENV_KEYS.shareLive] = 'true';
-    else delete process.env[PIWI_ENV_KEYS.shareLive];
+    // PIWI_SHARE_LIVE shares a run outside CI that no editor or app follows from its start; the workers read it as
+    // they open their live view.
+    const shareLive = !ci && !process.env[RUN_CHANNEL_ENV] && readBool(process.env[PIWI_SHARE_LIVE_ENV]) === true;
+    if (shareLive) process.env[PIWI_SHARE_LIVE_ENV] = 'true';
+    else delete process.env[PIWI_SHARE_LIVE_ENV];
     if (!setup?.liveViewKey) {
       const why = this.liveViewMissing(setup);
       if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);

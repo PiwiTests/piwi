@@ -104,8 +104,9 @@ responsibilities.
      log saying once when it is lost and once when it is back, through the file the global setup relays from the
      runner's process (`PIWI_RUN_LOG`, `internal/support/run-log.ts`: what a worker writes goes to its running test's
      output); outside CI only while the run channel shares the run (`share`, **Share live**, the state told back as
-     `live`), given up after the quick retries or a 401 or 404 until shared again: only while the instance says
-     someone watches does it post frames of the test's page, through
+     `live`), or from the start of a run no run channel follows with `PIWI_SHARE_LIVE=1`, an environment variable
+     alone, never an option, given up after the quick retries or a 401 or 404 until shared again: only while the
+     instance says someone watches does it post frames of the test's page, through
      the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
      its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a

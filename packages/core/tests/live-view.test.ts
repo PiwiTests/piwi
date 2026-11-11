@@ -456,6 +456,9 @@ describe('an ask to watch', () => {
     expect(parseLiveAsk({ id: 'ask_1-a', by: 'Dana' })).toEqual({ id: 'ask_1-a', by: 'Dana' });
     expect(parseLiveAsk({ id: 'a1', by: ' Dana\n\u202Eevil ' })).toEqual({ id: 'a1', by: 'Dana evil' });
     expect(parseLiveAsk({ id: 'a1', by: 'x'.repeat(300) })!.by).toHaveLength(MAX_ASK_BY);
+    // Nothing a notification reads as a link or as markup, and no character cut in two.
+    expect(parseLiveAsk({ id: 'a1', by: '[Dana](command:x) <img src=y> `z`' })!.by).toBe('Dana command:x img src=y z');
+    expect(Array.from(parseLiveAsk({ id: 'a1', by: '😀'.repeat(150) })!.by)).toHaveLength(MAX_ASK_BY);
     for (const broken of [
       null,
       {},
