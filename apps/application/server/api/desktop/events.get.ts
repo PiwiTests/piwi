@@ -115,15 +115,16 @@ export default eventHandler(async (event) => {
     void desktopRuns()
       ?.then((hub) => {
         if (closed) return;
+        // Each listener is let go with the stream, whatever comes after it.
+        const listening: Array<() => void> = [];
+        unsubscribeHub = () => {
+          for (const unsubscribe of listening) unsubscribe();
+        };
         send({ type: 'hub-runs', live: hub.liveRunCount() });
-        const unsubscribeLive = hub.onLiveRunCount((live) => send({ type: 'hub-runs', live }));
+        listening.push(hub.onLiveRunCount((live) => send({ type: 'hub-runs', live })));
         // The editors' runs, which the shell's surfaces count: never steered from here.
         send({ type: 'editor-runs', runs: hub.editorRuns() });
-        const unsubscribeEditors = hub.onEditorRuns((runs) => send({ type: 'editor-runs', runs }));
-        unsubscribeHub = () => {
-          unsubscribeLive();
-          unsubscribeEditors();
-        };
+        listening.push(hub.onEditorRuns((runs) => send({ type: 'editor-runs', runs })));
       })
       .catch(() => {});
 
