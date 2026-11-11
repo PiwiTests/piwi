@@ -12,8 +12,7 @@
  * (`useDesktopRunHub`, `tabsAfter`); the person's choice holds until a stop is answered there, or, while that worker
  * runs and nobody watches it, until a new stop comes. The workers not shown stay drawn, hidden, so their views, answers
  * and lists stay as they were, and a run that goes from several workers to one, or back, keeps each worker drawn. When
- * the tabs move on from the worker the keyboard was in, it goes to the same control of the worker shown, else to its
- * tab. Above them, **Resume all** and **Pause all** (`runLevelControls`), their buttons and the workers' waiting while
+ * the tabs move on from the worker the keyboard was in, it goes to the tab of the worker shown. Above them, **Resume all** and **Pause all** (`runLevelControls`), their buttons and the workers' waiting while
  * one is on its way, and waiting themselves while a worker they name has a command of its own on its way.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
@@ -132,17 +131,18 @@ function pauseAll(): void {
 // ── Focus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const root = ref<HTMLElement | null>(null);
-/** The control of a worker the keyboard is on (its `data-focus`), until the focus goes elsewhere. */
-let lastFocus: string | null = null;
+/** The keyboard is on a control of one of the run's workers, until it goes elsewhere. */
+let onWorker = false;
 
 function heardFocus(event: FocusEvent): void {
   const target = event.target instanceof HTMLElement ? event.target : null;
-  lastFocus = target && root.value?.contains(target) ? (target.dataset.focus ?? null) : null;
+  onWorker = !!target?.closest('[data-focus]') && !!root.value?.contains(target);
 }
 
-/** A press anywhere but on a worker's control: the person put the focus there themselves. */
+/** A press anywhere but on a control of this run's workers: the person put the focus there themselves. */
 function heardPress(event: PointerEvent): void {
-  if (!(event.target instanceof Element) || !event.target.closest('[data-focus]')) lastFocus = null;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target?.closest('[data-focus]') || !root.value?.contains(target)) onWorker = false;
 }
 
 onMounted(() => {
@@ -155,18 +155,16 @@ onBeforeUnmount(() => {
 });
 
 /**
- * The tabs moved on while the keyboard was on a control of the worker now hidden: it goes to the same control of the
- * worker shown (Resume, at its stop), else to that worker's tab.
+ * The tabs moved on while the keyboard was on a control of the worker now hidden: it goes to the tab of the worker
+ * shown, never to one of its controls, which a key pressed again would answer.
  */
 watch(shown, async (lane, before) => {
-  if (lane === null || before === null || lane === before || lastFocus === null) return;
-  const key = lastFocus;
+  if (lane === null || before === null || lane === before || !onWorker) return;
   await nextTick();
   const active = document.activeElement;
   const hidden = active instanceof HTMLElement && active.closest('[role="tabpanel"]')?.id === panelId(before);
   if (active && active !== document.body && !hidden) return;
-  const same = document.getElementById(panelId(lane))?.querySelector<HTMLElement>(`[data-focus="${key}"]`);
-  (same ?? document.getElementById(tabId(lane)))?.focus();
+  document.getElementById(tabId(lane))?.focus();
 });
 </script>
 

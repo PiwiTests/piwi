@@ -265,11 +265,15 @@ function heardSession(session: HubSession): void {
 
 /**
  * The tabs of a run as its workers stand now: none for a run of fewer than two workers. A worker is watched while the
- * window watches its lane; a stopped one keeps its tab anyway, and Watch live shows nothing of a running one.
+ * window watches its lane, or while it pauses with Watch live on (Pause and watch, where the lane cannot be watched);
+ * a stopped one keeps its tab anyway, and Watch live shows nothing of one that runs on.
  */
 function followTabs(session: HubSession): void {
   const { ref } = session;
-  const tabs = tabsAfter(state.tabs[ref], session.workers, (worker) => watchesLane(ref, worker.parallelIndex));
+  const watched = (worker: HubWorker) =>
+    watchesLane(ref, worker.parallelIndex) ||
+    (worker.pausing && (state.watchLive[ref]?.includes(worker.worker) ?? false));
+  const tabs = tabsAfter(state.tabs[ref], session.workers, watched);
   if (tabs) state.tabs[ref] = tabs;
   else delete state.tabs[ref];
 }

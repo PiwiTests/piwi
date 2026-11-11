@@ -50,6 +50,18 @@ const emit = defineEmits<{
   releasing: [on: boolean];
 }>();
 
+/** What this page holds the worker's buttons for (a pick, a give-back), said to the worker, and let go as it goes. */
+const held = { picking: false, releasing: false };
+function holding(what: 'picking' | 'releasing', on: boolean): void {
+  held[what] = on;
+  if (what === 'picking') emit('picking', on);
+  else emit('releasing', on);
+}
+onBeforeUnmount(() => {
+  if (held.picking) emit('picking', false);
+  if (held.releasing) emit('releasing', false);
+});
+
 const hub = useDesktopRunHub();
 
 // ── The image of the stop ─────────────────────────────────────────────────────────────────────────────────────────
@@ -190,7 +202,7 @@ async function interactOff(): Promise<void> {
   const since = props.stop.since;
   const drained = liveImage.value?.release() ?? Promise.resolve();
   interact.value = false;
-  emit('releasing', true);
+  holding('releasing', true);
   try {
     await drained;
     if (interact.value || props.stop.since !== since) return;
@@ -198,7 +210,7 @@ async function interactOff(): Promise<void> {
     playedAt.value = null;
     await props.giveBack(since);
   } finally {
-    emit('releasing', false);
+    holding('releasing', false);
   }
 }
 
@@ -219,7 +231,7 @@ const pickable = computed(() => props.takes.includes('pick-at') && (framed.value
 async function pickAt(point: { x: number; y: number } | null): Promise<void> {
   if (!point || !props.takes.includes('pick-at') || props.busy) return;
   picking.value = false;
-  emit('picking', true);
+  holding('picking', true);
   const answer = await hub.command({
     type: 'pick-at',
     ref: props.runRef,
@@ -227,7 +239,7 @@ async function pickAt(point: { x: number; y: number } | null): Promise<void> {
     since: props.stop.since,
     ...point,
   });
-  emit('picking', false);
+  holding('picking', false);
   emit('said', answer, { picked: true });
 }
 

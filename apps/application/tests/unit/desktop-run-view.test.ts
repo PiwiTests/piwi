@@ -615,6 +615,10 @@ describe('the window’s stream of its runs', () => {
     runs.setWatchLive('desktop-7', 0, true);
     run(running(0), stopped(1, 's4'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    // Pausing with Watch live on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
+    runs.chooseTab('desktop-7', 0);
+    run({ ...running(0), pausing: true }, stopped(1, 's5'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
     runs.setWatchLive('desktop-7', 0, false);
     runs.chooseTab('desktop-7', 0);
     await runs.setLaneWatch('desktop-7', 0, true);

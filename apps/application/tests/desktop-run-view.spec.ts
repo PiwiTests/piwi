@@ -1306,7 +1306,7 @@ test.describe('Desktop run live view', () => {
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
     await expect(controls.getByRole('button')).toHaveText(['Resume all']);
     // Resume there, from the keyboard: once it goes on, the next stopped test takes the tab, and the keyboard follows
-    // to its Resume.
+    // to its tab, never to a control a key pressed again would answer.
     await panel('worker 2').getByRole('button', { name: 'Resume' }).focus();
     await page.keyboard.press('Enter');
     await expect
@@ -1315,7 +1315,7 @@ test.describe('Desktop run live view', () => {
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
     await send(sessionOf([firstAt('s2'), second]));
     await expect(tab1).toHaveAttribute('aria-selected', 'true');
-    await expect(panel('worker 1').getByRole('button', { name: 'Resume' })).toBeFocused();
+    await expect(tab1).toBeFocused();
     await send(sessionOf([firstAt('s2'), secondAt('s3')]));
     await expect(tab1).toHaveAttribute('aria-selected', 'true');
     // Step on its way at the worker shown: Resume all waits for its answer, and sends nothing meanwhile.
@@ -1364,7 +1364,7 @@ test.describe('Desktop run live view', () => {
 
     // The run goes down to one worker, and back as Playwright starts another: the worker stays drawn as it was, the
     // tabs gone, then back.
-    const kept = tray(page).locator('div[data-lane="1"]');
+    const kept = tray(page).locator('div[data-lane="1"] [data-shot="desktop-run-worker"]');
     await kept.evaluate((element) => element.setAttribute('data-kept', ''));
     await send(sessionOf([secondAt('s5')]));
     await expect(tabs).toHaveCount(0);
@@ -1372,7 +1372,7 @@ test.describe('Desktop run live view', () => {
     await expect(tray(page).locator('[data-kept]')).toHaveCount(1);
     await send(sessionOf([first, secondAt('s5')]));
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
-    await expect(panel('worker 2').locator('xpath=self::*[@data-kept]')).toHaveCount(1);
+    await expect(panel('worker 2').locator('[data-kept]')).toHaveCount(1);
 
     // The run reports to this app, its second worker on the refunds test: the run page's Show its page shows that
     // worker's tab, the focus on it.

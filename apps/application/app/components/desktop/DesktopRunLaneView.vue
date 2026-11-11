@@ -47,6 +47,18 @@ const emit = defineEmits<{
   releasing: [on: boolean];
 }>();
 
+/** What this page holds the worker's buttons for (a pick, a give-back), said to the worker, and let go as it goes. */
+const held = { picking: false, releasing: false };
+function holding(what: 'picking' | 'releasing', on: boolean): void {
+  held[what] = on;
+  if (what === 'picking') emit('picking', on);
+  else emit('releasing', on);
+}
+onBeforeUnmount(() => {
+  if (held.picking) emit('picking', false);
+  if (held.releasing) emit('releasing', false);
+});
+
 const hub = useDesktopRunHub();
 /** Interact, as the person left it for the worker's lane, kept by the window. */
 const interact = defineModel<boolean>('interact', { default: false });
@@ -150,7 +162,7 @@ async function pickAt(point: { x: number; y: number }): Promise<void> {
   const since = stop.value?.since;
   if (!since || !pickable.value || props.busy) return;
   picking.value = false;
-  emit('picking', true);
+  holding('picking', true);
   const answer = await hub.command({
     type: 'pick-at',
     ref: runRef.value,
@@ -158,7 +170,7 @@ async function pickAt(point: { x: number; y: number }): Promise<void> {
     since,
     ...point,
   });
-  emit('picking', false);
+  holding('picking', false);
   emit('said', answer, { picked: true });
 }
 
@@ -207,7 +219,7 @@ async function interactOff(): Promise<void> {
   const since = stop.value?.since ?? null;
   const drained = liveImage.value?.release() ?? Promise.resolve();
   interact.value = false;
-  emit('releasing', true);
+  holding('releasing', true);
   try {
     await drained;
     const now = stop.value;
@@ -216,7 +228,7 @@ async function interactOff(): Promise<void> {
     playedAt.value = null;
     await props.giveBack(since);
   } finally {
-    emit('releasing', false);
+    holding('releasing', false);
   }
 }
 
