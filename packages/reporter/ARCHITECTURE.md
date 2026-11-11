@@ -164,10 +164,11 @@ What the package does to a user's run, process by process.
   and `withEndSignal` in `pause-at.ts`, beside a signal the test gave, through
   `AbortSignal.any`): End aborts it before the debugger lets the held call go, so
   Playwright gives that call up before it runs. The attempt then stops nowhere more, and
-  is skipped by the runner's own `testInfo.skip(true, ENDED_REASON)` as the call
-  rejects, at its next locator call, as a `page.pause()` it stopped at goes on, or as its
-  function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it
-  passed). A call the proxy does not delegate (a navigation, a key press, a page's own
+  is skipped by the runner's own `testInfo.skip(true, ENDED_AT_STOP_REASON)` (from
+  `@piwitests/core/run-channel`, the reason every surface reads to mark the result ended
+  at a stop) as the call rejects, at its next locator call, as a `page.pause()` it stopped
+  at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
+  feature-checked, only when it passed). A call the proxy does not delegate (a navigation, a key press, a page's own
   assertion), or any call on an older Playwright, runs first, which the editor hears
   (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
   teardown), End goes on as Resume does, the result kept; the bar offers it at neither.

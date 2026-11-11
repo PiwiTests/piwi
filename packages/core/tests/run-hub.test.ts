@@ -859,6 +859,11 @@ describe('how far a run is, on the hub', () => {
     ]) {
       expect(read(broken), JSON.stringify(broken)).toBeUndefined();
     }
+    // How many of the skipped were ended at a stop, kept within them.
+    const skipped = { ...progress, done: 3, failed: 0, skipped: 2 };
+    expect(read({ ...skipped, endedAtStop: 2 })).toEqual({ ...skipped, endedAtStop: 2 });
+    expect(read({ ...skipped, endedAtStop: 3 })).toEqual(skipped);
+    expect(read({ ...skipped, endedAtStop: 'one' })).toEqual(skipped);
     // A session without it reads as one from a service that predates it.
     expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
       'progress',

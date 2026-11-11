@@ -13,12 +13,14 @@ import {
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
   MAX_WAITING_TITLE,
+  ENDED_AT_STOP_REASON,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
   RUN_FEATURES,
   RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
+  endedAtStopIn,
   isSnapshotRef,
   parseRunMainToHub,
   parseRunToHub,
@@ -786,6 +788,33 @@ describe('the run channel', () => {
       expect(parseRunMainToHub(line(progress))).toEqual(progress);
       expect(parseRunMainToHub(line({ ...progress, failed: 3 }))).toBeNull();
       expect(parseRunMainToHub(line({ ...progress, done: 1.5 }))).toBeNull();
+    });
+
+    test('reads how many of the skipped were ended at a stop, and leaves out a count it cannot read', () => {
+      const progress = { type: 'run-progress', done: 4, failed: 0, flaky: 0, skipped: 2 };
+      expect(parseRunMainToHub(line({ ...progress, endedAtStop: 1 }))).toEqual({ ...progress, endedAtStop: 1 });
+      expect(parseRunMainToHub(line({ ...progress, endedAtStop: 0 }))).toEqual({ ...progress, endedAtStop: 0 });
+      // More than the skipped, or no count: the counts stand without it.
+      for (const wrong of [3, -1, 1.5, '1', null]) {
+        expect(parseRunMainToHub(line({ ...progress, endedAtStop: wrong })), String(wrong)).toEqual(progress);
+      }
+      const end = { ...progress, type: 'run-end', status: 'passed', failure: null, endedAtStop: 2 };
+      expect(parseRunMainToHub(line(end))).toEqual(end);
+    });
+
+    test('names the skip of a test ended at a stop as results already stored read it', () => {
+      expect(ENDED_AT_STOP_REASON).toBe('Ended from Piwi');
+      expect(endedAtStopIn([{ type: 'skip', description: 'Ended from Piwi' }])).toBe(true);
+      expect(
+        endedAtStopIn([
+          { type: 'tag', description: '@cart' },
+          { type: 'skip', description: 'Ended from Piwi' },
+        ]),
+      ).toBe(true);
+      expect(endedAtStopIn([{ type: 'skip', description: 'not ready' }])).toBe(false);
+      expect(endedAtStopIn([{ type: 'fixme', description: 'Ended from Piwi' }])).toBe(false);
+      expect(endedAtStopIn([{ type: 'skip' }])).toBe(false);
+      expect(endedAtStopIn(null)).toBe(false);
     });
 
     test('reads how the run ended, a status of a newer Playwright as other, its failure cut short', () => {
