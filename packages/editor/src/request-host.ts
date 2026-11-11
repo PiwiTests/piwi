@@ -20,11 +20,33 @@ import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
 type StreamEvent =
-  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[]; held?: unknown }
-  | { type: 'request'; request: RunRequestOffer }
+  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[]; held?: unknown; projects?: unknown }
+  | { type: 'request'; request: RunRequestOffer; projects?: unknown }
   | { type: 'stop'; id: string }
   | { type: 'withdrawn'; id: string }
   | { type: 'revoked' };
+
+/** A project's id and the name the instance shows for it. */
+export interface ProjectName {
+  id: number;
+  name: string;
+}
+
+/** The longest project name the host passes on. */
+const MAX_PROJECT_NAME = 200;
+
+/** The project names in what the instance said, leaving out any that is not an id and a name. */
+export function readProjectNames(raw: unknown): ProjectName[] {
+  if (!Array.isArray(raw)) return [];
+  const names: ProjectName[] = [];
+  for (const item of raw.slice(0, 200)) {
+    const { id, name } = (item ?? {}) as { id?: unknown; name?: unknown };
+    if (!Number.isSafeInteger(id) || (id as number) <= 0 || typeof name !== 'string') continue;
+    const trimmed = name.trim();
+    if (trimmed && trimmed.length <= MAX_PROJECT_NAME) names.push({ id: id as number, name: trimmed });
+  }
+  return names;
+}
 
 /** Where the connection stands. */
 export type RequestHostStatus = 'connecting' | 'online' | 'offline' | 'revoked';
@@ -48,6 +70,8 @@ export interface RequestHostOptions {
    * started again: unanswered ones are refused, one being stopped ends as stopped and the others as an error.
    */
   holds?: (id: string) => boolean;
+  /** The instance named projects this target may take requests for: each one's id and its label, else its name. */
+  onProjectNames?: (projects: ProjectName[]) => void;
   /** The connection changed: `revoked` once the key or its app was disconnected, after which the host stops. */
   onStatus?: (status: RequestHostStatus, detail?: string) => void;
   /**
@@ -263,10 +287,15 @@ export class RequestHost {
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
-  /** Tell the instance this app's platform, version and the projects it has a folder for. */
+  /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
   async describe(): Promise<void> {
     const { platform, version, projectIds } = this.options.describe();
-    await this.call('PUT', '/api/run-targets/self', { platform, version, projectIds: projectIds.slice(0, 200) });
+    const described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', {
+      platform,
+      version,
+      projectIds: projectIds.slice(0, 200),
+    });
+    if (!this.stopped) this.takeNames(described?.projects);
   }
 
   /** Where the connection stands now. */
@@ -321,9 +350,11 @@ export class RequestHost {
     if (this.stopped) return;
     switch (event.type) {
       case 'snapshot':
+        this.takeNames(event.projects);
         this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY, event.held);
         break;
       case 'request':
+        this.takeNames(event.projects);
         this.offer(event.request);
         break;
       case 'stop':
@@ -336,6 +367,11 @@ export class RequestHost {
         this.revoked(undefined, true);
         break;
     }
+  }
+
+  private takeNames(raw: unknown): void {
+    const names = readProjectNames(raw);
+    if (names.length) this.options.onProjectNames?.(names);
   }
 
   /** Take a list of the requests read at `askedAt`: an offer made since then stays, whatever the list says. */
@@ -417,11 +453,12 @@ export class RequestHost {
     const asked = ++this.listing;
     const askedAt = Date.now();
     try {
-      const listed = await this.call<{ requests?: unknown; stops?: unknown; held?: unknown }>(
+      const listed = await this.call<{ requests?: unknown; stops?: unknown; held?: unknown; projects?: unknown }>(
         'GET',
         '/api/run-targets/requests',
       );
       if (this.stopped || asked !== this.listing) return;
+      this.takeNames(listed.projects);
       this.takeList(listed.requests, listed.stops, askedAt, listed.held);
       if (!this.streamOpen) this.setStatus('online');
     } catch (error) {

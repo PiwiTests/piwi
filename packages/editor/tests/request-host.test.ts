@@ -1,7 +1,8 @@
 /**
  * The request host against a fake instance on this machine: the stream's snapshot and events, the minute list that
  * keeps the app online, stops told once, withdrawn and expired offers, a revoked key, the stream opened again after it
- * ends, the requests it no longer holds ended once it starts, and the target's calls with its key as a bearer token.
+ * ends, the requests it no longer holds ended once it starts, the project names it passes on, and the target's calls
+ * with its key as a bearer token.
  */
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -28,7 +29,14 @@ const id = (n: number) => n.toString(16).padStart(32, '0');
 /** A fake instance: the stream sends what `streams` gives it, the list answers `list`, every request is recorded. */
 async function fakeInstance(handlers: {
   stream?: (res: http.ServerResponse) => void;
-  list?: () => { requests: RunRequestOffer[]; stops: string[]; held?: { id: string; state: string }[] };
+  list?: () => {
+    requests: RunRequestOffer[];
+    stops: string[];
+    held?: { id: string; state: string }[];
+    projects?: unknown;
+  };
+  /** What the instance answers the describe call with. */
+  self?: () => unknown;
   status?: (path: string) => number | null;
   /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
   refusalBody?: string;
@@ -57,6 +65,7 @@ async function fakeInstance(handlers: {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (path === '/api/run-targets/requests')
         res.end(JSON.stringify(handlers.list?.() ?? { requests: [], stops: [] }));
+      else if (path === '/api/run-targets/self') res.end(JSON.stringify(handlers.self?.() ?? {}));
       else if (path.endsWith('/claim'))
         res.end(JSON.stringify({ ...offer(path.split('/')[4]!), expiresAt: undefined }));
       else if (path.endsWith('/answer'))
@@ -229,6 +238,37 @@ describe('the request host', () => {
       await until(() => instance.calls.filter((c) => c.path === '/api/run-targets/requests').length >= 2);
     for (const instance of [older, unchecked])
       expect(instance.calls.some((c) => c.path.endsWith('/answer') || c.path.endsWith('/state'))).toBe(false);
+  });
+
+  test('passes on the project names of the describe answer, the snapshot, each request and the list', async () => {
+    const instance = await fakeInstance({
+      self: () => ({ projects: [{ id: 1, name: 'Checkout' }] }),
+      stream: (res) => {
+        instance.send(res, { type: 'snapshot', requests: [], stops: [], projects: [{ id: 2, name: 'Billing' }] });
+        instance.send(res, { type: 'request', request: offer(id(1)), projects: [{ id: 3, name: ' Search ' }] });
+      },
+      list: () => ({
+        requests: [],
+        stops: [],
+        projects: [
+          { id: 4, name: 'Accounts' },
+          { id: 0, name: 'Not an id' },
+          { id: 5, name: '' },
+          { id: 6, name: 'x'.repeat(201) },
+          { id: 7 },
+          'Mobile',
+        ],
+      }),
+    });
+    cleanups.push(instance.close);
+    const named = new Map<number, string>();
+    const { made } = host(instance.url, {
+      onProjectNames: (projects) => projects.forEach((p) => named.set(p.id, p.name)),
+    });
+    made.start();
+    await until(() => named.size >= 4);
+    await until(() => instance.calls.filter((c) => c.path === '/api/run-targets/requests').length >= 2);
+    expect(Object.fromEntries(named)).toEqual({ 1: 'Checkout', 2: 'Billing', 3: 'Search', 4: 'Accounts' });
   });
 
   test('withdraws an offer the list no longer holds, and one past its time', async () => {

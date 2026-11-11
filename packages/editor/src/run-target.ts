@@ -72,6 +72,8 @@ const state: {
   stoppedWhileClaiming: Set<string>;
   /** The requests whose run the shell started for a server before this one, and still holds. */
   adopted: Set<string>;
+  /** The names the instance gave for its projects, by id. */
+  projectNames: Map<number, string>;
 } = {
   instance: null,
   key: null,
@@ -86,6 +88,7 @@ const state: {
   claiming: new Set(),
   stoppedWhileClaiming: new Set(),
   adopted: new Set(),
+  projectNames: new Map(),
 };
 
 const windowListeners = new Set<(message: RunTargetMessage) => void>();
@@ -121,6 +124,7 @@ export function runTargetConnection(): RunTargetConnectionView {
     error: state.error,
     keyToKeep: state.keyToKeep,
     linkedProjectIds: [...state.links.keys()].sort((a, b) => a - b),
+    projectNames: Object.fromEntries(state.projectNames),
   };
 }
 
@@ -139,6 +143,7 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
     id: request.id,
     instance: state.instance ?? '',
     projectId: request.projectId,
+    projectName: state.projectNames.get(request.projectId) ?? null,
     tests: request.tests,
     options: request.options,
     source: request.source,
@@ -227,6 +232,7 @@ function expireLater(id: string, held: HeldRequest, afterMs: number): void {
 
 function startHost(instance: string, key: string): void {
   stopHost();
+  if (state.instance !== instance) state.projectNames.clear();
   state.instance = instance;
   state.key = key;
   state.error = null;
@@ -239,6 +245,12 @@ function startHost(instance: string, key: string): void {
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
     holds: (id) => state.held.has(id) || state.claiming.has(id) || state.adopted.has(id),
+    onProjectNames: (projects) => {
+      if (state.host !== host) return;
+      const changed = projects.some(({ id, name }) => state.projectNames.get(id) !== name);
+      for (const { id, name } of projects) state.projectNames.set(id, name);
+      if (changed) tellConnection();
+    },
     onKeyRevoked: () => tellShell({ type: 'key-revoked', instance }),
     onStatus: (status, detail) => {
       state.status = status;
@@ -372,6 +384,7 @@ export function disconnectRunTarget(): void {
   state.flow = null;
   stopHost();
   state.adopted.clear();
+  state.projectNames.clear();
   state.instance = null;
   state.key = null;
   state.keyToKeep = false;

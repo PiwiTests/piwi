@@ -3,18 +3,25 @@ import type { RunRequestOffer, RunRequestState } from '@piwitests/core/run-reque
 import { runTargets, users, type RunRequestRow } from '../database/schema';
 import type { DbClient } from '../database';
 import { getUserAccessCached } from './auth';
-import { mayReceiveOn, runRequestOfferOf } from './run-requests';
+import { mayReceiveOn, runRequestOfferOf, targetProjectNames, type TargetProjectName } from './run-requests';
 
 /**
- * What a connected target hears on its stream (`GET /api/run-targets/stream`): the requests, stops and held requests
- * it would read from `GET /api/run-targets/requests` on connecting, then each new request sent to it, each stop of a request it
+ * What a connected target hears on its stream (`GET /api/run-targets/stream`): the requests, stops, held requests and
+ * project names it would read from `GET /api/run-targets/requests` on connecting, then each new request sent to it with
+ * its project's name, each stop of a request it
  * holds, each request it was offered that no longer waits for it (`withdrawn`: stopped, or claimed by another of its
  * owner's apps), and its own disconnection. A request can arrive twice (in the snapshot and as it is made): the target
  * keys them by id. Held in memory, as the run event bus is: an instance runs one replica.
  */
 export type RunTargetEvent =
-  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[]; held: { id: string; state: RunRequestState }[] }
-  | { type: 'request'; request: RunRequestOffer }
+  | {
+      type: 'snapshot';
+      requests: RunRequestOffer[];
+      stops: string[];
+      held: { id: string; state: RunRequestState }[];
+      projects: TargetProjectName[];
+    }
+  | { type: 'request'; request: RunRequestOffer; projects: TargetProjectName[] }
   | { type: 'stop'; id: string }
   | { type: 'withdrawn'; id: string }
   | { type: 'revoked' };
@@ -88,7 +95,8 @@ export async function publishRunRequest(db: DbClient, row: RunRequestRow): Promi
   const [owner] = await db.select().from(users).where(eq(users.id, row.requesterId));
   if (!request || !owner) return;
   if (!(await mayReceiveOn(db, await getUserAccessCached(db, owner), row.projectId))) return;
-  for (const target of online) publishToRunTarget(target.id, { type: 'request', request });
+  const projects = await targetProjectNames(db, [row.projectId]);
+  for (const target of online) publishToRunTarget(target.id, { type: 'request', request, projects });
 }
 
 /**

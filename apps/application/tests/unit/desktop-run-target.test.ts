@@ -59,6 +59,8 @@ let instance: Awaited<ReturnType<typeof fakeInstance>>;
 let verifyAt: string | null = null;
 /** The requests the fake instance counts as this target's. */
 let heldOnInstance: { id: string; state: string }[] = [];
+/** The project names the instance gives, in its snapshot and its describe answer. */
+let namesOnInstance: { id: number; name: string }[] = [{ id: 3, name: 'Checkout' }];
 
 function offer(): RunRequestOffer {
   return {
@@ -83,7 +85,13 @@ async function fakeInstance() {
       calls.push({ method: req.method ?? '', path: url, body: raw ? JSON.parse(raw) : null });
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        const snapshot = { type: 'snapshot', requests: [offer()], stops: [], held: heldOnInstance };
+        const snapshot = {
+          type: 'snapshot',
+          requests: [offer()],
+          stops: [],
+          held: heldOnInstance,
+          projects: namesOnInstance,
+        };
         res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
         streams.push(res);
         return;
@@ -103,6 +111,8 @@ async function fakeInstance() {
         res.end(JSON.stringify({ status: 'approved', apiKey: KEY }));
       } else if (url === '/api/run-targets/requests') {
         res.end(JSON.stringify({ requests: [], stops: [], held: heldOnInstance }));
+      } else if (url === '/api/run-targets/self') {
+        res.end(JSON.stringify({ projects: namesOnInstance }));
       } else if (url.endsWith('/claim')) {
         const { expiresAt: _expiresAt, ...request } = offer();
         res.end(JSON.stringify(request));
@@ -152,6 +162,7 @@ beforeEach(async () => {
 afterEach(async () => {
   verifyAt = null;
   heldOnInstance = [];
+  namesOnInstance = [{ id: 3, name: 'Checkout' }];
   resetDesktopRunTarget();
   await instance.close();
   fs.rmSync(folder, { recursive: true, force: true });
@@ -198,10 +209,12 @@ describe('a request from the team instance', () => {
     const asked = heard.find((m) => m.type === 'run-request')!;
     expect(asked.type === 'run-request' && asked.request).toMatchObject({
       id: REQUEST_ID,
+      projectName: 'Checkout',
       runnable: true,
       hasFolder: true,
       instance: instance.url,
     });
+    expect(runTargetConnection().projectNames).toEqual({ 3: 'Checkout' });
     expect(JSON.stringify(heard)).not.toContain(KEY);
     const self = instance.calls.find((c) => c.path === '/api/run-targets/self')!;
     expect(self.body).toMatchObject({ version: '0.68.0', projectIds: [3] });
@@ -256,10 +269,15 @@ describe('a request from the team instance', () => {
   });
 
   test('without a linked folder, Not now refuses it with the failed check', async () => {
+    namesOnInstance = [];
     const heard: RunTargetMessage[] = [];
     subscribeRunTargetWindow((message) => heard.push(message));
     useKeptKey(instance.url, KEY, new Map());
     await until(() => heard.some((m) => m.type === 'run-request'));
+    // A project the instance does not name is shown by its id.
+    const asked = heard.find((m) => m.type === 'run-request')!;
+    expect(asked.type === 'run-request' && asked.request.projectName).toBe(null);
+    expect(runTargetConnection().projectNames).toEqual({});
     expect(await answerRunRequest(REQUEST_ID, 'run')).toMatchObject({ ok: false, statusCode: 409 });
     expect(await answerRunRequest(REQUEST_ID, 'not-now')).toEqual({ ok: true, launch: false });
     const answer = instance.calls.find((c) => c.path.endsWith('/answer'))!;

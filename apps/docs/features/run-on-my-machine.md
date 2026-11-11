@@ -46,7 +46,7 @@ An app connects to one instance at a time. **Disconnect** removes the key from t
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
 The folder of each project is linked on this machine, per instance: the first request for a project asks for it, and
-**Settings → Desktop app** lists the linked folders, with **Unlink**.
+**Settings → Desktop app** lists the linked folders by project name, with **Unlink**.
 
 ## Ask for a run
 
@@ -58,8 +58,8 @@ left out, and the window says how many. Nobody else's app receives it.
 
 ## In the app
 
-The request opens the desktop app's window, in front: the instance that asked, the tests, the checks of the linked
-folder, and the exact command. Nothing runs until you click **Run**:
+The request opens the desktop app's window, in front: the instance that asked, the project, the tests, the checks of
+the linked folder, and the exact command. Nothing runs until you click **Run**:
 
 - **The folder**: linked, with a Playwright config and `@playwright/test` installed, and every spec of the request
   inside it.
@@ -76,11 +76,11 @@ server the Playwright config names. It shows in the app's Local runs while it go
 
 ## Follow and stop
 
-Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its
-outcome, and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not
-run. **Run again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists
-your last 20 requests, with **Stop** for one still going on. Quitting the app stops its requested runs.
-After a crash, it ends the requests it lost on reconnecting: unanswered ones are refused, runs end as errors.
+Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its outcome,
+and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
+again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists your last 20
+requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. After a
+crash, it ends the requests it lost on reconnecting: unanswered ones are refused, runs end as errors.
 
 ## What leaves your machine
 
