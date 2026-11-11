@@ -721,6 +721,11 @@ export const HELP_TOPICS = {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
   },
+  'run.testManagementSync': {
+    title: 'Results sync',
+    text: 'When the project sends results to a test management tool, the run’s results go there as one test run when the run finishes: one result per test case key, the worst outcome of its tests. A dry run shows what would be sent and sends nothing. When an upload may have reached the tool, Sync again looks for the test run before it sends.',
+    doc: 'operate/zephyr-scale',
+  },
   'run.test-cases': {
     title: 'Tests',
     text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',

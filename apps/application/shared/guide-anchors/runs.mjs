@@ -378,6 +378,11 @@ export const RUNS_ANCHORS = [
 export const RUNS_EXEMPTIONS = [
   {
     rule: 'help',
+    key: 'run.testManagementSync',
+    reason: 'Shows only on a run whose results were sent to a test management tool, and the seed has no such run yet.',
+  },
+  {
+    rule: 'help',
     key: 'run.live-view-setup',
     reason: 'Live-view readiness shows only while a run is reporting, and the seed has no run in progress.',
   },

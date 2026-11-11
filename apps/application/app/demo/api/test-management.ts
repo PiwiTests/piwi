@@ -1,9 +1,12 @@
 import { and, eq } from 'drizzle-orm';
-import { testManagementCases, testManagementCatalogReads } from '~~/server/database/schema';
+import { integrationActions, testManagementCases, testManagementCatalogReads } from '~~/server/database/schema';
 import {
   readTestManagementBinding,
   writeTestManagementBinding,
 } from '~~/server/utils/integrations/test-management/binding';
+import { writeCreatedIssueLink } from '~~/server/utils/integrations/entity-links';
+import { findFailedSync } from '~~/server/utils/integrations/test-management/sync-again';
+import type { SyncActionPayload } from '#shared/integrations/test-management-sync';
 import { lookupCatalogCases } from '#shared/handlers/test-management-cases';
 import { testManagementKeyConfig, testManagementMappingSummary } from '#shared/handlers/test-management-summary';
 import {
@@ -15,6 +18,7 @@ import type { TestManagementPickerOptions } from '#shared/integrations/test-mana
 import type { DrizzleDB } from '#shared/handlers/db';
 import {
   DEMO_TEST_MANAGEMENT_CASES,
+  DEMO_TEST_MANAGEMENT_API_URL,
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_FOLDERS,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
@@ -120,4 +124,39 @@ export async function demoTestManagementCases(db: DrizzleDB, projectId: number, 
   const keys = parseCatalogLookupKeys(rawKeys);
   if (!keys) throw demoHttpError(400, CATALOG_LOOKUP_KEYS_MESSAGE);
   return await lookupCatalogCases(db, projectId, keys, () => null);
+}
+
+/**
+ * Send a run's failed results sync again, as the canned tool takes it: the sync is done, and the test run the canned tool
+ * made is linked to the run. Nothing is looked up or called.
+ */
+export async function sendDemoRunSync(db: DrizzleDB, runId: number) {
+  const action = await findFailedSync(db as never, runId);
+  if (!action) throw demoHttpError(409, 'This run has no failed results sync');
+  const payload = action.payload as SyncActionPayload;
+  const runKey = `${payload.providerProjectKey}-R${runId}`;
+  const runUrl = `${DEMO_TEST_MANAGEMENT_API_URL}/testcycles/${runKey}`;
+  const result = { runKey, runUrl, sent: payload.results.length };
+  await db.transaction(async (tx) => {
+    await writeCreatedIssueLink(tx as never, {
+      entityType: 'test_run',
+      entityId: runId,
+      connectionId: action.connectionId,
+      createdBy: action.requestedBy ?? null,
+      issue: {
+        provider: 'zephyr-scale',
+        url: runUrl,
+        key: runKey,
+        externalId: null,
+        title: payload.run.name,
+        statusText: null,
+        statusColor: null,
+      },
+    });
+    await tx
+      .update(integrationActions)
+      .set({ status: 'done', result: result as never, error: null, finishedAt: new Date() })
+      .where(eq(integrationActions.id, action.id));
+  });
+  return { status: 'done' as const, result };
 }

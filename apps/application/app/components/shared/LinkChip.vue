@@ -5,7 +5,7 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 
 /**
  * A pinned link as a chip: the provider icon, the key and title as one link to
- * the page (a new tab), the synced status, and a remove button for writers. The
+ * the page (a new tab; a Zephyr Scale test run names no page), the synced status, and a remove button for writers. The
  * chip wraps inside a narrow container rather than overflowing it, and the
  * remove button shows on hover, on keyboard focus and on touch screens.
  */
@@ -22,6 +22,8 @@ const displayLabel = computed(() => {
   return props.link.title || props.link.key || props.link.url.replace(/^https?:\/\//, '').slice(0, 50);
 });
 
+// A test run in Zephyr Scale is known by its API address, which opens no page: its chip names it without a link.
+const href = computed(() => (props.link.provider === 'zephyr-scale' ? null : safeHttpUrl(props.link.url)));
 const providerIcon = computed(() => getProviderIcon(props.link.provider as any));
 const name = computed(() => props.link.key || displayLabel.value);
 </script>
@@ -32,17 +34,19 @@ const name = computed(() => props.link.key || displayLabel.value);
   >
     <UIcon :name="providerIcon" class="w-3.5 h-3.5 shrink-0" />
 
-    <a
-      :href="safeHttpUrl(link.url) ?? undefined"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="inline-flex min-w-0 items-center gap-1.5 hover:underline focus-visible:underline outline-none"
-      :title="link.title ? `${link.title} (${link.url})` : link.url"
+    <component
+      :is="href ? 'a' : 'span'"
+      :href="href ?? undefined"
+      :target="href ? '_blank' : undefined"
+      :rel="href ? 'noopener noreferrer' : undefined"
+      class="inline-flex min-w-0 items-center gap-1.5 outline-none"
+      :class="href ? 'hover:underline focus-visible:underline' : ''"
+      :title="href ? (link.title ? `${link.title} (${link.url})` : link.url) : (link.title ?? undefined)"
       data-testid="link-chip-open"
     >
       <span v-if="link.key" class="font-mono text-primary font-medium whitespace-nowrap">{{ link.key }}</span>
       <span v-if="link.title || !link.key" class="max-w-48 truncate">{{ displayLabel }}</span>
-    </a>
+    </component>
 
     <UBadge
       v-if="link.statusText"

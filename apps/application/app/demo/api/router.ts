@@ -72,6 +72,7 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
 import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
+import { getRunSync } from '#shared/handlers/test-management-sync';
 import {
   demoTestManagementCases,
   demoTestManagementKeyConfig,
@@ -80,6 +81,7 @@ import {
   demoTestManagementSummary,
   refreshDemoTestManagementCatalog,
   saveDemoTestManagement,
+  sendDemoRunSync,
 } from './test-management';
 import {
   apiCreateRunRequest,
@@ -1563,6 +1565,24 @@ const routes: RouteEntry[] = [
         if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
         throw err;
       }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/test-management-sync$/,
+    permission: 'project:read',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return { sync: await getRunSync(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/test-management-sync$/,
+    permission: 'run:control',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return sendDemoRunSync(await getDemoDb(), +m[1]!);
     },
   },
   {

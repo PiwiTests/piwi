@@ -85,12 +85,14 @@ const { SKIP_CATALOG_NOT_READ, SKIP_NO_MAPPED_CASES } =
   await import('../../server/utils/integrations/test-management/sync');
 const { OUTBOX_MAX_ATTEMPTS } = await import('../../server/utils/outbox');
 const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
+const { sendDemoRunSync } = await import('../../app/demo/api/test-management');
 const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
 
 type Route = (event: FakeEvent) => Promise<any>;
 const route = (module: { default: unknown }) => underRoutePermission(state, module.default as Route);
 const create = route(await import('../../server/api/integrations/connections/index.post'));
 const syncAgain = route(await import('../../server/api/test-runs/[id]/test-management-sync.post'));
+const readSync = route(await import('../../server/api/test-runs/[id]/test-management-sync.get'));
 
 const as = (
   id: number,
@@ -607,5 +609,114 @@ describe('Sync again', () => {
     expect((await refusal(syncAgain(at(RUN_ID)))).statusCode).toBe(403);
     expect((await syncRow()).status).toBe('failed');
     expect(zephyr.requests).toEqual([]);
+  });
+});
+
+describe('what the run page reads', () => {
+  const queued = async (dryRun = false) => {
+    await seedRun();
+    await fillCatalog();
+    await bind({ dryRun });
+    await runTestManagementSync(db, RUN_ID);
+  };
+
+  test('a run with no sync reads null', async () => {
+    await seedRun();
+    expect(await readSync(at(RUN_ID))).toEqual({ sync: null });
+  });
+
+  test('a sent sync reads the cycle it made and the counts it sent', async () => {
+    await queued();
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({
+      status: 'done',
+      dryRun: false,
+      outcomeUnknown: false,
+      runKey: 'SHOP-R42',
+      resultCount: 2,
+      counts: { passed: 1, failed: 1, flaky: 0, notExecuted: 0 },
+      unknownKeys: ['SHOP-T9'],
+      unknownKeyCount: 1,
+      unmappedCount: 1,
+    });
+  });
+
+  test('a dry run reads what it would send, with no cycle', async () => {
+    await queued(true);
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({
+      status: 'done',
+      dryRun: true,
+      runKey: null,
+      resultCount: 2,
+    });
+    expect(zephyr.requests).toEqual([]);
+  });
+
+  test('an upload that ended without an answer reads as an unknown outcome', async () => {
+    zephyr.upload = () => json({ message: 'down' }, 503);
+    await queued();
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({
+      status: 'failed',
+      outcomeUnknown: true,
+      error: expect.stringMatching(/^Outcome unknown/),
+      runKey: null,
+    });
+  });
+
+  test('a refused sync reads that and not an unknown outcome', async () => {
+    zephyr.upload = () => json({ message: 'bad' }, 422);
+    await queued();
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({ status: 'failed', outcomeUnknown: false });
+  });
+
+  test('a skipped sync reads its reason', async () => {
+    await seedRun();
+    await bind();
+    await runTestManagementSync(db, RUN_ID);
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({ status: 'skipped', error: SKIP_CATALOG_NOT_READ });
+  });
+
+  test('the latest sync is the one read', async () => {
+    zephyr.upload = () => json({ message: 'bad' }, 422);
+    await queued();
+    const [first] = await syncRows();
+    await db
+      .insert(schema.integrationActions)
+      .values({ ...first!, id: undefined, status: 'pending', dedupeKey: 'later' } as never);
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({ status: 'pending' });
+  });
+
+  test('takes project:read: a reader sees it, a caller with no grant on the project does not', async () => {
+    await queued();
+    state.caller = as(4, InstanceRole.MEMBER, { projectId: 10, role: ProjectRole.VIEWER });
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({ status: 'done' });
+    state.caller = as(5, InstanceRole.MEMBER);
+    expect([403, 404]).toContain((await refusal(readSync(at(RUN_ID)))).statusCode);
+  });
+
+  test('a missing run is a 404', async () => {
+    expect((await refusal(readSync(at(999)))).statusCode).toBe(404);
+  });
+});
+
+describe('Sync again in the demo', () => {
+  test('sends the failed sync as done and links the canned cycle', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    zephyr.upload = () => json({ message: 'down' }, 503);
+    await runTestManagementSync(db, RUN_ID);
+    reset();
+    expect(await sendDemoRunSync(db as never, RUN_ID)).toMatchObject({
+      status: 'done',
+      result: { runKey: `SHOP-R${RUN_ID}`, sent: 2 },
+    });
+    expect((await syncRow()).status).toBe('done');
+    expect(await testRunLinks()).toMatchObject([{ key: `SHOP-R${RUN_ID}`, provider: 'zephyr-scale' }]);
+    expect(zephyr.requests).toEqual([]);
+  });
+
+  test('a run with no failed sync is a 409', async () => {
+    await seedRun();
+    expect((await refusal(sendDemoRunSync(db as never, RUN_ID))).statusCode).toBe(409);
   });
 });
