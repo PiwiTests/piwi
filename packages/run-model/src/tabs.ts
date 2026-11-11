@@ -28,3 +28,51 @@ export function shownLaneOf(
   const next = advance ? stopped[0] : stopped.find((w) => !known.has(w.stop!.since));
   return (next ?? current ?? stopped[0] ?? workers[0]!).parallelIndex;
 }
+
+/**
+ * A run's worker tabs: the lane shown, the stops that stood as its workers were last followed (`known`, by `since`),
+ * and the stop the person resumed or ended on the worker shown (`advance`).
+ */
+export interface WorkerTabs {
+  shown: number | null;
+  known: readonly string[];
+  advance: string | null;
+}
+
+/**
+ * A run's tabs as its workers stand now (`shownLaneOf`): the worker shown stays while it stands at a stop or is
+ * `watched`; once the person resumed or ended its test there (`advance`) and it left that stop, the next stopped test
+ * takes the tab; else a stop not `known` takes it, once. Null for a run of fewer than two workers, which shows no tabs.
+ */
+export function tabsAfter(
+  tabs: WorkerTabs | null | undefined,
+  workers: readonly HubWorker[],
+  watched: (worker: HubWorker) => boolean,
+): WorkerTabs | null {
+  if (workers.length < 2) return null;
+  const sorted = [...workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
+  const { shown = null, known = [], advance = null } = tabs ?? {};
+  const before = sorted.find((worker) => worker.parallelIndex === shown);
+  const advanced = advance !== null && (before?.state !== 'stopped' || before.stop?.since !== advance);
+  return {
+    shown: shownLaneOf(sorted, { before: shown, watched, known: new Set(known), advance: advanced }),
+    known: sorted.flatMap((worker) => (worker.state === 'stopped' && worker.stop ? [worker.stop.since] : [])),
+    advance: advanced ? null : advance,
+  };
+}
+
+/**
+ * The person shows the worker in `lane` behind a run's tabs: it keeps the tab until a stop is answered there, or, while
+ * it runs and nobody watches it, until a new stop comes.
+ */
+export function tabsChosen(tabs: WorkerTabs, lane: number): WorkerTabs {
+  return { ...tabs, shown: lane, advance: null };
+}
+
+/**
+ * The person resumes or ends the test of the worker in `lane` at the stop `since`: once it leaves that stop, the next
+ * stopped test takes the tab, when that worker is the one shown. The same tabs otherwise.
+ */
+export function tabsAdvanced(tabs: WorkerTabs, lane: number, since: string | null): WorkerTabs {
+  return since !== null && tabs.shown === lane ? { ...tabs, advance: since } : tabs;
+}

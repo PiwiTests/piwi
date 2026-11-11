@@ -2,11 +2,13 @@
 /**
  * Desktop shell only: the responses a stopped test of a desktop run kept, to choose the one **Mock a request** writes
  * a `page.route` for: a button each (the method and address, the status, type, size and time), the arrow keys, Home
- * and End moving between them (one tab stop), Escape closing the list, a filter from six. Every field is the page's
- * text, shown as text; the address is cut to the row and whole in its title.
+ * and End moving between them (one tab stop), Escape closing the list, a filter from six, in the words of Piwi Picker's
+ * Runs window (`desktopSay`). Every field is the page's text, shown as text; the address is cut to the row and whole in
+ * its title.
  */
 import type { HubKeptRequest } from '@piwitests/core/run-hub';
 import { foldText } from '#shared/utils/fold-text';
+import { desktopSay } from '~/utils/desktop-run-view';
 
 const props = defineProps<{ requests: readonly HubKeptRequest[]; busy: boolean }>();
 const emit = defineEmits<{ mock: [id: number]; close: [] }>();
@@ -26,13 +28,14 @@ const current = ref<number | null>(null);
 const rows = ref<HTMLButtonElement[]>([]);
 
 function sizeText(size: number | null): string {
-  if (size === null) return 'size not stated';
+  if (size === null) return desktopSay('runs_requestNoSize');
   return size < 1000 ? `${size} B` : `${(size / 1000).toFixed(1)} kB`;
 }
 
 /** What follows a response's status: its type, its size and when it finished. */
 function factsOf(request: HubKeptRequest): string {
-  return [request.type, sizeText(request.size), `at ${(request.time / 1000).toFixed(1)} s`].filter(Boolean).join(' · ');
+  const at = desktopSay('runs_requestAt', { time: `${(request.time / 1000).toFixed(1)} s` });
+  return [request.type, sizeText(request.size), at].filter(Boolean).join(' · ');
 }
 
 function onKeydown(event: KeyboardEvent, index: number): void {
@@ -56,25 +59,25 @@ function tabIndexOf(request: HubKeptRequest, index: number): number {
 <template>
   <div role="group" :aria-labelledby="titleId" class="space-y-2" @keydown.esc.prevent="emit('close')">
     <div class="flex items-center justify-between gap-2">
-      <p :id="titleId" class="text-sm font-semibold text-highlighted">Choose the response to mock</p>
+      <p :id="titleId" class="text-sm font-semibold text-highlighted">{{ desktopSay('runs_requestsTitle') }}</p>
       <UButton
         size="xs"
         color="neutral"
         variant="ghost"
         icon="i-lucide-x"
-        aria-label="Close the list of responses"
+        :aria-label="desktopSay('runs_requestsClose')"
         @click="emit('close')"
       />
     </div>
-    <p v-if="requests.length === 0" class="text-xs text-muted">The test kept no response before this stop.</p>
+    <p v-if="requests.length === 0" class="text-xs text-muted">{{ desktopSay('runs_requestsNone') }}</p>
     <template v-else>
       <UInput
         v-if="requests.length >= FILTER_FROM"
         v-model="query"
         size="xs"
         type="search"
-        placeholder="Filter the responses"
-        aria-label="Filter the responses"
+        :placeholder="desktopSay('runs_requestsFilter')"
+        :aria-label="desktopSay('runs_requestsFilter')"
         @keydown.down.prevent="rows[0]?.focus()"
       />
       <ul class="space-y-1 max-h-56 overflow-y-auto">
@@ -101,7 +104,7 @@ function tabIndexOf(request: HubKeptRequest, index: number): number {
           </button>
         </li>
       </ul>
-      <p v-if="shown.length === 0" class="text-xs text-muted">No response matches.</p>
+      <p v-if="shown.length === 0" class="text-xs text-muted">{{ desktopSay('runs_requestsNoMatch') }}</p>
     </template>
   </div>
 </template>

@@ -10,7 +10,8 @@ delete process.env.PIWI_DATABASE_URL;
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 
-const { hashPassword, verifyPassword, passwordNeedsRehash, verifyUser } = await import('../../server/utils/auth');
+const { findLoginAccount, hashPassword, verifyPassword, passwordNeedsRehash, verifyUser } =
+  await import('../../server/utils/auth');
 
 /** The request a busy server's 503 would answer, from the client whose share its hashes count against. */
 const event = {
@@ -79,10 +80,10 @@ describe('signing in', () => {
     const legacy = unencodedHash('s3cret');
     await db.insert(schema.users).values({ id: 1, username: 'lee', password: legacy, role: 'member' });
 
-    expect(await verifyUser(event, 'lee', 'wrong')).toBeNull();
+    expect(await verifyUser(event, await findLoginAccount(db, 'lee'), 'wrong')).toBeNull();
     expect(await storedHash()).toBe(legacy);
 
-    expect((await verifyUser(event, 'lee', 's3cret'))?.id).toBe(1);
+    expect((await verifyUser(event, await findLoginAccount(db, 'lee'), 's3cret'))?.id).toBe(1);
     const rehashed = await storedHash();
     expect(rehashed).toMatch(/^scrypt\$17\$8\$1\$/);
     expect(await verifyPassword(event, 's3cret', rehashed!)).toBe(true);

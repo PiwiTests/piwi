@@ -12,11 +12,14 @@
  * (`DesktopRunCopyList`). The window holds the hub's stream from a plugin
  * (`desktop-run-hub.client.ts`), which opens the tray on every stop it hears;
  * here, the stop's run expands, its worker scrolls into view, and the live
- * region reads it out. A worker's **Watch** shows its page as its test runs,
- * and at each stop (`DesktopRunLaneView`). The tray also
+ * region reads it out; a stop that opens the tray shows its worker's tab, in a
+ * run of several workers, which show one at a time as in Piwi Picker's Runs
+ * window (`DesktopRunSession`). A worker's **Watch** shows its page as its test
+ * runs, and at each stop (`DesktopRunLaneView`). The tray also
  * opens on the worker the run page's **Show its page** names (`showWorker`),
- * its run expanded and the focus on that worker. A running run's **Hold
- * failures** switch, off by default and on from the start for a reproduction,
+ * its run expanded, its tab shown and the focus on that worker. A running
+ * run's **Hold failures** switch, off by default and on from the start for a
+ * reproduction,
  * makes a failure no pause bar shows wait at its line (`hold` for its live
  * steps, and `show`, said by the plugin from the store's `holds`, for its
  * steps to come); it shows the run's own, which Piwi Picker or an agent may
@@ -88,6 +91,8 @@ function announce(text: string) {
 async function heardStop(session: HubSession, worker: HubWorker) {
   const stop = worker.stop;
   if (!stop) return;
+  // The stop opened the tray: its worker's tab shows.
+  if (!openShown) hub.chooseTab(session.ref, worker.parallelIndex);
   const run = runOf(session);
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
   announce(desktopStopSaid(session, worker, stop));
@@ -96,6 +101,16 @@ async function heardStop(session: HubSession, worker: HubWorker) {
     .querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(session.ref, worker.worker)}"]`)
     ?.scrollIntoView({ block: 'nearest' });
 }
+
+/** Whether the tray showed open before the stop it hears now: the plugin opens it first, on every stop. */
+let openShown = trayOpen.value;
+watch(
+  trayOpen,
+  (open) => {
+    openShown = open;
+  },
+  { flush: 'post' },
+);
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
@@ -123,14 +138,16 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-// A worker the window was asked to show (the run page's Show its page): its run expands, and the focus moves to the
-// worker once it is drawn.
+// A worker the window was asked to show (the run page's Show its page): its run expands, its tab shows, and the focus
+// moves to the worker once it is drawn.
 watch(shownWorker, async (shown) => {
   if (!shown) return;
   shownWorker.value = null;
   const session = hub.state.sessions[shown.ref];
   const run = session ? runOf(session) : undefined;
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  const lane = session?.workers.find((worker) => worker.worker === shown.worker)?.parallelIndex;
+  if (lane !== undefined) hub.chooseTab(shown.ref, lane);
   await nextTick();
   document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
 });

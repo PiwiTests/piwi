@@ -51,8 +51,10 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   that a vitest file loads without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`,
   `@piwitests/run-ui/text`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **What the Local runs tray shares with Piwi Picker's Runs window lives in `@piwitests/run-model`**
-  (`packages/run-model/`): what a stop takes, its place and error, a test's name, the live view's input. Import it by
-  name (`@piwitests/run-model/stop`), never from `apps/extension`.
+  (`packages/run-model/`): what a stop takes, its place and error, a test's name, a worker's status and tab, its
+  controls, who is present, the tab shown, the live view's input, and their English words (`RUN_WORDS_EN`, which the
+  tray says through `desktopSay`). Import it by name (`@piwitests/run-model/stop`), never from `apps/extension`, and
+  never keep a copy in `app/`.
   ([`packages/run-model/AGENTS.md`](../../packages/run-model/AGENTS.md))
 - **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
   or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code

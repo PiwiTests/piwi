@@ -141,7 +141,7 @@ onMounted(() => {
 
 async function handleLogin() {
   if (!state.username || !state.password) {
-    error.value = 'Please enter username and password';
+    error.value = 'Please enter your username or email and password';
     return;
   }
 
@@ -304,11 +304,11 @@ definePageMeta({
 
       <!-- Password login form -->
       <form class="space-y-4" method="post" @submit.prevent="handleLogin">
-        <UFormField label="Username" name="username" required>
+        <UFormField label="Username or email" name="username" required>
           <UInput
             v-model="state.username"
             type="text"
-            placeholder="Enter your username"
+            placeholder="Enter your username or email"
             autocomplete="username"
             :disabled="loading"
             class="w-full"

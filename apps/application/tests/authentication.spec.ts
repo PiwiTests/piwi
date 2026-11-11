@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 test.describe('Authentication Tests', () => {
   test('should work without authentication when disabled', async ({ request }) => {
@@ -57,5 +58,51 @@ test.describe('Authentication Tests', () => {
     expect(response.status()).toBe(400);
     const data = await response.json();
     expect(data.message).toContain('Authentication is not enabled');
+  });
+});
+
+// ── Authentication on (CI only) ─────────────────────────────────────────────
+
+const AUTH_BASE = 'http://localhost:3097';
+const ADMIN = { username: 'admin', password: 'adminpassword123' };
+const EMAIL_MEMBER = {
+  username: 'email-sign-in-member',
+  email: 'email-sign-in@example.com',
+  password: 'EmailSignIn123!',
+  role: 'member',
+};
+
+test.describe.serial('Sign-in, authentication on', () => {
+  test.skip(!process.env.CI, 'The auth-enabled server runs in CI only (see playwright.config.ts webServer)');
+
+  // The setup is refused once the instance has a user, which is the case after the first run.
+  test.beforeAll(async () => {
+    await fetch(`${AUTH_BASE}/api/auth/setup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...ADMIN, name: 'Admin' }),
+    });
+  });
+
+  test('a member signs in through the form with their email in another letter case', async ({ page, playwright }) => {
+    const api = await playwright.request.newContext({ baseURL: AUTH_BASE });
+    expect((await api.post('/api/auth/login', { data: ADMIN })).ok()).toBeTruthy();
+    const { items } = (await (await api.get('/api/users')).json()) as { items: { id: number; username: string }[] };
+    for (const user of items) if (user.username === EMAIL_MEMBER.username) await api.delete(`/api/users/${user.id}`);
+    const created = await api.post('/api/users', { data: EMAIL_MEMBER });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    await api.dispose();
+
+    await page.goto(`${AUTH_BASE}/login`);
+    await waitForHydration(page);
+    await page.getByLabel('Username or email').fill('Email-Sign-In@Example.COM');
+    await page.getByLabel('Password').fill(EMAIL_MEMBER.password);
+    await page.getByRole('button', { name: 'Login' }).click();
+    await expect(page).not.toHaveURL(/\/login/);
+
+    const me = (await (await page.request.get(`${AUTH_BASE}/api/auth/me`)).json()) as {
+      user: { username: string } | null;
+    };
+    expect(me.user?.username).toBe(EMAIL_MEMBER.username);
   });
 });

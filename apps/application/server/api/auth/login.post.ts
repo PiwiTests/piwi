@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
-import { authUserView, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
+import { authUserView, findLoginAccount, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
 import { rateLimitClientIp, releaseRateLimit, resetRateLimit, takeRateLimitSlots } from '../../utils/rate-limit';
-import { USERNAME_MAX_LENGTH } from '#shared/project-access';
+import { LOGIN_IDENTIFIER_MAX_LENGTH } from '#shared/project-access';
 import { z } from 'zod';
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -11,14 +11,14 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Login',
     description:
-      'Authenticates a user with username and password credentials and creates a session. Returns the user as `GET /api/auth/me` does.',
+      "Authenticates a user with a password and creates a session. `username` takes the account's username or its email address, letter case ignored for the email; a username wins over another account's email. Returns the user as `GET /api/auth/me` does.",
     security: [],
   },
 });
 
-// A username longer than any account's is refused before it names a rate-limit key.
+// Text longer than any username or email address is refused before it names a rate-limit key.
 const loginSchema = z.object({
-  username: z.string().min(1).max(USERNAME_MAX_LENGTH),
+  username: z.string().min(1).max(LOGIN_IDENTIFIER_MAX_LENGTH),
   password: z.string().min(1),
 });
 
@@ -44,11 +44,15 @@ export default eventHandler(async (event) => {
   const { username, password } = validation.data;
 
   const address = rateLimitClientIp(event);
-  const account = username.toLowerCase();
+  const db = await getDatabase();
+  const found = await findLoginAccount(db, username);
+  // An account is counted by its id, whichever of its names was typed; text that
+  // names no account is counted by itself, lowercased, under its own prefix.
+  const [kind, name] = found ? ['account', String(found.id)] : ['name', username.toLowerCase()];
   const ipKey = `login:ip:${address}`;
   // An address never holds an `@`, so the last one splits this key unambiguously.
-  const accountAddressKey = `login:user-ip:${account}@${address}`;
-  const accountKey = `login:user:${account}`;
+  const accountAddressKey = `login:${kind}-ip:${name}@${address}`;
+  const accountKey = `login:${kind}:${name}`;
   // Throttle failed attempts so credentials can't be brute-forced online: per
   // source, per account from one source, and a ceiling per account across every
   // source, so failures from elsewhere never lock the owner out below it. Every
@@ -66,7 +70,7 @@ export default eventHandler(async (event) => {
   );
 
   // A check that throws (a busy server's 503) found no wrong password, so it gives its slots back.
-  const user = await verifyUser(event, username, password).catch((error: unknown) => {
+  const user = await verifyUser(event, found, password).catch((error: unknown) => {
     for (const slot of taken) releaseRateLimit(slot);
     throw error;
   });
@@ -83,7 +87,7 @@ export default eventHandler(async (event) => {
   releaseRateLimit(accountKey);
   resetRateLimit(accountAddressKey);
 
-  const view = await authUserView(await getDatabase(), user);
+  const view = await authUserView(db, user);
 
   // Set session
   await setUserSession(event, {
