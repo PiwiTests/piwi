@@ -4,7 +4,8 @@
  * stop's view (`DesktopRunStopPage`) and a lane's (`DesktopRunLaneView`). Each frame is decoded aside and shown once
  * whole, the latest alone waiting meanwhile, and is kept nowhere else (`draw`). While the stop it shows takes the
  * window's input (`input`, while Interact is on), the pointer, the wheel and the keys on it go to the page: Tab leaves
- * the image unless a click took the keyboard, and Escape turns Interact off (`leave`). A Shift+click, or a click while
+ * the image unless a click took the keyboard, and Escape turns Interact off (`leave`), but goes to the page while a pick
+ * or a check runs there (`input.acting`) and Pick on the image does not wait. A Shift+click, or a click while
  * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the run model the
  * tray shares with Piwi Picker's Runs window (`@piwitests/run-model/view-input`, `pagePoint`). `dimmed` shows an image
  * that is no longer the page as it is now, and `mark` says over it what it shows. It fills the width of its page card
@@ -237,8 +238,9 @@ function onKeyDown(event: KeyboardEvent): void {
       altGraph: event.getModifierState?.('AltGraph') ?? false,
       isComposing: event.isComposing,
     },
-    // An action runs in the test's window at the stop (a pick, a recording, a check): its Escape is the page's.
-    { mac: MAC, captured, acting: !!props.input?.acting },
+    // An action runs in the test's window at the stop (a pick, a check): its Escape is the page's, unless Pick on the
+    // image waits, which Escape stops.
+    { mac: MAC, captured, acting: !!props.input?.acting && !picking.value },
   );
   if (decided === 'leave') {
     // The keyboard back to the tray; Pick on the image, waiting, stops too.

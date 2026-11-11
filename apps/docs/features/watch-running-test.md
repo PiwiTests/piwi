@@ -44,8 +44,8 @@ wheel and your keys on the view to the page as a person's would. The first of th
 agent waits until you give it back ([driving a stop](/guide/concepts#presence-driving-a-stop)). It stays on across the
 worker's next stops, where your first click or key takes the stop again. Turning it or watching off, **Give back** or
 `Esc` on the view turns it off and gives the stop back, once the input sent before has reached the page. While a
-pick, a recording or a check runs on the page, started there or from its pause bar, `Esc` goes to the page instead, as
-its own key: it skips the pick. A `Shift`+click
+pick or a check runs on the page, started there or from its pause bar, `Esc` goes to the page instead, as its own
+key: it skips the pick or closes the check. A recording takes no `Esc` of its own, so there `Esc` gives the stop back. A `Shift`+click
 picks a locator instead. The keys that stay the window's are listed under
 [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 

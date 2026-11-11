@@ -149,7 +149,7 @@ started in a terminal. Then one input model (IO19, RW5, E15): **Interact** after
 view, the Runs window and the desktop tray included, sticky for the worker's slot across its stops, its first input
 driving the stop, and turned off with watching, **Give back** or by `Esc` on the view, which gives the stop back once
 the input sent before has reached the page (the hub's `drive`, the editors' `piwi/driveStop`). Then `Esc` reaching the
-page while an action runs there (RW20): the worker says when a pick, a recording or a check runs in the test's window
+page while an action runs there (RW20): the worker says when a pick or a check runs in the test's window
 (the run channel's `acting`), the stop carries it (`RunStop.acting`, `HubStop.acting`), and every view sends `Esc` to
 the page meanwhile, else gives the stop back. The rest of P6 is proposed: attention and the ambient state, and the
 editors' unattended runs. The later phases are

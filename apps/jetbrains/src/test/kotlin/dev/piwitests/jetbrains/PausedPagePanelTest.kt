@@ -120,7 +120,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         val heard = mutableListOf<String>()
         panel.interactOff = { heard += "given back" }
         panel.releaseInput = { heard += "released" }
-        // A pick, a recording or a check runs on the page: Escape is its own, and Interact stays on.
+        // A pick or a check runs on the page: Escape is its own, and Interact stays on.
         panel.acting = true
         picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
         assertEquals(listOf(PageInput("key", "press", key = "Escape")), sent)

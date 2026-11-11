@@ -172,11 +172,11 @@ export interface HubStop {
    */
   driver?: HubPresence;
   /**
-   * An action that runs in the test's window at this stop: a pick, a recording, a check or a region's pick, started
-   * from the pause bar or as an intent. Its Escape is the page's, so a view sends Escape there while one runs. Absent
-   * while none runs, and from a hub or a reporter that predates it.
+   * An action that takes Escape as its own runs in the test's window at this stop: a pick, a check or a region's pick,
+   * started from the pause bar or as an intent. A view sends Escape there while one runs. Absent while none runs, and
+   * from a hub or a reporter that predates it.
    */
-  acting?: HubIntent | HubCodeIntent;
+  acting?: 'pick' | HubCodeIntent;
 }
 
 /** A test a worker runs. */
@@ -999,12 +999,12 @@ function readStop(value: unknown): HubStop | null | undefined {
     ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
     ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
     ...(value.driver === undefined || !readPresence(value.driver) ? {} : { driver: readPresence(value.driver)! }),
-    ...(ACTING.includes(value.acting as HubIntent) ? { acting: value.acting as HubIntent | HubCodeIntent } : {}),
+    ...(ACTING.includes(value.acting as string) ? { acting: value.acting as 'pick' | HubCodeIntent } : {}),
   };
 }
 
-/** The actions a stop says run in the test's window. */
-const ACTING: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
+/** The actions a stop says run in the test's window, each taking Escape as its own. */
+const ACTING: readonly string[] = ['pick', 'assert', 'assert-region'];
 
 /** A tool present on a run, field by field: a kind of a newer hub reads as `other`; null when it is not one. */
 function readPresence(value: unknown): HubPresence | null {

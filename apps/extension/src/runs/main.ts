@@ -97,7 +97,8 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * and the keys on it to the page, and the first of them drives the stop: the left and right buttons with the click
  * count the system gave them where the stop takes it (`input-clicks`), Control, Alt and Meta held around a click. Tab
  * moves the focus on unless a click into the view took the keyboard; Escape turns Interact off and gives the stop
- * back, and the browser's shortcuts stay the window's. Pick on the image, or a Shift+click on the image or the view,
+ * back (but goes to the page while a pick or a check runs there, the stop's `acting`), and the browser's shortcuts
+ * stay the window's. Pick on the image, or a Shift+click on the image or the view,
  * names the element under the pointer.
  *
  * Watch, at a hub that shows a lane while it runs and for a worker whose reporter does, watches the worker's lane
@@ -1181,8 +1182,9 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
     if (!view.input) return;
     const shown = target();
     const at = shown ? stoppedAt(shown.key) : null;
-    // An action runs in the test's window at the stop shown (a pick, a recording, a check): its Escape is the page's.
-    const acting = !!at?.stop.acting && at.stop.since === shown?.since;
+    // An action runs in the test's window at the stop shown (a pick, a check): its Escape is the page's, unless Pick on
+    // the image waits, which Escape stops.
+    const acting = !!at?.stop.acting && at.stop.since === shown?.since && !picking.has(shown.key);
     const decided = keyOnView(
       {
         key: event.key,

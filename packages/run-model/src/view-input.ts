@@ -77,7 +77,7 @@ function pressed(combo: string): KeyOnView {
  * goes as `ControlOrMeta`, and only with the editing keys, Enter, A, Y and Z: every other shortcut stays the
  * browser's, as do Alt's outside macOS (where Option writes a character, or moves by a word) and the function keys.
  * Tab goes to the page only while the view holds the keyboard (`captured`). Escape gives it back, but while an action
- * runs in the test's window (`acting`: a pick, a recording, a check, the stop's `acting`), where it goes to the page,
+ * runs in the test's window (`acting`: a pick, a check, the stop's `acting`), where it goes to the page,
  * which ends or leaves it as the action does.
  */
 export function keyOnView(press: KeyPress, options: { mac: boolean; captured: boolean; acting?: boolean }): KeyOnView {

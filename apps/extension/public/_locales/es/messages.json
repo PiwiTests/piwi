@@ -6951,7 +6951,7 @@
     "message": "Se perdió la conexión con el editor: la vista en directo vuelve a empezar cuando regrese."
   },
   "runs_liveHint": {
-    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc desactiva Interactuar y devuelve la parada, pero va a la página mientras en ella se elige un elemento, se graba o se comprueba; Mayús+clic elige un locator."
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc desactiva Interactuar y devuelve la parada, pero va a la página mientras en ella se elige un elemento o se comprueba; Mayús+clic elige un locator."
   },
   "runs_watch": {
     "message": "Ver"

@@ -425,10 +425,12 @@ describe('a stopped page’s live view, in the run sessions', () => {
     read({ type: 'acting', stop: 1, what: null });
     await waitFor(() => (acting() === null ? true : undefined));
     expect(last(sent)?.workers[0]?.stop).not.toHaveProperty('acting');
-    // An action said for a stop the worker no longer stands at changes nothing.
-    read({ type: 'acting', stop: 1, what: 'record' });
-    await waitFor(() => (acting() === 'record' ? true : undefined));
+    // The stop ends with an action running: it goes with the stop.
+    read({ type: 'acting', stop: 1, what: 'assert' });
+    await waitFor(() => (acting() === 'assert' ? true : undefined));
     read({ type: 'running', stop: 1 });
+    await waitFor(() => (last(sent)?.workers[0]?.stop === null ? true : undefined));
+    // An action said for a stop the worker no longer stands at changes nothing.
     await stopAt(2);
     const heard = sent.length;
     read({ type: 'acting', stop: 1, what: 'pick' });

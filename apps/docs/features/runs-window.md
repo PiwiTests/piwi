@@ -98,8 +98,9 @@ the view to the page as a person's would, the picker and the recorder included:
 - **The keys**, while the view has the focus (a focus ring around it): characters are typed, named keys (Enter, the
   arrows, Backspace, Delete, Home, End) pressed, with Shift, and `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the
   editing keys. A paste types the clipboard's text.
-- **What stays the window's**: the browser's other shortcuts, the function keys, `Esc` and `Tab`, as the
-  [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window) say.
+- **What stays the window's**: the browser's other shortcuts, the function keys, `Esc` (but while a pick or a check
+  runs on the page) and `Tab`, as the [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window)
+  say.
 
 A hint under the view says so the first time. What you hold down is let go before the test goes on.
 

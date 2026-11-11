@@ -1014,7 +1014,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   editing keys, a paste as text, its control characters but a tab and its line breaks left out, as the hub and the
   worker refuse them (`isViewTextControl`). The browser's other shortcuts, the function keys and Escape stay the window's: Escape
   turns Interact off, on Interact, but goes to the page while an action runs in the test's window there (the stop's
-  `acting`: a pick, a recording, a check), whose Escape it is; the image carries `data-acting` meanwhile. Tab moves the focus on unless a click into the view took the keyboard
+  `acting`: a pick, a check, a region's pick), whose Escape it is; the image carries `data-acting` meanwhile. Tab moves the focus on unless a click into the view took the keyboard
   (`captured`), until Escape: a keyboard user never has the focus held there. A hint says so under the first view that
   takes input. A Shift+click picks with Interact off too.
 - **Pick on the image**, a toggle where the stop takes `pick-at` and the image or a frame names its viewport, or a

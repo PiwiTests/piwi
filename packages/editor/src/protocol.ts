@@ -1526,11 +1526,11 @@ export interface RunStop {
    */
   driver?: RunPresence;
   /**
-   * An action that runs in the test's window at this stop: a pick, a recording, a check or a region's pick, started
-   * from the pause bar or as an intent. Its Escape is the page's, so a view sends Escape there while one runs. Absent
-   * while none runs, and from a reporter that predates it.
+   * An action that takes Escape as its own runs in the test's window at this stop: a pick, a check or a region's pick,
+   * started from the pause bar or as an intent. A view sends Escape there while one runs. Absent while none runs, and
+   * from a reporter that predates it.
    */
-  acting?: 'pick' | 'record' | 'assert' | 'assert-region';
+  acting?: 'pick' | 'assert' | 'assert-region';
 }
 
 /**

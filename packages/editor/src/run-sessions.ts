@@ -2007,7 +2007,7 @@ export class RunSessions {
         return asked.settle(message.value);
       }
       case 'acting': {
-        // An action that runs in the test's window at the stop the worker stands at: its Escape is the page's.
+        // An action that takes Escape as its own runs in the test's window at the stop the worker stands at.
         const stop = worker.stop;
         if (stop?.id !== message.stop || (stop.view.acting ?? null) === message.what) return;
         const { acting: _acting, ...view } = stop.view;

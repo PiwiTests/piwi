@@ -23,6 +23,7 @@ import {
   type RunActAction,
   type RunEvent,
   type RunHold,
+  type RunActing,
   type RunIntent,
   type RunTake,
   type RunToHub,
@@ -482,10 +483,10 @@ export function tellHub(message: RunToHub): void {
 }
 
 /**
- * Tell the editor that an action runs in the test's window at the stop `stop` (`what`: a pick, a recording, a check, a
- * region's pick), or that it ended (null), while the worker still holds that stop.
+ * Tell the editor that an action that takes Escape as its own runs in the test's window at the stop `stop` (`what`: a
+ * pick, a check, a region's pick), or that it ended (null), while the worker still holds that stop.
  */
-export function tellActing(stop: number, what: RunIntent | null): void {
+export function tellActing(stop: number, what: RunActing | null): void {
   if (held?.stop === stop) tellHub({ type: 'acting', stop, what });
 }
 

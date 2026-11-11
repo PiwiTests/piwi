@@ -629,9 +629,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val worker = liveWorkerTab()?.component as? PausedPagePanel
         val target = laneTarget
         if (worker != null && target != null) {
-            val shown = Glue.laneShown(sessions[target.first], target.second, stops)
-            worker.caption(shown.caption)
-            worker.acting = shown.stop?.stop?.acting != null
+            worker.caption(Glue.laneShown(sessions[target.first], target.second, stops).caption)
             // The service ends the view with the run, and Watch is off for the next.
             if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
                 watchingLane = null
@@ -1724,13 +1722,13 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     /** Interact went off, whatever turned it off: the stop it was last on for is given back. */
     var interactOff: (() -> Unit)? = null
     /**
-     * An action runs in the test's window at the stop shown (a pick, a recording, a check: the stop's `acting`): Escape
+     * An action runs in the test's window at the stop shown (a pick, a check: the stop's `acting`): Escape
      * on the image goes to the page, whose Escape it is, rather than giving the stop back.
      */
     var acting = false
     private var changedLive: ((Boolean) -> Unit)? = null
     private val live = JCheckBox("Watch live").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
-    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back, but goes to the page while a pick, a recording or a check runs there; Shift+click picks."; isEnabled = false }
+    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks."; isEnabled = false }
     var liveWanted: Boolean
         get() = live.isSelected
         set(value) { live.isSelected = value }

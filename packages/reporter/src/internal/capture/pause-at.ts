@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
-import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
+import type { Place, RunActing, RunIntent, StopReason } from '@piwitests/core/run-channel';
 import {
   pauseAnswered,
   removeStopHighlight,
@@ -690,21 +690,22 @@ const HIGHLIGHT_MS = 2000;
 /**
  * The pause bar's Pick a locator and Record here, started from outside the page (the editor's hub, for Piwi Picker):
  * the bar takes an intent while it waits for its answer, and one handed to it while it is about to (its highlight
- * still drawing) waits for it; while a pick or a recording runs, none is taken. Each action that runs in the test's
- * window, the bar's own or an intent, is said to `said` as it starts, and null once it ended (`acting`).
+ * still drawing) waits for it; while a pick or a recording runs, none is taken. Each action in the test's window that
+ * takes Escape as its own (a pick, a check, a region's pick: `RunActing`), the bar's own or an intent, is said to `said`
+ * as it starts, and null once it ended (`acting`); a recording, which records Escape as a step, is not.
  */
 export class BarIntents {
   private take: ((intent: RunIntent) => void) | null = null;
   private queued: RunIntent | null = null;
   private busy = false;
-  private readonly said: (what: RunIntent | null) => void;
+  private readonly said: (what: RunActing | null) => void;
 
-  constructor(said: (what: RunIntent | null) => void = () => {}) {
+  constructor(said: (what: RunActing | null) => void = () => {}) {
     this.said = said;
   }
 
   /** Runs an action in the test's window (`what`), saying it runs until it ended. */
-  async acting<T>(what: RunIntent, run: () => Promise<T>): Promise<T> {
+  async acting<T>(what: RunActing, run: () => Promise<T>): Promise<T> {
     this.said(what);
     try {
       return await run();
@@ -794,7 +795,7 @@ export async function viewHere(
         const picked = await intents.acting('pick', () => pickLocator(page, probe, null, signal).catch(() => null));
         if (picked && !signal.aborted) await onPick(picked);
       } else if (intent === 'record') {
-        if (onRecord) await intents.acting('record', () => onRecord(signal));
+        await onRecord?.(signal);
       } else if (onIntent) {
         await intents.acting(intent, () => onIntent(intent, signal));
       }
@@ -971,11 +972,11 @@ export async function pauseHere(
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish' || choice === 'end') return choice;
         /** The action runs in the test's window, said to `intents` while it runs. */
-        const acting = <T>(what: RunIntent, run: () => Promise<T>): Promise<T> =>
+        const acting = <T>(what: RunActing, run: () => Promise<T>): Promise<T> =>
           intents ? intents.acting(what, run) : run();
         if (choice === 'record' && onRecord) {
           await unlessEnded(
-            acting('record', () => onRecord(ended).catch(() => undefined)),
+            onRecord(ended).catch(() => undefined),
             ended,
           );
           continue;

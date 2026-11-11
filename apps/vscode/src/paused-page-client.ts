@@ -155,7 +155,7 @@ picture.addEventListener('keydown', (e) => {
       isComposing: e.isComposing,
       altGraph: e.getModifierState('AltGraph'),
     },
-    // An action runs in the test's window at the stop (a pick, a recording, a check): its Escape is the page's.
+    // An action runs in the test's window at the stop (a pick, a check): its Escape is the page's.
     { mac: /Mac/.test(navigator.platform), captured, acting: !!view?.acting },
   );
   if (key === 'leave') {
