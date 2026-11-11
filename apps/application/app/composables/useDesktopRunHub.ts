@@ -48,7 +48,13 @@ import {
 } from '#shared/desktop-runs';
 import { errorMessage } from '@piwitests/run-ui/text';
 import { tabsAdvanced, tabsAfter, tabsChosen, type WorkerTabs } from '@piwitests/run-model/tabs';
-import { desktopLaneKey, desktopLaneRun, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
+import {
+  desktopLaneKey,
+  desktopLaneRun,
+  desktopShareWarning,
+  desktopViewKey,
+  desktopWorkerKey,
+} from '~/utils/desktop-run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -220,6 +226,38 @@ function heard(text: string): void {
       for (const ref of new Set(kept)) if (!state.sessions[ref]) forgetRun(ref);
       return;
     }
+    case 'ask-to-watch':
+      // A teammate asks to watch a run: Share live shares it, Not now tells them.
+      if (typeof value.ref === 'string' && typeof value.id === 'string' && typeof value.by === 'string') {
+        const ref = value.ref;
+        const ask = value.id;
+        // The first share of the app's session says what it sends, as the run's Share live does.
+        const warns = !shareWarned;
+        toastApi?.add({
+          title: `${value.by} asks to watch ${typeof value.run === 'number' ? `run #${value.run}` : 'this run'} live`,
+          description: warns ? desktopShareWarning({ page: state.sessions[ref]?.live?.page ?? null }) : undefined,
+          icon: 'i-lucide-radio',
+          color: 'neutral',
+          duration: 0,
+          actions: [
+            {
+              label: 'Share live',
+              color: 'primary' as const,
+              onClick: () => {
+                shareWarned = true;
+                void command({ type: 'share', ref, on: true });
+              },
+            },
+            {
+              label: 'Not now',
+              color: 'neutral' as const,
+              variant: 'outline' as const,
+              onClick: () => void command({ type: 'answer-ask', ref, ask }),
+            },
+          ],
+        });
+      }
+      return;
     case 'notice':
       // A sentence about a run (a stop that went on, a code not made): the tray shows it as a toast.
       if (typeof value.message === 'string') {
