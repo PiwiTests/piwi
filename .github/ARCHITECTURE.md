@@ -47,8 +47,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   - `Reporter tests (Playwright floor)`: the same suite on the oldest Playwright the reporter supports
     (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself, on an Ubuntu
     that Playwright has Chromium builds for (24.04);
-  - `Package tests`: core, picker-dom (unit and in a browser), the editor service, the VS Code and browser extensions'
-    unit tests, and the showcase's cut.
+  - `Package tests`: core, picker-dom (unit and in a browser), the run model, the editor service, the VS Code and
+    browser extensions' unit tests, and the showcase's cut.
 - The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with
   every unit test; a change that touches only guides (`AGENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`), `adr/`,
   `proposals/` or a file the guides link to outside the `js` paths (the root Markdown files,

@@ -17,8 +17,8 @@ status and tab), `controls`, `presence` (who has a run open, watches or drives),
   never an English sentence. A key is a key of Piwi Picker's catalogs: a new one goes into its five catalogs
   (`apps/extension/AGENTS.md`, Text and translations) and into `RUN_WORDS_EN` in the same change.
 - **`RUN_WORDS_EN` is the extension's English catalog:** `apps/extension/tests/unit/run-words.test.ts` fails on a
-  message or a placeholder that differs, or a key a catalog lacks. That test is what keeps the tray's English words
-  the window's.
+  message or a placeholder that differs, or a key a catalog lacks. That test is what keeps the English words a surface
+  without the catalogs says (`englishRunSpeaker`) the window's.
 - **Icons are names by meaning (`WorkerIcon`, `ControlIcon`),** the Runs window's own `IconName`s; another surface
   maps each to its set. A new one needs its entry in the extension's `ICONS`.
 - **FSL-1.1-MIT, and never moved into `@piwitests/core`,** which is MIT: code moves from the MIT parts into this

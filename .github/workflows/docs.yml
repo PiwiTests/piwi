@@ -12,6 +12,7 @@ on:
       - 'packages/core/**'
       - 'packages/picker-dom/**'
       - 'packages/run-ui/**'
+      - 'packages/run-model/**'
       - 'packages/reporter/src/public/options.ts'
       - 'packages/reporter/src/internal/config/env.ts'
       - 'CHANGELOG.md'

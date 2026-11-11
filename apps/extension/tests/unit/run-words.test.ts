@@ -7,8 +7,8 @@ import { runsSpeaker } from '../../src/shared/run-words.js';
 import { readCatalog, setBrowserLanguage } from './setup-i18n.js';
 
 /**
- * The run model's English words (`RUN_WORDS_EN`), which the desktop app's tray says, are the English catalog's: the
- * same message, with the same placeholders, under a key every catalog holds.
+ * The run model's English words (`RUN_WORDS_EN`), which a surface without the catalogs says (`englishRunSpeaker`), are
+ * the English catalog's: the same message, with the same placeholders, under a key every catalog holds.
  */
 
 const keys = Object.keys(RUN_WORDS_EN) as RunWordKey[];
