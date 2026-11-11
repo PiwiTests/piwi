@@ -65,6 +65,7 @@ folder, and the exact command. Nothing runs until you click **Run**:
   inside it.
 - **The commit**: the run's branch and commit against the folder's. On another commit, or with uncommitted changes, the
   tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
+- **One run per folder**, and a command of at most 24,000 characters: past it, ask for fewer tests.
 
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.

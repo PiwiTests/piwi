@@ -101,6 +101,8 @@ pub struct LocalRuns {
     specs: Mutex<HashMap<u32, PathBuf>>,
     /// What each running run is, for the tray's Stop items (`run_label`).
     labels: Mutex<HashMap<u32, String>>,
+    /// The linked folder each plain run is going in (`runs_in`).
+    folders: Mutex<HashMap<u32, PathBuf>>,
 }
 
 /// What a local run is, as the tray names it: `tests in shop`, `the bisect in
@@ -141,6 +143,18 @@ impl LocalRuns {
         self.labels.lock().unwrap().insert(id, label);
     }
 
+    /// Record the linked folder plain run `id` is going in.
+    pub(crate) fn track_folder(&self, id: u32, folder: &Path) {
+        self.folders.lock().unwrap().insert(id, folder.to_path_buf());
+    }
+
+    /// Whether a plain run is going in `folder`, compared by real path.
+    pub(crate) fn runs_in(&self, folder: &Path) -> bool {
+        let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let folder = real(folder);
+        self.folders.lock().unwrap().values().any(|other| real(other) == folder)
+    }
+
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.
     pub(crate) fn register_job(&self, id: u32, job: Job) {
         self.jobs.lock().unwrap().insert(id, job);
@@ -150,6 +164,7 @@ impl LocalRuns {
     pub(crate) fn drop_job(&self, id: u32) {
         self.jobs.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Record (or clear) the child currently running for a job, so a stop or
@@ -187,6 +202,7 @@ impl LocalRuns {
         self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Kill a plain run's process tree now, if it is still running.
@@ -194,6 +210,7 @@ impl LocalRuns {
         let child = self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
         if let Some(child) = child {
             crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
@@ -248,6 +265,7 @@ impl LocalRuns {
             crate::repro::remove_spec(&spec);
         }
         self.labels.lock().unwrap().clear();
+        self.folders.lock().unwrap().clear();
     }
 
     /// Whether a plain run, or a job's test or browser install, is still running.
@@ -753,6 +771,7 @@ pub(crate) async fn spawn_tests(
 
     let state = app.state::<LocalRuns>();
     state.label(id, run_label("tests", folder));
+    state.track_folder(id, folder);
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
@@ -880,6 +899,24 @@ mod tests {
         for bad in ["", "../../etc", "1/2", "1.0", "-1", " 1", "abc", &"9".repeat(21)] {
             assert!(!valid_project_id(bad), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn a_run_is_found_by_its_folder_until_it_is_forgotten() {
+        let folder = std::env::temp_dir().join(format!("piwi-runs-in-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("sub")).unwrap();
+        let runs = LocalRuns::default();
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(4, &folder);
+        assert!(runs.runs_in(&folder));
+        assert!(runs.runs_in(&folder.join("sub").join("..")));
+        assert!(!runs.runs_in(&folder.join("sub")));
+        runs.forget_child(4);
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(5, &folder);
+        runs.kill_all();
+        assert!(!runs.runs_in(&folder));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

@@ -265,7 +265,7 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
     if (state.host !== host) return;
     let plan: RequestPlan;
     try {
-      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null);
+      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null, foldersRunning());
     } catch (error) {
       await host
         .answer(request.id, {
@@ -440,12 +440,23 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
   state.flowTimer.unref?.();
 }
 
+/** The folders the requests held, other than `except`, run in once **Run** approved them. */
+function foldersRunning(except?: HeldRequest): string[] {
+  return [...state.held.values()]
+    .filter((held) => held !== except && held.approved)
+    .map((held) => held.approved!.folder);
+}
+
 /** Check a held request again, after the person linked its folder. */
 export async function planAgain(id: string): Promise<RunRequestPromptView | null> {
   const held = state.held.get(id);
   const unanswered = () => !!held && state.held.get(id) === held && !held.answering && !held.token && !held.launched;
   if (!held || !unanswered()) return null;
-  const plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
+  const plan = await planRequestedRun(
+    held.request,
+    state.links.get(held.request.projectId) ?? null,
+    foldersRunning(held),
+  );
   // Answered or gone while it was planned: the window shows it no more.
   if (!unanswered()) return null;
   held.plan = plan;
@@ -475,7 +486,7 @@ export async function answerRunRequest(
   try {
     if (decision === 'run') {
       const folder = state.links.get(held.request.projectId) ?? null;
-      held.plan = await planRequestedRun(held.request, folder);
+      held.plan = await planRequestedRun(held.request, folder, foldersRunning(held));
       // The folder changed since the window showed it: it shows the checks and the command again.
       if (!folder || !held.plan.runnable || held.plan.args.length === 0 || held.plan.display !== shownCommand) {
         tellWindow({ type: 'run-request', request: promptOf(held) });

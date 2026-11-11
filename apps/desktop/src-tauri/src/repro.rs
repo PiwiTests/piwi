@@ -353,6 +353,7 @@ pub async fn desktop_run_repro(
         }
     };
     state.label(id, crate::runner::run_label("the bug report", &folder));
+    state.track_folder(id, &folder);
     state.track_child(id, child);
 
     let emit_app = app.clone();

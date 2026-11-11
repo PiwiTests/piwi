@@ -91,14 +91,15 @@ shell and are feature-equivalent.
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
-  `isBrowserRequest`), refuses no arguments or a folder linked since, writes the token to a private file for the
-  reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit, `shut_down` stops the local runs, then
-  posts the end of every requested run still held (`end_requested_runs_on_quit`, 2 s each) and deletes its folder before
-  it stops the server. At startup each app removes its own leftover folders (`piwi-request-*`, Runner
-  `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`). The instance's key lives
-  in the OS keychain, read only while `runTargetInstance` is set, handed to the server after each start
-  (`hand_kept_key`), never to the window; a stop from the dashboard reaches the shell on its notification stream, and so
-  does `key-revoked`, which forgets the key only when it names the connected instance (`key_revoked`).
+  `isBrowserRequest`), refuses no arguments, a folder linked since, a folder another local or requested run is going in
+  (`runs_in`, `hold_folder`) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
+  the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
+  `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
+  2 s each) and deletes its folder before it stops the server. At startup each app removes its own leftover folders
+  (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
+  The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
+  each start (`hand_kept_key`), never to the window; a stop from the dashboard reaches the shell on its notification
+  stream, and so does `key-revoked`, which forgets the key only when it names the connected instance (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

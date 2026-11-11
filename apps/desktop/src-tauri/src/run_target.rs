@@ -44,6 +44,9 @@ const REQUEST_DIR_PREFIX: &str = if cfg!(feature = "runner") {
 /// How old a requested run's folder left in the temp dir by an earlier launch must be before the sweep at startup
 /// removes it.
 const LEFTOVER_REQUEST_DIR_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+/// The most characters a requested run's arguments may take, each counted with one separator, as the editor counts
+/// them (`REQUESTED_RUN_ARGS_MAX_CHARS` in `packages/editor/src/request-run.ts`).
+const REQUEST_ARGS_MAX_CHARS: usize = 24_000;
 /// How long the server gets, as the app quits, to take the end of each requested run still held.
 const QUIT_END_TIMEOUT: Duration = Duration::from_secs(2);
 /// The keychain service the instance's key is kept under, its account the instance's URL.
@@ -62,17 +65,33 @@ pub struct KeptKey(Mutex<Option<(String, String)>>);
 pub struct RequestedRuns(Mutex<HashMap<String, RequestedRun>>);
 
 /// A requested run the shell is starting or running: its run id once spawned,
-/// whether the dashboard stopped it before then, its private folder once made,
-/// and how it ended until the server has taken that.
+/// whether the dashboard stopped it before then, the linked folder it runs in
+/// and its private folder once checked, and how it ended until the server has
+/// taken that.
 #[derive(Default)]
 pub struct RequestedRun {
     run: Option<u32>,
     stop: bool,
+    folder: Option<PathBuf>,
     dir: Option<PathBuf>,
     ended: Option<(Option<i32>, bool)>,
 }
 
 impl RequestedRuns {
+    /// Take `folder` for request `id`, with its private folder `dir`, unless
+    /// another requested run holds it. Answers whether a stop came for it
+    /// meanwhile.
+    fn hold_folder(&self, id: &str, folder: &Path, dir: &Path) -> Result<bool, String> {
+        let mut runs = self.0.lock().unwrap();
+        if runs.iter().any(|(other, run)| other != id && run.folder.as_deref() == Some(folder)) {
+            return Err(FOLDER_BUSY.into());
+        }
+        let held = runs.entry(id.to_string()).or_default();
+        held.folder = Some(folder.to_path_buf());
+        held.dir = Some(dir.to_path_buf());
+        Ok(held.stop)
+    }
+
     /// Forget every requested run still held, removing each one's private
     /// folder, and hand each request id to `end` with how its run ended: a run
     /// with no end yet ends stopped. Called as the app quits.
@@ -91,6 +110,15 @@ impl RequestedRuns {
     fn dirs(&self) -> HashSet<PathBuf> {
         self.0.lock().unwrap().values().filter_map(|run| run.dir.clone()).collect()
     }
+}
+
+/// Why a requested run does not start in a folder another run is going in.
+const FOLDER_BUSY: &str = "another run is going in the linked folder: run this one once it ends";
+
+/// Whether a requested run's arguments stay within `REQUEST_ARGS_MAX_CHARS`,
+/// counted in UTF-16 units as the editor counts them.
+fn args_within_cap(args: &[String]) -> bool {
+    args.iter().map(|arg| arg.encode_utf16().count() + 1).sum::<usize>() <= REQUEST_ARGS_MAX_CHARS
 }
 
 /// The app is quitting: tell the server, while it is still up, that every
@@ -579,14 +607,21 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         }
     };
 
-    // A stop that came while the run was being prepared ends it before anything runs.
-    let stopped_early = app.try_state::<RequestedRuns>().is_some_and(|runs| {
-        let mut runs = runs.0.lock().unwrap();
-        runs.get_mut(&request_id).is_some_and(|held| {
-            held.dir = Some(dir.clone());
-            held.stop
-        })
-    });
+    // One requested run at a time in a folder; a stop that came while the run was being prepared ends it before
+    // anything runs.
+    let held = match app.try_state::<RequestedRuns>() {
+        Some(runs) => runs.hold_folder(&request_id, &folder, &dir),
+        None => Ok(false),
+    };
+    let stopped_early = match held {
+        Ok(stop) => stop,
+        Err(e) => {
+            forget(&app, &request_id);
+            let _ = std::fs::remove_dir_all(&dir);
+            tell_started(&server, &request_id, Some(&e));
+            return Err(e);
+        }
+    };
     if stopped_early {
         forget(&app, &request_id);
         let _ = std::fs::remove_dir_all(&dir);
@@ -671,6 +706,11 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
         return Err("the request names no test to run".into());
     }
     crate::runner::validate_args(&launch.args)?;
+    if !args_within_cap(&launch.args) {
+        return Err(format!(
+            "the command is longer than {REQUEST_ARGS_MAX_CHARS} characters: ask for fewer tests"
+        ));
+    }
     let linked = links_of(app, &launch.instance)
         .get(&launch.project_id)
         .cloned()
@@ -681,6 +721,10 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
     let folder = PathBuf::from(linked);
     if !folder.is_dir() {
         return Err("the linked folder no longer exists: pick it again".into());
+    }
+    let folder = std::fs::canonicalize(&folder).unwrap_or(folder);
+    if app.try_state::<crate::runner::LocalRuns>().is_some_and(|runs| runs.runs_in(&folder)) {
+        return Err(FOLDER_BUSY.into());
     }
     let cli = crate::runner::resolve_playwright_cli(&folder)
         .ok_or("no Playwright installation found in the linked folder: run your package manager's install first")?;
@@ -891,6 +935,7 @@ mod tests {
             let run = |dir: &PathBuf, ended| RequestedRun {
                 run: Some(1),
                 stop: false,
+                folder: None,
                 dir: Some(dir.clone()),
                 ended,
             };
@@ -969,6 +1014,34 @@ mod tests {
         };
         assert!(!other.starts_with(REQUEST_DIR_PREFIX));
         assert!(!REQUEST_DIR_PREFIX.starts_with(other));
+    }
+
+    #[test]
+    fn a_folder_holds_one_requested_run_at_a_time() {
+        let runs = RequestedRuns::default();
+        let (shop, admin) = (Path::new("/work/shop"), Path::new("/work/admin"));
+        runs.0.lock().unwrap().insert("a".into(), RequestedRun::default());
+        runs.0.lock().unwrap().insert("b".into(), RequestedRun::default());
+        assert_eq!(runs.hold_folder("a", shop, Path::new("/tmp/a")), Ok(false));
+        assert_eq!(runs.hold_folder("b", shop, Path::new("/tmp/b")), Err(FOLDER_BUSY.to_string()));
+        assert_eq!(runs.hold_folder("b", admin, Path::new("/tmp/b")), Ok(false));
+        assert_eq!(runs.hold_folder("a", shop, Path::new("/tmp/a")), Ok(false), "its own folder again");
+
+        runs.0.lock().unwrap().remove("a");
+        runs.0.lock().unwrap().insert("c".into(), RequestedRun { stop: true, ..Default::default() });
+        assert_eq!(runs.hold_folder("c", shop, Path::new("/tmp/c")), Ok(true), "a stop that came meanwhile");
+        assert_eq!(runs.dirs(), HashSet::from([PathBuf::from("/tmp/b"), PathBuf::from("/tmp/c")]));
+    }
+
+    #[test]
+    fn a_requested_run_s_arguments_stay_within_the_cap() {
+        let args = |len: usize| vec!["a".repeat(len)];
+        assert!(args_within_cap(&args(REQUEST_ARGS_MAX_CHARS - 1)));
+        assert!(!args_within_cap(&args(REQUEST_ARGS_MAX_CHARS)));
+        assert!(!args_within_cap(&vec!["".to_string(); REQUEST_ARGS_MAX_CHARS + 1]));
+        // Counted as the editor counts a JavaScript string: an emoji is two.
+        assert!(!args_within_cap(&["😀".repeat(REQUEST_ARGS_MAX_CHARS / 2)]));
+        assert!(args_within_cap(&["é".repeat(REQUEST_ARGS_MAX_CHARS - 1)]));
     }
 
     #[test]
