@@ -126,7 +126,11 @@ export async function linkNamedIssues(
     for (const key of state.candidates) {
       if (room <= 0) break;
       const issue = byKey.get(key);
-      if (!issue || state.dismissedIds.has(issue.id as string)) continue;
+      if (!issue) continue;
+      if (state.dismissedIds.has(issue.id as string)) {
+        state.taken.add(key);
+        continue;
+      }
       if (deadline.aborted) return stopped();
       const inserted = await db
         .insert(entityLinks)

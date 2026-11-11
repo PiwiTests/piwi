@@ -546,6 +546,19 @@ describe('a link removed by hand', () => {
     expect(await links(cluster)).toEqual([]);
   });
 
+  test('a removed issue named under its new key is not counted among the keys left out', async () => {
+    const cluster = await newCluster();
+    await pin(cluster, 'PROJ-26', 'annotation');
+    await deleteLinksTo(db as never, 'failure_cluster', cluster, `${SITE}/browse/PROJ-26`, null);
+    issues.set('PROJ-126', { id: '20026', key: 'PROJ-126', project: 'PROJ', category: 'new' });
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-126'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(await links(cluster)).toEqual([]);
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(0);
+  });
+
   test('a pinned link is recorded by its key only', async () => {
     const cluster = await newCluster();
     const link = await pin(cluster, 'PROJ-23', 'pinned');
