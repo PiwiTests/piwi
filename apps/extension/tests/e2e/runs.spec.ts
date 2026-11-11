@@ -1704,6 +1704,15 @@ test.describe('the live view', () => {
         await card.getByRole('button', { name: 'Give back' }).click();
         await expect(interact).toHaveAttribute('aria-pressed', 'false');
         await expect(card.locator('.run-driver')).toHaveCount(0);
+        // Watch live turned off with Interact on gives the stop back, as such, before the view ends.
+        await interact.click();
+        await view.click({ position: { x: 40, y: 40 } });
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await runs.evaluate(() => (document.getElementById('announce')!.textContent = ''));
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(card.locator('img.live')).toHaveCount(0);
       } finally {
         input.stop();
         await endRun(run);

@@ -619,8 +619,12 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   if (view?.since === stop.since && isLive(view)) {
     watchLive.delete(slot);
     const shown = run.session.workers.find((w) => w.worker === worker);
-    if (shown && interacting.has(slot)) setInteract(run, shown, stop, false);
-    endView(key, true);
+    // The stop is given back, once its input went, before the view ends, which would give it back unsaid.
+    const released = shown && interacting.has(slot) ? setInteract(run, shown, stop, false) : Promise.resolve();
+    void released.then(() => {
+      if (views.get(key) === view) endView(key, true);
+      render();
+    });
   } else {
     watchLive.set(slot, { hub: run.hub, run: run.session.ref });
     startView(run, worker, stop);
@@ -634,12 +638,12 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
  * window drives, or reached with its input, is given back, whatever command is on its way. Watch live or Watch turned
  * off, a view or a lane refused, and Give back turn it off too.
  */
-function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean): void {
+function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean): Promise<void> {
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
   if (on) {
     interacting.set(slot, { hub: run.hub, run: run.session.ref });
     render();
-    return;
+    return Promise.resolve();
   }
   interacting.delete(slot);
   const key = workerKey(run.hub, run.session.ref, worker);
@@ -650,15 +654,20 @@ function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean
     surface.inputOn = false;
     surface.captured = false;
   }
-  void drained.then(() => {
-    // Who drives as the hub says now: the toggle that called this may have been drawn before it changed.
+  const done = drained.then(async () => {
+    // Interact on again meanwhile: the person drives on. Who drives is read as the hub says now, the toggle that called
+    // this having been drawn before it changed; input that reached the stop gives it back while nobody else took it.
+    if (interacting.has(slot)) return;
     const now = stoppedAt(key)?.stop;
     if (now?.since !== stop.since || !hubAnswers(run.hub)) return;
     if (!state?.hubs.find((h) => h.id === run.hub)?.presence) return;
-    if (driverOf(now)?.who === 'self' || inputAt.get(slot) === stop.since)
-      void giveBack(run, worker.worker, stop.since);
+    const driver = driverOf(now);
+    if (driver?.who !== 'self' && (driver || inputAt.get(slot) !== stop.since)) return;
+    inputAt.delete(slot);
+    await giveBack(run, worker.worker, stop.since);
   });
   render();
+  return done;
 }
 
 /** Gives a stop back, past any command on its way: a refusal is shown under the test, the answer read out. */
@@ -844,11 +853,17 @@ function toggleLane(run: RunsRun, worker: HubWorker): void {
   // The run of a hub not connected now is shown as last heard: its Watch waits for the hub.
   if (!hubAnswers(run.hub)) return;
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
-  if (isWatched(lanes.get(slot))) {
-    // The stop is given back before the watch ends, which would give it back unsaid.
-    if (interacting.has(slot) && worker.state === 'stopped' && worker.stop)
-      setInteract(run, worker, worker.stop, false);
-    endLane(slot, true);
+  const lane = lanes.get(slot);
+  if (isWatched(lane)) {
+    // The stop is given back, once its input went, before the watch ends, which would give it back unsaid.
+    const released =
+      interacting.has(slot) && worker.state === 'stopped' && worker.stop
+        ? setInteract(run, worker, worker.stop, false)
+        : Promise.resolve();
+    void released.then(() => {
+      if (lanes.get(slot) === lane) endLane(slot, true);
+      render();
+    });
   } else startLane(run, worker);
   render();
 }
@@ -1161,7 +1176,7 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
       const at = stoppedAt(shown.key);
       const slot = at ? slotKey(at.run.hub, at.run.session.ref, at.worker.parallelIndex) : null;
       const toggle = at && slot && interacting.has(slot) ? 'interact' : shown.toggle;
-      if (at && toggle === 'interact') setInteract(at.run, at.worker, at.stop, false);
+      if (at && toggle === 'interact') void setInteract(at.run, at.worker, at.stop, false);
       document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${shown.key}|${toggle}`)}"]`)?.focus();
       return;
     }
@@ -1506,8 +1521,10 @@ function forgetGone(current: RunsState): void {
   for (const [slot, { hub, run }] of interacting) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) interacting.delete(slot);
   }
+  // Input kept for a run that ended, or a hub whose connection went (its next one drives nothing), is let go.
   for (const slot of inputAt.keys()) {
-    if (![...liveRuns].some((run) => slot.startsWith(`${run}|`))) inputAt.delete(slot);
+    const live = [...liveRuns].some((run) => slot.startsWith(`${run}|`));
+    if (!live || !current.hubs.some((h) => h.connected && slot.startsWith(`${h.id}|`))) inputAt.delete(slot);
   }
   // A run's tabs, and why its Stop was refused, last while it does.
   for (const key of tabs.keys()) if (!liveRuns.has(key)) tabs.delete(key);
@@ -2881,7 +2898,7 @@ function renderDriver(
       if (pressedHeld(event)) return;
       // Give back with Interact on turns it off, which gives the stop back.
       if (mine && interacting.has(slotKey(run.hub, run.session.ref, worker.parallelIndex))) {
-        setInteract(run, worker, stop, false);
+        void setInteract(run, worker, stop, false);
       } else void drive(run, worker.worker, stop.since, !mine, driver?.who ?? null);
     },
     { icon: mine ? 'undo' : 'hand', small: true, title: t(mine ? 'runs_giveBackTitle' : 'runs_takeControlTitle') },
@@ -3060,7 +3077,7 @@ function pageHead(
         const interact = makeButton(
           t('runs_interact'),
           (event) => {
-            if (!pressedHeld(event)) setInteract(run, worker, stop, !on);
+            if (!pressedHeld(event)) void setInteract(run, worker, stop, !on);
           },
           { icon: 'hand', small: true, title: t('runs_interactTitle') },
         );
