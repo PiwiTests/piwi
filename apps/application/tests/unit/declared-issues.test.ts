@@ -30,6 +30,8 @@ const { clusterKnownIssues } = await import('../../shared/handlers/known-issues'
 const { linkNamedIssues } = await import('../../shared/handlers/declared-issues');
 const { getOpenFailureClusters } = await import('../../shared/handlers/failure-clusters');
 const { getProjectFailureClusters } = await import('../../shared/handlers/projects');
+const { enqueueFixPolicies, enqueueRegressionPolicies } = await import('../../server/utils/integrations/policies');
+const { buildRunIssue } = await import('../../server/utils/integrations/documents');
 const { mergeFailureClusters, splitFailureCluster } = await import('../../shared/handlers/failure-cluster-ops');
 
 const SITE = 'https://declared.atlassian.net';
@@ -116,12 +118,14 @@ let connectionId = 0;
 let nextRun = 1;
 let nextTest = 1;
 
-async function bind(over: { projectKey?: string | null; resolveOnClose?: boolean } = {}) {
+async function bind(
+  over: { projectKey?: string | null; resolveOnClose?: boolean; policies?: Record<string, unknown> } = {},
+) {
   await writeProjectIntegration(dbc, 1, {
     connectionId,
     projectKey: over.projectKey === undefined ? 'PROJ' : over.projectKey,
     issueType: 'Bug',
-    policies: { resolveOnClose: over.resolveOnClose ?? false, reopenOnTicketReopen: false },
+    policies: { resolveOnClose: over.resolveOnClose ?? false, reopenOnTicketReopen: false, ...over.policies },
   } as never);
 }
 
@@ -548,6 +552,17 @@ describe('a link removed by hand', () => {
     expect(await links(cluster)).toEqual([]);
   });
 
+  test('removing every link to a URL records who removed it', async () => {
+    const cluster = await newCluster();
+    await pin(cluster, 'PROJ-25', 'annotation');
+
+    await deleteLinksTo(db as never, 'failure_cluster', cluster, `${SITE}/browse/PROJ-25`, 7);
+
+    expect(await dismissals(cluster)).toEqual([
+      expect.objectContaining({ key: 'PROJ-25', externalId: '20025', removedBy: 7 }),
+    ]);
+  });
+
   test('a removed issue named under its new key is not counted among the keys left out', async () => {
     const cluster = await newCluster();
     await pin(cluster, 'PROJ-26', 'annotation');
@@ -638,6 +653,33 @@ describe('links from the tests are read-only', () => {
     await pin(cluster, 'PROJ-41', 'annotation');
     expect(await getClusterTrackerLink(dbc, cluster)).toBeNull();
     expect((await clusterKnownIssues(db as never, [cluster], { declared: false })).has(cluster)).toBe(false);
+  });
+
+  test('the fix and regression policies write nothing, and the run issue body leaves it out', async () => {
+    await bind({ policies: { commentOnFix: true, commentOnRegression: true, scope: { branches: 'all' } } });
+    const declared = await newCluster();
+    const pinned = await newCluster();
+    await pin(declared, 'PROJ-44', 'annotation');
+    await pin(pinned, 'PROJ-45', 'pinned');
+    const { runId } = await failRun([
+      { cluster: declared, issues: [] },
+      { cluster: pinned, issues: [] },
+    ]);
+    const actions = async (clusterId: number) =>
+      db.select().from(schema.integrationActions).where(eq(schema.integrationActions.entityId, clusterId));
+
+    for (const clusterId of [declared, pinned]) {
+      const facts = { clusterId, projectId: 1, runId };
+      await enqueueFixPolicies(dbc, { ...facts, commit: null, verification: 'stopped-failing' as never });
+      await enqueueRegressionPolicies(dbc, facts);
+    }
+    const body = JSON.stringify(await buildRunIssue(db as never, runId));
+
+    expect(await actions(declared)).toEqual([]);
+    expect(body).not.toContain('PROJ-44');
+    // The pinned link beside it shows the same calls do write and list.
+    expect((await actions(pinned)).map((a) => a.kind).sort()).toEqual(['comment', 'comment']);
+    expect(body).toContain('PROJ-45');
   });
 
   test('its status is refreshed but never resolves the cluster', async () => {
