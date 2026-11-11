@@ -489,6 +489,23 @@ npx @piwitests/reporter bug 37 --write
 did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read, the file
 could not be written, or Playwright could not start or was stopped by a signal.
 
+## `mcp`
+
+Serve the run tools of this machine to a coding agent, as one MCP server over stdio: the runs of every editor with
+Piwi (whose runs are served to agents) and of the [desktop app](/features/desktop), under one entry for every
+repository. It finds each editor's server in the editors' discovery files, and the desktop app's in its own, once the
+app's server proved it holds the token there. It holds no run logic: `run_list` asks every host and names each run's
+host, `run_start` goes to the editor whose workspace holds the spec, and every other tool goes to the host of its
+`run`; a host that does not answer is named in the answer. See [Run control for agents](/features/agent-run-control).
+
+```bash
+claude mcp add --scope user piwi-runs -- npx @piwitests/reporter mcp
+```
+
+| Flag | Description |
+|---|---|
+| `-h`, `--help` | Show help |
+
 ## Related
 
 - [Getting started](/guide/getting-started) — `init` in the setup flow

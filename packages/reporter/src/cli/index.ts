@@ -11,6 +11,7 @@
  */
 import { runAi } from './ai.js';
 import { runBug } from './bug.js';
+import { runMcp } from './mcp.js';
 import { runCodegen } from './codegen.js';
 import { runCoverage } from './coverage.js';
 import { runFlake } from './flake.js';
@@ -46,6 +47,7 @@ Commands:
   codegen   Turn a steps file (a Piwi Picker recording) into a Playwright spec
   preflight List the test locators your uncommitted change breaks, and fix them
   bug       Write a bug report's failing test into the project and run it once
+  mcp       Serve the run tools of this machine's editors and desktop app to an agent, over stdio
 
 Run \`npx @piwitests/reporter <command> --help\` for a command's options.
 (The published package is @piwitests/reporter; its command is piwi. Invoke it
@@ -86,6 +88,8 @@ async function main(): Promise<number> {
       return runPreflight(rest);
     case 'bug':
       return runBug(rest);
+    case 'mcp':
+      return runMcp(rest);
     case undefined:
     case '-h':
     case '--help':

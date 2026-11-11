@@ -17,33 +17,22 @@ its own.
 
 ## Connect your agent
 
-The server listens on `127.0.0.1` once the editor extension starts, at a port and behind a token the extension keeps
-for this workspace (in a JetBrains IDE, this project): a configuration you copy once keeps working after a restart. If
-another program holds that port, the server moves, with a new token, and says so.
+**One entry for every repository.** `npx @piwitests/reporter mcp` serves the runs of every editor with Piwi and of
+the desktop app as one MCP server, over stdio: add it once, at user scope, for any agent that starts a command.
 
-| Agent                                                                          | What it takes                                                                           |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| VS Code's own agent (1.101 and later)                                          | Nothing to set: the extension lists the server as **Piwi runs**, beside **Piwi**        |
-| Claude Code, Cursor and other agents that connect over HTTP                    | The `mcpServers` entry of type `http` below, with the token as a bearer header          |
-| The JetBrains AI Assistant, Claude Desktop and agents that only start commands | An `mcpServers` entry that runs `mcp-remote`, a small Node bridge, at one exact release |
+```bash
+claude mcp add --scope user piwi-runs -- npx @piwitests/reporter mcp
+```
 
-- **From VS Code**: **Piwi: Copy the runs' MCP server configuration for agents** asks which, then copies the entry:
+How it routes each call: [`mcp`](/reference/cli#mcp). VS Code's own agent (1.101 and later) needs nothing: the extension lists its window's server as **Piwi runs**,
+beside **Piwi**, which then leaves the desktop app's run tools of the same names out.
 
-  ```json
-  {
-    "mcpServers": {
-      "piwi-runs": { "type": "http", "url": "http://127.0.0.1:41234/mcp", "headers": { "Authorization": "Bearer …" } }
-    }
-  }
-  ```
-
-  Claude Code reads it in your user settings (`claude mcp add-json` with `--scope user`), Cursor in
-  `~/.cursor/mcp.json`; the other choice is VS Code's own `mcp.json`.
-
-- **From a JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code or Cursor**
-  copies the same entry; **…for Agents** copies one that runs `npx -y mcp-remote@0.14.3 <url> --transport http-only`,
-  the token in `env`, for the AI Assistant (**Settings → Tools → AI Assistant → Model Context Protocol**), which has no
-  public way for a plugin to add a server.
+Each editor's server listens on `127.0.0.1` once the extension starts, at a port and behind a token the extension
+keeps for this workspace (in a JetBrains IDE, this project). If another program holds that port, the server moves,
+with a new token, and says so. To give an agent one window's runs alone, copy its entry: **Piwi: Copy the runs' MCP
+server configuration for agents** in VS Code, **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code
+or Cursor** (an `http` entry, the token as a bearer header) or **…for Agents** (one that runs
+`npx -y mcp-remote@0.14.3 <url> --transport http-only`, for the JetBrains AI Assistant) in a JetBrains IDE.
 
 **The configuration holds the token.** Keep it in your user settings, never in a file of the repository such as a
 project's `.mcp.json`: whoever reads it can drive your runs while the editor is open. **Reset the token** (**Piwi:
@@ -55,7 +44,8 @@ an agent with the old one is refused until you copy the configuration again. `pi
 
 | Tool            | What it does                                                                                                                                                                                                                                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run_list`      | The runs of the window, their workers, the test each one runs and where it stands stopped                                                                                                                                                                                                                                     |
+| `run_start`     | Start a run of a spec, or of the test at a line, built and checked as yours are and run where you see it, labeled with the agent's name; a failed test waits at its line by default                                                                                                                                         |
+| `run_list`      | The runs of the window, what started each (the editor, a terminal or a test runner), their page, progress, Hold failures and who has them open, their workers, the test each one runs and where it stands stopped                                                                                                           |
 | `run_follow`    | The run's events since a cursor: each test's start and end, each call with its place in your code and its result, the stops, and the page's navigations, console errors, uncaught errors and failed requests. It waits up to 25 seconds, and answers at once while the run is stopped or ended                                |
 | `run_control`   | Pause, Step, Run to a line, Resume, Finish or [End the test](./end-the-test), answered when the run stops again, with the page's snapshot, when the test it ended ends, or when the run ends                                                                                                                                  |
 | `page_snapshot` | The stopped page's ARIA snapshot in AI mode, a ref per element (`[ref=e5]`), to a depth you choose, with an image of the page when asked                                                                                                                                                                                      |

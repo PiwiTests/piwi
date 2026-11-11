@@ -3820,9 +3820,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }
       // The desktop app has no sign-in: its MCP server takes the app's token alone.
       const authorization = !conn.apiKey ? 'none' : signIn && c.source !== 'desktop' ? 'sign-in' : 'key';
+      // While this window serves its own runs to agents, the desktop app's run tools of the same names are left out:
+      // an agent reaches every run of the machine through `piwi mcp`.
+      const runsOff = c.source === 'desktop' && agentServer !== null;
       servers.push({
         label: `Piwi (${host})`,
-        url: `${conn.serverUrl}/mcp`,
+        url: `${conn.serverUrl}/mcp${runsOff ? '?runs=off' : ''}`,
         headers: authorization === 'key' ? { Authorization: `Bearer ${conn.apiKey}` } : {},
         authorization,
       });

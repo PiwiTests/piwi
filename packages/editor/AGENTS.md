@@ -237,8 +237,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   window; nothing evaluates code, and code is written only by the client (`piwi/stopCode`).** `src/run-agent.ts`
   checks each argument (`Args`); a long poll waits `MAX_FOLLOW_WAIT_S` at most. Checked by `tests/run-agent.test.ts`.
   Another host serves the same tools in its own words (`agentTools`, `AgentWords`), the editor's left as they are
-  (`EDITOR_AGENT_WORDS`); the desktop app's server writes no file and gives the code back in the page content.
-  ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+  (`EDITOR_AGENT_WORDS`); the desktop app's server writes no file and gives the code back in the page content. An
+  agent's `run_start` runs only a command the service built as a person's run (`runCommandFor`), and only through the
+  client (`piwi/startRun`); checked by `tests/run-hub.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **What comes from the page reaches an agent apart from Piwi's answer, between the markers of a page-content block,
   its credentials hidden again.** The snapshot, its address and title, an element's words, the locators built from
   them, the console, the errors, the requests (their methods too) and every message a worker sends about a page call

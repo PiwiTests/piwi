@@ -132,7 +132,7 @@ function ownSocket(file: string): boolean {
 }
 
 /** The folder's files as `readLiveEditors` reads them, never deleting one: none when it is not this user's alone. */
-function folderOnDisk(dir: string): DiscoveryFolder {
+export function folderOnDisk(dir: string): DiscoveryFolder {
   return {
     host: os.hostname(),
     names: () => {
@@ -163,7 +163,7 @@ function folderOnDisk(dir: string): DiscoveryFolder {
 }
 
 /** A folder's real path, its links followed, in the case the file system gives it; null for one that is gone. */
-function realFolder(folder: string): string | null {
+export function realFolder(folder: string): string | null {
   try {
     return fs.realpathSync.native(folder);
   } catch {

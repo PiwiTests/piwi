@@ -169,9 +169,12 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
 
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
-      const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
+      const query = getRequestURL(event).searchParams;
+      const modules = parseModules(query.get('modules'));
+      // `?runs=off`: an editor that serves its own runs lists this server without the run tools of the same names.
+      const runTools = query.get('runs') === 'off' ? [] : desktopRunTools(IS_DESKTOP);
       const tools = narrowToolsByModule(
-        [...(await toolsForCaller(db, ctx.access, { desktop: IS_DESKTOP })), ...desktopRunTools(IS_DESKTOP)],
+        [...(await toolsForCaller(db, ctx.access, { desktop: IS_DESKTOP })), ...runTools],
         modules,
       );
       return ok(id, {

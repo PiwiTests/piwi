@@ -183,8 +183,17 @@ the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page 
 to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
 reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
 worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
-be decided; and the tray as a compact list. The later phases are
-proposed. The bugs the analysis
+be decided; and the tray as a compact list. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
+routes an agent's calls to every host of the machine as one set of tools under one user-scope entry, with no run logic
+of its own (each editor's discovery file names its agents' server, `agents`, and the desktop app's `/mcp` is reached
+once its server proved its token): `run_list` asks every host and names each run's host, `run_start` goes to the
+editor whose workspace holds the spec, any other call to the host of its run (IO3, IO12). `run_start {file, line?,
+headed?, hold?}` builds the run as a person's and has the client run it where the developer sees it, labeled with the
+agent's name (`piwi/startRun`, `InitializationOptions.startsRuns`); `run_list` names each run's launcher, page,
+progress, Hold failures, sharing and presence, and each worker's lane (IO23 in part); VS Code lists the desktop app's
+MCP server with `?runs=off` while it serves its own runs, so its agent hears one set (IO13); the skills that verify a
+fix lead with `run_start`. Left of P8: `run_start` on the desktop app, whose runs the shell starts from its window.
+The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

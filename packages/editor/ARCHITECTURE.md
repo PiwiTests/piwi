@@ -1071,9 +1071,21 @@ answered with its address and token), and closes as the client turns it off or t
 As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
 registration of the server (VS Code's provider) or a configuration the developer copies.
 
-**The tools** (`src/run-agent.ts`, `RunAgent`): `run_list`, `run_follow`, `run_control`, `page_snapshot`, `page_act`,
-`page_locator` and `code_write`, each with a closed set of arguments read one by one (`Args`, an unknown one refused)
-and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`).
+**The tools** (`src/run-agent.ts`, `RunAgent`): `run_start` (for a client that runs one, below), `run_list`,
+`run_follow`, `run_control`, `page_snapshot`, `page_act`, `page_locator` and `code_write`, each with a closed set of
+arguments read one by one (`Args`, an unknown one refused) and a JSON schema that names them (`AGENT_TOOLS`,
+`runStartTool`, `additionalProperties: false`; the server lists `RunAgent.definitions()`).
+
+- **Starting a run.** `run_start { file, line?, headed?, hold?, agent? }` builds the run as `piwi/runArgs` builds a
+  person's (`runCommandFor`, from the spec and the line as a location), holding failures unless `hold` is false, and
+  asks the client to run it (`piwi/startRun`, `RunCommand.label`: `Started by <agent>`); a file that is no spec of a
+  config of the workspace runs nothing. It is listed only for a client that sent `InitializationOptions.startsRuns`.
+- **The list.** `run_list` names, for each run, what started it (`launcher`: the host, a terminal or a test runner),
+  its page, progress, Hold failures, whether it is shared live and who has it open, and each worker's lane.
+- **The router.** The discovery file names the server while it serves (`agents`), and the reporter's `piwi mcp`
+  forwards the tools of every editor and of the desktop app to an agent as one set, each call to the host of its run.
+  While it serves, the service lists the desktop app's MCP server for the agent with `?runs=off`, which leaves that
+  app's run tools of the same names out.
 
 - **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
   start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of
