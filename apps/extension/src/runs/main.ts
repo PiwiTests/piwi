@@ -19,6 +19,7 @@ import {
   STEERING,
   controlTitle,
   controlsOf,
+  runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
 import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
@@ -29,12 +30,14 @@ import {
   laneFrameNow,
   laneWatchOf,
   pagePoint,
+  runName as runNameOf,
   stopError,
   stopIntents,
   stopPlace,
+  stopSaid,
   testName,
 } from '@piwitests/run-model/stop';
-import { shownLaneOf } from '@piwitests/run-model/tabs';
+import { tabsAdvanced, tabsAfter, tabsChosen, type WorkerTabs } from '@piwitests/run-model/tabs';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
@@ -46,7 +49,6 @@ import {
   RUN_COMMAND,
   pageHintOf,
   shareRefusalOf,
-  runLevelControls,
   readRunsBounds,
   RUNS_BOUNDS_KEY,
   keyTargetOf,
@@ -1453,10 +1455,7 @@ function announceChanges(next: RunsState): void {
       const test = worker.test ? testName(worker.test) : runName(run.session);
       if (!seen) continue;
       if (worker.state === 'stopped' && worker.stop && before?.since !== since) {
-        const place = stopPlace(worker.stop, run.session.root);
-        said.push(
-          t(worker.stop.reason === 'failure' ? 'runs_announceFailed' : 'runs_announceStopped', { test, place }),
-        );
+        said.push(stopSaid(run.session, worker, worker.stop, runsSpeaker));
         // A watched lane that stops is brought into view.
         if (isWatched(lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)))) toView = key;
       } else if (before?.state === 'stopped' && worker.state !== 'stopped') {
@@ -1480,7 +1479,7 @@ function announce(text: string): void {
 }
 
 function runName(session: HubSession): string {
-  return session.project ?? session.label ?? t('runs_run');
+  return runNameOf(session, runsSpeaker);
 }
 
 /** The worker whose watched lane stopped since the last drawing: brought into view once drawn. */
@@ -1823,7 +1822,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   // One row under the name: Hold failures, from a hub that keeps it for each run, Pause all or Resume all, for a run of
   // several workers, and Stop the run, from a hub that stops it, while the run goes on and its hub is connected.
   const holds = session.hold && !session.ended && !away ? session.hold : null;
-  const level = away ? null : runLevelControls(run);
+  const level = away ? null : runLevelControls(run.session);
   const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
   const stoppable = !away && !!hub?.stops && canStopRun(session);
   if (holds || levelShown || stoppable) {
@@ -1877,19 +1876,9 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
   // A live run of several workers shows one at a time, behind a tab for each.
-  const tab = !session.ended && workers.length > 1 ? tabOf(runKey) : null;
+  const tab = session.ended ? null : tabsAfter(tabs.get(runKey), workers, (w) => watchingWorker(run, w));
   if (tab) {
-    const before = workers.find((w) => w.parallelIndex === tab.shown);
-    // The test shown was resumed or ended here, and has left the stop: the next stopped test takes the tab.
-    const advance = tab.advance !== null && (before?.state !== 'stopped' || before.stop?.since !== tab.advance);
-    tab.shown = shownLaneOf(workers, {
-      before: tab.shown,
-      watched: (w) => watchingWorker(run, w),
-      known: tab.known,
-      advance,
-    });
-    if (advance) tab.advance = null;
-    tab.known = new Set(workers.flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop.since] : [])));
+    tabs.set(runKey, tab);
     children.push(renderWorkerTabs(run, workers, tab.shown));
   } else tabs.delete(runKey);
   if (workers.length > 0) {
@@ -1975,38 +1964,23 @@ function renderHold(run: RunsRun, on: boolean, by: 'start' | 'person' | 'agent')
   return box;
 }
 
-/**
- * A live run's tabs, by run (`runKeyOf`), while it has several workers (`shownLaneOf`): the lane shown, the stops that
- * stood when they were last drawn (`known`), and the stop the person resumed or ended there (`advance`).
- */
-interface RunTabs {
-  shown: number | null;
-  known: ReadonlySet<string>;
-  advance: string | null;
-}
-const tabs = new Map<string, RunTabs>();
-
-/** A run's tabs, made the first time they show. */
-function tabOf(runKey: string): RunTabs {
-  let tab = tabs.get(runKey);
-  if (!tab) tabs.set(runKey, (tab = { shown: null, known: new Set(), advance: null }));
-  return tab;
-}
+/** A live run's tabs, by run (`runKeyOf`), while it has several workers (`tabsAfter`). */
+const tabs = new Map<string, WorkerTabs>();
 
 /** The person chooses a worker's tab, by its lane. */
 function chooseTab(runKey: string, lane: number): void {
-  const tab = tabOf(runKey);
-  tab.shown = lane;
-  tab.advance = null;
+  const tab = tabs.get(runKey);
+  if (tab) tabs.set(runKey, tabsChosen(tab, lane));
   focusKey = `${runKey}|tab|${lane}`;
   render();
 }
 
 /** Resume or End the test at the stop `since` of the worker a run's tabs show: the next stopped test takes the tab. */
 function advanceTab(run: RunsRun, worker: number, since: string | null): void {
-  const tab = tabs.get(runKeyOf(run));
+  const runKey = runKeyOf(run);
+  const tab = tabs.get(runKey);
   const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex;
-  if (tab && since !== null && lane === tab.shown) tab.advance = since;
+  if (tab && lane !== undefined) tabs.set(runKey, tabsAdvanced(tab, lane, since));
 }
 
 /** An element id of the window's own, for `prefix` and a key: the same for the same key. */

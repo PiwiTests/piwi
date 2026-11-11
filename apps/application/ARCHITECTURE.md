@@ -271,8 +271,14 @@ Each entry names folders under `server/api/`.
   given back by `DesktopRunWorker`), and
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
   does, else through the shell (`desktop-run-hub.client.ts`, `desktopShellIdOf`);
-  `DesktopRunSession`, `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live
-  view (with the input and the stop's model the tray shares with Piwi Picker's Runs window, `@piwitests/run-model`), `DesktopRunShare` a run's Share live,
+  `DesktopRunSession`, `DesktopRunWorker`, `DesktopRunStopPage` and `DesktopRunLaneView` show each worker as Piwi
+  Picker's Runs window does, from the run model they share (`@piwitests/run-model`: a worker's status and tab, its
+  controls, who is present and drives a stop, which frame is the page now, the live view's input, Pause all and
+  Resume all, and their English words, `desktopSay`, with the model's icons mapped once in `DESKTOP_RUN_ICONS`): its
+  test, a status card in its tone, its controls, and its page in a card (`DesktopRunPageCard`, who drives the stop at
+  its foot, `DesktopRunDriver`). A run of several workers shows one at a time behind its worker tabs, which
+  `useDesktopRunHub` follows by run as it hears it (`desktopTabsAfter`, `shownLaneOf`; `chooseTab`, `advanceTab`), the
+  workers not shown kept drawn and hidden. `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
   `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run

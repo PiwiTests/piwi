@@ -1273,6 +1273,11 @@ export const HELP_TOPICS = {
     text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
     doc: 'features/run-on-my-machine#connected-apps',
   },
+  'settings.run-requests': {
+    title: 'Your runs on my machine',
+    text: 'The runs you asked your own apps for with **Run on my machine**, newest first: where each stands, the app that holds it and the run it reported. Only you see them. **Stop** ends one still going on.',
+    doc: 'features/run-on-my-machine#follow-and-stop',
+  },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
   },

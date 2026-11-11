@@ -1053,7 +1053,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 
 - One row under the run's name holds Hold failures and, for a run of several workers, **Pause all** (the hub's
   `runControl` `pause` with no worker) and **Resume all** (a `resume` for each stopped worker, at its stop), from
-  `runLevelControls`, then, at its end, **Stop the run** (the hub's `stop`) for a run its hub can stop (`RunsHub.stops`,
+  `runLevelControls` (`@piwitests/run-model/controls`, which the desktop app's tray decides them with too), then, at its end, **Stop the run** (the hub's `stop`) for a run its hub can stop (`RunsHub.stops`,
   `canStopRun`: never a terminal's run), its answer read out.
 - Resume, Step and Finish take `F8` (and `F5`), `F10` and `Shift+F11` (`stopKeyOf`, `STOP_KEYS` on the buttons'
   `aria-keyshortcuts`), for the worker whose row holds the focus (`data-worker`), else the only stopped test
@@ -1096,7 +1096,8 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
 - `packages/run-model/tests/` covers the run model: which keys go to the page and as what, and the input's batches
   (`view-input.test.ts`: coalesced moves, double and triple clicks, drags, the wheel, texts joined, the bound, the
   rate, a refusal and `dispose`), `stopIntents` and its fallback, `heldUntilWatched`, `laneWatchOf`, `laneFrameNow`,
-  `pagePoint`, `shownLaneOf`, a worker's status and controls, and who is present, in English. `run-words.test.ts`
+  `pagePoint`, `shownLaneOf`, a worker's status and controls, a run's Pause all and Resume all, and who is present,
+  in English. `run-words.test.ts`
   holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.

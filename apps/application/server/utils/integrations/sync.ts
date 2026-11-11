@@ -89,6 +89,8 @@ async function syncOneLink(
     statusText: issue.status,
     statusColor: issue.statusColor ?? statusColorForCategory(issue.statusCategory),
     key: issue.key,
+    // The tracker's stable id, once it reports one: a link pinned by its key gains it here.
+    ...(issue.id ? { externalId: issue.id } : {}),
   });
   const previousCategory = (link.metadata as { statusCategory?: string | null } | null)?.statusCategory ?? null;
   // The last category the tracker reported: a sync that reports none keeps it.
@@ -256,21 +258,30 @@ export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?:
   return { refreshed, failed, skipped };
 }
 
+/** One tracker issue as a webhook names it: its stable id, its key, or both. */
+export interface IssueRef {
+  id?: string | null;
+  key?: string | null;
+}
+
 /**
  * Sync a single connection's links to one issue immediately, those of the
- * projects bound to that connection (the webhook and the tests use this).
+ * projects bound to that connection (the webhook and the tests use this). A
+ * link matches on the issue's stable id (`external_id`) or on its key, so a
+ * link pinned by its key before the tracker reported the id is found too.
  */
-export async function refreshLinkByExternalId(
-  db: DbClient,
-  connectionId: number,
-  externalId: string,
-): Promise<boolean> {
+export async function refreshLinksForIssue(db: DbClient, connectionId: number, issue: IssueRef): Promise<boolean> {
+  const matches = [
+    issue.id ? eq(entityLinks.externalId, issue.id) : undefined,
+    issue.key ? eq(entityLinks.key, issue.key) : undefined,
+  ].filter((m) => m !== undefined);
+  if (matches.length === 0) return false;
   const links = await linksOnBoundConnection(
     db,
     await db
       .select()
       .from(entityLinks)
-      .where(and(eq(entityLinks.connectionId, connectionId), eq(entityLinks.externalId, externalId))),
+      .where(and(eq(entityLinks.connectionId, connectionId), or(...matches))),
   );
   if (links.length === 0) return false;
   const tracker = await createTracker(db, connectionId).catch(() => null);

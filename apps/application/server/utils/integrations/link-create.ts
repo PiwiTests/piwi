@@ -18,7 +18,8 @@ import { mergeEntityLinkMetadata } from './entity-links';
  * A tracker issue's status category is recorded as the link is made, as for an
  * issue Piwi files, so the status pull counts the issue's first move (to Done,
  * or out of it) and its policies act on it. `readable` is the projects the
- * caller can read, for the unfurl (`unfurlLink`).
+ * caller can read, for the unfurl (`unfurlLink`). A read through the connection
+ * stores the issue's stable id as `externalId`; a failed one keeps the key there.
  */
 export async function createEnrichedLink(
   db: DbClient,
@@ -32,17 +33,18 @@ export async function createEnrichedLink(
 
   // Through the project's connection when the link matched it, otherwise the
   // rich provider / OpenGraph path.
-  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(
+  const { title, statusText, statusColor, statusCategory, assignee, externalId } = await unfurlLink(
     db,
     link,
     readable,
     projectConnectionId,
   );
   if (statusCategory) await mergeEntityLinkMetadata(db, link.id, { statusCategory, assignee: assignee ?? null });
-  if (!title && !statusText) return link;
+  if (!title && !statusText && !externalId) return link;
   await db
     .update(entityLinks)
     .set({
+      ...(externalId ? { externalId } : {}),
       title: title ?? link.title,
       statusText: statusText ?? null,
       statusColor: statusColor ?? null,

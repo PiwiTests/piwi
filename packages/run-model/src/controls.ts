@@ -2,12 +2,14 @@
  * The controls a worker of a run takes, as a surface offers them: each one's words, icon and tone (`CONTROLS`), which
  * ones a worker takes now (`controlsOf`), and how a surface groups them: the controls that steer the test on their own
  * row (`STEERING`), Resume, Step and Finish joined (`JOINED`), and the code a stop can write that folds under More
- * once the row holds `FOLD_FROM` of it (`FOLDED`).
+ * once the row holds `FOLD_FROM` of it (`FOLDED`). A run of several workers has its own, Pause all and Resume all
+ * (`runLevelControls`).
  */
 import type {
   HubCodeIntent,
   HubControlAction,
   HubIntent,
+  HubSession,
   HubStop,
   HubWindowAction,
   HubWorker,
@@ -102,4 +104,28 @@ export function controlsOf(
   controls.push(...IN_WINDOW.filter((what) => intents.includes(what) || held.includes(what)));
   if (intents.includes('mock')) controls.push('mock');
   return controls;
+}
+
+/** A stopped worker Resume all answers, at the stop it stands at (`since`). */
+export interface StopAnswer {
+  worker: number;
+  since: string;
+}
+
+/**
+ * A run's own controls, for a live run of several workers: Pause all while a worker runs a test it can stop in and no
+ * Pause reached it, and Resume all while two tests or more are stopped, each stopped worker at its own stop.
+ */
+export function runLevelControls(session: Pick<HubSession, 'ended' | 'workers'>): {
+  pauseAll: boolean;
+  resumeAll: StopAnswer[];
+} {
+  if (session.ended || session.workers.length < 2) return { pauseAll: false, resumeAll: [] };
+  const resumeAll = session.workers.flatMap((worker): StopAnswer[] =>
+    worker.state === 'stopped' && worker.stop ? [{ worker: worker.worker, since: worker.stop.since }] : [],
+  );
+  const pauseAll = session.workers.some(
+    (worker) => worker.state === 'running' && !worker.pausing && !worker.test?.cannotPause,
+  );
+  return { pauseAll, resumeAll: resumeAll.length > 1 ? resumeAll : [] };
 }

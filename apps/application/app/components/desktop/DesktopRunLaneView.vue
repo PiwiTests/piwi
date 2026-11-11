@@ -1,24 +1,28 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: a worker's lane in the Local runs tray, where its reporter shows it while its test runs
- * (`watch`). **Watch** shows the page of the lane's running test as it paints, and of each stop it comes to, through
- * its tests and the workers Playwright starts in it, until it is turned off or the run ends (the run page's **Watch**
- * and **Pause and watch** turn it on too, through `useDesktopRunHub`). The frames are drawn into one image
- * (`DesktopRunLiveImage`), which keeps the last one, dimmed and marked as running, until a frame of the page as it is
- * now comes: across a Step, a Resume and between two tests, as the tray opens again or the window shows again (a frame
- * of an earlier view of the lane), and while the lane says why it sends none. At a stop of a test, the stop takes the
- * clicks, the keys (with **Interact** on, `interact`, which Escape on the image turns off) and **Pick on the image** on
- * the image as it does on a stop watched live: the window watches the stop through the lane. Turned off, Watch live
- * and Interact go off for the worker too.
+ * (`watch`), in its card (`DesktopRunPageCard`) while it is watched or the hub said why it would not show it. **Watch**
+ * (on the worker's row of controls while its test runs, in the card's head at a stop) shows the page of the lane's
+ * running test as it paints, and of each stop it comes to, through its tests and the workers Playwright starts in it,
+ * until it is turned off or the run ends (the run page's **Watch** and **Pause and watch** turn it on too, through
+ * `useDesktopRunHub`). The frames are drawn into one image (`DesktopRunLiveImage`), which keeps the last one, dimmed
+ * and marked as running, until a frame of the page as it is now comes (`laneFrameNow`): across a Step, a Resume and
+ * between two tests, as the tray opens again or the window shows again (a frame of an earlier view of the lane), and
+ * while the lane says why it sends none. At a stop of a test, the stop takes the clicks, the keys (with **Interact**
+ * on, `interact`, which Escape on the image turns off) and **Pick on the image** on the image as it does on a stop
+ * watched live: the window watches the stop through the lane. Turned off, Watch live and Interact go off for the worker
+ * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
+import { driverOf, givesBack } from '@piwitests/run-model/presence';
+import { laneFrameNow, stopIntents } from '@piwitests/run-model/stop';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopLaneFrame, DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
-  desktopLaneFrameCurrent,
   desktopLaneKey,
   desktopRunStop,
-  desktopStopTakes,
+  desktopSay,
   type DesktopLaneAt,
   type DesktopLiveImageHandle,
 } from '~/utils/desktop-run-view';
@@ -30,6 +34,8 @@ const props = defineProps<{
   busy: boolean;
   /** Gives back the stop `since` names, once Interact went off and its input went. */
   giveBack: (since: string) => Promise<void>;
+  /** Who watches the page, in the card's head. */
+  watchers?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +46,18 @@ const emit = defineEmits<{
   /** The stop is being given back as Interact goes off, or was: the worker's buttons wait meanwhile. */
   releasing: [on: boolean];
 }>();
+
+/** What this page holds the worker's buttons for (a pick, a give-back), said to the worker, and let go as it goes. */
+const held = { picking: false, releasing: false };
+function holding(what: 'picking' | 'releasing', on: boolean): void {
+  held[what] = on;
+  if (what === 'picking') emit('picking', on);
+  else emit('releasing', on);
+}
+onBeforeUnmount(() => {
+  if (held.picking) emit('picking', false);
+  if (held.releasing) emit('releasing', false);
+});
 
 const hub = useDesktopRunHub();
 /** Interact, as the person left it for the worker's lane, kept by the window. */
@@ -55,7 +73,7 @@ watch(refusedLane, (refused) => {
   if (refused && interact.value) interact.value = false;
 });
 const stop = computed(() => desktopRunStop(props.worker));
-const takes = computed(() => (stop.value ? desktopStopTakes(props.worker, stop.value) : []));
+const takes = computed(() => (stop.value ? stopIntents(props.worker, stop.value) : []));
 
 // ── The frames ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -71,11 +89,11 @@ const current = computed(
   () =>
     !!shown.value &&
     shown.value.view === hub.laneView(runRef.value, lane.value) &&
-    desktopLaneFrameCurrent(shown.value, props.worker),
+    laneFrameNow(shown.value, props.worker),
 );
 /** Why the lane sends no frame of the page as it is now. */
 const refusedNow = computed(() =>
-  refused.value && desktopLaneFrameCurrent(refused.value, props.worker) ? refused.value.text : null,
+  refused.value && laneFrameNow(refused.value, props.worker) ? refused.value.text : null,
 );
 /** The image is the page as it is now, and frames of it come. */
 const live = computed(() => current.value && !refusedNow.value);
@@ -115,7 +133,8 @@ function listen(on: boolean): void {
 }
 
 onMounted(() => listen(watched.value));
-watch(watched, listen);
+// Once the card is drawn: the frame kept comes at once, into its image.
+watch(watched, listen, { flush: 'post' });
 onBeforeUnmount(() => {
   unlisten?.();
   unlisten = null;
@@ -143,7 +162,7 @@ async function pickAt(point: { x: number; y: number }): Promise<void> {
   const since = stop.value?.since;
   if (!since || !pickable.value || props.busy) return;
   picking.value = false;
-  emit('picking', true);
+  holding('picking', true);
   const answer = await hub.command({
     type: 'pick-at',
     ref: runRef.value,
@@ -151,7 +170,7 @@ async function pickAt(point: { x: number; y: number }): Promise<void> {
     since,
     ...point,
   });
-  emit('picking', false);
+  holding('picking', false);
   emit('said', answer, { picked: true });
 }
 
@@ -200,20 +219,20 @@ async function interactOff(): Promise<void> {
   const since = stop.value?.since ?? null;
   const drained = liveImage.value?.release() ?? Promise.resolve();
   interact.value = false;
-  emit('releasing', true);
+  holding('releasing', true);
   try {
     await drained;
     const now = stop.value;
     if (!since || interact.value || now?.since !== since) return;
-    if (!now.driver?.self && (now.driver || playedAt.value !== since)) return;
+    if (!givesBack(driverOf(now, englishRunSpeaker), playedAt.value === since)) return;
     playedAt.value = null;
     await props.giveBack(since);
   } finally {
-    emit('releasing', false);
+    holding('releasing', false);
   }
 }
 
-defineExpose({ interactOff });
+defineExpose({ interactOff, toggle });
 
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
@@ -224,28 +243,32 @@ async function leave(): Promise<void> {
 
 /** What the image is: live while frames of the page as it is now come, and whether it takes the clicks and keys. */
 const alt = computed(() => {
-  const what = live.value ? 'The page, live' : 'The page as it last showed';
-  return inputTarget.value ? `${what}: clicks and keys go to it` : what;
+  if (!live.value) return desktopSay('runs_laneAltLast');
+  return desktopSay(inputTarget.value ? 'runs_liveAltInput' : 'runs_liveAlt');
 });
+
+/** An image of the lane shows: a frame came in this watch. */
+const framed = computed(() => !!liveImage.value?.viewport);
 
 const note = computed((): { icon?: string; text: string } | null => {
   if (!watched.value) return refusedLane.value ? { icon: 'i-lucide-triangle-alert', text: refusedLane.value } : null;
   if (refusedNow.value) return { icon: 'i-lucide-triangle-alert', text: refusedNow.value };
   if (current.value) return null;
-  if (stop.value) return { icon: 'i-lucide-clock', text: 'Taking an image of the page…' };
+  if (stop.value) return { icon: 'i-lucide-clock', text: desktopSay('runs_imageLoading') };
   if (props.worker.state === 'between') return shown.value ? null : { text: 'The page shows as the next test starts.' };
-  return shown.value ? null : { icon: 'i-lucide-clock', text: 'Starting the live view…' };
+  return shown.value ? null : { icon: 'i-lucide-clock', text: desktopSay('runs_liveStarting') };
 });
 </script>
 
 <template>
-  <figure
-    class="space-y-2"
+  <DesktopRunPageCard
+    v-if="watched || refusedLane"
+    :watchers="watchers"
     :data-picking="picking || undefined"
     :data-watching="watched || undefined"
     data-shot="desktop-run-lane"
   >
-    <div class="flex flex-wrap gap-1.5">
+    <template v-if="stop" #tools>
       <UButton
         data-focus="page:watch"
         size="xs"
@@ -255,14 +278,10 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="watched"
         :aria-disabled="busy || undefined"
         :class="watched ? PRESSED_TOGGLE_CLASS : ''"
-        :title="
-          watched
-            ? 'Stop showing the page of this worker'
-            : 'Show the page as the test runs, and at each stop, through its next tests, until you turn it off'
-        "
+        :title="desktopSay('runs_watchTitle')"
         @click="toggle"
       >
-        Watch
+        {{ desktopSay('runs_watch') }}
       </UButton>
       <UButton
         v-if="canInteract"
@@ -274,11 +293,11 @@ const note = computed((): { icon?: string; text: string } | null => {
         icon="i-lucide-hand"
         :aria-pressed="interact"
         :class="interact ? PRESSED_TOGGLE_CLASS : ''"
-        title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
+        :title="desktopSay('runs_interactTitle')"
         :aria-disabled="busy || undefined"
         @click="!busy && (interact ? interactOff() : (interact = true))"
       >
-        Interact
+        {{ desktopSay('runs_interact') }}
       </UButton>
       <UButton
         v-if="pickable"
@@ -292,24 +311,37 @@ const note = computed((): { icon?: string; text: string } | null => {
         title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
         @click="!busy && (picking = !picking)"
       >
-        Pick on the image
+        {{ desktopSay('runs_pickAt') }}
       </UButton>
-    </div>
+    </template>
     <DesktopRunLiveImage
       ref="liveImage"
       v-model:picking="picking"
       :alt="alt"
       :input="inputTarget"
       :dimmed="!live"
-      :mark="live ? 'Live' : stop ? null : 'Running…'"
+      :mark="live ? 'live' : stop ? null : 'running'"
       @pick="pickAt"
       @said="emit('said', $event, {})"
       @leave="leave"
       @played="playedAt = $event"
     />
-    <p v-if="note" class="flex items-center gap-1.5 text-xs text-muted">
-      <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" />
+    <div v-if="note && watched && !framed" class="grid aspect-[16/10] place-items-center bg-muted px-4 text-center">
+      <p class="flex items-center gap-1.5 text-xs text-muted">
+        <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" aria-hidden="true" />
+        {{ note.text }}
+      </p>
+    </div>
+    <p
+      v-else-if="note"
+      class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted"
+      :class="framed ? 'border-t border-default' : ''"
+    >
+      <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" aria-hidden="true" />
       {{ note.text }}
     </p>
-  </figure>
+    <template v-if="$slots.foot" #foot>
+      <slot name="foot" />
+    </template>
+  </DesktopRunPageCard>
 </template>

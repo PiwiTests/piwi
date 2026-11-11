@@ -8,7 +8,8 @@ import { rateLimitKeyCount } from '../../server/utils/rate-limit';
  * the password is checked, so no more than an account's limit from one address,
  * or its ceiling across addresses, is ever tried in one window, failures from
  * other addresses leave the owner's own below the ceiling, and a valid login
- * gives its slots back.
+ * gives its slots back. An account counts by its id, whichever of its names is
+ * typed; text that names no account counts by itself.
  */
 
 const auth = vi.hoisted(() => ({
@@ -17,6 +18,10 @@ const auth = vi.hoisted(() => ({
   correct: 'right-password',
   /** A password whose check the server refuses as too busy. */
   busy: 'busy-password',
+  /** The account id each registered name resolves to; any other text names no account. */
+  accounts: new Map<string, number>(),
+  /** Text whose account lookup fails. */
+  lookupFails: 'lookup-fails',
 }));
 
 vi.mock('../../server/database', () => ({ getDatabase: async () => ({}) }));
@@ -24,7 +29,12 @@ vi.mock('../../server/utils/auth', () => ({
   isAuthEnabled: () => true,
   authUserView: async () => ({ id: 1, username: 'ada', role: 'member' }),
   setUserSession: async () => {},
-  verifyUser: async (_event: unknown, username: string, password: string) => {
+  findLoginAccount: async (_db: unknown, identifier: string) => {
+    if (identifier === auth.lookupFails) throw new Error('database unavailable');
+    const id = auth.accounts.get(identifier);
+    return id === undefined ? null : { id, username: identifier, sessionEpoch: 0 };
+  },
+  verifyUser: async (_event: unknown, user: { id: number } | null, password: string) => {
     await new Promise<void>((resolve) => {
       const previous = auth.release;
       auth.release = () => {
@@ -33,7 +43,7 @@ vi.mock('../../server/utils/auth', () => ({
       };
     });
     if (password === auth.busy) throw Object.assign(new Error('busy'), { statusCode: 503 });
-    return password === auth.correct ? { id: 1, username, sessionEpoch: 0 } : null;
+    return password === auth.correct ? { id: user?.id ?? 1, username: 'ada', sessionEpoch: 0 } : null;
   },
 }));
 
@@ -72,6 +82,7 @@ async function together(events: H3Event[]): Promise<number[]> {
 
 beforeEach(() => {
   auth.release = () => {};
+  auth.accounts.clear();
   address += 1;
 });
 
@@ -134,12 +145,59 @@ describe('login throttle', () => {
     expect(rateLimitKeyCount()).toBe(before);
   });
 
-  test('a username longer than any account can hold is refused before it names a key', async () => {
+  test('text longer than any email address is refused before it names a key', async () => {
     const ip = `10.0.0.${address}`;
     const before = rateLimitKeyCount();
-    expect(await together([request(ip, 'a'.repeat(201), 'wrong')])).toEqual([400]);
+    expect(await together([request(ip, 'a'.repeat(255), 'wrong')])).toEqual([400]);
     expect(rateLimitKeyCount()).toBe(before);
-    expect(await together([request(ip, 'a'.repeat(200), 'wrong')])).toEqual([401]);
+    expect(await together([request(ip, 'a'.repeat(254), 'wrong')])).toEqual([401]);
+  });
+
+  test('a lookup that fails takes no slot', async () => {
+    const ip = `10.0.0.${address}`;
+    const before = rateLimitKeyCount();
+    for (let i = 0; i < 25; i++) expect(await together([request(ip, auth.lookupFails, 'wrong')])).toEqual([500]);
+    expect(rateLimitKeyCount()).toBe(before);
+    const statuses = await together(Array.from({ length: 6 }, () => request(ip, `ada${address}`, 'wrong')));
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+  });
+
+  test('switching between the username and the email of one account gets no extra attempts', async () => {
+    const ip = `10.0.0.${address}`;
+    auth.accounts.set(`ada${address}`, 1000 + address);
+    auth.accounts.set(`ada${address}@example.com`, 1000 + address);
+    auth.accounts.set(`ADA${address}@EXAMPLE.COM`, 1000 + address);
+    const statuses = await together([
+      ...Array.from({ length: 2 }, () => request(ip, `ada${address}`, 'wrong')),
+      ...Array.from({ length: 2 }, () => request(ip, `ada${address}@example.com`, 'wrong')),
+      ...Array.from({ length: 2 }, () => request(ip, `ADA${address}@EXAMPLE.COM`, 'wrong')),
+    ]);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+  });
+
+  test('two accounts whose usernames differ in letter case count separately', async () => {
+    const ip = `10.0.0.${address}`;
+    auth.accounts.set(`Kai${address}`, 2000 + address);
+    auth.accounts.set(`kai${address}`, 3000 + address);
+    const statuses = await together([
+      ...Array.from({ length: 5 }, () => request(ip, `Kai${address}`, 'wrong')),
+      ...Array.from({ length: 5 }, () => request(ip, `kai${address}`, 'wrong')),
+    ]);
+    expect(statuses).toEqual(Array.from({ length: 10 }, () => 401));
+  });
+
+  test('two texts that name no account count separately, and never as an account', async () => {
+    const ip = `10.0.0.${address}`;
+    const id = 4000 + address;
+    auth.accounts.set(`noor${address}`, id);
+    const statuses = await together([
+      ...Array.from({ length: 5 }, () => request(ip, `ghost${address}-a`, 'wrong')),
+      ...Array.from({ length: 5 }, () => request(ip, `ghost${address}-b`, 'wrong')),
+      ...Array.from({ length: 5 }, () => request(ip, String(id), 'wrong')),
+      ...Array.from({ length: 5 }, () => request(ip, `noor${address}`, 'wrong')),
+    ]);
+    expect(statuses).toEqual(Array.from({ length: 20 }, () => 401));
   });
 
   test('a valid login gives its slots back', async () => {

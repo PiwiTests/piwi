@@ -2,14 +2,15 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { reactive } from 'vue';
 import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
+import { CONTROLS } from '@piwitests/run-model/controls';
 import {
+  DESKTOP_RUN_ICONS,
+  DESKTOP_TONE_COLORS,
   desktopArgsAttended,
-  desktopCodeActions,
   desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
   desktopImagePoint,
-  desktopLaneFrameCurrent,
   desktopLaneKey,
   desktopLiveInstance,
   desktopLiveText,
@@ -21,21 +22,15 @@ import {
   desktopRunHolds,
   desktopRunOf,
   desktopRunRef,
+  desktopSaidAround,
+  desktopSay,
   desktopSessionsOfRun,
   desktopShareOffered,
   desktopShareWarning,
   desktopShownRefs,
-  desktopSteering,
   desktopWaitedFor,
   desktopStopLink,
-  desktopRunPresence,
-  desktopStopDriver,
-  desktopStopPlace,
   desktopStopSaid,
-  desktopWatchesLane,
-  desktopWorkerMeta,
-  desktopWorkerState,
-  desktopWorkerWatchers,
   isDesktopRunImage,
 } from '../../app/utils/desktop-run-view';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
@@ -210,34 +205,7 @@ describe('a worker of a desktop run', () => {
     );
   });
 
-  test('says where it stands, with Pause while it runs and Resume, Step and Finish at a stop', () => {
-    const running = workerOf();
-    expect(desktopWorkerState(running, ROOT)).toBe('Running');
-    expect(desktopWorkerMeta(running)).toBe('chromium · attempt 1');
-    expect(desktopSteering(running)).toEqual(['pause']);
-    expect(desktopSteering(workerOf({ pausing: true }))).toEqual([]);
-    expect(desktopSteering(workerOf({ state: 'between' }))).toEqual([]);
-    // A state of a newer service reads as running.
-    expect(desktopWorkerState(workerOf({ state: 'other' }), ROOT)).toBe('Running');
-
-    const stopped = workerOf({ state: 'stopped', stop: stopOf({ reason: 'page-pause' }) });
-    expect(desktopWorkerState(stopped, ROOT)).toBe('Stopped at page.pause()');
-    expect(desktopSteering(stopped)).toEqual(['resume', 'step', 'finish']);
-    expect(desktopStopPlace(stopped.stop!, ROOT)).toBe('tests/checkout.spec.ts:5');
-    // End the test, where the stop takes it: its reporter ends the test there, skipped.
-    const endable = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view', 'end'] }) });
-    expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
-    // Show the browser, where the stop takes it (its pause bar shows): at a failure too.
-    const headed = workerOf({ state: 'stopped', stop: stopOf({ bar: true, intents: ['front', 'end'] }) });
-    expect(desktopSteering(headed)).toEqual(['resume', 'step', 'finish', 'front', 'end']);
-    const failedHeaded = workerOf({
-      state: 'stopped',
-      stop: stopOf({ reason: 'failure', bar: true, intents: ['front'] }),
-    });
-    expect(desktopSteering(failedHeaded)).toEqual(['resume', 'front']);
-  });
-
-  test('says the call a Pause waits in and how long it has run, with End the test where its worker takes it', () => {
+  test('says how long the call a Pause waits in has run, in the run model’s words', () => {
     const waiting = {
       title: "Click getByRole('button', { name: 'Pay' })",
       uri: `file://${ROOT}/tests/checkout.spec.ts`,
@@ -247,114 +215,36 @@ describe('a worker of a desktop run', () => {
     };
     const at = Date.parse(waiting.since);
     const pausing = workerOf({ pausing: true, waiting, intents: ['give-up'] });
-    expect(desktopWorkerState(pausing, ROOT)).toBe("Pausing: waits in Click getByRole('button', { name: 'Pay' })");
     expect(desktopWaitedFor(pausing, at + 12_400)).toBe('for 12 s');
     expect(desktopWaitedFor(pausing, at + 125_000)).toBe('for 2 min 5 s');
-    expect(desktopSteering(pausing)).toEqual(['give-up']);
-    // A worker that cannot tell when the call began, or whose reporter does not end a test there.
+    // A worker that cannot tell when the call began.
     expect(desktopWaitedFor(workerOf({ pausing: true, waiting: { ...waiting, since: null } }), at)).toBeNull();
-    expect(desktopSteering(workerOf({ pausing: true, waiting, intents: [] }))).toEqual([]);
-    // No Pause waits: the call is not said.
+    // No Pause waits, or the worker stopped: the call is not said.
     expect(desktopWaitedFor(workerOf({ waiting }), at + 12_400)).toBeNull();
-    expect(desktopWorkerState(workerOf({ pausing: true }), ROOT)).toBe('Pausing before its next call…');
-  });
-
-  test('says a stop an agent asked for is the agent’s', () => {
-    const at = (reason: HubStop['reason']) =>
-      desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason, by: 'agent' }) }), ROOT);
-    expect(at('pause')).toBe('Paused by the agent');
-    expect(at('step')).toBe('Stopped after the agent’s step');
-    expect(at('run-to')).toBe('Stopped at the line the agent ran it to');
-    expect(at('page-pause')).toBe('Stopped at page.pause()');
-    expect(desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason: 'pause' }) }), ROOT)).toBe('Paused');
-  });
-
-  test('ends a failure as it failed, Resume alone', () => {
-    const failed = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', error: 'expect failed' }) });
-    expect(desktopWorkerState(failed, ROOT)).toBe('Failed at tests/checkout.spec.ts:5');
-    expect(desktopSteering(failed)).toEqual(['resume']);
-    const told = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', intents: ['end'] }) });
-    expect(desktopSteering(told)).toEqual(['resume']);
-  });
-
-  test('offers the code actions the stop takes from the window, never those that end in an editor', () => {
-    const at = workerOf({ state: 'stopped', stop: stopOf() });
-    expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
-    const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
-    expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+    expect(desktopWaitedFor(workerOf({ pausing: true, waiting, state: 'stopped', stop: stopOf() }), at)).toBeNull();
   });
 });
 
-describe('who else is on a run, its workers and its stops', () => {
-  const PICKER = { kind: 'picker', name: 'Piwi Picker' } as const;
-  const AGENT = { kind: 'agent', name: 'an agent' } as const;
-  const SELF = { kind: 'desktop', name: 'the desktop app', self: true } as const;
-  const CODE = { kind: 'editor', name: 'Visual Studio Code' } as const;
-
-  test('names who else has the run open, this window left out', () => {
-    expect(desktopRunPresence({ presence: [SELF, PICKER, AGENT] })).toBe(
-      'Also open in Piwi Picker · An agent follows this run',
-    );
-    expect(desktopRunPresence({ presence: [PICKER, CODE, { kind: 'desktop', name: 'the desktop app' }] })).toBe(
-      'Also open in Piwi Picker, Visual Studio Code and another window of the app',
-    );
-    expect(desktopRunPresence({ presence: [AGENT] })).toBe('An agent follows this run');
-    // This window alone, nobody, or a hub without presence.
-    expect(desktopRunPresence({ presence: [SELF] })).toBeNull();
-    expect(desktopRunPresence({ presence: [] })).toBeNull();
-    expect(desktopRunPresence({})).toBeNull();
+describe('the run model’s words, icons and tones in the window', () => {
+  test('are said in English, a placeholder set apart where the window draws its value itself', () => {
+    expect(desktopSay('runs_pageCaption')).toBe('The test’s page');
+    expect(desktopSay('runs_worker', { number: '2' })).toBe('worker 2');
+    expect(desktopSaidAround('runs_statePausingIn', 'call')).toEqual(['Pausing: waits in ', '']);
+    expect(desktopSaidAround('runs_announceStopped', 'place', { test: 'pays' })).toEqual(['pays stopped at ', '.']);
   });
 
-  test('names who watches a worker’s page, this window last and only beside another', () => {
-    expect(desktopWorkerWatchers({ watchers: [SELF, PICKER] })).toBe('Watched by Piwi Picker and you');
-    expect(desktopWorkerWatchers({ watchers: [CODE] })).toBe('Watched by Visual Studio Code');
-    expect(desktopWorkerWatchers({ watchers: [PICKER, CODE, SELF] })).toBe(
-      'Watched by Piwi Picker, Visual Studio Code and you',
-    );
-    expect(desktopWorkerWatchers({ watchers: [SELF] })).toBeNull();
-    expect(desktopWorkerWatchers({})).toBeNull();
-  });
-
-  test('names who drives a stop, and offers to take it from an agent or give it back', () => {
-    expect(desktopStopDriver({ driver: AGENT })).toEqual({ text: 'An agent drives this stop', offer: 'take' });
-    expect(desktopStopDriver({ driver: SELF })).toEqual({ text: 'You drive this stop', offer: 'give' });
-    expect(desktopStopDriver({ driver: PICKER })).toEqual({ text: 'Piwi Picker drives this stop', offer: 'take' });
-    expect(desktopStopDriver({ driver: { kind: 'editor', name: 'the editor' } })).toEqual({
-      text: 'The editor drives this stop',
-      offer: 'take',
-    });
-    expect(desktopStopDriver({ driver: { kind: 'desktop', name: 'the desktop app' } })).toEqual({
-      text: 'Another window of the app drives this stop',
-      offer: 'take',
-    });
-    expect(desktopStopDriver({})).toBeNull();
-    // Nobody drives it while an agent follows the run: the window may take it before the agent acts.
-    expect(desktopStopDriver({}, true)).toEqual({ text: 'An agent may act on this stop', offer: 'take' });
+  test('map every icon of a worker’s state and of a control to one of the app’s own, by its meaning', () => {
+    const icons = [...Object.values(CONTROLS).map((look) => look.icon), 'x-circle', 'pause', 'clock', 'play', 'dot'];
+    for (const name of icons)
+      expect(DESKTOP_RUN_ICONS[name as keyof typeof DESKTOP_RUN_ICONS], name).toMatch(/^i-lucide-/);
+    // Each tone a color of the app's tokens, never one written here.
+    for (const color of Object.values(DESKTOP_TONE_COLORS)) expect(color).toMatch(/^var\(--(?:ui|color-status)-/);
   });
 });
 
 describe('the lane of a worker', () => {
-  test('is watched while its test runs only where its reporter shows it', () => {
+  test('is named by its run and its lane', () => {
     expect(desktopLaneKey('desktop-7', 1)).toBe('desktop-7|lane 1');
-    expect(desktopWatchesLane(workerOf({ intents: ['view', 'watch'] }))).toBe(true);
-    expect(desktopWatchesLane(workerOf())).toBe(false);
-  });
-
-  test('shows the page as it is now with the frame of its running test or of its stop, else as it last showed', () => {
-    const running = workerOf();
-    const runningFrame = { worker: 0, test: 't', since: null };
-    expect(desktopLaneFrameCurrent(runningFrame, running)).toBe(true);
-    // A frame of the stop it went on from, of another test, or of the worker Playwright ran in the lane before.
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, running)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, test: 'u' }, running)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, worker: 1 }, running)).toBe(false);
-    // Between two tests, no frame is the page now.
-    expect(desktopLaneFrameCurrent(runningFrame, workerOf({ state: 'between', test: null }))).toBe(false);
-    // At a stop, the stop's frame alone.
-    const stopped = workerOf({ state: 'stopped', stop: stopOf({ since: 's2' }) });
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's2' }, stopped)).toBe(true);
-    expect(desktopLaneFrameCurrent(runningFrame, stopped)).toBe(false);
-    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, stopped)).toBe(false);
   });
 
   test('names a point of its image in CSS pixels of the page it shows', () => {
@@ -699,6 +589,52 @@ describe('the window’s stream of its runs', () => {
     runs.setWatchLive('desktop-8', 0, true);
     runs.want(false);
     expect(runs.watchesLive('desktop-8', 0)).toBe(false);
+  });
+
+  test('follows a run’s worker tabs as it hears it, the person’s choice and Resume there included', async () => {
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    const run = (...workers: HubWorker[]) => source.send({ type: 'session', session: sessionOf('desktop-7', workers) });
+    const running = (w: number) => workerOf({ worker: w, parallelIndex: w });
+    const stopped = (w: number, since: string) =>
+      workerOf({ worker: w, parallelIndex: w, state: 'stopped', stop: stopOf({ since }) });
+    run(running(0));
+    expect(runs.tabsOf('desktop-7')).toBeNull();
+    run(running(0), running(1));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    // A stop takes the tab; the person's choice holds as long as no new stop comes.
+    run(running(0), stopped(1, 's1'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    runs.chooseTab('desktop-7', 0);
+    run(running(0), stopped(1, 's1'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    // A worker whose lane is watched keeps its tab when another stops; its Watch live, which shows nothing while it
+    // runs, does not.
+    runs.setWatchLive('desktop-7', 0, true);
+    run(running(0), stopped(1, 's4'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    // Pausing with Watch live on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
+    runs.chooseTab('desktop-7', 0);
+    run({ ...running(0), pausing: true }, stopped(1, 's5'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    runs.setWatchLive('desktop-7', 0, false);
+    runs.chooseTab('desktop-7', 0);
+    await runs.setLaneWatch('desktop-7', 0, true);
+    run(running(0), stopped(1, 's2'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
+    await runs.setLaneWatch('desktop-7', 0, false);
+    // Resumed where it is shown, the next stopped test takes the tab once it goes on; elsewhere, nothing moves.
+    run(stopped(0, 's3'), stopped(1, 's2'));
+    runs.advanceTab('desktop-7', 1, 's3');
+    expect(runs.tabsOf('desktop-7')?.advance).toBeNull();
+    runs.advanceTab('desktop-7', 0, 's3');
+    run(running(0), stopped(1, 's2'));
+    expect(runs.tabsOf('desktop-7')).toEqual({ shown: 1, known: ['s2'], advance: null });
+    // The run ends: its tabs go.
+    source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
+    expect(runs.tabsOf('desktop-7')).toBeNull();
   });
 
   test('passes a frame to who watches its view alone, keeping the latest one until the last one leaves', async () => {
