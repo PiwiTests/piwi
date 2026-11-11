@@ -2,11 +2,12 @@
  * Sending a run's results again after a sync failed: the one place that looks in the test management tool for a test
  * run an earlier upload may have made. The outbox never does; a person asks for it.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { integrationActions } from '../../../database/schema';
 import type { DbClient } from '../../../database';
 import type { IntegrationAction } from '../../../database/schema';
 import { readSyncState, uploadOutcomeUnknown, type SyncActionPayload } from '#shared/integrations/test-management-sync';
+import { OUTBOX_LEASE_MS, OUTBOX_PROCESSING } from '../../outbox';
 import type { TestManagementProvider } from './types';
 
 /** The latest sync of a run's results that failed, or null when the run has none. */
@@ -34,10 +35,11 @@ export type RequeueOutcome =
   | { status: 'unsure'; reason: string };
 
 /**
- * Queue a failed sync to be sent again. A row that holds an upload start and no test run is looked up in the tool
- * first: a test run found there is recorded on the row, so the next attempt only links it; none found clears the start,
- * so the next attempt uploads. When the tool gives no answer Piwi can trust, the row is left as it was. `changed` when
- * another request changed the row first.
+ * Queue a failed sync to be sent again. The row is claimed first, so two requests cannot both queue it. A row that
+ * holds an upload start and no test run is then looked up in the tool: a test run found there is recorded on the row,
+ * so the next attempt only links it; none found clears the start, so the next attempt uploads. When the tool gives no
+ * answer Piwi can trust, or the look fails, the row is put back as it was. `changed` when another request or the
+ * outbox changed the row first.
  */
 export async function requeueFailedSync(
   db: DbClient,
@@ -55,14 +57,50 @@ export async function requeueFailedSync(
       }
     : null;
 
+  const leaseEnd = new Date(Date.now() + OUTBOX_LEASE_MS);
+  const [claimed] = await db
+    .update(integrationActions)
+    .set({ status: OUTBOX_PROCESSING, scheduledFor: leaseEnd })
+    .where(
+      and(
+        eq(integrationActions.id, action.id),
+        eq(integrationActions.status, 'failed'),
+        eq(integrationActions.attempts, action.attempts),
+        action.finishedAt
+          ? eq(integrationActions.finishedAt, action.finishedAt)
+          : isNull(integrationActions.finishedAt),
+      ),
+    )
+    .returning({ id: integrationActions.id });
+  if (!claimed) return { status: 'changed' };
+  const held = and(
+    eq(integrationActions.id, action.id),
+    eq(integrationActions.status, OUTBOX_PROCESSING),
+    eq(integrationActions.scheduledFor, leaseEnd),
+  );
+  const putBack = () =>
+    db
+      .update(integrationActions)
+      .set({ status: 'failed', scheduledFor: action.scheduledFor, finishedAt: action.finishedAt })
+      .where(held);
+
   if (uploadOutcomeUnknown(state) && tm.findRun && payload.results.length > 0) {
-    const found = await tm.findRun(payload.providerProjectKey, {
-      runId: payload.runId,
-      startedAt: payload.startedAt,
-      testCaseKey: payload.results[0]!.key,
-      name: payload.run.name,
-    });
-    if (found.outcome === 'unsure') return { status: 'unsure', reason: found.reason };
+    let found;
+    try {
+      found = await tm.findRun(payload.providerProjectKey, {
+        runId: payload.runId,
+        startedAt: payload.startedAt,
+        testCaseKey: payload.results[0]!.key,
+        name: payload.run.name,
+      });
+    } catch (err) {
+      await putBack();
+      throw err;
+    }
+    if (found.outcome === 'unsure') {
+      await putBack();
+      return { status: 'unsure', reason: found.reason };
+    }
     if (found.outcome === 'found') {
       result = { uploadStartedAt: state.uploadStartedAt, runKey: found.run.key, runUrl: found.run.url };
     }
@@ -78,7 +116,7 @@ export async function requeueFailedSync(
       scheduledFor: new Date(),
       finishedAt: null,
     })
-    .where(and(eq(integrationActions.id, action.id), eq(integrationActions.status, 'failed')))
+    .where(held)
     .returning();
   return queued ? { status: 'queued', action: queued } : { status: 'changed' };
 }

@@ -89,6 +89,8 @@ const { sendDemoRunSync } = await import('../../app/demo/api/test-management');
 const { limiterForConnection, RequestLimiterBusyError, resetLimitersForTests } =
   await import('../../server/utils/integrations/test-management/limiter');
 const { createConnection } = await import('../../server/utils/integrations/connections');
+const { findFailedSync, requeueFailedSync } =
+  await import('../../server/utils/integrations/test-management/sync-again');
 const { buildIssueDraft } = await import('../../server/utils/integrations/draft');
 
 type Route = (event: FakeEvent) => Promise<any>;
@@ -763,6 +765,55 @@ describe('Sync again', () => {
     expect((await refusal(syncAgain(at(RUN_ID)))).statusCode).toBe(502);
     expect(uploads()).toEqual([]);
     expect(await syncRow()).toEqual(before);
+  });
+
+  test('two requests at once queue the sync once and look in the tool once', async () => {
+    await failUpload(503);
+    const action = (await findFailedSync(db, RUN_ID))!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const findRun = vi.fn(async () => {
+      await gate;
+      return { outcome: 'not-found' as const };
+    });
+    const tm = { findRun } as unknown as Parameters<typeof requeueFailedSync>[1];
+    const first = requeueFailedSync(db, tm, action);
+    const second = requeueFailedSync(db, tm, action);
+    expect(await second).toEqual({ status: 'changed' });
+    release();
+    expect(await first).toMatchObject({ status: 'queued', action: { status: 'pending', result: null } });
+    expect(findRun).toHaveBeenCalledTimes(1);
+  });
+
+  test('a request that read the sync before it failed again does not queue it', async () => {
+    await failUpload(503);
+    const stale = (await findFailedSync(db, RUN_ID))!;
+    await db
+      .update(schema.integrationActions)
+      .set({ attempts: stale.attempts + 1, finishedAt: new Date(stale.finishedAt!.getTime() + 60_000) })
+      .where(eq(schema.integrationActions.id, stale.id));
+    const findRun = vi.fn(async () => ({ outcome: 'not-found' as const }));
+    const tm = { findRun } as unknown as Parameters<typeof requeueFailedSync>[1];
+    expect(await requeueFailedSync(db, tm, stale)).toEqual({ status: 'changed' });
+    expect(findRun).not.toHaveBeenCalled();
+    expect((await syncRow()).status).toBe('failed');
+  });
+
+  test('a claim whose lease ran out is failed by the sweep as Outcome unknown and never uploads', async () => {
+    await failUpload(503);
+    const action = (await findFailedSync(db, RUN_ID))!;
+    const findRun = vi.fn(async () => {
+      await db
+        .update(schema.integrationActions)
+        .set({ scheduledFor: new Date(0) })
+        .where(eq(schema.integrationActions.id, action.id));
+      await sweepIntegrationActions(db);
+      return { outcome: 'not-found' as const };
+    });
+    const tm = { findRun } as unknown as Parameters<typeof requeueFailedSync>[1];
+    expect(await requeueFailedSync(db, tm, action)).toEqual({ status: 'changed' });
+    expect(await syncRow()).toMatchObject({ status: 'failed', error: expect.stringMatching(/^Outcome unknown/) });
+    expect(uploads()).toEqual([]);
   });
 
   test('a run with no failed sync is a 409', async () => {

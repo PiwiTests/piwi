@@ -78,6 +78,8 @@ test run that run's upload may have made, by its name and start time:
   read), nothing is sent, the send stays failed and the message says why. Check the project in Zephyr before you try
   again.
 
+Two people who press **Sync again** at the same time send the results once: the second is told the sync changed.
+
 A send that failed before the upload, or after the test run was made, only repeats the step that failed. **Sync again**
 works on a failed send; a dry run has nothing to repeat. It is refused, and says why, while the binding is turned off,
 is a dry run, or names another connection or another Zephyr project.
