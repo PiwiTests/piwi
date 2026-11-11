@@ -535,7 +535,7 @@ describe('findRun', () => {
     name: 'Piwi #12 main',
   };
 
-  test('reads the cycle of the last executions and matches it by the run number', async () => {
+  test('reads the cycle of each execution and matches it by the run number', async () => {
     fetchMock
       .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
       .mockResolvedValueOnce(reply(fixture('testcycle-other')))
@@ -549,13 +549,23 @@ describe('findRun', () => {
     expect(list.pathname).toBe('/v2/testexecutions');
     expect(list.searchParams.get('projectKey')).toBe('SHOP');
     expect(list.searchParams.get('testCase')).toBe('SHOP-T1');
-    expect(list.searchParams.get('onlyLastExecutions')).toBe('true');
+    expect(list.searchParams.has('onlyLastExecutions')).toBe(false);
     // A minute before the attempt began, in the form the API takes.
     expect(list.searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
     expect(requested(1).pathname).toBe('/v2/testcycles/2999');
     expect(requested(2).pathname).toBe('/v2/testcycles/3001');
     // One read per cycle, not per execution.
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  test('reads every execution of the test case in both passes, not only the last ones', async () => {
+    fetchMock.mockImplementation(async () => reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }));
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of [0, 1]) {
+      expect(requested(call).pathname).toBe('/v2/testexecutions');
+      expect(requested(call).searchParams.has('onlyLastExecutions')).toBe(false);
+    }
   });
 
   test('run 12 does not match the cycle of run 123', async () => {
@@ -615,7 +625,7 @@ describe('findRun', () => {
     expect(all.pathname).toBe('/v2/testexecutions');
     expect(all.searchParams.has('actualEndDateAfter')).toBe(false);
     expect(all.searchParams.get('testCase')).toBe('SHOP-T1');
-    expect(all.searchParams.get('onlyLastExecutions')).toBe('true');
+    expect(all.searchParams.has('onlyLastExecutions')).toBe(false);
   });
 
   test(`is unsure when the executions without the end date filter run past ${FIND_RUN_MAX_PAGES} pages`, async () => {

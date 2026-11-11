@@ -465,8 +465,8 @@ export class ZephyrScaleClient implements TestManagementProvider {
   }
 
   /**
-   * The test cycle an earlier upload created. Zephyr cannot list cycles by name, so this reads every last execution of
-   * one test case the run reports on, and the name of each cycle they belong to: the cycle whose name holds
+   * The test cycle an earlier upload created. Zephyr cannot list cycles by name, so this reads every execution of one
+   * test case the run reports on, and the name of each cycle they belong to: the cycle whose name holds
    * `Piwi #<runId>` (or is the name the run was given) is the one. The first pass reads only executions that ended since
    * the attempt began. Whether an upload gives its executions an end date is unchecked, so when that pass reads
    * everything and finds nothing, a second pass reads them all, whatever their end date: the answer never depends on it.
@@ -497,7 +497,6 @@ export class ZephyrScaleClient implements TestManagementProvider {
       projectKey,
       testCase: marker.testCaseKey,
       ...(endedAfter ? { actualEndDateAfter: endedAfter } : {}),
-      onlyLastExecutions: 'true',
       maxResults: PAGE_SIZE,
     };
     const scope = endedAfter ? ' since the run began' : '';

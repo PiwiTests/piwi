@@ -79,7 +79,7 @@ export interface RunMarker {
   runId: number;
   /** When to start looking for the run, an ISO time: the run's start, or the attempt's when the run has none. */
   startedAt: string;
-  /** A test case the run reported on, whose last execution leads to the run. */
+  /** A test case the run reported on, whose executions lead to the run. */
   testCaseKey: string;
   /** The name the run was given. */
   name: string;
