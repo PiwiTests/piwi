@@ -1,0 +1,69 @@
+/**
+ * Sending a run's results again after a sync failed: the one place that looks in the test management tool for a test
+ * run an earlier upload may have made. The outbox never does; a person asks for it.
+ */
+import { and, desc, eq } from 'drizzle-orm';
+import { integrationActions } from '../../../database/schema';
+import type { DbClient } from '../../../database';
+import type { IntegrationAction } from '../../../database/schema';
+import { readSyncState, uploadOutcomeUnknown, type SyncActionPayload } from '#shared/integrations/test-management-sync';
+import type { TestManagementProvider } from './types';
+
+/** The latest sync of a run's results that failed, or null when the run has none. */
+export async function findFailedSync(db: DbClient, runId: number): Promise<IntegrationAction | null> {
+  const [row] = await db
+    .select()
+    .from(integrationActions)
+    .where(
+      and(
+        eq(integrationActions.kind, 'sync-results'),
+        eq(integrationActions.entityType, 'test_run'),
+        eq(integrationActions.entityId, runId),
+        eq(integrationActions.status, 'failed'),
+      ),
+    )
+    .orderBy(desc(integrationActions.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Queue a failed sync to be sent again. A row that holds an upload start and no test run is looked up in the tool
+ * first: a test run found there is recorded on the row, so the next attempt only links it; none found clears the start,
+ * so the next attempt uploads. Returns the queued row, or null when another request changed the row first.
+ */
+export async function requeueFailedSync(
+  db: DbClient,
+  tm: TestManagementProvider,
+  action: IntegrationAction,
+): Promise<IntegrationAction | null> {
+  const payload = action.payload as SyncActionPayload;
+  const state = readSyncState(action.result);
+  let result: Record<string, unknown> | null = state.runKey
+    ? { uploadStartedAt: state.uploadStartedAt, runKey: state.runKey, runUrl: state.runUrl }
+    : null;
+
+  if (uploadOutcomeUnknown(state) && tm.findRun && payload.results.length > 0) {
+    const found = await tm.findRun(payload.providerProjectKey, {
+      runId: payload.runId,
+      startedAt: payload.startedAt,
+      testCaseKey: payload.results[0]!.key,
+      name: payload.run.name,
+    });
+    if (found) result = { uploadStartedAt: state.uploadStartedAt, runKey: found.key, runUrl: found.url };
+  }
+
+  const [queued] = await db
+    .update(integrationActions)
+    .set({
+      status: 'pending',
+      attempts: 0,
+      error: null,
+      result: result as never,
+      scheduledFor: new Date(),
+      finishedAt: null,
+    })
+    .where(and(eq(integrationActions.id, action.id), eq(integrationActions.status, 'failed')))
+    .returning();
+  return queued ?? null;
+}

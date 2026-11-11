@@ -21,7 +21,7 @@ import type { DbClient } from '../../database';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { automaticFiling, evaluateAutoCreate } from '#shared/integrations/automation';
 import { issueLabels } from '#shared/integrations/build-issue';
-import { createIssueKey } from '#shared/integrations/action-keys';
+import { createIssueKey, syncResultsDedupeKey } from '#shared/integrations/action-keys';
 import { pickOwnerRoute } from '#shared/integrations/binding';
 import {
   countAutomaticCreates,
@@ -34,12 +34,22 @@ import { missingRequiredFields } from '#shared/integrations/fields';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import type { IssueTracker, TrackerIssue } from './types';
 import { createIssue } from './create';
-import { findActionByKey, recordRefusedAction, retireAction, type CreateIssueResult } from './actions';
+import {
+  enqueueAction,
+  findActionByKey,
+  recordRefusedAction,
+  retireAction,
+  runActionNow,
+  type CreateIssueResult,
+} from './actions';
+import type { IntegrationAction } from '../../database/schema';
 import { filedIssueStillTracks } from './entity-links';
 import { bindingLocale, readProjectIntegration } from './binding';
 import { createTracker, getConnectionRow } from './connections';
 import { getCreateFields } from './fields';
-import { loadTrackerRun } from './tracker-run';
+import { loadTrackerRun, runDrivesWrites } from './tracker-run';
+import { readTestManagementBinding } from './test-management/binding';
+import { prepareRunSync } from './test-management/sync';
 import { resolveOwners } from '../scm/ownership';
 import { resolveDefaultBranch } from '../scm/default-branch';
 
@@ -203,6 +213,41 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
     }
   }
   return filed;
+}
+
+/**
+ * Queue the end-of-run sync of a finished run to the project's test management tool and send it once. A project whose
+ * binding is off, a run the `test-management` use or the binding's run scope leaves out, and a sync already queued for
+ * the run queue nothing. A run whose results cannot be sent (the catalog was never read, no test carries a key the
+ * catalog holds) is recorded as skipped with the reason, so the activity list says why. Returns the action, or null
+ * when nothing was queued or recorded.
+ */
+export async function runTestManagementSync(db: DbClient, runId: number): Promise<IntegrationAction | null> {
+  const [row] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!row) return null;
+  const binding = await readTestManagementBinding(db, row.projectId);
+  const { connectionId, providerProjectKey } = binding;
+  if (!binding.enabled || connectionId === null || providerProjectKey === null) return null;
+  const run = await loadTrackerRun(db, runId, 'test-management');
+  if (!runDrivesWrites(run, binding.runScope)) return null;
+
+  const dedupeKey = syncResultsDedupeKey(runId, connectionId);
+  if (await findActionByKey(db, dedupeKey)) return null;
+  const prepared = await prepareRunSync(db, run, { ...binding, connectionId, providerProjectKey });
+  const input = {
+    connectionId,
+    projectId: run.projectId,
+    kind: 'sync-results',
+    entityType: 'test_run',
+    entityId: runId,
+    dedupeKey,
+    payload: prepared.payload,
+    requestedBy: null,
+  };
+  if (prepared.skip !== null) return recordRefusedAction(db, { ...input, status: 'skipped', error: prepared.skip });
+  const action = await enqueueAction(db, input);
+  await runActionNow(db, action.id);
+  return action;
 }
 
 /**

@@ -22,6 +22,11 @@
  * An action runs only through the connection its project is bound to when it
  * runs: one whose project is bound to another connection, or to none, is
  * skipped.
+ *
+ * The end-of-run `sync-results` action sends a run's results to a test management tool, which creates a test run each
+ * time they are sent. It is therefore never sent blind twice: the row holds a marker from before the upload until the
+ * tool names the test run, and an attempt that finds the marker alone, or ends without an answer from the tool, fails
+ * as Outcome unknown and waits for a person (`test-management/sync-again.ts`).
  */
 import { and, eq, inArray, isNotNull, lt, lte, ne } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
@@ -36,12 +41,19 @@ import type { IssueComment } from '#shared/integrations/run-issue';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
-import { createTracker } from './connections';
+import { createTracker, getConnectionRow, markConnectionFailed, testManagementForRow } from './connections';
 import { connectionPausedUntil, holdConnection } from './connection-pauses';
 import { boundConnectionId } from './bound-connection';
 import { JiraError } from './jira/client';
 import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
+import { applySyncResults, SyncUploadError } from './test-management/sync';
+import {
+  readSyncState,
+  syncOutcomeUnknownMessage,
+  uploadOutcomeUnknown,
+  type SyncActionPayload,
+} from '#shared/integrations/test-management-sync';
 import {
   descriptionDigest,
   documentDigest,
@@ -732,6 +744,8 @@ export function outcomeUnknownMessage(title: string): string {
 const NOT_BOUND = 'the project is not bound to this connection';
 /** Why an action whose connection has no usable credentials was not run. */
 const NO_CREDENTIALS = 'connection has no usable credentials';
+/** The longest a sync's call queues behind the other requests of its connection before the attempt backs off. */
+const SYNC_LIMITER_WAIT_MS = 60_000;
 
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
@@ -778,6 +792,15 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     return { status: 'failed', error, final: true };
   }
 
+  if (action.kind === 'sync-results' && uploadOutcomeUnknown(readSyncState(action.result))) {
+    const error = syncOutcomeUnknownMessage((action.payload as SyncActionPayload).run.name);
+    await db
+      .update(integrationActions)
+      .set({ status: 'failed', error, attempts, finishedAt: now })
+      .where(eq(integrationActions.id, action.id));
+    return { status: 'failed', error, final: true };
+  }
+
   const pausedUntil = connectionPausedUntil(action.connectionId, now);
   if (pausedUntil) return waitForPause(db, action, pausedUntil);
 
@@ -791,7 +814,25 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
         return failAttempt(db, action, attempts, now, err);
       }
     }
-    case 'test-management':
+    case 'test-management': {
+      if (action.kind !== 'sync-results') return skip(`unsupported action kind '${action.kind}'`);
+      if ((action.payload as SyncActionPayload).dryRun) {
+        const result = { dryRun: true, payload: action.payload };
+        await db
+          .update(integrationActions)
+          .set({ status: 'done', result: result as never, error: null, attempts, finishedAt: now })
+          .where(eq(integrationActions.id, action.id));
+        return { status: 'done', result };
+      }
+      const row = await getConnectionRow(db, action.connectionId);
+      const tm = row ? testManagementForRow(row, { maxWaitMs: SYNC_LIMITER_WAIT_MS }) : null;
+      if (!tm) return skip(NO_CREDENTIALS);
+      try {
+        return { status: 'done', result: await applySyncResults(db, tm, action, attempts) };
+      } catch (err) {
+        return failSyncAttempt(db, action, attempts, now, err);
+      }
+    }
     case 'wiki':
       return skip(`unsupported action kind '${action.kind}'`);
   }
@@ -886,6 +927,52 @@ async function failAttempt(
 }
 
 /**
+ * Record a failed attempt of a sync. A refusal fails at once, a 401 also marking the connection failed; a 429 and any
+ * failure after the tool named the test run back off and retry, and a 429 pauses the connection. An upload that ended
+ * without an answer (a 5xx, a timeout, a lost connection) may have created the test run, so it fails at once as
+ * Outcome unknown. An upload the tool answered without creating anything (a refusal or a 429) clears its marker in the
+ * same write, so what is sent next is not taken for an upload that may have happened.
+ */
+async function failSyncAttempt(
+  db: DbClient,
+  action: IntegrationAction,
+  attempts: number,
+  now: Date,
+  err: unknown,
+): Promise<ActionOutcome> {
+  const upload = err instanceof SyncUploadError;
+  const cause = upload ? err.cause : err;
+  const status = cause instanceof IntegrationHttpError ? cause.status : null;
+  const rateLimited = status === 429;
+  const refused = status === 401 || isFinalRefusal(cause) || cause instanceof RangeError;
+  const unknown = upload && !rateLimited && !refused;
+  const final = refused || unknown;
+  const next = final
+    ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
+    : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(cause));
+  const message = unknown
+    ? syncOutcomeUnknownMessage((action.payload as SyncActionPayload).run.name)
+    : cause instanceof Error
+      ? cause.message
+      : String(cause);
+  await db
+    .update(integrationActions)
+    .set({
+      status: next.status,
+      attempts,
+      error: message,
+      scheduledFor: next.scheduledFor,
+      finishedAt: next.status === 'failed' ? now : null,
+      ...(upload && !unknown ? { result: null } : {}),
+    })
+    .where(eq(integrationActions.id, action.id));
+  if (status === 401) await markConnectionFailed(db, action.connectionId, message);
+  if (rateLimited) await pauseConnection(db, action, retryAfterMs(cause) || RATE_LIMIT_PAUSE_MS, now);
+  console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
+  return { status: 'failed', error: message, final, retrying: next.status !== 'failed' };
+}
+
+/**
  * Run one action immediately by id (the click path), regardless of its schedule.
  * Null when there is no such action, or when another attempt holds it.
  */
@@ -913,20 +1000,30 @@ async function readClaimedAction(db: DbClient, id: number): Promise<IntegrationA
   return row ? { ...row, attempts: row.attempts - 1 } : null;
 }
 
-/** A create given up while it held its marker fails as Outcome unknown, so the person checks the tracker first. */
-async function nameAbandonedCreates(db: DbClient): Promise<void> {
+/**
+ * A create or a sync given up while it held its marker fails as Outcome unknown, so the person checks the tool first.
+ */
+async function nameAbandonedOutcomes(db: DbClient): Promise<void> {
   const rows = await db
     .select()
     .from(integrationActions)
     .where(
       and(
-        eq(integrationActions.kind, 'create-issue'),
+        inArray(integrationActions.kind, ['create-issue', 'sync-results']),
         eq(integrationActions.status, 'failed'),
         eq(integrationActions.error, OUTBOX_ABANDONED_ERROR),
         isNotNull(integrationActions.result),
       ),
     );
   for (const row of rows) {
+    if (row.kind === 'sync-results') {
+      if (!uploadOutcomeUnknown(readSyncState(row.result))) continue;
+      await db
+        .update(integrationActions)
+        .set({ error: syncOutcomeUnknownMessage((row.payload as SyncActionPayload).run.name) })
+        .where(eq(integrationActions.id, row.id));
+      continue;
+    }
     if (!createOutcomeUnknown(row.result)) continue;
     await db
       .update(integrationActions)
@@ -947,7 +1044,7 @@ export async function sweepIntegrationActions(
   const now = new Date();
   let done = 0;
   let failed = await failAbandonedOutboxRows(db, integrationActions, { finishedAt: now });
-  await nameAbandonedCreates(db);
+  await nameAbandonedOutcomes(db);
   let skipped = 0;
 
   const due = await db

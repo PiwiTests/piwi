@@ -95,7 +95,7 @@ export interface TestManagementProvider {
   listFolders(projectKey: string): Promise<TmFolder[]>;
   uploadRun?(input: UploadRunInput): Promise<TmRun>;
   findRun?(projectKey: string, marker: RunMarker): Promise<TmRun | null>;
-  linkRun?(run: TmRun, link: { url: string; title: string }): Promise<void>;
+  linkRun?(run: Pick<TmRun, 'key'>, link: { url: string; title: string }): Promise<void>;
   /** The web address of a test case, or null when the tool documents none. */
   caseUrl?(key: string): string | null;
 }

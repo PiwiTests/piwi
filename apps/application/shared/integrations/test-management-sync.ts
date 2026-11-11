@@ -77,6 +77,58 @@ export interface SyncPayload {
   dryRun: boolean;
 }
 
+/**
+ * What a sync action stores at enqueue, so a retry sends what the first attempt would have: the payload, and what
+ * finding or linking the run later needs.
+ */
+export interface SyncActionPayload extends SyncPayload {
+  runId: number;
+  /** The run's address in Piwi, or null when the server has none. */
+  runUrl: string | null;
+  /** The tool's project the results go to, as the binding named it at enqueue. */
+  providerProjectKey: string;
+  /** When to start looking for the test run an earlier attempt made, an ISO time. */
+  startedAt: string;
+}
+
+/**
+ * What a sync row's `result` holds: the marker written before the upload is sent, the test run the upload created, and
+ * what a finished sync sent. A dry run holds the payload it would have sent.
+ */
+export interface SyncState {
+  /** Set before the upload is sent, epoch ms; with no `runKey` it means the upload may have reached the tool. */
+  uploadStartedAt?: number;
+  runKey?: string;
+  runUrl?: string;
+  sent?: number;
+  dryRun?: true;
+  payload?: SyncPayload;
+}
+
+/** The state a sync row's `result` holds; an empty state for a row that holds none. */
+export function readSyncState(result: unknown): SyncState {
+  if (!result || typeof result !== 'object') return {};
+  const value = result as Record<string, unknown>;
+  return {
+    ...(typeof value.uploadStartedAt === 'number' ? { uploadStartedAt: value.uploadStartedAt } : {}),
+    ...(typeof value.runKey === 'string' ? { runKey: value.runKey } : {}),
+    ...(typeof value.runUrl === 'string' ? { runUrl: value.runUrl } : {}),
+    ...(typeof value.sent === 'number' ? { sent: value.sent } : {}),
+    ...(value.dryRun === true ? { dryRun: true as const } : {}),
+    ...(value.payload && typeof value.payload === 'object' ? { payload: value.payload as SyncPayload } : {}),
+  };
+}
+
+/** Whether an upload began and the tool never named the test run it made: it may exist, so uploading again may repeat it. */
+export function uploadOutcomeUnknown(state: SyncState): boolean {
+  return state.uploadStartedAt !== undefined && state.runKey === undefined;
+}
+
+/** The failure an unknown upload records: what to look for in the tool, and what to do then. */
+export function syncOutcomeUnknownMessage(runName: string): string {
+  return `Outcome unknown: check the test management tool for a test run named "${runName}", then use Sync again`;
+}
+
 export interface BuildSyncInput {
   run: SyncRunFacts;
   /** Every attempt row of the run. */

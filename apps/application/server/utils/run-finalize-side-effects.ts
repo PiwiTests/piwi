@@ -1,7 +1,7 @@
 import { attachRunPlan } from './pass-reuse';
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
-import { runTrackerAutomation } from './integrations/automation';
+import { runTestManagementSync, runTrackerAutomation } from './integrations/automation';
 import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
@@ -34,7 +34,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * resource findings, its analysis (the scenario gaps, change coverage, fix
  * verification and the hand-back outcomes it shows) and its outbound effects
  * (AI diagnosis, the issues automatic creation files once fix verification
- * is done, notifications, the pull-request comment and commit status, auto-heal).
+ * is done, the results sent to the project's test management tool, notifications, the pull-request comment and
+ * commit status, auto-heal).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -55,7 +56,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * metadata as the incident check read it, its final `status` and `isFullRun`:
  * never for a run from an editor, a bisect step or a reproduction, and for a
  * run from a developer's machine or the desktop app only when it ran the whole
- * suite. A run the use leaves out
+ * suite. The results sent to a test management tool follow the `test-management` use instead, so a run the
+ * notifications leave out can still send them. A run the use leaves out
  * sends no incident event either: the use reads a flagged run as if it carried
  * no flag.
  *
@@ -138,16 +140,25 @@ export async function runFinalizeSideEffects(
   void analysis.coverage.then(() =>
     inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e)),
   );
-  if (!notifies) return rollup;
-  autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+  if (notifies) {
+    autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+  }
   // The issues the project's rules file go out first, so the run's notifications name them. They
   // wait for fix verification: a regression's reopen transition is then queued, and a rule does not
   // file a second issue beside the Done one it moves out of Done.
-  const filing = isEligibleRun(current, 'tracker')
-    ? analysis.fixed
-        .then(() => runTrackerAutomation(db, id))
-        .catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
-    : Promise.resolve();
+  const filing =
+    notifies && isEligibleRun(current, 'tracker')
+      ? analysis.fixed
+          .then(() => runTrackerAutomation(db, id))
+          .catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
+      : Promise.resolve();
+  // A run the notifications use leaves out can still be the one the test management tool wants.
+  if (isEligibleRun(current, 'test-management')) {
+    void filing
+      .then(() => runTestManagementSync(db, id))
+      .catch((e) => console.error('[integrations] runTestManagementSync failed', e));
+  }
+  if (!notifies) return rollup;
   void filing.then(() =>
     emitRunNotifications(db, id, { announce }).catch((e) =>
       console.error('[notifications] emitRunNotifications failed', e),

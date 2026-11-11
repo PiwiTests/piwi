@@ -444,7 +444,7 @@ export class ZephyrScaleClient implements TestManagementProvider {
   }
 
   /** Add a web link to a test cycle. */
-  async linkRun(run: TmRun, link: { url: string; title: string }): Promise<void> {
+  async linkRun(run: Pick<TmRun, 'key'>, link: { url: string; title: string }): Promise<void> {
     if (!CYCLE_KEY.test(run.key)) throw new RangeError('Invalid test cycle key');
     await this.request(
       'POST',
