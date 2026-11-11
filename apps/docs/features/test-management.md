@@ -27,8 +27,9 @@ A run is sent once, when it finishes, if all of these hold:
 - the project's test case catalog has been read, and at least one test of the run carries a key the catalog holds.
 
 A run split across shards is sent once, after its last shard reports, with the results of every shard. Sending is a
-background action: the run is not held up, and a send that fails because Zephyr is down is retried with a growing
-wait.
+background action, so the run is not held up. Only two failures are retried on their own, with a growing wait: Zephyr
+asking Piwi to slow down (a 429), and a failure after Zephyr named the test run, which repeats only the step that
+failed. An upload that gets no answer is **Outcome unknown** and waits for **Sync again** (see below).
 
 The binding is read again when the results go out. If it was turned off, became a dry run or names another Zephyr
 project since the run finished, nothing is sent and the run's panel says why. If Zephyr already holds the test run by
@@ -57,8 +58,8 @@ A run that was sent, or would be, shows a **Zephyr Scale** panel in its header:
 - **A live send** shows the key of the test run, how many results were sent and the counts, for example
   `SHOP-R2`, "12 results sent: 10 passed, 1 failed, 1 flaky, 0 not executed". The key is also listed with the run's
   links.
-- **A dry run** says that nothing was sent and shows what a live sync would send, so you can check the keys, the
-  counts and the keys the catalog does not hold before you turn the dry run off.
+- **A dry run** says that nothing was sent and shows how many results a live sync would send, with their counts, and
+  the keys left out because the catalog does not hold them, so you can check them before you turn the dry run off.
 - **A run that was not sent** says why: for instance that the catalog was not read yet or that no test carries a
   mapped key.
 - **A send that waits to retry** says that sending failed, at what time the next attempt is due, and the error.
