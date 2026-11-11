@@ -113,6 +113,7 @@ export function authMock(state: RouteAccessState) {
     refuseApiKey: () => refuseApiKey(state),
     getRequestAccess: async () => caller(state).access,
     isAuthEnabled: () => true,
+    isSignedInPerson: () => !caller(state).apiKey,
   };
 }
 

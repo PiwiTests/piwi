@@ -1,11 +1,12 @@
 import { testRuns, projects } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { runFinishedEventData, storedCaseEventData } from '../../../utils/run-stream-catch-up';
-import { runEventBus } from '../../../utils/run-events';
+import { runEventBus, type RunEvent } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
 import { liveViewRelay } from '../../../utils/live-view';
+import { askRefusal, viewerAskEvent, viewerLiveView, type LiveAskEvent } from '../../../utils/live-asks';
+import { isSignedInPerson } from '../../../utils/auth';
 import { liveResourcesSnapshot } from '#shared/live-resources';
-import type { LiveViewRunState } from '#shared/live-view';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -13,7 +14,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`) and the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run).',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes, and `live-ask` (the viewer’s own ask to watch the run, as it changes) and `continued` (`runId`, the run shared after this one from the same editor window, which continues it). The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values; with sign-in on, whether this viewer may ask the developer of a run outside CI to share it, `canAsk`, and their latest ask, `ask`: its `id`, `by`, the developer’s `answer`, null, `not-now` or `shared`, and `waitMs` before they may ask again), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`) and the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -21,7 +22,9 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  // The signed-in person watching, who may ask to watch a run nobody shares and hears their own asks; null for none.
+  const asker = isSignedInPerson(event) ? user.id : null;
 
   // Verify the run exists
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
@@ -35,9 +38,21 @@ export default eventHandler(async (event) => {
   }
 
   const [project] = await db
-    .select({ liveView: projects.liveView })
+    .select({ liveView: projects.liveView, askToWatch: projects.askToWatch })
     .from(projects)
     .where(eq(projects.id, testRun.projectId));
+
+  /** A run event as this viewer gets it: the live view's state for them, and their own asks alone; null for none. */
+  const forViewer = (runEvent: RunEvent): RunEvent | null => {
+    if (runEvent.type === 'live-ask') {
+      const view = viewerAskEvent(runEvent.data as LiveAskEvent, asker);
+      return view ? { ...runEvent, data: { ...view } } : null;
+    }
+    if (runEvent.type !== 'live-view') return runEvent;
+    const state = runEvent.data as { keyed?: unknown; enabled?: unknown; askable?: unknown };
+    const busState = { keyed: state.keyed === true, enabled: state.enabled === true, askable: state.askable === true };
+    return { ...runEvent, data: { ...viewerLiveView(busState, id, asker) } };
+  };
 
   return createSSEEndpoint(event, (controller, encoder) => {
     // Send initial state as catch-up event
@@ -80,10 +95,10 @@ export default eventHandler(async (event) => {
     }
     // Whether the project's live view is on and the run holds a key, then the workers in its view now and their stops:
     // the live events that follow change them.
-    const viewState: LiveViewRunState = {
-      keyed: liveViewRelay.holdsKey(id, { digests: testRun.liveViewKeyDigests, createdAt: testRun.createdAt }),
-      enabled: project?.liveView === true,
-    };
+    const keyed = liveViewRelay.holdsKey(id, { digests: testRun.liveViewKeyDigests, createdAt: testRun.createdAt });
+    const enabled = project?.liveView === true;
+    const askable = !askRefusal({ ...testRun, keyed, liveView: enabled, askToWatch: project?.askToWatch !== false });
+    const viewState = viewerLiveView({ keyed, enabled, askable }, id, asker);
     const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
     for (const worker of liveViewRelay.workersOf(id)) {
@@ -123,8 +138,10 @@ export default eventHandler(async (event) => {
       }
     })();
 
-    // Subscribe to live events
-    return runEventBus.subscribe(id, (runEvent) => {
+    // Subscribe to live events, each as this viewer gets it.
+    return runEventBus.subscribe(id, (published) => {
+      const runEvent = forViewer(published);
+      if (!runEvent) return;
       try {
         controller.enqueue(encoder.encode(`id: ${runEvent.seq}\ndata: ${JSON.stringify(runEvent)}\n\n`));
 

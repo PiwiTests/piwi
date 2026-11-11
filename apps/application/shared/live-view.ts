@@ -39,12 +39,44 @@ export interface LiveWorkerState {
 /**
  * Whether a live run holds a live view key on the instance, as its event stream says it (`live-view`): its project's
  * live view applies to it. A CI run's workers stream with it at once; those of a run outside CI only once its
- * developer shares it, so until then the run page says how (**Not shared live**).
+ * developer shares it, so until then the run page says how (**Not shared live**), and offers **Ask to watch** to a
+ * viewer who may ask (`canAsk`), with their latest ask (`ask`).
  */
 export interface LiveViewRunState {
   keyed: boolean;
   /** Whether the project's live view is on now: off, the run page says so whatever the run holds. */
   enabled: boolean;
+  /**
+   * Whether this viewer may ask the run's developer to share it: a signed-in person, in a project that takes asks to
+   * watch, of a running run outside CI that holds a key. The run's stream sets it for each viewer.
+   */
+  canAsk?: boolean;
+  /** This viewer's latest ask to watch the run, null for none. The run's stream sets it for each viewer. */
+  ask?: LiveAskView | null;
+}
+
+/**
+ * A person's latest ask to watch a run that is not shared live (**Ask to watch**), as their run page shows it: in
+ * `ask` of the run stream's `live-view` event, and in its `live-ask` event as it changes, which only the person who
+ * asked hears.
+ */
+export interface LiveAskView {
+  id: string;
+  /** Who asked, as the developer reads it. */
+  by: string;
+  /** The developer's answer: none yet, `not-now`, or `shared` once a worker of the run streams. */
+  answer: 'not-now' | 'shared' | null;
+  /** How long before this person may ask again, in milliseconds, when the view was sent: 0 when they may now. */
+  waitMs: number;
+}
+
+/**
+ * Whether a run is one CI runs, whose workers stream as soon as the run holds a key: the reporter recorded the CI
+ * that runs it (`metadata.ci`). Any other run streams only once its developer shares it.
+ */
+export function isCiRun(metadata: unknown): boolean {
+  const ci = metadata && typeof metadata === 'object' ? (metadata as { ci?: unknown }).ci : null;
+  return !!ci;
 }
 
 /**

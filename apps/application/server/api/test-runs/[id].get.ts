@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Get test run details',
     description:
-      'Returns full details for a specific test run, including project info, attached reports, test cases with results, and storage statistics.',
+      'Returns full details for a specific test run, including project info, attached reports, test cases with results, and storage statistics. `continuedInId` is the run that continued this one, shared after it from the same editor window, while it is stored; null for none.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },

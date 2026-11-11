@@ -599,11 +599,12 @@ const LIVE_VIEW_CALL_LINES = [
 
 /**
  * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
- * on the test the worker runs.
+ * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another.
  */
-function holdLiveWorkerStream(base, runId, key) {
+function holdLiveWorkerStream(base, runId, key, after = null) {
   const client = base.startsWith('https:') ? https : http;
-  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
+  const continues = after === null ? '' : `&after=${after}`;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
@@ -5751,6 +5752,68 @@ const SCENES = [
         await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
           data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
         });
+      }
+    },
+  },
+  {
+    name: 'run-continued',
+    description:
+      'A run from a developer’s machine that the next run of its editor window continues: its page says Continued in run #N, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 640 },
+    outputs: ['run-continued.png', 'run-continued-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-continued needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await request.get(`${base}/api/projects/${projectId}`)).json();
+      const runs = [];
+      let closeStream = () => {};
+      /** A run outside CI that holds a live view key, as the reporter's global setup and begin start it. */
+      const start = async () => {
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 1 },
+          })
+        ).json();
+        const run = { runId: setup.runId, key: setup.liveView?.key, streamToken: begun.streamToken };
+        runs.push(run);
+        return run;
+      };
+      try {
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } });
+        const earlier = await start();
+        // The window's next run replaces it, and its worker names the run it continues as it shares.
+        const next = await start();
+        if (!next.key) throw new Error('run-continued needs a live view key: is the project’s live view on?');
+        closeStream = holdLiveWorkerStream(base, next.runId, next.key, earlier.runId);
+        const linked = async () =>
+          (await (await request.get(`${base}/api/test-runs/${earlier.runId}`)).json()).continuedInId === next.runId;
+        for (let tries = 0; !(await linked()); tries++) {
+          if (tries > 50) throw new Error('the next run did not continue the earlier one');
+          await page.waitForTimeout(100);
+        }
+        await goto(`/test-runs/${earlier.runId}`);
+        await page.locator('[data-shot="run-continued"]').waitFor();
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 760 });
+        await settle();
+        await shoot('narrow');
+      } finally {
+        closeStream();
+        for (const run of runs) {
+          await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+          });
+        }
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
       }
     },
   },

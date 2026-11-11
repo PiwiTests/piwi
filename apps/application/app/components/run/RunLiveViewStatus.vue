@@ -1,13 +1,17 @@
 <script setup lang="ts">
+import type { ApiResponse } from '~~/types/api';
+import type { LiveAskView } from '#shared/live-view';
 import type { RunLiveViewReadiness } from '~/utils/run-live-view-status';
-import { runLiveViewStatus } from '~/utils/run-live-view-status';
+import { askToWatchView, runLiveViewStatus } from '~/utils/run-live-view-status';
 
 const props = defineProps<{
   readiness: RunLiveViewReadiness;
   projectId: number;
+  runId: number;
 }>();
 const emit = defineEmits<{ retry: [] }>();
 const { can } = useAuth();
+const toast = useToast();
 const { saving: turningOn, save } = useProjectPatch(() => props.projectId);
 /**
  * Whether the project's live view was turned on from this page, which a run that started without it does not get:
@@ -37,11 +41,65 @@ const turnOnLabel = computed(() =>
 async function turnOn(): Promise<void> {
   if (await save({ liveView: true }, 'Live view turned on')) turnedOn.value = true;
 }
+
+/**
+ * The viewer's latest ask to watch the run, and when this page received it, as the run's stream or the ask's own
+ * answer last gave it: its `waitMs` counts from then.
+ */
+const latestAsk = ref<{ view: LiveAskView; receivedAt: number } | null>(null);
+/** When the instance said this viewer may ask again, after it refused an ask as too soon. */
+const refusedUntil = ref<number | null>(null);
+watch(
+  () => props.readiness.state?.ask,
+  (view, before) => {
+    if (view === undefined) return;
+    latestAsk.value = view ? { view, receivedAt: Date.now() } : null;
+    // The developer shared the run this viewer asked about: its live view now shows.
+    if (view?.answer === 'shared' && before?.id === view.id && before.answer === null) {
+      toast.add({ title: 'The run is shared live', description: 'Its running tests offer Watch.', color: 'success' });
+    }
+  },
+  { immediate: true },
+);
+const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 15_000) });
+const askView = computed(() => {
+  const ask = latestAsk.value;
+  const fromAsk = ask ? ask.receivedAt + ask.view.waitMs : null;
+  const askAgainAt = Math.max(fromAsk ?? 0, refusedUntil.value ?? 0) || null;
+  return askToWatchView({
+    status: status.value.kind,
+    canAsk: props.readiness.state?.canAsk === true,
+    ask: ask?.view ?? null,
+    askAgainAt,
+    now: now.value,
+  });
+});
+
+const asking = ref(false);
+/** Ask the developer to share the run: the instance hands the ask to the run, and its answer comes on the stream. */
+async function ask(): Promise<void> {
+  if (asking.value) return;
+  asking.value = true;
+  try {
+    const view = await $fetch<ApiResponse<typeof import('~~/server/api/test-runs/[id]/live-view/ask.post').default>>(
+      `/api/test-runs/${props.runId}/live-view/ask`,
+      { method: 'POST' },
+    );
+    latestAsk.value = { view, receivedAt: Date.now() };
+    refusedUntil.value = null;
+  } catch (e) {
+    const waitMs = (e as { data?: { data?: { waitMs?: unknown } } }).data?.data?.waitMs;
+    if (typeof waitMs === 'number') refusedUntil.value = Date.now() + waitMs;
+    toast.add({ title: 'Could not ask to watch', description: errorMessage(e), color: 'error' });
+  } finally {
+    asking.value = false;
+  }
+}
 </script>
 
 <template>
   <div
-    class="inline-flex shrink-0 items-center gap-1 text-xs text-muted max-sm:px-4"
+    class="inline-flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted max-sm:px-4"
     data-shot="run-live-view-status"
     data-testid="live-view-readiness"
     :data-state="status.kind"
@@ -81,5 +139,37 @@ async function turnOn(): Promise<void> {
         </UButton>
       </template>
     </HelpHint>
+    <!-- Ask to watch: what came of the viewer's ask, then the button, or the wait before they may ask again. -->
+    <template v-if="askView">
+      <span
+        v-if="askView.note"
+        role="status"
+        aria-live="polite"
+        data-testid="ask-to-watch-state"
+        :data-state="askView.note"
+        :title="
+          askView.note === 'asked'
+            ? 'The developer is asked where they launched the run: this page shows their answer.'
+            : undefined
+        "
+      >
+        · {{ askView.note === 'asked' ? 'Asked to watch' : 'The developer answered Not now' }}
+      </span>
+      <UButton
+        v-if="askView.action"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        :loading="asking"
+        title="Ask the developer who runs it to share this run live, naming you"
+        data-testid="ask-to-watch"
+        @click="ask"
+      >
+        {{ askView.action === 'ask' ? 'Ask to watch' : 'Ask again' }}
+      </UButton>
+      <span v-else-if="askView.waitMinutes" data-testid="ask-to-watch-wait">
+        · Ask again in {{ askView.waitMinutes }} min
+      </span>
+    </template>
   </div>
 </template>

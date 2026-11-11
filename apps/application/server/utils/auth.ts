@@ -731,6 +731,14 @@ export function refuseApiKey(event: H3Event): void {
 }
 
 /**
+ * Whether a request `requireAuth` authenticated comes from a person signed in with a session: authentication is on,
+ * and no API key made it.
+ */
+export function isSignedInPerson(event: H3Event): boolean {
+  return isAuthEnabled(event) && event.context.apiKeyId === undefined;
+}
+
+/**
  * `requireAuth` for a route that changes the caller's credentials or creates a
  * credential (an API key, a connected client): the caller signs in with a
  * session, never an API key (403). With authentication off, every caller passes.
