@@ -103,7 +103,8 @@ export interface IssueTracker {
   listIssueTypes(projectKey: string): Promise<TrackerIssueType[]>;
   /** The fields of the create screen for a project and issue type (id or name). */
   listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
-  searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
+  /** People the project's issues can be assigned to, matching `query`, or the one person `accountId` names. */
+  searchAssignable(projectKey: string, query: string, options?: { accountId?: string }): Promise<TrackerUser[]>;
   /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
   pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
   /**

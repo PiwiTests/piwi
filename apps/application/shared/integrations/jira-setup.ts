@@ -1,8 +1,8 @@
 /**
  * Pure helpers behind the Jira connect form: reading a pasted address down to the
  * site URL, the Atlassian pages an administrator opens while creating a token,
- * the scopes a scoped token must carry, plain-language hints for a failed check,
- * and the token-expiry reminder. Loads unchanged in the app, the server and the demo.
+ * the scopes a scoped token must carry, plain-language hints for a failed check
+ * or a failed search for assignable people, and the token-expiry reminder. Loads unchanged in the app, the server and the demo.
  */
 
 /** Where an Atlassian account creates and revokes its API tokens, classic or scoped. */
@@ -182,6 +182,26 @@ export function jiraFailureHint(stage: JiraCheckStage, failure: JiraCheckFailure
   }
   return null;
 }
+
+/**
+ * What to do about a failed search for assignable people, from Jira's status as
+ * the search answered it. Null when Jira's own message says all there is.
+ */
+export function assigneeSearchHint(providerStatus: number | null | undefined): string | null {
+  if (providerStatus === 401 || providerStatus === 403) {
+    return "The connection's account needs Assign Issues on this project or the Browse users and groups global permission. A scoped token also needs read:jira-user.";
+  }
+  if (providerStatus === 404) return "The connection's account does not see this Jira project. Check the project key.";
+  if (providerStatus === 429) return 'Jira is rate limiting this account. Try again in a minute.';
+  return null;
+}
+
+/**
+ * The hint under an empty list of assignable people: Jira Cloud answers an empty
+ * list, not an error, when the account may not browse users.
+ */
+export const ASSIGNEE_EMPTY_HINT =
+  "If the project has people, the connection's account needs Assign Issues on it or the Browse users and groups global permission. A scoped token also needs read:jira-user.";
 
 /** The hint shown when the credentials work but the account sees no project. */
 export const JIRA_NO_PROJECTS_HINT =

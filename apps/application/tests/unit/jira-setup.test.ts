@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   ATLASSIAN_API_GATEWAY,
   JIRA_SCOPED_TOKEN_SCOPES,
+  assigneeSearchHint,
   jiraFailureHint,
   jiraGatewayUrl,
   jiraProjectUrl,
@@ -93,6 +94,29 @@ describe('jiraFailureHint', () => {
 
   test('an error with nothing to add yields null', () => {
     expect(jiraFailureHint('projects', { status: 500 })).toBeNull();
+  });
+});
+
+describe('assigneeSearchHint', () => {
+  test.each([401, 403])('a %i names the permission and the scope', (status) => {
+    const hint = assigneeSearchHint(status);
+    expect(hint).toContain('Assign Issues');
+    expect(hint).toContain('Browse users and groups');
+    expect(hint).toContain('read:jira-user');
+  });
+
+  test('a 404 is about the project key', () => {
+    expect(assigneeSearchHint(404)).toMatch(/project key/);
+  });
+
+  test('a 429 asks to try again', () => {
+    expect(assigneeSearchHint(429)).toMatch(/Try again/);
+  });
+
+  test('any other status, or none, yields null', () => {
+    expect(assigneeSearchHint(500)).toBeNull();
+    expect(assigneeSearchHint(null)).toBeNull();
+    expect(assigneeSearchHint(undefined)).toBeNull();
   });
 });
 
