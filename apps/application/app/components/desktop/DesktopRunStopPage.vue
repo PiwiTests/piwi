@@ -2,9 +2,11 @@
 /**
  * Desktop shell only: the page of a stopped worker of a run the shell started, in the Local runs tray, while its lane
  * is not watched (`DesktopRunLaneView` shows it then). Its image, asked once per stop; **Watch live**, where the stop
- * takes it, which shows the stop's frames in the image's place (`DesktopRunLiveImage`, where the pointer, the wheel and
- * the keys go to the page when the stop takes the window's input) and stays on for the worker's next stops until it is
- * turned off (the run page's **Pause and watch** turns it on too, through `useDesktopRunHub`); **Pick on the image**,
+ * takes it, which shows the stop's frames in the image's place (`DesktopRunLiveImage`) and stays on for the worker's
+ * next stops until it is turned off (the run page's **Pause and watch** turns it on too, through `useDesktopRunHub`);
+ * **Interact** beside it, where the stop takes the window's input, which sends the pointer, the wheel and the keys on
+ * the view to the page, stays on for the next stops too, and goes off with Watch live or Escape on the view;
+ * **Pick on the image**,
  * or a Shift+click on the image or the view, names the element under the pointer. The view ends with the stop, as the
  * window hides, and when it is turned off. Why the hub would not show the worker's lane shows under the image.
  */
@@ -28,6 +30,8 @@ const props = defineProps<{
   busy: boolean;
   /** Why the hub would not show the worker's lane (**Watch**), when it would not. */
   laneRefused?: string | null;
+  /** Gives back the stop `since` names, once Interact went off and its input went. */
+  giveBack: (since: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +39,8 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
+  /** The stop is being given back as Interact goes off, or was: the worker's buttons wait meanwhile. */
+  releasing: [on: boolean];
 }>();
 
 const hub = useDesktopRunHub();
@@ -69,6 +75,8 @@ const stillShown = computed(() => (still.value?.since === props.stop.since ? sti
 const canView = computed(() => props.takes.includes('view'));
 /** Watch live, as the person left it for the worker, kept by the window: on, each next stop of the worker is watched. */
 const watchLive = defineModel<boolean>('watchLive', { default: false });
+/** Interact, as the person left it for the worker's lane, kept by the window. */
+const interact = defineModel<boolean>('interact', { default: false });
 const view = ref<{
   since: string;
   status: 'starting' | 'on' | 'ended' | 'refused';
@@ -96,6 +104,8 @@ function startView(): void {
     else {
       stopListening();
       view.value = { ...view.value, status: 'refused', note: answer.message };
+      // A refused view takes no input: Interact goes off, to be turned on again on a view that takes it.
+      if (interact.value) interact.value = false;
     }
   });
 }
@@ -127,9 +137,19 @@ function endView(tell: boolean): void {
   }
 }
 
-function toggleLive(): void {
+/** Watch live is being turned off, the stop given back first. */
+let leaving = false;
+
+async function toggleLive(): Promise<void> {
+  if (leaving || props.busy) return;
   if (live.value) {
     watchLive.value = false;
+    // The stop is given back, once its input went, before the view ends, which would give it back unsaid.
+    if (interact.value) {
+      leaving = true;
+      await interactOff();
+      leaving = false;
+    }
     endView(true);
   } else {
     watchLive.value = true;
@@ -137,9 +157,11 @@ function toggleLive(): void {
   }
 }
 
-/** Where the clicks and keys on the view go, while the view is on and the stop takes them. */
+/** The hub accepted the view and the stop takes the clicks and keys on it: Interact sends them. */
+const canInteract = computed(() => live.value && view.value?.status === 'on' && props.takes.includes('input'));
+/** Where the clicks and keys on the view go, while Interact sends them. */
 const inputTarget = computed(() =>
-  view.value?.status === 'on' && live.value && props.takes.includes('input')
+  canInteract.value && interact.value
     ? {
         ref: props.runRef,
         worker: props.worker,
@@ -148,7 +170,40 @@ const inputTarget = computed(() =>
       }
     : null,
 );
-const liveButton = ref<{ $el: HTMLElement } | null>(null);
+const interactButton = ref<{ $el: HTMLElement } | null>(null);
+
+/** The stop the view's input drove last (all but the pointer's moves). */
+const playedAt = ref<string | null>(null);
+
+/**
+ * Interact goes off: the input waiting on the view goes first, then a stop the window drives, or reached with its
+ * input while nobody else took it, is given back, unless Interact is on again by then.
+ */
+async function interactOff(): Promise<void> {
+  const since = props.stop.since;
+  const drained = liveImage.value?.release() ?? Promise.resolve();
+  interact.value = false;
+  emit('releasing', true);
+  try {
+    await drained;
+    if (interact.value || props.stop.since !== since) return;
+    const driver = props.stop.driver;
+    if (!driver?.self && (driver || playedAt.value !== since)) return;
+    playedAt.value = null;
+    await props.giveBack(since);
+  } finally {
+    emit('releasing', false);
+  }
+}
+
+defineExpose({ interactOff });
+
+/** Escape on the view: Interact goes off, and the keyboard to its toggle. */
+async function leave(): Promise<void> {
+  void interactOff();
+  await nextTick();
+  interactButton.value?.$el?.focus();
+}
 
 // ── Pick on the image ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -241,17 +296,34 @@ const note = computed((): { icon?: string; text: string } | null => {
     <div v-if="canView || pickable" class="flex flex-wrap gap-1.5">
       <UButton
         v-if="canView"
-        ref="liveButton"
         data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
         icon="i-lucide-eye"
         :aria-pressed="live"
-        title="Show the page as it paints, and let the clicks and keys on it go to the page where the stop takes them"
+        :aria-disabled="busy || undefined"
+        :class="live ? PRESSED_TOGGLE_CLASS : ''"
+        title="Show the page as it paints, in place of its image: Interact then sends your clicks and keys to it"
         @click="toggleLive"
       >
         Watch live
+      </UButton>
+      <UButton
+        v-if="canInteract"
+        ref="interactButton"
+        data-focus="page:interact"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-hand"
+        :aria-pressed="interact"
+        :class="interact ? PRESSED_TOGGLE_CLASS : ''"
+        title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
+        :aria-disabled="busy || undefined"
+        @click="!busy && (interact ? interactOff() : (interact = true))"
+      >
+        Interact
       </UButton>
       <UButton
         v-if="pickable"
@@ -261,6 +333,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         icon="i-lucide-mouse-pointer-click"
         :aria-pressed="picking"
         :aria-disabled="busy || undefined"
+        :class="picking ? PRESSED_TOGGLE_CLASS : ''"
         title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
         @click="!busy && (picking = !picking)"
       >
@@ -276,7 +349,8 @@ const note = computed((): { icon?: string; text: string } | null => {
       mark="Live"
       @pick="pickAt"
       @said="emit('said', $event, {})"
-      @leave="liveButton?.$el?.focus()"
+      @leave="leave"
+      @played="playedAt = $event"
     />
     <img
       v-if="!framed && stillShown?.src"

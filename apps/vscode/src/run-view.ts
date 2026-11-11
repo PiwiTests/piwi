@@ -34,6 +34,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
+  DRIVE_STOP_REQUEST,
   PAGE_FRAME_NOTIFICATION,
   type PageFrame,
   type PageViewParams,
@@ -85,8 +86,10 @@ import {
   accessibleLabel,
   controlItems,
   controlState,
+  giveBackParams,
   heardSession,
   imageClickOf,
+  keepsInteract,
   lineEditOf,
   linesAbove,
   liveItem,
@@ -175,6 +178,8 @@ export interface RunControl extends vscode.Disposable {
   workerView(): PausedPageView | null;
   /** A message of the worker panel's script, as it posts it, which the integration suite sends. */
   workerMessage(message: unknown): Promise<void>;
+  /** A message of the paused page's script, as it posts it, which the integration suite sends. */
+  pageMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
@@ -272,10 +277,19 @@ export function registerRunControl(
   let pickable = 0;
   let wantLive = false;
   let watchingPage: PageViewParams | null = null;
+  /** The watch the service accepted: the paused page offers Interact, and sends input, only for it. */
+  let acceptedPage: PageViewParams | null = null;
+  /**
+   * The stop Interact was last on for, while it is on: the paused page keeps it on for the next stops of that stop's
+   * worker slot while Watch live stays on and the run goes on, and their input goes to each once its watch is
+   * accepted. Null while Interact is off.
+   */
+  let interactOn: ShownStop | null = null;
 
   const stopPageView = () => {
     const previous = watchingPage;
     watchingPage = null;
+    acceptedPage = null;
     if (previous) void lc.sendRequest(PAGE_VIEW_REQUEST, { ...previous, on: false }).catch(() => undefined);
   };
   /** Share live said what it sends in this window: it asks no more. */
@@ -491,26 +505,57 @@ export function registerRunControl(
       );
   };
 
+  /** The service accepted the watch the paused page asked last. */
+  const accepted = () => !!watchingPage && watchingPage === acceptedPage;
+  /** Whether the paused page offers Interact (`live.input`): its stop takes input, and a watch on was accepted. */
+  const offersInput = (on: boolean) => !!pageShows?.takes.includes('input') && (!on || accepted());
+
   const watchPage = async (on: boolean) => {
+    if (!on) interactOff();
     stopPageView();
     const stop = pageShows;
     const current = page;
     if (!stop || !current?.live || !panel?.visible) return;
     const shown = current.live.shown;
-    showPage({ ...current, live: { ...current.live, on, interacting: false }, note: null });
+    showPage({ ...current, live: { ...current.live, on, input: offersInput(on), interacting: false }, note: null });
     if (!on) return;
     const params: PageViewParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on: true };
     watchingPage = params;
     const answer = await lc.sendRequest<RunControlResult>(PAGE_VIEW_REQUEST, params).catch(() => null);
     if (page?.live?.shown !== shown || watchingPage !== params) return;
     if (!answer?.ok) {
+      interactOff();
       stopPageView();
       showPage({
         ...page,
-        live: { ...page.live, on: false, interacting: false },
+        live: { ...page.live, on: false, input: offersInput(false), interacting: false },
         note: answer?.message ?? 'The editor service did not answer.',
       });
+      return;
     }
+    acceptedPage = params;
+    // Accepted, the watch offers Interact, and Interact kept for the slot sends the new stop's input at once.
+    showPage({
+      ...page,
+      live: { ...page.live, input: offersInput(true), interacting: keepsInteract(interactOn, stop) },
+    });
+  };
+
+  /**
+   * Interact goes off: when it was on, the stop it was last on for is given back (`piwi/driveStop`, `on: false`), a
+   * refusal said under the caption while the page shows that stop.
+   */
+  const interactOff = () => {
+    const stop = interactOn;
+    interactOn = null;
+    if (!stop) return;
+    void lc
+      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, giveBackParams(stop))
+      .catch(() => null)
+      .then((answer) => {
+        if (answer?.ok || !page || pageStop !== stopKey(stop)) return;
+        showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
+      });
   };
 
   const pageMessage = async (message: unknown) => {
@@ -522,14 +567,20 @@ export function registerRunControl(
       return watchPage(m.on);
     }
     if (m.type === 'interact' && typeof m.on === 'boolean' && page.live.on) {
-      showPage({ ...page, live: { ...page.live, interacting: m.on && page.live.input } });
+      const stop = pageShows;
+      // Interact is offered once the service accepted the watch: until then, turning it on changes nothing.
+      if (m.on && (!stop || !page.live.input || !accepted())) return void showPage(page);
+      showPage({ ...page, live: { ...page.live, interacting: m.on } });
+      // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
+      if (m.on) interactOn = stop;
+      else interactOff();
       return;
     }
     if (m.type === 'pick') return pickOnPage(message);
     const refused = () => {
       if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
     };
-    if (!watchingPage || !page.live.on || !panel?.visible) return refused();
+    if (!watchingPage || !accepted() || !page.live.on || !panel?.visible) return refused();
     const events =
       m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
@@ -553,6 +604,10 @@ export function registerRunControl(
    */
   const openPage = async (stop: ShownStop) => {
     const key = stopKey(stop);
+    // Another slot's stop, or one that takes no input, turns Interact off before the watch ends; the same slot's keeps
+    // it.
+    if (keepsInteract(interactOn, stop)) interactOn = stop;
+    else interactOff();
     stopPageView();
     pageStop = key;
     pageShows = stop;
@@ -571,11 +626,14 @@ export function registerRunControl(
         const change = pausedPageViewChange(visible, panel.visible, wantLive);
         visible = panel.visible;
         if (change === 'end') {
+          interactOff();
           stopPageView();
-          if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
+          if (page?.live)
+            showPage({ ...page, live: { ...page.live, on: false, input: offersInput(false), interacting: false } });
         } else if (change === 'watch') void watchPage(true);
       });
       panel.onDidDispose(() => {
+        interactOff();
         stopPageView();
         wantLive = false;
         panel = null;
@@ -680,6 +738,8 @@ export function registerRunControl(
    * shows the stops of the slot it watches.
    */
   const changed = () => {
+    // The run Interact was on for ended or went away: a rerun under its ref starts with Interact off.
+    if (interactOn && !sessions.has(interactOn.ref)) interactOff();
     const now = stops();
     const keys = new Set(now.map(stopKey));
     drawControls();
@@ -1294,6 +1354,7 @@ export function registerRunControl(
     pausedPage: () => (panel ? page : null),
     workerView: () => workerPanel.view(),
     workerMessage: (message) => workerPanel.message(message),
+    pageMessage,
     pickOnPage,
     write,
     caretCount: () => caretShown,

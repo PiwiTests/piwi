@@ -6927,7 +6927,13 @@
     "message": "Live ansehen"
   },
   "runs_liveTitle": {
-    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Ihre Klicks und Tasten darauf gehen an die Seite"
+    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Interagieren sendet dann Ihre Klicks und Tasten an sie"
+  },
+  "runs_interact": {
+    "message": "Interagieren"
+  },
+  "runs_interactTitle": {
+    "message": "Ihre Klicks, das Scrollen und Ihre Tasten an die Seite des Tests senden und diesen Halt steuern: Esc gibt ihn zurück"
   },
   "runs_liveBadge": {
     "message": "Live"
@@ -6945,13 +6951,13 @@
     "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
   },
   "runs_liveHint": {
-    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."
+    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc schaltet Interagieren aus und gibt den Halt zurück; Umschalt+Klick wählt einen Locator."
   },
   "runs_watch": {
     "message": "Ansehen"
   },
   "runs_watchTitle": {
-    "message": "Die Seite des Tests zeigen, während er läuft, über seine Halte und seine nächsten Tests hinweg: Bei einem Halt gehen Ihre Klicks und Tasten an die Seite"
+    "message": "Die Seite des Tests zeigen, während er läuft, über seine Halte und seine nächsten Tests hinweg: Bei einem Halt sendet Interagieren Ihre Klicks und Tasten an sie"
   },
   "runs_pauseWatch": {
     "message": "Anhalten und ansehen"

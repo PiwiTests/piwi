@@ -382,7 +382,8 @@ test.describe('the Runs window in another language', () => {
         stopAtCheckout(run.worker, 2, { reason: 'failure' });
         await expect(runs.locator('.state')).toHaveText(`${failed} tests/checkout.spec.ts:5`);
         expect(await clipped(runs)).toEqual([]);
-        // A headless stop watched live: its tools, its badge, the hint on its input and the actions it takes then.
+        // A headless stop watched live, with Interact: its tools, its badge, the hint on its input and the actions it
+        // takes then.
         run.worker.send({ type: 'running', stop: 2 });
         stopAtCheckout(run.worker, 3, { bar: false });
         const frame = await jpegOf(runs);
@@ -391,6 +392,7 @@ test.describe('the Runs window in another language', () => {
         await answerView(run.worker);
         sendFrame(run.worker, 3, frame);
         await expect(runs.locator('img.live')).toBeVisible();
+        await runs.getByRole('button', { name: readCatalog(language).runs_interact!.message }).click();
         await expect(runs.locator('.hint')).toBeVisible();
         await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
         await expect(runs.locator('.controls button')).toHaveCount(10);

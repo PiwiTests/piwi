@@ -6129,6 +6129,7 @@ const SCENES = [
         };
         await send(session({ ...running, state: 'stopped', stop }));
         await laneFrame('s1');
+        await worker.getByRole('button', { name: 'Interact' }).click();
         await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
         await settle();
         await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
@@ -7357,7 +7358,7 @@ const SCENES = [
   {
     name: 'desktop-run-live',
     description:
-      'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+      'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live with Interact on, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
     tags: ['docs', 'desktop'],
     out: 'docs',
     outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
@@ -7440,6 +7441,8 @@ const SCENES = [
         image,
       );
       await shown.getByRole('img', { name: /The page, live/ }).waitFor();
+      await shown.getByRole('button', { name: 'Interact' }).click();
+      await shown.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
       await settle();
       await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
 

@@ -146,7 +146,9 @@ each rule below ends with the section to read there.
   `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
   connection per hub")
 - **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
-  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
+  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). The view takes input only while
+  Interact is on, and Escape on it turns Interact off and gives the stop back, in the Runs window and the desktop tray
+  alike. (see "The Runs window")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")

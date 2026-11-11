@@ -198,7 +198,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
-    `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
+    `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
@@ -866,7 +866,8 @@ editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at
   image, intent or `drive` takes it, and takes it from the agent, which hears `taken` in `run_follow`; while a person
   drives, the agent's actions, its Resume, Step, Finish and End there, and its turning Hold failures off for that stop
   are refused or leave it held. The stop a person's Step or Run to comes to stays theirs (`carried`). It is given back
-  by `drive` off, by no longer watching the page, by leaving or no longer following the runs, which the agent hears
+  by `drive` off (an editor's `piwi/driveStop` off, as its Interact goes off, gives back what either of its views
+  drove; its `on` takes a stop one of them watches), by no longer watching the page, by leaving or no longer following the runs, which the agent hears
   (`given-back`); the agent's goes as it stops following the run. A person's controls are never refused, and a tool
   with no name drives nothing.
 

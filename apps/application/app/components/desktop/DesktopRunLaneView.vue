@@ -7,8 +7,9 @@
  * (`DesktopRunLiveImage`), which keeps the last one, dimmed and marked as running, until a frame of the page as it is
  * now comes: across a Step, a Resume and between two tests, as the tray opens again or the window shows again (a frame
  * of an earlier view of the lane), and while the lane says why it sends none. At a stop of a test, the stop takes the
- * clicks, the keys and **Pick on the image** on the image as it does on a stop watched live: the window watches the
- * stop through the lane. Turned off, Watch live goes off for the worker too.
+ * clicks, the keys (with **Interact** on, `interact`, which Escape on the image turns off) and **Pick on the image** on
+ * the image as it does on a stop watched live: the window watches the stop through the lane. Turned off, Watch live
+ * and Interact go off for the worker too.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -27,6 +28,8 @@ const props = defineProps<{
   worker: HubWorker;
   /** A command for this worker is on its way: a pick waits for it. */
   busy: boolean;
+  /** Gives back the stop `since` names, once Interact went off and its input went. */
+  giveBack: (since: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -34,15 +37,23 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
+  /** The stop is being given back as Interact goes off, or was: the worker's buttons wait meanwhile. */
+  releasing: [on: boolean];
 }>();
 
 const hub = useDesktopRunHub();
+/** Interact, as the person left it for the worker's lane, kept by the window. */
+const interact = defineModel<boolean>('interact', { default: false });
 
 const runRef = computed(() => props.session.ref);
 const lane = computed(() => props.worker.parallelIndex);
 const watched = computed(() => hub.watchesLane(runRef.value, lane.value));
 /** Why the hub would not show the lane, the last time the window asked. */
 const refusedLane = computed(() => hub.state.laneRefusals[desktopLaneKey(runRef.value, lane.value)] ?? null);
+// A refused lane takes no input: Interact goes off, to be turned on again on a lane that takes it.
+watch(refusedLane, (refused) => {
+  if (refused && interact.value) interact.value = false;
+});
 const stop = computed(() => desktopRunStop(props.worker));
 const takes = computed(() => (stop.value ? desktopStopTakes(props.worker, stop.value) : []));
 
@@ -112,10 +123,12 @@ onBeforeUnmount(() => {
 
 // ── At a stop ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Where the clicks and keys on the image go: the stop it shows, while it takes them. */
+/** The stop the image shows takes the clicks and keys on it: Interact sends them. */
+const canInteract = computed(() => !!stop.value && current.value && takes.value.includes('input'));
+/** Where the clicks and keys on the image go: the stop it shows, while Interact is on. */
 const inputTarget = computed(() => {
   const at = stop.value;
-  return at && current.value && takes.value.includes('input')
+  return at && canInteract.value && interact.value
     ? {
         ref: runRef.value,
         worker: props.worker.worker,
@@ -155,13 +168,58 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape));
 
 // ── Watch ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const watchButton = ref<{ $el: HTMLElement } | null>(null);
+const interactButton = ref<{ $el: HTMLElement } | null>(null);
 
-function toggle(): void {
+/** Watch is being turned off, the stop given back first. */
+let leaving = false;
+
+async function toggle(): Promise<void> {
+  if (leaving || props.busy) return;
   const on = !watched.value;
-  // Watch off watches the worker no more, at its stops either.
-  if (!on) hub.setWatchLive(runRef.value, props.worker.worker, false);
+  // Watch off watches the worker no more, at its stops either, and sends nothing to its page: the stop is given back
+  // before the watch ends, which would give it back unsaid.
+  if (!on) {
+    hub.setWatchLive(runRef.value, props.worker.worker, false);
+    if (interact.value) {
+      leaving = true;
+      await interactOff();
+      leaving = false;
+    }
+  }
   void hub.setLaneWatch(runRef.value, lane.value, on);
+}
+
+/** The stop the image's input drove last (all but the pointer's moves). */
+const playedAt = ref<string | null>(null);
+
+/**
+ * Interact goes off: the input waiting on the image goes first, then a stop the window drives, or reached with its
+ * input while nobody else took it, is given back, unless Interact is on again by then.
+ */
+async function interactOff(): Promise<void> {
+  const since = stop.value?.since ?? null;
+  const drained = liveImage.value?.release() ?? Promise.resolve();
+  interact.value = false;
+  emit('releasing', true);
+  try {
+    await drained;
+    const now = stop.value;
+    if (!since || interact.value || now?.since !== since) return;
+    if (!now.driver?.self && (now.driver || playedAt.value !== since)) return;
+    playedAt.value = null;
+    await props.giveBack(since);
+  } finally {
+    emit('releasing', false);
+  }
+}
+
+defineExpose({ interactOff });
+
+/** Escape on the image: Interact goes off, and the keyboard to its toggle. */
+async function leave(): Promise<void> {
+  void interactOff();
+  await nextTick();
+  interactButton.value?.$el?.focus();
 }
 
 /** What the image is: live while frames of the page as it is now come, and whether it takes the clicks and keys. */
@@ -189,13 +247,14 @@ const note = computed((): { icon?: string; text: string } | null => {
   >
     <div class="flex flex-wrap gap-1.5">
       <UButton
-        ref="watchButton"
         data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
         icon="i-lucide-eye"
         :aria-pressed="watched"
+        :aria-disabled="busy || undefined"
+        :class="watched ? PRESSED_TOGGLE_CLASS : ''"
         :title="
           watched
             ? 'Stop showing the page of this worker'
@@ -206,6 +265,22 @@ const note = computed((): { icon?: string; text: string } | null => {
         Watch
       </UButton>
       <UButton
+        v-if="canInteract"
+        ref="interactButton"
+        data-focus="page:interact"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-hand"
+        :aria-pressed="interact"
+        :class="interact ? PRESSED_TOGGLE_CLASS : ''"
+        title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
+        :aria-disabled="busy || undefined"
+        @click="!busy && (interact ? interactOff() : (interact = true))"
+      >
+        Interact
+      </UButton>
+      <UButton
         v-if="pickable"
         size="xs"
         color="neutral"
@@ -213,6 +288,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         icon="i-lucide-mouse-pointer-click"
         :aria-pressed="picking"
         :aria-disabled="busy || undefined"
+        :class="picking ? PRESSED_TOGGLE_CLASS : ''"
         title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
         @click="!busy && (picking = !picking)"
       >
@@ -228,7 +304,8 @@ const note = computed((): { icon?: string; text: string } | null => {
       :mark="live ? 'Live' : stop ? null : 'Running…'"
       @pick="pickAt"
       @said="emit('said', $event, {})"
-      @leave="watchButton?.$el?.focus()"
+      @leave="leave"
+      @played="playedAt = $event"
     />
     <p v-if="note" class="flex items-center gap-1.5 text-xs text-muted">
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" />

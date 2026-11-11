@@ -166,6 +166,41 @@ describe('the live view’s input in batches', () => {
     ]);
   });
 
+  it('sends what waits when it finishes, a held click and a drag’s end included, then takes nothing more', async () => {
+    batcher.key({ type: 'key', action: 'press', key: 'a' });
+    await vi.advanceTimersByTimeAsync(0);
+    // A key on its way, a click held for a double click, then a drag under way, Control held with it.
+    batcher.down('left', 10, 20);
+    batcher.up('left', 10, 20);
+    batcher.down('left', 50, 50, { modifiers: ['Control'] });
+    batcher.move(80, 80);
+    let finished = false;
+    void batcher.finish().then(() => (finished = true));
+    batcher.key({ type: 'key', action: 'press', key: 'b' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(finished).toBe(false);
+    await played();
+    expect(batches[1]).toEqual([
+      { type: 'mouse', action: 'click', x: 10, y: 20, button: 'left', clickCount: 1 },
+      { type: 'key', action: 'down', key: 'Control' },
+      { type: 'mouse', action: 'down', x: 50, y: 50, button: 'left' },
+      { type: 'mouse', action: 'move', x: 80, y: 80 },
+      { type: 'mouse', action: 'up', x: 80, y: 80, button: 'left' },
+      { type: 'key', action: 'up', key: 'Control' },
+    ]);
+    expect(finished).toBe(false);
+    await played();
+    expect(finished).toBe(true);
+    expect(batches).toHaveLength(2);
+  });
+
+  it('finishes at once with nothing waiting, and drops a press not sent yet', async () => {
+    batcher.down('right', 5, 5);
+    await expect(batcher.finish()).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(batches).toEqual([]);
+  });
+
   it('sends a press released where it went down as a click, once no next click can make it a double click', async () => {
     batcher.down('left', 10, 20);
     batcher.move(11, 21);

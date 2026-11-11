@@ -815,13 +815,13 @@ class GlueTest {
         assertEquals("You drive this stop", Glue.driverText(stop.copy(driver = me), interact = true))
         assertEquals("Piwi Picker drives this stop", Glue.driverText(stop.copy(driver = picker), interact = true))
         assertEquals("An agent drives this stop", Glue.driverText(stop.copy(driver = agent)))
-        assertEquals("An agent drives this stop: Interact takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
+        assertEquals("An agent drives this stop: your input takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
         // The Paused Page tab's and the Worker tab's captions.
         val stopped = RunWorker(5, 1, "stopped", runTest(), stop.copy(by = "agent", driver = agent), takes = listOf("input"), watchers = listOf(picker, me))
         val sessions = mapOf("ed-1" to session("ed-1", stopped))
         val shown = Glue.stopsOf(sessions).single()
         val said = "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6"
-        val present = "An agent drives this stop: Interact takes control · Watched by Piwi Picker and you"
+        val present = "An agent drives this stop: your input takes control · Watched by Piwi Picker and you"
         assertEquals(present, Glue.stopPresence(shown, sessions))
         assertEquals("$said · $present", Glue.stopCaption(shown, sessions))
         assertEquals("Worker 2 · $said · $present", Glue.laneShown(sessions["ed-1"], 1, listOf(shown)).caption)
@@ -1299,6 +1299,25 @@ class GlueTest {
         assertTrue(Glue.actsOnPage(listOf(PageInput("text", text = "MORNING10"))))
         assertTrue(Glue.actsOnPage(listOf(PageInput("wheel", x = 1.0, y = 2.0, deltaX = 0.0, deltaY = 40.0))))
         assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "move", 1.0, 2.0), PageInput("key", "press", key = "Tab"))))
+    }
+
+    @Test
+    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch live stays on`() {
+        val live = listOf("view", "input", "pick-at")
+        fun at(ref: String, slot: Int, takes: List<String>, line: Int = 7) =
+            Glue.ShownStop(ref, slot + 4, stopAt(specUri, line), runTest(), takes, slot = slot)
+        val shown = "ed-1" to 1
+        // The slot's next stop, the worker Playwright starts in its place included.
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live, 8), watchLive = true))
+        assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live).copy(worker = 11), watchLive = true))
+        // Interact or Watch live off, another slot or run, or a stop that takes no input on a live view: off.
+        assertFalse(Glue.keepsInteract(false, shown, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, live), watchLive = false))
+        assertFalse(Glue.keepsInteract(true, null, at("ed-1", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 2, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-2", 1, live), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("view", "pick-at")), watchLive = true))
+        assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, listOf("input")), watchLive = true))
     }
 
     @Test

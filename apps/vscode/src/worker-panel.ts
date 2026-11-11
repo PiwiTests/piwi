@@ -4,16 +4,19 @@
  * worker Playwright starts in its place, the last image kept, dimmed, until the next one comes. At a stop of its test,
  * Interact sends clicks and keys to the page (`piwi/pageInput`) and Shift+click picks the element under it
  * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is drawn anew, so a
- * message of the panel names the stop it was drawn for, and Interact starts off. One slot at a time; a stop elsewhere
- * never takes it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the
- * wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the
- * paused page as new ones (`hooks`). The pure half is `run-control.ts`.
+ * message of the panel names the stop it was drawn for. Interact is offered once the service accepts the watch, and
+ * stays on through the slot's next stops while the watch goes on; the person's first click, key, wheel or pick drives
+ * the stop, and Interact going off gives it back (`piwi/driveStop`). One slot at a time; a stop elsewhere never takes
+ * it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the wheel or a
+ * pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the paused page as
+ * new ones (`hooks`). The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
 import {
+  DRIVE_STOP_REQUEST,
   LANE_FRAME_NOTIFICATION,
   LANE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
@@ -29,7 +32,9 @@ import {
 import {
   actsOnPage,
   frameIsCurrent,
+  giveBackParams,
   imageClickOf,
+  laneKeepsInteract,
   laneShown,
   pagePoint,
   pausedPageHtml,
@@ -86,7 +91,12 @@ export function createWorkerPanel(
   /** What the last pick or input came to; why the worker sends no image now, until one comes. */
   let note: string | null = null;
   let refused: string | null = null;
+  /** The service accepted the watch: Interact is offered, and input goes to the page, only then. */
+  let accepted = false;
+  /** Interact is on: kept through the slot's next stops while the watch goes on, off at a stop that takes no input. */
   let interacting = false;
+  /** The stop Interact was last on for, which Interact going off gives back. */
+  let interactAt: ShownStop | null = null;
   let view: PausedPageView | null = null;
   /** The extension disposes of the panel: nothing is shown again. */
   let disposed = false;
@@ -97,9 +107,8 @@ export function createWorkerPanel(
   /** The view as it stands, posted to the panel's script, or drawn anew for a new slot (`fresh`). */
   const draw = (fresh = false) => {
     const stop = lane.stop;
-    const input = !!stop && stop.takes.includes('input');
+    const input = !!stop && stop.takes.includes('input') && accepted;
     const current = !!imageOf && frameIsCurrent(imageOf, lane.worker);
-    if (!input) interacting = false;
     view = {
       image,
       caption: lane.caption,
@@ -123,10 +132,33 @@ export function createWorkerPanel(
   const stopWatching = () => {
     const previous = watching;
     watching = null;
+    accepted = false;
     if (previous) void lc.sendRequest(LANE_VIEW_REQUEST, { ...previous, on: false }).catch(() => undefined);
   };
 
+  /**
+   * Interact goes off: when it was on, the stop it was last on for is given back (`piwi/driveStop`, `on: false`), a
+   * refusal said under the caption while the panel shows that stop.
+   */
+  const interactOff = () => {
+    const stop = interacting ? interactAt : null;
+    interacting = false;
+    interactAt = null;
+    if (!stop) return;
+    const at = shown;
+    void lc
+      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, giveBackParams(stop))
+      .catch(() => null)
+      .then((answer) => {
+        if (answer?.ok || at !== shown || lane.stop?.stop.since !== stop.stop.since) return;
+        note = answer?.message ?? NO_ANSWER;
+        draw();
+      });
+  };
+
   const watch = async (on: boolean): Promise<RunControlResult> => {
+    // Each watch starts with Interact off, and Interact goes off with the watch.
+    interactOff();
     stopWatching();
     const slot = target;
     if (!on || !slot || !panel?.visible) {
@@ -138,12 +170,13 @@ export function createWorkerPanel(
     watching = params;
     note = null;
     refused = null;
-    // Each watch starts with Interact off.
-    interacting = false;
     draw();
     const answer = await lc.sendRequest<RunControlResult>(LANE_VIEW_REQUEST, params).catch(() => null);
     if (watching !== params) return answer ?? { ok: false, message: NO_ANSWER };
-    if (!answer?.ok) {
+    if (answer?.ok) {
+      accepted = true;
+      draw();
+    } else {
       watching = null;
       note = answer?.message ?? NO_ANSWER;
       draw();
@@ -178,7 +211,12 @@ export function createWorkerPanel(
       return void watch(m.on);
     }
     if (m.type === 'interact' && typeof m.on === 'boolean') {
-      interacting = m.on;
+      // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
+      const stop = lane.stop;
+      if (m.on && accepted && stop?.takes.includes('input')) {
+        interacting = true;
+        interactAt = stop;
+      } else interactOff();
       return draw();
     }
     if (m.type === 'pick') return pick(raw);
@@ -186,7 +224,7 @@ export function createWorkerPanel(
       if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
     };
     const stop = lane.stop;
-    if (!watching || !stop || !panel?.visible) return refused();
+    if (!watching || !accepted || !stop || !panel?.visible) return refused();
     const events =
       m.type === 'release' ? [] : m.type === 'input' && view.live?.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
@@ -221,14 +259,15 @@ export function createWorkerPanel(
       const change = pausedPageViewChange(visible, made.visible, wantOn);
       visible = made.visible;
       if (change === 'end') {
+        interactOff();
         stopWatching();
-        interacting = false;
         draw();
         hooks.changed();
       } else if (change === 'watch') void watch(true);
     });
     made.onDidDispose(() => {
       if (panel !== made) return;
+      interactOff();
       stopWatching();
       panel = null;
       target = null;
@@ -259,6 +298,8 @@ export function createWorkerPanel(
       else panel.reveal(vscode.ViewColumn.Beside, true);
       panel.title = `Piwi: ${workerName(slot).toLowerCase()}`;
       if (target?.ref !== ref || target.lane !== slot) {
+        // Another slot's view turns Interact off.
+        interactOff();
         stopWatching();
         target = { ref, lane: slot };
         shown++;
@@ -266,7 +307,6 @@ export function createWorkerPanel(
         imageOf = null;
         note = null;
         refused = null;
-        interacting = false;
         lane = laneShown(sessions.get(ref), slot, stops);
         draw(true);
       }
@@ -285,12 +325,18 @@ export function createWorkerPanel(
       if (!target) return;
       const before = lane.stop?.stop.since ?? null;
       lane = laneShown(now.get(target.ref), target.lane, at);
-      // The service ends the view with the run.
-      if (!now.has(target.ref)) watching = null;
+      // The service ends the view with the run, and Interact goes off with it: a rerun under its ref starts off.
+      if (!now.has(target.ref)) {
+        interactOff();
+        watching = null;
+        accepted = false;
+      }
+      // Interact stays on through the slot's stops that take input and the stretches between them.
+      if (!laneKeepsInteract(interacting, lane.stop)) interactOff();
+      else if (lane.stop) interactAt = lane.stop;
       if ((lane.stop?.stop.since ?? null) === before) return draw();
-      // A new stop, or the worker going on, is drawn anew: Interact off, and no message of the view before reaches it.
+      // A new stop, or the worker going on, is drawn anew, Interact kept: no message of the view before reaches it.
       shown++;
-      interacting = false;
       note = null;
       draw(true);
     },
