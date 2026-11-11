@@ -96,7 +96,8 @@ shell and are feature-equivalent.
   it checks a waiting request again) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
   the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
   `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
-  2 s each) and deletes its folder before it stops the server. At startup each app removes its own leftover folders
+  2 s each) and deletes its folder before it stops the server. A run that ends once the quit began ends stopped
+  (`end_child`), and only that quit post tells the server of it (`quit_requested_runs`). At startup each app removes its own leftover folders
   (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
   The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
   each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a

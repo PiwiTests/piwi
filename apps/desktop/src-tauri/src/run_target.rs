@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -60,9 +61,10 @@ const KEYCHAIN_SERVICE: &str = if cfg!(feature = "runner") {
 #[derive(Default)]
 pub struct KeptKey(Mutex<Option<(String, String)>>);
 
-/// The run each requested run started, by request id, for a stop from the dashboard.
+/// The run each requested run started, by request id, for a stop from the
+/// dashboard, and whether the app is quitting.
 #[derive(Default)]
-pub struct RequestedRuns(Mutex<HashMap<String, RequestedRun>>);
+pub struct RequestedRuns(Mutex<HashMap<String, RequestedRun>>, AtomicBool);
 
 /// A requested run the shell is starting or running: its run id once spawned,
 /// whether the dashboard stopped it before then, the linked folder it runs in
@@ -155,6 +157,18 @@ impl RequestedRuns {
         }
     }
 
+    /// The app is quitting: from now on the quit tells the server how the
+    /// held runs ended (`end_all`).
+    fn quit(&self) {
+        let _held = self.0.lock().unwrap();
+        self.1.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the app is quitting (`quit`).
+    fn quitting(&self) -> bool {
+        self.1.load(Ordering::SeqCst)
+    }
+
     /// The private folders of the requested runs held now.
     fn dirs(&self) -> HashSet<PathBuf> {
         self.0.lock().unwrap().values().filter_map(|run| run.dir.clone()).collect()
@@ -206,6 +220,15 @@ const FOLDER_BUSY: &str = "another run is going in the linked folder: run this o
 /// counted in UTF-16 units as the editor counts them.
 fn args_within_cap(args: &[String]) -> bool {
     args.iter().map(|arg| arg.encode_utf16().count() + 1).sum::<usize>() <= REQUEST_ARGS_MAX_CHARS
+}
+
+/// The app is quitting: a requested run that ends from now on is told to the
+/// server by `end_requested_runs_on_quit` alone. Runs before the local runs
+/// are stopped.
+pub(crate) fn quit_requested_runs(app: &AppHandle) {
+    if let Some(runs) = app.try_state::<RequestedRuns>() {
+        runs.quit();
+    }
 }
 
 /// The app is quitting: tell the server, while it is still up, that every
@@ -772,11 +795,16 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
-    // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`).
+    // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
+    // only the quit sends an end once it began.
     let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
-        if let Some(runs) = ended_app.try_state::<RequestedRuns>() {
-            runs.end(&ended_request, code, stopped);
+        let Some(runs) = ended_app.try_state::<RequestedRuns>() else {
+            return;
+        };
+        runs.end(&ended_request, code, stopped);
+        if runs.quitting() {
+            return;
         }
         let app = ended_app.clone();
         std::thread::spawn(move || {

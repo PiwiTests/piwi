@@ -1633,6 +1633,7 @@ pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     }
     // Local test runs die with the shell — never orphan a browser fleet. They stop first, while the server is up to
     // take the end each run's reporter sends in the grace `kill_all` gives it.
+    run_target::quit_requested_runs(app_handle);
     if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
         runs.kill_all();
     }

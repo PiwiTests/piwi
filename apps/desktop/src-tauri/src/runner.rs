@@ -103,6 +103,9 @@ pub struct LocalRuns {
     labels: Mutex<HashMap<u32, String>>,
     /// The linked folder each plain run is going in (`runs_in`).
     folders: Mutex<HashMap<u32, PathBuf>>,
+    /// Set once the app quits (`kill_all`): every run that ends from then on
+    /// was stopped.
+    quitting: AtomicBool,
 }
 
 /// What a local run is, as the tray names it: `tests in shop`, `the bisect in
@@ -205,6 +208,14 @@ impl LocalRuns {
         }
     }
 
+    /// Forget plain run `id` once its process has exited, and answer whether
+    /// it was stopped: asked to stop, or still going when the app quit.
+    fn end_child(&self, id: u32) -> bool {
+        let stopped = self.stopping.lock().unwrap().contains(&id) || self.quitting.load(Ordering::SeqCst);
+        self.drop_child(id);
+        stopped
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
@@ -242,6 +253,7 @@ impl LocalRuns {
     /// closes its webServer and browsers itself; whatever still runs
     /// `QUIT_GRACE` later is killed with its process tree.
     pub fn kill_all(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
         let mut interrupted = false;
         for child in self.children.lock().unwrap().values() {
             interrupted |= crate::interrupt::interrupt(child.pid());
@@ -800,11 +812,7 @@ pub(crate) async fn spawn_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
-                    let mut stopped = false;
-                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        stopped = runs.stopping.lock().unwrap().contains(&id);
-                        runs.drop_child(id);
-                    }
+                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| runs.end_child(id));
                     crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
@@ -931,6 +939,16 @@ mod tests {
         assert!(!runs.runs_in(&folder));
         assert!(runs.folders().is_empty());
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_run_that_ends_once_the_app_quits_ends_stopped() {
+        let runs = LocalRuns::default();
+        runs.track_folder(4, Path::new("/work/shop"));
+        runs.track_folder(5, Path::new("/work/admin"));
+        assert!(!runs.end_child(4), "a run that ends on its own");
+        runs.kill_all();
+        assert!(runs.end_child(5), "killed as the app quits");
     }
 
     #[test]
