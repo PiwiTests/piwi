@@ -272,6 +272,9 @@ export const failureClusters = sqliteTable(
     // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
     // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
     announcedAt: integer('announced_at', { mode: 'timestamp' }),
+    // How many other keys of the bound Jira project the cluster's failing executions named in the last run that
+    // linked the issues its tests name, past the 10 links from the tests a cluster keeps. Null until then.
+    declaredIssuesMore: integer('declared_issues_more'),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1227,7 +1230,7 @@ export const entityLinks = sqliteTable(
     // The connection that can read/write this record, and the tracker's stable id.
     connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
     externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
-    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'tag' | 'reporter'
 
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -1245,6 +1248,33 @@ export const entityLinks = sqliteTable(
     clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
     connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
+    // One link from the tests per cluster and key, so two runs finishing at once cannot both insert it.
+    declaredKeyIdx: uniqueIndex('idx_entity_links_cluster_declared_key')
+      .on(t.failureClusterId, t.key)
+      .where(sql`origin IN ('annotation', 'tag')`),
+  }),
+);
+
+// An issue a person unlinked from a failure cluster, so the link step does not add it back from the issues its
+// tests name. `external_id` keeps the tracker's issue id of a link from the tests or a created one (null for a
+// pinned one), so the dismissal holds after the issue moves to another key.
+export const entityLinkDismissals = sqliteTable(
+  'entity_link_dismissals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    failureClusterId: integer('failure_cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    externalId: text('external_id'),
+    removedBy: integer('removed_by').references(() => users.id, { onDelete: 'set null' }),
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    clusterKeyIdx: uniqueIndex('idx_entity_link_dismissals_cluster_key').on(t.failureClusterId, t.key),
+    removedByIdx: index('idx_entity_link_dismissals_removed_by').on(t.removedBy),
   }),
 );
 

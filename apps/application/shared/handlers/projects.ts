@@ -14,6 +14,7 @@ import {
   coverageReports,
   coverageTotals,
   entityLinks,
+  entityLinkDismissals,
   bugReports,
   analyticsDailyRollups,
   handbackOutcomes,
@@ -845,6 +846,7 @@ export async function deleteProjectData(
   const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+    await db.delete(entityLinkDismissals).where(inArray(entityLinkDismissals.failureClusterId, projectClusterIds));
   }
   const projectBugReports = await db
     .select({ id: bugReports.id })
