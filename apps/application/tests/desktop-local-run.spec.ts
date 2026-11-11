@@ -301,7 +301,7 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // Leave the run page entirely — the store, not the page, owns the run.
-    await page.getByRole('link', { name: 'Projects' }).first().click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).first().click();
     await expect(page).toHaveURL(/\/projects/);
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();

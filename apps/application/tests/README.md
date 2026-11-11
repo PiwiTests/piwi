@@ -159,7 +159,7 @@ The `e2e` job of `.github/workflows/ci.yml` runs the suite on the production bui
 database backend:
 
 - 2 retries per failing test, and the run stops after 12 failed attempts
-- a trace (with DOM, ARIA and screenshot snapshots) and a screenshot for each failure
+- a trace with DOM snapshots and a screenshot for each failure
 - a blob report per shard, which `npx playwright merge-reports` turns into one HTML report
 
 ## Best Practices

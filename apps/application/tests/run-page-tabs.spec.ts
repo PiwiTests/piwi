@@ -36,6 +36,11 @@ function streamsOf(page: Page): Promise<{ path: string; open: boolean }[]> {
   );
 }
 
+/** The notification streams the pages hold between them, open or opening. */
+async function notificationStreamsOf(pages: Page[]): Promise<{ path: string; open: boolean }[]> {
+  return (await Promise.all(pages.map(streamsOf))).flat().filter((s) => s.path === '/api/notifications/stream');
+}
+
 /** Open `path` in a new tab of the context, hidden from its first script when asked, and wait for its streams to open. */
 async function openTab(context: BrowserContext, path: string, hidden: boolean): Promise<Page> {
   const page = await context.newPage();
@@ -91,6 +96,8 @@ test.describe('Run page beside other dashboard tabs', () => {
         openTab(context, '/', true),
         openTab(context, '/', true),
       ]);
+      // Tabs opened together can each hold the notification stream until their leases agree on one.
+      await expect.poll(async () => (await notificationStreamsOf(tabs)).length, { timeout: 30_000 }).toBe(1);
 
       await page.addInitScript(trackStreams);
       await page.goto(`/test-runs/${run.runId}`);
@@ -115,10 +122,7 @@ test.describe('Run page beside other dashboard tabs', () => {
       await expect(page.getByTestId('live-view-readiness')).toHaveAttribute('data-state', 'disabled');
 
       // One tab of the browser holds the notification stream.
-      const notificationStreams = (await Promise.all([page, ...tabs].map(streamsOf)))
-        .flat()
-        .filter((s) => s.path === '/api/notifications/stream');
-      expect(notificationStreams).toHaveLength(1);
+      expect(await notificationStreamsOf([page, ...tabs])).toHaveLength(1);
     } finally {
       await finishRun(request, run);
     }
