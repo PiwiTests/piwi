@@ -388,7 +388,7 @@ export interface PiwiDashboardOptions {
   failOnFlakyTests?: boolean;
 
   // ── Authentication ─────────────────────────────────────────────────────────
-  /** Username for dashboard login (use `apiKey` instead when possible) */
+  /** Username or email address for dashboard login (use `apiKey` instead when possible) */
   username?: string | null;
   /** Password for dashboard login (used with `username`) */
   password?: string | null;

@@ -104,12 +104,12 @@ describe('stored password hash cost', () => {
     afterEach(() => close());
 
     test('refuses an account whose hash is above the written cost and logs one warning naming it', async () => {
-      const { verifyUser, verifyPassword } = await loadAuth();
+      const { findLoginAccount, verifyUser, verifyPassword } = await loadAuth();
       const [costly, other] = ABOVE_WRITTEN_COST;
       await db.insert(schema.users).values({ id: 7, username: 'kim', password: costly!, role: 'member' });
 
-      expect(await verifyUser(event, 'kim', 'pw')).toBeNull();
-      expect(await verifyUser(event, 'kim', 'pw')).toBeNull();
+      expect(await verifyUser(event, await findLoginAccount(db, 'kim'), 'pw')).toBeNull();
+      expect(await verifyUser(event, await findLoginAccount(db, 'kim'), 'pw')).toBeNull();
       expect(await verifyPassword(event, 'pw', other!, 8)).toBe(false);
 
       expect(crypto.calls).toEqual([]);
