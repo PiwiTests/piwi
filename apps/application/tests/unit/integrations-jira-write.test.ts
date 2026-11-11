@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { JiraClient, JiraError } from '../../server/utils/integrations/jira/client';
 import { doc } from '../../shared/integrations/document';
+import { MAX_BULK_ISSUE_KEYS } from '../../server/utils/integrations/types';
 
 function response(body: unknown, init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}) {
   const { ok = true, status = 200, headers = {} } = init;
@@ -115,6 +116,14 @@ describe('JiraClient write methods', () => {
     });
     controller.abort(new Error('deadline'));
     await expect(client.getIssues(['SHOP-1'], { signal: controller.signal })).rejects.toThrow('deadline');
+  });
+
+  test('getIssues asks for at most MAX_BULK_ISSUE_KEYS keys, the first ones', async () => {
+    fetchMock.mockResolvedValueOnce(response({ issues: [] }));
+    const keys = Array.from({ length: MAX_BULK_ISSUE_KEYS + 20 }, (_, i) => `SHOP-${i + 1}`);
+    await client.getIssues(keys);
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(JSON.parse((init as RequestInit).body as string).issueIdsOrKeys).toEqual(keys.slice(0, MAX_BULK_ISSUE_KEYS));
   });
 
   test('a failed bulk fetch throws, so the caller links nothing', async () => {

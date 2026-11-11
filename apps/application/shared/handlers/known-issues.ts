@@ -24,7 +24,7 @@ export interface KnownIssueRef {
   statusCategory: string | null;
   /** The issue's assignee in the tracker, as last synced. */
   assignee: string | null;
-  /** `created` when Piwi filed the issue, else a link a person pinned. */
+  /** `created` when Piwi filed the issue, `annotation` or `tag` when the tests named it, else a link a person pinned. */
   origin: string | null;
   /** When the link was made: the filing, or the pin. */
   linkedAt: string | null;
@@ -39,6 +39,14 @@ export interface KnownIssueRef {
 export function isTrackerLink(link: { provider: string; key: string | null; connectionId: number | null }): boolean {
   if (!link.key || isProviderOfKind(link.provider, 'test-management')) return false;
   return link.provider === 'jira' || link.connectionId != null;
+}
+
+/** The `origin` values of links the tests declare (`piwi:issue`, a key tag): Piwi never writes through them. */
+export const DECLARED_LINK_ORIGINS = ['annotation', 'tag'] as const;
+
+/** Whether a link was declared by the tests (its `origin` is one of {@link DECLARED_LINK_ORIGINS}). */
+export function isDeclaredLink(link: { origin?: string | null }): boolean {
+  return link.origin === 'annotation' || link.origin === 'tag';
 }
 
 /**
@@ -120,8 +128,16 @@ export async function clusterReopenings(db: DrizzleDB, knownIssues: Map<number, 
   return out;
 }
 
-/** The known issue of each cluster that has one, keyed by cluster id, in one query. */
-export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): Promise<Map<number, KnownIssueRef>> {
+/**
+ * The known issue of each cluster that has one, keyed by cluster id, in one query: the cluster's newest tracker link
+ * pinned or created, else its oldest link from the tests whose issue is not Done, else its oldest link from the tests.
+ * With `declared` false, links from the tests are left out, as for an issue body Piwi writes.
+ */
+export async function clusterKnownIssues(
+  db: DrizzleDB,
+  clusterIds: number[],
+  opts: { declared?: boolean } = {},
+): Promise<Map<number, KnownIssueRef>> {
   const out = new Map<number, KnownIssueRef>();
   const ids = [...new Set(clusterIds.filter((id): id is number => typeof id === 'number'))];
   if (ids.length === 0) return out;
@@ -142,10 +158,10 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
     .from(entityLinks)
     .where(and(inArray(entityLinks.failureClusterId, ids), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
-  for (const row of rows) {
-    if (row.clusterId == null || out.has(row.clusterId) || !isTrackerLink(row)) continue;
+  const declared = new Map<number, (typeof rows)[number]>();
+  const toRef = (row: (typeof rows)[number]): KnownIssueRef => {
     const meta = (row.metadata ?? null) as { statusCategory?: string | null; assignee?: string | null } | null;
-    out.set(row.clusterId, {
+    return {
       key: row.key!,
       url: row.url,
       provider: row.provider,
@@ -156,8 +172,22 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
       assignee: meta?.assignee ?? null,
       origin: row.origin ?? null,
       linkedAt: row.createdAt ? new Date(row.createdAt as unknown as string | number | Date).toISOString() : null,
-    });
+    };
+  };
+  const isDone = (row: (typeof rows)[number]) =>
+    (row.metadata as { statusCategory?: string | null } | null)?.statusCategory === 'done';
+  for (const row of rows) {
+    if (row.clusterId == null || out.has(row.clusterId) || !isTrackerLink(row)) continue;
+    if (!isDeclaredLink(row)) {
+      out.set(row.clusterId, toRef(row));
+      continue;
+    }
+    if (opts.declared === false) continue;
+    // Rows come newest first, so the last one kept is the oldest, an open issue before a Done one.
+    const kept = declared.get(row.clusterId);
+    if (!kept || !isDone(row) || isDone(kept)) declared.set(row.clusterId, row);
   }
+  for (const [clusterId, row] of declared) if (!out.has(clusterId)) out.set(clusterId, toRef(row));
   return out;
 }
 

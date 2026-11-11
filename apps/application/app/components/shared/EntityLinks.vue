@@ -9,6 +9,8 @@ const props = defineProps<{
   links?: EntityLinkInfo[] | null;
   /** Hide the add/remove controls for viewers without write access. */
   readonly?: boolean;
+  /** How many more issues the cluster's tests named than it links. */
+  declaredMore?: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -103,7 +105,11 @@ watch(
   <div class="flex flex-wrap items-center gap-1.5">
     <LinkChip v-for="link in localLinks" :key="link.id" :link="link" :removable="!readonly" @remove="removeLink" />
 
-    <span v-if="readonly && localLinks.length === 0" class="text-xs text-muted">None</span>
+    <span v-if="declaredMore" class="text-xs text-muted" data-testid="links-declared-more">
+      and {{ declaredMore }} more named by its tests
+    </span>
+
+    <span v-if="readonly && localLinks.length === 0 && !declaredMore" class="text-xs text-muted">None</span>
 
     <UPopover v-if="!readonly" v-model:open="addLinkOpen">
       <UButton

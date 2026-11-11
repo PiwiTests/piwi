@@ -1,17 +1,19 @@
 import {
   entityLinks,
+  entityLinkDismissals,
   testRuns,
   testRunsCases,
   testCases,
   failureClusters,
   bugReports,
 } from '../../server/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { safeHttpUrl } from '../utils/safe-url';
 import { detectProvider, extractKey, type LinkProvider } from '../link-detect';
 
 import type { DrizzleDB } from './db';
+import { DECLARED_LINK_ORIGINS, isDeclaredLink } from './known-issues';
 
 /**
  * How a URL resolved against the configured connections. Injected by the server
@@ -99,6 +101,10 @@ export async function listLinks(db: DrizzleDB, entityType: LinkEntityType, entit
   return { links };
 }
 
+/**
+ * Pin a URL to an entity. On a failure cluster, a keyed URL clears the key's dismissal, and a link from the tests
+ * with the same key becomes the pinned link instead of a second row.
+ */
 export async function createLink(
   db: DrizzleDB,
   data: {
@@ -135,6 +141,39 @@ export async function createLink(
 
   const { provider, key, connectionId, externalId } = await resolveUrl(url, resolver);
 
+  if (entityType === 'failure_cluster' && key) {
+    // Pinning an issue by hand clears its dismissal, and takes over the cluster's link from the tests to it.
+    await db
+      .delete(entityLinkDismissals)
+      .where(and(eq(entityLinkDismissals.failureClusterId, entityId), eq(entityLinkDismissals.key, key)));
+    const [declared] = await db
+      .select()
+      .from(entityLinks)
+      .where(
+        and(
+          eq(entityLinks.failureClusterId, entityId),
+          eq(entityLinks.key, key),
+          inArray(entityLinks.origin, [...DECLARED_LINK_ORIGINS]),
+        ),
+      )
+      .limit(1);
+    if (declared) {
+      const [pinned] = await db
+        .update(entityLinks)
+        .set({
+          url,
+          provider,
+          connectionId,
+          externalId: declared.externalId ?? externalId,
+          origin: 'pinned',
+          ...(title ? { title } : {}),
+        })
+        .where(eq(entityLinks.id, declared.id))
+        .returning();
+      return { success: true, link: pinned ?? null };
+    }
+  }
+
   const result = await db
     .insert(entityLinks)
     .values({
@@ -150,27 +189,67 @@ export async function createLink(
   return { success: true, link: result[0] ?? null };
 }
 
-export async function deleteLink(db: DrizzleDB, id: number) {
+/** A removed link, as {@link recordLinkDismissals} reads it. */
+interface RemovedLink {
+  failureClusterId: number | null;
+  key: string | null;
+  externalId: string | null;
+  origin: string;
+}
+
+/**
+ * Record that a person removed a cluster's keyed links, so the step that links the issues a cluster's tests name
+ * does not add them back. The tracker's issue id is kept for a link from the tests or a created one, so the dismissal
+ * holds after the issue moves to another key; a pinned link's id is not one Piwi read.
+ */
+async function recordLinkDismissals(db: DrizzleDB, removed: RemovedLink[], removedBy: number | null): Promise<void> {
+  for (const link of removed) {
+    if (link.failureClusterId == null || !link.key) continue;
+    const keepsId = isDeclaredLink(link) || link.origin === 'created';
+    await db
+      .insert(entityLinkDismissals)
+      .values({
+        failureClusterId: link.failureClusterId,
+        key: link.key,
+        externalId: keepsId ? link.externalId : null,
+        removedBy,
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/** Remove a link by id. A keyed link on a failure cluster is recorded as dismissed, by `removedBy` when known. */
+export async function deleteLink(db: DrizzleDB, id: number, removedBy: number | null = null) {
   const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
   if (!existing[0]) throw new Error('Link not found');
   await db.delete(entityLinks).where(eq(entityLinks.id, id));
+  await recordLinkDismissals(db, existing, removedBy);
   return { success: true };
 }
 
 /**
  * Remove every link of an entity to a URL, in one statement. Surrounding spaces
- * are ignored on both sides: a link may have been stored with them. Returns how
- * many links were removed.
+ * are ignored on both sides: a link may have been stored with them. A keyed link
+ * on a failure cluster is recorded as dismissed, as `deleteLink` records it.
+ * Returns how many links were removed.
  */
 export async function deleteLinksTo(
   db: DrizzleDB,
   entityType: LinkEntityType,
   entityId: number,
   url: string,
+  removedBy: number | null = null,
 ): Promise<number> {
   const removed = await db
     .delete(entityLinks)
     .where(and(eq(fkColumnFor(entityType), entityId), eq(sql`trim(${entityLinks.url})`, url.trim())))
-    .returning({ id: entityLinks.id });
+    .returning({
+      id: entityLinks.id,
+      failureClusterId: entityLinks.failureClusterId,
+      key: entityLinks.key,
+      externalId: entityLinks.externalId,
+      origin: entityLinks.origin,
+    });
+  await recordLinkDismissals(db, removed, removedBy);
   return removed.length;
 }

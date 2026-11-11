@@ -1,0 +1,253 @@
+/**
+ * The link step's core, shared by the server's finalize and the demo: the keys a run's failing executions name in
+ * the bound Jira project, one bulk lookup, and the links it writes. The server's `linkDeclaredIssues`
+ * (`server/utils/integrations/declared-issues.ts`) decides whether a run gets the step and supplies the connection;
+ * the demo supplies a canned one.
+ *
+ * An annotation is run data any reporter token can send, while the issue is read through the connection's account,
+ * so only issues of the bound Jira project are linked: a key in the issue-key shape whose project part is the
+ * binding's `projectKey`, and a looked-up issue still in that project under the key the test named. Anything else
+ * is dropped, never stored as a plain link (a plain link is unfurled, which would let a reporter token make the
+ * server fetch a URL of its choosing).
+ */
+import { and, eq, gt, inArray, isNotNull, notInArray } from 'drizzle-orm';
+import { sanitizeTestMetadata } from '@piwitests/core/test-meta';
+import { entityLinkDismissals, entityLinks, failureClusters, testRunsCases } from '../../server/database/schema';
+import type { IssueTracker, TrackerIssue } from '../../server/utils/integrations/types';
+import type { DrizzleDB } from './db';
+import { isDeclaredLink } from './known-issues';
+
+/** The most links from the tests a cluster keeps; links pinned by hand or created by Piwi do not count. */
+export const MAX_DECLARED_LINKS_PER_CLUSTER = 10;
+/** The most distinct keys one run looks up. */
+export const MAX_DECLARED_KEYS_PER_RUN = 50;
+
+/** A Jira issue key: an upper-case project part, a dash and a number without a leading zero. */
+const ISSUE_KEY_SHAPE = /^[A-Z][A-Z0-9_]+-[1-9][0-9]*$/;
+
+/** What the step did, for its callers and tests. */
+export interface DeclaredLinksResult {
+  /** Why nothing was looked up, when it was not. */
+  skipped?: 'ineligible' | 'unbound' | 'no-project-key' | 'out-of-scope' | 'no-lookup' | 'nothing-named';
+  /** The keys sent to the lookup. */
+  looked: string[];
+  /** The links inserted, as cluster id and key. */
+  linked: { clusterId: number; key: string }[];
+  /** The lookup failed or ran past the deadline, so nothing was written. */
+  failed?: 'lookup' | 'deadline';
+}
+
+/**
+ * The key a `piwi:issue` value names in the bound project, or null: a bare key, or a URL the connection's
+ * `parseIssueUrl` reads, in the key shape and with `projectKey` as its project part.
+ */
+export function declaredIssueKey(value: string, projectKey: string, tracker: Pick<IssueTracker, 'parseIssueUrl'>) {
+  const key = /^https?:\/\//i.test(value) ? tracker.parseIssueUrl(value)?.key : value;
+  if (!key || !ISSUE_KEY_SHAPE.test(key)) return null;
+  return key.slice(0, key.lastIndexOf('-')) === projectKey ? key : null;
+}
+
+interface ClusterState {
+  /** The keys the cluster's failing executions name, with how many executions name each and the first test. */
+  named: Map<string, { count: number; testCaseId: number }>;
+  /** Keys the cluster links by any origin, or has dismissed. */
+  taken: Set<string>;
+  /** Jira issue ids the cluster has dismissed. */
+  dismissedIds: Set<string>;
+  /** Links from the tests the cluster holds. */
+  declared: number;
+  /** The keys still to link, most-named first. */
+  candidates: string[];
+}
+
+/** The connection the step reads through: the bound one on the server, a canned one in the demo. */
+export interface DeclaredIssuesLookup {
+  projectKey: string;
+  connectionId: number | null;
+  tracker: Pick<IssueTracker, 'parseIssueUrl'> & Required<Pick<IssueTracker, 'getIssues'>>;
+  /** Aborts the lookup; once it fires nothing more is written. */
+  deadline: AbortSignal;
+}
+
+/**
+ * Links the run's failing executions' named issues to their clusters: one bulk lookup for at most
+ * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing executions name first, leaving out a key a cluster
+ * already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
+ * the keys it names and does not link.
+ *
+ * At the deadline the lookup is aborted and nothing is written. A lookup that fails links nothing; the next failing
+ * run that names the key tries again.
+ */
+export async function linkNamedIssues(
+  db: DrizzleDB,
+  runId: number,
+  { projectKey, connectionId, tracker, deadline }: DeclaredIssuesLookup,
+): Promise<DeclaredLinksResult> {
+  const result: DeclaredLinksResult = { looked: [], linked: [] };
+  const { clusters, failing } = await readClusterStates(db, runId, projectKey, tracker);
+  // A cluster whose executions name nothing this run has no key past the cap.
+  const unnamed = failing.filter((id) => !clusters.has(id));
+  if (unnamed.length > 0) {
+    await db
+      .update(failureClusters)
+      .set({ declaredIssuesMore: 0 })
+      .where(and(inArray(failureClusters.id, unnamed), gt(failureClusters.declaredIssuesMore, 0)));
+  }
+  if (clusters.size === 0) return { ...result, skipped: 'nothing-named' };
+
+  const keys = pickLookupKeys(clusters);
+  result.looked = keys;
+  let found: TrackerIssue[] = [];
+  if (keys.length > 0) {
+    try {
+      found = (await tracker.getIssues(keys, { signal: deadline })).issues;
+    } catch (err) {
+      if (deadline.aborted) return { ...result, failed: 'deadline' };
+      console.error('[integrations] the declared-issue lookup failed', err);
+      return { ...result, failed: 'lookup' };
+    }
+  }
+  if (deadline.aborted) return { ...result, failed: 'deadline' };
+
+  // An issue counts only under the key the test named and in the bound project: a moved issue comes back under its
+  // new key, or in another project.
+  const asked = new Set(keys);
+  const byKey = new Map<string, TrackerIssue>();
+  for (const issue of found) {
+    if (asked.has(issue.key) && issue.projectKey === projectKey && issue.id) byKey.set(issue.key, issue);
+  }
+
+  const now = new Date();
+  for (const [clusterId, state] of clusters) {
+    let room = MAX_DECLARED_LINKS_PER_CLUSTER - state.declared;
+    if (deadline.aborted) return { ...result, failed: 'deadline' };
+    for (const key of state.candidates) {
+      if (room <= 0) break;
+      const issue = byKey.get(key);
+      if (!issue || state.dismissedIds.has(issue.id as string)) continue;
+      const inserted = await db
+        .insert(entityLinks)
+        .values({
+          failureClusterId: clusterId,
+          url: issue.url,
+          provider: 'jira',
+          key,
+          title: issue.title,
+          statusText: issue.status,
+          statusColor: issue.statusColor,
+          metadata: {
+            ...(issue.statusCategory ? { statusCategory: issue.statusCategory } : {}),
+            source: { testCaseId: state.named.get(key)?.testCaseId ?? null },
+          } as never,
+          unfurledAt: now,
+          connectionId,
+          externalId: issue.id,
+          origin: 'annotation',
+          createdBy: null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: entityLinks.id });
+      if (inserted.length === 0) continue;
+      state.taken.add(key);
+      state.declared++;
+      room--;
+      result.linked.push({ clusterId, key });
+    }
+    // The keys named and still not linked or dismissed, Jira's answer aside: left out at the cap, past the run's
+    // budget, or not found.
+    const more = state.candidates.filter((k) => !state.taken.has(k)).length;
+    await db.update(failureClusters).set({ declaredIssuesMore: more }).where(eq(failureClusters.id, clusterId));
+  }
+  return result;
+}
+
+/** The clusters of the run's failing executions that name an issue of the bound project, with what each holds. */
+async function readClusterStates(
+  db: DrizzleDB,
+  runId: number,
+  projectKey: string,
+  tracker: Pick<IssueTracker, 'parseIssueUrl'>,
+): Promise<{ clusters: Map<number, ClusterState>; failing: number[] }> {
+  const rows = await db
+    .select({
+      clusterId: testRunsCases.failureClusterId,
+      testCaseId: testRunsCases.testCaseId,
+      testMeta: testRunsCases.testMeta,
+    })
+    .from(testRunsCases)
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        isNotNull(testRunsCases.failureClusterId),
+        notInArray(testRunsCases.status, ['passed', 'skipped', 'didnotrun']),
+      ),
+    );
+  const clusters = new Map<number, ClusterState>();
+  const failing = new Set<number>();
+  for (const row of rows) {
+    if (row.clusterId != null) failing.add(row.clusterId);
+    const issues = sanitizeTestMetadata(row.testMeta)?.issues ?? [];
+    for (const value of issues) {
+      const key = declaredIssueKey(value, projectKey, tracker);
+      if (!key || row.clusterId == null) continue;
+      let state = clusters.get(row.clusterId);
+      if (!state) {
+        state = { named: new Map(), taken: new Set(), dismissedIds: new Set(), declared: 0, candidates: [] };
+        clusters.set(row.clusterId, state);
+      }
+      const named = state.named.get(key);
+      if (named) named.count++;
+      else state.named.set(key, { count: 1, testCaseId: row.testCaseId });
+    }
+  }
+  if (clusters.size === 0) return { clusters, failing: [...failing] };
+
+  const ids = [...clusters.keys()];
+  const links = await db
+    .select({ clusterId: entityLinks.failureClusterId, key: entityLinks.key, origin: entityLinks.origin })
+    .from(entityLinks)
+    .where(inArray(entityLinks.failureClusterId, ids));
+  for (const link of links) {
+    const state = clusters.get(link.clusterId as number);
+    if (!state) continue;
+    if (link.key) state.taken.add(link.key.toUpperCase());
+    if (isDeclaredLink(link)) state.declared++;
+  }
+  const dismissals = await db
+    .select({
+      clusterId: entityLinkDismissals.failureClusterId,
+      key: entityLinkDismissals.key,
+      externalId: entityLinkDismissals.externalId,
+    })
+    .from(entityLinkDismissals)
+    .where(inArray(entityLinkDismissals.failureClusterId, ids));
+  for (const dismissal of dismissals) {
+    const state = clusters.get(dismissal.clusterId);
+    if (!state) continue;
+    state.taken.add(dismissal.key.toUpperCase());
+    if (dismissal.externalId) state.dismissedIds.add(dismissal.externalId);
+  }
+  for (const state of clusters.values()) {
+    state.candidates = [...state.named]
+      .filter(([key]) => !state.taken.has(key))
+      .sort(([a, x], [b, y]) => y.count - x.count || a.localeCompare(b))
+      .map(([key]) => key);
+  }
+  return { clusters, failing: [...failing] };
+}
+
+/**
+ * The keys to look up: those of the clusters below the cap, the ones the most failing executions name first, at most
+ * {@link MAX_DECLARED_KEYS_PER_RUN}.
+ */
+function pickLookupKeys(clusters: Map<number, ClusterState>): string[] {
+  const counts = new Map<string, number>();
+  for (const state of clusters.values()) {
+    if (state.declared >= MAX_DECLARED_LINKS_PER_CLUSTER) continue;
+    for (const key of state.candidates) counts.set(key, (counts.get(key) ?? 0) + (state.named.get(key)?.count ?? 0));
+  }
+  return [...counts]
+    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+    .slice(0, MAX_DECLARED_KEYS_PER_RUN)
+    .map(([key]) => key);
+}

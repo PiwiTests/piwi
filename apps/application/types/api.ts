@@ -1239,7 +1239,9 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
   links: EntityLinkInfo[];
-  /** The cluster's known issue: its newest tracker link. Every surface names this one. */
+  /** How many more issue keys its tests named in their last failing run than were linked. */
+  declaredIssuesMore?: number | null;
+  /** The cluster's known issue: its tracker link, else a link its tests name. Every surface names this one. */
   knownIssue: KnownIssueRef | null;
   /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
   issueFilingQueued: boolean;
@@ -2063,7 +2065,7 @@ export interface EntityLinkInfo {
   /** The connection that can read/write this record, when Piwi owns it. */
   connectionId?: number | null;
   externalId?: string | null;
-  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  /** Who put the link there: `pinned` by a person, `created` by Piwi, `annotation` from the test's `piwi:issue`, etc. */
   origin?: string | null;
   createdBy?: number | null;
   createdAt: Date;

@@ -14,11 +14,13 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   entityLinks,
+  entityLinkDismissals,
   handbackOutcomes,
   integrationActions,
   mcpToolCalls,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
+import { isDeclaredLink } from './known-issues';
 import { isCurrentlySnoozed, wakeOnRecurrence, type SnoozeState } from '../inbox-queues';
 import { eligibleRunSql, isEligibleRun } from '../run-eligibility';
 import type { DrizzleDB } from './db';
@@ -196,7 +198,8 @@ async function routeMovedTests(
  * Move the given tests' executions out of a cluster into a new cluster, and
  * route their later failures with any fingerprint leading to the source
  * cluster (its own and its aliases) to the new one. The pair is recorded as a
- * rejected merge, so reconciliation never folds it back. Both clusters' seen
+ * rejected merge, so reconciliation never folds it back, and the source's link
+ * dismissals are copied to the new cluster. Both clusters' seen
  * runs and occurrences are then recomputed from the executions each holds.
  * Returns null when the cluster does not exist, and no cluster when none of
  * the tests has an execution in it.
@@ -295,6 +298,9 @@ export async function splitFailureCluster(
           set: { clusterId: newId },
         });
     }
+
+    // A key removed by hand from the source stays removed from the cluster split off.
+    await copyLinkDismissals(tx, sourceId, newId);
 
     await tx
       .insert(clusterMergeSuggestions)
@@ -519,6 +525,57 @@ function mergedTriageNote(victimNote: string): SQL {
 }
 
 /**
+ * Before a merge moves the victim's links: delete the victim's links from the
+ * tests whose key the survivor links (by any origin) or has dismissed, and the
+ * survivor's links from the tests whose key the victim pinned or created.
+ */
+async function dropDuplicateDeclaredLinks(db: DrizzleDB, survivorId: number, victimId: number): Promise<void> {
+  const links = await db
+    .select({
+      id: entityLinks.id,
+      clusterId: entityLinks.failureClusterId,
+      key: entityLinks.key,
+      origin: entityLinks.origin,
+    })
+    .from(entityLinks)
+    .where(inArray(entityLinks.failureClusterId, [survivorId, victimId]));
+  const dismissed = await db
+    .select({ key: entityLinkDismissals.key })
+    .from(entityLinkDismissals)
+    .where(eq(entityLinkDismissals.failureClusterId, survivorId));
+  const survivorKeys = new Set(dismissed.map((d) => d.key));
+  const victimHandKeys = new Set<string>();
+  for (const link of links) {
+    if (!link.key) continue;
+    if (link.clusterId === survivorId) survivorKeys.add(link.key);
+    else if (link.origin === 'pinned' || link.origin === 'created') victimHandKeys.add(link.key);
+  }
+  const drop = links
+    .filter((link) => link.key && isDeclaredLink(link))
+    .filter((link) => (link.clusterId === victimId ? survivorKeys.has(link.key!) : victimHandKeys.has(link.key!)))
+    .map((link) => link.id);
+  if (drop.length > 0) await db.delete(entityLinks).where(inArray(entityLinks.id, drop));
+}
+
+/** Copy one cluster's link dismissals to another; a key the other already dismissed keeps its own. */
+async function copyLinkDismissals(db: DrizzleDB, fromId: number, toId: number): Promise<void> {
+  const dismissals = await db
+    .select({
+      key: entityLinkDismissals.key,
+      externalId: entityLinkDismissals.externalId,
+      removedBy: entityLinkDismissals.removedBy,
+      removedAt: entityLinkDismissals.removedAt,
+    })
+    .from(entityLinkDismissals)
+    .where(eq(entityLinkDismissals.failureClusterId, fromId));
+  if (dismissals.length === 0) return;
+  await db
+    .insert(entityLinkDismissals)
+    .values(dismissals.map((d) => ({ ...d, failureClusterId: toId })))
+    .onConflictDoNothing();
+}
+
+/**
  * Merge one failure cluster into another. The `survivorId` cluster keeps its
  * manual base commit, takes the status `mergedTriage` gives it, the victim's
  * assignee when it has none and the victim's note when it lacks it, and absorbs
@@ -547,6 +604,10 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .set({ failureClusterId: survivorId })
       .where(eq(testRunsCases.failureClusterId, victimId));
 
+    // One link per key remains, so the index on links from the tests never
+    // rejects the move, and a key the survivor dismissed is not brought back.
+    await dropDuplicateDeclaredLinks(tx, survivorId, victimId);
+
     // The survivor inherits the victim's external links, so a ticket Piwi filed
     // (or a pinned issue) keeps tracking the failure across the merge rather than
     // being cascade-deleted with the victim cluster.
@@ -554,6 +615,10 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .update(entityLinks)
       .set({ failureClusterId: survivorId })
       .where(eq(entityLinks.failureClusterId, victimId));
+
+    // The victim's dismissals follow it; a key the survivor dismissed keeps the survivor's.
+    await copyLinkDismissals(tx, victimId, survivorId);
+    await tx.delete(entityLinkDismissals).where(eq(entityLinkDismissals.failureClusterId, victimId));
 
     // Execution-scope diagnoses are keyed by test-run-case and stay meaningful —
     // move them to the survivor. A cluster-scope diagnosis on the victim is

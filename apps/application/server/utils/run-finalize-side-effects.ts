@@ -2,6 +2,7 @@ import { attachRunPlan } from './pass-reuse';
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
 import { runTestManagementSync, runTrackerAutomation } from './integrations/automation';
+import { linkDeclaredIssues } from './integrations/declared-issues';
 import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
@@ -32,7 +33,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * pass reuse plan, the environment-incident check, the daily rollup of its cell, regression signals, the CI re-run
  * dispatch it answers, auto markers, flaky root causes, the history of its
  * resource findings, its analysis (the scenario gaps, change coverage, fix
- * verification and the hand-back outcomes it shows) and its outbound effects
+ * verification and the hand-back outcomes it shows), the links to the issues
+ * its failing tests name, and its outbound effects
  * (AI diagnosis, the issues automatic creation files once fix verification
  * is done, the results sent to the project's test management tool, notifications, the pull-request comment and
  * commit status, auto-heal).
@@ -136,7 +138,12 @@ export async function runFinalizeSideEffects(
         return undefined;
       })
     : undefined;
-  const analysis = analyzeFinishedRunInBackground(db, id);
+  // The issues the run's failing tests name are linked first, so every step that reads a cluster's links counts
+  // them. It never holds up the rollup the caller awaits.
+  const linked = isEligibleRun(current, 'tracker')
+    ? linkDeclaredIssues(db, id).catch((e) => console.error('[integrations] linkDeclaredIssues failed', e))
+    : Promise.resolve();
+  const analysis = analyzeFinishedRunInBackground(db, id, linked);
   void analysis.coverage.then(() =>
     inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e)),
   );

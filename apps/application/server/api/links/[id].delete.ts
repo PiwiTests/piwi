@@ -14,10 +14,10 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'link ID');
 
-  const { db } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
 
   try {
-    return await deleteLink(db, id);
+    return await deleteLink(db, id, user.id);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete link';
     const statusCode = message === 'Link not found' ? 404 : 400;
