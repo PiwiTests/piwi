@@ -73,6 +73,7 @@ export const projects = pgTable(
     gateStatus: boolean('gate_status').notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     liveView: boolean('live_view').notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
     liveViewMasks: jsonb('live_view_masks'), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
+    askToWatch: boolean('ask_to_watch').notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -123,6 +124,7 @@ export const testRuns = pgTable(
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     liveViewKeyDigests: jsonb('live_view_key_digests').$type<string[]>(), // SHA-256 digests of the run's live view keys, one per shard that set it up, never a key: an instance started again takes a running worker's key back by them
+    continuedInId: integer('continued_in_id'), // The run that continued this one, shared after it from the same editor window (its worker's `after`); null for none
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
