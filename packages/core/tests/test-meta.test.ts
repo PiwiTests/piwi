@@ -412,6 +412,8 @@ describe('sanitizeTestMetadata', () => {
     ).toEqual({ issues: ['SHOP-1', 'https://acme.atlassian.net/browse/SHOP-2'] });
     expect(sanitizeTestMetadata({ issues: 'SHOP-1' })).toBeNull();
     expect(sanitizeTestMetadata({ issue: 'SHOP-1' })).toBeNull();
+    expect(sanitizeTestMetadata({ Issue: 'SHOP-1', 'issue ': 'SHOP-2', ' ISSUE\t': 'SHOP-3' })).toBeNull();
+    expect(sanitizeTestMetadata({ issues: ['SHOP-4'], Issue: 'SHOP-1' })).toEqual({ issues: ['SHOP-4'] });
     const many = Array.from({ length: MAX_TEST_ISSUES + 5 }, (_, i) => `SHOP-${i + 1}`);
     expect(sanitizeTestMetadata({ issues: many })?.issues).toHaveLength(MAX_TEST_ISSUES);
   });

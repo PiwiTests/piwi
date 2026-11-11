@@ -402,7 +402,9 @@ export function sanitizeTestMetadata(raw: unknown): TestMetadata | null {
         description: typeof entry === 'string' ? entry : undefined,
       }));
     }
-    if (key === 'issue') return [];
+    // The singular `issue` is the annotation, not a wire field: dropped however it is cased or spaced, as the parser
+    // trims and lower-cases a type, so no variant of it adds issues.
+    if (key.trim().toLowerCase() === 'issue') return [];
     return [{ type: `${PIWI_ANNOTATION_PREFIX}${key}`, description: typeof value === 'string' ? value : undefined }];
   });
   return parseTestMetadata(asAnnotations);
