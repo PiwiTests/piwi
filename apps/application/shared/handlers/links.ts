@@ -163,7 +163,7 @@ export async function createLink(
         .set({
           url,
           provider,
-          connectionId,
+          connectionId: connectionId ?? declared.connectionId,
           externalId: declared.externalId ?? externalId,
           origin: 'pinned',
           ...(title ? { title } : {}),

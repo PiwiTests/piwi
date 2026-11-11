@@ -25,7 +25,7 @@ const { linkDeclaredIssues, MAX_DECLARED_KEYS_PER_RUN } =
 const { syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { getClusterTrackerLink, getClusterKnownIssue } = await import('../../server/utils/integrations/known-issue');
 const { createEnrichedLink } = await import('../../server/utils/integrations/link-create');
-const { deleteLink, deleteLinksTo } = await import('../../shared/handlers/links');
+const { createLink, deleteLink, deleteLinksTo } = await import('../../shared/handlers/links');
 const { clusterKnownIssues } = await import('../../shared/handlers/known-issues');
 const { linkNamedIssues } = await import('../../shared/handlers/declared-issues');
 const { mergeFailureClusters, splitFailureCluster } = await import('../../shared/handlers/failure-cluster-ops');
@@ -603,6 +603,18 @@ describe('pinning a link from the tests by hand', () => {
     expect(link?.origin).toBe('pinned');
     expect(await links(cluster)).toHaveLength(1);
     expect((await getClusterTrackerLink(dbc, cluster))?.id).toBe(declared.id);
+  });
+  test('keeps the connection when pinned through a URL no connection resolves', async () => {
+    const cluster = await newCluster();
+    const declared = await pin(cluster, 'PROJ-32', 'annotation');
+
+    const { link } = await createLink(db as never, {
+      entityType: 'failure_cluster',
+      entityId: cluster,
+      url: `${SITE}/browse/PROJ-32`,
+    });
+
+    expect(link).toMatchObject({ id: declared.id, origin: 'pinned', connectionId });
   });
 });
 
