@@ -790,9 +790,19 @@ pub(crate) async fn spawn_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    state.label(id, run_label("tests", folder));
-    state.track_folder(id, folder);
-    state.children.lock().unwrap().insert(id, child);
+    {
+        // Checked under the lock `kill_all` drains, so a run spawned as the app quits never outlives it.
+        let mut children = state.children.lock().unwrap();
+        if state.quitting.load(Ordering::SeqCst) {
+            drop(children);
+            crate::worktree::kill_child_tree(child.pid());
+            let _ = child.kill();
+            return Err("the app is quitting".into());
+        }
+        state.label(id, run_label("tests", folder));
+        state.track_folder(id, folder);
+        children.insert(id, child);
+    }
     crate::run_target::hand_local_runs(app);
 
     let emit_app = app.clone();

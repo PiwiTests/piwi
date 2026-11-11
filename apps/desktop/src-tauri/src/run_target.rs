@@ -50,6 +50,10 @@ const LEFTOVER_REQUEST_DIR_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const REQUEST_ARGS_MAX_CHARS: usize = 24_000;
 /// How long the server gets, as the app quits, to take the end of each requested run still held.
 const QUIT_END_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long the quit waits, in all, for the server to take those ends.
+const QUIT_ENDS_WITHIN: Duration = Duration::from_secs(3);
+/// Why a requested run does not start as the app quits.
+const QUITTING: &str = "the app is quitting";
 /// The keychain service the instance's key is kept under, its account the instance's URL.
 const KEYCHAIN_SERVICE: &str = if cfg!(feature = "runner") {
     RUNNER_KEYCHAIN_SERVICE
@@ -80,15 +84,33 @@ pub struct RequestedRun {
 }
 
 impl RequestedRuns {
-    /// Take `folder` for request `id`, with its private folder `dir`, unless
-    /// another requested run holds it. Answers whether a stop came for it
-    /// meanwhile.
+    /// Hold request `id` before the server hands its launch over, so a stop
+    /// that arrives from then on is kept for it; refused for a request already
+    /// held, being launched or running, and once the app quits.
+    fn hold(&self, id: &str) -> Result<(), String> {
+        let mut runs = self.0.lock().unwrap();
+        if self.quitting() {
+            return Err(QUITTING.into());
+        }
+        if runs.contains_key(id) {
+            return Err("this request is already starting or running".into());
+        }
+        runs.insert(id.to_string(), RequestedRun::default());
+        Ok(())
+    }
+
+    /// Take `folder` for request `id`, held, with its private folder `dir`,
+    /// unless another requested run holds it or the app quits. Answers whether
+    /// a stop came for it meanwhile.
     fn hold_folder(&self, id: &str, folder: &Path, dir: &Path) -> Result<bool, String> {
         let mut runs = self.0.lock().unwrap();
+        if self.quitting() {
+            return Err(QUITTING.into());
+        }
         if runs.iter().any(|(other, run)| other != id && run.folder.as_deref() == Some(folder)) {
             return Err(FOLDER_BUSY.into());
         }
-        let held = runs.entry(id.to_string()).or_default();
+        let held = runs.get_mut(id).ok_or(QUITTING)?;
         held.folder = Some(folder.to_path_buf());
         held.dir = Some(dir.to_path_buf());
         Ok(held.stop)
@@ -238,18 +260,41 @@ pub(crate) fn end_requested_runs_on_quit(app: &AppHandle) {
     let Some(runs) = app.try_state::<RequestedRuns>() else {
         return;
     };
-    let server = server_info(app);
+    runs.quit();
+    let Some(server) = server_info(app).map(std::sync::Arc::new) else {
+        runs.end_all(|_, _, _| {});
+        return;
+    };
+    let mut posts = Vec::new();
     runs.end_all(|id, code, stopped| {
-        if let Some(server) = &server {
-            let _ = local_call_within(
-                server,
-                "POST",
-                &format!("/api/desktop/run-target/requests/{id}/ended"),
-                Some(&json!({ "code": code, "stopped": stopped })),
-                QUIT_END_TIMEOUT,
-            );
-        }
+        let (server, path) = (server.clone(), format!("/api/desktop/run-target/requests/{id}/ended"));
+        posts.push(move || {
+            let body = json!({ "code": code, "stopped": stopped });
+            let _ = local_call_within(&server, "POST", &path, Some(&body), QUIT_END_TIMEOUT);
+        });
     });
+    run_all_within(posts, QUIT_ENDS_WITHIN);
+}
+
+/// Run each of `posts` on its own thread, and wait until all are done or
+/// `within` has passed.
+fn run_all_within(posts: Vec<impl FnOnce() + Send + 'static>, within: Duration) {
+    let deadline = std::time::Instant::now() + within;
+    let (done, finished) = std::sync::mpsc::channel();
+    let count = posts.len();
+    for post in posts {
+        let done = done.clone();
+        std::thread::spawn(move || {
+            post();
+            let _ = done.send(());
+        });
+    }
+    for _ in 0..count {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if finished.recv_timeout(left).is_err() {
+            return;
+        }
+    }
 }
 
 /// Remove the requested runs' private folders an earlier launch left in the
@@ -725,14 +770,8 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         port: server.port,
         token: server.token.clone(),
     };
-    // Held before the server hands the launch over, so a stop that arrives from then on is kept for it. A request
-    // already held is being launched or is running: a second call leaves its entry alone.
     if let Some(runs) = app.try_state::<RequestedRuns>() {
-        let mut held = runs.0.lock().unwrap();
-        if held.contains_key(&request_id) {
-            return Err("this request is already starting or running".into());
-        }
-        held.insert(request_id.clone(), RequestedRun::default());
+        runs.hold(&request_id)?;
     }
     let forget = |app: &AppHandle, request_id: &str| {
         if let Some(runs) = app.try_state::<RequestedRuns>() {
@@ -822,12 +861,12 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
             let stop_now = app.try_state::<RequestedRuns>().is_some_and(|runs| {
                 let mut runs = runs.0.lock().unwrap();
                 match runs.get_mut(&request_id) {
-                    Some(held) => {
+                    Some(held) if held.ended.is_none() => {
                         held.run = Some(id);
                         held.stop
                     }
                     // It already ended.
-                    None => false,
+                    _ => false,
                 }
             });
             if stop_now {
@@ -1112,6 +1151,51 @@ mod tests {
     }
 
     #[test]
+    fn no_requested_run_is_held_once_the_app_quits() {
+        let runs = RequestedRuns::default();
+        assert_eq!(runs.hold("a"), Ok(()));
+        assert_eq!(runs.hold("a"), Err("this request is already starting or running".to_string()));
+        assert_eq!(runs.hold("b"), Ok(()));
+        runs.quit();
+        assert_eq!(runs.hold("c"), Err(QUITTING.to_string()));
+        let shop = Path::new("/work/shop");
+        assert_eq!(runs.hold_folder("a", shop, Path::new("/tmp/a")), Err(QUITTING.to_string()));
+        runs.end_all(|_, _, _| {});
+        assert_eq!(runs.hold_folder("b", shop, Path::new("/tmp/b")), Err(QUITTING.to_string()));
+        assert!(runs.0.lock().unwrap().is_empty(), "nothing held again after the quit ended them");
+
+        let drained = RequestedRuns::default();
+        drained.hold("a").unwrap();
+        drained.end_all(|_, _, _| {});
+        assert_eq!(drained.hold_folder("a", shop, Path::new("/tmp/a")), Err(QUITTING.to_string()));
+        assert!(drained.0.lock().unwrap().is_empty(), "a request the quit ended is not held again");
+    }
+
+    #[test]
+    fn the_quit_waits_for_the_server_at_most_its_deadline_in_all() {
+        let (told, seen) = std::sync::mpsc::channel();
+        let posts: Vec<Box<dyn FnOnce() + Send>> = (0..3)
+            .map(|i| {
+                let told = told.clone();
+                Box::new(move || {
+                    if i < 2 {
+                        std::thread::sleep(Duration::from_secs(10));
+                    }
+                    let _ = told.send(i);
+                }) as Box<dyn FnOnce() + Send>
+            })
+            .collect();
+        let started = std::time::Instant::now();
+        run_all_within(posts, Duration::from_millis(300));
+        assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+        assert_eq!(seen.try_recv(), Ok(2), "a post that answers in time is made");
+
+        let started = std::time::Instant::now();
+        run_all_within(vec![|| {}, || {}], Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(1), "no wait once every post is done");
+    }
+
+    #[test]
     fn the_sweep_removes_only_old_request_folders_no_run_holds() {
         let root = TempRoot::new("sweep");
         let make = |name: &str| {
@@ -1232,6 +1316,7 @@ mod tests {
             assert!(runs.dirs().is_empty());
             assert_eq!(runs.stop("a"), None);
             assert!(!runs.0.lock().unwrap()["a"].stop);
+            runs.hold("b").unwrap();
             let free = runs.hold_folder("b", Path::new("/work/shop"), Path::new("/tmp/b"));
             assert_eq!(free, Ok(false), "its folder is free");
         }
