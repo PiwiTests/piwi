@@ -94,9 +94,10 @@ says so:
 The other lines of a run's start (its project and Playwright version, its shard, the stream opening on time) are
 printed with `PIWI_VERBOSE=true` alone. A stream that opens late, a failure link and a warning are always printed.
 
-In a terminal outside CI, the run's page is a link, and Windows Terminal, ConEmu, WezTerm and Ghostty show how far the
-run is in the tab or the taskbar, red once a test failed. `PIWI_TERMINAL_PROGRESS=off` turns both off, and
-`PIWI_TERMINAL_PROGRESS=on` shows the progress in any terminal.
+In a terminal outside CI, the run's page is a link. Windows Terminal and ConEmu show how far the run is in the tab and
+the taskbar, and Ghostty 1.2 or later atop the terminal, red once a test failed. `PIWI_TERMINAL_PROGRESS=off` turns
+both off, and `PIWI_TERMINAL_PROGRESS=on` sends the progress to any terminal: one that reads it as a notification
+shows one at each step.
 
 ## When the run does not reach the instance
 

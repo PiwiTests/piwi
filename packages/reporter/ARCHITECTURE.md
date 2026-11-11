@@ -56,7 +56,10 @@ What the package does to a user's run, process by process.
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
   `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
   and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
-  or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+  or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`); on GitHub
+  Actions the unprefixed `::notice` lines naming the run's page as it starts and as it lands (`ci-output.ts`); outside
+  CI, in a terminal other than a dumb one, the run's page as an OSC 8 link and its progress as OSC 9;4, cleared as the
+  run or its process ends (`internal/support/terminal.ts`, `PIWI_TERMINAL_PROGRESS`).
   On Windows the private files (the setup file, the stream buffer, the recovery file, the
   workers' resource census, the run's log, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
   (`privateTempDir`), a folder of this user's alone, whatever account runs the tests; a
@@ -819,7 +822,7 @@ src/
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
                 page, the results file; lab (the command line's side of an arm)
-    support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
+    support/    logger, limiter, ci, ci-output, terminal, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, private-file (the temp files and their
                 folder: owner-only, checked before they are read), source-snippet, worker-index, errors,

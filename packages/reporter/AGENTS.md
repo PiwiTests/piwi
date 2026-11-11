@@ -35,7 +35,9 @@ responsibilities.
      `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
      (`internal/collect/run-environments.ts`), unless `collectEnvironmentInfo` is off (`tests/environment-collect.spec.ts`);
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
-     in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;
+     in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), `[Piwi Dashboard]`-prefixed log output, the
+     `::notice` lines on GitHub Actions (`ci-output.ts`), and outside CI the OSC 8 link and OSC 9;4 progress
+     (`internal/support/terminal.ts`, `PIWI_TERMINAL_PROGRESS`, `tests/terminal.spec.ts`);
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
      (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
      covered page, in its own isolated world (`internal/capture/code-reach.ts`);

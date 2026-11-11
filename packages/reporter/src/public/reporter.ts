@@ -449,8 +449,11 @@ export class PiwiDashboardReporter {
     const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
     if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
     if (this.enabled && terminalFeatures(process.env, !!process.stdout.isTTY).progress) {
-      this.terminalProgress = new TerminalProgress(suite.allTests().length, (text) => process.stdout.write(text));
-      this.terminalProgress.begin();
+      const progress = new TerminalProgress(suite.allTests().length, (text) => process.stdout.write(text));
+      progress.begin();
+      // A run whose process ends before `onEnd` (a second Ctrl+C) takes the bar off too.
+      process.once('exit', () => progress.end((text) => fs.writeSync(1, text)));
+      this.terminalProgress = progress;
     }
     if (!this.enabled) {
       if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
@@ -1425,11 +1428,11 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    this.terminalProgress?.end();
+    this.terminalProgress = null;
     this.stopNotes?.stop();
     this.stopNotes = null;
     await this.hubLink?.end(result?.status ?? 'other');
-    this.terminalProgress?.end();
-    this.terminalProgress = null;
     this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =

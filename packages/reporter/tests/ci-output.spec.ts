@@ -132,6 +132,7 @@ describe('emitRunOutputs — GitHub Actions', () => {
   it('puts the failure headline between the link and the file in the job summary', () => {
     const summaryFile = path.join(tmpDir, 'gh-summary');
     const withHeadline = { ...failure(1), headline: "Expected 26 rows, found 51 — getByRole('row') toHaveCount" };
+    vi.spyOn(process.stdout, 'write').mockReturnValue(true);
     emitRunOutputs({ ...OUTPUT, status: 'failed', failures: [withHeadline] }, silentLogger, undefined, {
       GITHUB_ACTIONS: 'true',
       GITHUB_STEP_SUMMARY: summaryFile,
@@ -189,6 +190,23 @@ describe('announceLiveRun', () => {
     stdout.mockClear();
     announceLiveRun(OUTPUT.runUrl, silentLogger, { GITLAB_CI: 'true' });
     expect(stdout).not.toHaveBeenCalled();
+  });
+
+  it('makes the page a link in a terminal outside CI', () => {
+    const info = vi.spyOn(silentLogger, 'info').mockImplementation(() => {});
+    const tty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    try {
+      announceLiveRun(OUTPUT.runUrl, silentLogger, {});
+      announceLiveRun(OUTPUT.runUrl, silentLogger, { PIWI_TERMINAL_PROGRESS: 'off' });
+    } finally {
+      if (tty) Object.defineProperty(process.stdout, 'isTTY', tty);
+      else delete (process.stdout as { isTTY?: boolean }).isTTY;
+    }
+    expect(info.mock.calls.map(([line]) => line)).toEqual([
+      `View live progress: \u001b]8;;${OUTPUT.runUrl}\u001b\\${OUTPUT.runUrl}\u001b]8;;\u001b\\`,
+      `View live progress: ${OUTPUT.runUrl}`,
+    ]);
   });
 
   it('escapes what a workflow command would read as its end', () => {

@@ -255,7 +255,7 @@ of the contract:
 
 **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
 `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded. How the rules count
-retried and untagged tests is in the [CLI reference](/reference/cli#gate).
+retried tests and a required tag that matches no test is in the [CLI reference](/reference/cli#gate).
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 
