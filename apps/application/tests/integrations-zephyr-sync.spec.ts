@@ -207,6 +207,8 @@ test.describe('Zephyr Scale — results sync', () => {
     await expect(panel.getByTestId('sync-sent')).toContainText('2 results sent: 1 passed, 1 failed');
     await expect(panel.getByTestId('sync-unknown-keys')).toContainText('SHOP-T9');
     await expect(panel.getByTestId('sync-again')).toHaveCount(0);
+    // The run's links live in the Details popover.
+    await page.getByRole('button', { name: 'Details' }).click();
     const chip = page.locator('[data-tour="run-links"]').getByTestId('link-chip-open');
     await expect(chip).toContainText('SHOP-R1');
     expect(await chip.evaluate((element) => element.tagName)).toBe('SPAN');
