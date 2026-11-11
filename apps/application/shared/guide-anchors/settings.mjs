@@ -89,6 +89,18 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/account' },
   },
   {
+    id: 'account-run-requests',
+    kind: 'field',
+    pages: ['/settings/account'],
+    describes:
+      'The runs you asked your own apps for, newest first, each with where it stands, its app, its run and Stop.',
+    shownWhen: 'While Run on my machine is on, or while you have requests to show.',
+    requires: { capability: 'machine-runs' },
+    help: 'settings.run-requests',
+    doc: 'features/run-on-my-machine#follow-and-stop',
+    sample: { route: '/settings/account' },
+  },
+  {
     id: 'account-api-keys',
     kind: 'field',
     pages: ['/settings/account'],
