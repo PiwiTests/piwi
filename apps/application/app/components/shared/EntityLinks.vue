@@ -74,7 +74,7 @@ function unlinkWarning(link: EntityLinkInfo): string {
 }
 
 async function removeLink(id: number) {
-  // An issue Piwi filed is synced and written to through its link: say so first.
+  // A link Piwi made (an issue it filed and writes to, a test run it sent results to): say what unlinking leaves first.
   const link = localLinks.value.find((l) => l.id === id);
   if (link?.origin === 'created' && !window.confirm(unlinkWarning(link))) return;
   try {

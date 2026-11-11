@@ -2,6 +2,7 @@
 import type { RunSyncView } from '#shared/handlers/test-management-sync';
 import { getProviderIcon } from '#shared/link-detect';
 import { nextSyncRead, syncRetryPending } from '~/utils/run-sync-reads';
+import { outcomeUnknownLines } from '~/utils/run-sync-outcome';
 
 /**
  * How the run's results went to the test management tool: the test run made there, what was sent (or would be, in a dry
@@ -76,6 +77,10 @@ const countsText = computed(() => {
   return parts.join(', ');
 });
 
+const outcomeUnknown = computed(() =>
+  sync.value?.outcomeUnknown ? outcomeUnknownLines(sync.value.runName, canSendAgain.value) : null,
+);
+
 const hiddenUnknownKeys = computed(() => (sync.value ? sync.value.unknownKeyCount - sync.value.unknownKeys.length : 0));
 
 async function sendAgain(): Promise<void> {
@@ -135,7 +140,7 @@ async function sendAgain(): Promise<void> {
         Results not sent: {{ sync.error }}
       </span>
       <span v-else class="text-error" data-testid="sync-failed">
-        {{ sync.error ?? 'Sending the results failed' }}
+        {{ outcomeUnknown?.status ?? sync.error ?? 'Sending the results failed' }}
       </span>
 
       <UButton
@@ -152,9 +157,8 @@ async function sendAgain(): Promise<void> {
       <HelpHint topic="run.testManagementSync" />
     </div>
 
-    <p v-if="sync.outcomeUnknown" class="text-xs text-muted" data-testid="sync-outcome-unknown">
-      The upload may have reached the tool. Sync again looks there for the test run
-      <template v-if="sync.runName">“{{ sync.runName }}”</template> first and links it when it exists.
+    <p v-if="outcomeUnknown" class="text-xs text-muted" data-testid="sync-outcome-unknown">
+      {{ outcomeUnknown.next }}
     </p>
 
     <p v-if="sync.unknownKeyCount > 0" class="text-xs text-highlighted" data-testid="sync-unknown-keys">
