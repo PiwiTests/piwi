@@ -396,7 +396,22 @@ export interface RunCommandArgs {
   command: string;
   /** Environment variables to set on the command's process. */
   env?: Record<string, string>;
+  /**
+   * The command runs Playwright for nobody watching (a fix plan's verification, a Flake Lab command): the client asks
+   * `piwi/followCommand` for it, and runs the `RunCommand` it answers as it runs a test run, telling its end
+   * (`piwi/commandEnded`), so its runs are listed, paused and stopped as the editor's. As a plain terminal command when
+   * the answer is null. Absent otherwise.
+   */
+  follow?: boolean;
 }
+
+/**
+ * Asks the service to follow a command it gave with `RunCommandArgs.follow`: it answers the command with a ref of its
+ * own and the run channel in its environment (`args` its Playwright arguments, none for a command that runs no
+ * `playwright test` itself), its runs held to no failure, since nobody attends them. Null for a command of no
+ * Playwright config's folder, or while the run channel does not listen.
+ */
+export const FOLLOW_COMMAND_REQUEST = 'piwi/followCommand';
 
 export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 

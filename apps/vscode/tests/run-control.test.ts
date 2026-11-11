@@ -44,6 +44,8 @@ import {
   runLabel,
   runName,
   runPageTarget,
+  sessionLines,
+  workersNow,
   frameIsCurrent,
   waitedFor,
   waitingWorkers,
@@ -140,6 +142,66 @@ const session = (ref: string, workers: RunWorker[], ended = false): RunSession =
 });
 
 const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSession(map, s), new Map());
+
+describe('what the Testing view writes of a run', () => {
+  test('a test each worker starts, each attempt, a stop and why, and the stop answered, each once', () => {
+    const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
+    expect(sessionLines(undefined, begun)).toEqual([
+      { text: 'Worker 1 · checkout › pays', test: { uri: spec, line: 2 }, at: null },
+    ]);
+    // Nothing new: nothing written.
+    expect(sessionLines(begun, begun)).toEqual([]);
+    const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
+    expect(sessionLines(begun, stopped)).toEqual([
+      {
+        text: 'Worker 1 · Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
+        test: { uri: spec, line: 2 },
+        at: { uri: spec, line: 5 },
+      },
+    ]);
+    expect(sessionLines(stopped, begun)).toEqual([
+      { text: 'Worker 1 · goes on', test: { uri: spec, line: 2 }, at: null },
+    ]);
+    // A retry is an attempt of its own; a run in a terminal says so at its stop.
+    const retried = session('ed-1', [worker(0, 'running', { test: runTest(1) })]);
+    expect(sessionLines(begun, retried)[0]?.text).toBe('Worker 1 · checkout › pays · attempt 2');
+    const terminal = { ...stopped, terminal: true };
+    expect(sessionLines(begun, terminal)[0]?.text).toMatch(/ · run in a terminal$/);
+  });
+});
+
+describe('what each worker runs now', () => {
+  test('each worker of the live runs by its lane: its test, stopped there, or between tests', () => {
+    const one = session('ed-1', [
+      worker(1, 'stopped', { stop: stopAt(spec, 5) }),
+      worker(0, 'running'),
+      worker(2, 'between'),
+    ]);
+    expect(workersNow(sessionsOf(one))).toEqual([
+      'Worker 1 · checkout › pays',
+      'Worker 2 · checkout › pays · stopped',
+      'Worker 3 · between tests',
+    ]);
+    // Several runs: each line names its run; an ended one lists none.
+    const two = session('ed-2', [worker(0, 'running')]);
+    expect(workersNow(sessionsOf(session('ed-1', [worker(0, 'running')]), two))).toEqual([
+      'Run in shop (ed-1) · Worker 1 · checkout › pays',
+      'Run in shop (ed-2) · Worker 1 · checkout › pays',
+    ]);
+    expect(workersNow(sessionsOf(session('ed-1', [worker(0, 'running')], true)))).toEqual([]);
+    // Many workers: the first seven, then how many more; a title's line break as a space.
+    const many = session(
+      'ed-1',
+      Array.from({ length: 12 }, (_, i) =>
+        worker(i, 'running', { test: { ...runTest(), title: ['cart', 'adds\na mug'] } }),
+      ),
+    );
+    const listed = workersNow(sessionsOf(many));
+    expect(listed).toHaveLength(8);
+    expect(listed[0]).toBe('Worker 1 · cart › adds a mug');
+    expect(listed[7]).toBe('and 5 more workers');
+  });
+});
 
 describe('the sessions kept', () => {
   test('are the latest of each run, one that ended dropped', () => {
@@ -551,14 +613,17 @@ describe('Share live', () => {
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
       name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
-      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      // What each worker runs now, under the counts.
+      tooltip: 'Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays',
       markdown: true,
       command: null,
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
       name: 'Piwi: Run progress',
       text: '$(beaker) 4 of 10 · $(error) 1',
-      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      tooltip:
+        'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.\n\n' +
+        'Run in shop (ed-1) · Worker 1 · checkout › pays\n\nRun in shop (ed-2) · Worker 1 · checkout › pays',
       markdown: true,
       command: null,
     });
@@ -567,7 +632,8 @@ describe('Share live', () => {
     expect(progressItem(sessionsOf(watched))).toEqual({
       name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
-      tooltip: "Piwi: the run ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+      tooltip:
+        "Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n[Watch a worker's test](command:piwi.watchWorker)",
       markdown: true,
       command: RUN_COMMANDS.watch,
     });
@@ -577,7 +643,7 @@ describe('Share live', () => {
     expect(progressItem(sessionsOf(named))).toEqual({
       name: 'Piwi: Run progress',
       text: '$(beaker) #78 · 3 of 9',
-      tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\n${link}`,
+      tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n${link}`,
       markdown: true,
       command: RUN_COMMANDS.openPage,
     });

@@ -1312,10 +1312,28 @@ export function coalesced(fn: () => void, schedule: (run: () => void) => void): 
 /** The longest name a test run's task gets: the start of `playwright test` and its arguments. */
 const TASK_NAME_LENGTH = 80;
 
-/** The name of a test run's task: `playwright test` and its arguments, cut at `TASK_NAME_LENGTH` characters. */
-export function runTaskName(args: readonly string[]): string {
-  const name = ['playwright test', ...args].join(' ');
+/**
+ * The name of a test run's task, cut at `TASK_NAME_LENGTH` characters: `playwright test` and its arguments, or, for a
+ * command whose arguments the service did not give, the command itself (`commandTaskName`).
+ */
+export function runTaskName(args: readonly string[], command?: string): string {
+  const name = args.length || !command ? ['playwright test', ...args].join(' ') : commandTaskName(command);
   return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
+}
+
+/**
+ * A command as its task's name, without `npx`: a `playwright test` whole (a fix plan's verification of several
+ * projects, `playwright test a.spec.ts --project=chromium && playwright test …`), any other up to its first option, the
+ * reporter's package named as its command (`piwi flake verify 12`).
+ */
+function commandTaskName(command: string): string {
+  const words = command
+    .split(/\s+/)
+    .filter((word) => word && word !== 'npx')
+    .map((word) => (word === '@piwitests/reporter' ? 'piwi' : word));
+  if (words[0] === 'playwright' && words[1] === 'test') return words.join(' ');
+  const option = words.findIndex((word) => word.startsWith('-'));
+  return (option < 0 ? words : words.slice(0, option)).join(' ');
 }
 
 /**
