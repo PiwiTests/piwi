@@ -35,6 +35,10 @@ then the desktop app. When the environment or the workspace `.env` names another
 fields, and an empty **Server URL** shows its address. While the service cannot start, the page and the **Piwi** tool
 window offer **Node.js Settings…**, and the service starts again once you close the settings.
 
+When the service stops, the **Piwi** tool window says so and offers **Restart the Editor Service** and **Open Log**, as
+does a balloon that says it is not running; both are also under **Tools → Piwi** and in the tool window's gear. The
+**Log** tab holds the service's starts and stops, why it could not start, its errors and the requests that failed.
+
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 

@@ -427,6 +427,11 @@ export interface ServerOptions {
    * listen, and with null as the service stops. The process's entry writes and removes the file (`main.ts`).
    */
   publish?: (discovery: EditorDiscovery | null) => void;
+  /**
+   * Writes an error to the editor's log: the process's entry writes it to stderr (`main.ts`), which both clients show in
+   * their log; `window/logMessage` by default.
+   */
+  logError?: (text: string) => void;
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
@@ -805,6 +810,7 @@ function isRunControlResult(value: unknown): value is RunControlResult {
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
+  const logError = options.logError ?? ((text: string) => connection.console.error(text));
   /** What `asked` settles with, or `fallback` once a quick fix or a hover has waited long enough. */
   const within = <T>(asked: Promise<T>, fallback: T): Promise<T> =>
     Promise.race([
@@ -2137,7 +2143,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         // The failures and the coverage marks follow the edit: placed again on the edited buffer.
         placeAgainSoon(document);
         coverageAgain(urisOf(document.uri));
-        void validate(document).catch((e) => connection.console.error(`Piwi: ${(e as Error).message}`));
+        void validate(document).catch((e) => logError(`Piwi: ${(e as Error).message}`));
       }, delay),
     );
   };
