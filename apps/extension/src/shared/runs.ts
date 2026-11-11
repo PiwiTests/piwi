@@ -8,7 +8,6 @@
  */
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import {
-  runsAttention,
   type HubCodeAction,
   type HubCodeIntent,
   type HubWindowAction,
@@ -18,9 +17,9 @@ import {
   type HubKeptRequest,
   type HubSession,
   type HubWorker,
-  type RunAttention,
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
+import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */

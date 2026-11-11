@@ -106,9 +106,13 @@ const FIRST_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30_000;
 /** With no Runs window open, how many times in a row the hubs are found again before the worker waits to be asked. */
 const UNWATCHED_RETRIES = 4;
-/** How long an ended run stays in the window, and how many do. */
+/**
+ * How long an ended run stays in the window, and how many do; a run `unseen` stays until a Runs window takes the focus,
+ * then as long, at most `UNSEEN_KEPT` of them.
+ */
 const ENDED_KEPT_MS = 10 * 60_000;
 const ENDED_KEPT = 5;
+const UNSEEN_KEPT = 20;
 /** How long `ready` waits for the hubs to answer `subscribe`. */
 const READY_MS = 3000;
 /** How often the hubs are found again while a Runs window is open. */
@@ -227,10 +231,11 @@ export class RunHubs {
     return () => void this.observers.delete(changed);
   }
 
-  /** A Runs window took the focus: the runs that failed while none had it are seen. */
+  /** A Runs window took the focus: the runs that failed while none had it are seen, and stay as long as a run just ended. */
   seen(): void {
     if (!this.ended.some((run) => run.unseen)) return;
-    this.ended = this.ended.map((run) => ({ ...run, unseen: false }));
+    const at = this.now();
+    this.ended = this.ended.map((run) => (run.unseen ? { ...run, unseen: false, at } : run));
     this.changed();
   }
 
@@ -268,7 +273,7 @@ export class RunHubs {
       for (const session of sessions) live.push({ hub: hub.url, session });
     }
     const cutoff = this.now() - ENDED_KEPT_MS;
-    this.ended = this.ended.filter((run) => run.at >= cutoff);
+    this.ended = this.ended.filter((run) => run.unseen || run.at >= cutoff);
     // A run of a ref that runs again shows as the live one alone.
     const ended = this.ended
       .filter(({ hub, session }) => !live.some((run) => run.hub === hub && run.session.ref === session.ref))
@@ -756,7 +761,9 @@ export class RunHubs {
     this.ended = [
       { hub, desktop: this.desktopUrls.has(hub), session: { ...session, workers }, at: this.now(), unseen },
       ...this.ended.filter((run) => !(run.hub === hub && run.session.ref === session.ref)),
-    ].slice(0, ENDED_KEPT);
+    ]
+      .filter((run, i) => i < ENDED_KEPT || run.unseen)
+      .slice(0, UNSEEN_KEPT);
   }
 
   private lost(hub: LiveHub, connection: HubConnection, why: HubLoss): void {

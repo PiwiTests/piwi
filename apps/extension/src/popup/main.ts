@@ -540,9 +540,10 @@ async function replayInOtherTab(tabId: number): Promise<boolean> {
 }
 
 /**
- * The Runs tile: shown while an editor or the desktop app is paired, with what its runs ask of you while one of its
- * hubs answers (the tests that wait for you, in amber, else the tests that failed, in red, else how many runs there
- * are), muted otherwise, its line saying the Runs window tells why. The worker finds the hubs through the pairings and
+ * The Runs tile: shown while an editor or the desktop app is paired, with what its runs ask of you (the tests that wait
+ * for you, in amber, else the tests that failed, in red, those of a run that failed unseen included whether or not its
+ * hub answers), else how many runs there are while one of its hubs answers, muted otherwise, its line saying the Runs
+ * window tells why. The worker finds the hubs through the pairings and
  * keeps their connections (`background/run-hubs.ts`); the popup only asks it.
  */
 async function showRunsTile(): Promise<void> {
@@ -557,15 +558,15 @@ async function showRunsTile(): Promise<void> {
   const runs = summary.runs ?? 0;
   const waiting = summary.waiting ?? 0;
   const failed = summary.failed ?? 0;
-  if (!summary.connected) {
-    runsHint.textContent = t('popup_runsHintAway');
-    runsButton.dataset.state = 'waiting';
-  } else if (waiting > 0) {
+  if (waiting > 0) {
     runsHint.textContent = tn('popup_runsHintWaiting', waiting);
     runsButton.dataset.state = 'attention';
   } else if (failed > 0) {
     runsHint.textContent = tn('popup_runsHintFailed', failed);
     runsButton.dataset.state = 'failed';
+  } else if (!summary.connected) {
+    runsHint.textContent = t('popup_runsHintAway');
+    runsButton.dataset.state = 'waiting';
   } else {
     runsHint.textContent = runs > 0 ? tn('popup_runsHint', runs) : t('popup_runsHintNone');
   }

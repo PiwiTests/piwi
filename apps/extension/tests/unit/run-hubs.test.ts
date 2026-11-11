@@ -521,6 +521,45 @@ describe('a hub’s connection', () => {
     expect(hubs.state().runs.find((run) => run.session.ref === 'c')?.unseen).toBeUndefined();
   });
 
+  it('keeps a run unseen past the ten minutes and the newer runs that end, then ten minutes once seen', async () => {
+    const { hubs, sockets } = setup({ looking: () => false });
+    await hubs.find();
+    const refs = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    await welcome(
+      sockets[0]!,
+      refs.map((ref) => session([RUNNING], { ref })),
+    );
+    const end = (ref: string, status: HubProgress['status']) =>
+      sockets[0]!.hear({
+        type: 'session',
+        session: session([], {
+          ref,
+          ended: true,
+          progress: {
+            total: 1,
+            done: 1,
+            failed: status === 'failed' ? 1 : 0,
+            flaky: 0,
+            skipped: 0,
+            status,
+            failure: null,
+          },
+        }),
+      });
+    end('a', 'failed');
+    // Six runs that pass end after it: five ended runs are kept, the one unseen besides.
+    for (const ref of refs.slice(1)) end(ref, 'passed');
+    const kept = () => hubs.state().runs.map((run) => run.session.ref);
+    expect(kept()).toEqual(['g', 'f', 'e', 'd', 'c', 'a']);
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 1);
+    expect(kept()).toEqual(['a']);
+    hubs.seen();
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
+    expect(kept()).toEqual(['a']);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(kept()).toEqual([]);
+  });
+
   it('ignores a message it cannot read, and anything before the welcome', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();

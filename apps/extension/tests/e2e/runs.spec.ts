@@ -259,6 +259,46 @@ test('says on the toolbar badge, the popup’s Runs tile and the Runs window’s
   }
 });
 
+test('a run that failed with no Runs window open keeps the badge and the Runs tile red until a Runs window is in front', async () => {
+  const { context, worker, extensionId } = await pairedExtension(editor);
+  try {
+    const badge = () =>
+      worker.evaluate(async () => ({
+        text: await chrome.action.getBadgeText({}),
+        color: await chrome.action.getBadgeBackgroundColor({}),
+      }));
+    const run = await startRun(editor, 'pays');
+    const main = runMain(editor, run.channel, run.ref, 2);
+    try {
+      await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
+      main.send({ type: 'run-end', status: 'failed', failure: null, done: 2, failed: 1, flaky: 0, skipped: 0 });
+      await waitFor(() => (editor.svc.latest(run.ref)?.progress?.status === 'failed' ? true : undefined));
+    } finally {
+      main.socket.destroy();
+      await endRun(run);
+    }
+    // The run ended, but nobody saw it fail: the badge and the tile keep its failed test.
+    await expect.poll(async () => (await badge()).text).toBe('1');
+    expect((await badge()).color).toEqual([185, 28, 28, 255]);
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(popup.locator('#runs-hint')).toHaveText('1 test failed');
+    await expect(popup.locator('#runs')).toHaveAttribute('data-state', 'failed');
+    await popup.close();
+    // The Runs window, brought to the front, shows the run: the badge lets go of it.
+    const runs = await openRuns(context, extensionId);
+    await expect(runs.locator('.run.ended')).toHaveCount(1);
+    await runs.evaluate(async () => {
+      const { id } = await chrome.windows.getCurrent();
+      await chrome.windows.update(id!, { focused: true });
+    });
+    await expect.poll(async () => (await badge()).text).toBe('');
+    await expect(runs).toHaveTitle('Runs · Piwi Picker');
+  } finally {
+    await context.close();
+  }
+});
+
 test('a run of several workers pauses and resumes all from its header, and F10 steps the stopped test', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {

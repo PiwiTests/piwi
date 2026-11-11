@@ -166,6 +166,8 @@ runHubs.observe(() => {
   runsBadgeShown = key;
   void showStateBadge();
 });
+// The browser keeps a badge across the worker's restarts, the runs it counted gone: the worker draws it at its start.
+void showStateBadge().catch(() => undefined);
 
 /**
  * Service worker: the keyboard-shortcut trigger for picking (the toolbar
@@ -203,14 +205,14 @@ async function runShortcut(): Promise<Awaited<ReturnType<typeof runHubs.shortcut
   const took = done.answers.some((answer) => answer.ok);
   const sign = !took ? 'badge_runsNone' : done.action === 'pause' ? 'badge_runsPaused' : 'badge_runsResumed';
   signShowing = true;
-  await chrome.action.setBadgeText({ text: t(sign) });
-  await chrome.action.setBadgeBackgroundColor({ color: SHORTCUT_BADGE_COLOR });
   // A press while the sign shows starts its moment again.
   clearTimeout(shortcutSign);
   shortcutSign = setTimeout(() => {
     signShowing = false;
     void showStateBadge();
   }, SHORTCUT_SIGN_MS);
+  await chrome.action.setBadgeText({ text: t(sign) });
+  await chrome.action.setBadgeBackgroundColor({ color: SHORTCUT_BADGE_COLOR });
   return done;
 }
 

@@ -32,7 +32,7 @@
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
-import { runsAttention } from '@piwitests/core/run-hub';
+import { runsAttention } from '@piwitests/run-model/attention';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,

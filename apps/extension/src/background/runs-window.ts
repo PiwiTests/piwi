@@ -63,6 +63,8 @@ const runsWindows = new Map<chrome.runtime.Port, number | null>();
 
 /** The browser window that has the focus, as the browser last said; none while another program has it. */
 let focusedWindow: number = chrome.windows.WINDOW_ID_NONE;
+/** Whether the browser said which window has the focus since the worker started: its word beats the first guess. */
+let focusHeard = false;
 
 /** Whether a Runs window has the focus now. */
 function lookedAt(): boolean {
@@ -74,14 +76,13 @@ function followFocus(): void {
   void chrome.windows
     .getLastFocused()
     .then((window) => {
-      if (window.focused && window.id !== undefined && focusedWindow === chrome.windows.WINDOW_ID_NONE) {
-        focusedWindow = window.id;
-      }
+      if (window.focused && window.id !== undefined && !focusHeard) focusedWindow = window.id;
     })
     .catch(() => {
       // No window open yet: the next focus change says.
     });
   chrome.windows.onFocusChanged.addListener((windowId) => {
+    focusHeard = true;
     focusedWindow = windowId;
     if (lookedAt()) runHubs.seen();
   });
