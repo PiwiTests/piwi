@@ -146,9 +146,9 @@ the run** in the Runs window, for a run an editor or the desktop app started (th
 feature `stop`), carried out as each tool's own Stop does, the editor through its client (`piwi/stopRun`: VS Code's
 task, the JetBrains plugin's process) and the desktop app through the window whose tray holds the run, never for a run
 started in a terminal. Then one input model (IO19, RW5, E15): **Interact** after **Watch live** or **Watch** in every
-view, the Runs window and the desktop tray included, sticky for the worker's slot across its stops, driving the stop
-(the hub's `drive`, the editors' `piwi/driveStop`), and turned off with watching or by `Esc` on the view, which gives
-the stop back. The rest of P6 is proposed: `Esc` reaching the page while an action runs there, attention and the
+view, the Runs window and the desktop tray included, sticky for the worker's slot across its stops, its first input
+driving the stop, and turned off with watching, **Give back** or by `Esc` on the view, which gives the stop back once
+the input sent before has reached the page (the hub's `drive`, the editors' `piwi/driveStop`). The rest of P6 is proposed: `Esc` reaching the page while an action runs there, attention and the
 ambient state, and the editors' unattended runs. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
