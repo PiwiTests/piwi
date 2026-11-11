@@ -127,12 +127,8 @@ const KEY_REVOKED_MESSAGE = 'Invalid or expired API key';
  * the instance's 401 for a key it no longer holds.
  */
 async function readRefusal(response: Response): Promise<{ message: string; keyGone: boolean }> {
-  let body: { message?: unknown; data?: { errorCode?: unknown } | null } | null = null;
-  try {
-    body = (await response.json()) as typeof body;
-  } catch {
-    // Not the instance's answer.
-  }
+  type Body = { message?: unknown; data?: { errorCode?: unknown } | null } | null;
+  const body = (await response.json().catch(() => null)) as Body;
   const message = typeof body?.message === 'string' ? body.message : '';
   const keyGone =
     response.status === 401 && (body?.data?.errorCode === KEY_REVOKED_CODE || message === KEY_REVOKED_MESSAGE);

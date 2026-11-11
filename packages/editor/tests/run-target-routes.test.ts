@@ -104,7 +104,7 @@ async function fakeInstance() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (url === '/api/run-targets/requests') res.end(JSON.stringify({ requests: [], stops: [] }));
       else if (url.endsWith('/claim')) {
-        const { expiresAt: _expiresAt, ...request } = offer(url.split('/').at(-2));
+        const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
       else res.end('{}');
@@ -467,9 +467,9 @@ describe('a request waiting for a folder another run is going in', () => {
   const busy = (asked: Asked | undefined) => !!asked && !asked.runnable && asked.checks.some((c) => c.id === 'busy');
   /** The window's last word on each request, as the window hears it. */
   const shown = (heard: RunTargetMessage[], id: string) =>
-    heard.findLast(
-      (m) => (m.type === 'run-request' && m.request.id === id) || (m.type === 'run-request-gone' && m.id === id),
-    );
+    [...heard]
+      .reverse()
+      .find((m) => (m.type === 'run-request' && m.request.id === id) || (m.type === 'run-request-gone' && m.id === id));
 
   test('is shown runnable again once the requested run there ends', async () => {
     offered = [REQUEST_ID, OTHER_ID];
