@@ -26,7 +26,7 @@ import {
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
 import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
-import { PIWI_EDITOR_ENV, editorNotFollowed, followEditor, runInteractive } from '../internal/config/editors.js';
+import { PIWI_EDITOR_ENV, followHub, runInteractive, type FollowedHub } from '../internal/config/hub.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -201,6 +201,19 @@ function decidesOutcome(status: string): boolean {
 function failedEveryAttempt(attempts: ReadonlyArray<{ status: string }>): boolean {
   const ran = attempts.filter((attempt) => decidesOutcome(attempt.status));
   return ran.length > 0 && ran.every((attempt) => attempt.status === 'failed' || attempt.status === 'timedOut');
+}
+
+/** The line saying which hub a run started in a terminal attached to, how it attends it, and how to change that. */
+function followedLine(followed: FollowedHub): string {
+  const where = followed.pid === null ? followed.name : `${followed.name} (pid ${followed.pid})`;
+  if (!followed.attended) {
+    return (
+      `Following this run in ${where}, unattended: its output goes to no terminal, so no failure waits and only a ` +
+      `Pause stops it. ${PIWI_EDITOR_ENV}=on attends it, ${PIWI_EDITOR_ENV}=off runs it alone.`
+    );
+  }
+  const stops = followed.kind === 'editor' ? 'whose breakpoints stop it' : 'whose window pauses and watches it';
+  return `Following this run in ${where}, ${stops}: ${PIWI_EDITOR_ENV}=off runs it alone.`;
 }
 
 /**
@@ -418,27 +431,12 @@ export class PiwiDashboardReporter {
     normalizeBoolEnv(process.env);
     // A requested run's workers reach neither the config's server nor its credentials.
     if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
-    // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
-    // hook, inherit the editor's run channel.
+    // A run started in a terminal attaches to its hub, the editor whose workspace holds it, else the desktop app whose
+    // linked folder does: its workers, which start after this hook, inherit the hub's run channel.
     const dirs = [configDirFromConfig(config), process.cwd()];
     const gate = { env: process.env, argv: process.argv, terminal: !!process.stdout.isTTY || !!process.stderr.isTTY };
-    const followed = followEditor(dirs, gate);
-    if (followed) {
-      const { editor } = followed;
-      this.logger.info(
-        `Following this run in ${editor.client ?? 'the editor'} (pid ${editor.pid}), whose breakpoints stop it: ` +
-          `${PIWI_EDITOR_ENV}=off runs it alone.`,
-      );
-    } else {
-      // A run piped to a file or another program does not follow the editor whose workspace holds it: it says why.
-      const missed = editorNotFollowed(dirs, gate);
-      if (missed) {
-        this.logger.info(
-          `Not following this run in ${missed.editor.client ?? 'the editor'} (pid ${missed.editor.pid}): ` +
-            `${missed.why}. ${PIWI_EDITOR_ENV}=on follows it.`,
-        );
-      }
-    }
+    const followed = followHub(dirs, gate);
+    if (followed) this.logger.info(followedLine(followed));
     // The hub its workers reach hears how far the run is, from its own process.
     this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
     // The run the global setup registered names its page now; the stream names the run it opens, another on a refusal.

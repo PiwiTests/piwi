@@ -97,8 +97,11 @@ shell and are feature-equivalent.
   window; a stop from the dashboard reaches the shell on its notification stream.
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
-  linked folders), and deletes it on quit. Its readers:
-  - `@piwitests/reporter`, from `src/internal/config/desktop.ts`;
+  linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`)
+  once the window loaded a session of a server that proved its token and takes it out as the window leaves the server
+  (`publish_discovery_hub`, `withdraw_discovery_hub`), and deletes it on quit. Its readers:
+  - `@piwitests/reporter`, from `src/internal/config/desktop.ts`, and its hub pick (`hub.ts`) for a run started in a
+    terminal in a linked folder;
   - `src-tauri/src/mcp_stdio.rs`, which resolves the app's address from it on every message;
   - the editor service (`packages/editor/src/context.ts`), which picks the project linked to the workspace;
   - the bundled server (`apps/application/server/utils/desktop-links.ts`), which reads a project's linked folder to

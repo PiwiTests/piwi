@@ -46,7 +46,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import { runTargetConnection } from '@piwitests/editor/run-target';
-import type { RunIntent } from '@piwitests/core/run-channel';
+import { TERMINAL_REF_PREFIX, type RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
   RecordChannel,
@@ -235,6 +235,14 @@ function samePath(a: string, b: string): boolean {
   return process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase();
 }
 
+/** The linked folder, of `links`, that is `cwd` or holds it, the most specific when several do; null for none. */
+export function linkHolding(links: readonly DesktopLink[], cwd: string): string | null {
+  const at = real(cwd);
+  const holding = links.filter((link) => samePath(real(link.path), at) || insideFolder(link.path, cwd));
+  holding.sort((a, b) => real(b.path).length - real(a.path).length);
+  return holding[0]?.path ?? null;
+}
+
 /** Whether `file` is inside `folder`, both resolved through their links. */
 export function insideFolder(folder: string, file: string): boolean {
   const relative = path.relative(real(folder), real(file));
@@ -300,13 +308,17 @@ export class DesktopRuns {
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
-      rootOf: (cwd) => this.links().find((link) => samePath(real(link.path), real(cwd)))?.path ?? null,
+      // The linked folder that holds the run: a run the shell starts runs in it, one started in a terminal there or
+      // below.
+      rootOf: (cwd) => linkHolding(this.links(), cwd),
       writesCode: () => true,
       onRegion: (stop, region) =>
         'refused' in region
           ? this.actions.regionRefused(stop, region.refused)
           : this.actions.region(stop, region.locator, region.snapshot),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
+      // A run started in a terminal in a linked folder attaches under a ref of its own (the reporter's `hub.ts`).
+      terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX),
       // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
@@ -459,10 +471,13 @@ export class DesktopRuns {
   /**
    * Stops the run `ref` as another tool asks through the hub (`stop`): every window's stream hears it (`stop-run`), and
    * the window that holds the run stops it as its own Stop does, the shell's process with it. Refused for a run that
-   * ended, and while no window is open to stop it.
+   * ended, one started in a terminal, whose process is the terminal's, and while no window is open to stop it.
    */
   stopRun(ref: string): RunControlResult {
     const session = this.sessions.current().find((s) => s.ref === ref);
+    if (session?.terminal && !session.ended) {
+      return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    }
     if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
     if (this.windows.size === 0) {
       return { ok: false, message: "No window of the desktop app is open: open the app's window to stop the run." };

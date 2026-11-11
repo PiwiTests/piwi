@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { ChannelAddress, HubAddress } from '@piwitests/core/editor-discovery';
+import { formatPairing, parsePairing, type EditorPairing } from '@piwitests/core/editor-send';
+import { parseRecordChannel } from '@piwitests/core/ide-recorder';
 
 /** Connection details the desktop app publishes while it is running. */
 export interface DesktopConfig {
@@ -58,6 +61,56 @@ export function readDesktopConfig(filePath: string): DesktopConfig | null {
  */
 export function readDesktopToken(filePath: string): string | null {
   return readDesktopFile(filePath)?.token ?? null;
+}
+
+/**
+ * What the discovery file names of the app's bundled server as a hub, for a run started in a terminal in a folder the
+ * app links (`hub.ts`): its run channel (`PIWI_RUN_CHANNEL`), where a run's picks go (`PIWI_EDITOR_SEND`), its hub for
+ * Piwi Picker, and the folders linked to a project.
+ */
+export interface DesktopHub {
+  pid: number | null;
+  runChannel: ChannelAddress;
+  /** Where the runs' picks go, as `PIWI_EDITOR_SEND` names it; null when the file names none. */
+  send: EditorPairing | null;
+  hub: HubAddress | null;
+  /** The linked folders, absolute. */
+  folders: string[];
+}
+
+/**
+ * The app's bundled server as a hub (`DesktopHub`), from the discovery file of an app that still runs; null when the
+ * file is absent, unreadable or malformed, its app is gone, or it names no run channel: an app that predates the field
+ * or whose server has not proved itself yet. Never throws.
+ */
+export function readDesktopHub(filePath: string): DesktopHub | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const file = readDesktopFile(filePath);
+    if (!file || (file.pid !== null && !processAlive(file.pid))) return null;
+    const channel = parsed?.runChannel;
+    const runChannel =
+      typeof channel?.path === 'string' && typeof channel?.token === 'string'
+        ? parseRecordChannel(`${channel.path}#${channel.token}`)
+        : null;
+    if (!runChannel) return null;
+    const send =
+      typeof parsed?.send?.url === 'string' && typeof parsed?.send?.token === 'string'
+        ? parsePairing(formatPairing({ url: parsed.send.url, token: parsed.send.token }))
+        : null;
+    const hub =
+      typeof parsed?.hub?.url === 'string' && typeof parsed?.hub?.token === 'string'
+        ? { url: parsed.hub.url as string, token: parsed.hub.token as string }
+        : null;
+    const projects: unknown[] = Array.isArray(parsed?.projects) ? parsed.projects : [];
+    const folders = projects.flatMap((project) => {
+      const folder = (project as { path?: unknown } | null)?.path;
+      return typeof folder === 'string' && path.isAbsolute(folder) ? [folder] : [];
+    });
+    return { pid: file.pid, runChannel, send, hub, folders };
+  } catch {
+    return null;
+  }
 }
 
 /** The fields of the discovery file the readers use; `pid` is null when the file names none. */

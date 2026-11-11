@@ -39,6 +39,18 @@ export const RUN_REF_ENV = 'PIWI_RUN_REF';
 export const TERMINAL_REF_PREFIX = 'terminal-';
 
 /**
+ * How the ref of a run nobody attends ends: no failure of it waits for an answer, and a stop nobody asked for goes on.
+ * The desktop app names its Flake Lab, bisect and lab runs so, and the reporter a run started in a terminal whose
+ * output goes to a file or a pipe.
+ */
+export const UNATTENDED_REF_SUFFIX = '-unattended';
+
+/** Whether the run `ref` names is one nobody attends (`UNATTENDED_REF_SUFFIX`). */
+export function isUnattendedRef(ref: string): boolean {
+  return ref.endsWith(UNATTENDED_REF_SUFFIX);
+}
+
+/**
  * A line of the user's code: its file relative to the run's working directory, with forward slashes (`..` for a file
  * above it), and the 1-based line and column.
  */

@@ -46,7 +46,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, isUnattendedRef } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { editorsDir, readLiveHubs } from './discovery.js';
@@ -1859,7 +1859,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
-    holdsFailures: (ref) => !unattendedRuns.has(ref),
+    // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
+    holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.

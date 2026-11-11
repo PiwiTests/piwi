@@ -9,26 +9,33 @@ import {
   type DiscoveryFolder,
   type EditorDiscovery,
 } from '@piwitests/core/editor-discovery';
-import { formatRecordChannel, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { formatPairing } from '@piwitests/core/editor-send';
+import { RECORD_CHANNEL_ENV, formatRecordChannel, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, UNATTENDED_REF_SUFFIX } from '@piwitests/core/run-channel';
 import { isRunOriginKind, type RunInteractive } from '@piwitests/core/wire';
 import { detectCi } from '../support/ci.js';
 import { isMergeReports } from '../support/run-mode.js';
-import { PIWI_ORIGIN_ENV } from './env.js';
+import { defaultDesktopConfigPath, readDesktopHub, type DesktopHub } from './desktop.js';
+import { PIWI_DESKTOP_CONFIG_ENV, PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from './env.js';
 
 /**
- * A run started in a terminal, or by an editor's own test runner (`startedByTestRunner`), follows the editor whose
- * workspace holds it: each editor service writes its discovery file (`@piwitests/core/editor-discovery`:
- * `~/.piwi/editors/<pid>.json`, or the folder `PIWI_EDITORS_DIR` names), which names its run channel, and the reporter
- * hands that channel to the run's workers (`PIWI_RUN_CHANNEL`) under a ref of the run's own (`PIWI_RUN_REF`,
- * `terminal-<pid>-<time>`): they connect to it as the workers of a run the editor started do. Only a run whose output
- * goes to a terminal or that a test runner started (else `PIWI_EDITOR=on`), never under CI nor Playwright's own
- * debugger or UI mode, never one that names its run channel itself or that a launcher started (`PIWI_ORIGIN`);
- * `PIWI_EDITOR=off` runs it alone. The files are read only from a folder this user owns, not a link, that no other user
- * can enter, and only those this user owns in it; none is deleted here.
+ * The hub of a run started in a terminal, or by an editor's own test runner (`startedByTestRunner`): one owner per run,
+ * picked in order. A run that names its run channel (`PIWI_RUN_CHANNEL`, its launcher's) keeps it; else the editor whose
+ * workspace holds the run, each editor service writing its discovery file (`@piwitests/core/editor-discovery`:
+ * `~/.piwi/editors/<pid>.json`, or the folder `PIWI_EDITORS_DIR` names), which names its run channel; else the desktop
+ * app whose linked folder holds it, its discovery file (`~/.piwi/desktop.json`, `PIWI_DESKTOP_CONFIG`) naming its
+ * bundled server's run channel (`readDesktopHub`); else none. The reporter hands the hub's channel to the run's workers
+ * (`PIWI_RUN_CHANNEL`) under a ref of the run's own (`PIWI_RUN_REF`, `terminal-<pid>-<time>`): they connect to it as the
+ * workers of a run the hub's tool started do. An editor's channel is its record channel too (`PIWI_RECORD_CHANNEL`),
+ * and a hub that names where its runs' picks go gets them (`PIWI_EDITOR_SEND`), unless the run names its own. A run
+ * whose output goes to no terminal and that no test runner started attaches unattended (its ref ends in
+ * `-unattended`): it is listed and can be paused, but no failure of it waits and a stop nobody asked for goes on;
+ * `PIWI_EDITOR=on` attends it. Never under CI nor Playwright's own debugger or UI mode, never one that a launcher started
+ * (`PIWI_ORIGIN`); `PIWI_EDITOR=off` runs it alone. The editors' files are read only from a folder this user owns, not a
+ * link, that no other user can enter, and only those this user owns in it; none is deleted here.
  */
 
-/** `PIWI_EDITOR`: `off` never follows an editor; `on` follows one when the run's output goes to no terminal too. */
+/** `PIWI_EDITOR`: `off` never attaches the run to a hub; `on` attends it when its output goes to no terminal too. */
 export const PIWI_EDITOR_ENV = 'PIWI_EDITOR';
 
 /**
@@ -55,7 +62,7 @@ export interface TerminalRunGate {
   terminal: boolean;
 }
 
-/** Why a run looks for no editor to follow, in a few words; null when it does. */
+/** Why a run looks for no hub to attach to, in a few words; null when it does. */
 export function terminalRunSkip(gate: TerminalRunGate): string | null {
   const { env, argv } = gate;
   const editor = env[PIWI_EDITOR_ENV]?.trim().toLowerCase();
@@ -70,13 +77,19 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
     return "Playwright's debugger or UI mode runs it";
   }
   if (isMergeReports(argv)) return 'it merges reports, running no test';
-  const forced = !!editor && ['on', 'true', '1', 'yes'].includes(editor);
-  if (!gate.terminal && !forced && !startedByTestRunner(env)) return NO_TERMINAL;
   return null;
 }
 
-/** Why a run whose output goes to a file or a pipe follows no editor. */
-const NO_TERMINAL = 'its output goes to no terminal';
+/**
+ * Whether a person attends the run, so a failure of it may wait at its line and a breakpoint stops it: its output goes
+ * to a terminal, an editor's test runner started it, or `PIWI_EDITOR=on` says so. A run piped to a file or another
+ * program, as an agent's, is not attended.
+ */
+export function terminalRunAttended(gate: TerminalRunGate): boolean {
+  const editor = gate.env[PIWI_EDITOR_ENV]?.trim().toLowerCase();
+  const forced = !!editor && ['on', 'true', '1', 'yes'].includes(editor);
+  return gate.terminal || forced || startedByTestRunner(gate.env);
+}
 
 /** The folder of the editors' discovery files: `PIWI_EDITORS_DIR`, else `~/.piwi/editors`. */
 export function editorsFolder(env: NodeJS.ProcessEnv = process.env): string {
@@ -174,51 +187,77 @@ function realFolder(folder: string): string | null {
   }
 }
 
-/** The editor a run follows, and the ref its workers name the run by. */
-export interface FollowedEditor {
-  editor: EditorDiscovery;
+/** The hub a run attaches to: an editor's service or the desktop app's server, the ref its workers name the run by. */
+export interface FollowedHub {
+  kind: 'editor' | 'desktop';
+  /** The hub's process, as its discovery file names it; null when the desktop app's names none. */
+  pid: number | null;
+  /** The tool the hub is, as a person reads it: the editor's own name, `the editor`, or `the desktop app`. */
+  name: string;
+  /** The hub's client as the run's `piwiInteractive` names it: the editor's own name, else `editor`, or `desktop`. */
+  client: string;
   ref: string;
+  /** Whether a person attends the run (`terminalRunAttended`); its ref ends in `-unattended` when not. */
+  attended: boolean;
 }
 
 /**
- * Follow the editor whose workspace holds the run (`dirs`: its Playwright config's folder, then its working
- * directory), when the gate lets the run look for one: its run channel and the run's own ref go into `gate.env`, which
- * the workers inherit. Null when the run runs alone. Never throws.
+ * The desktop app's server as the hub of a run its linked folder holds, compared as an editor's workspace is
+ * (`editorForRun`): a file of an app that still runs naming its run channel, whose socket, but on Windows, is this
+ * user's in a folder no other user can enter.
  */
-export function followEditor(
-  dirs: readonly string[],
-  gate: TerminalRunGate,
-  folder: string = editorsFolder(gate.env),
-): FollowedEditor | null {
-  try {
-    if (terminalRunSkip(gate)) return null;
-    const live = readLiveEditors(folderOnDisk(folder)).filter((editor) => stillServing(editor));
-    const editor = editorForRun(live, dirs, realFolder, process.platform === 'win32');
-    if (!editor?.runChannel) return null;
-    const ref = `${TERMINAL_REF_PREFIX}${process.pid}-${Date.now()}`;
-    gate.env[RUN_CHANNEL_ENV] = formatRecordChannel(editor.runChannel);
-    gate.env[RUN_REF_ENV] = ref;
-    return { editor, ref };
-  } catch {
+function desktopForRun(hub: DesktopHub | null, dirs: readonly string[]): DesktopHub | null {
+  if (!hub) return null;
+  const channel = hub.runChannel;
+  if (process.platform !== 'win32' && !(privateFolder(path.dirname(channel.path)) && ownSocket(channel.path))) {
     return null;
   }
+  const asEditor: EditorDiscovery = {
+    pid: hub.pid ?? 0,
+    host: os.hostname(),
+    version: '',
+    client: null,
+    startedAt: '',
+    roots: hub.folders,
+    hub: hub.hub,
+    runChannel: channel,
+    recorderBundle: null,
+  };
+  return editorForRun([asEditor], dirs, realFolder, process.platform === 'win32') ? hub : null;
 }
 
 /**
- * The editor a run would have followed but does not, for the one reason a person would not expect: its output goes to
- * a file or a pipe (`terminalRunSkip`). Null for a run that follows one, one that runs alone on purpose (CI, a launcher,
- * `PIWI_EDITOR=off`, Playwright's debugger), and one no editor's workspace holds. Never throws.
+ * Attach the run to its hub (`dirs`: its Playwright config's folder, then its working directory), when the gate lets
+ * it look for one: the editor whose workspace holds it, else the desktop app whose linked folder does. The hub's run
+ * channel, the run's own ref, an editor's record channel and where the hub takes the run's picks go into `gate.env`,
+ * which the workers inherit. Null when the run runs alone. Never throws.
  */
-export function editorNotFollowed(
+export function followHub(
   dirs: readonly string[],
   gate: TerminalRunGate,
   folder: string = editorsFolder(gate.env),
-): { editor: EditorDiscovery; why: string } | null {
+  desktopFile: string = gate.env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath(),
+): FollowedHub | null {
   try {
-    if (terminalRunSkip(gate) !== NO_TERMINAL) return null;
+    if (terminalRunSkip(gate)) return null;
+    const attended = terminalRunAttended(gate);
+    const ref = `${TERMINAL_REF_PREFIX}${process.pid}-${Date.now()}${attended ? '' : UNATTENDED_REF_SUFFIX}`;
     const live = readLiveEditors(folderOnDisk(folder)).filter((editor) => stillServing(editor));
     const editor = editorForRun(live, dirs, realFolder, process.platform === 'win32');
-    return editor?.runChannel ? { editor, why: NO_TERMINAL } : null;
+    if (editor?.runChannel) {
+      const channel = formatRecordChannel(editor.runChannel);
+      gate.env[RUN_CHANNEL_ENV] = channel;
+      gate.env[RUN_REF_ENV] = ref;
+      gate.env[RECORD_CHANNEL_ENV] ??= channel;
+      const name = editor.client ?? 'the editor';
+      return { kind: 'editor', pid: editor.pid, name, client: editor.client ?? 'editor', ref, attended };
+    }
+    const desktop = desktopForRun(readDesktopHub(desktopFile), dirs);
+    if (!desktop) return null;
+    gate.env[RUN_CHANNEL_ENV] = formatRecordChannel(desktop.runChannel);
+    gate.env[RUN_REF_ENV] = ref;
+    if (desktop.send) gate.env[PIWI_LOCAL_DEBUG_ENV.editorSend] ??= formatPairing(desktop.send);
+    return { kind: 'desktop', pid: desktop.pid, name: 'the desktop app', client: 'desktop', ref, attended };
   } catch {
     return null;
   }
@@ -236,14 +275,13 @@ export function runChannelRef(env: NodeJS.ProcessEnv): string | null {
 
 /**
  * The hub that steers the run, as the run's `piwiInteractive` metadata names it: a run whose workers connect to a hub
- * (`runChannelRef`) is interactive. Its client is the editor the run follows, by its discovery file's name (`editor`
- * when the file gives none), else the launcher `PIWI_ORIGIN` names, null when nothing names one. Null for a run that
- * follows no hub.
+ * (`runChannelRef`) is interactive. Its client is the hub the run attached to (`FollowedHub.client`), else the launcher
+ * `PIWI_ORIGIN` names, null when nothing names one. Null for a run that attaches to no hub.
  */
-export function runInteractive(env: NodeJS.ProcessEnv, followed: FollowedEditor | null): RunInteractive | null {
+export function runInteractive(env: NodeJS.ProcessEnv, followed: FollowedHub | null): RunInteractive | null {
   const ref = runChannelRef(env);
   if (!ref) return null;
   const origin = env[PIWI_ORIGIN_ENV.kind]?.trim();
-  const client = followed ? (followed.editor.client ?? 'editor') : isRunOriginKind(origin) ? origin : null;
+  const client = followed ? followed.client : isRunOriginKind(origin) ? origin : null;
   return { client, ref };
 }

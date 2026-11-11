@@ -8,8 +8,10 @@
  * coming to it to copy, and clicks the page through the view. Then the window watches a worker's lane as its test
  * runs, pauses it and clicks the page through the lane at the stop. Then an agent steers a run through the run tools
  * `/mcp` serves: it pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into
- * code, which comes to the window to copy and back to the agent. Headless, as the shell runs a reproduction. Skipped
- * when the reporter is not built (`npm run reporter:build`) or Chromium is not installed.
+ * code, which comes to the window to copy and back to the agent. Then a run started in a terminal in the linked folder,
+ * which the app's discovery file names the server's run channel to, follows the app: listed as a terminal's run, with
+ * no Stop, it is paused and clicked through its view. Headless, as the shell runs a reproduction. Skipped when the
+ * reporter is not built (`npm run reporter:build`) or Chromium is not installed.
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -163,6 +165,16 @@ beforeAll(async () => {
     WINDOW_SPEC(base).replace('steered from the window', 'watched as it runs'),
   );
   fs.writeFileSync(
+    path.join(project, 'tests', 'terminal.spec.cjs'),
+    WINDOW_SPEC(base).replace('steered from the window', 'started in a terminal'),
+  );
+  // A run started in a terminal finds its hub from Piwi's reporter, which a config wrapped by `wrapConfig` has.
+  fs.writeFileSync(
+    path.join(project, 'playwright.terminal.config.cjs'),
+    `module.exports = { ...require('./playwright.config.cjs'), reporter: [[${JSON.stringify(reporter)}, {}]] };
+`,
+  );
+  fs.writeFileSync(
     path.join(project, 'fixture.cjs'),
     `const { test: base, expect } = require('@playwright/test');
 const { extendPiwiFixtures } = require(${JSON.stringify(reporter)});
@@ -227,11 +239,12 @@ async function picksRoute(): Promise<string> {
 }
 
 /**
- * Runs Playwright on one spec of the project, in the environment the desktop shell gives a run. `stop` ends a run
- * still going, its workers included, so a test that failed leaves no run under `REF` for the next one to read.
+ * Runs Playwright on one spec of the project, in the environment the desktop shell gives a run, but the variables
+ * `extra` sets to undefined. `stop` ends a run still going, its workers included, so a test that failed leaves no run
+ * under `REF` for the next one to read.
  */
 function runPlaywright(
-  spec: string,
+  spec: string | string[],
   extra: NodeJS.ProcessEnv,
 ): { exited: Promise<number | null>; output(): string; stop(): Promise<void> } {
   const env: NodeJS.ProcessEnv = {
@@ -243,6 +256,7 @@ function runPlaywright(
     PIWI_DESKTOP_CONFIG: path.join(project, 'no-desktop.json'),
     ...extra,
   };
+  for (const [name, value] of Object.entries(extra)) if (value === undefined) delete env[name];
   for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT']) delete env[name];
   // A run the desktop shell starts is local: no variable a CI provider sets is left.
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
@@ -251,7 +265,7 @@ function runPlaywright(
   let ended = false;
   const child = execFile(
     process.execPath,
-    [requireHere.resolve('@playwright/test/cli'), 'test', spec],
+    [requireHere.resolve('@playwright/test/cli'), 'test', ...[spec].flat()],
     // Its own process group, so `stop` ends its workers and browsers with it.
     { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' },
     () => {},
@@ -575,6 +589,94 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
     } finally {
       opened.close();
       await stop();
+    }
+  }, 120_000);
+});
+
+describe.skipIf(!runnable)('a run started in a terminal in a linked folder', () => {
+  it('follows the app, which lists it as a terminal’s run with no Stop, pauses it and clicks through its view', async () => {
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    let id = 0;
+    const send = (body: Record<string, unknown>) => runs.command({ viewer: opened.viewer, id: ++id, ...body });
+    // The app's discovery file, as the shell writes it once the server proved its token.
+    const [hub] = runs.live();
+    const channel = runs.runChannel!;
+    const hash = channel.lastIndexOf('#');
+    const desktopFile = path.join(project, 'desktop.json');
+    fs.writeFileSync(
+      desktopFile,
+      JSON.stringify({
+        url: 'http://127.0.0.1:9',
+        token: TOKEN,
+        pid: process.pid,
+        projects: [{ id: 1, path: fs.realpathSync(project) }],
+        runChannel: { path: channel.slice(0, hash), token: channel.slice(hash + 1) },
+        hub: { url: hub!.url, token: hub!.token },
+      }),
+      { mode: 0o600 },
+    );
+    const editors = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-no-editors-'));
+    const { exited, output, stop } = runPlaywright(
+      ['--config', 'playwright.terminal.config.cjs', 'tests/terminal.spec.cjs'],
+      {
+        PIWI_RUN_CHANNEL: undefined,
+        PIWI_RUN_REF: undefined,
+        PIWI_ORIGIN: undefined,
+        PIWI_ORIGIN_REF: undefined,
+        PIWI_DESKTOP_CONFIG: desktopFile,
+        PIWI_DESKTOP_APP: 'off',
+        PIWI_EDITORS_DIR: editors,
+        // Its output goes to this test, not a terminal: attended as asked.
+        PIWI_EDITOR: 'on',
+      },
+    );
+    const session = () =>
+      events
+        .filter((e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session')
+        .map((e) => e.session)
+        .filter((s) => s.ref.startsWith('terminal-'))
+        .pop();
+    try {
+      const begun = await waitFor(() => {
+        const now = session();
+        return now?.workers[0]?.state === 'running' && now.workers[0].test ? now : undefined;
+      });
+      expect(begun).toMatchObject({ ref: expect.stringMatching(/^terminal-\d+-\d+$/), terminal: true });
+      expect(output()).toContain('Following this run in the desktop app');
+      // Its process is the terminal's: no Stop.
+      expect(await send({ type: 'stop', ref: begun.ref })).toMatchObject({
+        ok: false,
+        message: 'The run was started in a terminal: stop it there.',
+      });
+      expect(
+        await send({ type: 'runControl', ref: begun.ref, worker: null, action: 'pause', since: null }),
+      ).toMatchObject({ ok: true });
+      const paused = await waitFor(() =>
+        session()?.workers[0]?.state === 'stopped' ? session()?.workers[0]?.stop : undefined,
+      );
+      expect(paused.reason).toBe('pause');
+      const at = { ref: begun.ref, worker: session()!.workers[0]!.worker, since: paused.since };
+      expect(await send({ type: 'view', ...at, on: true })).toMatchObject({ ok: true });
+      await waitFor(() => session()?.workers[0]?.stop?.intents?.includes('input'));
+      const clicked = await send({
+        type: 'input',
+        ...at,
+        events: [
+          { type: 'mouse', action: 'move', x: 160, y: 120 },
+          { type: 'mouse', action: 'click', x: 160, y: 120, button: 'left', clickCount: 1 },
+        ],
+      });
+      expect(clicked).toMatchObject({ ok: true });
+      expect(await send({ type: 'runControl', ...at, action: 'resume' })).toMatchObject({ ok: true });
+      expect(await exited).toBe(0);
+    } catch (error) {
+      throw withOutput(error, output());
+    } finally {
+      opened.close();
+      await stop();
+      fs.rmSync(editors, { recursive: true, force: true });
+      fs.rmSync(desktopFile, { force: true });
     }
   }, 120_000);
 });

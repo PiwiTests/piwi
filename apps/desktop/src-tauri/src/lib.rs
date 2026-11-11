@@ -178,6 +178,11 @@ struct DataDir(PathBuf);
 /// The reporter discovery file, removed on quit so it never outlives the server.
 struct DiscoveryFile(PathBuf);
 
+/// What the discovery file names of the bundled server as a hub (`discovery_hub_fields`), once its session loaded;
+/// none while no server that proved its token runs.
+#[derive(Default)]
+struct DiscoveryHub(Mutex<Option<serde_json::Value>>);
+
 /// The server log path, shared so the webview error bridge (`desktop_log`) can
 /// append to the *same* `logs/server.log` the server sidecar writes to — a
 /// webview is a separate process whose console never reaches the sidecar's stdout.
@@ -1077,15 +1082,22 @@ fn write_discovery_file(
     let dir = home.join(DISCOVERY_DIR);
     private_fs::create_private_dir(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    private_fs::write_private(&path, discovery_body(port, token, links).to_string().as_bytes())?;
+    private_fs::write_private(&path, discovery_body(port, token, links, None).to_string().as_bytes())?;
     Ok(path)
 }
 
 /// The discovery file's content: the address and token, this process's id, and the projects linked
 /// to a folder on this machine, so an editor opened on one of those folders
 /// connects to its project with no setup, and the bundled server reads a
-/// project's git history from its folder. Readers ignore fields they do not know.
-fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
+/// project's git history from its folder; with `hub`, the server as the hub of
+/// a run started in a terminal in one of those folders (`discovery_hub_fields`).
+/// Readers ignore fields they do not know.
+fn discovery_body(
+    port: u16,
+    token: &str,
+    links: &HashMap<String, runner::LinkRecord>,
+    hub: Option<&serde_json::Value>,
+) -> serde_json::Value {
     let mut projects: Vec<(i64, &str)> = links
         .iter()
         .filter_map(|(id, link)| id.parse::<i64>().ok().map(|id| (id, link.path.as_str())))
@@ -1093,12 +1105,90 @@ fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRe
     projects.sort();
     // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
     // localhost resolves to ::1 first on some systems.
-    json!({
+    let mut body = json!({
         "url": format!("http://127.0.0.1:{port}"),
         "token": token,
         "pid": std::process::id(),
         "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
-    })
+    });
+    if let (Some(serde_json::Value::Object(fields)), Some(object)) = (hub, body.as_object_mut()) {
+        for (key, value) in fields {
+            object.insert(key.clone(), value.clone());
+        }
+    }
+    body
+}
+
+/// The bundled server as the hub of a run started in a terminal in a linked
+/// folder (the reporter's `hub.ts`), from `GET /api/desktop/run-channel`'s
+/// answer: its run channel (`runChannel`, `{ path, token }`), where the run's
+/// picks go (`send`, `{ url, token }`) and its hub's WebSocket for Piwi Picker
+/// (`hub`, `{ url, token }`). `None` without a run channel; a field that does
+/// not read as one is left out.
+fn discovery_hub_fields(answer: &serde_json::Value) -> Option<serde_json::Value> {
+    let channel = answer
+        .get("runChannel")?
+        .as_str()
+        .filter(|value| hub_env::is_run_channel(value))?;
+    let (path, token) = channel.rsplit_once('#')?;
+    let mut fields = json!({ "runChannel": { "path": path, "token": token } });
+    if let Some((url, token)) = answer
+        .get("picks")
+        .and_then(|value| value.as_str())
+        .filter(|value| hub_env::is_picks_address(value))
+        .and_then(|value| value.rsplit_once('#'))
+    {
+        fields["send"] = json!({ "url": url, "token": token });
+    }
+    let hub = answer.get("hub");
+    let url = hub
+        .and_then(|hub| hub.get("url"))
+        .and_then(|value| value.as_str())
+        .filter(|url| url.starts_with("ws://127.0.0.1:") && !url.contains(char::is_whitespace));
+    let token = hub
+        .and_then(|hub| hub.get("token"))
+        .and_then(|value| value.as_str())
+        .filter(|token| !token.is_empty());
+    if let (Some(url), Some(token)) = (url, token) {
+        fields["hub"] = json!({ "url": url, "token": token });
+    }
+    Some(fields)
+}
+
+/// Name the bundled server as the hub in the discovery file, once the window
+/// loaded the session of a server that proved its token: read from
+/// `GET /api/desktop/run-channel` over a connection that proves it again.
+/// Nothing for an app that publishes no discovery file (Piwi Runner).
+pub(crate) fn publish_discovery_hub(app: &AppHandle) {
+    let (Some(_), Some(info)) = (
+        app.try_state::<DiscoveryFile>(),
+        app.try_state::<mcp_clients::ServerInfo>(),
+    ) else {
+        return;
+    };
+    let server = mcp_clients::ServerInfo {
+        port: info.port,
+        token: info.token.clone(),
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let fields = crate::repro::local_get_json(&server, "/api/desktop/run-channel")
+            .ok()
+            .and_then(|answer| discovery_hub_fields(&answer));
+        if let Some(hub) = app.try_state::<DiscoveryHub>() {
+            *hub.0.lock().unwrap() = fields;
+        }
+        refresh_discovery_file(&app);
+    });
+}
+
+/// Name no hub in the discovery file: the window left the server, whose run
+/// channel goes with it.
+pub(crate) fn withdraw_discovery_hub(app: &AppHandle) {
+    if let Some(hub) = app.try_state::<DiscoveryHub>() {
+        *hub.0.lock().unwrap() = None;
+    }
+    refresh_discovery_file(app);
 }
 
 /// Rewrite the discovery file after a folder link changes, while this app
@@ -1114,7 +1204,10 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     if !file.0.exists() {
         return;
     }
-    let body = discovery_body(info.port, &info.token, &runner::read_links(app));
+    let hub = app
+        .try_state::<DiscoveryHub>()
+        .and_then(|hub| hub.0.lock().unwrap().clone());
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app), hub.as_ref());
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
@@ -3260,6 +3353,7 @@ pub fn run() {
                 Ok(path) => {
                     append_log(&log_path, &format!("reporter discovery file: {}", path.display()));
                     app.manage(DiscoveryFile(path));
+                    app.manage(DiscoveryHub::default());
                 }
                 // Not fatal: the reporter can still be pointed here by hand with
                 // the URL and token shown in Settings.
@@ -3862,13 +3956,58 @@ mod tests {
         links.insert("3".to_string(), link("/work/admin"));
         links.insert("not-an-id".to_string(), link("/work/other"));
         assert_eq!(
-            discovery_body(3001, "pd_x", &links),
+            discovery_body(3001, "pd_x", &links, None),
             serde_json::json!({
                 "url": "http://127.0.0.1:3001",
                 "token": "pd_x",
                 "pid": std::process::id(),
                 "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
             })
+        );
+    }
+
+    const HUB_TOKEN: &str = "Ab3_-Ab3_-Ab3_-Ab3_-Ab3_-Ab3_-Ab";
+
+    #[test]
+    fn discovery_names_the_server_as_the_hub_of_a_terminals_runs() {
+        let answer = serde_json::json!({
+            "runChannel": format!("/tmp/piwi-desktop-run-x1/channel.sock#{HUB_TOKEN}"),
+            "picks": format!("http://127.0.0.1:3001/api/desktop/runs/picks#{HUB_TOKEN}"),
+            "hub": { "url": "ws://127.0.0.1:3001/piwi/hub", "token": "pd_x" },
+        });
+        let fields = discovery_hub_fields(&answer).unwrap();
+        assert_eq!(
+            fields,
+            serde_json::json!({
+                "runChannel": { "path": "/tmp/piwi-desktop-run-x1/channel.sock", "token": HUB_TOKEN },
+                "send": { "url": "http://127.0.0.1:3001/api/desktop/runs/picks", "token": HUB_TOKEN },
+                "hub": { "url": "ws://127.0.0.1:3001/piwi/hub", "token": "pd_x" },
+            })
+        );
+        let body = discovery_body(3001, "pd_x", &std::collections::HashMap::new(), Some(&fields));
+        assert_eq!(body["runChannel"]["token"], HUB_TOKEN);
+        assert_eq!(body["send"]["url"], "http://127.0.0.1:3001/api/desktop/runs/picks");
+        assert_eq!(body["url"], "http://127.0.0.1:3001");
+        // A Windows named pipe is a channel too.
+        let pipe = serde_json::json!({ "runChannel": format!(r"\\.\pipe\piwi-run-0a1b#{HUB_TOKEN}") });
+        assert_eq!(
+            discovery_hub_fields(&pipe).unwrap()["runChannel"]["path"],
+            r"\\.\pipe\piwi-run-0a1b"
+        );
+    }
+
+    #[test]
+    fn discovery_names_no_hub_without_a_channel_and_leaves_out_what_is_not_one() {
+        assert_eq!(discovery_hub_fields(&serde_json::json!({ "runChannel": null })), None);
+        assert_eq!(discovery_hub_fields(&serde_json::json!({ "runChannel": "/tmp/x.sock#short" })), None);
+        let answer = serde_json::json!({
+            "runChannel": format!("/tmp/x.sock#{HUB_TOKEN}"),
+            "picks": format!("http://example.com:3001/picks#{HUB_TOKEN}"),
+            "hub": { "url": "ws://example.com/piwi/hub", "token": "pd_x" },
+        });
+        assert_eq!(
+            discovery_hub_fields(&answer),
+            Some(serde_json::json!({ "runChannel": { "path": "/tmp/x.sock", "token": HUB_TOKEN } }))
         );
     }
 

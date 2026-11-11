@@ -1198,7 +1198,7 @@ could), `startServer` hands `publish` what the file says:
 - its version (written in by `build.mjs`, `0.0.0-dev` unbundled) and its client (`initialize`'s `clientInfo`);
 - `startedAt` and the workspace's folders (`roots`);
 - the hub's address and token;
-- the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/editors.ts`
+- the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/hub.ts`
   follows the service one of whose `roots` holds the run, `editorForRun`);
 - the recorder bundle's path.
 
