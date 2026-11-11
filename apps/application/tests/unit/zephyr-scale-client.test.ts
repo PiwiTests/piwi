@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { strFromU8, unzipSync } from 'fflate';
+import { strFromU8, unzipSync, zipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '../../shared/integrations/registry';
 import { IntegrationHttpError } from '../../server/utils/integrations/http-error';
 import {
   ZEPHYR_MAX_PAGES,
+  ZEPHYR_MAX_UPLOAD_BYTES,
   ZEPHYR_TIMEOUT_STATUS,
   ZephyrScaleClient,
   ZephyrScaleError,
@@ -14,6 +15,12 @@ import {
  * The Zephyr Scale Cloud client against a stubbed `fetch`. The bodies are in `tests/fixtures/zephyr-scale/`, each
  * written from a schema of SmartBear's public OpenAPI document and named in the file's `_spec` field.
  */
+
+// The real zip by default; a test sets the size of the zip it makes, since compressing 10 MB is slow under coverage.
+vi.mock('fflate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fflate')>();
+  return { ...actual, zipSync: vi.fn(actual.zipSync) };
+});
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.secret-payload.secret-signature';
 
@@ -435,16 +442,19 @@ describe('uploadRun', () => {
   });
 
   test('refuses results that do not fit in the 10 MB Zephyr accepts, before sending anything', async () => {
-    // Incompressible keys: a zip of repeated text would shrink far below the cap.
-    const results = Array.from({ length: 200_000 }, (_, i) => ({
-      key: `SHOP-T${i}`,
-      status: Array.from({ length: 8 }, () => Math.random().toString(36).slice(2)).join(''),
-    }));
-    await expect(client().uploadRun({ ...input, results })).rejects.toMatchObject({
+    vi.mocked(zipSync).mockReturnValueOnce(new Uint8Array(ZEPHYR_MAX_UPLOAD_BYTES + 1));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({
       status: 413,
       message: expect.stringContaining('10 MB'),
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('sends results that fill the 10 MB exactly', async () => {
+    vi.mocked(zipSync).mockReturnValueOnce(new Uint8Array(ZEPHYR_MAX_UPLOAD_BYTES));
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    await expect(client().uploadRun(input)).resolves.toMatchObject({ key: 'SHOP-R42' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   test('a refused key or project is not sent', async () => {
