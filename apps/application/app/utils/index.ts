@@ -353,15 +353,24 @@ export function formatStatusLabel(status: string): string {
   return status;
 }
 
-/** Status label for one execution: a pass after a failed attempt (`flaky`, its verdict) reads "passed on retry". */
-export function formatExecutionStatus(status: string, flaky?: boolean | null): string {
+/**
+ * Status label for one execution: a pass after a failed attempt (`flaky`, its verdict) reads "passed on retry", and a
+ * skip of a test ended at a stop (`endedAtStop`, `isEndedAtStop`) "ended at a stop", a mark on its skipped status.
+ */
+export function formatExecutionStatus(status: string, flaky?: boolean | null, endedAtStop?: boolean | null): string {
+  if (endedAtStop && status === 'skipped') return 'ended at a stop';
   return statusPaletteKey(status, flaky) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
-/** The status chip's label: the execution's status in sentence case ("Passed on retry", "Didn't run"). */
-export function statusChipLabel(status: string, flaky?: boolean | null): string {
-  const label = formatExecutionStatus(status, flaky);
+/** The status chip's label: the execution's status in sentence case ("Passed on retry", "Ended at a stop"). */
+export function statusChipLabel(status: string, flaky?: boolean | null, endedAtStop?: boolean | null): string {
+  const label = formatExecutionStatus(status, flaky, endedAtStop);
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** The mark of a run holding tests ended at a stop (End the test): "Ended at a stop", with the count above one. */
+export function endedAtStopMark(count: number): string {
+  return count > 1 ? `${count} ended at a stop` : 'Ended at a stop';
 }
 
 /**

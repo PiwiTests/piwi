@@ -758,6 +758,9 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // A test ended at a stop is marked so, not counted as a plain pass.
+        val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
+        assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
@@ -2912,6 +2915,11 @@ class GlueTest {
         // Only on Failure is offered while every run says what it changed, and on a run that fails nothing.
         assertEquals(listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"), Glue.runVerdict(ended)?.actions)
         assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
+        // The skipped that were ended at a stop are named beside them.
+        assertEquals(
+            "Run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)",
+            Glue.runVerdict(passing.copy(fixed = 0, passed = 3, skipped = 2, endedAtStop = 1))?.text,
+        )
         // Without the counts: the titles count.
         assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)
     }

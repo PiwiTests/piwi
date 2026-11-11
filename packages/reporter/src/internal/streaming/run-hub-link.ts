@@ -7,6 +7,7 @@ import {
   MAX_RUN_FAILURE_TEXT,
   RUN_CHANNEL_ENV,
   TERMINAL_REF_PREFIX,
+  endedAtStopIn,
   parseHubToMain,
   readRunPage,
   type RunCounts,
@@ -23,7 +24,8 @@ import { runChannelRef, startedByTestRunner } from '../config/hub.js';
  * (`run-page`, again when the stream opens another run than the global setup's), and how the run ended, with its first
  * failure's title and error line through `hideSecretsInText` (`run-end`), and a teammate's ask to watch the run
  * (`run-ask`). Each test counts once, by the outcome of its latest attempt: a serial group's retry counts its tests
- * again in place of their earlier outcome. Of what the hub says it reads the developer's answer to an ask
+ * again in place of their earlier outcome. A skipped test whose latest attempt was ended at a stop (End the test,
+ * `ENDED_AT_STOP_REASON`) counts in `endedAtStop` too. Of what the hub says it reads the developer's answer to an ask
  * (`ask-answer`, `onAskAnswer`) alone, and it never waits on the hub but `CLOSE_MS` at the end, the connection held open
  * meanwhile so the run's process does not exit inside `onEnd`: a connection that does not open, or closes (a hub that
  * predates it closes it at its first line), leaves the run as without it.
@@ -38,11 +40,14 @@ const PROGRESS_MS = 250;
 const CLOSE_MS = 500;
 
 export class RunHubLink {
-  private readonly counts: RunCounts = { done: 0, failed: 0, flaky: 0, skipped: 0 };
-  /** Each test counted, by Playwright's id, in the order first counted: its outcome, and its failure while it failed. */
+  private readonly counts: Required<RunCounts> = { done: 0, failed: 0, flaky: 0, skipped: 0, endedAtStop: 0 };
+  /**
+   * Each test counted, by Playwright's id, in the order first counted: its outcome, whether it was ended at a stop, and
+   * its failure while it failed.
+   */
   private readonly counted = new Map<
     string,
-    { as: Counted; failure: { title: string; error: string | null } | null }
+    { as: Counted; ended: boolean; failure: { title: string; error: string | null } | null }
   >();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sentAt = -Infinity;
@@ -111,13 +116,17 @@ export class RunHubLink {
           : outcome === 'skipped'
             ? 'skipped'
             : 'passed';
+    const ended = as === 'skipped' && endedAtStopIn(result.annotations);
     const before = this.counted.get(test.id);
     if (before) {
       if (before.as !== 'passed') this.counts[before.as]--;
+      if (before.ended) this.counts.endedAtStop--;
     } else this.counts.done++;
     if (as !== 'passed') this.counts[as]++;
+    if (ended) this.counts.endedAtStop++;
     this.counted.set(test.id, {
       as,
+      ended,
       // Its title as the workers name it: its describe blocks' titles, then its own.
       failure:
         as === 'failed'

@@ -6,7 +6,8 @@
  * stop waits for it: the tray shows every stop it hears (`onStop`), once, a stream that opens again included, and the
  * stop waits there; closed, nobody here answers and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
- * What it keeps: each live run as the hub last told it, what each code made at a stop came to, the codes and the
+ * What it keeps: each live run as the hub last told it, how many tests of each run that ended were ended at a stop
+ * (`endedAtStop`, as its own process counted them), what each code made at a stop came to, the codes and the
  * locators picked, to copy, the workers whose **Watch live** is on, and the lanes the window watches (**Watch**: the
  * page of a worker's running test, and of its stops), which the tray and the run page both turn on. The frames of a
  * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
@@ -26,6 +27,7 @@
  * test there (`advanceTab`) moves it to the next stopped test. The person's choice (`chooseTab`) holds until a stop is
  * answered there, or, while that worker runs and nobody watches it, until a new stop comes.
  */
+import { endedAtStopOf } from '@piwitests/run-model/outcome';
 import {
   parseHubMessage,
   type HubAnswer,
@@ -72,6 +74,11 @@ interface HubState {
   sessions: Record<string, HubSession>;
   /** The folder of each run heard since the window opened, for the place of its codes once it ended. */
   roots: Record<string, string | null>;
+  /**
+   * How many tests of each run that ended were ended at a stop (End the test), by ref, as its own process counted them:
+   * the tray marks its outcome with them. Only runs that ended any.
+   */
+  endedAtStop: Record<string, number>;
   /** What the latest code made at a worker's stop came to, by worker (`desktopWorkerKey`). */
   outcomes: Record<string, DesktopCodeOutcome>;
   kept: DesktopKept[];
@@ -109,6 +116,7 @@ const state = reactive<HubState>({
   listed: false,
   sessions: {},
   roots: {},
+  endedAtStop: {},
   outcomes: {},
   kept: [],
   epoch: 0,
@@ -252,6 +260,8 @@ function heard(text: string): void {
 function heardSession(session: HubSession): void {
   state.roots[session.ref] = session.root;
   if (session.ended) {
+    const endedAtStop = endedAtStopOf(session.progress);
+    if (endedAtStop > 0) state.endedAtStop[session.ref] = endedAtStop;
     delete state.sessions[session.ref];
     forgetRun(session.ref);
     return;

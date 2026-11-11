@@ -1252,14 +1252,31 @@ export type RunEndStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'o
 const RUN_END_STATUSES: readonly string[] = ['passed', 'failed', 'timedout', 'interrupted'];
 
 /**
+ * Why a test ended at a stop (End the test) is skipped, as the `skip` annotation of its attempt reads: the reporter's
+ * `testInfo.skip(true, ENDED_AT_STOP_REASON)`. A result carrying it is marked ended at a stop wherever it shows, its
+ * status staying `skipped`.
+ */
+export const ENDED_AT_STOP_REASON = 'Ended from Piwi';
+
+/** Whether a result's annotations hold the skip of a test ended at a stop (`ENDED_AT_STOP_REASON`). */
+export function endedAtStopIn(
+  annotations: ReadonlyArray<{ type: string; description?: string | null }> | null | undefined,
+): boolean {
+  return (annotations ?? []).some((a) => a.type === 'skip' && a.description === ENDED_AT_STOP_REASON);
+}
+
+/**
  * How many of a run's tests ended, each once, by the outcome of its last attempt: `done` counts them all, `failed`,
- * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed.
+ * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed. `endedAtStop` counts
+ * those of `skipped` whose last attempt was ended at a stop (`ENDED_AT_STOP_REASON`); absent from a reporter that
+ * predates it.
  */
 export interface RunCounts {
   done: number;
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
 }
 
 /**
@@ -1354,11 +1371,20 @@ export type RunMainToHub =
       failure: { title: string; error: string | null } | null;
     } & RunCounts);
 
-/** The counts of a message, checked: each a whole number, none above `done`; null when one is not. */
+/**
+ * The counts of a message, checked: each a whole number, none above `done`; null when one is not. `endedAtStop` is
+ * kept when it is a whole number within `skipped`, and left out otherwise.
+ */
 function readCounts(value: Record<string, unknown>): RunCounts | null {
   const { done, failed, flaky, skipped } = value;
   if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
-  return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+  if (failed + flaky + skipped > done) return null;
+  return { done, failed, flaky, skipped, ...endedAtStopWithin(value.endedAtStop, skipped) };
+}
+
+/** `endedAtStop` as a count may hold it: a whole number within `skipped`; nothing otherwise. */
+export function endedAtStopWithin(value: unknown, skipped: number): { endedAtStop?: number } {
+  return isInt(value, 0) && value <= skipped ? { endedAtStop: value } : {};
 }
 
 /** What the hub tells the run's own process: the developer's answer to a teammate's ask to watch. */

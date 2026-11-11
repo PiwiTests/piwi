@@ -1681,6 +1681,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
     // Created below, before any command can end.
     reporterHeard: (ref) => runSessions.heardFrom(ref),
+    endedAtStop: (ref) => runSessions.endedAtStopOf(ref),
     runEnded: (ended) => {
       void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended);
       // The run may have recorded coverage: the files the client holds show it.

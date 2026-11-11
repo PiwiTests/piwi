@@ -104,6 +104,35 @@ describe('a run’s own connection, in the run sessions', () => {
     });
   });
 
+  test('counts the tests ended at a stop as its process does, and keeps the count once the run ended', async () => {
+    const { sessions, sent, main } = harness();
+    const run = main();
+    await waitFor(() => last(sent));
+    expect(sessions.endedAtStopOf('ed-1')).toBe(0);
+    run.read({ type: 'run-progress', done: 3, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1 });
+    expect(await waitFor(() => (last(sent)?.progress?.done === 3 ? last(sent) : undefined))).toMatchObject({
+      progress: { skipped: 1, endedAtStop: 1 },
+    });
+    expect(sessions.endedAtStopOf('ed-1')).toBe(1);
+    run.read({
+      type: 'run-end',
+      status: 'passed',
+      failure: null,
+      done: 9,
+      failed: 0,
+      flaky: 0,
+      skipped: 2,
+      endedAtStop: 2,
+    });
+    run.socket.destroy();
+    expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
+      progress: { status: 'passed', skipped: 2, endedAtStop: 2 },
+    });
+    // Once the run ended, for its verdict, which the instance gives later.
+    expect(sessions.endedAtStopOf('ed-1')).toBe(2);
+    expect(sessions.endedAtStopOf('ed-2')).toBe(0);
+  });
+
   test('names the run’s page on the instance once its process does, and keeps it to the end', async () => {
     const { sent, main } = harness();
     const run = main();

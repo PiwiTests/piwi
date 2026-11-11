@@ -6595,6 +6595,24 @@
       }
     }
   },
+  "runs_progressEndedAtStop_one": {
+    "message": "$count$ an einem Halt beendet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressEndedAtStop_other": {
+    "message": "$count$ an einem Halt beendet",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_endedPassed": {
     "message": "Der Lauf ist bestanden."
   },

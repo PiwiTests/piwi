@@ -971,8 +971,9 @@ function testTitle(test: RunTest): string {
 
 /**
  * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
- * many they hold, and how many of them failed, for every run kept that says so (none from a reporter that predates
- * it), with the run's number on the instance once one run names it. Its tooltip says what each worker runs now
+ * many they hold, and how many of them failed, were flaky or were ended at a stop (End the test), for every run kept
+ * that says so (none from a reporter that predates it), with the run's number on the instance once one run names it.
+ * Its tooltip says what each worker runs now
  * (`workersNow`), links to the runs' pages and to a worker's test, and says who else has each run open; a click watches a worker while one can be, else opens the run's
  * page. None while no run says.
  */
@@ -980,14 +981,21 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const told = [...sessions.values()].flatMap((s) => (s.progress ? [s.progress] : []));
   if (!told.length) return null;
   const sum = (count: (p: NonNullable<RunSession['progress']>) => number) => told.reduce((n, p) => n + count(p), 0);
-  const [done, total, failed, flaky] = [
+  const [done, total, failed, flaky, endedAtStop] = [
     sum((p) => p.done),
     sum((p) => p.total),
     sum((p) => p.failed),
     sum((p) => p.flaky),
+    sum((p) => p.endedAtStop ?? 0),
   ];
   const tests = total === 1 ? 'test' : 'tests';
-  const outcomes = [failed ? `${failed} failed` : '', flaky ? `${flaky} flaky` : ''].filter(Boolean).join(', ');
+  const outcomes = [
+    failed ? `${failed} failed` : '',
+    flaky ? `${flaky} flaky` : '',
+    endedAtStop ? `${endedAtStop} ended at a stop` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
   const watchable = watchableWorkers(sessions).length > 0;
   const pages = runPagesOf(sessions);
   const one = told.length === 1 && pages.length === 1 ? pages[0]! : null;

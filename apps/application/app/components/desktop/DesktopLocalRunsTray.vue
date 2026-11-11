@@ -42,6 +42,8 @@ import {
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
 import { desktopRunOf, desktopStopSaid, desktopWorkerKey } from '~/utils/desktop-run-view';
+import { endedAtStopWords } from '@piwitests/run-model/outcome';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, shownWorker, activeCount, trayMounts } = store;
@@ -181,17 +183,28 @@ function duration(run: LocalRun): string {
   return localRunDuration(run.startedAt, run.finishedAt, now.value);
 }
 
+/** How many tests of a run's steps were ended at a stop (End the test), as the hub heard them end. */
+function endedAtStopIn(run: LocalRun): number {
+  return Object.entries(hub.state.endedAtStop).reduce(
+    (sum, [ref, count]) => sum + (run.hubRefs.includes(desktopRunOf(ref)) ? count : 0),
+    0,
+  );
+}
+
 function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
   switch (run.status) {
     case 'running':
       return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
-    case 'passed':
+    case 'passed': {
       if (run.kind === 'flake') {
         return flakeLabOutcome(run.exitCode) === 'reproduced'
           ? { label: 'Reproduced', color: 'success' }
           : { label: 'Not reproduced', color: 'neutral' };
       }
-      return { label: 'Passed', color: 'success' };
+      // A test ended at a stop is skipped: the run passed, marked so.
+      const ended = endedAtStopWords(endedAtStopIn(run), englishRunSpeaker);
+      return { label: ended ? `Passed · ${ended}` : 'Passed', color: 'success' };
+    }
     case 'failed':
       return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
     case 'stopped':

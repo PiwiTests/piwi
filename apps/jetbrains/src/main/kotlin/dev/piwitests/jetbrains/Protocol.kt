@@ -344,7 +344,8 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
- * command that started it (`RunCommand.ref`), when the service still keeps it.
+ * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
+ * were ended at a stop (End the Test), null for none.
  */
 data class RunEnded(
     val root: String? = null,
@@ -355,6 +356,7 @@ data class RunEnded(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val fixed: Int = 0,
     val stillFailing: List<String>? = null,
     val newFailures: List<String>? = null,
@@ -866,9 +868,10 @@ data class RunPage(val id: Int = 0, val url: String = "")
 
 /**
  * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
- * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`), whether it still runs or how it
- * ended (`status`: `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it
- * ended (null for none). Null for a run whose reporter predates it.
+ * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`, and of the skipped those ended at a
+ * stop, `endedAtStop`, null from a reporter that predates the count), whether it still runs or how it ended (`status`:
+ * `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it ended (null for
+ * none). Null for a run whose reporter predates it.
  */
 data class RunProgress(
     val total: Int = 0,
@@ -876,6 +879,7 @@ data class RunProgress(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val status: String = "running",
     val failure: RunFailure? = null,
 )

@@ -345,9 +345,6 @@ export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   return wantsStops(state) ? 'next' : 'resume';
 }
 
-/** Why a test ended at a stop (End the test) is skipped, as its `skip` annotation reads. */
-export const ENDED_REASON = 'Ended from Piwi';
-
 /**
  * Whether Playwright `version` (`testInfo.config.version`) gives a call up as the `signal` among its options aborts
  * (1.62): an older one drops the option and runs the call.

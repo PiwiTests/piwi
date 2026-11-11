@@ -576,6 +576,11 @@ const HEARD_REFS = 200;
 
 export class RunSessions {
   private readonly sessions = new Map<string, Session>();
+  /**
+   * How many tests of each run that ended were ended at a stop, as its own process counted them, by ref: the latest
+   * `MAX_KEPT_RUNS` that ended any (`endedAtStopOf`).
+   */
+  private readonly endedAtStop = new Map<string, number>();
   /** The refs of the runs whose reporter connected, latest last, `HEARD_REFS` at most (`heardFrom`). */
   private readonly heard = new Set<string>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
@@ -617,6 +622,14 @@ export class RunSessions {
       ? `No worker of this run is connected to ${this.host} now: the run ended, or Playwright is starting another worker.`
       : `No worker of this run is connected to ${this.host}: none has started a test yet, or its tests import ` +
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
+  }
+
+  /**
+   * How many tests of the run of `ref` were ended at a stop (End the test), as its own process counted them: the live
+   * run's, else the last that ended under the ref; 0 for none, and for a reporter that predates the count.
+   */
+  endedAtStopOf(ref: string): number {
+    return this.sessions.get(ref)?.progress?.endedAtStop ?? this.endedAtStop.get(ref) ?? 0;
   }
 
   /** Whether the reporter of a run of `ref` ran: the run's own process reached the service (`run-begin`). */
@@ -2232,6 +2245,14 @@ export class RunSessions {
     session.main = null;
     // A run that ends before its process said how: its command ended, or nothing connected for a while.
     if (session.progress?.status === 'running') session.progress = { ...session.progress, status: 'interrupted' };
+    this.endedAtStop.delete(session.ref);
+    if (session.progress?.endedAtStop) {
+      this.endedAtStop.set(session.ref, session.progress.endedAtStop);
+      for (const oldest of this.endedAtStop.keys()) {
+        if (this.endedAtStop.size <= MAX_KEPT_RUNS) break;
+        this.endedAtStop.delete(oldest);
+      }
+    }
     for (const worker of workers) this.closeWorker(worker);
     if (this.sessions.get(session.ref) === session) {
       this.sessions.delete(session.ref);

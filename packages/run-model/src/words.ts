@@ -115,6 +115,9 @@ export const RUN_WORDS_EN = {
   runs_liveStarting: 'Starting the live view…',
   runs_liveHint:
     'Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks a locator.',
+  // How a run came out, beyond its status: one key per plural form, said through `RunSpeaker.count`.
+  runs_progressEndedAtStop_one: '$count$ ended at a stop',
+  runs_progressEndedAtStop_other: '$count$ ended at a stop',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',
@@ -125,6 +128,12 @@ export const RUN_WORDS_EN = {
 /** A key of the catalogs that the run model's functions return or use, or a word of the interface the surfaces share. */
 export type RunWordKey = keyof typeof RUN_WORDS_EN;
 
+/** A key without its plural form, of a key that has one. */
+type CountBase<K> = K extends `${infer Base}_other` ? Base : never;
+
+/** A message that counts (`$count$`): its key without the plural form, whose `_one` and `_other` are run words. */
+export type RunCountKey = CountBase<RunWordKey>;
+
 /** The values of a message's placeholders, by name. */
 export type RunWordArgs = Readonly<Record<string, string>>;
 
@@ -134,14 +143,18 @@ export interface RunMessage {
   args?: RunWordArgs;
 }
 
-/** How a surface says the run model's words: a message by its key, and names listed in a sentence. */
+/** How a surface says the run model's words: a message by its key, a message that counts, and names listed in a sentence. */
 export interface RunSpeaker {
   say(key: RunWordKey, args?: RunWordArgs): string;
+  /** The message of `key` in the plural form the surface's language gives `count`, its `$count$` the number formatted. */
+  count(key: RunCountKey, count: number): string;
   /** `A`, `A and B`, `A, B, and C`, as the surface's language lists names. */
   list(items: readonly string[]): string;
 }
 
 const englishList = new Intl.ListFormat('en', { type: 'conjunction' });
+const englishPlural = new Intl.PluralRules('en');
+const englishNumber = new Intl.NumberFormat('en');
 
 /** The words in English, from `RUN_WORDS_EN`: each `$name$` takes the value of `name`, and an absent one is empty. */
 export const englishRunSpeaker: RunSpeaker = {
@@ -151,6 +164,10 @@ export const englishRunSpeaker: RunSpeaker = {
       /\$([A-Za-z0-9_@]+)\$/g,
       (_whole, name: string) => values.get(name.toLowerCase()) ?? '',
     );
+  },
+  count(key, count) {
+    const form = englishPlural.select(count) === 'one' ? 'one' : 'other';
+    return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { count: englishNumber.format(count) });
   },
   list: (items) => englishList.format(items),
 };
