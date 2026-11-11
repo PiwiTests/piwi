@@ -91,6 +91,7 @@ async function sendAgain(): Promise<void> {
     class="rounded-md border border-default px-3 py-2 text-sm space-y-1"
     data-shot="run-test-management-sync"
     data-testid="run-test-management-sync"
+    data-tour="run-test-management-sync"
   >
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       <UIcon :name="icon" class="size-4 shrink-0 text-muted" />

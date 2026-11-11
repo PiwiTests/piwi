@@ -1574,6 +1574,66 @@ describe('the test management binding of the checkout project', () => {
   });
 });
 
+describe('the results syncs of the checkout project', () => {
+  const syncs = () =>
+    q(
+      `select a.*, r.branch, r.status as run_status, r.is_full_run, r.start_time from integration_actions a
+       join test_runs r on r.id = a.entity_id where a.kind = 'sync-results' order by a.entity_id`,
+    );
+  const read = (value: unknown) => JSON.parse(String(value)) as Record<string, any>;
+
+  test('are of whole runs on the default branch that ended, one each: a dry run, a sent run, an unknown outcome', () => {
+    const rows = syncs();
+    expect(rows.map((row) => `${row.status}:${read(row.result).dryRun ? 'dry' : 'live'}`)).toEqual([
+      'done:dry',
+      'done:live',
+      'failed:live',
+    ]);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        entity_type: 'test_run',
+        project_id: 1,
+        connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      });
+      expect(row.branch).toBe('main');
+      expect(row.is_full_run).toBe(1);
+      expect(['passed', 'failed']).toContain(row.run_status);
+      expect(row.dedupe_key).toBe(`sync-results:test_run:${row.entity_id}:conn${DEMO_TEST_MANAGEMENT_CONNECTION_ID}`);
+    }
+  });
+
+  test('send the catalog keys of the run and list the one it leaves out', () => {
+    for (const row of syncs()) {
+      const payload = read(row.payload);
+      expect(payload.results.map((r: { key: string }) => r.key)).toEqual(['SHOP-T123']);
+      expect(payload.unknownKeys).toEqual([DEMO_UNKNOWN_TEST_CASE_KEY]);
+      expect(payload.counts.passed + payload.counts.failed).toBe(payload.results.length);
+    }
+  });
+
+  test('keep what each state needs: a dry run its payload, a sent run its test run and link, an unknown outcome its start', () => {
+    const [dry, sent, unknown] = syncs();
+    expect(read(dry!.result).payload.results).toHaveLength(1);
+    expect(read(dry!.result).runKey).toBeUndefined();
+    const result = read(sent!.result);
+    expect(result.runKey).toBe(`${DEMO_TEST_MANAGEMENT_PROJECT_KEY}-R${sent!.entity_id}`);
+    const links = q(`select * from entity_links where provider = 'zephyr-scale'`);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ test_run_id: sent!.entity_id, key: result.runKey, url: result.runUrl });
+    expect(read(unknown!.result).uploadStartedAt).toBeGreaterThan(0);
+    expect(read(unknown!.result).runKey).toBeUndefined();
+    expect(String(unknown!.error)).toContain('Outcome unknown');
+  });
+
+  test('ended after their run started and before now', () => {
+    for (const row of syncs()) {
+      expect(Number(row.created_at)).toBeGreaterThan(Number(row.start_time) * 1000);
+      expect(Number(row.finished_at)).toBeLessThan(Date.now());
+      expect(new Date(read(row.payload).startedAt).getTime()).toBe(Number(row.start_time) * 1000);
+    }
+  });
+});
+
 describe('the seed loaded through libsql, as app:seed:dev and the server load it', () => {
   // libsql bundles an older SQLite than sql.js, and the load-time rebase
   // rewrites the JSON arrays element by element: every element must come back

@@ -47,6 +47,17 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-test-management-sync',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'How the run’s results went to the test management tool: the test run made there, what was sent, the keys left out, and Sync again.',
+    shownWhen: 'When the project is bound to a test management tool and the run ended and was eligible to send.',
+    help: 'run.testManagementSync',
+    doc: 'operate/zephyr-scale',
+    sample: { route: '/test-runs/2', expect: { run: { id: 2, project: 'e2e-checkout' } } },
+  },
+  {
     id: 'run-retry-command',
     kind: 'action',
     pages: ['/test-runs/[id]'],
@@ -376,11 +387,6 @@ export const RUNS_ANCHORS = [
 
 /** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
 export const RUNS_EXEMPTIONS = [
-  {
-    rule: 'help',
-    key: 'run.testManagementSync',
-    reason: 'Shows only on a run whose results were sent to a test management tool, and the seed has no such run yet.',
-  },
   {
     rule: 'help',
     key: 'run.live-view-setup',
