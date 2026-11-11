@@ -132,6 +132,7 @@ describe('summarizeRunCases', () => {
       didNotRun: 28,
       flaky: 3,
       fixme: 0,
+      endedAtStop: 0,
       running: 3,
       interrupted: 0,
     });
@@ -156,6 +157,17 @@ describe('summarizeRunCases', () => {
     expect(s.failed).toBe(1);
   });
 
+  test('counts a test ended at a stop as skipped and ended at a stop, never as a pass', () => {
+    const ended = [{ type: 'skip', description: 'Ended from Piwi' }];
+    const s = summarizeRunCases([
+      { status: 'skipped', testAnnotations: ended },
+      { status: 'skipped', testAnnotations: [{ type: 'skip', description: 'not on Safari' }] },
+      { status: 'passed', testAnnotations: ended },
+      { status: 'passed' },
+    ]);
+    expect(s).toMatchObject({ total: 4, passed: 2, skipped: 2, endedAtStop: 1, fixme: 0 });
+  });
+
   test('treats a missing retries field as zero (not flaky)', () => {
     const s = summarizeRunCases([{ status: 'passed' }, { status: 'passed', retries: null }]);
     expect(s.passed).toBe(2);
@@ -171,6 +183,7 @@ describe('summarizeRunCases', () => {
       didNotRun: 0,
       flaky: 0,
       fixme: 0,
+      endedAtStop: 0,
       running: 0,
       interrupted: 0,
     });

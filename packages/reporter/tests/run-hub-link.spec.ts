@@ -12,8 +12,9 @@ import { withoutCi } from './_helpers.js';
 /**
  * The run's own connection to the hub, in a real Playwright run through the built package: a fake editor service on
  * the socket the run names hears, on a connection apart from the workers', how many tests the run holds, each that
- * ended for good (a serial group's retry counting its tests once), and how the run ended with its first failure; the
- * run still ends as it would without it, its exit code and the reporters after Piwi's included.
+ * ended for good (a serial group's retry counting its tests once, a test ended at a stop counted apart among the
+ * skipped), and how the run ended with its first failure; the run still ends as it would without it, its exit code and
+ * the reporters after Piwi's included.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -33,6 +34,10 @@ test.describe('cart', () => {
   });
 });
 test.skip('is skipped', async () => {});
+test('is ended at a stop', async ({}, testInfo) => {
+  // As End the test at a stop skips the attempt.
+  testInfo.skip(true, 'Ended from Piwi');
+});
 test.describe.serial('checkout', () => {
   test('opens', async () => {});
   test('pays', async ({}, testInfo) => {
@@ -145,7 +150,7 @@ describe('the run’s own connection to the hub', () => {
       token: TOKEN,
       ref: 'ed-0a1b2c3d',
       cwd: project,
-      total: 7,
+      total: 8,
       workers: 1,
       shard: null,
     });
@@ -161,14 +166,16 @@ describe('the run’s own connection to the hub', () => {
 
   it('says how the run ended, its counts and its first failure, the failure’s credentials hidden', () => {
     const end = runs[0]![runs[0]!.length - 1];
-    // The serial group's retry counts its tests once: `opens` again as passed, `thanks` as passed, not skipped.
+    // The serial group's retry counts its tests once: `opens` again as passed, `thanks` as passed, not skipped. Of the
+    // two skipped, the one ended at a stop counts apart.
     expect(end).toMatchObject({
       type: 'run-end',
       status: 'failed',
-      done: 7,
+      done: 8,
       failed: 1,
       flaky: 2,
-      skipped: 1,
+      skipped: 2,
+      endedAtStop: 1,
       failure: { title: 'cart › fails' },
     });
     const error = (end as { failure: { error: string } }).failure.error;

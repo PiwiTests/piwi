@@ -48,6 +48,8 @@ export interface RunLifecycleEvent {
   runId?: number;
   projectId?: number;
   status?: string;
+  /** The run that continues `runId`, on `run-continued`. */
+  continuedInId?: number;
 }
 
 /** Listeners that need the event itself (which project), called at once, not debounced. */

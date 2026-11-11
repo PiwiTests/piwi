@@ -21,6 +21,8 @@ import {
   ignoredEnvValues,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
+  PIWI_SHARE_LIVE_ENV,
+  readBool,
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
   type IgnoredEnvValue,
@@ -66,6 +68,7 @@ import {
   LIVE_VIEW_ENV,
   formatLiveViewEnv,
   formatLiveViewMissing,
+  LIVE_SHARE_MISSING,
   type LiveViewMissing,
 } from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
@@ -633,6 +636,17 @@ export class PiwiDashboardReporter {
     );
     if (this.streamManager) {
       this.streamManager.onOpened = (runId, runUrl) => this.hubLink?.page(runId, runUrl);
+      // A teammate asks to watch the run: the hub's tool asks the developer, and the run's terminal says so, whether a
+      // tool showed it or not.
+      this.streamManager.onAsk = (ask) => {
+        const asked = this.hubLink?.ask(ask) ?? false;
+        this.logger.info(
+          asked
+            ? `${ask.by} asks to watch this run live on the dashboard: share it from the editor or the app that follows it.`
+            : `${ask.by} asks to watch this run live on the dashboard. A run that no editor or app follows is shared from its start with PIWI_SHARE_LIVE=1.`,
+        );
+      };
+      if (this.hubLink) this.hubLink.onAskAnswer = (answer) => this.streamManager?.answerAsk(answer);
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
@@ -671,8 +685,14 @@ export class PiwiDashboardReporter {
     if (this.mergingReports) return;
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    // PIWI_SHARE_LIVE shares a run outside CI that no editor or app follows from its start; the workers read it as
+    // they open their live view.
+    const shareLive = !ci && !process.env[RUN_CHANNEL_ENV] && readBool(process.env[PIWI_SHARE_LIVE_ENV]) === true;
+    if (shareLive) process.env[PIWI_SHARE_LIVE_ENV] = 'true';
+    else delete process.env[PIWI_SHARE_LIVE_ENV];
     if (!setup?.liveViewKey) {
       const why = this.liveViewMissing(setup);
+      if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
       else if (why !== 'local') {
@@ -686,6 +706,11 @@ export class PiwiDashboardReporter {
       this.liveViewOn = true;
       this.logger.info(
         "Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.",
+      );
+    } else if (shareLive) {
+      this.liveViewOn = true;
+      this.logger.info(
+        `Shared live (PIWI_SHARE_LIVE) for the specs that use Piwi's fixtures: people who may open this run on ${this.httpClient.baseUrl} watch each worker's page, its calls and its stops while it runs, the secret fields painted over. Nothing is stored.`,
       );
     } else if (process.env[RUN_CHANNEL_ENV]) {
       this.logger.info(

@@ -727,6 +727,52 @@ describe('the window', () => {
     expect(await window.command({ type: 'subscribe', id: 5 })).toBeNull();
   });
 
+  it('asks the person as a teammate asks to watch a run, and sends Not now back through the run', async () => {
+    const window = await openWindow();
+    const main = net.connect(channel.path);
+    main.setEncoding('utf8');
+    const heard: string[] = [];
+    main.on(
+      'data',
+      lineReader(
+        (line) => heard.push(line),
+        () => main.destroy(),
+      ),
+    );
+    const say = (message: Record<string, unknown>) => main.write(`${JSON.stringify(message)}\n`);
+    say({
+      type: 'run-begin',
+      token: channel.token,
+      ref: 'desktop-31',
+      cwd: folder,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 1,
+      workers: 1,
+      shard: null,
+    });
+    say({ type: 'run-ask', id: 'a1', by: 'Dana' });
+    expect(await waitFor(() => window.events.find((e) => e.type === 'ask-to-watch'))).toEqual({
+      type: 'ask-to-watch',
+      ref: 'desktop-31',
+      id: 'a1',
+      by: 'Dana',
+      run: null,
+    });
+    expect(await window.command({ type: 'answer-ask', id: 6, ref: 'desktop-31', ask: 'a1' })).toMatchObject({
+      ok: true,
+    });
+    expect(await waitFor(() => heard.map((line) => JSON.parse(line)).find((m) => m.type === 'ask-answer'))).toEqual({
+      type: 'ask-answer',
+      id: 'a1',
+      answer: 'not-now',
+    });
+    expect(await window.command({ type: 'answer-ask', id: 7, ref: 'a b', ask: 'a1' })).toMatchObject({ ok: false });
+    main.destroy();
+    window.close();
+  });
+
   it('watches a stop’s live view and plays its input there alone, picking on its image', async () => {
     const window = await openWindow();
     const other = await openWindow();

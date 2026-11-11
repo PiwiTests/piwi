@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import type { StreamEventPayload } from '#shared/types';
 import { testBeginData, testCompletedData } from '../../server/utils/live-case-events';
 import { mapWireCaseToRunCase } from '../../server/utils/map-wire-case';
+import { ENDED_AT_STOP_REASON } from '@piwitests/core/run-channel';
+import { isEndedAtStop } from '#shared/utils/skip-kind';
 
 const begin: StreamEventPayload = {
   type: 'begin',
@@ -83,5 +85,19 @@ describe('testCompletedData', () => {
       locks: ['db'],
       testMeta: { owner: 'payments', priority: 'high' },
     });
+  });
+
+  test('carries the attempt’s annotations, so its row reads a test ended at a stop', () => {
+    const ended: StreamEventPayload = {
+      ...begin,
+      type: 'complete',
+      status: 'skipped',
+      duration: 300,
+      testAnnotations: [{ type: 'skip', description: ENDED_AT_STOP_REASON }],
+    };
+    const data = testCompletedData(ended, mapWireCaseToRunCase(ended), undefined);
+    expect(isEndedAtStop(data as Parameters<typeof isEndedAtStop>[0])).toBe(true);
+    const plain: StreamEventPayload = { ...ended, testAnnotations: undefined };
+    expect(testCompletedData(plain, mapWireCaseToRunCase(plain), undefined).testAnnotations).toBeNull();
   });
 });

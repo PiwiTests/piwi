@@ -34,6 +34,13 @@ describe('runSummaryText', () => {
     );
   });
 
+  test('names the tests ended at a stop among the skipped, never as passed', () => {
+    expect(runSummaryText({ ...run, endedAtStop: 2 })).toContain(
+      'Tests: 120 total · 110 passed · 6 failed · 4 skipped (1 fixme, 2 ended at a stop) · 2 passed on retry',
+    );
+    expect(runSummaryText({ ...run, fixme: 0, endedAtStop: 1 })).toContain('4 skipped (1 ended at a stop)');
+  });
+
   test('names the tests an interruption cut short, apart from every outcome', () => {
     const cut = {
       ...run,

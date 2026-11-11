@@ -203,8 +203,10 @@ views are exempt only where a rule says so.
   failed, flaky, skipped, didn't run, running, interrupted; violet is the accent, never an outcome). Timed-out counts
   as failed, a pass after a failed attempt as flaky, and a `test.fixme()` skip is the second grey `fixme`
   (`isFixmeSkip` / `fixmeSkipPredicate`, `shared/utils/skip-kind.ts`), carved out of skipped as flaky is out of passed.
-  An interrupted test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled
-  "Interrupted" in every legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
+  A test ended at a stop (End the test, `isEndedAtStop`) is a mark, not an outcome: skipped in color and count, its
+  label alone reading "Ended at a stop" (`statusChipLabel`'s `endedAtStop`, `ENDED_AT_STOP_BADGE`). An interrupted
+  test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled "Interrupted" in every
+  legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
 - **Never hardcode a status color** in a bar, chart, legend, dot, history cell, timeline bar or filter chip: use
   `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`app/utils/status-palette.ts`, `flaky` the execution's stored
   `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML,

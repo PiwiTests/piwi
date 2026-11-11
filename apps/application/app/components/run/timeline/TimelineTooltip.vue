@@ -186,7 +186,7 @@ const positionStyle = computed(() => {
       </div>
       <div class="flex items-center gap-3 text-gray-500">
         <span v-if="item.kind === 'pause'">{{ pauseReasonText(item.status) }}</span>
-        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky) }}</span>
+        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky, item.endedAtStop) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
           Worker {{ item.slot != null ? item.slot + 1 : item.workerIndex

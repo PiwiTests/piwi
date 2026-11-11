@@ -3,6 +3,7 @@ import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import { runEventBus } from '../../../utils/run-events';
+import { liveAsks } from '../../../utils/live-asks';
 import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -10,14 +11,20 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Keep a streaming test run alive',
     description:
-      'Lightweight liveness ping for an active streaming run. The reporter sends this during idle gaps (when no test events are flowing) so the server can tell a still-running run apart from a crashed one. Bumps the run\'s activity timestamp; the stale-run reaper marks runs with no recent activity as "interrupted". Answers `watched` like the events endpoint, which is how a reporter holding back step events learns that someone opened the run during a long test. Requires the stream token.',
+      "Lightweight liveness ping for an active streaming run. The reporter sends this during idle gaps (when no test events are flowing) so the server can tell a still-running run apart from a crashed one. Bumps the run's activity timestamp; the stale-run reaper marks runs with no recent activity as \"interrupted\". Answers `watched` like the events endpoint, which is how a reporter holding back step events learns that someone opened the run during a long test, and `ask` (`{ id, by }`, once) like it: a teammate’s ask to watch the run, for the reporter to put to the developer. The body’s `askAnswer` (`{ id, answer: 'not-now' }`) is the developer’s answer to an ask of this run, and its `takesAsks: true` says the reporter takes asks. Requires the stream token.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
         'application/json': {
           schema: {
             type: 'object',
-            properties: { streamToken: { type: 'string' } },
+            properties: {
+              streamToken: { type: 'string' },
+              askAnswer: {
+                type: 'object',
+                properties: { id: { type: 'string' }, answer: { type: 'string', enum: ['not-now'] } },
+              },
+            },
             required: ['streamToken'],
           },
         },
@@ -39,9 +46,11 @@ export default eventHandler(async (event) => {
 
   // Validates the token (and revives an interrupted run if it was prematurely reaped).
   await authorizeStreamToken(db, id, body.streamToken);
+  liveAsks.noteTakesAsks(id, body);
+  liveAsks.answer(id, body.askAnswer);
 
   // Advance the activity timestamp so the stale-run reaper leaves this run alone.
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
-  return { success: true, watched: runEventBus.answerWatched(id, body.streamToken) };
+  return { success: true, watched: runEventBus.answerWatched(id, body.streamToken), ...liveAsks.handOverAnswer(id) };
 });

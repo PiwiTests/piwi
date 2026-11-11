@@ -27,7 +27,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import type { LanguageClient } from 'vscode-languageclient/node';
+import { State, type LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
 import {
   LOCATOR_AT_CARET_REQUEST,
@@ -42,6 +42,9 @@ import {
   RUN_CONTROL_REQUEST,
   SET_BREAKPOINTS_NOTIFICATION,
   SHARE_RUN_REQUEST,
+  SHARE_WINDOW_NOTIFICATION,
+  ASK_TO_WATCH_NOTIFICATION,
+  ANSWER_ASK_REQUEST,
   HOLD_RUN_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
@@ -59,6 +62,9 @@ import {
   type RunSession,
   type SetBreakpointsParams,
   type ShareRunParams,
+  type ShareWindowParams,
+  type AskToWatchParams,
+  type AnswerAskParams,
   type HoldRunParams,
   type StopActionParams,
   type StopActionResult,
@@ -107,6 +113,7 @@ import {
   runStarted,
   runTargetArg,
   shareLiveWarning,
+  askToWatchText,
   holdTarget,
   holdText,
   runLabel,
@@ -294,6 +301,10 @@ export function registerRunControl(
   };
   /** Share live said what it sends in this window: it asks no more. */
   let liveWarned = false;
+  /** This window's runs are shared live, as the service says (`piwi/shareWindowChanged`). */
+  let windowShared = false;
+  /** The person said yes to what sharing the window's runs sends, once in the window. */
+  let windowWarned = false;
 
   /** Where the edits are mapped from for a run: its start, else when it was first heard. */
   const sinceOf = (ref: string) => runs.get(ref)?.since ?? edits.now();
@@ -368,7 +379,7 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
-    const live = liveItem(sessions);
+    const live = liveItem(sessions, windowShared);
     const progress = progressItem(sessions);
     for (const control of [
       ...controlItems(state),
@@ -1008,10 +1019,17 @@ export function registerRunControl(
     if (!ref) return;
     const live = sessions.get(ref)?.live;
     if (on && !live?.refused && !liveWarned) {
-      const yes = 'Share live';
-      if ((await vscode.window.showWarningMessage(`Piwi: ${shareLiveWarning(live)}`, { modal: true }, yes)) !== yes) {
-        return;
-      }
+      // The first share of the window chooses its scope too: this run, or the window's runs until stopped.
+      const yes = 'Share this run';
+      const all = "Share this window's runs";
+      const picked = await vscode.window.showWarningMessage(
+        `Piwi: ${shareLiveWarning(live)}`,
+        { modal: true },
+        yes,
+        all,
+      );
+      if (picked === all) return shareWindow(ref, true);
+      if (picked !== yes) return;
       liveWarned = true;
     }
     const answer = await lc
@@ -1026,6 +1044,44 @@ export function registerRunControl(
     if (picked === open) await vscode.env.openExternal(vscode.Uri.parse(live.page));
     if (picked === copy) await vscode.env.clipboard.writeText(live.page);
     if (picked === stop) await shareLive({ ref }, false);
+  };
+
+  /**
+   * Share this window's runs live until the person stops or the window closes (`on`), the run of `ref` too when one is
+   * named, or stop sharing them all: the first share of the window says what goes out and waits for a yes.
+   */
+  const shareWindow = async (ref: string | null, on: boolean) => {
+    if (on && !windowWarned) {
+      const yes = "Share this window's runs";
+      const live = ref ? sessions.get(ref)?.live : undefined;
+      const picked = await vscode.window.showWarningMessage(
+        `Piwi: ${shareLiveWarning(live, true)}`,
+        { modal: true },
+        yes,
+      );
+      if (picked !== yes) return;
+      windowWarned = true;
+    }
+    const params: ShareRunParams = { on, scope: 'window', ...(ref ? { ref } : {}) };
+    const answer = await lc.sendRequest<RunControlResult>(SHARE_RUN_REQUEST, params).catch(() => null);
+    say(answer ? answer.message : 'the editor service did not answer.');
+  };
+
+  /** A teammate asks to watch a run of this window: Share live shares it, Not now tells them. */
+  const askedToWatch = async (ask: AskToWatchParams) => {
+    const share = 'Share live';
+    const notNow = 'Not now';
+    const picked = await vscode.window.showInformationMessage(`Piwi: ${askToWatchText(ask)}`, share, notNow);
+    if (picked === share) return shareLive({ ref: ask.ref }, true);
+    if (picked !== notNow) return;
+    const answer = await lc
+      .sendRequest<RunControlResult>(ANSWER_ASK_REQUEST, {
+        ref: ask.ref,
+        id: ask.id,
+        answer: 'not-now',
+      } satisfies AnswerAskParams)
+      .catch(() => null);
+    if (answer && !answer.ok) say(answer.message);
   };
 
   /** Opens a run's page on the instance: the one the command names, the only one known, or the one chosen. */
@@ -1309,6 +1365,23 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.showBrowser, (arg?: unknown) => showBrowser(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
+    vscode.commands.registerCommand(RUN_COMMANDS.shareWindow, (arg?: unknown) =>
+      shareWindow(runTargetArg(arg)?.ref ?? null, true),
+    ),
+    vscode.commands.registerCommand(RUN_COMMANDS.stopSharingWindow, () => shareWindow(null, false)),
+    lc.onNotification(SHARE_WINDOW_NOTIFICATION, (changed: ShareWindowParams) => {
+      windowShared = changed?.on === true;
+      void vscode.commands.executeCommand('setContext', 'piwi.windowSharedLive', windowShared);
+      drawControls();
+    }),
+    lc.onNotification(ASK_TO_WATCH_NOTIFICATION, (ask: AskToWatchParams) => void askedToWatch(ask)),
+    // A service started again shares this window's runs as the person left them: the window has not closed.
+    lc.onDidChangeState((e) => {
+      if (e.newState !== State.Running || !windowShared) return;
+      void lc
+        .sendRequest<RunControlResult>(SHARE_RUN_REQUEST, { on: true, scope: 'window' } satisfies ShareRunParams)
+        .catch(() => null);
+    }),
     vscode.commands.registerCommand(RUN_COMMANDS.openPage, (arg?: unknown) => openRunPage(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.holdFailures, (arg?: unknown) => holdFailures(arg)),
     {

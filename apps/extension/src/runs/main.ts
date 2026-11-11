@@ -22,6 +22,7 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
+import { endedAtStopOf, endedAtStopWords } from '@piwitests/run-model/outcome';
 import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
 import { tabStatus, workerStatus, type WorkerStatus } from '@piwitests/run-model/status';
 import {
@@ -1831,7 +1832,10 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   }
   if (session.progress) {
     const { total, done, failed, flaky } = session.progress;
-    children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
+    const ended = endedAtStopOf(session.progress);
+    children.push(
+      part(`${runKey}|progress`, [total, done, failed, flaky, ended], () => renderProgress(session.progress!)),
+    );
   }
   // Who else has the run open, from a hub that says so, while the run goes on and its hub is connected.
   const present = session.ended || away ? null : presenceLine(session.presence, runsSpeaker);
@@ -2188,11 +2192,16 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
   render();
 }
 
-/** How far a run is, under its name: how many of its tests ended, of all it holds, and how many failed or were flaky. */
+/**
+ * How far a run is, under its name: how many of its tests ended, of all it holds, and how many failed, were flaky or
+ * were ended at a stop (skipped, marked so).
+ */
 function renderProgress(progress: HubProgress): HTMLElement {
   const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: progress.done }));
   if (progress.failed > 0) line.append(' · ', element('span', 'failed', tn('runs_progressFailed', progress.failed)));
   if (progress.flaky > 0) line.append(' · ', element('span', 'flaky', tn('runs_progressFlaky', progress.flaky)));
+  const endedAtStop = endedAtStopWords(endedAtStopOf(progress), runsSpeaker);
+  if (endedAtStop) line.append(' · ', element('span', 'ended-at-stop', endedAtStop));
   return line;
 }
 

@@ -82,6 +82,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var inputMillis = 0L
     private val binds = CopyOnWriteArrayList<StopBindParams>()
     private val shares = CopyOnWriteArrayList<ShareRunParams>()
+    private val answers = CopyOnWriteArrayList<AnswerAskParams>()
     private val holds = CopyOnWriteArrayList<HoldRunParams>()
     private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
@@ -92,11 +93,17 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         super.setUp()
         sessions = project.service<PiwiRunSessions>()
         sessions.liveWarned = false
+        sessions.windowWarned = false
         remote = sessions.remote
         sessions.remote = object : RunRemote {
             override fun control(params: RunControlParams): RunControlResult {
                 controls += params
                 return RunControlResult(true, "Asked.")
+            }
+
+            override fun answerAsk(params: AnswerAskParams): RunControlResult {
+                answers += params
+                return RunControlResult(true, "They see “Not now”.")
             }
 
             override fun shareRun(params: ShareRunParams): RunControlResult {
@@ -498,7 +505,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val asked = mutableListOf<String>()
         TestDialogManager.setTestDialog { message ->
             asked += message
-            Messages.NO
+            Messages.CANCEL
         }
         try {
             assertTrue(myFixture.testAction(share).isEnabled)
@@ -530,13 +537,44 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.getOrNull(2) })
     }
 
+    /**
+     * The first share chooses the project's runs: their own warning comes, and its yes shares them; a later share of the
+     * project's runs asks no more, and stopping them asks nothing.
+     */
+    fun testTheFirstShareMayShareTheProjectsRunsAfterTheirOwnWarning() {
+        val page = "https://piwi.example.com/test-runs/42"
+        hear(running("ed-live").copy(live = RunLive(false, null, page, 0)))
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            if (asked.size == 1) Messages.NO else Messages.YES
+        }
+        try {
+            myFixture.testAction(ActionManager.getInstance().getAction("Piwi.ShareRunLive"))
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf(Glue.shareLiveWarning(page), Glue.shareLiveWarning(page, window = true)), asked)
+        assertEquals(ShareRunParams("ed-live", true, "window"), waitFor("the share") { shares.firstOrNull() })
+        TestDialogManager.setTestDialog { throw AssertionError("asked again") }
+        try {
+            sessions.shareWindow(true)
+            waitFor("the second share") { shares.getOrNull(1) }
+            sessions.shareWindow(false)
+            assertEquals(ShareRunParams(null, false, "window"), waitFor("the stop") { shares.getOrNull(2) })
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+    }
+
     /** A run whose workers have not said yet how it stands on the instance is warned of too, before it is shared. */
     fun testARunNotHeardOfYetIsWarnedOfBeforeItIsShared() {
         hear(running("ed-quiet"))
         val asked = mutableListOf<String>()
         TestDialogManager.setTestDialog { message ->
             asked += message
-            Messages.NO
+            Messages.CANCEL
         }
         try {
             myFixture.testAction(ActionManager.getInstance().getAction("Piwi.ShareRunLive"))

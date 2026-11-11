@@ -167,6 +167,8 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "agents" to service.agentsOptions(),
         )
         PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
+        // A service started again shares the project's runs as the person left them: the project has not closed.
+        if (project.getServiceIfCreated(PiwiRunSessions::class.java)?.windowShared == true) options["shareWindow"] = true
         return options
     }
 
@@ -259,6 +261,16 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/runSessionChanged")
     fun runSessionChanged(session: RunSession) {
         project.service<PiwiRunSessions>().heard(session)
+    }
+
+    @JsonNotification("piwi/shareWindowChanged")
+    fun shareWindowChanged(params: ShareWindowParams) {
+        project.service<PiwiRunSessions>().windowSharedChanged(params.on)
+    }
+
+    @JsonNotification("piwi/askToWatch")
+    fun askToWatch(ask: AskToWatchParams) {
+        project.service<PiwiRunSessions>().askedToWatch(ask)
     }
 
     @JsonNotification("piwi/pageFrame")

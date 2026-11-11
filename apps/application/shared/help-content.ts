@@ -544,6 +544,7 @@ export const HELP_TOPICS = {
       '- **To** — the people who may open the run, over this instance. The images show what the page shows, the secret fields painted over.',
       '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
+      '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
@@ -634,6 +635,9 @@ export const HELP_TOPICS = {
       '- **JetBrains IDEs** — **Tools → Piwi → Share the Run Live**.',
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
+      '- **Terminal** — `PIWI_SHARE_LIVE=1` shares a run from its start.',
+      '',
+      '**Ask to watch** asks the developer to share it, naming you, where they launched the run (a run with no tool prints it in its terminal); this page shows their answer. Once per 5 minutes, when the project allows it and you are signed in.',
     ].join('\n'),
     doc: 'features/share-live',
   },
@@ -728,7 +732,7 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. A test ended at a stop with End the test counts as skipped and reads **Ended at a stop**, as the header marks the run that holds one. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
     doc: 'reference/test-search',
   },
   'run.changes': {

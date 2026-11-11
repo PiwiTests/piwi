@@ -156,6 +156,8 @@ export function testCompletedData(
     testCaseId: persisted?.testCaseId ?? null,
     // Its verdict as stored: it passed after an earlier attempt failed or timed out.
     passedAfterFailure: persisted?.passedAfterFailure ?? null,
+    // Its annotations as stored, from which the row reads a `test.fixme()` skip or a test ended at a stop.
+    testAnnotations: Array.isArray(input.testAnnotations) ? input.testAnnotations : null,
     ...searchFields(tc, maxLocks),
   };
 }

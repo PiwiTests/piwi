@@ -245,6 +245,9 @@ import {
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   SHARE_RUN_REQUEST,
+  SHARE_WINDOW_NOTIFICATION,
+  ASK_TO_WATCH_NOTIFICATION,
+  ANSWER_ASK_REQUEST,
   HOLD_RUN_REQUEST,
   STOP_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
@@ -299,6 +302,9 @@ import {
   type StopBindResult,
   type RunControlParams,
   type ShareRunParams,
+  type ShareWindowParams,
+  type AskToWatchParams,
+  type AnswerAskParams,
   type HoldRunParams,
   type DriveStopParams,
   type RunControlResult,
@@ -1675,6 +1681,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
     // Created below, before any command can end.
     reporterHeard: (ref) => runSessions.heardFrom(ref),
+    endedAtStop: (ref) => runSessions.endedAtStopOf(ref),
     runEnded: (ended) => {
       void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended);
       // The run may have recorded coverage: the files the client holds show it.
@@ -1887,6 +1894,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
     sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
+    askedToWatch: (ask) => void connection.sendNotification(ASK_TO_WATCH_NOTIFICATION, ask satisfies AskToWatchParams),
+    shareWindowChanged: (on) =>
+      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams),
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -2359,6 +2369,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     writesCode = init?.stopCode === true;
     stopsRuns = init?.stopsRuns === true;
     startsRuns = init?.startsRuns === true;
+    if (init?.shareWindow === true) runSessions.share({ on: true, scope: 'window' });
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
@@ -4052,6 +4063,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(SHARE_RUN_REQUEST, (params: ShareRunParams): RunControlResult => runSessions.share(params));
+  connection.onRequest(ANSWER_ASK_REQUEST, (params: AnswerAskParams): RunControlResult =>
+    runSessions.answerAsk(params),
+  );
   connection.onRequest(HOLD_RUN_REQUEST, (params: HoldRunParams): RunControlResult =>
     runSessions.hold(params, 'person'),
   );

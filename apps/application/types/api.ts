@@ -455,6 +455,8 @@ export interface ProjectWithTestRuns {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+  askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
@@ -499,6 +501,8 @@ export interface ProjectDetails {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+  askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
@@ -614,6 +618,8 @@ export interface TestRunDetails {
   origin?: string;
   /** The person who asked for a requested run; null for every other run. */
   requesterId?: number | null;
+  /** The run that continued this one, shared after it from the same editor window; null for none. */
+  continuedInId?: number | null;
   createdAt: Date;
   project?: {
     id: number;

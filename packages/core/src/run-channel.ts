@@ -21,6 +21,7 @@
  * Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
  * sides. A side ignores a message it cannot read.
  */
+import { parseLiveAsk, parseLiveAskAnswer, type LiveAsk, type LiveAskAnswer } from './live-view';
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
@@ -634,9 +635,11 @@ export type HubToRun =
   | { type: 'events'; on: boolean }
   /**
    * Share the run on the team instance from now on (`on`): open the live view stream with the run's key, or close it,
-   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`.
+   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`. `after`
+   * names the run on the instance this one continues, shared before it from the same editor window
+   * (`LIVE_VIEW_AFTER_PARAM`).
    */
-  | { type: 'share'; on: boolean };
+  | { type: 'share'; on: boolean; after?: number };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -1204,8 +1207,12 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'events':
       return typeof value.on === 'boolean' ? { type: 'events', on: value.on } : null;
-    case 'share':
-      return typeof value.on === 'boolean' ? { type: 'share', on: value.on } : null;
+    case 'share': {
+      if (typeof value.on !== 'boolean') return null;
+      return isInt(value.after, 1)
+        ? { type: 'share', on: value.on, after: value.after }
+        : { type: 'share', on: value.on };
+    }
     default:
       return typeof value.type === 'string' && value.type ? unknown(value.type) : null;
   }
@@ -1245,14 +1252,31 @@ export type RunEndStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'o
 const RUN_END_STATUSES: readonly string[] = ['passed', 'failed', 'timedout', 'interrupted'];
 
 /**
+ * Why a test ended at a stop (End the test) is skipped, as the `skip` annotation of its attempt reads: the reporter's
+ * `testInfo.skip(true, ENDED_AT_STOP_REASON)`. A result carrying it is marked ended at a stop wherever it shows, its
+ * status staying `skipped`.
+ */
+export const ENDED_AT_STOP_REASON = 'Ended from Piwi';
+
+/** Whether a result's annotations hold the skip of a test ended at a stop (`ENDED_AT_STOP_REASON`). */
+export function endedAtStopIn(
+  annotations: ReadonlyArray<{ type: string; description?: string | null }> | null | undefined,
+): boolean {
+  return (annotations ?? []).some((a) => a.type === 'skip' && a.description === ENDED_AT_STOP_REASON);
+}
+
+/**
  * How many of a run's tests ended, each once, by the outcome of its last attempt: `done` counts them all, `failed`,
- * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed.
+ * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed. `endedAtStop` counts
+ * those of `skipped` whose last attempt was ended at a stop (`ENDED_AT_STOP_REASON`); absent from a reporter that
+ * predates it.
  */
 export interface RunCounts {
   done: number;
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
 }
 
 /**
@@ -1338,6 +1362,8 @@ export type RunMainToHub =
       runner?: true;
     }
   | ({ type: 'run-page' } & RunPage)
+  /** A teammate asks to watch the run (`LiveAsk`): the hub's tool asks the developer. */
+  | ({ type: 'run-ask' } & LiveAsk)
   | ({ type: 'run-progress' } & RunCounts)
   | ({
       type: 'run-end';
@@ -1345,11 +1371,31 @@ export type RunMainToHub =
       failure: { title: string; error: string | null } | null;
     } & RunCounts);
 
-/** The counts of a message, checked: each a whole number, none above `done`; null when one is not. */
+/**
+ * The counts of a message, checked: each a whole number, none above `done`; null when one is not. `endedAtStop` is
+ * kept when it is a whole number within `skipped`, and left out otherwise.
+ */
 function readCounts(value: Record<string, unknown>): RunCounts | null {
   const { done, failed, flaky, skipped } = value;
   if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
-  return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+  if (failed + flaky + skipped > done) return null;
+  return { done, failed, flaky, skipped, ...endedAtStopWithin(value.endedAtStop, skipped) };
+}
+
+/** `endedAtStop` as a count may hold it: a whole number within `skipped`; nothing otherwise. */
+export function endedAtStopWithin(value: unknown, skipped: number): { endedAtStop?: number } {
+  return isInt(value, 0) && value <= skipped ? { endedAtStop: value } : {};
+}
+
+/** What the hub tells the run's own process: the developer's answer to a teammate's ask to watch. */
+export type HubToMain = { type: 'ask-answer' } & LiveAskAnswer;
+
+/** A line the hub sent the run's own process; null when it is not one. */
+export function parseHubToMain(line: string): HubToMain | null {
+  const value = readJson(line);
+  if (!value || value.type !== 'ask-answer') return null;
+  const answer = parseLiveAskAnswer(value);
+  return answer ? { type: 'ask-answer', ...answer } : null;
 }
 
 /** A line the run's own process sent, checked field by field; null when it is not one. */
@@ -1383,6 +1429,10 @@ export function parseRunMainToHub(line: string): RunMainToHub | null {
     case 'run-page': {
       const page = readRunPage(value);
       return page ? { type: 'run-page', ...page } : null;
+    }
+    case 'run-ask': {
+      const ask = parseLiveAsk(value);
+      return ask ? { type: 'run-ask', ...ask } : null;
     }
     case 'run-progress': {
       const counts = readCounts(value);

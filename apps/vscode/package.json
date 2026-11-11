@@ -553,6 +553,17 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.shareWindowLive",
+        "title": "Share this window's runs live until I stop",
+        "category": "Piwi",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "piwi.stopSharingWindowLive",
+        "title": "Stop sharing this window's runs live",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.codeAtStop",
         "title": "Write code at the stop…",
         "category": "Piwi",
@@ -766,6 +777,14 @@
         {
           "command": "piwi.stopSharingRun",
           "when": "piwi.runSharedLive"
+        },
+        {
+          "command": "piwi.shareWindowLive",
+          "when": "piwi.active && !piwi.windowSharedLive"
+        },
+        {
+          "command": "piwi.stopSharingWindowLive",
+          "when": "piwi.windowSharedLive"
         },
         {
           "command": "piwi.codeAtStop",

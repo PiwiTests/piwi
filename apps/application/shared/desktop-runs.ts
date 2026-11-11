@@ -100,6 +100,11 @@ export type DesktopRunEvent =
   /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
   | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string }
   /**
+   * A signed-in teammate asks to watch the run `ref`, which is not shared live (**Ask to watch**): the window asks the
+   * person, naming them (`by`) and the run's number on the instance (`run`), with Share live and Not now (`answer-ask`).
+   */
+  | { type: 'ask-to-watch'; ref: string; id: string; by: string; run: number | null }
+  /**
    * Another tool asked through the hub to stop the run `ref` (the hub's `stop`): the window that holds it stops it as
    * its own Stop does, else the main window has the shell stop its process.
    */
@@ -111,7 +116,12 @@ export type DesktopRunEvent =
  * held in it, until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
  * from (`viewer`, the stream's `hello`), whose views it watches and whose input it plays.
  */
-export type DesktopRunCommand = (HubCommand | { type: 'show'; id: number; ref: string; on: boolean }) & {
+export type DesktopRunCommand = (
+  | HubCommand
+  | { type: 'show'; id: number; ref: string; on: boolean }
+  /** The person's Not now to a teammate's ask to watch the run `ref` (`ask`, the ask's id). */
+  | { type: 'answer-ask'; id: number; ref: string; ask: string }
+) & {
   viewer: string;
 };
 

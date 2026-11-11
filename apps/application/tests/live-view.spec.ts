@@ -25,6 +25,8 @@ import { holdWorkerStream } from './utils/live-view';
  */
 
 const target = resolveE2ETarget();
+/** The Tests toolbar's status while it says the run is not shared live. */
+const NOT_SHARED = '[data-testid="live-view-readiness"][data-state="unshared"]';
 const reporter = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
 const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
@@ -313,7 +315,7 @@ test.describe('Live view of a run', () => {
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
       // A CI run's workers join at once: nothing says it is not shared.
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
       const view = page.getByTestId('lane-panel');
@@ -467,7 +469,7 @@ test.describe('Live view of a run', () => {
       // While the test runs on its slow page, nothing offers to watch it, and nothing reached this server.
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
@@ -504,16 +506,18 @@ test.describe('Live view of a run', () => {
       });
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
-      // Its running row says it is not shared, where Watch would be, and how to share it.
-      const unshared = page.getByTestId('live-unshared');
-      await expect(unshared).toHaveText('Not shared live');
+      // The Tests toolbar says once that it is not shared, and how to share it; no row repeats it, and with sign-in
+      // off nobody is offered to ask.
+      const unshared = page.locator(NOT_SHARED);
+      await expect(unshared).toContainText('Not shared live');
+      await expect(page.getByTestId('ask-to-watch')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared.png') });
       const wide = page.viewportSize()!;
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(unshared).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared-narrow.png') });
       await page.setViewportSize(wide);
-      await unshared.getByRole('button').click();
+      await unshared.getByRole('button', { name: 'Help: Not shared live' }).click();
       const hint = page.getByRole('dialog');
       await expect(hint).toContainText('Tools → Piwi → Share the Run Live');
       await expect(hint).toContainText('Piwi: Share the run live on the team instance');
@@ -559,7 +563,7 @@ test.describe('Live view of a run', () => {
       await page.goto(`/test-runs/${runId}`);
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
+      await expect(page.locator(NOT_SHARED)).toHaveCount(0);
       await watch.click();
       const view = page.getByTestId('lane-panel');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
@@ -573,8 +577,8 @@ test.describe('Live view of a run', () => {
       );
       await page.keyboard.press('Escape');
       await expect(watch).toHaveCount(0, { timeout: 10_000 });
-      // No longer shared, its running row says so again.
-      await expect(page.getByTestId('live-unshared')).toHaveText('Not shared live');
+      // No longer shared, the Tests toolbar says so again.
+      await expect(page.locator(NOT_SHARED)).toContainText('Not shared live');
       await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(0);
 
       run.release();

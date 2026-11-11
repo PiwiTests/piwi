@@ -11,6 +11,12 @@ describe('the run model’s words in English', () => {
     expect(en.say('runs_driverTool', { tool: '$tool$' })).toBe('$tool$ drives this stop');
   });
 
+  it('says a message that counts in the plural form English gives the number', () => {
+    expect(en.count('runs_progressEndedAtStop', 1)).toBe('1 ended at a stop');
+    expect(en.count('runs_progressEndedAtStop', 2)).toBe('2 ended at a stop');
+    expect(en.count('runs_progressEndedAtStop', 1200)).toBe('1,200 ended at a stop');
+  });
+
   it('lists names as English does', () => {
     expect(en.list([])).toBe('');
     expect(en.list(['you'])).toBe('you');

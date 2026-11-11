@@ -68,10 +68,10 @@ responsibilities.
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
      intents and queries (`takes` in its `run-attach`), with the run's own connection from `onBegin` to `onEnd`
      (`internal/streaming/run-hub-link.ts`: how many tests, each that ended for good, the run's page on the instance once
-     known, `tests/run-hub-page.spec.ts`, how the run ended and its first failure through `hideSecretsInText`,
-     `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
+     known, `tests/run-hub-page.spec.ts`, how many were ended at a stop, how the run ended and its first failure through
+     `hideSecretsInText`, `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
      through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
-     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
+     `ENDED_AT_STOP_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
      as asked (`give-up`, in `features`: the call given up through its `signal` where it carries one, else the attempt
      skipped at its next locator call, `tests/run-channel-give-up.spec.ts`), brings a stop's window to the front at a
      stop its pause bar shows as asked (`front`, in `features`: `page.bringToFront` through `internalCall`,
@@ -104,8 +104,9 @@ responsibilities.
      log saying once when it is lost and once when it is back, through the file the global setup relays from the
      runner's process (`PIWI_RUN_LOG`, `internal/support/run-log.ts`: what a worker writes goes to its running test's
      output); outside CI only while the run channel shares the run (`share`, **Share live**, the state told back as
-     `live`), given up after the quick retries or a 401 or 404 until shared again: only while the instance says
-     someone watches does it post frames of the test's page, through
+     `live`), or from the start of a run no run channel follows with `PIWI_SHARE_LIVE=1`, an environment variable
+     alone, never an option, given up after the quick retries or a 401 or 404 until shared again: only while the
+     instance says someone watches does it post frames of the test's page, through
      the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
      its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a

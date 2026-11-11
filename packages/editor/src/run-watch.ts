@@ -255,6 +255,11 @@ export interface RunWatchOptions {
   commandEndWaitMs?: number;
   /** Whether the run of a command's ref connected to the service: its reporter ran (`RunSessions.heardFrom`). */
   reporterHeard?: (ref: string) => boolean;
+  /**
+   * How many tests of the run of a ref were ended at a stop, as its own process counted them
+   * (`RunSessions.endedAtStopOf`): `runEnded` says it beside the skipped.
+   */
+  endedAtStop?: (ref: string) => number;
 }
 
 /** A command built with a ref, and the runs carrying that ref the instance holds. */
@@ -745,7 +750,10 @@ export class RunWatch {
     }
     const tally = this.tallies.get(key);
     this.tallies.delete(key);
+    const watch = this.watchOf(context, runId);
     const ref = this.refOf(context, runId);
+    // Counted by the run's own process, under the ref its run carries.
+    const endedAtStop = Math.min(run.skippedTests, watch ? (this.options.endedAtStop?.(watch.ref) ?? 0) : 0);
     runEnded({
       root: context.root,
       runId,
@@ -755,6 +763,7 @@ export class RunWatch {
       failed: run.failedTests,
       flaky: run.flakyTests ?? 0,
       skipped: run.skippedTests,
+      ...(endedAtStop > 0 ? { endedAtStop } : {}),
       ...runVerdict(before, context.failures, runId),
       ...(tally ? { repeat: repeatVerdict(tally.repeat, tally, run) } : {}),
     });
@@ -762,9 +771,15 @@ export class RunWatch {
 
   /** The ref of the command whose run `runId` is on the context's instance; null when the service keeps none. */
   private refOf(context: PiwiContext, runId: number): string | null {
+    const w = this.watchOf(context, runId);
+    return w ? (w.commandRef ?? w.ref) : null;
+  }
+
+  /** The watch of the command whose run `runId` is on the context's instance; null when the service keeps none. */
+  private watchOf(context: PiwiContext, runId: number): RefWatch | null {
     const serverUrl = context.client?.connection.serverUrl;
     for (const w of this.watches.values()) {
-      if (w.serverUrl === serverUrl && w.carried.has(runId)) return w.commandRef ?? w.ref;
+      if (w.serverUrl === serverUrl && w.carried.has(runId)) return w;
     }
     return null;
   }

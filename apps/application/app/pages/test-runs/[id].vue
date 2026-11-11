@@ -36,6 +36,7 @@ import {
   liveWatchAddress,
   liveWorkerKey,
   parseLiveWatchAddress,
+  type LiveAskView,
   type LiveLane,
   type LiveViewRunState,
   type LiveWorkerState,
@@ -224,17 +225,10 @@ const runVerdict = computed(() => {
 const liveWorkerSeen = ref(false);
 const testsRanLong = ref(false);
 let testsRanTimer: ReturnType<typeof setTimeout> | null = null;
-// What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
-// key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
-// no key, where the tests' pages show.
+// What the running rows say where Watch would be, while no worker is in the run's view: in the desktop app, which
+// hands out no key, where the tests' pages show. A run nobody shares says so once, in the Tests toolbar.
 const liveNote = computed(() =>
-  liveRowNote({
-    live: isLive.value,
-    desktop: isDesktop,
-    keyed: liveViewKeyed.value,
-    ci: !!testRun.value?.metadata?.ci,
-    workers: Object.keys(liveWorkers.value).length,
-  }),
+  liveRowNote({ live: isLive.value, desktop: isDesktop, workers: Object.keys(liveWorkers.value).length }),
 );
 // The live runs the desktop app started that report to this run, by the origin it records: their running rows offer
 // Pause and watch.
@@ -323,9 +317,54 @@ watch(
   { immediate: true },
 );
 watch(liveWorkers, openAddressed);
+/** The lane the page's address named as the run ended: a run that continues this one opens on it. */
+let watchAtEnd: string | null = null;
 watch(runOver, (over) => {
-  if (over) watchAddress.value = null;
+  if (!over) return;
+  if (typeof route.query.watch === 'string') watchAtEnd = route.query.watch;
+  watchAddress.value = null;
 });
+
+/**
+ * The run that continued this one, shared after it from the same editor window: as the run said it when the page read
+ * it, or as the instance tells it while the page is open (`continued` on the run's stream, `run-continued` once it
+ * ended). Told while the page is open, the page says so, and opens that run, on the lane its address names, only when
+ * it followed this run live: a page opened to read an ended run stays where it is.
+ */
+const continuedInId = ref<number | null>(testRun.value?.continuedInId ?? null);
+watch(
+  () => testRun.value?.continuedInId,
+  (id) => {
+    if (id) continuedInId.value = id;
+  },
+);
+/** The run that continues this one, with the lane the page's address names, as a route. */
+const continuedRoute = computed(() => {
+  if (!continuedInId.value) return null;
+  const lane = typeof route.query.watch === 'string' ? route.query.watch : watchAtEnd;
+  return { path: `/test-runs/${continuedInId.value}`, query: lane ? { watch: lane } : {} };
+});
+/** How long the page says the run continues elsewhere before it opens that run. */
+const FOLLOW_DELAY_MS = 1500;
+let followTimer: ReturnType<typeof setTimeout> | null = null;
+/** The page showed this run live: a run that continues it is followed there. */
+let followedLive = false;
+watch(
+  isLive,
+  (live) => {
+    if (live) followedLive = true;
+  },
+  { immediate: true },
+);
+function followContinuation(next: unknown): void {
+  if (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= Number(runId) || followTimer) return;
+  continuedInId.value = next;
+  if (!followedLive) return;
+  followTimer = setTimeout(() => {
+    followTimer = null;
+    if (!pageLeft && continuedRoute.value) void navigateTo(continuedRoute.value);
+  }, FOLLOW_DELAY_MS);
+}
 /** The page's address names the lane the view follows while it is open, so it can be shared, and a lane it waits for. */
 function syncAddress(): void {
   if (!import.meta.client || watchAddress.value) return;
@@ -587,6 +626,7 @@ function flushPendingEvents() {
         tags?: string[] | null;
         locks?: string[] | null;
         testMeta?: TestCaseResult['testMeta'];
+        testAnnotations?: TestCaseResult['testAnnotations'];
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
@@ -619,6 +659,7 @@ function flushPendingEvents() {
         tags: d.tags ?? null,
         locks: d.locks ?? null,
         testMeta: d.testMeta ?? null,
+        testAnnotations: d.testAnnotations ?? null,
       });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
@@ -673,6 +714,8 @@ function flushPendingEvents() {
             tags: d.tags ?? existing.tags,
             locks: d.locks ?? existing.locks,
             testMeta: d.testMeta ?? existing.testMeta,
+            // The attempt's annotations: a skip ended at a stop reads so on its row and in the header's count.
+            testAnnotations: d.testAnnotations !== undefined ? d.testAnnotations : existing.testAnnotations,
           };
           liveTestCases.value = copy;
           showLive();
@@ -745,6 +788,11 @@ function flushPendingEvents() {
       liveViewState.value = state;
       // Catch-up starts with the view state and then its current workers.
       if (parsed.seq === 0 || !liveViewKeyed.value) liveWorkers.value = {};
+    } else if (parsed.type === 'live-ask') {
+      // The viewer's own ask to watch the run changed: the developer answered, or a worker of the run streams.
+      if (liveViewState.value) liveViewState.value = { ...liveViewState.value, ask: data as unknown as LiveAskView };
+    } else if (parsed.type === 'continued') {
+      followContinuation((data as { runId?: unknown }).runId);
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -931,6 +979,7 @@ watch(
 onUnmounted(() => {
   pageLeft = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
+  if (followTimer) clearTimeout(followTimer);
   disconnectStream();
 });
 
@@ -976,6 +1025,7 @@ const displayProgress = computed(() => {
       failedTests: s.failed,
       skippedTests: s.skipped,
       fixmeTests: s.fixme,
+      endedAtStopTests: s.endedAtStop,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
       interruptedTests: s.interrupted,
@@ -987,6 +1037,7 @@ const displayProgress = computed(() => {
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
     fixmeTests: 0,
+    endedAtStopTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
     interruptedTests: 0,
@@ -1015,7 +1066,10 @@ const tabIndicator = useTabRunIndicator(() => {
 // leave the live state. The global stream is closed while the tab is hidden, so
 // a live run is also refetched when the tab comes back.
 useRunEvents((event) => {
-  if (event.runId !== Number(runId) || !isLive.value) return;
+  if (event.runId !== Number(runId)) return;
+  // A run shared after this one from the same editor window continues it: the page follows, live or ended.
+  if (event.type === 'run-continued') return followContinuation(event.continuedInId);
+  if (!isLive.value) return;
   // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open. The demo's
   // own stream always hears the end.
   if (event.type === 'run-cancelled') reloadRun();
@@ -1059,6 +1113,7 @@ function buildRunSummary(): string {
     failed: p?.failedTests ?? run.failedTests ?? 0,
     skipped: p?.skippedTests ?? run.skippedTests ?? 0,
     fixme: p?.fixmeTests ?? 0,
+    endedAtStop: p?.endedAtStopTests ?? 0,
     flaky: p?.flakyTests ?? run.flakyTests ?? 0,
     didNotRun: p?.didNotRunTests ?? run.didNotRunTests ?? 0,
     interrupted: p?.interruptedTests ?? 0,
@@ -1423,6 +1478,19 @@ const moreMenuItems = computed(() => {
               @toggle-status="handleFilterStatus"
               @label-updated="reloadRunAsked"
             />
+            <p
+              v-if="continuedRoute"
+              class="mt-3 text-sm text-highlighted leading-relaxed max-sm:px-4"
+              data-testid="run-continued"
+              data-shot="run-continued"
+            >
+              Continued in
+              <NuxtLink
+                :to="continuedRoute"
+                class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                >run #{{ continuedInId }}</NuxtLink
+              >
+            </p>
             <DesktopRunHome v-if="isDesktop && isLive && testRun" :run-id="testRun.id" :sessions="desktopSessions" />
             <DesktopEditorRunNote v-if="isLive && editorRunsHere.length" :runs="editorRunsHere" />
           </template>
@@ -1461,6 +1529,7 @@ const moreMenuItems = computed(() => {
                 <RunLiveViewStatus
                   v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded && !runReadEnded"
                   :project-id="testRun.projectId"
+                  :run-id="testRun.id"
                   :readiness="{
                     desktop: isDesktop,
                     demo: isDemoMode,
