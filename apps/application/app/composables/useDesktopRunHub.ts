@@ -74,6 +74,12 @@ interface HubState {
    */
   watchLive: Record<string, number[]>;
   /**
+   * The lanes whose Interact is on (Playwright's `parallelIndex`), by run (ref): the clicks, the wheel and the keys on
+   * their views go to the page, at each next stop too, until it is turned off, their run ends, the window is no longer
+   * present or the stream opens again.
+   */
+  interacting: Record<string, number[]>;
+  /**
    * The lanes the window watches (Playwright's `parallelIndex`), by run (ref): the page of each one's running test and
    * of its stops shows, until it is turned off or their run ends. A stream that opens again keeps them.
    */
@@ -95,6 +101,7 @@ const state = reactive<HubState>({
   kept: [],
   epoch: 0,
   watchLive: {},
+  interacting: {},
   lanes: {},
   laneRefusals: {},
   laneViews: {},
@@ -155,6 +162,8 @@ function heard(text: string): void {
       viewer = value.viewer;
       state.connected = true;
       state.sessions = {};
+      // A new viewer drives no stop: the one before gave its stops back, and Interact goes off with them.
+      state.interacting = {};
       state.kept = [];
       state.epoch++;
       latestFrames.clear();
@@ -180,6 +189,7 @@ function heard(text: string): void {
       const kept = [
         ...Object.keys(state.lanes),
         ...Object.keys(state.watchLive),
+        ...Object.keys(state.interacting),
         ...heardAt.keys(),
         ...Object.keys(state.laneRefusals).map(desktopLaneRun),
       ];
@@ -245,6 +255,7 @@ function heardSession(session: HubSession): void {
 function forgetRun(ref: string): void {
   heardAt.delete(ref);
   delete state.watchLive[ref];
+  delete state.interacting[ref];
   for (const lane of state.lanes[ref] ?? []) forgetLane(ref, lane);
   delete state.lanes[ref];
   for (const key of Object.keys(state.laneRefusals)) if (desktopLaneRun(key) === ref) delete state.laneRefusals[key];
@@ -301,6 +312,7 @@ function close(): void {
     outcomes: {},
     epoch: state.epoch + 1,
     watchLive: {},
+    interacting: {},
     lanes: {},
     laneRefusals: {},
     laneViews: {},
@@ -434,6 +446,8 @@ export function useDesktopRunHub() {
     present(on: boolean): void {
       if (on === present) return;
       present = on;
+      // Not present, the window gives back the stops it drove: Interact goes off with them.
+      if (!on) state.interacting = {};
       if (viewer) void command({ type: 'follow', on });
     },
     /** Hears each run another tool asks through the hub to stop (`stop-run`), until the returned function is called. */
@@ -465,6 +479,17 @@ export function useDesktopRunHub() {
       if (on) state.watchLive[ref] = [...others, worker];
       else if (others.length) state.watchLive[ref] = others;
       else delete state.watchLive[ref];
+    },
+    /** Whether Interact is on for a lane of a run: the input on its views goes to the page. */
+    interacts(ref: string, lane: number): boolean {
+      return state.interacting[ref]?.includes(lane) ?? false;
+    },
+    /** Turns Interact on or off for a lane of a run, for the window, until its run ends. */
+    setInteract(ref: string, lane: number, on: boolean): void {
+      const others = (state.interacting[ref] ?? []).filter((l) => l !== lane);
+      if (on) state.interacting[ref] = [...others, lane];
+      else if (others.length) state.interacting[ref] = others;
+      else delete state.interacting[ref];
     },
     /** Whether the window watches a lane of a run (Playwright's `parallelIndex`): its page shows as its test runs. */
     watchesLane,

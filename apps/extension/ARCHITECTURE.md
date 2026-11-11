@@ -988,9 +988,15 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (`.stale`), taking no input and, while the worker is not stopped, marked **Running…**, until the next one comes; at a stop with no frame of it yet, the stop's image shows if it came. Why
   the lane sends no frame (`refused`) shows in place of its image, read out, until a frame comes. At a stop its frame
   shows, the image is the stop's live view: input, Pick on the image and the actions in the test's window work as
-  with Watch live, Escape giving the keyboard back to Watch. A watched lane that stops is scrolled into view
+  with Watch live, Interact and Escape included. A watched lane that stops is scrolled into view
   (`bringIntoView`) when its row is not wholly in it.
-- Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
+- **Interact**, a toggle after Watch live or Watch where a live view shows a stop that takes `input` from the window
+  (only while it watches, once the hub accepted the view), sends the person's input to the page, whose first event that
+  is not a move drives the stop. It is kept by run and slot (`interacting`, `slotKey`) across the slot's next stops,
+  and goes off with Watch live or Watch, a refused view or lane, Give back, Escape on the view, or as the run ends. Off,
+  the input waiting goes first (`ViewInputBatcher.finish`), then a stop the window drives, as the latest state says
+  (`stoppedAt`), or reached with its input (`inputAt`), is given back (`drive` off), past any command on its way
+  (`giveBack`). While it is on, the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
   `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
   pointer event's own point, a mouse event's being whole pixels), a batch about every 50 ms, one on its way at a time,
@@ -1004,9 +1010,9 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   as text), named keys pressed with Shift, Control (`⌘` on macOS) as `ControlOrMeta` with A, Y, Z, Enter and the
   editing keys, a paste as text, its control characters but a tab and its line breaks left out, as the hub and the
   worker refuse them (`isViewTextControl`). The browser's other shortcuts, the function keys and Escape stay the window's: Escape
-  gives the keyboard back, on Watch live. Tab moves the focus on unless a click into the view took the keyboard
+  turns Interact off, on Interact. Tab moves the focus on unless a click into the view took the keyboard
   (`captured`), until Escape: a keyboard user never has the focus held there. A hint says so under the first view that
-  takes input.
+  takes input. A Shift+click picks with Interact off too.
 - **Pick on the image**, a toggle where the stop takes `pick-at` and the image or a frame names its viewport, or a
   Shift+click on either, sends `pick-at` with the point; the answer's sentence shows its locator through `richText`,
   read out. Escape turns the toggle off.

@@ -186,6 +186,12 @@ export class ViewInputBatcher {
   private held: HeldClick | null = null;
   private sending = false;
   private disposed = false;
+  /** `finish` was called: nothing more is taken, and what waits still goes. */
+  private finished = false;
+  /** Where the pointer was last, on the view. */
+  private pointer: { x: number; y: number } | null = null;
+  /** What `finish` waits on: called once what waited went out, or was dropped. */
+  private drained: Array<() => void> = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** When the timer set is due. */
   private timerAt = Infinity;
@@ -208,7 +214,8 @@ export class ViewInputBatcher {
 
   /** The pointer moved to `x`, `y`, a button held or not. */
   move(x: number, y: number): void {
-    if (this.disposed) return;
+    if (this.disposed || this.finished) return;
+    this.pointer = { x, y };
     const press = this.press;
     if (press && !press.dragging) {
       if (!this.far(press, x, y)) return;
@@ -231,7 +238,7 @@ export class ViewInputBatcher {
    * sent until the pointer goes or the button comes up.
    */
   down(button: ViewButton, x: number, y: number, keys: PressKeys = {}): void {
-    if (this.disposed) return;
+    if (this.disposed || this.finished) return;
     if (this.press) this.up(this.press.button, x, y);
     const modifiers = [...(keys.modifiers ?? [])];
     if (this.clickCounts) {
@@ -247,7 +254,7 @@ export class ViewInputBatcher {
 
   /** A button came up at `x`, `y`: sent at once where the stop plays click counts; the end of a drag, or a click. */
   up(button: ViewButton, x: number, y: number, keys: PressKeys = {}): void {
-    if (this.disposed) return;
+    if (this.disposed || this.finished) return;
     const press = this.press;
     if (!press || press.button !== button) return;
     this.press = null;
@@ -283,7 +290,7 @@ export class ViewInputBatcher {
 
   /** The pointer left without its button coming up (the browser took it): a button sent down comes up where it was. */
   cancel(x: number, y: number): void {
-    if (this.disposed || !this.press) return;
+    if (this.disposed || this.finished || !this.press) return;
     const press = this.press;
     this.press = null;
     if (!press.dragging) return;
@@ -293,7 +300,7 @@ export class ViewInputBatcher {
 
   /** The wheel turned over `x`, `y`: turns in a row at the same place add up. */
   wheel(x: number, y: number, deltaX: number, deltaY: number): void {
-    if (this.disposed) return;
+    if (this.disposed || this.finished) return;
     this.release();
     const clamp = (delta: number) => Math.max(-MAX_VIEW_WHEEL, Math.min(MAX_VIEW_WHEEL, Math.round(delta)));
     const tail = this.queue[this.queue.length - 1];
@@ -310,7 +317,7 @@ export class ViewInputBatcher {
 
   /** A key or a text, after what came before it. */
   key(input: ViewInput): void {
-    if (this.disposed) return;
+    if (this.disposed || this.finished) return;
     this.release();
     const tail = this.queue[this.queue.length - 1];
     if (
@@ -324,6 +331,31 @@ export class ViewInputBatcher {
     this.add(input);
   }
 
+  /**
+   * Nothing more is taken, and what was played ends well: a button sent down comes up where the pointer last was, a
+   * press not sent yet is dropped, the held click goes, and what waits goes out, after the batch on its way. Resolves once it
+   * went, or was dropped.
+   */
+  finish(): Promise<void> {
+    const done = new Promise<void>((resolve) => this.drained.push(resolve));
+    if (!this.disposed && !this.finished) {
+      const press = this.press;
+      if (press) this.cancel(this.pointer?.x ?? press.x, this.pointer?.y ?? press.y);
+      this.release();
+      this.finished = true;
+      this.last = -Infinity;
+    }
+    this.schedule();
+    this.settle();
+    return done;
+  }
+
+  /** Once nothing waits or goes out after `finish`, or after `dispose`, what waits on it hears so. */
+  private settle(): void {
+    if (!this.disposed && (!this.finished || this.sending || this.queue.length || this.held)) return;
+    for (const resolve of this.drained.splice(0)) resolve();
+  }
+
   /** Nothing more is sent: what waits is dropped. */
   dispose(): void {
     this.disposed = true;
@@ -332,6 +364,7 @@ export class ViewInputBatcher {
     this.held = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.settle();
   }
 
   /** The keys held with a press go down, before it. */
@@ -403,5 +436,6 @@ export class ViewInputBatcher {
     // Refused (the stop ended, the view stopped): what waited is the stop's, and goes with it.
     if (!played) this.queue = [];
     this.schedule();
+    this.settle();
   }
 }

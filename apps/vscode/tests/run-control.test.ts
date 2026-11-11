@@ -29,8 +29,11 @@ import {
   accessibleLabel,
   controlItems,
   controlState,
+  giveBackParams,
   heardSession,
   imageClickOf,
+  keepsInteract,
+  laneKeepsInteract,
   lineEditOf,
   linesAbove,
   liveInstance,
@@ -787,7 +790,7 @@ describe('who else is there', () => {
     expect(driverText({ ...stop, driver: me }, true)).toBe('You drive this stop');
     expect(driverText({ ...stop, driver: picker }, true)).toBe('Piwi Picker drives this stop');
     expect(driverText({ ...stop, driver: agent })).toBe('An agent drives this stop');
-    expect(driverText({ ...stop, driver: agent }, true)).toBe('An agent drives this stop: Interact takes control');
+    expect(driverText({ ...stop, driver: agent }, true)).toBe('An agent drives this stop: your input takes control');
   });
 
   test('says who drives the stop and who watches it in the paused page’s and the worker panel’s captions', () => {
@@ -801,7 +804,7 @@ describe('who else is there', () => {
     const sessions = sessionsOf(session('ed-1', [stopped]));
     const at = stopsOf(sessions);
     const said = 'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8';
-    const present = 'An agent drives this stop: Interact takes control · Watched by Piwi Picker and you';
+    const present = 'An agent drives this stop: your input takes control · Watched by Piwi Picker and you';
     expect(stopPresence(at[0]!, sessions)).toBe(present);
     expect(stopCaption(at[0]!, sessions)).toBe(`${said} · ${present}`);
     expect(laneShown(session('ed-1', [stopped]), 1, at).caption).toBe(`Worker 2 · ${said} · ${present}`);
@@ -1453,6 +1456,36 @@ describe('the paused page view', () => {
     expect(pausedPageViewChange(false, true, false)).toBe('none');
   });
 
+  test('keeps Interact for the next stops of its worker slot that take input, and gives back the stop it was on for', () => {
+    const live: RunTake[] = ['view', 'input', 'pick-at'];
+    const at = (ref: string, slot: number, takes: RunTake[], line = 7): ShownStop => ({
+      ref,
+      worker: slot + 4,
+      slot,
+      stop: stopAt(spec, line),
+      test: runTest(),
+      takes,
+    });
+    const on = { ref: 'ed-1', slot: 1 };
+    // The slot's next stop, the worker Playwright starts in its place included.
+    expect(keepsInteract(on, at('ed-1', 1, live, 9))).toBe(true);
+    expect(keepsInteract(on, { ...at('ed-1', 1, live), worker: 11 })).toBe(true);
+    // Interact off, another slot or run, or a stop that takes no input on a live view: off.
+    expect(keepsInteract(null, at('ed-1', 1, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 2, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-2', 1, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 1, ['view', 'pick-at']))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 1, ['input']))).toBe(false);
+    // The worker panel keeps it while its worker runs and through a stop that takes input.
+    expect(laneKeepsInteract(true, null)).toBe(true);
+    expect(laneKeepsInteract(true, at('ed-1', 1, live))).toBe(true);
+    expect(laneKeepsInteract(true, at('ed-1', 1, ['view']))).toBe(false);
+    expect(laneKeepsInteract(false, at('ed-1', 1, live))).toBe(false);
+    const stop = at('ed-1', 1, live);
+    // Interact going off gives the stop back; nothing takes one as Interact turns on.
+    expect(giveBackParams(stop)).toEqual({ ref: 'ed-1', worker: 5, since: stop.stop.since, on: false });
+  });
+
   test('shows the JPEG under its caption, with no script and data images only', () => {
     const html = pausedPageHtml({ image: { mime: 'image/jpeg', data: '/9j/4AAQ+w==' }, caption: 'Click <b>' }, 'n0nce');
     expect(html).toContain(
@@ -1478,6 +1511,8 @@ describe('the paused page view', () => {
     expect(html).toContain('src="https://webview/paused-page.js?a=1&#38;b=2"');
     expect(html).toContain('data-shown="7"');
     expect(html).toContain('id="interact" type="checkbox" disabled');
+    expect(html).toContain('your first one drives the stop');
+    expect(html).toContain('Escape turns it off and gives the stop back');
     expect(html).toContain('<details><summary>');
     expect(html).not.toContain('<details open');
     expect(html).not.toContain('<test>');

@@ -459,10 +459,26 @@ describe("an agent's tools for the runs of the editor window", () => {
       expect((await call('run_control', { run, action: 'resume', stop: since, wait: 0 })).piwi).toMatchObject({
         ok: false,
       });
+      // Esc gives it back while the panel still watches, and Interact takes it again.
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: false })).toMatchObject({
+        ok: true,
+        message: 'You gave this stop back: an agent may act on it.',
+      });
+      expect(await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver ? undefined : true))).toBe(true);
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: true })).toMatchObject({ ok: true });
+      expect(
+        await waitFor(() => (ide.latest(run)?.workers[0]?.stop?.driver?.kind === 'editor' ? true : undefined)),
+      ).toBe(true);
+      const retaken = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });
       // The panel no longer watches it: the agent hears it is given back, and may act again.
       await ide.client.sendRequest('piwi/pageView', { ...at, on: false });
-      const given = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });
+      const given = await call('run_follow', { run, after: retaken.piwi.next, wait: 0 });
       expect(given.piwi.events).toContainEqual(expect.objectContaining({ kind: 'given-back', worker: 0 }));
+      // Unwatched, the editor takes it no more.
+      expect(await ide.client.sendRequest('piwi/driveStop', { ...at, on: true })).toMatchObject({
+        ok: false,
+        message: 'Watch the stopped page first: you drive the stop you watch.',
+      });
       expect((await call('page_act', { run, stop: since, target: 'e2', action: 'click' })).piwi).toMatchObject({
         ok: true,
       });

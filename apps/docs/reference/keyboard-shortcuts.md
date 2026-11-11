@@ -43,12 +43,19 @@ stopped test shown: a run's worker tabs show one worker at a time. Step and Fini
 | `F10` | Step |
 | `Shift` + `F11` | Finish |
 
-While you [watch a stop](/features/runs-window#click-and-type-on-the-view), the view takes your keys, but the
-browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` gives the keys back to the window and moves
-the focus to **Watch** or **Watch live**. `Tab` moves the focus on past the view, unless you clicked into it: then
-`Tab` and `Shift+Tab` go to the page too, until `Esc`. Characters an input method composes (Chinese, Japanese,
-Korean) do not reach the page; paste them instead. On a run's worker tabs, the arrow keys, `Home` and `End` move
-between the workers.
+While **Interact** is on at a [watched stop](/features/runs-window#click-and-type-on-the-view), the view takes your
+keys, but the browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` turns **Interact** off, gives
+the stop back and moves the focus to **Interact**. `Tab` moves the focus on past the view, unless you clicked into
+it: then `Tab` and `Shift+Tab` go to the page too, until `Esc`. Characters an input method composes (Chinese,
+Japanese, Korean) do not reach the page; paste them instead. The desktop app's Local runs tray takes the same keys.
+On a run's worker tabs, the arrow keys, `Home` and `End` move between the workers.
+
+## The run shortcut
+
+Piwi Picker's run shortcut works from any window. It resumes the stopped tests, else pauses every run, but a run
+[nobody attends](/guide/concepts#hold-failures); Piwi Picker's toolbar icon shows what it did for a moment. It has no
+key until you set one: **Set a shortcut**, in the Runs window, opens the browser's shortcuts page, where you give it a
+key and, in Chrome and Edge, the **Global** scope. In Firefox, it works while Firefox has the focus.
 
 ## Assistant panel
 

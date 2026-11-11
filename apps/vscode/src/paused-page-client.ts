@@ -14,26 +14,41 @@ let captured = false;
 const post = (message: Record<string, unknown>) => vscode.postMessage({ ...message, shown });
 const active = () => live.checked && interact.checked && !!view?.live?.on;
 let requestId = 0;
-const pending = new Map<number, (ok: boolean) => void>();
-const createInput = () =>
-  new ViewInputBatcher({
+/** The batches posted and not answered yet, with the input they came from. */
+const pending = new Map<number, { from: ViewInputBatcher; answered: (ok: boolean) => void }>();
+/** The input of a toggle changed, still going out before the toggle's message, whatever the toggles show now. */
+const finishing = new Set<ViewInputBatcher>();
+/** The toggles' messages, each posted once the input before it went out. */
+let toggled = Promise.resolve();
+/** Toggles changed whose message is not posted yet: the extension's state leaves the checkboxes as they are. */
+let toggling = 0;
+const createInput = (): ViewInputBatcher => {
+  const own: ViewInputBatcher = new ViewInputBatcher({
     clickCounts: picture.dataset.clickCounts === 'true',
     send: async (events) => {
-      if (!active()) return false;
+      const ending = finishing.has(own);
+      if (!ending && !active()) return false;
+      // Input made after a toggle changed goes after the toggle's message.
+      if (!ending) await toggled;
       const id = ++requestId;
       return new Promise<boolean>((resolve) => {
         const timeout = setTimeout(() => {
           pending.delete(id);
           resolve(false);
         }, 10_000);
-        pending.set(id, (ok) => {
-          clearTimeout(timeout);
-          resolve(ok);
+        pending.set(id, {
+          from: own,
+          answered: (ok) => {
+            clearTimeout(timeout);
+            resolve(ok);
+          },
         });
         post({ type: 'input', events, id });
       });
     },
   });
+  return own;
+};
 let input = createInput();
 
 function point(e: MouseEvent) {
@@ -47,22 +62,44 @@ function point(e: MouseEvent) {
     y: Math.min(view.image.height - 1, (y * view.image.height) / box.height),
   };
 }
+/** The input waiting is dropped, and what the page holds let go of: the pointer or the focus left the image. */
 function release() {
   captured = false;
-  input.dispose();
-  for (const resolve of pending.values()) resolve(false);
-  pending.clear();
+  const dropped = input;
+  dropped.dispose();
+  for (const [id, wait] of pending) {
+    if (wait.from !== dropped) continue;
+    pending.delete(id);
+    wait.answered(false);
+  }
   input = createInput();
   post({ type: 'release' });
 }
+/**
+ * A toggle changed (`message`): the input before it goes out first, the click held back for a second one included,
+ * then the release, then `message`, as the Runs window does; the toggles' messages keep the order they changed in.
+ */
+function toggle(message: Record<string, unknown>) {
+  captured = false;
+  const ending = input;
+  finishing.add(ending);
+  input = createInput();
+  const drained = ending.finish();
+  toggling++;
+  toggled = toggled
+    .then(() => drained)
+    .then(() => {
+      finishing.delete(ending);
+      toggling--;
+      post({ type: 'release' });
+      post(message);
+    });
+}
 live.addEventListener('change', () => {
-  release();
-  post({ type: 'view', on: live.checked });
+  if (!live.checked) interact.disabled = true;
+  toggle({ type: 'view', on: live.checked });
 });
-interact.addEventListener('change', () => {
-  release();
-  post({ type: 'interact', on: interact.checked });
-});
+interact.addEventListener('change', () => toggle({ type: 'interact', on: interact.checked }));
 picture.addEventListener('click', (e) => {
   if (active() && !e.shiftKey) return;
   if (!view?.pick) return;
@@ -121,9 +158,11 @@ picture.addEventListener('keydown', (e) => {
     { mac: /Mac/.test(navigator.platform), captured },
   );
   if (key === 'leave') {
+    // Escape turns Interact off: the input held goes out and is let go of, then the stop is given back.
     e.preventDefault();
-    release();
-    live.focus();
+    interact.checked = false;
+    toggle({ type: 'interact', on: false });
+    interact.focus();
   } else if (typeof key === 'object') {
     e.preventDefault();
     input.key(key.send);
@@ -140,16 +179,18 @@ window.addEventListener('blur', release);
 window.addEventListener('message', (event: MessageEvent<{ type: string; view: PausedPageView }>) => {
   if (event.data?.type === 'input-result') {
     const result = event.data as unknown as { id: number; ok: boolean };
-    pending.get(result.id)?.(result.ok);
+    pending.get(result.id)?.answered(result.ok);
     pending.delete(result.id);
     return;
   }
   if (event.data?.type !== 'state' || event.data.view.live?.shown !== shown) return;
   if (active() && (!event.data.view.live.on || !event.data.view.live.interacting)) release();
   view = event.data.view;
-  live.checked = view.live?.on === true;
-  interact.disabled = !live.checked || !view.live?.input;
-  interact.checked = !interact.disabled && view.live?.interacting === true;
+  if (!toggling) {
+    live.checked = view.live?.on === true;
+    interact.disabled = !live.checked || !view.live?.input;
+    interact.checked = !interact.disabled && view.live?.interacting === true;
+  }
   note.textContent = view.note ?? '';
   document.getElementById('caption')!.textContent = view.caption;
   picture.classList.toggle('pick', !!view.pick && !active());

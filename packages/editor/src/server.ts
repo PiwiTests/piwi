@@ -231,6 +231,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PAGE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
+  DRIVE_STOP_REQUEST,
   PAGE_FRAME_NOTIFICATION,
   PICK_AT_REQUEST,
   HUB_REQUEST,
@@ -294,6 +295,7 @@ import {
   type RunControlParams,
   type ShareRunParams,
   type HoldRunParams,
+  type DriveStopParams,
   type RunControlResult,
   type StopRunParams,
   type SetBreakpointsParams,
@@ -3900,9 +3902,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   // A pick on the image is the editor's person driving the stop.
-  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> =>
-    runSessions.pickAt(params, clientPageView?.viewer),
-  );
+  // A pick drives the stop as the view that watches it, its lane's panel included, which gives it back as it goes.
+  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => {
+    const at = { ref: params?.ref, worker: params?.worker ?? -1, since: params?.since, events: [] };
+    const view = [clientPageView, clientLaneView].find((v) => v?.takes(at)) ?? clientPageView;
+    return runSessions.pickAt(params, view?.viewer);
+  });
 
   connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
     answersStops
@@ -3914,6 +3919,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ? clientLaneView!.input(params)
       : clientPageView!.input(params),
   );
+  // The person takes a stop one of this client's views watches, as that view; turning Interact off, or Esc, gives back
+  // what either view drove there.
+  connection.onRequest(DRIVE_STOP_REQUEST, (params: DriveStopParams): RunControlResult => {
+    if (!answersStops) return { ok: false, message: 'This client does not show stopped pages.' };
+    const at = { ref: params?.ref, worker: params?.worker, since: params?.since, events: [] };
+    const watching = [clientPageView!, clientLaneView!].find((view) => view.takes(at));
+    if (params?.on === true) {
+      if (!watching) return { ok: false, message: 'Watch the stopped page first: you drive the stop you watch.' };
+      return runSessions.driveStop(at, watching.viewer, true);
+    }
+    return runSessions.driveStop(at, clientPageView!.viewer, false, [clientLaneView!.viewer]);
+  });
   connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
     answersStops
       ? clientLaneView!.watch(params)

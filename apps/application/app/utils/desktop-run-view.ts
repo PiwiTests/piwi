@@ -231,6 +231,8 @@ export interface DesktopLiveImageHandle {
   clear(): void;
   /** Gives the image the keyboard. */
   focus(): void;
+  /** Takes no more input, what it played ending well: resolves once what waited went out. */
+  release(): Promise<void>;
   /** The viewport, in CSS pixels, of the frame shown; null before the first. */
   viewport: { width: number; height: number } | null;
 }

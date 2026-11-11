@@ -6927,7 +6927,13 @@
     "message": "Ver en directo"
   },
   "runs_liveTitle": {
-    "message": "Mostrar la página del test tal como se dibuja, en lugar de su imagen: tus clics y teclas sobre ella van a la página"
+    "message": "Mostrar la página del test tal como se dibuja, en lugar de su imagen: luego Interactuar envía tus clics y teclas a ella"
+  },
+  "runs_interact": {
+    "message": "Interactuar"
+  },
+  "runs_interactTitle": {
+    "message": "Enviar tus clics, el desplazamiento y tus teclas a la página del test, controlando esta parada: Esc la devuelve"
   },
   "runs_liveBadge": {
     "message": "En directo"
@@ -6945,13 +6951,13 @@
     "message": "Se perdió la conexión con el editor: la vista en directo vuelve a empezar cuando regrese."
   },
   "runs_liveHint": {
-    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc desactiva Interactuar y devuelve la parada; Mayús+clic elige un locator."
   },
   "runs_watch": {
     "message": "Ver"
   },
   "runs_watchTitle": {
-    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, tus clics y teclas sobre ella van a la página"
+    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, Interactuar envía tus clics y teclas a ella"
   },
   "runs_pauseWatch": {
     "message": "Pausar y ver"

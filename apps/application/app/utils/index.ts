@@ -49,6 +49,12 @@ export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
 export const SEGMENTED_SELECTED_CLASS = 'bg-default shadow-sm text-highlighted font-medium';
 
 /**
+ * A toggle button that is on (`aria-pressed`), such as the Local runs tray's Watch live and Interact: the neutral
+ * raised surface of a selected tab, its weight kept so the label does not move.
+ */
+export const PRESSED_TOGGLE_CLASS = 'bg-elevated text-highlighted';
+
+/**
  * The selected row of a list that picks what the page shows (an affected test,
  * the opened attempt): a raised surface inside a neutral ring, never the primary
  * color.

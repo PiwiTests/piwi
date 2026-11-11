@@ -37,6 +37,16 @@ image.
 Watching pauses while the view is out of sight (another tab in front of an editor's panel or tab, a minimized Runs
 window) and starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
 
+## Interact
+
+At a stop, **Interact**, beside **Watch live** or **Watch** in each view once the view is on, sends your clicks, the
+wheel and your keys on the view to the page as a person's would. The first of them takes control of the stop, so an
+agent waits until you give it back ([driving a stop](/guide/concepts#presence-driving-a-stop)). It stays on across the
+worker's next stops, where your first click or key takes the stop again. Turning it or watching off, **Give back** or
+`Esc` on the view turns it off and gives the stop back, once the input sent before has reached the page. A `Shift`+click
+picks a locator instead. The keys that stay the window's are listed under
+[keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
+
 ## What is sent, and what is kept
 
 The worker takes images only while a view watches it, and sends them to the editor service or the desktop app's

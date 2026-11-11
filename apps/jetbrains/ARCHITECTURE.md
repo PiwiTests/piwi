@@ -565,11 +565,27 @@ checkboxes keep **Interact** off until chosen; input goes through `piwi/pageInpu
 coalesced pointer moves, and a release only after the input queued before it. A stop without `input-clicks` gets a
 click with its count, a left click waiting 250 ms for a second one, and a drag once the pointer moves 4 pixels, as the
 Runs window's `ViewInputBatcher` sends them. While interacting, the image takes the Undo, Redo and Select All
-shortcuts for the page (a shortcut set registered on it, which the IDE runs before its keymap). Escape releases held
-input; Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another worker's new stop
-does not.
-Watch live is remembered within the tab, while each watch resets Interact. No Picker pairing or port forwarding is
-needed for the panel, and older reporters keep the still image.
+shortcuts for the page (a shortcut set registered on it, which the IDE runs before its keymap). Turning Interact on
+only routes the input: the person's first click, key, text, wheel or pick drives the stop, in the service. Interact
+going off, whatever turns it off, gives back the stop it was last on for (`PausedPagePanel.interactOff`,
+`PiwiRunSessions.giveBack`: `piwi/driveStop` with `on: false`, `RunRemote.driveStop`); the plugin never sends
+`on: true`. Every call of the tab, its watches included, goes on one serial chain (`pageCalls`), each once the one
+before was answered. The give-back goes from the input queue (`pageInputs`): once the input queued before it, the
+click held back and the release included, was sent and answered, and before the input queued after it, so that input
+drives the stop no more. A watch ending sends what was queued for it, in order, then `piwi/pageView` off
+(`stopPageView`); where Interact is on as it ends (Watch live off, the tab hidden or closed, a watch refused, another
+slot's stop), Interact goes off first (`PausedPagePanel.letGo`), so the input held, the give-back and the watch-off
+reach the service in that order. Escape while Interact is on lets go of the input held, then turns Interact off and
+focuses its checkbox. Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
+worker's new stop does not.
+Watch live is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
+Watch live stays on (`Glue.keepsInteract`, `PiwiRunSessions.pageSlot`), disabled until that stop's watch is accepted
+and taking input then. It goes off as it is unchecked or Escape is pressed, as Watch live is turned off or refused, as
+the tab hides (between stops too: `PausedPagePanel.ended` keeps a listener for it) or closes, at another slot's stop,
+at a stop that takes no input (`PausedPagePanel.watching` and `configureLive` with `keepInteract`) and as its run ends
+or every run goes away (`PiwiRunSessions.runGone`, queued from `heard` before the draw, so a rerun under the ref starts
+with it off). The Worker tab has no Interact. No Picker pairing or port forwarding is needed for the panel, and older
+reporters keep the still image.
 
 **Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to
 each live run 100 ms after a burst of changes, and the settings page does when the breakpoints checkbox changes. They go
@@ -917,10 +933,11 @@ the browser (`Glue.sharedText`), with **Copy the Command** and **Stop Sharing**.
 **Who else is there.** The Paused Page tab's caption (`Glue.stopCaption`, kept as it changes by `draw`), the Worker
 tab's (`Glue.laneShown`), the gutter arrow's tooltip and a stop's entry in the status bar item's menu
 (`Glue.stopPresence`) add who drives the stop (`Glue.driverText`, from `RunStop.driver`: `You drive this stop`, `An
-agent drives this stop: Interact takes control` where the stop takes input) and who else watches its page
+agent drives this stop: your input takes control` where the stop takes input) and who else watches its page
 (`Glue.watchersText`, from `RunWorker.watchers`, the IDE itself named `you` and left out when alone). The status bar
 item's tooltip of a run names the other tools that have each run open (`Glue.runsPresenceText`, from
-`RunSession.presence`). Interact's input or a pick takes a stop from the agent: no request of its own.
+`RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
+off, Escape included, gives it back.
 
 **Share the Run Live** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
 instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, `RunSession.live`): the only run it

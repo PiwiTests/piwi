@@ -15,7 +15,8 @@
  * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a command
  * answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands there.
  * Who else watches its page shows under its test, and at a stop who drives it: **Take control** from an agent, which
- * waits until **Give back**. Everything the hub sends is shown as text.
+ * waits until **Give back**, or **Interact** on its page, turned off again the same. Everything the hub sends is shown
+ * as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
@@ -134,6 +135,26 @@ const watchLive = computed({
   get: () => hub.watchesLive(props.session.ref, props.worker.worker),
   set: (on: boolean) => hub.setWatchLive(props.session.ref, props.worker.worker, on),
 });
+/**
+ * Interact, kept by the window for the worker's lane while the worker is watched: on, the clicks, the wheel and the
+ * keys on its view go to the page, and the first of them drives the stop. Turned off on the page, the stop is given
+ * back once its input went (`giveBackAt`), the worker's buttons waiting meanwhile (`busy`).
+ */
+const interact = computed({
+  get: () => hub.interacts(props.session.ref, props.worker.parallelIndex),
+  set: (on: boolean) => hub.setInteract(props.session.ref, props.worker.parallelIndex, on),
+});
+
+/** The worker's page is watched: its own stop's Watch live, or its lane. */
+const watched = computed(() => watchLive.value || hub.watchesLane(props.session.ref, props.worker.parallelIndex));
+// Interact goes off with watching, a worker Playwright starts in the lane without Watch live included.
+watch(
+  watched,
+  (on) => {
+    if (!on && interact.value) interact.value = false;
+  },
+  { immediate: true },
+);
 /** What the last command answered, or what a code made here came to, for the stop it was sent at. */
 const answer = ref<{ since: string | null; ok: boolean; text: string; locator: string | null; warnings: string[] }>();
 /** The responses the test kept, listed for Mock a request at the stop they were asked at. */
@@ -177,6 +198,34 @@ async function steer(what: DesktopSteer): Promise<void> {
   const body = what === 'front' ? { type: 'front', since: at } : { type: 'runControl', action: what, since: at };
   const result = await send(body, at);
   if (result && !result.ok) say(result, at);
+}
+
+/**
+ * Gives back the stop `at` names as Interact goes off on its page, past any command on its way, leaving what the last
+ * one answered in place.
+ */
+async function giveBackAt(at: string): Promise<void> {
+  if (since.value !== at || !hub.state.connected) return;
+  const result = await hub.command({
+    ref: props.session.ref,
+    worker: props.worker.worker,
+    type: 'drive',
+    since: at,
+    on: false,
+  });
+  if (since.value !== at) return;
+  if (!result.ok) say(result, at);
+  else if (result.message) emit('announce', result.message);
+}
+
+const lanePage = useTemplateRef<{ interactOff(): Promise<void> }>('lanePage');
+const stopPage = useTemplateRef<{ interactOff(): Promise<void> }>('stopPage');
+
+/** Give back: with Interact on, it goes off on the page, which gives the stop back once its input went. */
+function giveBack(): void {
+  const page = lanePage.value ?? stopPage.value;
+  if (interact.value && page) void page.interactOff();
+  else void drive(false);
 }
 
 /** Drives the stop (`on`: an agent waits until it is given back), or gives it back. */
@@ -348,23 +397,31 @@ onBeforeUnmount(() => {
     </dl>
     <DesktopRunLaneView
       v-if="laneShown"
+      ref="lanePage"
       :session="session"
       :worker="worker"
       :busy="busy"
+      :give-back="giveBackAt"
+      v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @releasing="busy = $event"
     />
     <DesktopRunStopPage
       v-else-if="stop"
+      ref="stopPage"
       :run-ref="session.ref"
       :worker="worker.worker"
       :stop="stop"
       :takes="takes"
       :busy="busy"
       :lane-refused="laneRefused"
+      :give-back="giveBackAt"
       v-model:watch-live="watchLive"
+      v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @releasing="busy = $event"
     />
     <p v-else-if="worker.state !== 'between'" class="text-xs text-muted" data-testid="desktop-watch-needs-update">
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}
@@ -394,7 +451,7 @@ onBeforeUnmount(() => {
         icon="i-lucide-undo-2"
         title="Let an agent act on this stop again"
         :aria-disabled="busy || undefined"
-        @click="!busy && drive(false)"
+        @click="!busy && giveBack()"
       >
         Give back
       </UButton>

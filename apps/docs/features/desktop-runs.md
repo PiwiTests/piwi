@@ -30,7 +30,7 @@ off again as the app's last window closes. A run [nobody attends](/guide/concept
 its switch says why.
 
 <figure>
-  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
+  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live with Interact on, with Resume, Step, Finish, Assert a region and Mock a request">
   <figcaption>A run the desktop app started, stopped at a <code>page.pause()</code> and watched live.</figcaption>
 </figure>
 
@@ -52,13 +52,13 @@ the output here**, brings the output back; the window closes with the app.
 ## Watch live
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off; at a stop, the image takes your input as **Watch live** does. After **Step**, **Resume**
+stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. After **Step**, **Resume**
 or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
 update it.
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
-until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
-to the tray, and `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the
+until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends your clicks, the wheel and your
+keys on the view to the page; `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the
 [frames](/guide/concepts#watch-share-live).
 
 **Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
