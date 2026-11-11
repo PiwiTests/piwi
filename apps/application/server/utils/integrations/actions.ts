@@ -48,6 +48,7 @@ import { JiraError } from './jira/client';
 import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import { applySyncResults, SyncUploadError } from './test-management/sync';
+import { RequestLimiterBusyError } from './test-management/limiter';
 import {
   readSyncState,
   syncOutcomeUnknownMessage,
@@ -967,7 +968,10 @@ async function failSyncAttempt(
     })
     .where(eq(integrationActions.id, action.id));
   if (status === 401) await markConnectionFailed(db, action.connectionId, message);
-  if (rateLimited) await pauseConnection(db, action, retryAfterMs(cause) || RATE_LIMIT_PAUSE_MS, now);
+  // A busy limiter is Piwi's own queue for the connection, not the tool's answer: the connection stays open.
+  if (rateLimited && !(cause instanceof RequestLimiterBusyError)) {
+    await pauseConnection(db, action, retryAfterMs(cause) || RATE_LIMIT_PAUSE_MS, now);
+  }
   console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
   return { status: 'failed', error: message, final, retrying: next.status !== 'failed' };
 }

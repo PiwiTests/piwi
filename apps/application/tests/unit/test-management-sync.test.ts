@@ -86,7 +86,8 @@ const { SKIP_CATALOG_NOT_READ, SKIP_NO_MAPPED_CASES } =
 const { OUTBOX_MAX_ATTEMPTS } = await import('../../server/utils/outbox');
 const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 const { sendDemoRunSync } = await import('../../app/demo/api/test-management');
-const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
+const { limiterForConnection, RequestLimiterBusyError, resetLimitersForTests } =
+  await import('../../server/utils/integrations/test-management/limiter');
 const { createConnection } = await import('../../server/utils/integrations/connections');
 const { buildIssueDraft } = await import('../../server/utils/integrations/draft');
 
@@ -436,6 +437,16 @@ describe('what each failure of the upload leaves', () => {
     expect(row.scheduledFor.getTime()).toBeGreaterThanOrEqual(before + 119_000);
     expect(connectionPausedUntil(zephyrId, new Date())).not.toBeNull();
     expect(uploads()).toHaveLength(1);
+  });
+
+  test('a busy request queue backs off for the wait it names and leaves the connection open', async () => {
+    vi.spyOn(limiterForConnection(zephyrId), 'wait').mockRejectedValueOnce(new RequestLimiterBusyError(30_000));
+    const before = Date.now();
+    const row = await attempt();
+    expect(row).toMatchObject({ status: 'pending', attempts: 1, result: null });
+    expect(row.scheduledFor.getTime()).toBeGreaterThanOrEqual(before + 29_000);
+    expect(connectionPausedUntil(zephyrId, new Date())).toBeNull();
+    expect(uploads()).toHaveLength(0);
   });
 
   test.each([500, 502, 503, 504])('a %i fails at once as Outcome unknown and keeps the marker', async (status) => {
