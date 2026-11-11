@@ -76,7 +76,9 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         if (!Files.isRegularFile(server)) throw ExecutionException("The Piwi editor service is missing: $server")
         val interpreter = NodeJsInterpreterManager.getInstance(project).interpreter
         val node = (interpreter as? NodeJsLocalInterpreter)?.interpreterSystemDependentPath ?: "node"
-        val problem = Glue.nodeProblem(node, nodeVersion(node))
+        val version = nodeVersion(node)
+        val problem = Glue.nodeProblem(node, version)
+        if (problem == null) project.service<PiwiLog>().write("Starting the editor service with Node.js ${version?.trim()} ($node).")
         project.service<PiwiProjectService>().startFailed(problem)
         if (problem != null) throw ExecutionException(problem)
         val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
@@ -92,10 +94,19 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
      * end ends the sessions of its runs ([PiwiRunSessions.watch]).
      */
     override fun startServerProcess(): OSProcessHandler =
-        super.startServerProcess().also {
+        logged { super.startServerProcess() }.also {
+            project.service<PiwiLog>().watch(it)
             project.service<PiwiProjectService>().watchServer(it)
             project.service<PiwiRunSessions>().watch(it)
         }
+
+    /** `start`'s result; a start that fails, its command line included (`createCommandLine`), says why in the log first. */
+    private fun <T> logged(start: () -> T): T = try {
+        start()
+    } catch (e: ExecutionException) {
+        project.service<PiwiLog>().write("The editor service did not start: ${e.message}")
+        throw e
+    }
 
     /**
      * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),
@@ -166,8 +177,9 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 }
 
-/** The lsp4j proxy of a running service, with the service's own requests; null until it runs. */
-fun LspServer.piwiServer(): PiwiLanguageServer? = Lsp4jAccess.server(this) as? PiwiLanguageServer
+/** The lsp4j proxy of a running service, with the service's own requests, their failures logged; null until it runs. */
+fun LspServer.piwiServer(): PiwiLanguageServer? =
+    (Lsp4jAccess.server(this) as? PiwiLanguageServer)?.let { PiwiLog.logged(project, it) }
 
 /**
  * The lsp4j proxy of a running service. The platform hands it only to a request's sender, so it

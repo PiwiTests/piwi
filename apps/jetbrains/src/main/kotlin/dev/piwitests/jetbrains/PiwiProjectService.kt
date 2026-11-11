@@ -29,6 +29,7 @@ import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -158,6 +159,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
     @Volatile var startProblem: String? = null
         private set
+
+    /** Whether the editor service ran and stopped, and none started since: the tool window offers to start it again. */
+    @Volatile var serviceStopped = false
+        private set
+
+    /** The editor service's latest process: one that ends after another started says nothing of the running one. */
+    @Volatile private var latestProcess: ProcessHandler? = null
 
     /** Whether the project's wait for trust was said already. */
     private val trustAsked = AtomicBoolean()
@@ -346,6 +354,22 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .notify(project)
     }
 
+    /**
+     * Restart the Editor Service, from its action, a balloon or the tool window, said in the log, then [restartServer].
+     * With none running and no test file open, the IDE has nothing to start it for: a balloon says to open one.
+     */
+    fun restartService() {
+        val log = project.service<PiwiLog>()
+        val open = FileEditorManager.getInstance(project).openFiles.any { PiwiLspServerSupportProvider.isSupported(it) }
+        if (!serverStarted() && !open) {
+            log.write(Glue.SERVICE_NEEDS_A_FILE)
+            PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.SERVICE_NEEDS_A_FILE, NotificationType.INFORMATION).notify(project)
+            return
+        }
+        log.write("Restarting the editor service.")
+        ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
+    }
+
     /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
     fun restartServer(runningOnly: Boolean = false) {
         val manager = LspServerManager.getInstance(project)
@@ -366,16 +390,42 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     fun watchServer(process: ProcessHandler) {
         val startedAt = System.currentTimeMillis()
+        latestProcess = process
+        serviceStopped = false
+        changed()
+        val watching = Disposer.newDisposable(this, "Piwi editor service process")
         process.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
-                    if (gone.value(null) || startProblem != null) return
+                    Disposer.dispose(watching)
+                    if (gone.value(null)) return
+                    project.getServiceIfCreated(PiwiLog::class.java)?.write("The editor service stopped (exit code ${event.exitCode}).")
+                    if (latestProcess === process) stopped()
+                    if (startProblem != null) return
                     if (!Glue.restartsService(startedAt, System.currentTimeMillis(), serverRestarts)) return
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
                 }
             },
-            this,
+            watching,
         )
+    }
+
+    /**
+     * The latest service's process ended: until another starts, the tool window says it stopped and offers to start it,
+     * and nothing it answered is shown. Its answers are dropped here, not read again from a service that is gone.
+     */
+    private fun stopped() {
+        synchronized(lock) {
+            serviceStopped = true
+            status = null
+            runs = null
+            failuresResult = null
+            failures = emptyList()
+            statusPushes++
+            runsPushes++
+            failuresPushes++
+        }
+        changed()
     }
 
     /** Start the editor service again unless another one starts or runs. */

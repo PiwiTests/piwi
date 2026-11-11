@@ -12,9 +12,11 @@ import { editorsDir, removeDiscovery, writeDiscovery } from './discovery.js';
 import { startServer } from './server.js';
 
 const connection = createConnection(ProposedFeatures.all);
-// A rejected promise nothing waits on is logged in the editor's output; the service keeps serving.
+/** An error, on stderr, where Node.js writes a crash's stack: VS Code's output channel and the JetBrains Log tab show it. */
+const logError = (text: string) => process.stderr.write(`${text}\n`);
+// A rejected promise nothing waits on is logged in the editor's log; the service keeps serving.
 process.on('unhandledRejection', (reason) =>
-  connection.console.error(`Piwi: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`),
+  logError(`Piwi: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`),
 );
 
 let published: string | null = null;
@@ -31,6 +33,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
 }
 
 startServer(connection, {
+  logError,
   publish: (discovery) => {
     unpublish();
     if (discovery) published = writeDiscovery(editorsDir(), discovery);

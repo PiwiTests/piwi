@@ -183,23 +183,24 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
-            if (service.status == null) {
-                tree.emptyText.appendText(if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST)
-                // A service that cannot start: the Node.js settings one click away, which start it again once closed.
-                if (service.trusted() && service.startProblem != null) {
-                    tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
-                        service.openNodeSettings()
-                    }
-                }
+            val empty = if (service.status == null) {
+                Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped)
             } else {
-                val empty = Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
-                tree.emptyText.appendText(empty.text)
-                for ((i, link) in empty.links.withIndex()) {
-                    if (i > 0) tree.emptyText.appendSecondaryText("   ", SimpleTextAttributes.REGULAR_ATTRIBUTES, null)
-                    tree.emptyText.appendSecondaryText(link.label, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
-                        val actions = ActionManager.getInstance()
-                        actions.getAction(link.actionId)?.let { actions.tryToExecute(it, null, tree, ActionPlaces.UNKNOWN, true) }
-                    }
+                Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
+            }
+            tree.emptyText.appendText(empty.text)
+            // A service that cannot start: the Node.js settings one click away, which start it again once closed.
+            val nodeSettings = service.status == null && service.trusted() && service.startProblem != null
+            if (nodeSettings) {
+                tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                    service.openNodeSettings()
+                }
+            }
+            for ((i, link) in empty.links.withIndex()) {
+                if (i > 0 || nodeSettings) tree.emptyText.appendSecondaryText("   ", SimpleTextAttributes.REGULAR_ATTRIBUTES, null)
+                tree.emptyText.appendSecondaryText(link.label, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                    val actions = ActionManager.getInstance()
+                    actions.getAction(link.actionId)?.let { actions.tryToExecute(it, null, tree, ActionPlaces.UNKNOWN, true) }
                 }
             }
         }
@@ -299,8 +300,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
 
     /**
-     * The tool window's gear menu: the connection, Piwi Picker's pairing, the MCP configurations, and the reading and
-     * settings of Piwi itself.
+     * The tool window's gear menu: the connection, Piwi Picker's pairing, the MCP configurations, and the reading, the
+     * editor service, its log and the settings of Piwi itself.
      */
     private fun gearActions(): DefaultActionGroup {
         val actions = ActionManager.getInstance()
@@ -310,7 +311,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             addSeparator()
             addAll(registered("Piwi.PairPicker", "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration"))
             addSeparator()
-            addAll(registered("Piwi.Refresh", "Piwi.OpenSettings"))
+            addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings"))
         }
     }
 
