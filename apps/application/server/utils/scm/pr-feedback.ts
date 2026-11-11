@@ -29,7 +29,7 @@ import {
   testRunsCases,
 } from '../../database/schema';
 import { getPrFeedbackSettings } from './pr-feedback-settings';
-import { pendingStatuses, postClosingStatus } from './pending-status';
+import { pendingStatuses, postClosingStatus, storedRunStatus } from './pending-status';
 import { createScmProvider } from './index';
 import type { ScmProvider } from './ScmProvider';
 import { normalizeGitUrl } from './git-url';
@@ -417,11 +417,22 @@ export async function postRunPrFeedback(
   fixedClusters: VerifiedFix[] = [],
   changeCoverage: PrChangeCoverage | null = null,
   locatorBreaks: PrLocatorBreaks | null = null,
-): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
+): Promise<FeedbackResult> {
   const pending = await pendingStatuses.stop(runId);
   const result = await postFinishedRunFeedback(db, runId, fixedClusters, changeCoverage, locatorBreaks);
-  if (pending && !result.status) await postClosingStatus(db, runId);
+  if (pending && result.statusContext !== pending.context) {
+    await postClosingStatus(pending, runId, (await storedRunStatus(db, runId)) ?? 'ended');
+  }
   return result;
+}
+
+/** What a run's feedback did: its comment, its status and the context it posted the status under. */
+interface FeedbackResult {
+  posted: boolean;
+  comment: boolean;
+  status: boolean;
+  statusContext?: string;
+  reason?: string;
 }
 
 async function postFinishedRunFeedback(
@@ -430,7 +441,7 @@ async function postFinishedRunFeedback(
   fixedClusters: VerifiedFix[],
   changeCoverage: PrChangeCoverage | null,
   locatorBreaks: PrLocatorBreaks | null,
-): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
+): Promise<FeedbackResult> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
   const settings = await getPrFeedbackSettings(db);
@@ -531,7 +542,12 @@ async function postFinishedRunFeedback(
     }).catch((e) => console.error(`[pr-feedback] could not record the feedback of run #${runId}`, e));
   }
 
-  return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
+  return {
+    posted: commentPosted || statusPosted,
+    comment: commentPosted,
+    status: statusPosted,
+    ...(statusPosted ? { statusContext: settings.statusContext } : {}),
+  };
 }
 
 /** The leaks of a run that its base branch never showed, or null when the run sent no resource report. */

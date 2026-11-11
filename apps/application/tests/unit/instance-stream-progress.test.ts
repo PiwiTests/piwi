@@ -134,7 +134,7 @@ describe('the instance stream’s tallies', () => {
     stream.end();
   });
 
-  test('sends the run’s tally it holds before the run’s next lifecycle event, which goes out as it did', async () => {
+  test('sends the run’s tally it holds before the run’s next lifecycle event, and then that event', async () => {
     const stream = await openStream();
     runEventBus.publishRunProgress(tally(5, 4));
     runEventBus.publishRunProgress(tally(5, 9));

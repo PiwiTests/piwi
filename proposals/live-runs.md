@@ -890,7 +890,7 @@ runs the performance check.
    turn it off? Answered: any signed-in reader, the asker named to the developer and the answer shown to the asker,
    and a project setting, on by default (built in P9).
 7. The pending pull-request status: on by default where pull-request feedback is set up? A commit status or a check
-   run? What is GitLab's equivalent? Answered: the project's own commit status and switch, GitLab's `running` and
+   run? What is GitLab's equivalent? Answered: the project's own commit status and switch, GitLab's `pending` and
    Bitbucket's `INPROGRESS` (built in P10).
 8. Should a run whose test was ended at a stop get a run status of its own rather than a mark (a wire change)?
    Answered: a mark, every status kept (built in P9).

@@ -73,6 +73,7 @@ describe('the run qualifiers in SQL', () => {
 
   test('a value that names no number matches nothing, and excludes nothing', async () => {
     expect(await found('worker:two')).toEqual([]);
+    expect(await found('worker:1 worker:two')).toEqual([0, 2]);
     expect(await found('-worker:two')).toEqual([0, 1, 2, 3]);
   });
 

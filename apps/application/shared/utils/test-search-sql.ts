@@ -84,12 +84,13 @@ export function testSearchConditions(query: TestSearchQuery, columns: TestSearch
     }
     if (term.negated) {
       if (predicate) conditions.push(not(predicate));
+    } else if (term.field && testSearchFieldDef(term.field).single) {
+      // A value no row can hold matches nothing in its group, and leaves the group's other values standing.
+      const group = anyOf.get(term.field) ?? [];
+      group.push(predicate ?? sql`1 = 0`);
+      anyOf.set(term.field, group);
     } else if (!predicate) {
       conditions.push(sql`1 = 0`);
-    } else if (term.field && testSearchFieldDef(term.field).single) {
-      const group = anyOf.get(term.field) ?? [];
-      group.push(predicate);
-      anyOf.set(term.field, group);
     } else {
       conditions.push(predicate);
     }

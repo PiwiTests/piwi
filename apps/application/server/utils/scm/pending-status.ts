@@ -12,9 +12,10 @@ import type { ScmCommitStatus, ScmProvider } from './ScmProvider';
 /**
  * A CI run's pending commit status while it runs: under the context Piwi posts the run's final status with
  * (`prFeedback.status`), `pending` with how far the run is and a link to its page, the first at once and then at most
- * once a minute, the latest tally winning. The run's final status replaces it; a run that ends without one (cancelled,
- * interrupted, an environment incident, a run the final feedback leaves out) gets a closing `error` status instead
- * (`closePendingStatus`), so no commit stays pending.
+ * once a minute, the latest tally winning. Where the first one went is kept, so the closing status goes there whatever
+ * the settings say later. The run's final status replaces it; every other end closes it with an `error` status saying
+ * how the run ended (`closePendingStatus`): a run finished with no final status under that context, cancelled, deleted
+ * or interrupted. A run interrupted for its silence may go on, and its pending status with it.
  */
 
 /** The least time between two pending statuses of one run. */
@@ -23,20 +24,39 @@ export const PENDING_STATUS_MS = 60_000;
 /** How many ended runs are remembered, so a late tally of one posts nothing. */
 const ENDED_KEPT = 1000;
 
+/** Where a run's statuses go: its commit, through its project's provider, under the configured context. */
+export interface StatusTarget {
+  provider: ScmProvider;
+  commit: string;
+  branch: string | null;
+  context: string;
+  runUrl: string;
+}
+
 interface PendingRun {
   latest: RunProgressBroadcast | null;
   sentAt: number;
   timer: ReturnType<typeof setTimeout> | null;
   inFlight: Promise<void>;
-  posted: boolean;
+  /** Where its first pending status went, once one did. */
+  target: StatusTarget | null;
+}
+
+/** How a pending status is posted: the run's target, or null when the project posts none for it. */
+export interface PendingPoster {
+  target(runId: number): Promise<StatusTarget | null>;
+  post(target: StatusTarget, progress: RunProgressBroadcast): Promise<boolean>;
 }
 
 export class PendingStatuses {
   private readonly runs = new Map<number, PendingRun>();
+  /** Runs that post no pending status: ended for good, or with no target. */
   private readonly ended = new Set<number>();
+  /** Each run's stop under way, so a second caller learns what the first one did. */
+  private readonly stopping = new Map<number, Promise<StatusTarget | null>>();
 
   constructor(
-    private readonly post: (progress: RunProgressBroadcast) => Promise<boolean>,
+    private readonly poster: PendingPoster,
     private readonly now: () => number = Date.now,
     private readonly everyMs: number = PENDING_STATUS_MS,
   ) {}
@@ -46,7 +66,7 @@ export class PendingStatuses {
     if (this.ended.has(progress.runId)) return;
     let run = this.runs.get(progress.runId);
     if (!run) {
-      run = { latest: null, sentAt: -Infinity, timer: null, inFlight: Promise.resolve(), posted: false };
+      run = { latest: null, sentAt: -Infinity, timer: null, inFlight: Promise.resolve(), target: null };
       this.runs.set(progress.runId, run);
     }
     run.latest = progress;
@@ -58,18 +78,27 @@ export class PendingStatuses {
   }
 
   /**
-   * The run ended: no pending status of it goes from now on, and the one on its way has arrived when this resolves.
-   * True when one of them went out.
+   * The run stopped: no pending status of it goes from now on, and the one on its way has arrived when this resolves,
+   * with where its pending statuses went (null for none). `forGood` false lets a run interrupted for its silence post
+   * again once it goes on. A second stop of the run resolves as the first.
    */
-  async stop(runId: number): Promise<boolean> {
-    this.ended.add(runId);
-    if (this.ended.size > ENDED_KEPT) this.ended.delete(this.ended.values().next().value!);
+  stop(runId: number, forGood = true): Promise<StatusTarget | null> {
+    if (forGood) this.end(runId);
+    const under = this.stopping.get(runId);
+    if (under) return under;
     const run = this.runs.get(runId);
-    if (!run) return false;
+    if (!run) return Promise.resolve(null);
     this.runs.delete(runId);
     if (run.timer) clearTimeout(run.timer);
-    await run.inFlight;
-    return run.posted;
+    const stopped = run.inFlight.then(() => run.target);
+    this.stopping.set(runId, stopped);
+    void stopped.finally(() => this.stopping.delete(runId));
+    return stopped;
+  }
+
+  private end(runId: number): void {
+    this.ended.add(runId);
+    if (this.ended.size > ENDED_KEPT) this.ended.delete(this.ended.values().next().value!);
   }
 
   private send(run: PendingRun): void {
@@ -79,26 +108,23 @@ export class PendingStatuses {
     run.latest = null;
     run.sentAt = this.now();
     run.inFlight = run.inFlight
-      .then(() => this.post(progress))
-      .then((posted) => {
-        if (posted) run.posted = true;
+      .then(async () => {
+        const target = run.target ?? (await this.poster.target(progress.runId));
+        if (!target) {
+          // A run the project posts no status for is let go.
+          this.end(progress.runId);
+          if (this.runs.get(progress.runId) === run) this.runs.delete(progress.runId);
+          return;
+        }
+        if (await this.poster.post(target, progress)) run.target = target;
       })
       .catch((e) => console.error('[pr-feedback] pending status failed', e));
   }
 }
 
-/** Where a run's statuses go: its commit, through its project's provider, under the configured context. */
-interface StatusTarget {
-  provider: ScmProvider;
-  commit: string;
-  branch: string | null;
-  context: string;
-  runUrl: string;
-}
-
 /**
- * The target of a CI run's commit status, when the project posts one: PR feedback and its status on, the site URL
- * set, the run naming its commit and a repository the project's provider reaches.
+ * The target of a run's commit status, when the project posts one: PR feedback and its status on, the site URL set,
+ * the run naming its commit and a repository the project's provider reaches; with `ciOnly`, a CI run alone.
  */
 async function statusTarget(db: DbClient, runId: number, ciOnly: boolean): Promise<StatusTarget | null> {
   const settings = await getPrFeedbackSettings(db);
@@ -126,55 +152,62 @@ async function statusTarget(db: DbClient, runId: number, ciOnly: boolean): Promi
   };
 }
 
-/** What a pending status says: how many of the run's tests ended, and how many failed. */
+/**
+ * What a pending status says: how many of the run's tests have a result, at most its total (its retries count again
+ * until the run ends), or how many results came while the total is unknown, and how many results failed.
+ */
 export function pendingStatusDescription(progress: RunProgressBroadcast): string {
-  const done = progress.passedTests + progress.failedTests + progress.skippedTests + progress.didNotRunTests;
+  const results = progress.passedTests + progress.failedTests + progress.skippedTests + progress.didNotRunTests;
+  const total = Math.max(0, progress.totalTests);
+  const done = total > 0 ? `${Math.min(results, total)} of ${total} tests` : `${results} done`;
   const failed = progress.failedTests > 0 ? `, ${progress.failedTests} failed` : '';
-  return `Running: ${done} of ${progress.totalTests} tests${failed}`.slice(0, 140);
+  return `Running: ${done}${failed}`.slice(0, 140);
 }
 
 /** What a closing status says of a run that ended with no final status. */
 export function closingStatusDescription(runId: number, status: string | null): string {
   if (status === 'cancelled') return `Run #${runId} was cancelled before it ended`;
   if (status === 'interrupted') return `Run #${runId} was interrupted before it ended`;
+  if (status === null) return `Run #${runId} was deleted before it ended`;
   return `Run #${runId} ended with no result to report`;
 }
 
-async function postStatus(target: StatusTarget, status: Omit<ScmCommitStatus, 'context' | 'ref'>): Promise<boolean> {
-  return target.provider.postCommitStatus(target.commit, { ...status, context: target.context, ref: target.branch });
-}
-
-/** Post a CI run's pending status with its tally. False when the project posts none for the run. */
-async function postPendingStatus(progress: RunProgressBroadcast): Promise<boolean> {
-  const db = await getDatabase();
-  const target = await statusTarget(db, progress.runId, true);
-  if (!target) return false;
-  return postStatus(target, {
-    state: 'pending',
-    description: pendingStatusDescription(progress),
-    targetUrl: target.runUrl,
-  });
-}
-
 /** The instance's pending statuses, fed by the run-progress bus (`server/plugins/pending-pr-status.ts`). */
-export const pendingStatuses = new PendingStatuses(postPendingStatus);
+export const pendingStatuses = new PendingStatuses({
+  target: async (runId) => statusTarget(await getDatabase(), runId, true),
+  post: (target, progress) =>
+    target.provider.postCommitStatus(target.commit, {
+      state: 'pending',
+      description: pendingStatusDescription(progress),
+      targetUrl: target.runUrl,
+      context: target.context,
+      ref: target.branch,
+    }),
+});
+
+/** Post a run's closing `error` status at `target`, saying how the run ended (`status`, null for a deleted run). */
+export async function postClosingStatus(target: StatusTarget, runId: number, status: string | null): Promise<void> {
+  const posted: Omit<ScmCommitStatus, 'ref'> = {
+    state: 'error',
+    description: closingStatusDescription(runId, status),
+    targetUrl: target.runUrl,
+    context: target.context,
+  };
+  await target.provider.postCommitStatus(target.commit, { ...posted, ref: target.branch });
+}
 
 /**
- * A run ended with no final status to replace its pending one: when a pending status went out, a closing `error`
- * status takes its place, saying how the run ended.
+ * A run ended with no final status to replace its pending one (`status`: how; null for a deleted run): its pending
+ * statuses stop, and when one went out, a closing `error` status takes its place. A run interrupted for its silence
+ * (`forGood` false) may post pending statuses again once it goes on.
  */
-export async function closePendingStatus(db: DbClient, runId: number): Promise<void> {
-  if (await pendingStatuses.stop(runId)) await postClosingStatus(db, runId);
+export async function closePendingStatus(runId: number, status: string | null, forGood = true): Promise<void> {
+  const target = await pendingStatuses.stop(runId, forGood);
+  if (target) await postClosingStatus(target, runId, status);
 }
 
-/** The closing `error` status of a run whose pending status went out and that ended with no final status. */
-export async function postClosingStatus(db: DbClient, runId: number): Promise<void> {
-  const target = await statusTarget(db, runId, false);
-  if (!target) return;
+/** The run's status as stored, null once it is gone. */
+export async function storedRunStatus(db: DbClient, runId: number): Promise<string | null> {
   const [run] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, runId));
-  await postStatus(target, {
-    state: 'error',
-    description: closingStatusDescription(runId, run?.status ?? null),
-    targetUrl: target.runUrl,
-  });
+  return run?.status ?? null;
 }

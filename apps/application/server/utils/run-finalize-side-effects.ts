@@ -36,7 +36,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * verification and the hand-back outcomes it shows) and its outbound effects
  * (AI diagnosis, the issues automatic creation files once fix verification
  * is done, the results sent to the project's test management tool, notifications, the pull-request comment and
- * commit status, auto-heal).
+ * commit status, auto-heal). A run whose outbound effects do not go closes the pending commit status it posted while
+ * it ran (`closePendingStatus`).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -126,7 +127,9 @@ export async function runFinalizeSideEffects(
         console.error('[notifications] emitIncidentNotification failed', e),
       );
     }
-    closePendingStatus(db, id).catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
+    closePendingStatus(id, run.status ?? 'ended').catch((e) =>
+      console.error('[pr-feedback] closePendingStatus failed', e),
+    );
     return rollup;
   }
   const notifies = isEligibleRun(current, 'notifications');
@@ -161,7 +164,9 @@ export async function runFinalizeSideEffects(
       .catch((e) => console.error('[integrations] runTestManagementSync failed', e));
   }
   if (!notifies) {
-    closePendingStatus(db, id).catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
+    closePendingStatus(id, run.status ?? 'ended').catch((e) =>
+      console.error('[pr-feedback] closePendingStatus failed', e),
+    );
     return rollup;
   }
   void filing.then(() =>

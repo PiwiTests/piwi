@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { eligibleRunSql } from '../run-eligibility';
@@ -82,17 +82,27 @@ export interface UsualDuration {
   usualMs: number;
 }
 
+/** How many of a project's newest runs eligible as a baseline the usual durations read. */
+export const USUAL_DURATION_RUNS = 200;
+
 /**
  * The usual duration of every test of a run's project on each Playwright project it ran in, from the passing
  * executions the Stuck? rule reads (`runningTestHistory`: the last `STUCK_HISTORY` of each, in runs eligible as a
- * baseline), in one query: the run page's Timeline draws it behind a running attempt. A test with fewer passes than
- * the rule needs is left out. Where two tests share a file, describe path and title, the one an external ID names
- * wins, as `runningTestHistory` picks it. Empty for an unknown run.
+ * baseline), within the project's newest `USUAL_DURATION_RUNS` such runs, in one query: the run page's Timeline draws
+ * it behind a running attempt. A test with fewer passes than the rule needs is left out. Where two tests share a file,
+ * describe path and title, the one an external ID names stands for the name, as `runningTestHistory` picks it, with
+ * too few passes too. Empty for an unknown run.
  */
 export async function runUsualDurations(db: DrizzleDB, runId: number): Promise<{ tests: UsualDuration[] }> {
   const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
   if (!run) return { tests: [] };
   const browserKey = sql<string>`COALESCE(${testRunsCases.browserName}, '')`;
+  const recentRuns = db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, run.projectId), eligibleRunSql('baseline')))
+    .orderBy(desc(testRuns.id))
+    .limit(USUAL_DURATION_RUNS);
   const ranked = db.$with('ranked').as(
     db
       .select({
@@ -104,13 +114,11 @@ export async function runUsualDurations(db: DrizzleDB, runId: number): Promise<{
         ),
       })
       .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
       .where(
         and(
-          eq(testRuns.projectId, run.projectId),
+          inArray(testRunsCases.testRunId, recentRuns),
           sql`${testRunsCases.status} = 'passed'`,
           sql`${testRunsCases.duration} IS NOT NULL`,
-          eligibleRunSql('baseline'),
         ),
       ),
   );
@@ -141,19 +149,20 @@ export async function runUsualDurations(db: DrizzleDB, runId: number): Promise<{
     (a, b) =>
       Number(a.row.externalId == null) - Number(b.row.externalId == null) || b.row.testCaseId - a.row.testCaseId,
   );
-  const tests = new Map<string, UsualDuration>();
+  const tests = new Map<string, UsualDuration | null>();
   for (const { row, durations } of entries) {
-    const usualMs = usualDurationMs(durations);
-    if (usualMs === null) continue;
     const test: UsualDuration = {
       filePath: row.filePath,
       suitePath: splitSuitePath(row.suitePath),
       title: row.title,
       browser: row.browser || null,
-      usualMs,
+      usualMs: 0,
     };
     const key = usualDurationKey(test);
-    if (!tests.has(key)) tests.set(key, test);
+    // The test picked for a name keeps it, with too few passes for the rule too.
+    if (tests.has(key)) continue;
+    const usualMs = usualDurationMs(durations);
+    tests.set(key, usualMs === null ? null : { ...test, usualMs });
   }
-  return { tests: [...tests.values()] };
+  return { tests: [...tests.values()].filter((test): test is UsualDuration => test !== null) };
 }
