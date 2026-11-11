@@ -557,10 +557,13 @@ export function sessionLines(before: RunSession | undefined, now: RunSession): S
     const started = worker.test && (worker.test.id !== was?.test?.id || worker.test.retry !== was?.test?.retry);
     if (started) {
       const attempt = worker.test!.retry > 0 ? ` · attempt ${worker.test!.retry + 1}` : '';
-      lines.push({ text: `${who} · ${worker.test!.title.join(' › ')}${attempt}`, test, at: null });
+      lines.push({ text: `${who} · ${testTitle(worker.test!)}${attempt}`, test, at: null });
     }
     if (worker.stop && worker.stop.since !== was?.stop?.since) {
-      const text = `${who} · ${pausedText(worker.stop, worker.test, !!now.terminal, !!now.runner)}`;
+      const text = `${who} · ${pausedText(worker.stop, worker.test, !!now.terminal, !!now.runner)}`.replace(
+        /\s+/g,
+        ' ',
+      );
       lines.push({ text, test, at: { uri: worker.stop.uri, line: worker.stop.line } });
     } else if (!worker.stop && was?.stop && !started) {
       lines.push({ text: `${who} · goes on`, test, at: null });
@@ -935,17 +938,26 @@ export function liveText(live: RunLive): string {
  */
 export function workersNow(sessions: Sessions): string[] {
   const live = [...sessions.values()].filter((s) => !s.ended && s.workers.length > 0);
-  return live.flatMap((s) =>
+  const lines = live.flatMap((s) =>
     [...s.workers]
       .sort((a, b) => a.parallelIndex - b.parallelIndex)
       .map((w) => {
         const run = live.length > 1 ? `${runLabel(s)} · ` : '';
-        const what = w.test
-          ? `${w.test.title.join(' › ')}${w.state === 'stopped' ? ' · stopped' : ''}`
-          : 'between tests';
+        const what = w.test ? `${testTitle(w.test)}${w.state === 'stopped' ? ' · stopped' : ''}` : 'between tests';
         return `${run}${workerName(w.parallelIndex)} · ${what}`;
       }),
   );
+  return lines.length > MAX_WORKER_LINES
+    ? [...lines.slice(0, MAX_WORKER_LINES - 1), `and ${lines.length - MAX_WORKER_LINES + 1} more workers`]
+    : lines;
+}
+
+/** How many workers the tooltip lists, the last line counting the others. */
+const MAX_WORKER_LINES = 8;
+
+/** A test's titles on one line: `cart › adds a mug`, a title's own line breaks as spaces. */
+function testTitle(test: RunTest): string {
+  return test.title.join(' › ').replace(/\s+/g, ' ');
 }
 
 /**

@@ -510,11 +510,16 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 command's environment, as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor`, and in `RunCommand.ref`. The Flake Lab lines
 and the fix plan's verification carry `PIWI_ORIGIN=editor` alone, with `RunCommandArgs.follow`: the client asks
 `piwi/followCommand` for them, which gives them a ref and the run channel, and runs the answer as it runs a test run,
-its end told (`piwi/commandEnded`) and Stop ending it; a plain terminal command when the answer is null.
+its end told (`piwi/commandEnded`) and Stop ending it; a plain terminal command when the answer is null. The ref goes
+in `PIWI_RUN_REF`, which names the run on the run channel alone: a command of several runs (a Flake Lab line's batches)
+is not the editor's own run on the instance. The service follows only the commands it gives so (`followableCommand`: a
+fix plan's verification as `verificationCommand` builds it, a Flake Lab line).
 
-A repeated run and a followed command are runs nobody attends (`unattended`): their workers keep a run connection, so
-they are listed, paused and stopped as the others, but they hold no failure (`holdsFailures`, the session's `hold`
-absent) and turn headed for no `page.pause()`.
+A repeated run and a followed command are runs nobody attends (`unattended`, its own `MAX_RUN_COMMANDS` latest): their
+workers keep a run connection, so they are listed, paused and stopped as the others, but they hold no failure
+(`holdsFailures`, the session's `hold` absent), turn headed for no `page.pause()`, take none of the editor's breakpoints
+(`setBreakpoints`), and let a stop no one asked for go on at once (`UNASKED_STOPS`: a breakpoint, a `page.pause()`),
+said once per run; a Pause, a Step or a Run to someone asked for waits.
 
 `piwi/runArgs` runs tests either way:
 

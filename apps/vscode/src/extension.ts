@@ -1722,7 +1722,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
-      if (e.newState === State.Stopped) runControl.clear();
+      if (e.newState === State.Stopped) {
+        runControl.clear();
+        explorer?.sessionsCleared();
+      }
       // A service started again hears the editor's breakpoints, for a run a terminal starts.
       else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),

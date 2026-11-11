@@ -2149,13 +2149,22 @@ object Glue {
         val lines = live.flatMap { session ->
             session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
                 val run = if (live.size > 1) "${runLabel(session)} · " else ""
-                val test = w.test?.title?.joinToString(" › ")
+                // A title's own line breaks as spaces: one line per worker.
+                val test = w.test?.title?.joinToString(" › ")?.replace(Regex("\\s+"), " ")
                 val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
                 "$run${workerName(w.parallelIndex)} · $what"
             }
         }
-        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
+        val shown = if (lines.size > MAX_WORKER_LINES) {
+            lines.take(MAX_WORKER_LINES - 1) + "and ${lines.size - MAX_WORKER_LINES + 1} more workers"
+        } else {
+            lines
+        }
+        return shown.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
+
+    /** How many workers the tooltip lists, the last line counting the others. */
+    private const val MAX_WORKER_LINES = 8
 
     /**
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in

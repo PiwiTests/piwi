@@ -417,10 +417,11 @@ export class TestExplorer implements vscode.Disposable {
    */
   sessionChanged(session: RunSession): void {
     if (this.disposed) return;
-    const before = this.sessions.get(session.ref);
-    if (session.ended) this.sessions.delete(session.ref);
-    else this.sessions.set(session.ref, session);
     const run = this.runOfRef(session.ref);
+    // Kept only once a test run follows the run: what it brought before is written then, as it stands.
+    const before = run ? this.sessions.get(session.ref) : undefined;
+    if (session.ended || !run) this.sessions.delete(session.ref);
+    else this.sessions.set(session.ref, session);
     if (!run) return;
     for (const line of sessionLines(before, session)) {
       const at = line.at
@@ -428,6 +429,11 @@ export class TestExplorer implements vscode.Disposable {
         : undefined;
       run.appendOutput(`${line.text}\r\n`, at, line.test ? this.itemAt(line.test.uri, line.test.line) : undefined);
     }
+  }
+
+  /** The service stopped: its runs' sessions ended with it, and a rerun of a ref starts anew. */
+  sessionsCleared(): void {
+    this.sessions.clear();
   }
 
   /** The test run that follows the run of `ref`: a profile run's command, else a run in progress followed. */

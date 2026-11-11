@@ -64,7 +64,7 @@ describe('a run nobody attends', () => {
   test('a command the service follows runs with a ref of its own on the run channel, holding no failure', async () => {
     const asked: RunCommandArgs = {
       cwd: dir,
-      command: 'npx piwi flake --test 12 --plan plan.json',
+      command: 'npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:7494',
       env: { PIWI_ORIGIN: 'editor' },
       follow: true,
     };
@@ -73,21 +73,29 @@ describe('a run nobody attends', () => {
       cwd: dir,
       command: asked.command,
       args: [],
+      // Named on the run channel alone: its several runs are not the editor's own on the instance.
       env: {
         PIWI_ORIGIN: 'editor',
-        PIWI_ORIGIN_REF: followed.ref,
+        PIWI_RUN_REF: followed.ref,
         PIWI_RUN_CHANNEL: expect.stringMatching(/#[\w-]{16,}$/),
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
     expect(await attached(followed)).toMatchObject({ type: 'attached', holds: [] });
     expect(await waitFor(() => svc.latest(followed.ref!))).not.toHaveProperty('hold');
-    // A Playwright command keeps its arguments, which name its task.
+    // A fix plan's verification keeps its arguments, which name its task; one of several projects has none.
     const verification = (await svc.client.sendRequest('piwi/followCommand', {
       ...asked,
-      command: 'npx playwright test tests/cart.spec.ts:3 --repeat-each=5',
+      command: 'npx playwright test tests/cart.spec.ts:3',
     })) as RunCommand;
-    expect(verification.args).toEqual(['tests/cart.spec.ts:3', '--repeat-each=5']);
+    expect(verification.args).toEqual(['tests/cart.spec.ts:3']);
+    const chain = 'npx playwright test a.spec.ts --project=x && npx playwright test b.spec.ts --project=y';
+    const chained = (await svc.client.sendRequest('piwi/followCommand', { ...asked, command: chain })) as RunCommand;
+    expect(chained).toMatchObject({ command: chain, args: [] });
+    // A command the service never gives with `follow` is not followed: the client runs it as it is.
+    for (const command of ['npx playwright test --reporter=list', 'rm -rf .', 'npx @piwitests/reporter flake 12; ls']) {
+      expect(await svc.client.sendRequest('piwi/followCommand', { ...asked, command }), command).toBeNull();
+    }
     // A folder no Playwright config of the workspace holds, or no command, is not followed.
     expect(await svc.client.sendRequest('piwi/followCommand', { ...asked, cwd: os.tmpdir() })).toBeNull();
     expect(await svc.client.sendRequest('piwi/followCommand', { ...asked, command: ' ' })).toBeNull();

@@ -189,6 +189,17 @@ describe('what each worker runs now', () => {
       'Run in shop (ed-2) · Worker 1 · checkout › pays',
     ]);
     expect(workersNow(sessionsOf(session('ed-1', [worker(0, 'running')], true)))).toEqual([]);
+    // Many workers: the first seven, then how many more; a title's line break as a space.
+    const many = session(
+      'ed-1',
+      Array.from({ length: 12 }, (_, i) =>
+        worker(i, 'running', { test: { ...runTest(), title: ['cart', 'adds\na mug'] } }),
+      ),
+    );
+    const listed = workersNow(sessionsOf(many));
+    expect(listed).toHaveLength(8);
+    expect(listed[0]).toBe('Worker 1 · cart › adds a mug');
+    expect(listed[7]).toBe('and 5 more workers');
   });
 });
 

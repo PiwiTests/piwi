@@ -46,7 +46,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { editorsDir, readLiveHubs } from './discovery.js';
@@ -145,6 +145,7 @@ import {
   isTestLocation,
   locationSpec,
   playwrightArgsOf,
+  followableCommand,
   playwrightTestCommand,
   repeatArgs,
   verificationCommand,
@@ -1814,7 +1815,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * hold their failures, by ref.
    */
   const watchedRuns = new Set<string>();
-  /** The runs the service built for nobody to attend (`unattended`), by ref: they hold no failure. */
+  /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
   const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
   const runLines = new RunLines();
@@ -3413,7 +3414,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runCommands.delete(oldest);
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
-    for (const ref of unattendedRuns) if (!runCommands.has(ref)) unattendedRuns.delete(ref);
     runLines.started(run.ref, unsavedFiles);
     return run;
   };
@@ -3425,7 +3425,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    */
   const unattended = (command: RunCommand): RunCommand => {
     if (!recordChannel || !command.ref) return command;
+    // Kept apart from the command lines, which a long run may outlive: it stays one nobody attends.
+    unattendedRuns.delete(command.ref);
     unattendedRuns.add(command.ref);
+    for (const oldest of unattendedRuns) {
+      if (unattendedRuns.size <= MAX_RUN_COMMANDS) break;
+      unattendedRuns.delete(oldest);
+    }
     return registered({ ...command, env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value } });
   };
 
@@ -3556,17 +3562,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(FOLLOW_COMMAND_REQUEST, (params: RunCommandArgs): RunCommand | null => {
     const context = contexts.find((c) => commandFolder(c) === params?.cwd);
-    if (!context || typeof params.command !== 'string' || !params.command.trim() || !recordChannel) return null;
+    if (!context || !followableCommand(params?.command) || !recordChannel) return null;
     const env = Object.fromEntries(
       Object.entries(params.env ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
     );
+    // Named on the run channel alone: a command of several runs (a Flake Lab line's batches) is not the editor's own
+    // run on the instance, as it was not before it was followed.
     const ref = newRunRef();
-    runWatch.watch(context, ref);
     const run: RunCommand = {
       cwd: commandFolder(context),
       command: params.command,
       args: playwrightArgsOf(params.command) ?? [],
-      env: { ...env, ...editorRunEnv(ref) },
+      env: { ...env, [RUN_REF_ENV]: ref },
       ref,
     };
     return unattended(run);

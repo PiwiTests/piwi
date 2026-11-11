@@ -95,6 +95,8 @@ export const SESSION_LINGER_MS = 5_000;
 export const PAUSED_PAGE_WAIT_MS = 10_000;
 /** The runs whose breakpoints (for workers that connect later) and whose command's end the service keeps, at most. */
 const MAX_KEPT_RUNS = 50;
+/** The stops nobody asked for, which a run nobody attends lets go on: a breakpoint, a `page.pause()`, any other. */
+const UNASKED_STOPS: ReadonlySet<string> = new Set(['breakpoint', 'page-pause', 'other']);
 /** The stops the service shows and answers among those a worker holds only then (`attached`): a held failure. */
 const SHOWN_HOLDS: readonly RunHold[] = ['failure'];
 
@@ -339,9 +341,10 @@ export interface RunSessionsOptions {
   watched?(ref: string): boolean;
   /**
    * Whether a failure of the run of `ref` may be held at all, whoever watches it: true by default. A run nobody attends
-   * (the desktop app's Flake Lab, bisect and lab runs, a run in UI mode or repeating its tests past a failure) holds
-   * none: its workers
-   * hear that they hold no failure (`attached`), and a failure that stops one anyway goes on at once.
+   * (the desktop app's Flake Lab, bisect and lab runs, a run in UI mode or repeating its tests past a failure, the
+   * editor's Verify ×3, fix plan verifications and Flake Lab lines) holds none: its workers hear that they hold no
+   * failure (`attached`), and a failure that stops one anyway goes on at once. It stops at no breakpoint either, and a
+   * stop no one asked for (a `page.pause()`) goes on at once; a Pause, a Step or a Run to someone asked for waits.
    */
   holdsFailures?(ref: string): boolean;
   /**
@@ -1775,9 +1778,12 @@ export class RunSessions {
     return this.options.holdsFailures?.(ref) ?? true;
   }
 
-  /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
+  /**
+   * `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. A run
+   * nobody attends (`holdsFailures`) stops at none.
+   */
   setBreakpoints(params: SetRunBreakpointsParams): void {
-    if (typeof params?.ref !== 'string' || !Array.isArray(params.places)) return;
+    if (typeof params?.ref !== 'string' || !Array.isArray(params.places) || !this.holds(params.ref)) return;
     const files = filesOf(params.places);
     this.keepBreakpoints(params.ref, files);
     const session = this.sessions.get(params.ref);
@@ -1931,7 +1937,9 @@ export class RunSessions {
         worker.askedBy = null;
         this.changed(session, true);
         this.options.heard?.(session.ref, worker.index, { type: 'stopped', stop: worker.stop.view }, session.root);
-        if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
+        if (!message.bar && !this.holds(session.ref) && UNASKED_STOPS.has(message.reason)) {
+          this.resumeUnattended(session, worker, message.place);
+        } else if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
         return;
       case 'waiting': {
         // Said while a Pause waits for the call, by a reporter that ends a test there; a null title once it waits in
@@ -2044,6 +2052,21 @@ export class RunSessions {
    * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker hears the runs. It
    * goes on, said once a run.
    */
+  /**
+   * A run nobody attends lets a stop no one asked for go on (a breakpoint, a `page.pause()`): said once per run. A Pause,
+   * a Step or a Run to someone asked for waits for them.
+   */
+  private resumeUnattended(session: Session, worker: Worker, place: Place): void {
+    this.send(worker, { type: 'control', action: 'resume', stop: worker.stop!.id });
+    if (session.resumedSaid) return;
+    session.resumedSaid = true;
+    this.options.notice(
+      session.root ?? worker.cwd,
+      'information',
+      `Piwi let the test stopped at ${path.basename(place.file)}:${place.line} go on: nobody attends this run.`,
+    );
+  }
+
   private resumeUnanswered(session: Session, worker: Worker, place: Place): void {
     this.send(worker, { type: 'control', action: 'resume', stop: worker.stop!.id });
     // A failure held for a surface that is not there ends as it would have: nothing to say.

@@ -802,6 +802,13 @@ class GlueTest {
             Glue.workersNowText(two),
         )
         assertNull(Glue.workersNowText(mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest()), ended = true))))
+        // Many workers: the first seven, then how many more; a title's line break as a space.
+        val wrapped = runTest().copy(title = listOf("cart", "adds\na mug"))
+        val many = session("ed-1", *Array(12) { RunWorker(it, it, "running", wrapped) })
+        val listed = Glue.workersNowText(mapOf("ed-1" to many))!!.split("\n")
+        assertEquals(8, listed.size)
+        assertEquals("Worker 1 · cart › adds a mug", listed.first())
+        assertEquals("and 5 more workers", listed.last())
     }
 
     @Test
