@@ -150,7 +150,7 @@ register a webhook so a close or reopen reflects immediately instead of within t
    `PIWI_SITE_URL` when Piwi sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
-3. Piwi looks the issue up by its id or its key in the bound projects' links and refreshes those, applying the
+3. Piwi looks the issue up by its id or key in the bound projects' links and refreshes those, applying the
    resolve/reopen policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link*; it can never
