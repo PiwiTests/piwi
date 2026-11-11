@@ -233,7 +233,8 @@ counted from 1 in each shard; a worker Playwright starts again after a failure t
 to, at `page.pause()`, or at a failure held for a look. Each tool names it by why it stopped, in the same words
 (**Stopped at a breakpoint**, **Paused**, …). At a stop of a headed run, **Show the browser** brings the test's
 window to the front ([Watch a run](/features/watch-a-run#where-a-test-stopped)). A test ended there with
-[End the test](/features/end-the-test) is skipped and marked **Ended at a stop** wherever its result shows.
+[End the test](/features/end-the-test) is skipped, and marked **Ended at a stop** on the run's and the test's pages,
+in the Runs window, the Local runs tray and the editors.
 
 The test timeout stops while a test is paused at a breakpoint, and so does the paused call's own budget
 (`actionTimeout`, or `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its

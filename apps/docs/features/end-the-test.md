@@ -10,8 +10,8 @@ lang: en-US
 
 At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the locator call it
 stopped before never runs (Playwright 1.62 or later), nor the rest of the test, and Playwright reports it as skipped,
-its `skip` annotation reading `Ended from Piwi`. Every tool marks the result **Ended at a stop**, so it never reads as
-a plain pass. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
+its `skip` annotation reading `Ended from Piwi`. Its result reads **Ended at a stop**, never a plain skip, on the run's
+page, the test's pages, Piwi Picker's Runs window, the desktop app's Local runs tray and both editors. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
 steps you were missing, and the rest of the test has nothing to show you.
 
 ## Where it is

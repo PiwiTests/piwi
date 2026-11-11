@@ -24,8 +24,8 @@ whose project enables live view, and connect to an editor or the desktop app for
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing** |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing** |
 
-The first share in a window asks for confirmation, and for this run or [the window's runs](#a-window-s-runs). The shared
-run shows its destination, viewer count and a link to copy.
+The first share asks for confirmation; in an editor, it also asks whether to share this run or
+[the window's runs](#a-window-s-runs). The shared run shows its destination, viewer count and a link to copy.
 
 Until then, its workers send nothing, and the run's **Tests** tab says **Not shared live** once, beside its search,
 with [**Ask to watch**](#ask-to-watch) for a teammate who may ask; its running tests say where they
