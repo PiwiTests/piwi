@@ -6038,7 +6038,7 @@ const SCENES = [
             }),
           image,
         );
-        await worker.getByRole('img', { name: /The page, live/ }).waitFor();
+        await worker.getByRole('img', { name: /^Live view/ }).waitFor();
         await settle();
         await shoot('paused');
 
@@ -6107,7 +6107,7 @@ const SCENES = [
         const worker = tray.locator('[data-shot="desktop-run-worker"]');
         await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
         await laneFrame(null);
-        await worker.getByRole('img', { name: 'The page, live', exact: true }).waitFor();
+        await worker.getByRole('img', { name: 'Live view of the test’s page', exact: true }).waitFor();
         await settle();
         await shoot('tray', { of: '[aria-label="Local runs"]', pad: 0 });
         await page.setViewportSize({ width: 390, height: 844 });
@@ -6130,7 +6130,9 @@ const SCENES = [
         await send(session({ ...running, state: 'stopped', stop }));
         await laneFrame('s1');
         await worker.getByRole('button', { name: 'Interact' }).click();
-        await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
+        await worker
+          .getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' })
+          .waitFor();
         await settle();
         await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
 
@@ -7440,9 +7442,9 @@ const SCENES = [
           }),
         image,
       );
-      await shown.getByRole('img', { name: /The page, live/ }).waitFor();
+      await shown.getByRole('img', { name: /^Live view/ }).waitFor();
       await shown.getByRole('button', { name: 'Interact' }).click();
-      await shown.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
+      await shown.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' }).waitFor();
       await settle();
       await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
 
@@ -7479,6 +7481,100 @@ const SCENES = [
       await tray.locator('[data-shot="desktop-run-copy"]').waitFor();
       await settle();
       await shoot('code', { of: '[data-shot="desktop-run-copy"]', pad: 8 });
+    },
+  },
+  {
+    name: 'desktop-run-workers',
+    description:
+      'Local runs tray (desktop app): a run of two workers, one stopped at its page.pause() with its page watched live, the other running, at the tray’s width, at 390 px and in dark mode',
+    tags: ['desktop'],
+    outputs: ['desktop-run-workers.png', 'desktop-run-workers-narrow.png', 'desktop-run-workers-dark.png'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const test = (id, title, line) => ({ id, title, uri, line, project: 'chromium', retry: 0, cannotPause: null });
+      const stopped = {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        pausing: false,
+        intents,
+        test: test('t1', ['checkout', 'pays with a saved card'], 11),
+        stop: {
+          reason: 'page-pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents,
+        },
+      };
+      const running = {
+        worker: 1,
+        parallelIndex: 1,
+        state: 'running',
+        pausing: false,
+        intents,
+        test: test('t2', ['checkout', 'refunds a returned mug'], 31),
+        stop: null,
+      };
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        workers: [stopped, running],
+        ended: false,
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      const shown = tray.locator('[data-worker="desktop-41|0"]');
+      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await page.evaluate(
+        (data) =>
+          window.__hub.send({
+            type: 'frame',
+            ref: 'desktop-41',
+            worker: 0,
+            since: 's1',
+            width: 1280,
+            height: 800,
+            data,
+          }),
+        image,
+      );
+      await shown.getByRole('img', { name: /live/i }).waitFor();
+      await settle();
+      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await settle();
+      await shoot('dark', { of: '[aria-label="Local runs"]', pad: 0 });
     },
   },
   {

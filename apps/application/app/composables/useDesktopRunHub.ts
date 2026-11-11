@@ -19,6 +19,11 @@
  * included, is the page as it last showed. A run the stream does not list as it opens (`listed`) ended meanwhile: what
  * the window kept of it goes. **Share live** asks what it sends the first time in this session of the app
  * (`shareAsks`).
+ *
+ * A live run of several workers shows one at a time behind its worker tabs, kept here by run (`tabs`,
+ * `desktopTabsAfter`) and followed as each of its sessions is heard: the worker shown stays while it stands at a stop
+ * or is watched (its Watch live or its lane), a new stop takes the tab once, and the person's Resume or End the test
+ * there (`advanceTab`) moves it to the next stopped test; the person's choice (`chooseTab`) holds until then.
  */
 import {
   parseHubMessage,
@@ -39,7 +44,14 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { errorMessage } from '@piwitests/run-ui/text';
-import { desktopLaneKey, desktopLaneRun, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
+import {
+  desktopLaneKey,
+  desktopLaneRun,
+  desktopTabsAfter,
+  desktopViewKey,
+  desktopWorkerKey,
+  type DesktopRunTabs,
+} from '~/utils/desktop-run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -88,6 +100,8 @@ interface HubState {
   laneRefusals: Record<string, string>;
   /** How many times the window told the hub to show each lane, by `desktopLaneKey`: the view its frames belong to. */
   laneViews: Record<string, number>;
+  /** The worker tabs of each live run of several workers, by run (ref). A stream that opens again keeps them. */
+  tabs: Record<string, DesktopRunTabs>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
@@ -105,6 +119,7 @@ const state = reactive<HubState>({
   lanes: {},
   laneRefusals: {},
   laneViews: {},
+  tabs: {},
 });
 
 let source: EventSource | null = null;
@@ -192,6 +207,7 @@ function heard(text: string): void {
         ...Object.keys(state.interacting),
         ...heardAt.keys(),
         ...Object.keys(state.laneRefusals).map(desktopLaneRun),
+        ...Object.keys(state.tabs),
       ];
       for (const ref of new Set(kept)) if (!state.sessions[ref]) forgetRun(ref);
       return;
@@ -241,6 +257,7 @@ function heardSession(session: HubSession): void {
     return;
   }
   state.sessions[session.ref] = session;
+  followTabs(session);
   const heard = heardAt.get(session.ref) ?? new Map<number, string>();
   heardAt.set(session.ref, heard);
   for (const worker of session.workers) {
@@ -251,9 +268,20 @@ function heardSession(session: HubSession): void {
   }
 }
 
+/** The tabs of a run as its workers stand now: none for a run of fewer than two workers. */
+function followTabs(session: HubSession): void {
+  const { ref } = session;
+  const watched = (worker: HubWorker) =>
+    (state.watchLive[ref]?.includes(worker.worker) ?? false) || watchesLane(ref, worker.parallelIndex);
+  const tabs = desktopTabsAfter(state.tabs[ref], session.workers, watched);
+  if (tabs) state.tabs[ref] = tabs;
+  else delete state.tabs[ref];
+}
+
 /** A run ended: what the window kept to watch it goes, its lanes' frames and refusals with them. */
 function forgetRun(ref: string): void {
   heardAt.delete(ref);
+  delete state.tabs[ref];
   delete state.watchLive[ref];
   delete state.interacting[ref];
   for (const lane of state.lanes[ref] ?? []) forgetLane(ref, lane);
@@ -316,6 +344,7 @@ function close(): void {
     lanes: {},
     laneRefusals: {},
     laneViews: {},
+    tabs: {},
   });
 }
 
@@ -524,6 +553,23 @@ export function useDesktopRunHub() {
         if (listeners.size === 0) laneListeners.delete(key);
         void tellLanesSoon();
       };
+    },
+    /** The worker tabs of a live run of several workers; null for a run that shows none. */
+    tabsOf(ref: string): DesktopRunTabs | null {
+      return state.tabs[ref] ?? null;
+    },
+    /** The person shows a worker of a run behind its tabs, by its lane, until a stop is answered there. */
+    chooseTab(ref: string, lane: number): void {
+      const tabs = state.tabs[ref];
+      if (tabs) state.tabs[ref] = { ...tabs, shown: lane, advance: null };
+    },
+    /**
+     * The person resumes or ends the test of the worker in `lane` at the stop `since`: once it leaves that stop, the
+     * next stopped test takes the tab, when that worker is the one shown.
+     */
+    advanceTab(ref: string, lane: number, since: string | null): void {
+      const tabs = state.tabs[ref];
+      if (tabs && since !== null && tabs.shown === lane) state.tabs[ref] = { ...tabs, advance: since };
     },
     /** Hears each stop as a worker comes to it; returns the unsubscribe. */
     onStop(listener: (session: HubSession, worker: HubWorker) => void): () => void {

@@ -455,24 +455,6 @@ export function shortcutCommands(runs: readonly RunsRun[], hubs: readonly RunsHu
     .map(({ hub, session }) => ({ hub, ref: session.ref, worker: null, action: 'pause', since: null }));
 }
 
-/**
- * A run's own controls, for a run of several workers: Pause all while a worker runs a test it can stop in and no Pause
- * reached it, and Resume all while a test is stopped, each stopped worker at its own stop.
- */
-export function runLevelControls(run: RunsRun): { pauseAll: boolean; resumeAll: ShortcutCommand[] } {
-  const { hub, session } = run;
-  if (session.ended || session.workers.length < 2) return { pauseAll: false, resumeAll: [] };
-  const resumeAll = session.workers.flatMap((worker): ShortcutCommand[] =>
-    worker.state === 'stopped' && worker.stop
-      ? [{ hub, ref: session.ref, worker: worker.worker, action: 'resume', since: worker.stop.since }]
-      : [],
-  );
-  const pauseAll = session.workers.some(
-    (worker) => worker.state === 'running' && !worker.pausing && !worker.test?.cannotPause,
-  );
-  return { pauseAll, resumeAll: resumeAll.length > 1 ? resumeAll : [] };
-}
-
 /** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */
 export const RUNS_BOUNDS_KEY = 'runsWindowBounds';
 

@@ -19,6 +19,7 @@ import {
   STEERING,
   controlTitle,
   controlsOf,
+  runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
 import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
@@ -46,7 +47,6 @@ import {
   RUN_COMMAND,
   pageHintOf,
   shareRefusalOf,
-  runLevelControls,
   readRunsBounds,
   RUNS_BOUNDS_KEY,
   keyTargetOf,
@@ -1823,7 +1823,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   // One row under the name: Hold failures, from a hub that keeps it for each run, Pause all or Resume all, for a run of
   // several workers, and Stop the run, from a hub that stops it, while the run goes on and its hub is connected.
   const holds = session.hold && !session.ended && !away ? session.hold : null;
-  const level = away ? null : runLevelControls(run);
+  const level = away ? null : runLevelControls(run.session);
   const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
   const stoppable = !away && !!hub?.stops && canStopRun(session);
   if (holds || levelShown || stoppable) {

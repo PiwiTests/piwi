@@ -19,9 +19,13 @@ While a run goes on, the tray shows each worker's test, its Playwright project a
 **Pause** stops the test before its next call that acts on or checks the page. A test also stops at a `page.pause()`,
 and a headed one shows Piwi's [pause bar](./editor-breakpoints#pause-a-run) there.
 
-At a stop, the tray says why the test stopped, the call about to run and its place in your code, with an image of the
-page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish** runs the test to its
-end without stopping again, and [**End the test**](./end-the-test) skips the rest of it.
+At a stop, the tray says why the test stopped, the call about to run (**Next**) and its place in your code (**At**),
+with an image of the page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish**
+runs the test to its end without stopping again, and [**End the test**](./end-the-test) skips the rest of it.
+
+A run of several workers shows one at a time, behind a tab each (**worker 2**) marked with its state. A new stop takes
+the tab from a worker that runs unwatched, and **Resume** or **End the test** there moves it to the next stopped test.
+**Pause all** and **Resume all** steer every worker at once.
 
 **Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
 it, and **Resume** to let it end as it failed. It is on from the start for **Reproduce**, which runs to show you the
@@ -52,9 +56,8 @@ the output here**, brings the output back; the window closes with the app.
 ## Watch live
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. After **Step**, **Resume**
-or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
-update it.
+stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. Between two
+images, and with an older reporter: [Watch a running test](./watch-running-test).
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
 until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends your clicks, the wheel and your
@@ -97,17 +100,15 @@ run live](./share-live#from-the-desktop-app).
 
 ## From Piwi Picker
 
-Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s-runs) lists its runs beside your
-editor's, steers them, and watches their pages live. Code it starts at a stop of the app's run comes to the app's tray
-too.
+Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s-runs) follows and steers these runs
+too, and the code it makes at their stops comes to this tray.
 
 ## For agents
 
 The app's [MCP server](./mcp), which its **MCP server** page connects your coding agent to, serves these runs with
 the tools of [Run control for agents](./agent-run-control): `run_list`, `run_follow`, `run_control`,
-`page_snapshot`, `page_act`, `page_locator` and `code_write`. An agent follows a run, pauses or steps it, reads the
-stopped page as its ARIA snapshot and acts on it by ref, as you can and no further: a stopped page alone, the actions
-the tools name, no code to evaluate. What comes from the page reaches it marked as the page's, never as instructions.
+`page_snapshot`, `page_act`, `page_locator` and `code_write`. An agent follows a run, pauses or steps it, and reads
+and acts on the stopped page as you can and no further: [what keeps it safe](./agent-run-control#what-keeps-it-safe).
 
 What it does shows in the tray: a stop it asked for says so (**Paused by the agent**), and so does its first action
 at a stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under

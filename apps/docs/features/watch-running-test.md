@@ -21,7 +21,7 @@ stops it before its next call too. It needs `@piwitests/reporter` newer than 0.6
 | VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: **Piwi: worker 2** beside the editor | A headless stop of the worker shows there, with **Interact** and the pick on a click, instead of the paused page |
 | JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** beside it, for **Interact**, unless that tab holds another stop |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
-| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch-live) tray on it | The tray scrolls the stopped worker into view |
+| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch-live) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
 **Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and Watch a
 Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
@@ -31,8 +31,8 @@ workers to choose from, the editor asks which.
 
 Each view names the worker by its slot in the run (`Worker 2`) and says what it does: its running test, the call a Pause waits in, where it
 stopped, between tests, or starting. Across a **Step**, a **Resume** or between two tests, the last image stays until
-the next one comes, dimmed in VS Code, the Runs window and the desktop app. A page that does not change sends no new
-image.
+the next one comes, dimmed in VS Code, the Runs window and the desktop app, the last two marking it **Running…**. A
+page that does not change sends no new image.
 
 Watching pauses while the view is out of sight (another tab in front of an editor's panel or tab, a minimized Runs
 window) and starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
@@ -64,8 +64,8 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
   size and quality; when none can start, it is an image of the page twice a second.
 - **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a second; when even that is
   too heavy, the view says so in its place.
-- **An older reporter** shows a stopped test alone: the Runs window's row says to update it, and the editors offer no
-  Watch for its workers.
+- **An older reporter** shows a stopped test alone: the Runs window's row and the desktop app's tray hold their
+  **Watch**, saying to update it, and the editors offer no Watch for its workers.
 
 ## Related
 

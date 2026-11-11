@@ -7,12 +7,13 @@
  * the image unless a click took the keyboard, and Escape turns Interact off (`leave`). A Shift+click, or a click while
  * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the run model the
  * tray shares with Piwi Picker's Runs window (`@piwitests/run-model/view-input`, `pagePoint`). `dimmed` shows an image
- * that is no longer the page as it is now, and `mark` says over it what it shows.
+ * that is no longer the page as it is now, and `mark` says over it what it shows. It fills the width of its page card
+ * (`DesktopRunPageCard`), and while it takes the input, says how under it.
  */
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopImagePoint, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
+import { desktopImagePoint, desktopSay, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
 
 const props = defineProps<{
   alt: string;
@@ -20,8 +21,8 @@ const props = defineProps<{
   input: DesktopRunInputTarget | null;
   /** The image is the page as it last showed, not as it is now. */
   dimmed?: boolean;
-  /** What the mark over the image says: `Live`, with its dot, or `Running…`; none when null. */
-  mark?: 'Live' | 'Running…' | null;
+  /** What the mark over the image says: `Live`, with its dot, or `Running…` (`running`); none when null. */
+  mark?: 'live' | 'running' | null;
 }>();
 
 const emit = defineEmits<{
@@ -270,7 +271,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-show="viewport" class="space-y-2">
+  <div v-show="viewport">
     <div class="relative">
       <img
         ref="img"
@@ -278,7 +279,7 @@ onBeforeUnmount(() => {
         :tabindex="inputOn ? 0 : undefined"
         :data-stale="dimmed || undefined"
         draggable="false"
-        class="block w-full rounded-md border border-default focus-visible:outline-2 focus-visible:outline-primary select-none transition-opacity"
+        class="block w-full bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary select-none transition-opacity"
         :class="[dimmed ? 'opacity-50' : '', picking ? 'cursor-crosshair' : inputOn ? 'cursor-default' : '']"
         @pointerdown="onPointerDown"
         @mousedown="onMouseDown"
@@ -297,13 +298,12 @@ onBeforeUnmount(() => {
         aria-hidden="true"
         class="pointer-events-none absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-default/90 px-1.5 py-0.5 text-xs text-highlighted"
       >
-        <span v-if="mark === 'Live'" class="size-1.5 rounded-full bg-error" />
-        {{ mark }}
+        <span v-if="mark === 'live'" class="size-1.5 rounded-full bg-error" />
+        {{ desktopSay(mark === 'live' ? 'runs_liveBadge' : 'runs_laneRunning') }}
       </span>
     </div>
-    <p v-if="inputOn" class="text-xs text-muted">
-      Clicks and keys on the view go to the page. Escape turns Interact off and gives the stop back; Tab leaves unless a
-      click took it.
+    <p v-if="inputOn" class="px-2.5 py-1.5 border-t border-default text-xs text-muted">
+      {{ desktopSay('runs_liveHint') }}
     </p>
   </div>
 </template>

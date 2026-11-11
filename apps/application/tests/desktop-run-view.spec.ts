@@ -145,13 +145,23 @@ const TEST = {
 };
 
 function session(worker: Record<string, unknown>, ended = false) {
+  return sessionOf([worker], ended);
+}
+
+/** The hub's run with several workers. */
+function sessionOf(workers: Record<string, unknown>[], ended = false) {
   return {
     type: 'session',
-    session: { ref: REF, root: ROOT, label: 'acme', command: null, project: 'Acme', workers: [worker], ended },
+    session: { ref: REF, root: ROOT, label: 'acme', command: null, project: 'Acme', workers, ended },
   };
 }
 
 const RUNNING = { worker: 0, parallelIndex: 0, state: 'running', test: TEST, stop: null, pausing: false, intents: [] };
+
+/** The names of a page's live view, with and without the input, and of a watched lane's last image. */
+const LIVE = 'Live view of the test’s page';
+const LIVE_INPUT = 'Live view of the test’s page: keys and clicks go to the page';
+const LAST_SEEN = 'The test’s page, as last seen';
 
 /** A running worker whose reporter shows its lane while the test runs (`watch`). */
 const WATCHABLE = { ...RUNNING, intents: ['mock', 'view', 'input', 'pick-at', 'watch'] };
@@ -328,17 +338,17 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText("Click getByRole('button', { name: 'Pay' })")).toBeVisible();
     await expect(worker.getByText('tests/checkout.spec.ts:5')).toBeVisible();
     const still = worker.getByRole('img', {
-      name: "The page, stopped before Click getByRole('button', { name: 'Pay' })",
+      name: "The test’s page, stopped before: Click getByRole('button', { name: 'Pay' })",
     });
     await expect(still).toBeVisible();
     expect(commands.filter((c) => c.type === 'pausedPage')).toHaveLength(1);
     await expect(worker.getByRole('button')).toHaveText([
-      'Watch live',
-      'Pick on the image',
       'Resume',
       'Step',
       'Finish',
       'Mock a request',
+      'Watch live',
+      'Pick on the image',
     ]);
 
     // Watch live: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
@@ -354,13 +364,13 @@ test.describe('Desktop run live view', () => {
       (event) => window.__hub.send(event),
       session(stopped('s1', { intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'] })),
     );
-    await expect(worker.getByRole('img', { name: 'The page, live', exact: true })).not.toHaveAttribute('tabindex');
+    await expect(worker.getByRole('img', { name: LIVE, exact: true })).not.toHaveAttribute('tabindex');
     const interact = worker.getByRole('button', { name: 'Interact' });
     await expect(interact).toHaveAttribute('aria-pressed', 'false');
     // Interact sends the clicks and keys on the view to the page, and the first of them drives the stop.
     await interact.click();
     await expect(interact).toHaveAttribute('aria-pressed', 'true');
-    const view = worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
+    const view = worker.getByRole('img', { name: LIVE_INPUT });
     await expect(view).toBeVisible();
     await expect(view).toHaveAttribute('tabindex', '0');
     expect(commands.filter((c) => c.type === 'drive')).toEqual([]);
@@ -370,7 +380,7 @@ test.describe('Desktop run live view', () => {
     await page.keyboard.press('Escape');
     await expect(interact).toBeFocused();
     await expect(interact).toHaveAttribute('aria-pressed', 'false');
-    const watched = worker.getByRole('img', { name: 'The page, live', exact: true });
+    const watched = worker.getByRole('img', { name: LIVE, exact: true });
     await expect(watched).toBeVisible();
     await expect
       .poll(() => commands.filter((c) => c.type === 'drive'))
@@ -393,7 +403,7 @@ test.describe('Desktop run live view', () => {
 
     // Mock a request: the response chosen becomes a route, which comes to the window to copy, its imports apart.
     await worker.getByRole('button', { name: 'Mock a request' }).click();
-    const list = worker.getByRole('group', { name: 'Choose the response to mock' });
+    const list = worker.getByRole('group', { name: 'Choose the request to mock' });
     await list.getByRole('button', { name: /api\/cart/ }).click();
     await expect.poll(() => commands.find((c) => c.type === 'mock')).toMatchObject({ since: 's1', request: 1 });
     // Answered: the list closes, the buttons take a press again.
@@ -472,7 +482,7 @@ test.describe('Desktop run live view', () => {
       { ref: REF, data: image },
     );
     await expect(interact).toHaveAttribute('aria-pressed', 'true');
-    await expect(worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' })).toBeVisible();
+    await expect(worker.getByRole('img', { name: LIVE_INPUT })).toBeVisible();
     // Watch live off turns Interact off, and gives back the stop the window drives.
     const drove = { kind: 'desktop', name: 'the desktop app', self: true };
     await page.evaluate(
@@ -548,13 +558,13 @@ test.describe('Desktop run live view', () => {
 
     // End the test, which the stop takes: its reporter ends the test there, skipped.
     await expect(worker.getByRole('button')).toHaveText([
-      'Watch live',
-      'Pick on the image',
       'Resume',
       'Step',
       'Finish',
       'End the test',
       'Mock a request',
+      'Watch live',
+      'Pick on the image',
     ]);
     const end = worker.getByRole('button', { name: 'End the test' });
     await expect(end).toHaveAttribute('title', 'End the test here: the rest of it is skipped');
@@ -563,7 +573,7 @@ test.describe('Desktop run live view', () => {
       .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
       .toMatchObject({ ref: REF, worker: 0, action: 'end', since: 's2' });
 
-    // A failure: where it failed and its error, with Resume alone.
+    // A failure: where it failed and its error, with Resume alone; the hub offers no End the test there.
     await page.evaluate(
       (event) => window.__hub.send(event),
       session(
@@ -571,13 +581,16 @@ test.describe('Desktop run live view', () => {
           reason: 'failure',
           title: 'Failed: Error: expect failed',
           error: 'expect(locator).toBeVisible() failed',
-          intents: ['mock', 'view', 'pick-at', 'end'],
+          intents: ['mock', 'view', 'pick-at'],
         }),
       ),
     );
     await expect(worker.getByText('Failed at tests/checkout.spec.ts:5')).toBeVisible();
     await expect(worker.getByText('expect(locator).toBeVisible() failed')).toBeVisible();
-    await expect(worker.getByRole('button', { name: 'Resume' })).toHaveAttribute('title', 'End the test as it failed');
+    await expect(worker.getByRole('button', { name: 'Resume' })).toHaveAttribute(
+      'title',
+      'Let the test end as it failed',
+    );
     await expect(worker.getByRole('button', { name: 'Step' })).toHaveCount(0);
     await expect(worker.getByRole('button', { name: 'End the test' })).toHaveCount(0);
 
@@ -640,7 +653,7 @@ test.describe('Desktop run live view', () => {
       'Also open in Piwi Picker · An agent follows this run',
     );
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
-    await expect(worker.getByTestId('desktop-worker-watchers')).toHaveText('Watched by Piwi Picker and you');
+    await expect(worker.getByTestId('desktop-worker-watchers')).toHaveText('Watched by you and Piwi Picker');
 
     // A stop the agent asked for and drives: Take control drives it from this window.
     const agentStop = stopped('s1', { by: 'agent', driver: AGENT });
@@ -860,7 +873,7 @@ test.describe('Desktop run live view', () => {
         data: image,
       });
     await frame(null);
-    const live = lane.getByRole('img', { name: 'The page, live', exact: true });
+    const live = lane.getByRole('img', { name: LIVE, exact: true });
     await expect(live).toBeVisible();
     await expect(live).not.toHaveAttribute('data-stale');
     await expect(lane.getByText('Live', { exact: true })).toBeVisible();
@@ -874,17 +887,17 @@ test.describe('Desktop run live view', () => {
     await frame('s1');
     await expect(live).toBeVisible();
     await expect(worker.getByRole('button')).toHaveText([
-      'Watch',
-      'Interact',
-      'Pick on the image',
       'Resume',
       'Step',
       'Finish',
       'Mock a request',
+      'Watch',
+      'Interact',
+      'Pick on the image',
     ]);
     const laneInteract = lane.getByRole('button', { name: 'Interact' });
     await laneInteract.click();
-    const view = lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
+    const view = lane.getByRole('img', { name: LIVE_INPUT });
     await expect(view).toBeVisible();
     await view.click({ position: { x: 20, y: 20 } });
     await expect.poll(() => commands.find((c) => c.type === 'input')).toMatchObject({ since: 's1', worker: 0 });
@@ -906,7 +919,7 @@ test.describe('Desktop run live view', () => {
       .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
       .toMatchObject({ action: 'resume', since: 's1' });
     await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
-    const lastShown = lane.getByRole('img', { name: 'The page as it last showed' });
+    const lastShown = lane.getByRole('img', { name: LAST_SEEN });
     await expect(lastShown).toBeVisible();
     await expect(lastShown).toHaveAttribute('data-stale', 'true');
     await expect(lane.getByText('Running…', { exact: true })).toBeVisible();
@@ -935,12 +948,13 @@ test.describe('Desktop run live view', () => {
       .toMatchObject({ ref: REF, lane: 0, on: false });
     await expect(lane.getByRole('img')).toHaveCount(0);
 
-    // A worker whose reporter shows a stopped test alone offers no Watch, and says what would.
+    // A worker whose reporter shows a stopped test alone holds its Watch, and says what would show it.
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
-    await expect(watch).toHaveCount(0);
-    await expect(worker.getByTestId('desktop-watch-needs-update')).toHaveText(
-      'Update the reporter to watch a running test.',
-    );
+    const outdated = worker.getByTestId('desktop-watch-needs-update');
+    await expect(outdated).toHaveText('Watch');
+    await expect(outdated).toHaveAttribute('aria-disabled', 'true');
+    await expect(outdated).not.toHaveAttribute('aria-pressed');
+    await expect(outdated).toHaveAttribute('title', 'Update the reporter to watch a running test');
   });
 
   test('keeps the keyboard on the worker and the image honest as its lane stops, hides, refuses and leaves a test', async ({
@@ -965,8 +979,8 @@ test.describe('Desktop run live view', () => {
     const lane = worker.locator('[data-shot="desktop-run-lane"]');
     const watch = worker.getByRole('button', { name: 'Watch', exact: true });
     const watchLive = worker.getByRole('button', { name: 'Watch live' });
-    const live = lane.getByRole('img', { name: 'The page, live', exact: true });
-    const lastShown = lane.getByRole('img', { name: 'The page as it last showed' });
+    const live = lane.getByRole('img', { name: LIVE, exact: true });
+    const lastShown = lane.getByRole('img', { name: LAST_SEEN });
     const intents = ['mock', 'view', 'input', 'pick-at'];
     const atStop = (since: string, test: typeof TEST | null = TEST) =>
       session({ ...stopped(since, { intents }), intents: WATCHABLE.intents, test });
@@ -1196,11 +1210,9 @@ test.describe('Desktop run live view', () => {
         'Open Local runs on this test, where its page shows as it runs, and at each stop',
       );
       await watchLane.click();
-      await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      const shown = tray(page).locator(`[data-worker="${REF}|0"]`);
+      await expect(shown).toBeFocused();
+      await expect(shown.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
       await expect
         .poll(() => commands.filter((c) => c.type === 'watch').at(-1))
         .toMatchObject({ ref: REF, lane: 0, on: true, viewer: VIEWER });
@@ -1213,6 +1225,160 @@ test.describe('Desktop run live view', () => {
       );
       await expect(page.getByTestId('desktop-cannot-pause')).toHaveText(`This test never stops: ${never}`);
       await expect(page.getByRole('button', { name: 'Pause and watch' })).toHaveCount(0);
+    } finally {
+      await request.post(`/api/test-runs/${live.runId}/finish`, {
+        data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
+      });
+    }
+  });
+
+  test('shows a run of two workers one at a time, behind tabs a new stop takes and Resume moves on', async ({
+    page,
+    request,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const send = (event: unknown) => page.evaluate((e) => window.__hub.send(e), event);
+    const REFUNDS = { ...TEST, id: 't2', title: ['checkout', 'refunds'], line: 7 };
+    const first = RUNNING;
+    const second = { ...RUNNING, worker: 1, parallelIndex: 1, test: REFUNDS };
+    const firstAt = (since: string, extra: Record<string, unknown> = {}) => stopped(since, extra);
+    const secondAt = (since: string, extra: Record<string, unknown> = {}) => ({
+      ...stopped(since, extra),
+      worker: 1,
+      parallelIndex: 1,
+      test: REFUNDS,
+    });
+    const tabs = tray(page).getByRole('tablist', { name: 'Workers' });
+    const tab1 = tabs.getByRole('tab', { name: 'worker 1', exact: true });
+    const tab2 = tabs.getByRole('tab', { name: 'worker 2', exact: true });
+    const panel = (name: string) => tray(page).getByRole('tabpanel', { name, exact: true });
+
+    // Both run: a tab each, named by its lane and marked with its state, the first shown; Pause all pauses them.
+    await send(sessionOf([first, second]));
+    await expect(tabs.getByRole('tab')).toHaveText(['worker 1', 'worker 2']);
+    await expect(tab1).toHaveAttribute('aria-selected', 'true');
+    await expect(tab2).toHaveAttribute('aria-selected', 'false');
+    await expect(tab1).toHaveAttribute('data-status', 'running');
+    await expect(tab1).toHaveAttribute('title', 'Running');
+    await expect(panel('worker 1')).toContainText('checkout › pays');
+    await expect(panel('worker 2')).toBeHidden();
+    const controls = tray(page).getByRole('group', { name: 'Run controls' });
+    await expect(controls.getByRole('button')).toHaveText(['Pause all']);
+    await controls.getByRole('button', { name: 'Pause all' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ ref: REF, worker: null, action: 'pause', since: null });
+
+    // A stop takes the tab from a worker that runs, in its tone.
+    await send(sessionOf([first, secondAt('s1')]));
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+    await expect(tab2).toHaveAttribute('data-status', 'stopped');
+    await expect(tab2).toHaveAttribute('title', 'Paused');
+    await expect(panel('worker 2')).toContainText('checkout › refunds');
+    await expect(panel('worker 2')).toContainText('Paused');
+    await expect(panel('worker 1')).toBeHidden();
+
+    // One tab stop; the arrow keys, Home and End move between the tabs, showing each worker in turn.
+    await expect(tab1).toHaveAttribute('tabindex', '-1');
+    await expect(tab2).toHaveAttribute('tabindex', '0');
+    await tab2.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(tab1).toBeFocused();
+    await expect(tab1).toHaveAttribute('aria-selected', 'true');
+    await expect(panel('worker 1')).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await expect(tab2).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(tab1).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(tab2).toBeFocused();
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+
+    // A stop of the other worker leaves the tab with the stop shown, which the person answers; Resume all resumes both.
+    await send(sessionOf([firstAt('s2'), secondAt('s1')]));
+    await expect(tab1).toHaveAttribute('data-status', 'stopped');
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+    await expect(controls.getByRole('button')).toHaveText(['Resume all']);
+    // Resume there: once it goes on, the next stopped test takes the tab.
+    await panel('worker 2').getByRole('button', { name: 'Resume' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ worker: 1, action: 'resume', since: 's1' });
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+    await send(sessionOf([firstAt('s2'), second]));
+    await expect(tab1).toHaveAttribute('aria-selected', 'true');
+    await send(sessionOf([firstAt('s2'), secondAt('s3')]));
+    await expect(tab1).toHaveAttribute('aria-selected', 'true');
+    await controls.getByRole('button', { name: 'Resume all' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').slice(-2))
+      .toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ worker: 0, action: 'resume', since: 's2' }),
+          expect.objectContaining({ worker: 1, action: 'resume', since: 's3' }),
+        ]),
+      );
+
+    // A failure says so in its tab.
+    await send(sessionOf([firstAt('s2'), secondAt('s4', { reason: 'failure', error: 'expect failed' })]));
+    await expect(tab2).toHaveAttribute('data-status', 'failed');
+    await expect(tab2).toHaveAttribute('title', 'Failed, held at its line');
+
+    // The tray closed, a stop that opens it shows its worker's tab, whatever the tab showed.
+    await send(sessionOf([firstAt('s2'), second]));
+    await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+    await expect(tray(page)).toHaveCount(0);
+    await send(sessionOf([firstAt('s2'), secondAt('s5')]));
+    await expect(tray(page)).toBeVisible();
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+
+    // The run reports to this app, its second worker on the refunds test: the run page's Show its page shows that
+    // worker's tab, the focus on it.
+    await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toMatch(/^desktop:/);
+    const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+    const start = await retryPost(request, '/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_VIEW,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+      },
+    });
+    expect(start.ok()).toBeTruthy();
+    const live = (await start.json()) as { runId: number; streamToken: string };
+    try {
+      const begun = await retryPost(request, `/api/test-runs/${live.runId}/events`, {
+        data: {
+          streamToken: live.streamToken,
+          testCases: [
+            {
+              type: 'begin',
+              title: 'refunds',
+              location: 'tests/checkout.spec.ts:8:1',
+              workerIndex: 1,
+              startedAt: Date.now(),
+              browser: { projectName: 'chromium' },
+            },
+          ],
+        },
+      });
+      expect(begun.ok()).toBeTruthy();
+      await tray(page)
+        .getByRole('link', { name: `Open run #${live.runId}` })
+        .click({ timeout: 15_000 });
+      await expect(page).toHaveURL(new RegExp(`/test-runs/${live.runId}$`));
+      await page.getByRole('button', { name: '1 local run' }).click();
+      await tab1.click();
+      await expect(tab1).toHaveAttribute('aria-selected', 'true');
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await page.getByRole('button', { name: 'Show its page: checkout › refunds' }).click();
+      await expect(tab2).toHaveAttribute('aria-selected', 'true');
+      await expect(tray(page).locator(`[data-worker="${REF}|1"]`)).toBeFocused();
     } finally {
       await request.post(`/api/test-runs/${live.runId}/finish`, {
         data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
