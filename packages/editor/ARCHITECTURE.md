@@ -1203,7 +1203,11 @@ could), `startServer` hands `publish` what the file says:
 - the hub's address and token;
 - the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/hub.ts`
   follows the service one of whose `roots` holds the run, `editorForRun`);
-- the recorder bundle's path.
+- the recorder bundle's path;
+- `unattended`: the service knows a run nobody attends, which a piped run then follows;
+- `send`: where a run's picks go, the client's Send to editor pairing as it names it
+  (`InitializationOptions.runPairing`, `piwi/setRunPairing`), so a terminal's run posts **Pick a locator** to the
+  editor. The file is written again, in place, as the client names another.
 
 It hands `publish` null as it stops (`shutdown`, `exit`, the function `startServer` returns).
 

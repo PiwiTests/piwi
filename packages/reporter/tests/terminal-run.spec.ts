@@ -253,7 +253,7 @@ describe('a run started in a terminal', () => {
     expect(mains[0]!.main[0]).not.toHaveProperty('runner');
     expect(opened).toHaveLength(2);
     // The editor's channel is its record channel too: Record here and Assert are offered, Pick a locator, which needs
-    // the editor's pairing, is not.
+    // the editor's pairing, is not while its file names none.
     const takes = attach?.type === 'run-attach' ? attach.takes : [];
     expect(takes).toEqual(expect.arrayContaining(['record', 'assert', 'end']));
     expect(takes).not.toContain('pick');
@@ -314,6 +314,16 @@ describe('a run started in a terminal', () => {
       ref: expect.stringMatching(/^terminal-\d+-\d+-unattended$/),
     });
     expect(mainsOf(opened)).toHaveLength(1);
+  }, 60_000);
+
+  it('posts its picks to the editor whose file names where they go: Pick a locator is offered', async () => {
+    const send = { url: 'http://127.0.0.1:41003/piwi/send', token: 'editor-picks-token-0123456789' };
+    listEditors({ [`${process.pid}.json`]: discovery({ send }) });
+    listDesktop(null);
+    const { opened } = await run({ PIWI_EDITOR: 'on' });
+    const [attach] = workersOf(opened)[0]!.heard;
+    const takes = attach?.type === 'run-attach' ? attach.takes : [];
+    expect(takes).toEqual(expect.arrayContaining(['pick', 'record', 'assert']));
   }, 60_000);
 
   it('follows the desktop app whose linked folder holds it, with no editor, its picks going to the app', async () => {

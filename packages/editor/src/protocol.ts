@@ -585,7 +585,23 @@ export interface InitializationOptions {
    * configuration copied once still connects after a restart.
    */
   agents?: { enabled?: boolean; port?: number | null; token?: string | null };
+  /**
+   * Where a run's picks go, as `PIWI_EDITOR_SEND` names it (`<url>#<token>`, on the loopback interface): the service
+   * names it in its discovery file, so a run started in a terminal that follows the editor posts **Pick a locator**
+   * there. `piwi/setRunPairing` names it later, or again.
+   */
+  runPairing?: string;
 }
+
+/**
+ * `piwi/setRunPairing` (notification, client to server): where a run's picks go (`InitializationOptions.runPairing`),
+ * once the client knows it or as it changes; null for none.
+ */
+export interface SetRunPairingParams {
+  address: string | null;
+}
+
+export const SET_RUN_PAIRING_NOTIFICATION = 'piwi/setRunPairing';
 
 /**
  * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,

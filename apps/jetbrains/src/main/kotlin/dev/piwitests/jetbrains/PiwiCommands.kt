@@ -28,7 +28,6 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
-import org.jetbrains.ide.BuiltInServerManager
 import java.awt.datatransfer.StringSelection
 import java.net.URI
 import java.nio.file.Path
@@ -273,14 +272,7 @@ object PiwiCommands {
         command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
         val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
-        val address = if (pauses) {
-            runCatching {
-                val port = BuiltInServerManager.getInstance().waitForStart().port
-                "http://127.0.0.1:$port${PiwiSendHandler.PATH}#${PiwiSendToken.ensure()}"
-            }.getOrNull()
-        } else {
-            null
-        }
+        val address = if (pauses) PiwiSendHandler.runPairing() else null
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
         val args = Glue.playwrightTestArgs(line)
         if (args != null && project.service<PiwiProjectService>().local().playwrightRunner && PlaywrightRunnerGate.available()) {

@@ -362,6 +362,15 @@ class PiwiSendHandler : HttpRequestHandler() {
     companion object {
         const val PATH = "/api/piwi/send"
         const val LIVE_PATH = "/api/piwi/live"
+
+        /**
+         * Where a run posts a locator picked at its stop (`PIWI_EDITOR_SEND`): this endpoint on the built-in server's
+         * loopback port, with the pairing token; null when the server does not start. Call it off the event thread.
+         */
+        fun runPairing(): String? = runCatching {
+            val port = BuiltInServerManager.getInstance().waitForStart().port
+            "http://127.0.0.1:$port$PATH#${PiwiSendToken.ensure()}"
+        }.getOrNull()
         private val EXTENSION_ORIGIN = Regex("^(chrome|moz)-extension://.+")
 
         /** The answers carry `file: null` for a scratch file, as the VS Code extension's do. */

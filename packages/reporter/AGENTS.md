@@ -24,9 +24,10 @@ responsibilities.
      by an editor's test runner (`PW_TEST_REPORTER` naming a file), `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`
      (`terminal-<pid>-<time>`) of its hub, the editor whose workspace holds it, else the desktop app whose linked folder
      does (`internal/config/hub.ts`: never under CI, Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`), with
-     an editor's `PIWI_RECORD_CHANNEL` and the app's `PIWI_EDITOR_SEND` unless the run names its own, the ref ending in
-     `-unattended` for a run with no terminal nor test runner unless `PIWI_EDITOR=on` (such a run follows only an
-     editor whose discovery file says `unattended`), with one line saying so (`tests/terminal-run.spec.ts`); and
+     an editor's `PIWI_RECORD_CHANNEL`, and `PIWI_EDITOR_SEND` (the app's, or the pairing an editor's file names), unless
+     the run names its own, the ref ending in `-unattended` for a run with no terminal nor test runner unless
+     `PIWI_EDITOR=on` (such a run follows only an editor whose discovery file says `unattended`), with one line saying
+     so (`tests/terminal-run.spec.ts`); and
      outside CI `PIWI_STOP_NOTES`, the private file each worker notes its stops in for the run's stream
      (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
    - the one read of each worker's first page per project, on `about:blank` before the test navigates, through

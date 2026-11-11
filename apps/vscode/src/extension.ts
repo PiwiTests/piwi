@@ -79,6 +79,7 @@ import {
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
+  SET_RUN_PAIRING_NOTIFICATION,
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
@@ -93,6 +94,7 @@ import {
   type FailureSeverity,
   type McpAuthorization,
   type SetBaselineParams,
+  type SetRunPairingParams,
   type FileSummary,
   type McpServersResult,
   type AgentsParams,
@@ -446,6 +448,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // The extension's own log, kept when the client stops for a restart.
   const outputChannel = vscode.window.createOutputChannel('Piwi', { log: true });
   context.subscriptions.push(outputChannel);
+  /** Where a run's picks go (`runPairing` below), once known: the service names it again as it starts again. */
+  let runPairingAddress: string | null = null;
+  /** Tell the running service where a run's picks go, once `runPairing` exists. */
+  let announceRunPairing: (() => void) | null = null;
   const clientOptions: LanguageClientOptions = {
     outputChannel,
     // A failed request is logged, never a toast: the Failures view says when the service is down.
@@ -464,6 +470,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         port: context.workspaceState.get<number>(AGENTS_PORT) ?? null,
         token: agentsToken,
       },
+      // A run started in a terminal that follows this window posts its picks here: the service's discovery file says so.
+      ...(runPairingAddress ? { runPairing: runPairingAddress } : {}),
     }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
@@ -984,6 +992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     listen,
     started: (started) => {
       if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+      announceRunPairing?.();
     },
   });
   context.subscriptions.push(savedPort);
@@ -1017,6 +1026,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * port of the run's time when another window holds the saved one, which stays saved.
    */
   const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
+  announceRunPairing = () =>
+    void runPairing()
+      .then(async (address) => {
+        runPairingAddress = address;
+        if (lc.isRunning())
+          await lc.sendNotification(SET_RUN_PAIRING_NOTIFICATION, { address } satisfies SetRunPairingParams);
+      })
+      .catch(() => undefined);
 
   /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
   const breakpointsForRun = () =>
@@ -1741,6 +1758,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   recording = registerRecording(context, lc);
   context.subscriptions.push(recording);
   await lc.start();
+  announceRunPairing();
   showTestExplorer();
   await updateStatus();
   runControl.breakpointsChanged();
