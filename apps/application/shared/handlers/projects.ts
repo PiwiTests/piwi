@@ -632,6 +632,8 @@ export async function updateProject(
     gateStatus?: boolean;
     /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
     liveView?: boolean;
+    /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+    askToWatch?: boolean;
     /** Playwright locators of the elements the live view paints over, beside the secret fields; null or [] removes them. */
     liveViewMasks?: unknown;
     /** `GeneratedSpecSettings`; null clears them. */
@@ -668,6 +670,7 @@ export async function updateProject(
     quarantineFailsStatus,
     gateStatus,
     liveView,
+    askToWatch,
     liveViewMasks,
     generatedSpecs,
     targets,
@@ -725,6 +728,7 @@ export async function updateProject(
         quarantineFailsStatus,
         gateStatus,
         liveView,
+        askToWatch,
         liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,

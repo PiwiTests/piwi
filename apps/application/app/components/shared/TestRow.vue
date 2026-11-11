@@ -412,16 +412,6 @@ const clusterLabel = computed(() =>
             :project-name="projectName"
           />
           <span
-            v-else-if="liveShows === 'unshared'"
-            class="inline-flex items-center gap-1 text-xs text-muted"
-            data-testid="live-unshared"
-            @click.stop
-          >
-            <UIcon name="i-lucide-radio" class="size-3 shrink-0" />
-            Not shared live
-            <HelpHint topic="run.live-unshared" />
-          </span>
-          <span
             v-else-if="liveShows === 'desktop'"
             class="inline-flex items-center gap-1 text-xs text-muted"
             data-testid="live-at-stop"

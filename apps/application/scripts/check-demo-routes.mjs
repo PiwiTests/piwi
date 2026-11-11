@@ -102,6 +102,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
+  // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
+  // no reporter, so its simulated runs are never a run nobody shares.
+  'POST /api/test-runs/:id/live-view/ask',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',

@@ -4815,9 +4815,51 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     );
   const slowest = steps.reduce((a, b) => (ownMs(b) > ownMs(a) ? b : a));
 
+  // The run before it, from the same editor window, whose runs the developer shares live together: its test stood at
+  // the first breakpoint until they started it again, which cancelled it, so it stored no result. The paused run
+  // continues it (`continued_in_id`), and its page says so.
+  const earlierId = runId++;
   const id = runId++;
   const executionId = trcId++;
   const startTime = Math.floor(T / 1000);
+  const earlierStart = startTime - 4 * 60;
+  TEST_RUNS.push({
+    id: earlierId,
+    project_id: 1,
+    status: 'cancelled',
+    start_time: earlierStart,
+    duration: 9_000,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 0,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: null,
+    p90_test_duration: null,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.59.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    continued_in_id: id,
+    created_at: earlierStart,
+    updated_at: earlierStart + 9,
+  });
   TEST_RUNS.push({
     id,
     project_id: 1,
