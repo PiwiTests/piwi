@@ -588,6 +588,22 @@ describe('a link removed by hand', () => {
     expect(await dismissals(cluster)).toEqual([]);
   });
 
+  test('a removal with authentication off is recorded with no remover', async () => {
+    const cluster = await newCluster();
+    const first = await pin(cluster, 'PROJ-28', 'annotation');
+    const second = await pin(cluster, 'PROJ-29', 'annotation');
+
+    // With authentication off every request acts as user 0, which has no user row.
+    await deleteLink(db as never, first.id, 0);
+    await deleteLinksTo(db as never, 'failure_cluster', cluster, second.url, 0);
+
+    expect(await links(cluster)).toEqual([]);
+    expect(await dismissals(cluster)).toEqual([
+      expect.objectContaining({ key: 'PROJ-28', removedBy: null }),
+      expect.objectContaining({ key: 'PROJ-29', removedBy: null }),
+    ]);
+  });
+
   test('a pinned link is recorded by its key only', async () => {
     const cluster = await newCluster();
     const link = await pin(cluster, 'PROJ-23', 'pinned');

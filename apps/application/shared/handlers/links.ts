@@ -200,9 +200,11 @@ interface RemovedLink {
 /**
  * Record that a person removed a cluster's keyed links, so the step that links the issues a cluster's tests name
  * does not add them back. A link from the tests or a created one keeps the tracker's issue id, and its dismissal holds
- * after the issue moves to another key; a pinned link's dismissal keeps its key only.
+ * after the issue moves to another key; a pinned link's dismissal keeps its key only. User 0, the administrator every
+ * request acts as when authentication is off, has no user row, so its removal is recorded with no remover.
  */
 async function recordLinkDismissals(db: DrizzleDB, removed: RemovedLink[], removedBy: number | null): Promise<void> {
+  const remover = removedBy || null;
   for (const link of removed) {
     if (link.failureClusterId == null || !link.key) continue;
     const keepsId = isDeclaredLink(link) || link.origin === 'created';
@@ -212,7 +214,7 @@ async function recordLinkDismissals(db: DrizzleDB, removed: RemovedLink[], remov
         failureClusterId: link.failureClusterId,
         key: link.key,
         externalId: keepsId ? link.externalId : null,
-        removedBy,
+        removedBy: remover,
       })
       .onConflictDoNothing();
   }
