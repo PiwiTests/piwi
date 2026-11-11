@@ -103,9 +103,9 @@ const baseConfig = defineConfig({
     // (and so a no-op) when not targeting the desktop.
     extraHTTPHeaders: targetAuthHeaders(e2eTarget),
 
-    /* Trace on failure. A local run records per-action DOM, ARIA and screenshot snapshots and the
-       screencast, so the evidence timeline can show the page at each step. CI keeps the DOM snapshots
-       for the merged HTML report and records no screencast, ARIA or screenshot snapshots.
+    /* Trace on failure. A local run records per-action DOM, ARIA and screenshot snapshots, so the
+       evidence timeline can show the page at each step. CI keeps the DOM snapshots for the merged
+       HTML report and records no ARIA or screenshot snapshots and no screencast.
        See https://playwright.dev/docs/trace-viewer */
     trace: process.env.CI
       ? { mode: 'retain-on-failure', screenshots: false }
