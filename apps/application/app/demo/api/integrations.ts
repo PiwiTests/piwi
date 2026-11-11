@@ -9,6 +9,7 @@ import type {
   IssueDraft,
   IssueEntityType,
   TrackerIssueOption,
+  TrackerUserOption,
   TestManagementConnectionSummary,
   TrackerSummary,
 } from '#shared/integrations/types';
@@ -682,8 +683,23 @@ export function demoTransitionSample(from: 'open' | 'done'): TransitionSample {
   };
 }
 
-export function demoAssignable(): { users: { id: string; displayName: string }[] } {
-  return { users: [{ id: 'demo-account', displayName: 'Demo User' }] };
+/** The sample people the demo's Jira lets the connection assign: its own account first. */
+const DEMO_ASSIGNABLE: TrackerUserOption[] = [
+  { id: 'demo-account', displayName: 'Demo User', email: 'demo@example.com' },
+  { id: 'demo-alex', displayName: 'Alex Morgan', email: 'alex.morgan@example.com' },
+  { id: 'demo-priya', displayName: 'Priya Shah', email: 'priya.shah@example.com' },
+  { id: 'demo-sam', displayName: 'Sam Lee', email: 'sam.lee@example.com' },
+  { id: 'demo-jordan', displayName: 'Jordan Kim', email: 'jordan.kim@example.com' },
+];
+
+/**
+ * The demo people matching words of a name or an email, or the one person an
+ * account id names, like the server's search for assignable people.
+ */
+export function demoAssignable(query = '', accountId = ''): { users: TrackerUserOption[] } {
+  if (accountId) return { users: DEMO_ASSIGNABLE.filter((u) => u.id === accountId) };
+  const q = foldText(query.trim());
+  return { users: DEMO_ASSIGNABLE.filter((u) => !q || foldText(`${u.displayName} ${u.email}`).includes(q)) };
 }
 
 /** The demo's Jira issues a field can point at: an epic or two to parent a bug under. */

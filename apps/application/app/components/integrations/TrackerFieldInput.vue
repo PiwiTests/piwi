@@ -16,7 +16,7 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import type { AvatarProps } from '@nuxt/ui';
-import type { TrackerIssueOption, TrackerUserOption } from '#shared/integrations/types';
+import type { TrackerIssueOption } from '#shared/integrations/types';
 import { withTypedValue } from '~/utils/text-format';
 
 const props = defineProps<{
@@ -115,7 +115,16 @@ function addTag(text: string) {
 }
 
 // ── People, searched among the project's assignable users ─────────────────────
-const people = ref<TrackerUserOption[]>([]);
+const {
+  people,
+  loading: peopleLoading,
+  problem: peopleProblem,
+  searchSoon: searchPeopleSoon,
+  onOpen: onPeopleOpen,
+} = useAssignableSearch(
+  () => props.connectionId,
+  () => props.projectKey,
+);
 type PickerItem = { label: string; value: string; avatar?: AvatarProps };
 const peopleItems = computed((): PickerItem[] => {
   const items: PickerItem[] = people.value.map((u) => ({
@@ -151,19 +160,6 @@ const persons = computed({
         )
       : set(null, ''),
 });
-
-async function searchPeople(query = '') {
-  if (!props.connectionId || !props.projectKey) return;
-  try {
-    const params = new URLSearchParams({ project: props.projectKey, q: query });
-    const res = await $fetch<{ users: TrackerUserOption[] }>(
-      `/api/integrations/connections/${props.connectionId}/assignable?${params.toString()}`,
-    );
-    people.value = res.users;
-  } catch {
-    people.value = [];
-  }
-}
 
 // ── Issues, searched on the tracker: a parent, an epic ────────────────────────
 const issues = ref<TrackerIssueOption[]>([]);
@@ -275,32 +271,42 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     </template>
     <template #create-item-label="{ item }">Use {{ item.trim().toUpperCase() }}</template>
   </USelectMenu>
-  <USelectMenu
-    v-else-if="field.kind === 'user'"
-    v-model="person"
-    :items="peopleItems"
-    :avatar="personAvatar"
-    value-key="value"
-    searchable
-    :placeholder="placeholderFor('Search a person')"
-    :title="fullLabel"
-    class="w-full"
-    @update:open="(isOpen: boolean) => isOpen && searchPeople()"
-    @update:search-term="(q: string) => searchPeople(q)"
-  />
-  <USelectMenu
-    v-else-if="field.kind === 'user-array'"
-    v-model="persons"
-    :items="peopleItems"
-    value-key="value"
-    multiple
-    searchable
-    :placeholder="placeholderFor('Search people')"
-    :title="fullLabel"
-    class="w-full"
-    @update:open="(isOpen: boolean) => isOpen && searchPeople()"
-    @update:search-term="(q: string) => searchPeople(q)"
-  />
+  <div v-else-if="field.kind === 'user' || field.kind === 'user-array'" class="w-full min-w-0 space-y-1">
+    <USelectMenu
+      v-if="field.kind === 'user'"
+      v-model="person"
+      :items="peopleItems"
+      :avatar="personAvatar"
+      value-key="value"
+      ignore-filter
+      :loading="peopleLoading"
+      :placeholder="placeholderFor('Search a person')"
+      :title="fullLabel"
+      class="w-full"
+      @update:open="onPeopleOpen"
+      @update:search-term="(q: string) => searchPeopleSoon(q)"
+    />
+    <USelectMenu
+      v-else
+      v-model="persons"
+      :items="peopleItems"
+      value-key="value"
+      multiple
+      ignore-filter
+      :loading="peopleLoading"
+      :placeholder="placeholderFor('Search people')"
+      :title="fullLabel"
+      class="w-full"
+      @update:open="onPeopleOpen"
+      @update:search-term="(q: string) => searchPeopleSoon(q)"
+    />
+    <CheckResultLine
+      v-if="peopleProblem"
+      :state="peopleProblem.state"
+      :text="peopleProblem.text"
+      :hint="peopleProblem.hint"
+    />
+  </div>
   <UInputMenu
     v-else-if="field.kind === 'string-array' || field.kind === 'group-array'"
     v-model="tags"

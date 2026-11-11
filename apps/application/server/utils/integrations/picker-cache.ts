@@ -15,6 +15,11 @@ const TTL_MS = 5 * 60 * 1000;
 export const projectsCache = new TtlCache<TrackerProject[]>(TTL_MS);
 export const issueTypesCache = new TtlCache<TrackerIssueType[]>(TTL_MS);
 export const assignableCache = new TtlCache<TrackerUser[]>(TTL_MS);
+/**
+ * A failed search for assignable people, kept for 30 seconds by connection and project (and the account a lookup
+ * names), so the next searches in that picker answer from it instead of calling Jira again.
+ */
+export const assignableFailureCache = new TtlCache<{ message: string; providerStatus: number | null }>(30 * 1000);
 export const createFieldsCache = new TtlCache<TrackerField[]>(TTL_MS);
 export const transitionsCache = new TtlCache<TransitionSample>(TTL_MS);
 /** Issues come and go faster than projects: an issue filed a minute ago is found. */

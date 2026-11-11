@@ -321,8 +321,14 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
               class="w-full"
             />
           </UFormField>
-          <UFormField label="Default assignee (account id)">
-            <UInput v-model="form.defaultAssignee" placeholder="Jira account id" class="w-full" />
+          <UFormField label="Default assignee">
+            <TrackerAssigneePicker
+              :model-value="form.defaultAssignee || undefined"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+              data-testid="binding-default-assignee"
+              @update:model-value="(id) => (form.defaultAssignee = id ?? '')"
+            />
           </UFormField>
           <UFormField label="Labels" description="Comma-separated; added to every ticket.">
             <UInput v-model="form.labels" placeholder="team-checkout, e2e" class="w-full" />
@@ -496,11 +502,18 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
           <div v-if="form.ownerRoutes.length === 0" class="text-xs text-muted">
             No routes — every cluster uses the defaults.
           </div>
-          <div v-for="(route, i) in form.ownerRoutes" :key="i" class="grid gap-2 sm:grid-cols-5 mb-2 items-center">
+          <div v-for="(route, i) in form.ownerRoutes" :key="i" class="grid gap-2 sm:grid-cols-5 mb-2 items-start">
             <UInput v-model="route.owner" placeholder="@team or email" size="xs" />
             <UInput v-model="route.projectKey" placeholder="project key" size="xs" />
             <UInput v-model="route.componentId" placeholder="component id" size="xs" />
-            <UInput v-model="route.assigneeAccountId" placeholder="assignee id" size="xs" />
+            <TrackerAssigneePicker
+              :model-value="route.assigneeAccountId || undefined"
+              :connection-id="form.connectionId"
+              :project-key="route.projectKey || form.projectKey"
+              placeholder="Default assignee"
+              size="xs"
+              @update:model-value="(id) => (route.assigneeAccountId = id ?? '')"
+            />
             <UButton
               icon="i-lucide-trash-2"
               size="xs"
