@@ -63,9 +63,17 @@ vi.stubGlobal(
         });
       case '/rest/api/3/user/assignable/search':
         assignableSearches.push(url.searchParams);
-        // The LOCKED project stands for an account that may not browse users.
-        if (url.searchParams.get('project') === 'LOCKED') {
-          return json({ errorMessages: ['You do not have permission to browse users'] }, 403);
+        // The LOCKED project stands for an account that may not browse users; SLOW for a Jira that never answers in
+        // time, OFFLINE for one this server cannot reach, BROKEN for a fault that is not about Jira at all.
+        switch (url.searchParams.get('project')) {
+          case 'LOCKED':
+            return json({ errorMessages: ['You do not have permission to browse users'] }, 403);
+          case 'SLOW':
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+          case 'OFFLINE':
+            throw new TypeError('fetch failed');
+          case 'BROKEN':
+            throw new RangeError('not about Jira');
         }
         return json([{ accountId: `${site}-1`, displayName: `${site} person` }]);
       case '/rest/api/3/issue/picker':
@@ -268,18 +276,53 @@ describe('the routes that read a tracker through a connection', () => {
 describe('the search for assignable people', () => {
   const search = (query: Record<string, string>) => ROUTES.assignable.call(request({}, query)(billingJira));
 
-  test("answers a tracker's refusal with a 502 that carries the tracker's status, and caches nothing", async () => {
+  const failure = async (query: Record<string, string>) =>
+    (await search(query).then(
+      () => null,
+      (e: unknown) => e,
+    )) as { statusCode: number; message: string; data: Record<string, unknown> } | null;
+
+  test("answers a tracker's refusal with a 502 that carries the tracker's status, and repeats it for 30 seconds", async () => {
     state.caller = sam;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const error = (await search({ project: 'LOCKED', q: '' }).then(
-        () => null,
-        (e: unknown) => e,
-      )) as { statusCode: number; message: string; data: Record<string, unknown> } | null;
-      expect(error?.statusCode).toBe(502);
-      expect(error?.message).toContain('403');
-      expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const error = await failure({ project: 'LOCKED', q: '' });
+        expect(error?.statusCode).toBe(502);
+        expect(error?.message).toContain('403');
+        expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+      }
+      expect(assignableSearches).toHaveLength(1);
+      vi.advanceTimersByTime(31 * 1000);
+      expect((await failure({ project: 'LOCKED', q: '' }))?.statusCode).toBe(502);
+      expect(assignableSearches).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(assignableSearches).toHaveLength(2);
+  });
+
+  test.each([
+    ['times out', 'SLOW'],
+    ['cannot reach Jira', 'OFFLINE'],
+  ])('answers a search that %s with a 502 without a tracker status', async (_, project) => {
+    state.caller = sam;
+    const error = await failure({ project, q: '' });
+    expect(error?.statusCode).toBe(502);
+    expect(error?.message).toBe('Jira did not answer the search for assignable people.');
+    expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: null });
+  });
+
+  test('lets any other fault through as it is', async () => {
+    state.caller = sam;
+    const error = await failure({ project: 'BROKEN', q: '' });
+    expect(error).toBeInstanceOf(RangeError);
+  });
+
+  test('trims the words and cuts them at 200 characters', async () => {
+    state.caller = sam;
+    await search({ project: 'PAY', q: `  ${'a'.repeat(250)}  ` });
+    await search({ project: 'PAY', q: 'a'.repeat(200) });
+    expect(assignableSearches.map((params) => params.get('query'))).toEqual(['a'.repeat(200)]);
   });
 
   test('caches an answer for the same words', async () => {
