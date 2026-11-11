@@ -1,0 +1,8 @@
+{
+  "_spec": "AutomationExecutionsResponse (testCycle: id, key, url)",
+  "testCycle": {
+    "id": 3001,
+    "key": "SHOP-R42",
+    "url": "https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42"
+  }
+}

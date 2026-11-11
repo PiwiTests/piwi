@@ -7,8 +7,9 @@ lang: en-US
 # Zephyr Scale Cloud
 
 Connect Zephyr Scale Cloud, the test management app for Jira, to the dashboard, and bind a project to a Zephyr
-project. Piwi sends no test results to Zephyr Scale yet: it reads the project's test cases, and the connection holds
-the token in one place, managed by an administrator.
+project. Piwi reads the project's test cases and, once the binding is live, writes a finished run's results back as
+one test run ([Results in Zephyr Scale](/features/test-management)). The connection holds the token in one place,
+managed by an administrator.
 
 A connection is instance infrastructure, like an [issue tracker connection](./integrations): one row per external
 system, shared by every project, with its token encrypted at rest with `PIWI_SECRET_KEY`. Zephyr Scale is never
@@ -40,11 +41,12 @@ to add one. Pick the **Connection** and the **Project** key, then **Save**. The 
 kept apart from the issue tracker binding, so saving one never changes the other.
 
 - **Enabled** keeps the binding but pauses its use.
-- **Dry run** is on for a new binding. Piwi sends nothing to Zephyr Scale either way for now.
+- **Dry run** is on for a new binding. A run's page then shows what would be sent and nothing reaches Zephyr Scale;
+  turn it off to send. See [Results in Zephyr Scale](/features/test-management).
 - **Where a test’s case key comes from** is its tags, its external ID, or both. A key is a tag or an ID that
   matches the project's test case key pattern, such as `SHOP-T123`, with no `@`.
 - **Runs in scope** picks the branches and environments the binding covers, as the issue tracker binding does.
-- **Result statuses** name the statuses Piwi would use for a pass, a fail, a flaky test and a test not executed, and
+- **Result statuses** name the statuses Piwi uses for a pass, a fail, a flaky test and a test not executed, and
   how a flaky or skipped test is reported. The pickers list the statuses and folders of the chosen project; typing a
   name the tool does not list is allowed. A flaky status is needed to report flaky tests as `flaky`.
 - **Add the first line of the error** to a failed result is off by default, because an error message can carry data
@@ -106,6 +108,7 @@ Project admin on the project; the hover cards need only read access to it.
 
 ## Related
 
+- [Results in Zephyr Scale](/features/test-management): when a run is sent, what is sent and Sync again
 - [Integrations](./integrations): the Jira Cloud connection and how connections are managed
 - [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts the stored token
 - [Configuration reference](/reference/configuration#integrations): the integration variables

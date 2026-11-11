@@ -70,14 +70,29 @@ export interface UploadRunInput {
 export interface TmRun {
   key: string;
   id: string;
+  /** The run's page in the tool, or '' when the tool names none. Zephyr Scale answers with an API address only. */
   url: string;
 }
 
 /** The facts a retry uses to recognize a run an earlier attempt created. */
 export interface RunMarker {
   runId: number;
+  /** When to start looking for the run, an ISO time: the run's start, or the attempt's when the run has none. */
   startedAt: string;
+  /** A test case the run reported on, whose executions lead to the run. */
+  testCaseKey: string;
+  /** The name the run was given. */
+  name: string;
 }
+
+/**
+ * What a look for an earlier upload's test run found: the run, none, or no answer Piwi can trust, with why. Only
+ * `not-found` lets the results be uploaded again.
+ */
+export type FindRunOutcome =
+  | { outcome: 'found'; run: TmRun }
+  | { outcome: 'not-found' }
+  | { outcome: 'unsure'; reason: string };
 
 export interface TestManagementProvider {
   readonly provider: TestManagementProviderName;
@@ -89,8 +104,8 @@ export interface TestManagementProvider {
   /** The folders a test run can be filed under. */
   listFolders(projectKey: string): Promise<TmFolder[]>;
   uploadRun?(input: UploadRunInput): Promise<TmRun>;
-  findRun?(projectKey: string, marker: RunMarker): Promise<TmRun | null>;
-  linkRun?(run: TmRun, link: { url: string; title: string }): Promise<void>;
+  findRun?(projectKey: string, marker: RunMarker): Promise<FindRunOutcome>;
+  linkRun?(run: Pick<TmRun, 'key'>, link: { url: string; title: string }): Promise<void>;
   /** The web address of a test case, or null when the tool documents none. */
   caseUrl?(key: string): string | null;
 }

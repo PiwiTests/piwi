@@ -340,6 +340,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-issues',
       },
       {
+        title: 'Results in Zephyr Scale',
+        summary:
+          'A finished CI run of the whole suite written to Zephyr Scale Cloud as one test run, one result per test case key, with a dry run first and a link back to the run.',
+        needs: ['admin'],
+        where: 'Project → Settings → Test management; run page',
+        doc: 'features/test-management',
+      },
+      {
         title: 'Issue automation',
         summary:
           'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',

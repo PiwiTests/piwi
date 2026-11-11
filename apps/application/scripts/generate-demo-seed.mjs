@@ -5586,6 +5586,11 @@ const REBASE_SQL = [
   `UPDATE project_test_management SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE test_management_cases SET fetched_at = fetched_at + ${D_MS};`,
   `UPDATE test_management_catalog_reads SET fetched_at = fetched_at + ${D_MS};`,
+  `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS}, ` +
+    `result = json_set(result, '$.uploadStartedAt', json_extract(result, '$.uploadStartedAt') + ${D_MS}) ` +
+    `WHERE json_extract(result, '$.uploadStartedAt') IS NOT NULL;`,
+  `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS} ` +
+    `WHERE json_extract(result, '$.uploadStartedAt') IS NULL;`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
@@ -5602,6 +5607,8 @@ const REBASE_SQL = [
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS}, snoozed_until = snoozed_until + ${D_MS};`,
   '',
   '-- ISO timestamps embedded in JSON columns',
+  `UPDATE integration_actions SET payload = json_set(payload, '$.startedAt', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(payload, '$.startedAt'), '+' || ${D} || ' seconds'));`,
   `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
     `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
     `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
@@ -6907,6 +6914,132 @@ const TEST_MANAGEMENT_CATALOG_READS = [
   },
 ];
 
+// The newest eligible runs of the checkout project carry the results sync the run page shows: the newest was a dry run,
+// the one before it went to the tool and made a test run there, and the third's upload ended without an answer. A run is
+// eligible on the default branch, whole, and ended as passed or failed. Each payload is what `buildSyncPayload` makes of
+// the run's tests: the worst result of each key the catalog holds, the keys it does not hold listed apart.
+const TEST_MANAGEMENT_KNOWN_KEYS = new Set(DEMO_TEST_MANAGEMENT_CASES.map((c) => c.key));
+const TEST_MANAGEMENT_KEY_PATTERN = /^SHOP-T\d+$/;
+function demoSyncPayload(run) {
+  const rows = TEST_RUNS_CASES.filter((r) => r.test_run_id === run.id && r.status !== 'did-not-run');
+  const worst = new Map();
+  const unknown = new Set();
+  let unmapped = 0;
+  for (const row of rows) {
+    const keys = JSON.parse(row.tags ?? '[]').filter((t) => TEST_MANAGEMENT_KEY_PATTERN.test(t));
+    if (keys.length === 0) unmapped++;
+    for (const key of keys) {
+      if (!TEST_MANAGEMENT_KNOWN_KEYS.has(key)) {
+        unknown.add(key);
+        continue;
+      }
+      if (worst.get(key) !== 'failed') worst.set(key, row.status === 'failed' ? 'failed' : 'passed');
+    }
+  }
+  const results = [...worst].map(([key, status]) => ({ key, status: status === 'failed' ? 'Fail' : 'Pass' }));
+  const name = `Automation · ${run.branch} · ${run.environment} · Piwi #${run.id}`;
+  return {
+    runId: run.id,
+    runUrl: null,
+    providerProjectKey: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    startedAt: new Date(run.start_time * 1000).toISOString(),
+    run: { name, description: `Piwi run #${run.id}, ${run.branch}, ${run.environment}` },
+    results,
+    unknownKeys: [...unknown],
+    unknownKeyCount: unknown.size,
+    unmappedCount: unmapped,
+    tagsTruncated: 0,
+    counts: {
+      passed: results.filter((r) => r.status === 'Pass').length,
+      failed: results.filter((r) => r.status === 'Fail').length,
+      flaky: 0,
+      notExecuted: 0,
+    },
+    dryRun: false,
+  };
+}
+const SYNC_RUNS = TEST_RUNS.filter(
+  (r) => r.project_id === 1 && r.branch === 'main' && r.is_full_run === 1 && ['passed', 'failed'].includes(r.status),
+)
+  .sort((a, b) => b.start_time - a.start_time)
+  .slice(0, 3);
+const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
+  const payload = demoSyncPayload(run);
+  const endedMs = run.start_time * 1000 + run.duration + 4000;
+  const base = {
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    project_id: 1,
+    kind: 'sync-results',
+    entity_type: 'test_run',
+    entity_id: run.id,
+    dedupe_key: `sync-results:test_run:${run.id}:conn${DEMO_TEST_MANAGEMENT_CONNECTION_ID}`,
+    attempts: 1,
+    scheduled_for: null,
+    requested_by: null,
+    created_at: endedMs,
+    finished_at: endedMs + 2000,
+  };
+  if (index === 0) {
+    const { run: runFacts, results, unknownKeys, unknownKeyCount, unmappedCount, tagsTruncated, counts } = payload;
+    const sent = { run: runFacts, results, unknownKeys, unknownKeyCount, unmappedCount, tagsTruncated, counts };
+    return {
+      ...base,
+      status: 'done',
+      error: null,
+      payload: { ...payload, dryRun: true },
+      result: { dryRun: true, payload: { ...sent, dryRun: true } },
+    };
+  }
+  if (index === 1) {
+    const runKey = `${DEMO_TEST_MANAGEMENT_PROJECT_KEY}-R${run.id}`;
+    return {
+      ...base,
+      status: 'done',
+      error: null,
+      payload,
+      result: {
+        uploadStartedAt: endedMs + 500,
+        runKey,
+        runUrl: '',
+        sent: payload.results.length,
+      },
+    };
+  }
+  return {
+    ...base,
+    status: 'failed',
+    error: `Outcome unknown: check the test management tool for a test run named "${payload.run.name}", then use Sync again`,
+    payload,
+    result: { uploadStartedAt: endedMs + 500 },
+  };
+});
+{
+  const synced = INTEGRATION_ACTIONS.find((a) => a.status === 'done' && !a.result.dryRun);
+  const payload = synced?.payload;
+  if (synced) {
+    ENTITY_LINKS.push({
+      id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
+      test_run_id: synced.entity_id,
+      test_runs_case_id: null,
+      test_case_id: null,
+      url: synced.result.runUrl,
+      provider: 'zephyr-scale',
+      key: synced.result.runKey,
+      title: payload.run.name,
+      status_text: null,
+      status_color: null,
+      metadata: null,
+      unfurled_at: null,
+      connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      external_id: null,
+      origin: 'created',
+      created_by: null,
+      created_at: synced.finished_at,
+      updated_at: synced.finished_at,
+    });
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -6951,6 +7084,7 @@ const lines = [
   insert('project_test_management', PROJECT_TEST_MANAGEMENT),
   insert('test_management_cases', TEST_MANAGEMENT_CASES),
   insert('test_management_catalog_reads', TEST_MANAGEMENT_CATALOG_READS),
+  insert('integration_actions', INTEGRATION_ACTIONS),
   '',
   '-- Project URL patterns (browser extension)',
   insert('project_url_patterns', PROJECT_URL_PATTERNS),

@@ -16,6 +16,7 @@ export const ACTION_INTEGRATION_KINDS = {
   'update-issue': 'tracker',
   attach: 'tracker',
   transition: 'tracker',
+  'sync-results': 'test-management',
 } as const satisfies Record<string, IntegrationKind>;
 
 /** The integration kind of an outbox action, or null for an action kind the outbox does not run. */
@@ -46,6 +47,11 @@ export function createIssueSubmissionKey(
   submissionId: string,
 ): string {
   return `${createIssueKey(entityType, entityId, connectionId)}:s${submissionId}`;
+}
+
+/** One results sync per (test run, connection): the end-of-run write to a test management tool. */
+export function syncResultsDedupeKey(runId: number, connectionId: number): string {
+  return `sync-results:test_run:${runId}:conn${connectionId}`;
 }
 
 /** Whether an action's error is an Outcome unknown: the create may have reached the tracker. */

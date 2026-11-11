@@ -11,6 +11,7 @@ export type LinkProvider =
   | 'slack'
   | 'linear'
   | 'notion'
+  | 'zephyr-scale'
   | 'generic';
 
 /**
@@ -110,6 +111,7 @@ export function getProviderIcon(provider: LinkProvider): string {
     slack: 'i-simple-icons-slack',
     linear: 'i-simple-icons-linear',
     notion: 'i-simple-icons-notion',
+    'zephyr-scale': 'i-lucide-list-checks',
     generic: 'i-lucide-link',
   };
   return icons[provider];
@@ -128,6 +130,7 @@ export function getProviderName(provider: LinkProvider): string | null {
     slack: 'Slack',
     linear: 'Linear',
     notion: 'Notion',
+    'zephyr-scale': 'Zephyr Scale',
     generic: null,
   };
   return names[provider] ?? null;

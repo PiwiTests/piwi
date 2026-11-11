@@ -1,9 +1,16 @@
 import { and, eq } from 'drizzle-orm';
-import { testManagementCases, testManagementCatalogReads } from '~~/server/database/schema';
+import { integrationActions, testManagementCases, testManagementCatalogReads } from '~~/server/database/schema';
 import {
   readTestManagementBinding,
   writeTestManagementBinding,
 } from '~~/server/utils/integrations/test-management/binding';
+import { writeCreatedIssueLink } from '~~/server/utils/integrations/entity-links';
+import { findFailedSync } from '~~/server/utils/integrations/test-management/sync-again';
+import {
+  syncAgainRefusedMessage,
+  syncBindingMismatch,
+  type SyncActionPayload,
+} from '#shared/integrations/test-management-sync';
 import { lookupCatalogCases } from '#shared/handlers/test-management-cases';
 import { testManagementKeyConfig, testManagementMappingSummary } from '#shared/handlers/test-management-summary';
 import {
@@ -120,4 +127,45 @@ export async function demoTestManagementCases(db: DrizzleDB, projectId: number, 
   const keys = parseCatalogLookupKeys(rawKeys);
   if (!keys) throw demoHttpError(400, CATALOG_LOOKUP_KEYS_MESSAGE);
   return await lookupCatalogCases(db, projectId, keys, () => null);
+}
+
+/**
+ * Send a run's failed results sync again, as the canned tool takes it: the sync is done, and the test run the canned tool
+ * made is linked to the run. Nothing is looked up or called. Refused, as on the server, while the project's binding no
+ * longer takes the sync.
+ */
+export async function sendDemoRunSync(db: DrizzleDB, runId: number) {
+  const action = await findFailedSync(db as never, runId);
+  if (!action) throw demoHttpError(409, 'This run has no failed results sync');
+  const payload = action.payload as SyncActionPayload;
+  const refused = syncBindingMismatch(await readTestManagementBinding(db as never, action.projectId), {
+    connectionId: action.connectionId,
+    providerProjectKey: payload.providerProjectKey,
+    dryRun: payload.dryRun === true,
+  });
+  if (refused) throw demoHttpError(409, syncAgainRefusedMessage(refused));
+  const runKey = `${payload.providerProjectKey}-R${runId}`;
+  const result = { runKey, runUrl: '', sent: payload.results.length };
+  await db.transaction(async (tx) => {
+    await writeCreatedIssueLink(tx as never, {
+      entityType: 'test_run',
+      entityId: runId,
+      connectionId: action.connectionId,
+      createdBy: action.requestedBy ?? null,
+      issue: {
+        provider: 'zephyr-scale',
+        url: '',
+        key: runKey,
+        externalId: null,
+        title: payload.run.name,
+        statusText: null,
+        statusColor: null,
+      },
+    });
+    await tx
+      .update(integrationActions)
+      .set({ status: 'done', result: result as never, error: null, finishedAt: new Date() })
+      .where(eq(integrationActions.id, action.id));
+  });
+  return { status: 'done' as const, result };
 }
