@@ -37,7 +37,8 @@
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
-import { firstWaiting, runsAttention, type AttentionRun } from '@piwitests/run-model/attention';
+import { firstWaiting, runsAttention } from '@piwitests/run-model/attention';
+import { desktopEditorRuns } from '#shared/desktop-runs';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,
@@ -237,11 +238,14 @@ export default defineNuxtPlugin(() => {
 
   // The server resends a fresh snapshot on each (re)connection, which re-seeds
   // `active` without extra work here.
+  const editorRuns = useDesktopEditorRuns();
   subscribeDesktopEvents((message) => {
     if (message.type !== 'editor-runs') return handle(message as unknown as LiveRunMessage);
-    // An editor's test that waits at a stop shows on the bar and the dot, as the app's do; it opens in its editor.
-    const runs = Array.isArray(message.runs) ? (message.runs as Array<{ session?: AttentionRun }>) : [];
-    const now = runsAttention(runs.flatMap((run) => (run.session ? [run.session] : [])))?.waiting ?? 0;
+    // An editor's test that waits at a stop shows on the bar and the dot, as the app's do; it opens in its editor. The
+    // run page shows where its own run's tests wait (`DesktopEditorRunNote`).
+    const runs = desktopEditorRuns(message.runs);
+    editorRuns.value = runs;
+    const now = runsAttention(runs.map((run) => run.session))?.waiting ?? 0;
     if (now === editorWaiting) return;
     editorWaiting = now;
     // A flash keeps its moment: the bar counts them once it ends.

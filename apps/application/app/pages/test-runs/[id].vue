@@ -23,6 +23,7 @@ import {
   type FinalRefetchFailure,
 } from '~/utils/refetch-keeping';
 import { runReadEndedNotice } from '~/utils/run-read-ended';
+import { desktopEditorRunOf } from '~/utils/desktop-run-view';
 import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
@@ -242,6 +243,14 @@ const desktopSessions = useDesktopRunSessions(() => ({
   kind: runOrigin(testRun.value?.metadata),
   ref: runOriginRef(testRun.value?.metadata),
 }));
+// The runs of an editor of this machine that report to this page, as the desktop app's server observes them: the
+// page says where their tests wait, which the editor answers. Matched by the run's page on this app's own server.
+const editorRuns = useDesktopEditorRuns();
+const editorRunsHere = computed(() =>
+  isDesktop && import.meta.client
+    ? editorRuns.value.filter((run) => desktopEditorRunOf(run.session, Number(runId), window.location.origin))
+    : [],
+);
 // The worker someone opened Watch on, its lane, and the execution of the row they opened it from (null when the
 // page's address opened it): the view starts on that test, and follows the lane's next tests when the worker says
 // its lane.
@@ -1415,6 +1424,7 @@ const moreMenuItems = computed(() => {
               @label-updated="reloadRunAsked"
             />
             <DesktopRunHome v-if="isDesktop && isLive && testRun" :run-id="testRun.id" :sessions="desktopSessions" />
+            <DesktopEditorRunNote v-if="isLive && editorRunsHere.length" :runs="editorRunsHere" />
           </template>
 
           <template #tab-test-cases>

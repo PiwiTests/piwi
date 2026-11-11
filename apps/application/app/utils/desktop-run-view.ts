@@ -333,6 +333,23 @@ export function desktopSessionsOfRun(
   return sessions.filter((session) => entry.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
+/**
+ * Whether an editor's run reports to the run `runId` of the server at `origin`: its page (`HubSession.page`) is that
+ * run's on that server, never a run of the same number on the team instance.
+ */
+export function desktopEditorRunOf(
+  session: Pick<HubSession, 'page' | 'ended'>,
+  runId: number,
+  origin: string,
+): boolean {
+  if (session.ended || session.page?.id !== runId) return false;
+  try {
+    return new URL(session.page.url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 /** A running row of a run's page, as far as finding the worker that runs its test goes. */
 interface DesktopRunRow {
   status: string;

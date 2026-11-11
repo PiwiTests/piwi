@@ -9,6 +9,7 @@
  */
 import { WebSocket } from 'ws';
 import { parseHubMessage, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
+import type { DesktopEditorRun } from '#shared/desktop-runs';
 
 /** How often the editors' discovery files are read again. */
 export const EDITOR_RUNS_READ_MS = 5_000;
@@ -17,10 +18,7 @@ export const EDITOR_RUNS_READ_MS = 5_000;
 const EDITOR_HUB_WELCOME_MS = 10_000;
 
 /** A live run of an editor: the editor as it names itself, and the run as its hub tells it. */
-export interface EditorRun {
-  client: string | null;
-  session: HubSession;
-}
+export type EditorRun = DesktopEditorRun;
 
 interface Followed {
   socket: WebSocket;
