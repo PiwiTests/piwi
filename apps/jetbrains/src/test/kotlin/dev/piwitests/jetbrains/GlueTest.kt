@@ -105,9 +105,16 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
         assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
-        // A Run tab is named after what it runs: the tests, else the tool the command runs.
+        // A Run tab is named after what it runs: the tests, a chain's included, else the command up to its first option.
         assertEquals("Piwi: a.spec.ts:3", Glue.runTabName("npx playwright test tests/a.spec.ts:3 --repeat-each=3"))
-        assertEquals("Piwi: piwi flake", Glue.runTabName("npx piwi flake --test 12 --plan plan.json"))
+        val chain = "npx playwright test tests/a.spec.ts --project=chromium && npx playwright test tests/b.spec.ts --project=firefox"
+        assertEquals("Piwi: a.spec.ts and 1 more", Glue.runTabName(chain))
+        assertEquals("Piwi: piwi flake 12", Glue.runTabName("npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000"))
+        assertEquals("Piwi: piwi flake verify 12", Glue.runTabName("npx @piwitests/reporter flake verify 12"))
+        // A chain is the shell's: the IDE's runner takes none.
+        assertTrue(Glue.chained(chain))
+        assertNull(Glue.playwrightTestArgs(chain))
+        assertFalse(Glue.chained("npx playwright test tests/a.spec.ts"))
     }
 
     @Test

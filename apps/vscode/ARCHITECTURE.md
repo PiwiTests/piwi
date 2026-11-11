@@ -296,8 +296,9 @@ second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the 
 A test run carries its own ref (`RunCommand.ref`, also in its environment). It runs as a VS Code task (`runAsTask`):
 
 - a `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`);
-- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments, or
-  the command itself when it runs no `playwright test` (`runTaskName` in `src/glue.ts`);
+- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments, or,
+  for a command whose arguments the service did not give, the command (`runTaskName` in `src/glue.ts`: a chain of
+  `playwright test` whole, any other up to its first option, `piwi flake verify 12`);
 - it runs in a dedicated terminal, shown and cleared.
 
 Its start sends `piwi/commandStarted`, and `tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on

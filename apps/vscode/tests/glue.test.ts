@@ -1717,10 +1717,15 @@ describe('the task a test run is', () => {
   test('is named after its command, cut when long', () => {
     expect(runTaskName(['tests/login.spec.ts:12'])).toBe('playwright test tests/login.spec.ts:12');
     expect(runTaskName([])).toBe('playwright test');
-    // A command that runs no `playwright test` itself is named by its command.
-    expect(runTaskName([], 'npx piwi flake --test 12 --plan plan.json')).toBe(
-      'npx piwi flake --test 12 --plan plan.json',
+    // A command whose arguments the service did not give is named by its command: a chain whole, any other up to its
+    // first option.
+    expect(runTaskName([], 'npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000')).toBe(
+      'piwi flake 12',
     );
+    expect(runTaskName([], 'npx @piwitests/reporter flake verify 12')).toBe('piwi flake verify 12');
+    expect(
+      runTaskName([], 'npx playwright test a.spec.ts --project=x && npx playwright test b.spec.ts --project=y'),
+    ).toBe('playwright test a.spec.ts --project=x && playwright test b.spec.ts --project=y');
     expect(runTaskName([], 'npx playwright test')).toBe('playwright test');
     const long = runTaskName(['--grep', 'x'.repeat(200)]);
     expect(long).toHaveLength(80);

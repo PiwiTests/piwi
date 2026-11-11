@@ -341,7 +341,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's
   controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
-  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`).
+  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`). Its tooltip says what
+  each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect (in
@@ -380,9 +381,11 @@ runner does not take, runs in the console; without the runner, the settings page
 ### Commands and notifications
 
 `PiwiCommands.run` runs a command in the Run tool window, its tab named after what it runs (`Glue.runTabName`: the
-first test file and how many more, else the command's tool, `Piwi: piwi flake`). A command the service follows
+first test file and how many more, else the command up to its first option, `Piwi: piwi flake verify 12`). A command the service follows
 (`piwi.runCommand` with `RunCommandArgs.follow`: a Flake Lab line, a fix plan's verification) is asked of
-`piwi/followCommand` and started as a test run (`startRun`), or run as it is when the service answers none. The tab:
+`piwi/followCommand`, the documents saved first, and started as a test run (`startRun`), or run as it is when the
+service answers none. A chain (`a && b`, a fix plan's verification of several projects, `Glue.chained`) is the shell's
+to run (`cmd.exe /c`, `/bin/sh -c`), never the IDE's Playwright runner's. The tab:
 
 - its **Rerun** (`RunContentExecutor.withRerun`) stops the command if it runs, and starts it again with the same
   environment once its process ended and the service heard it (`piwi/commandEnded`), so the rerun's workers start a

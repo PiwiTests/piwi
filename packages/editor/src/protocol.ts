@@ -398,9 +398,9 @@ export interface RunCommandArgs {
   env?: Record<string, string>;
   /**
    * The command runs Playwright for nobody watching (a fix plan's verification, a Flake Lab command): the client asks
-   * `piwi/followCommand` for it, and runs the `RunCommand` it answers as it runs a test run, telling its start and end
-   * (`piwi/commandStarted`, `piwi/commandEnded`), so its runs are listed, paused and stopped as the editor's. As a
-   * plain terminal command when the answer is null. Absent otherwise.
+   * `piwi/followCommand` for it, and runs the `RunCommand` it answers as it runs a test run, telling its end
+   * (`piwi/commandEnded`), so its runs are listed, paused and stopped as the editor's. As a plain terminal command when
+   * the answer is null. Absent otherwise.
    */
   follow?: boolean;
 }

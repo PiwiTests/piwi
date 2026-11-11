@@ -201,11 +201,16 @@ object PiwiCommands {
 
     /**
      * Run a command line of the service: as a test run of its own when the service follows it (`RunCommandArgs.follow`,
-     * `piwi/followCommand`), listed, paused and stopped as the others, else in the Run tool window as it is.
+     * `piwi/followCommand`), listed, paused and stopped as the others, the documents saved first so it runs the files as
+     * they stand (a fix plan's edit just applied), else in the Run tool window as it is.
      */
     private fun runCommand(project: Project, args: RunCommandArgs) {
         if (args.follow != true) return run(project, args.cwd, args.command, args.env)
         background(project, "Piwi: starting the command") {
+            ApplicationManager.getApplication().invokeAndWait(
+                { FileDocumentManager.getInstance().saveAllDocuments() },
+                ModalityState.defaultModalityState(),
+            )
             val followed = project.service<PiwiProjectService>().server()?.followCommand(args)?.orNull()
             if (followed?.ref != null && !followed.command.isNullOrBlank()) {
                 startRun(project, followed, emptyList())
@@ -344,7 +349,11 @@ object PiwiCommands {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
-        if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
+        if (Glue.chained(command)) {
+            // A chain (a fix plan's verification of several projects) is the shell's to run, one command after another.
+            parts.clear()
+            parts.addAll(if (SystemInfo.isWindows) listOf("cmd.exe", "/c", command) else listOf("/bin/sh", "-c", command))
+        } else if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
             if (parts[0] != "node") parts[0] = "${parts[0]}.cmd"
         }
         ApplicationManager.getApplication().executeOnPooledThread {

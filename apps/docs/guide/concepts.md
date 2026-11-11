@@ -249,9 +249,9 @@ started with breakpoints, a debug run or a reproduction, off otherwise, unless a
 it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)) or the desktop app started the
 run with it on; and any tool that follows the run turns it on or off, the editors, Piwi Picker's Runs window, the
 desktop app, or an agent (`run_follow`). Off, a failure goes on at once, as without Piwi. A run nobody attends never
-holds one, though it is listed, paused and stopped as the others: a Flake Lab run, a bisect, a lab job, an editor's
-**Verify ×3** and a fix plan's check, a run with `--repeat-each` above 1 that does not stop at its first failure
-(`--max-failures=1`) and UI mode go on past each failure. Each tool shows it as the last one set it: the
+holds one: a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1 that does not stop at its first
+failure (`--max-failures=1`) and UI mode go on past each failure. So do an editor's **Verify ×3**, a fix plan's
+verification and a Flake Lab line, still listed, paused and stopped as the editor's other runs. Each tool shows it as the last one set it: the
 desktop app's switch turns it off as the app's last window closes only when no other tool set it since.
 
 ### Presence, driving a stop

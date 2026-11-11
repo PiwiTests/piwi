@@ -1468,11 +1468,20 @@ object Glue {
     /** A test file among a run's arguments, with its line and column: `tests/a.spec.ts:3`. */
     private val TEST_FILE_ARG = Regex("[^-\\s][^\\s]*\\.[cm]?[jt]sx?(:\\d+){0,2}")
 
-    /** The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command. */
+    /**
+     * The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command,
+     * a chain of several (`… && …`, [chained]) included.
+     */
     fun playwrightTestArgs(command: String): List<String>? {
         val parts = splitCommand(command)
-        return if (parts.take(3) == listOf("npx", "playwright", "test")) parts.drop(3) else null
+        return if (parts.take(3) == listOf("npx", "playwright", "test") && CHAIN !in parts) parts.drop(3) else null
     }
+
+    /** What joins the commands of a chain: a fix plan's verification of several Playwright projects. */
+    private const val CHAIN = "&&"
+
+    /** Whether a command chains several (`a && b`): a shell runs it, each one only once the one before it passed. */
+    fun chained(command: String): Boolean = CHAIN in splitCommand(command)
 
     /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
     fun playwrightRunName(args: List<String>): String {
@@ -1482,13 +1491,19 @@ object Glue {
     }
 
     /**
-     * The title of a run's tab in the Run tool window, after what it runs: its first test file and how many more
-     * ([playwrightRunName]), else the tool the command runs (`Piwi: piwi flake`).
+     * The title of a run's tab in the Run tool window, after what it runs: the first test file of a `playwright test` and
+     * how many more ([playwrightRunName], a chain's included), else the command up to its first option, the reporter's
+     * package named as its command (`Piwi: piwi flake verify 12`).
      */
     fun runTabName(command: String): String {
-        playwrightTestArgs(command)?.let { return playwrightRunName(it) }
         val parts = splitCommand(command)
-        val tool = parts.drop(if (parts.firstOrNull() == "npx") 1 else 0).take(2).joinToString(" ")
+        val words = parts.drop(if (parts.firstOrNull() == "npx") 1 else 0)
+        if (words.take(2) == listOf("playwright", "test")) return playwrightRunName(words.drop(2))
+        val tool = words
+            .map { if (it == "@piwitests/reporter") "piwi" else it }
+            .takeWhile { !it.startsWith("-") }
+            .take(4)
+            .joinToString(" ")
         return if (tool.isEmpty()) "Piwi" else "Piwi: $tool"
     }
 

@@ -510,8 +510,7 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 command's environment, as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor`, and in `RunCommand.ref`. The Flake Lab lines
 and the fix plan's verification carry `PIWI_ORIGIN=editor` alone, with `RunCommandArgs.follow`: the client asks
 `piwi/followCommand` for them, which gives them a ref and the run channel, and runs the answer as it runs a test run,
-its start and end told (`piwi/commandStarted`, `piwi/commandEnded`) and Stop ending it; a plain terminal command when the
-answer is null.
+its end told (`piwi/commandEnded`) and Stop ending it; a plain terminal command when the answer is null.
 
 A repeated run and a followed command are runs nobody attends (`unattended`): their workers keep a run connection, so
 they are listed, paused and stopped as the others, but they hold no failure (`holdsFailures`, the session's `hold`
