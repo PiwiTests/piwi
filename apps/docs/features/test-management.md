@@ -65,7 +65,7 @@ A run that was sent, or would be, shows a **Zephyr Scale** panel in its header:
 - **A send that waits to retry** says that sending failed, at what time the next attempt is due, and the error.
 - **A failed send** shows the error, and Maintainers and above get **Sync again**.
 
-The panel keeps itself current: it appears within a minute of the run ending, follows a send while it runs, and reads
+The panel keeps itself current: it appears within about a minute of the run ending, follows a send while it runs, and reads
 a retry again once it is due.
 
 ## Outcome unknown, and Sync again
