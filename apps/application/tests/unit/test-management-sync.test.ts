@@ -251,7 +251,7 @@ describe('what a finished run queues', () => {
     expect(row.dedupeKey).toBe(`sync-results:test_run:${RUN_ID}:conn${zephyrId}`);
     expect(row.result).toEqual({
       runKey: 'SHOP-R42',
-      runUrl: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+      runUrl: '',
       sent: 2,
     });
     expect((row.payload as any).results).toEqual([
@@ -263,7 +263,10 @@ describe('what a finished run queues', () => {
     expect(uploads()).toHaveLength(1);
     expect(links()).toHaveLength(1);
     expect(links()[0]!.path).toBe('/v2/testcycles/SHOP-R42/links/weblinks');
-    expect(await testRunLinks()).toMatchObject([{ provider: 'zephyr-scale', key: 'SHOP-R42', testRunId: RUN_ID }]);
+    // Zephyr names the test cycle by its API address only, which opens no page: the link keeps the key alone.
+    expect(await testRunLinks()).toMatchObject([
+      { provider: 'zephyr-scale', key: 'SHOP-R42', url: '', testRunId: RUN_ID },
+    ]);
   });
 
   test('the test cycle it links is not offered as an issue the run already has', async () => {
@@ -374,7 +377,7 @@ describe('an attempt, step by step', () => {
     expect(seen[1]).toEqual({
       uploadStartedAt: expect.any(Number),
       runKey: 'SHOP-R42',
-      runUrl: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+      runUrl: '',
     });
   });
 
@@ -583,7 +586,7 @@ describe('Sync again', () => {
       status: 'done',
       result: {
         runKey: 'SHOP-R42',
-        runUrl: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+        runUrl: '',
         sent: 2,
       },
     });

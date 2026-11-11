@@ -195,9 +195,10 @@ test.describe('Zephyr Scale — results sync', () => {
     });
 
     const run = (await (await api.get(`/api/test-runs/${runId}`)).json()) as {
-      links: Array<{ provider: string; key: string }>;
+      links: Array<{ provider: string; key: string; url: string }>;
     };
-    expect(run.links).toMatchObject([{ provider: 'zephyr-scale', key: 'SHOP-R1' }]);
+    // Zephyr names the cycle by an API address that opens no page, so the link keeps the key and no address.
+    expect(run.links).toMatchObject([{ provider: 'zephyr-scale', key: 'SHOP-R1', url: '' }]);
 
     await page.goto(`${server!.baseUrl}/test-runs/${runId}`);
     await waitForHydration(page);
@@ -206,6 +207,9 @@ test.describe('Zephyr Scale — results sync', () => {
     await expect(panel.getByTestId('sync-sent')).toContainText('2 results sent: 1 passed, 1 failed');
     await expect(panel.getByTestId('sync-unknown-keys')).toContainText('SHOP-T9');
     await expect(panel.getByTestId('sync-again')).toHaveCount(0);
+    const chip = page.locator('[data-tour="run-links"]').getByTestId('link-chip-open');
+    await expect(chip).toContainText('SHOP-R1');
+    expect(await chip.evaluate((element) => element.tagName)).toBe('SPAN');
   });
 
   test('a sharded run sends once, when its last shard finishes', async () => {

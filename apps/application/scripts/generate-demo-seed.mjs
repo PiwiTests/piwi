@@ -7000,7 +7000,7 @@ const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
       result: {
         uploadStartedAt: endedMs + 500,
         runKey,
-        runUrl: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/testcycles/${runKey}`,
+        runUrl: '',
         sent: payload.results.length,
       },
     };

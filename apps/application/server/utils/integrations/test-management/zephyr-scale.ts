@@ -432,15 +432,12 @@ export class ZephyrScaleClient implements TestManagementProvider {
         contentType: encoded.headers.get('content-type') ?? undefined,
       },
     );
-    const body = await this.readJson<{ testCycle?: { id?: unknown; key?: unknown; url?: unknown } } | null>(
-      response,
-      this.timeoutMs,
-    );
+    const body = await this.readJson<{ testCycle?: { id?: unknown; key?: unknown } } | null>(response, this.timeoutMs);
     const cycle = body?.testCycle;
     if (!cycle || typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || cycle.id == null) {
       throw new ZephyrScaleError(502, 'Zephyr Scale answered the upload with an unexpected shape');
     }
-    return { key: cycle.key, id: String(cycle.id), url: typeof cycle.url === 'string' ? cycle.url : '' };
+    return { key: cycle.key, id: String(cycle.id), url: '' };
   }
 
   /** Add a web link to a test cycle. */
@@ -486,18 +483,14 @@ export class ZephyrScaleClient implements TestManagementProvider {
     ].slice(0, FIND_RUN_MAX_CYCLES);
     const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\w)`);
     for (const id of ids) {
-      const cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown; links?: { self?: unknown } }>(
+      const cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown }>(
         `/testcycles/${encodeURIComponent(String(id))}`,
         {},
         ZEPHYR_INTERACTIVE_TIMEOUT_MS,
       );
       if (typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || typeof cycle.name !== 'string') continue;
       if (cycle.name !== marker.name && !named.test(cycle.name)) continue;
-      return {
-        key: cycle.key,
-        id: String(cycle.id ?? id),
-        url: typeof cycle.links?.self === 'string' ? cycle.links.self : '',
-      };
+      return { key: cycle.key, id: String(cycle.id ?? id), url: '' };
     }
     return null;
   }

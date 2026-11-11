@@ -397,7 +397,7 @@ describe('uploadRun', () => {
     expect(run).toEqual({
       key: 'SHOP-R42',
       id: '3001',
-      url: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+      url: '',
     });
 
     const url = requested();
@@ -541,7 +541,7 @@ describe('findRun', () => {
     expect(await client().findRun('SHOP', marker)).toEqual({
       key: 'SHOP-R42',
       id: '3001',
-      url: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+      url: '',
     });
 
     const list = requested(0);

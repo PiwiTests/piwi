@@ -18,9 +18,6 @@ export const DEMO_TEST_MANAGEMENT_CONNECTION = {
   config: { region: 'us' },
 };
 
-/** The address the canned tool names its test runs by; it opens no page. */
-export const DEMO_TEST_MANAGEMENT_API_URL = DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl;
-
 /** The project the checkout project is bound to, and the project the demo's pickers list first. */
 export const DEMO_TEST_MANAGEMENT_PROJECT_KEY = 'SHOP';
 

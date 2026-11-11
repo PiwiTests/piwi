@@ -18,7 +18,6 @@ import type { TestManagementPickerOptions } from '#shared/integrations/test-mana
 import type { DrizzleDB } from '#shared/handlers/db';
 import {
   DEMO_TEST_MANAGEMENT_CASES,
-  DEMO_TEST_MANAGEMENT_API_URL,
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_FOLDERS,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
@@ -135,8 +134,7 @@ export async function sendDemoRunSync(db: DrizzleDB, runId: number) {
   if (!action) throw demoHttpError(409, 'This run has no failed results sync');
   const payload = action.payload as SyncActionPayload;
   const runKey = `${payload.providerProjectKey}-R${runId}`;
-  const runUrl = `${DEMO_TEST_MANAGEMENT_API_URL}/testcycles/${runKey}`;
-  const result = { runKey, runUrl, sent: payload.results.length };
+  const result = { runKey, runUrl: '', sent: payload.results.length };
   await db.transaction(async (tx) => {
     await writeCreatedIssueLink(tx as never, {
       entityType: 'test_run',
@@ -145,7 +143,7 @@ export async function sendDemoRunSync(db: DrizzleDB, runId: number) {
       createdBy: action.requestedBy ?? null,
       issue: {
         provider: 'zephyr-scale',
-        url: runUrl,
+        url: '',
         key: runKey,
         externalId: null,
         title: payload.run.name,

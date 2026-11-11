@@ -5,8 +5,9 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 
 /**
  * A pinned link as a chip: the provider icon, the key and title as one link to
- * the page (a new tab; a Zephyr Scale test run names no page), the synced status, and a remove button for writers. The
- * chip wraps inside a narrow container rather than overflowing it, and the
+ * the page (a new tab; a link with no address, such as a Zephyr Scale test run,
+ * is named without one), the synced status, and a remove button for writers.
+ * The chip wraps inside a narrow container rather than overflowing it, and the
  * remove button shows on hover, on keyboard focus and on touch screens.
  */
 const props = defineProps<{
@@ -22,8 +23,8 @@ const displayLabel = computed(() => {
   return props.link.title || props.link.key || props.link.url.replace(/^https?:\/\//, '').slice(0, 50);
 });
 
-// A test run in Zephyr Scale is known by its API address, which opens no page: its chip names it without a link.
-const href = computed(() => (props.link.provider === 'zephyr-scale' ? null : safeHttpUrl(props.link.url)));
+// A link with no address, such as a Zephyr Scale test run, is named without a link.
+const href = computed(() => safeHttpUrl(props.link.url));
 const providerIcon = computed(() => getProviderIcon(props.link.provider as any));
 const name = computed(() => props.link.key || displayLabel.value);
 </script>

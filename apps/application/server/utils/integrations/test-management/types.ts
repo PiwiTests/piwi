@@ -70,6 +70,7 @@ export interface UploadRunInput {
 export interface TmRun {
   key: string;
   id: string;
+  /** The run's page in the tool, or '' when the tool names none. Zephyr Scale answers with an API address only. */
   url: string;
 }
 
