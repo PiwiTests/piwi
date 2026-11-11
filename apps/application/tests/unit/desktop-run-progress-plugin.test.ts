@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ref, watch } from 'vue';
+import { nextTick, reactive, ref, watch } from 'vue';
 
 /**
  * The desktop shell's OS progress (`plugins/desktop-run-progress.client.ts`), driven as the window drives it: the
@@ -38,7 +38,9 @@ async function plugin() {
   let emit: (message: Record<string, unknown>) => void = () => {};
   const ended = new Set<(run: TrayRun) => void>();
   const runs = ref<TrayRun[]>([]);
+  const hub = { state: reactive<{ sessions: Record<string, unknown> }>({ sessions: {} }) };
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
+  vi.stubGlobal('useDesktopRunHub', () => hub);
   vi.stubGlobal('watch', watch);
   vi.stubGlobal('tauriCore', () => ({
     invoke: async (cmd: string, args: Shown) => {
@@ -63,6 +65,7 @@ async function plugin() {
   return {
     shown,
     runs,
+    hub,
     emit: (message: Record<string, unknown>) => emit(message),
     /** The store says the run ended, with these fields set. */
     end: (run: TrayRun, over: Partial<TrayRun>) => {
@@ -171,12 +174,47 @@ describe('the OS progress of a job of the Local runs tray', () => {
     expect(flashes(shown)).toEqual([{ state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false }]);
   });
 
-  test('still flashes a run that is no job, an editor’s or CI’s, as its outcome', async () => {
-    const { shown, emit } = await plugin();
+  test('flashes a run of the tray as its outcome, never an editor’s or CI’s, which it shows running alone', async () => {
+    const { shown, runs, emit } = await plugin();
     const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
     emit({ type: 'run-started', runId: 11, ...ci });
+    expect(shown.at(-1)?.label).toBe('Running…');
     emit({ type: 'run-finished', runId: 11, status: 'failed', ...ci });
+    expect(failedEnds(shown)).toEqual([]);
+    expect(shown.at(-1)).toEqual(NOTHING);
+    const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+    runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+    emit({ type: 'run-started', runId: 12, ...own });
+    emit({ type: 'run-finished', runId: 12, status: 'failed', ...own });
     expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
+  });
+
+  test('says first that a test of the app’s runs waits for the person, amber, as the hub tells it', async () => {
+    const { shown, hub, emit } = await plugin();
+    emit({
+      type: 'run-progress',
+      runId: 13,
+      projectId: 1,
+      totalTests: 10,
+      passedTests: 3,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    });
+    expect(shown.at(-1)?.label).toBe('Running 3/10…');
+    const stopped = { state: 'stopped', stop: { reason: 'pause' } };
+    hub.state.sessions = { 'desktop-7': { ended: false, workers: [stopped] } };
+    await nextTick();
+    expect(shown.at(-1)).toEqual({
+      state: 'paused',
+      fraction: 0.3,
+      label: '1 test waits for you · Running 3/10',
+      failing: false,
+    });
+    // Answered: the run runs on, as it did.
+    hub.state.sessions = { 'desktop-7': { ended: false, workers: [{ state: 'running', stop: null }] } };
+    await nextTick();
+    expect(shown.at(-1)?.label).toBe('Running 3/10…');
   });
 
   test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {

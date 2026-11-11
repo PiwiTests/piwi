@@ -34,17 +34,18 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pi
 The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
 Windows, **More info** then **Run anyway** in SmartScreen.
 
-Data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
-`~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
-on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
-folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM tokens.
+Where its data lives, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
-hidden in the tray. The windows open where you left them. The app's
-[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app) open Settings, import a report, go back and forward
-and zoom; on macOS the app menu holds the first four and the docs. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
-While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the tray does not list (a `piwi flake` from a terminal or an
-editor, a probe, another window's, or from before a reload) never does. In the background,
+hidden in the tray. The windows open where you left them. The app has its own
+[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
+or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
+Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs waits at a
+stop for you (`1 test waits for you`). A run the tray lists flashes its outcome as it ends and, failed while you look
+away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; any other run never
+does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and **Stop**, which stops the
+tray's run started last. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
 
@@ -133,13 +134,8 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-**Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
-connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
-(`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start, so the app must run, and sends the token only
-to a server that proves it holds it. It writes only its own entry and keeps the first backup beside
-the config. A disk image (DMG), a translocated copy or a dev build writes nothing, for Connect, Disconnect and the
-startup repair alike; each client shows **Manual setup** with the reason. After a move, startup points that entry at the app again,
-as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**; **Update** replaces it. Restart the client afterwards. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
+**Settings → MCP server** connects Claude Code, Cursor and the other clients it detects in one click:
+[the desktop app's client setup](/features/mcp#in-the-desktop-app).
 
 ## Updates
 

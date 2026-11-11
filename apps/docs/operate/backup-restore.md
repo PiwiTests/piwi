@@ -57,6 +57,12 @@ Then confirm the running version at **Settings → About**, and that recent runs
 
 The [desktop build](/features/desktop) bundles its own server, and its database and storage live in a per-machine data directory *outside* the app bundle, migrated on first launch exactly as the server does — so the same forward-only rule applies. Back up that data directory before a major version jump; a newer build will migrate it, an older one cannot open it.
 
+The data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
+`~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
+on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
+folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM
+tokens.
+
 ## When to back up
 
 - **Before every version bump** — this is the one that matters, because it is the only rollback path.

@@ -13,7 +13,11 @@
  * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
  * command; when the last run finishes the outcome flashes (green pass / amber
  * interrupted / red fail) briefly before clearing, and a red one asks for the
- * user's attention. A step of a job of the Local runs tray (a reproduction, a
+ * user's attention: only a run the Local runs tray lists (`trayListsRun`), never an
+ * editor's, a terminal's or another window's that reports into the app. While a test
+ * of the app's runs waits at a stop for the person (the hub's runs, `runsAttention`),
+ * the shell says so first, amber (`paused`): `1 test waits for you`. The Windows
+ * thumbnail's Stop stops the tray's run started last (`thumbnailStopRun`). A step of a job of the Local runs tray (a reproduction, a
  * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
  * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
@@ -28,6 +32,7 @@
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
+import { runsAttention } from '@piwitests/core/run-hub';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,
@@ -36,9 +41,12 @@ import {
   finishedRunFlash,
   liveRunFacts,
   runsOfLocalRun,
+  thumbnailStopRun,
+  trayListsRun,
   unbegunRunsOf,
   type FinishedRunFlash,
   type LiveRun,
+  type LocalRunOwner,
   type RunProgressState,
 } from '~/utils/desktop-run-progress';
 
@@ -104,6 +112,10 @@ export default defineNuxtPlugin(() => {
   let lastFinished: FinishedRunFlash | null = null;
   /** The runs a local run's end took off the bar, and when. */
   const swept = new Map<number, number>();
+  /** The tests of the app's runs that wait at a stop for the person, as the hub tells them (`runsAttention`). */
+  let waiting = 0;
+  /** The runs of the Local runs tray: only theirs flash as they end. */
+  let trayRuns: () => readonly LocalRunOwner[] = () => [];
 
   /** Whether a local run's end took the run off the bar less than `SWEPT_MS` ago. */
   function wasSwept(runId: number): boolean {
@@ -128,7 +140,7 @@ export default defineNuxtPlugin(() => {
       clearTimeout(clearTimer);
       clearTimer = null;
     }
-    const agg = aggregateRunProgress([...active.values()]);
+    const agg = aggregateRunProgress([...active.values()], waiting);
     if (agg.state !== 'none') {
       lastFinished = null;
       send(agg.state, agg.fraction, agg.label, agg.failing);
@@ -201,9 +213,10 @@ export default defineNuxtPlugin(() => {
         if (!run) break;
         active.delete(msg.runId!);
         // A job's step has no outcome of its own: its job's verdict flashes once the job ends. Neither has a run
-        // nothing names, one that never began.
+        // nothing names, one that never began, nor one the tray does not list: an editor's, a terminal's, another
+        // window's.
         const facts = liveRunFacts(msg) ?? liveRunFacts(run);
-        if (facts && !facts.job) {
+        if (facts && !facts.job && trayListsRun(msg.runId!, { ...run, ...facts }, trayRuns())) {
           lastFinished = finishedRunFlash(msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled');
         }
         pushUpdate();
@@ -217,19 +230,30 @@ export default defineNuxtPlugin(() => {
   // `active` without extra work here.
   subscribeDesktopEvents((message) => handle(message as unknown as LiveRunMessage));
 
+  // A test of the app's runs that waits at a stop shows first: the hub's runs say which (`useDesktopRunHub`).
+  const hub = useDesktopRunHub();
+  watch(
+    () => runsAttention(Object.values(hub.state.sessions))?.waiting ?? 0,
+    (now) => {
+      waiting = now;
+      pushUpdate();
+    },
+    { immediate: true },
+  );
+
   // Local ("Run locally") runs are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {
     const { runs, stopRun, onRunEnded } = useDesktopLocalRuns();
+    trayRuns = () => runs.value;
 
     // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
-    // dashboard as this event.
+    // dashboard as this event: it stops one run, the one started last.
     tauriEvent()
       ?.listen('piwi:taskbar-stop', () => {
-        for (const run of runs.value) {
-          if (run.status === 'running') void stopRun(run);
-        }
+        const run = thumbnailStopRun(runs.value);
+        if (run) void stopRun(run);
       })
       .catch(() => {});
 
