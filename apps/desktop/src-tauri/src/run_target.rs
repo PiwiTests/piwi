@@ -118,6 +118,16 @@ impl RequestedRuns {
     fn dirs(&self) -> HashSet<PathBuf> {
         self.0.lock().unwrap().values().filter_map(|run| run.dir.clone()).collect()
     }
+
+    /// Mark request `id` stopped and answer the run it started; `None` for a
+    /// request still starting, whose run is stopped once it has an id, or one
+    /// not held here.
+    fn stop(&self, id: &str) -> Option<u32> {
+        let mut runs = self.0.lock().unwrap();
+        let held = runs.get_mut(id)?;
+        held.stop = true;
+        held.run
+    }
 }
 
 /// Why a requested run does not start in a folder another run is going in.
@@ -707,9 +717,10 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     }
 }
 
-/// The folder, its Playwright, and the token file of a launch, checked.
-fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), String> {
-    if connected_instance(app).as_deref() != Some(launch.instance.as_str()) {
+/// The folder of a launch from `connected`, the instance the app is connected
+/// to, checked against the folders linked for its projects.
+fn launch_folder(launch: &Launch, connected: Option<&str>, links: &HashMap<String, String>) -> Result<PathBuf, String> {
+    if connected != Some(launch.instance.as_str()) {
         return Err("the request is not from the connected instance".into());
     }
     if launch.args.is_empty() {
@@ -721,18 +732,20 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
             "the command is longer than {REQUEST_ARGS_MAX_CHARS} characters: ask for fewer tests"
         ));
     }
-    let linked = links_of(app, &launch.instance)
-        .get(&launch.project_id)
-        .cloned()
-        .ok_or("no folder is linked to this project")?;
-    if linked != launch.folder {
+    let linked = links.get(&launch.project_id).ok_or("no folder is linked to this project")?;
+    if *linked != launch.folder {
         return Err("the folder linked to this project changed since Run: answer the request again".into());
     }
     let folder = PathBuf::from(linked);
     if !folder.is_dir() {
         return Err("the linked folder no longer exists: pick it again".into());
     }
-    let folder = std::fs::canonicalize(&folder).unwrap_or(folder);
+    Ok(std::fs::canonicalize(&folder).unwrap_or(folder))
+}
+
+/// The folder, its Playwright, and the token file of a launch, checked.
+fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), String> {
+    let folder = launch_folder(launch, connected_instance(app).as_deref(), &links_of(app, &launch.instance))?;
     if app.try_state::<crate::runner::LocalRuns>().is_some_and(|runs| runs.runs_in(&folder)) {
         return Err(FOLDER_BUSY.into());
     }
@@ -752,14 +765,7 @@ pub(crate) fn stop_requested_run(app: &AppHandle, request_id: &str) {
     if !valid_request_id(request_id) {
         return;
     }
-    let run = app.try_state::<RequestedRuns>().and_then(|runs| {
-        let mut runs = runs.0.lock().unwrap();
-        let held = runs.get_mut(request_id)?;
-        // Still starting: the run is stopped as soon as it has an id.
-        held.stop = true;
-        held.run
-    });
-    if let Some(run_id) = run {
+    if let Some(run_id) = app.try_state::<RequestedRuns>().and_then(|runs| runs.stop(request_id)) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let _ = crate::runner::desktop_stop_local_tests(app, run_id).await;
@@ -1061,6 +1067,86 @@ mod tests {
         // Counted as the editor counts a JavaScript string: an emoji is two.
         assert!(!args_within_cap(&["😀".repeat(REQUEST_ARGS_MAX_CHARS / 2)]));
         assert!(args_within_cap(&["é".repeat(REQUEST_ARGS_MAX_CHARS - 1)]));
+    }
+
+    fn launch(folder: &Path, args: &[&str]) -> Launch {
+        Launch {
+            instance: "https://piwi.example.com".into(),
+            token: format!("pdq_{}", "c".repeat(64)),
+            project_id: "3".into(),
+            folder: folder.to_string_lossy().to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_launch_runs_only_in_the_folder_linked_to_its_project_on_the_connected_instance() {
+        let root = TempRoot::new("launch");
+        let shop = root.0.join("shop");
+        std::fs::create_dir_all(&shop).unwrap();
+        let connected = Some("https://piwi.example.com");
+        let linked = HashMap::from([("3".to_string(), shop.to_string_lossy().to_string())]);
+        let ok = launch(&shop, &["tests/cart.spec.ts:3"]);
+        assert_eq!(launch_folder(&ok, connected, &linked), Ok(std::fs::canonicalize(&shop).unwrap()));
+
+        let refused = |launch: &Launch, connected: Option<&str>, links: &HashMap<String, String>| {
+            launch_folder(launch, connected, links).unwrap_err()
+        };
+        assert_eq!(refused(&ok, None, &linked), "the request is not from the connected instance");
+        assert_eq!(
+            refused(&ok, Some("https://other.example.com"), &linked),
+            "the request is not from the connected instance"
+        );
+        assert_eq!(refused(&launch(&shop, &[]), connected, &linked), "the request names no test to run");
+        assert_eq!(
+            refused(&launch(&shop, &["--config=/tmp/x.ts"]), connected, &linked),
+            "flag not allowed: --config"
+        );
+        assert_eq!(refused(&ok, connected, &HashMap::new()), "no folder is linked to this project");
+        let elsewhere = HashMap::from([("3".to_string(), root.0.join("admin").to_string_lossy().to_string())]);
+        assert_eq!(
+            refused(&ok, connected, &elsewhere),
+            "the folder linked to this project changed since Run: answer the request again"
+        );
+        let gone = root.0.join("gone");
+        let linked_gone = HashMap::from([("3".to_string(), gone.to_string_lossy().to_string())]);
+        assert_eq!(
+            refused(&launch(&gone, &["tests/cart.spec.ts:3"]), connected, &linked_gone),
+            "the linked folder no longer exists: pick it again"
+        );
+    }
+
+    #[test]
+    fn a_stop_marks_a_held_request_and_answers_its_run() {
+        let runs = RequestedRuns::default();
+        assert_eq!(runs.stop("unknown"), None);
+        assert!(runs.0.lock().unwrap().is_empty(), "a stop for a request not held holds nothing");
+
+        runs.0.lock().unwrap().insert("starting".into(), RequestedRun::default());
+        runs.0.lock().unwrap().insert("running".into(), RequestedRun { run: Some(7), ..Default::default() });
+        assert_eq!(runs.stop("starting"), None);
+        assert_eq!(runs.stop("running"), Some(7));
+        let held = runs.0.lock().unwrap();
+        assert!(held["starting"].stop, "its run is stopped once it has an id");
+        assert!(held["running"].stop);
+    }
+
+    #[test]
+    fn a_command_with_a_value_that_does_not_pass_is_never_shown() {
+        assert_eq!(
+            server_command(r#"{"type":"requested-run-stop","requestId":"../../etc"}"#),
+            Some(ServerCommand::StopRun("../../etc".into()))
+        );
+        assert_eq!(
+            server_command(r#"{"type":"requested-run-stop"}"#),
+            Some(ServerCommand::StopRun(String::new()))
+        );
+        assert_eq!(
+            server_command(r#"{"type":"key-revoked","instance":"file:///etc"}"#),
+            Some(ServerCommand::KeyRevoked("file:///etc".into()))
+        );
+        assert_eq!(server_command(r#"{"title":"no type"}"#), None);
+        assert_eq!(server_command(r#"{"type":7}"#), None);
     }
 
     #[test]
