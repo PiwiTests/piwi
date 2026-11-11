@@ -108,6 +108,12 @@ pub struct LocalRuns {
     quitting: AtomicBool,
 }
 
+/// The real path of `path`, as Windows writes it without the `\\?\` verbatim
+/// prefix; `path` itself when it cannot be resolved.
+pub(crate) fn real_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// What a local run is, as the tray names it: `tests in shop`, `the bisect in
 /// shop`, after the linked folder's name.
 pub(crate) fn run_label(what: &str, folder: &Path) -> String {
@@ -161,9 +167,8 @@ impl LocalRuns {
 
     /// Whether a plain run is going in `folder`, compared by real path.
     pub(crate) fn runs_in(&self, folder: &Path) -> bool {
-        let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        let folder = real(folder);
-        self.folders.lock().unwrap().values().any(|other| real(other) == folder)
+        let folder = real_path(folder);
+        self.folders.lock().unwrap().values().any(|other| real_path(other) == folder)
     }
 
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.

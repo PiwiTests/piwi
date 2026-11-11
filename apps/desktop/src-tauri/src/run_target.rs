@@ -910,7 +910,7 @@ fn launch_folder(launch: &Launch, connected: Option<&str>, links: &HashMap<Strin
     if !folder.is_dir() {
         return Err("the linked folder no longer exists: pick it again".into());
     }
-    Ok(std::fs::canonicalize(&folder).unwrap_or(folder))
+    Ok(crate::runner::real_path(&folder))
 }
 
 /// The folder, its Playwright, and the token file of a launch, checked.
@@ -1372,7 +1372,9 @@ mod tests {
         let connected = Some("https://piwi.example.com");
         let linked = HashMap::from([("3".to_string(), shop.to_string_lossy().to_string())]);
         let ok = launch(&shop, &["tests/cart.spec.ts:3"]);
-        assert_eq!(launch_folder(&ok, connected, &linked), Ok(std::fs::canonicalize(&shop).unwrap()));
+        let real = launch_folder(&ok, connected, &linked).unwrap();
+        assert_eq!(std::fs::canonicalize(&real).unwrap(), std::fs::canonicalize(&shop).unwrap());
+        assert!(!real.to_string_lossy().starts_with(r"\\?\"), "{real:?}");
 
         let refused = |launch: &Launch, connected: Option<&str>, links: &HashMap<String, String>| {
             launch_folder(launch, connected, links).unwrap_err()
