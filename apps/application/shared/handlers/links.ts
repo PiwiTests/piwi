@@ -103,7 +103,8 @@ export async function listLinks(db: DrizzleDB, entityType: LinkEntityType, entit
 
 /**
  * Pin a URL to an entity. On a failure cluster, a keyed URL clears the key's dismissal, and a link from the tests
- * with the same key becomes the pinned link instead of a second row.
+ * with the same key, read through the same connection, becomes the pinned link instead of a second row. A URL on
+ * another site, or one no connection resolves, stays a plain link beside it.
  */
 export async function createLink(
   db: DrizzleDB,
@@ -142,7 +143,8 @@ export async function createLink(
   const { provider, key, connectionId, externalId } = await resolveUrl(url, resolver);
 
   if (entityType === 'failure_cluster' && key) {
-    // Pinning an issue by hand clears its dismissal, and takes over the cluster's link from the tests to it.
+    // Pinning an issue by hand clears its dismissal, and takes over the cluster's link from the tests to it when the
+    // URL resolved through that link's connection, so another site's issue under the same key never inherits it.
     await db
       .delete(entityLinkDismissals)
       .where(and(eq(entityLinkDismissals.failureClusterId, entityId), eq(entityLinkDismissals.key, key)));
@@ -157,13 +159,13 @@ export async function createLink(
         ),
       )
       .limit(1);
-    if (declared) {
+    if (declared && (declared.connectionId ?? null) === (connectionId ?? null)) {
       const [pinned] = await db
         .update(entityLinks)
         .set({
           url,
           provider,
-          connectionId: connectionId ?? declared.connectionId,
+          connectionId: declared.connectionId,
           externalId: declared.externalId ?? externalId,
           origin: 'pinned',
           ...(title ? { title } : {}),

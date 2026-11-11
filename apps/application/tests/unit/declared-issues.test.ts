@@ -649,17 +649,67 @@ describe('pinning a link from the tests by hand', () => {
     expect(await links(cluster)).toHaveLength(1);
     expect((await getClusterTrackerLink(dbc, cluster))?.id).toBe(declared.id);
   });
-  test('keeps the connection when pinned through a URL no connection resolves', async () => {
+  test('through the same connection: takes it over, keeping its connection and issue id', async () => {
     const cluster = await newCluster();
     const declared = await pin(cluster, 'PROJ-32', 'annotation');
 
-    const { link } = await createLink(db as never, {
-      entityType: 'failure_cluster',
-      entityId: cluster,
-      url: `${SITE}/browse/PROJ-32`,
-    });
+    const { link } = await createLink(
+      db as never,
+      { entityType: 'failure_cluster', entityId: cluster, url: `${SITE}/browse/PROJ-32` },
+      async () => ({ provider: 'jira', connectionId, key: 'PROJ-32' }),
+    );
 
-    expect(link).toMatchObject({ id: declared.id, origin: 'pinned', connectionId });
+    // The issue id the tests' lookup stored stays, rather than the key this URL resolved to.
+    expect(link).toMatchObject({ id: declared.id, origin: 'pinned', connectionId, externalId: declared.externalId });
+    expect(await links(cluster)).toHaveLength(1);
+  });
+
+  /**
+   * Pin `url` on a cluster that links PROJ-33 from its tests, and check it stays a plain link beside that one: the
+   * link from the tests is untouched, and a fix writes nothing to the bound PROJ-33, which nobody pinned.
+   */
+  async function pinsBeside(url: string, resolver?: Parameters<typeof createLink>[2]) {
+    await bind({ policies: { commentOnFix: true, scope: { branches: 'all' } } });
+    const cluster = await newCluster();
+    const declared = await pin(cluster, 'PROJ-33', 'annotation');
+
+    const { link } = await createLink(db as never, { entityType: 'failure_cluster', entityId: cluster, url }, resolver);
+
+    expect(link).toMatchObject({ origin: 'pinned', key: 'PROJ-33', url });
+    expect(link?.id).not.toBe(declared.id);
+    expect(link?.connectionId).not.toBe(connectionId);
+    expect(link?.externalId).not.toBe(declared.externalId);
+    const [after] = (await links(cluster)).filter((l) => l.id === declared.id);
+    expect(after).toEqual(declared);
+    // The tracker link, if any, is the plain one, which carries neither the bound connection nor its issue id.
+    expect((await getClusterTrackerLink(dbc, cluster))?.id ?? link?.id).toBe(link?.id);
+    const { runId } = await failRun([{ cluster, issues: [] }]);
+    const facts = { clusterId: cluster, projectId: 1, runId, commit: null, verification: 'stopped-failing' as never };
+    await enqueueFixPolicies(dbc, facts);
+    expect(
+      await db.select().from(schema.integrationActions).where(eq(schema.integrationActions.entityId, cluster)),
+    ).toEqual([]);
+    return link!;
+  }
+
+  test('through no connection: adds a plain link beside it, which Piwi never writes to', async () => {
+    const link = await pinsBeside('https://other.atlassian.net/browse/PROJ-33');
+    expect(link).toMatchObject({ connectionId: null, externalId: null });
+  });
+
+  test("through another connection: adds that connection's link beside it, and Piwi writes nothing to the bound issue", async () => {
+    const other = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Other Jira',
+      baseUrl: 'https://other.atlassian.net',
+      credentials: { email: 'ci@example.com', apiToken: 'token' },
+    });
+    const link = await pinsBeside('https://other.atlassian.net/browse/PROJ-33', async () => ({
+      provider: 'jira',
+      connectionId: other.id,
+      key: 'PROJ-33',
+    }));
+    expect(link).toMatchObject({ connectionId: other.id, externalId: 'PROJ-33' });
   });
 });
 
