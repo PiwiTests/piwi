@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, like } from 'drizzle-orm';
 import { entityLinks, integrationActions, testRunsCases } from '../../server/database/schema';
+import { isProviderOfKind } from '../integrations/registry';
 import { toEpochMs } from '../relative-time';
 import type { DrizzleDB } from './db';
 
@@ -31,11 +32,13 @@ export interface KnownIssueRef {
 
 /**
  * Whether a link is a tracker issue Piwi can write back through: it carries a
- * key and is a Jira link or sits on a connection. The newest such link on a
- * cluster is the cluster's known issue.
+ * key and is a Jira link or sits on a connection. A test cycle a results sync
+ * made sits on a connection too, and is not an issue. The newest such link on
+ * a cluster is the cluster's known issue.
  */
 export function isTrackerLink(link: { provider: string; key: string | null; connectionId: number | null }): boolean {
-  return !!link.key && (link.provider === 'jira' || link.connectionId != null);
+  if (!link.key || isProviderOfKind(link.provider, 'test-management')) return false;
+  return link.provider === 'jira' || link.connectionId != null;
 }
 
 /**

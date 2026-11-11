@@ -87,6 +87,8 @@ const { OUTBOX_MAX_ATTEMPTS } = await import('../../server/utils/outbox');
 const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 const { sendDemoRunSync } = await import('../../app/demo/api/test-management');
 const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
+const { createConnection } = await import('../../server/utils/integrations/connections');
+const { buildIssueDraft } = await import('../../server/utils/integrations/draft');
 
 type Route = (event: FakeEvent) => Promise<any>;
 const route = (module: { default: unknown }) => underRoutePermission(state, module.default as Route);
@@ -261,6 +263,34 @@ describe('what a finished run queues', () => {
     expect(links()).toHaveLength(1);
     expect(links()[0]!.path).toBe('/v2/testcycles/SHOP-R42/links/weblinks');
     expect(await testRunLinks()).toMatchObject([{ provider: 'zephyr-scale', key: 'SHOP-R42', testRunId: RUN_ID }]);
+  });
+
+  test('the test cycle it links is not offered as an issue the run already has', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    await runTestManagementSync(db, RUN_ID);
+    const jira = await createConnection(db, {
+      provider: 'jira',
+      name: 'Jira',
+      baseUrl: 'https://acme.atlassian.net',
+      credentials: { email: 'ci@example.com', apiToken: 'token' },
+    });
+    try {
+      await db.insert(schema.entityLinks).values({
+        testRunId: RUN_ID,
+        provider: 'jira',
+        key: 'PROJ-7',
+        url: 'https://acme.atlassian.net/browse/PROJ-7',
+        connectionId: jira.id,
+        origin: 'linked',
+      } as never);
+      const draft = await buildIssueDraft(db, 'test_run', RUN_ID);
+      expect(draft?.existing.map((candidate) => candidate.key)).toEqual(['PROJ-7']);
+    } finally {
+      await db.delete(schema.entityLinks);
+      await db.delete(schema.integrationConnections).where(eq(schema.integrationConnections.id, jira.id));
+    }
   });
 
   test('a run already synced queues nothing again', async () => {
