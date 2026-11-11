@@ -2887,6 +2887,45 @@ describe('runs as they happen', () => {
     expect(verdicts.find((v) => v.runId === 61)?.repeat).toBeUndefined();
   });
 
+  test('a run started here whose tests were ended at a stop says how many, as its own process counted them', async () => {
+    const command = await runTests();
+    // The run's own process, on the channel the command names: one test of it was ended at a stop.
+    const channel = parseRecordChannel(command.env!.PIWI_RUN_CHANNEL)!;
+    const main = net.connect(channel.path);
+    const send = (message: unknown) => main.write(`${JSON.stringify(message)}\n`);
+    send({
+      type: 'run-begin',
+      token: channel.token,
+      ref: command.ref,
+      cwd: dir,
+      pid: 1,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 2,
+      workers: 1,
+      shard: null,
+    });
+    send({
+      type: 'run-end',
+      status: 'passed',
+      failure: null,
+      done: 2,
+      failed: 0,
+      flaky: 0,
+      skipped: 1,
+      endedAtStop: 1,
+    });
+    const startTime = '2026-09-27T17:00:00.000Z';
+    runDetails.set(63, editorRun(63, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 63, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 63));
+    runDetails.set(63, { ...runDetails.get(63), status: 'passed', passedTests: 1, skippedTests: 1 });
+    pushInstanceEvent({ type: 'run-finished', runId: 63, projectId: 7, status: 'passed' });
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 63));
+    expect(verdict).toMatchObject({ runId: 63, ref: command.ref, passed: 1, skipped: 1, endedAtStop: 1 });
+    main.destroy();
+  });
+
   test('a run of a test three times that reached no instance says from its exit code how it went', async () => {
     const command = await verifyPays();
     const seen = notices.length;

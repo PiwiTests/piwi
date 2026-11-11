@@ -500,7 +500,9 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 
 - `fixed`: the tests failing before that it passed;
 - `stillFailing`: the tests it failed again (failing before in another run, or not new on the instance's word);
-- `newFailures`: the tests it failed that were not failing before.
+- `newFailures`: the tests it failed that were not failing before;
+- `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
+  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
 
@@ -632,8 +634,9 @@ test running Playwright itself) takes no worker's place.
 
 The run's own process (the reporter in Playwright's runner) keeps a connection of its own from its `onBegin` to its
 `onEnd` (`run-begin`, `RunSessions.attachMain`): how many tests the run holds, then each that ended for good
-(`run-progress`) and how the run ended with its first failure (`run-end`), which the session keeps as
-`RunSession.progress` (`HubSession.progress`): the status bars count from it. Its page on the instance (`run-page`, its
+(`run-progress`, with how many of the skipped were ended at a stop, `endedAtStop`) and how the run ended with its
+first failure (`run-end`), which the session keeps as `RunSession.progress` (`HubSession.progress`): the status bars
+count from it. Its page on the instance (`run-page`, its
 number and address, once the reporter knows them) is kept as `RunSession.page` (`HubSession.page`), which every surface
 links as `#78 · Open`; the hub names each stop's line where it stands now in the editor (`lineNow`, through
 `RunLines`), and a run whose reporter connected is remembered (`heardFrom`) so a command that ends without reaching the

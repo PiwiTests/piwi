@@ -898,11 +898,16 @@ object Glue {
         }
         if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
         if (parts.isEmpty()) {
+            val endedAtStop = ended.endedAtStop ?: 0
             parts += listOfNotNull(
                 "${ended.passed} passed",
                 "${ended.failed} failed",
                 if (ended.flaky > 0) "${ended.flaky} flaky" else null,
-                if (ended.skipped > 0) "${ended.skipped} skipped" else null,
+                if (ended.skipped > 0) {
+                    "${ended.skipped} skipped" + if (endedAtStop > 0) " ($endedAtStop ended at a stop)" else ""
+                } else {
+                    null
+                },
             ).joinToString(", ")
         }
         val failing = still + added > 0 || ended.failed > 0
@@ -2110,16 +2115,18 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, and how many failed; null while no run says.
+     * of how many they hold, how many failed, and how many were ended at a stop; null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
         val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
         val progress = told.mapNotNull { it.progress }
         val failed = progress.sumOf { it.failed }
+        val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
         val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
         return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
-            if (failed > 0) " · $failed failed" else ""
+            (if (failed > 0) " · $failed failed" else "") +
+            if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
     }
 
     /**

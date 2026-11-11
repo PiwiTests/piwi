@@ -1607,6 +1607,10 @@ describe('the verdict of a run started from the editor', () => {
   test('a run that touched no failure gives its counts', () => {
     const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
     expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
+    // The skipped that were ended at a stop are named beside them.
+    expect(runVerdict({ ...quiet, flaky: 0, passed: 3, skipped: 2, endedAtStop: 1 })?.text).toBe(
+      'Piwi: run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)',
+    );
   });
 
   test('the setting keeps it quiet: always, only when something fails, or never', () => {

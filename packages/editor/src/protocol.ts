@@ -812,6 +812,11 @@ export interface RunEnded {
   failed: number;
   flaky: number;
   skipped: number;
+  /**
+   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: a client says it
+   * beside the skipped. Absent for none, and for a reporter that predates the count.
+   */
+  endedAtStop?: number;
   fixed: number;
   stillFailing: string[];
   newFailures: string[];
@@ -1724,9 +1729,10 @@ export interface RunPage {
 /**
  * How far a run is (`run-begin`, `run-progress` and `run-end` of `@piwitests/core/run-channel`): how many tests it
  * holds (`total`, its repeats included), how many ended, each once by the outcome of its last attempt (`done`, and of
- * them `failed`, `flaky` and `skipped`; the others passed), whether it still runs or how it ended (`status`, `other`
- * for a status of a newer Playwright), and its first failure once it ended (the test's title and the first line of its
- * error; null for none).
+ * them `failed`, `flaky` and `skipped`; the others passed), how many of the skipped were ended at a stop (End the
+ * test: `endedAtStop`, absent from a reporter that predates the count), whether it still runs or how it ended
+ * (`status`, `other` for a status of a newer Playwright), and its first failure once it ended (the test's title and
+ * the first line of its error; null for none).
  */
 export interface RunProgress {
   total: number;
@@ -1734,6 +1740,7 @@ export interface RunProgress {
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
   status: 'running' | 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
   failure: { title: string; error: string | null } | null;
 }
