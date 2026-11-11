@@ -73,7 +73,12 @@ export type DesktopRunEvent =
   /** A locator a test of a run picked, for the window to copy; the latest ones again as the stream opens, with the codes. */
   | { type: 'pick'; pick: DesktopRunPick }
   /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
-  | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string };
+  | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string }
+  /**
+   * Another tool asked through the hub to stop the run `ref` (the hub's `stop`): the window that holds it stops it as
+   * its own Stop does, else the main window has the shell stop its process.
+   */
+  | { type: 'stop-run'; ref: string };
 
 /**
  * A command of the window: one of the hub's (`HubCommand`, answered as the hub answers it), or `show`, which only the

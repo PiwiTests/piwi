@@ -1044,7 +1044,8 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 
 - One row under the run's name holds Hold failures and, for a run of several workers, **Pause all** (the hub's
   `runControl` `pause` with no worker) and **Resume all** (a `resume` for each stopped worker, at its stop), from
-  `runLevelControls`.
+  `runLevelControls`, then, at its end, **Stop the run** (the hub's `stop`) for a run its hub can stop (`RunsHub.stops`,
+  `canStopRun`: never a terminal's run), its answer read out.
 - Resume, Step and Finish take `F8` (and `F5`), `F10` and `Shift+F11` (`stopKeyOf`, `STOP_KEYS` on the buttons'
   `aria-keyshortcuts`), for the worker whose row holds the focus (`data-worker`), else the only stopped test
   of a hub that answers (`keyTargetOf`); never from a field, nor at a held failure, which only its Resume button ends.

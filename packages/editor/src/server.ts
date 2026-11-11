@@ -47,7 +47,7 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
-import { forwardedPorts } from '@piwitests/core/run-hub';
+import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
@@ -240,6 +240,7 @@ import {
   RUN_CONTROL_REQUEST,
   SHARE_RUN_REQUEST,
   HOLD_RUN_REQUEST,
+  STOP_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -294,6 +295,7 @@ import {
   type ShareRunParams,
   type HoldRunParams,
   type RunControlResult,
+  type StopRunParams,
   type SetBreakpointsParams,
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
@@ -789,6 +791,13 @@ function flakeLabJobLine(context: PiwiContext, testCaseId: number, line: number)
 /** Whether a test's Flake Lab entry names a suspect no experiment tested yet. */
 export function hasUntestedSuspect(entry: FlakeLabEntry | undefined): boolean {
   return !!entry && ((entry.untestedSuspects ?? 0) > 0 || entry.suspect?.standing === 'untested');
+}
+
+/** Whether a client's answer reads as a `RunControlResult`. */
+function isRunControlResult(value: unknown): value is RunControlResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ok, message } = value as Record<string, unknown>;
+  return typeof ok === 'boolean' && typeof message === 'string' && message.length > 0;
 }
 
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
@@ -1772,6 +1781,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let answersStops = false;
   /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
   let writesCode = false;
+  /** Whether the client stops a run it started as another tool asks (`InitializationOptions.stopsRuns`). */
+  let stopsRuns = false;
   /** The editor's display language, as `initialize` names it. */
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
@@ -2307,6 +2318,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
     writesCode = init?.stopCode === true;
+    stopsRuns = init?.stopsRuns === true;
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
@@ -2321,6 +2333,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       serverInfo: { name: 'Piwi' },
     };
   });
+
+  /**
+   * Another tool asks through the hub to stop the run of `ref` (`stop`): the client stops it as its own Stop does
+   * (`piwi/stopRun`), a run that ended or one started in a terminal refused here, an answer the client did not give
+   * read as a refusal.
+   */
+  const stopRunAsked = async (ref: string): Promise<RunControlResult> => {
+    const session = runSessions.current().find((s) => s.ref === ref);
+    if (session?.terminal) return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
+    try {
+      const answer: unknown = await connection.sendRequest(STOP_RUN_REQUEST, { ref } satisfies StopRunParams);
+      if (isRunControlResult(answer)) return { ok: answer.ok, message: answer.message.slice(0, 500) };
+    } catch {
+      // The client did not answer: said below.
+    }
+    return { ok: false, message: 'The editor did not stop the run: stop it there.' };
+  };
 
   connection.onInitialized(() => {
     for (const folder of folders) {
@@ -2372,6 +2402,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
+        ...(stopsRuns ? { stopRun: stopRunAsked } : {}),
         forwarded: () => hubForwarded,
         peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
         peersMs: options.hubPeersMs,

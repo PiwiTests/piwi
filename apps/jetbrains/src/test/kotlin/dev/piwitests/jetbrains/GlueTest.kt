@@ -1699,6 +1699,15 @@ class GlueTest {
     }
 
     @Test
+    fun `A run another tool asks to stop ends when this IDE started it, else is refused saying where to stop it`() {
+        assertEquals(RunControlResult(ok = true, message = "The IDE stops the run."), Glue.stopRunAnswer(true))
+        assertEquals(
+            RunControlResult(ok = false, message = "The run was not started in this IDE: stop it where it was started."),
+            Glue.stopRunAnswer(false),
+        )
+    }
+
+    @Test
     fun `Hold failures turns the only live run's over, asks among several, and says who set it when an agent did`() {
         fun held(ref: String, on: Boolean, ended: Boolean = false) =
             RunSession(ref = ref, ended = ended, hold = RunHoldFailures(on = on, by = "start"))

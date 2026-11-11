@@ -139,7 +139,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes', 'hold', 'presence'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop'],
     });
     client.socket.close();
   });
@@ -441,6 +441,41 @@ describe('the commands', () => {
     }
   });
 
+  test('stop a run the editor started through its client, and refuse one started in a terminal', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const terminalRef = 'terminal-4244-1730000000003';
+    const terminal = new FakeWorker(channel.path, dir).attach(channel.token, terminalRef, 0, [...RUN_TAKES]);
+    try {
+      await waitFor(() => client.session(ref));
+      await waitFor(() => client.session(terminalRef));
+      client.send({ type: 'stop', id: 2, ref });
+      expect(await client.answer(2)).toMatchObject({ ok: true, message: 'Test Editor stops the run.' });
+      expect(svc.stops).toEqual([ref]);
+      // The client's own refusal, and a run it did not start, which it is never asked to stop.
+      svc.stopAnswer = { ok: false, message: 'The run was not started in this window: stop it in its terminal.' };
+      client.send({ type: 'stop', id: 3, ref });
+      expect(await client.answer(3)).toMatchObject({
+        ok: false,
+        message: 'The run was not started in this window: stop it in its terminal.',
+      });
+      client.send({ type: 'stop', id: 4, ref: terminalRef });
+      expect(await client.answer(4)).toMatchObject({
+        ok: false,
+        message: 'The run was started in a terminal: stop it there.',
+      });
+      expect(svc.stops).toEqual([ref, ref]);
+    } finally {
+      svc.stopAnswer = { ok: true, message: 'Test Editor stops the run.' };
+      worker.socket.destroy();
+      terminal.socket.destroy();
+      client.socket.close();
+    }
+  });
+
   test('name a run the editor’s own test runner started, as its workers say', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });
@@ -626,6 +661,59 @@ function ownHub(
     ...extra,
   });
 }
+
+describe('stopping a whole run', () => {
+  /** A connection to `own` that said hello: its welcome, and the answer to a stop of `ref` sent as command `id`. */
+  async function stopOn(own: RunHub, ref: string): Promise<{ welcome: HubMessage; answer: HubMessage }> {
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      const welcome = await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      socket.send(JSON.stringify({ type: 'stop', id: 4, ref }));
+      const answer = await waitFor(() => heard.find((m) => m.type === 'answer'));
+      return { welcome, answer };
+    } finally {
+      socket.close();
+    }
+  }
+
+  test('is offered by a hub whose host stops runs, which stops the run the command names and says so', async () => {
+    const stopped: string[] = [];
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      stopRun: async (ref) => {
+        stopped.push(ref);
+        return { ok: true, message: 'Test Editor stops the run.' };
+      },
+    }))!;
+    try {
+      const { welcome, answer } = await stopOn(own, 'ed-1');
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'stop'] });
+      expect(answer).toEqual({ type: 'answer', id: 4, ok: true, message: 'Test Editor stops the run.' });
+      expect(stopped).toEqual(['ed-1']);
+    } finally {
+      own.close();
+    }
+  });
+
+  test('is neither offered nor done by a hub whose host cannot stop a run', async () => {
+    const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
+    try {
+      const { welcome, answer } = await stopOn(own, 'ed-1');
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence'] });
+      expect(answer).toEqual({
+        type: 'answer',
+        id: 4,
+        ok: false,
+        message: 'This hub cannot stop a run: stop it where it was started.',
+      });
+    } finally {
+      own.close();
+    }
+  });
+});
 
 describe('a connection the hub lets go', () => {
   test('is cut when the library closed it, a frame too long, and the other side does not answer the close', async () => {

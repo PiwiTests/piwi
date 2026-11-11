@@ -15,6 +15,7 @@ import type {
   LocatorAtCaretResult,
   PausedImage,
   RunControlAction,
+  RunControlResult,
   RunLive,
   RunPresence,
   RunSession,
@@ -557,6 +558,16 @@ export function sharedText(result: StopBindResult): string {
 /** The icon before a stop's line: a failure's, else the pause's. */
 export function stopIcon(stop: RunStop): string {
   return stop.reason === 'failure' ? '$(error)' : '$(debug-pause)';
+}
+
+/**
+ * What the extension answers another tool that asks it to stop a run (`piwi/stopRun`, from Piwi Picker or the desktop
+ * app through the hub): whether it ended the run's task, a run started in another window or a terminal refused.
+ */
+export function stopRunAnswer(stopped: boolean): RunControlResult {
+  return stopped
+    ? { ok: true, message: 'VS Code stops the run.' }
+    : { ok: false, message: 'The run was not started in this VS Code window: stop it where it was started.' };
 }
 
 /** The commands of the run controls and of the code actions at a stop, as `package.json` contributes them. */

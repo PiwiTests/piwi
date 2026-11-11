@@ -369,7 +369,8 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
 **Commands.**
 
 - **Pause** (`piwi.pauseRun`: the running workers of every run of the window) and **Stop** (`piwi.stopRun`, which
-  terminates the ref's task), while a run is live;
+  terminates the ref's task), while a run is live; another tool's Stop through the hub reaches the same task
+  (`piwi/stopRun`, `terminateRun`, answered with `stopRunAnswer`);
 - **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
   `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped;
 - **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`), else,

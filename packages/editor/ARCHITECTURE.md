@@ -213,8 +213,10 @@ the custom messages of `src/protocol.ts`:
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
-writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do, and `agents` for the agents'
-MCP server ([Agents](#agents)).
+writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
+another tool asks (`piwi/stopRun`), as both clients do, and `agents` for the agents' MCP server ([Agents](#agents)).
+`piwi/stopRun` is the one request the service sends a client: VS Code ends the run's task, the JetBrains plugin its
+process, and the answer (`RunControlResult`) refuses a run the client did not start.
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -763,8 +765,9 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
-`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`). A reader keeps
-the features it knows; a hub that predates the list reads as having none.
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, and `stop` where
+its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
+predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -778,6 +781,9 @@ not a boundary.
 - `drive` (`since`, `on`): the connection drives the stop, or gives it back ([Presence and one driver](#presence-and-one-driver));
 - `hold` (`ref`, `on`): the run's Hold failures, as a person sets it, the hub's feature `hold`
   ([Stops no pause bar shows](#stops-no-pause-bar-shows));
+- `stop` (`ref`): the whole run ends as the tool that started it ends it, the hub's feature `stop`: the editor asks
+  its client (`piwi/stopRun`, a client that said `stopsRuns`), the desktop app's server its window
+  ([Another host](#another-host)); a run that ended, or one started in a terminal (`canStopRun`), is refused;
 - `runControl`: `pause`, and `step`, `resume` and `finish` with the `since` they need, as `piwi/runControl` takes them
   (Run to a line stays in the editor);
 - `pausedPage`;
@@ -1120,8 +1126,8 @@ surfaces as `server.ts` wires them to the client:
   nobody attends): their workers hear `attached` without `failure`, and a failure that stops one anyway goes on.
 - `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
   the folders a process of its own that was killed left behind.
-- `RunHub` takes the `token` `hello` carries (the desktop token) and the sentence its connections close with
-  (`closing`). `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
+- `RunHub` takes the `token` `hello` carries (the desktop token), the sentence its connections close with
+  (`closing`), and `stopRun`, which sends `stop-run` to the app's windows on the hub's `stop`. `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket
   connection that said hello does (`HubPeer.command`, answered with the `HubAnswer`). The desktop app's window is one,
   through routes behind the app's token.

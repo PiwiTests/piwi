@@ -384,9 +384,35 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes', 'hold', 'presence'],
+        features: ['peers', 'lanes', 'hold', 'presence', 'stop'],
       },
     ]);
+  });
+
+  it('has a window stop a run as Piwi Picker asks, and says no window can while none is open', async () => {
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    const worker = new Worker(folder).attach('desktop-6');
+    worker.begin();
+    await waitFor(() => picker.session('desktop-6'));
+    picker.send({ type: 'stop', id: 2, ref: 'desktop-6' });
+    expect(await picker.answer(2)).toMatchObject({
+      ok: false,
+      message: "No window of the desktop app is open: open the app's window to stop the run.",
+    });
+    const window = await openWindow();
+    const other = await openWindow();
+    picker.send({ type: 'stop', id: 3, ref: 'desktop-6' });
+    expect(await picker.answer(3)).toMatchObject({ ok: true, message: 'The desktop app stops the run.' });
+    // Every window hears it; the one whose tray holds the run stops it.
+    for (const each of [window, other]) expect(each.events).toContainEqual({ type: 'stop-run', ref: 'desktop-6' });
+    picker.send({ type: 'stop', id: 4, ref: 'desktop-99' });
+    expect(await picker.answer(4)).toMatchObject({ ok: false, message: 'The run has ended.' });
+    worker.socket.destroy();
+    window.close();
+    other.close();
+    picker.socket.close();
   });
 
   it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
@@ -451,7 +477,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes', 'hold', 'presence'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));

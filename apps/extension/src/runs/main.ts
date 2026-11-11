@@ -9,6 +9,7 @@ import type {
   HubStop,
   HubWorker,
 } from '@piwitests/core/run-hub';
+import { canStopRun } from '@piwitests/core/run-hub';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
@@ -1431,8 +1432,9 @@ function forgetGone(current: RunsState): void {
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
   }
-  // A run's tabs last while it does.
+  // A run's tabs, and why its Stop was refused, last while it does.
   for (const key of tabs.keys()) if (!liveRuns.has(key)) tabs.delete(key);
+  for (const key of stopRefusals.keys()) if (!liveRuns.has(key)) stopRefusals.delete(key);
   // A lane lasts while its run does, and while its hub is named: until the hubs are first found, none is.
   for (const [slot, lane] of lanes) {
     const gone = !named(lane.hub) && current.discovery !== 'searching';
@@ -1700,12 +1702,13 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
     );
   }
-  // One row under the name: Hold failures, from a hub that keeps it for each run, and Pause all or Resume all, for a
-  // run of several workers, while the run goes on and its hub is connected.
+  // One row under the name: Hold failures, from a hub that keeps it for each run, Pause all or Resume all, for a run of
+  // several workers, and Stop the run, from a hub that stops it, while the run goes on and its hub is connected.
   const holds = session.hold && !session.ended && !away ? session.hold : null;
   const level = away ? null : runLevelControls(run);
   const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
-  if (holds || levelShown) {
+  const stoppable = !away && !!hub?.stops && canStopRun(session);
+  if (holds || levelShown || stoppable) {
     // Each drawn again only when what it shows changes, so the other's buttons stay the same elements.
     const bar = part(`${runKey}|bar`, null, () => element('div', 'run-bar'));
     const items: HTMLElement[] = [];
@@ -1721,8 +1724,18 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
         part(`${runKey}|all`, [level!.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level!)),
       );
     }
+    if (stoppable) items.push(part(`${runKey}|stop`, stopping.has(runKey), () => renderStopRun(run)));
     place(bar, items);
     children.push(bar);
+    // Why its Stop was refused, under the row.
+    const refused = stoppable ? stopRefusals.get(runKey) : undefined;
+    if (refused) {
+      children.push(
+        part(`${runKey}|stop-refused`, refused, () =>
+          iconText(element('p', 'note run-note stop-refused'), 'info', refused),
+        ),
+      );
+    }
   }
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);
@@ -2026,6 +2039,38 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
   return row;
 }
 
+/** The runs whose Stop is on its way: its button waits for the answer. */
+const stopping = new Set<string>();
+/** Why a run's Stop was refused, by run: shown under its row until the next Stop. */
+const stopRefusals = new Map<string, string>();
+
+/**
+ * Stop the run, as its own Stop does where it was started, through its hub (`stop`): the button below the run's name,
+ * apart from its other controls. The hub's answer is read out; the run's end follows in its session.
+ */
+function renderStopRun(run: RunsRun): HTMLElement {
+  const key = runKeyOf(run);
+  const stop = makeButton(
+    t('runs_stopRun'),
+    async (event) => {
+      if (pressedHeld(event) || stopping.has(key) || !hubAnswers(run.hub)) return;
+      stopping.add(key);
+      stopRefusals.delete(key);
+      render();
+      const answer = await command(run.hub, run.session.ref, null, 'stop', null);
+      stopping.delete(key);
+      if (!answer.ok) stopRefusals.set(key, failureText(answer));
+      announce(answer.ok ? answer.message : failureText(answer));
+      render();
+    },
+    { icon: 'stop', small: true, tone: 'remove', title: t('runs_stopRunTitle') },
+  );
+  stop.classList.add('run-stop');
+  stop.dataset.focus = `${key}|stop-run`;
+  if (stopping.has(key)) unavailable(stop);
+  return stop;
+}
+
 /**
  * Turn a run's Hold failures on or off, unless a turn of it is on its way: the hub's answer is read out, and a refusal
  * shown under the toggle.
@@ -2230,7 +2275,10 @@ const CONTROLS = {
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive'>,
+  Exclude<
+    RunsWhat,
+    'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive' | 'stop'
+  >,
   { label: string; title: string; icon: IconName; tone?: 'primary' | 'remove' | 'ghost' }
 >;
 
@@ -3124,14 +3172,16 @@ function restoreFocus(): void {
   }
   const owner = focusKey.slice(0, focusKey.lastIndexOf('|') + 1);
   // An action More folds again at the next stop leaves the focus on More; never End the test, which a key pressed
-  // again would answer.
+  // again would answer, nor Stop the run.
   const folded = FOLDED.has(focusKey.slice(owner.length) as Control)
     ? document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${owner}more`)}"]`)
     : null;
   const near =
     folded ??
     (owner
-      ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+      ? document.querySelector<HTMLElement>(
+          `[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"]):not([data-focus$="|stop-run"])`,
+        )
       : null);
   if (!near) return;
   lending = true;

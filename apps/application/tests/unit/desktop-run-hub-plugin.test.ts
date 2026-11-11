@@ -46,6 +46,8 @@ interface TrayRun {
   status: string;
   steps: Array<{ args: string[] }>;
   hubRefs: string[];
+  shellId: number;
+  stopRequested: boolean;
 }
 
 async function plugin(label: string | null = 'main', trays = 1) {
@@ -54,6 +56,9 @@ async function plugin(label: string | null = 'main', trays = 1) {
   const presents: boolean[] = [];
   const visibility = ref<'visible' | 'hidden'>('visible');
   let stopListener: ((session: HubSession, worker: HubWorker) => void) | null = null;
+  let stopRunListener: ((ref: string) => void) | null = null;
+  const stoppedRuns: TrayRun[] = [];
+  const invoked: Array<[string, unknown]> = [];
   let emit: (message: Record<string, unknown>) => void = () => {};
   const runs = ref<TrayRun[]>([]);
   const holds = ref<Record<number, boolean>>({});
@@ -64,7 +69,12 @@ async function plugin(label: string | null = 'main', trays = 1) {
   if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   for (const [name, value] of Object.entries({ computed, ref, watch })) vi.stubGlobal(name, value);
-  vi.stubGlobal('tauriCore', () => ({ invoke: async () => null }));
+  vi.stubGlobal('tauriCore', () => ({
+    invoke: async (command: string, args: unknown) => {
+      invoked.push([command, args]);
+      return null;
+    },
+  }));
   vi.stubGlobal('tauriWindowLabel', () => label);
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
@@ -76,6 +86,10 @@ async function plugin(label: string | null = 'main', trays = 1) {
     trayOpen,
     trayMounts,
     activeCount: computed(() => runs.value.filter((run) => run.status === 'running').length),
+    stopRun: async (run: TrayRun) => {
+      run.stopRequested = true;
+      stoppedRuns.push(run);
+    },
   }));
   const hub = {
     state,
@@ -84,6 +98,10 @@ async function plugin(label: string | null = 'main', trays = 1) {
     present: (on: boolean) => presents.push(on),
     onStop: (listener: typeof stopListener) => {
       stopListener = listener;
+      return () => {};
+    },
+    onStopRun: (listener: typeof stopRunListener) => {
+      stopRunListener = listener;
       return () => {};
     },
   };
@@ -119,6 +137,10 @@ async function plugin(label: string | null = 'main', trays = 1) {
       hearing = label ?? 'main';
       stopListener?.(session, worker);
     },
+    /** Another tool asked through the hub to stop the run `ref`: the runs this window stopped, the shell's calls. */
+    stopRun: (ref: string) => stopRunListener?.(ref),
+    stoppedRuns,
+    invoked,
   };
 }
 
@@ -165,7 +187,8 @@ afterEach(() => {
 });
 
 function running(key: number, kind: TrayRun['kind'], hubRef: string): TrayRun {
-  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef] };
+  const shellId = Number(/^desktop-(\d+)/.exec(hubRef)?.[1]);
+  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef], shellId, stopRequested: false };
 }
 
 describe('the window’s hold on its runs’ hub', () => {
@@ -296,6 +319,39 @@ describe('the window’s hold on its runs’ hub', () => {
       'main: A test failed and waits',
       'main: A test failed and waits',
     ]);
+  });
+
+  test('stops a run another tool asks to stop once: in the window whose tray owns it, else through the shell', async () => {
+    const aux = await plugin('aux-1');
+    aux.runs.value = [running(1, 'tests', 'desktop-9')];
+    await settle();
+    const main = await plugin('main');
+    main.runs.value = [running(2, 'tests', 'desktop-4')];
+    await settle();
+    for (const ref of ['desktop-9-unattended', 'desktop-4', 'desktop-3']) {
+      for (const window of [aux, main]) window.stopRun(ref);
+    }
+    // Each window stopped its own run as its Stop does; the run no tray owns, the dashboard window had the shell stop.
+    expect(aux.stoppedRuns.map((run) => run.key)).toEqual([1]);
+    expect(main.stoppedRuns.map((run) => run.key)).toEqual([2]);
+    expect(aux.invoked).toEqual([]);
+    expect(main.invoked).toEqual([['desktop_stop_local_tests', { runId: 3 }]]);
+    // Asked again while they stop: neither is stopped twice, which the shell would take as a force stop.
+    for (const ref of ['desktop-4', 'desktop-3']) main.stopRun(ref);
+    expect(main.stoppedRuns).toHaveLength(1);
+    expect(main.invoked).toHaveLength(1);
+  });
+
+  test('stops a run of several steps only through the step it runs now, never an earlier one that ended', async () => {
+    const main = await plugin('main');
+    // Its first step, `desktop-5`, ended; its second, `desktop-6`, runs now.
+    main.runs.value = [{ ...running(1, 'tests', 'desktop-6'), hubRefs: ['desktop-5', 'desktop-6'] }];
+    await settle();
+    main.stopRun('desktop-5');
+    expect(main.stoppedRuns).toEqual([]);
+    expect(main.invoked).toEqual([]);
+    main.stopRun('desktop-6');
+    expect(main.stoppedRuns.map((run) => run.key)).toEqual([1]);
   });
 
   test('lets a window’s claim on its runs lapse once it stops saying it, as a window that closed unheard', async () => {

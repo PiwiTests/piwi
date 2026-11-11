@@ -169,6 +169,7 @@ describe('the global shortcut’s rule', () => {
       lanes: true,
       presence: true,
       holds,
+      stops: false,
     });
     // A run nobody attends is left to run: the shortcut pauses the run a person attends.
     expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
@@ -399,6 +400,21 @@ describe('Hold failures, as the worker reads it', () => {
   });
 });
 
+describe('Stop the run, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone', () => {
+    expect(parseRunsRequest({ ...command, what: 'stop' })).toEqual({ ...command, what: 'stop' });
+    for (const bad of [
+      { ...command, what: 'stop', worker: 0 },
+      { ...command, what: 'stop', since: 's3' },
+      { ...command, what: 'stop', on: true },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('Take control and Give back, as the worker reads them', () => {
   const command = { type: 'command', id: 8, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 0, since: 's3' };
 
@@ -531,7 +547,18 @@ describe('what a stop takes from the window', () => {
     const state: RunsState = {
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false, presence: false, holds: false }],
+      hubs: [
+        {
+          id: hub,
+          connected: true,
+          client: null,
+          desktop: false,
+          lanes: false,
+          presence: false,
+          holds: false,
+          stops: false,
+        },
+      ],
       runs: [
         {
           hub,
@@ -673,7 +700,18 @@ describe('a lane watched while it runs', () => {
     const state = (workers: HubWorker[]): RunsState => ({
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true, presence: false, holds: false }],
+      hubs: [
+        {
+          id: hub,
+          connected: true,
+          client: null,
+          desktop: false,
+          lanes: true,
+          presence: false,
+          holds: false,
+          stops: false,
+        },
+      ],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
     });
     const lanes: Array<number | null> = [];

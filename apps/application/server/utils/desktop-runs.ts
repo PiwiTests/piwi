@@ -36,7 +36,14 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
+import {
+  HUB_FEATURES,
+  canStopRun,
+  parseHubCommand,
+  type HubAnswer,
+  type HubMessage,
+  type LiveHub,
+} from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import { runTargetConnection } from '@piwitests/editor/run-target';
 import type { RunIntent } from '@piwitests/core/run-channel';
@@ -53,6 +60,7 @@ import {
   type AgentWords,
   type DiskFile,
   type HubPeer,
+  type RunControlResult,
   type RunHoldFailures,
   type StopTarget,
 } from '@piwitests/editor/run-host';
@@ -384,6 +392,7 @@ export class DesktopRuns {
           roots: runs.links().map((link) => link.path),
         }),
         surfacesChanged: () => runs.sessions.surfacesChanged(),
+        stopRun: async (ref) => runs.stopRun(ref),
         peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
         peersMs: options.peersMs,
         token: options.token,
@@ -445,6 +454,21 @@ export class DesktopRuns {
         features: [...HUB_FEATURES],
       },
     ];
+  }
+
+  /**
+   * Stops the run `ref` as another tool asks through the hub (`stop`): every window's stream hears it (`stop-run`), and
+   * the window that holds the run stops it as its own Stop does, the shell's process with it. Refused for a run that
+   * ended, and while no window is open to stop it.
+   */
+  stopRun(ref: string): RunControlResult {
+    const session = this.sessions.current().find((s) => s.ref === ref);
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
+    if (this.windows.size === 0) {
+      return { ok: false, message: "No window of the desktop app is open: open the app's window to stop the run." };
+    }
+    for (const window of this.windows.values()) window.sink.send({ type: 'stop-run', ref });
+    return { ok: true, message: 'The desktop app stops the run.' };
   }
 
   /**

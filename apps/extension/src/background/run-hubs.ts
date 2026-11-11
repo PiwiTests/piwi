@@ -264,6 +264,7 @@ export class RunHubs {
           lanes: !!this.features.get(hub.url)?.includes('lanes'),
           presence: !!this.features.get(hub.url)?.includes('presence'),
           holds: !!this.features.get(hub.url)?.includes('hold'),
+          stops: !!this.features.get(hub.url)?.includes('stop'),
         };
       }),
       runs: [...live, ...ended],
@@ -365,6 +366,8 @@ export class RunHubs {
         return request.on === undefined
           ? Promise.resolve(OFFLINE)
           : connection.command({ type: 'hold', ref, on: request.on });
+      case 'stop':
+        return connection.command({ type: 'stop', ref });
       case 'drive':
         // `parseRunsRequest` takes none without the stop it drives and whether to drive it.
         return since === null || request.on === undefined

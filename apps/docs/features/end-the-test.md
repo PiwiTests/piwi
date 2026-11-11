@@ -58,7 +58,7 @@ Test** ends it:
 
 - **Playwright's calls alone.** The test's own code between two calls, a loop or a helper, runs until its next call.
 - **One test.** It ends the stopped worker's test; the run's other tests run. To end the run, **Stop** it (one Piwi
-  started) or end it in its terminal.
+  started, from the editor, the desktop app or the [Runs window](./runs-window)) or end it in its terminal.
 
 ## Related
 

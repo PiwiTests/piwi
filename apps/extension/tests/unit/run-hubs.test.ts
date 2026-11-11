@@ -787,6 +787,7 @@ describe('connections that fail', () => {
         lanes: false,
         presence: false,
         holds: false,
+        stops: false,
       },
     ]);
     expect(fetches).toHaveLength(1);

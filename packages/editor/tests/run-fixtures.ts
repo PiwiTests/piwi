@@ -20,7 +20,16 @@ import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { parseHubToRun, type HubToRun, type RunHold, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import { startServer, type ServerOptions } from '../src/server';
-import type { AgentsResult, InitializationOptions, Notice, RunCommand, RunSession, StopCode } from '../src/protocol';
+import type {
+  AgentsResult,
+  InitializationOptions,
+  Notice,
+  RunCommand,
+  RunControlResult,
+  RunSession,
+  StopCode,
+  StopRunParams,
+} from '../src/protocol';
 
 export function last<T>(items: T[]): T | undefined {
   return items[items.length - 1];
@@ -62,6 +71,12 @@ export interface Service {
   agents: AgentsResult[];
   /** What the service published for its discovery file, last: null once it stopped. */
   published: Array<EditorDiscovery | null>;
+  /**
+   * The runs the service asked the client to stop (`piwi/stopRun`), each by its ref; the client answers `stopAnswer`,
+   * the run stopped by default.
+   */
+  stops: string[];
+  stopAnswer: RunControlResult;
   /** The latest session of a ref the client heard. */
   latest(ref: string): RunSession | undefined;
   /** A command that runs the spec's test, with its ref and the run channel it names. */
@@ -89,6 +104,12 @@ export async function service(
   const notices: Notice[] = [];
   const codes: StopCode[] = [];
   const agents: AgentsResult[] = [];
+  const stops: string[] = [];
+  const answers = { stop: { ok: true, message: 'Test Editor stops the run.' } as RunControlResult };
+  client.onRequest('piwi/stopRun', (params: StopRunParams) => {
+    stops.push(params.ref);
+    return answers.stop;
+  });
   client.onNotification('piwi/agentsChanged', (told: AgentsResult) => void agents.push(told));
   client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
   client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
@@ -100,7 +121,7 @@ export async function service(
     capabilities: {},
     clientInfo: { name: 'Test Editor' },
     workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
-    initializationOptions: { ...(runControl ? { runControl: true } : {}), ...init },
+    initializationOptions: { stopsRuns: true, ...(runControl ? { runControl: true } : {}), ...init },
   });
   await client.sendNotification('initialized', {});
   const command = async () => {
@@ -127,6 +148,13 @@ export async function service(
     codes,
     agents,
     published,
+    stops,
+    get stopAnswer() {
+      return answers.stop;
+    },
+    set stopAnswer(answer) {
+      answers.stop = answer;
+    },
     latest: (ref) => last(sessions.filter((s) => s.ref === ref)),
     command,
   };

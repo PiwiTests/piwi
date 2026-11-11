@@ -77,6 +77,8 @@ export interface RunsHub {
   presence: boolean;
   /** It keeps a Hold failures for each run a person attends (`hold` among its features): a run without one is unattended. */
   holds: boolean;
+  /** It stops a whole run as the tool that started it does (`stop` among its features), for a run `canStopRun` names. */
+  stops: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -100,7 +102,8 @@ export interface RunsState {
  * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
  * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
  * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch); or
- * the stop driven from here, an agent's actions there refused, or given back (`drive`, Take control and Give back).
+ * the stop driven from here, an agent's actions there refused, or given back (`drive`, Take control and Give back); or
+ * the whole run stopped (`stop`, Stop the run).
  */
 export type RunsWhat =
   | HubControlAction
@@ -116,7 +119,8 @@ export type RunsWhat =
   | 'share'
   | 'hold'
   | 'watch'
-  | 'drive';
+  | 'drive'
+  | 'stop';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -140,6 +144,7 @@ const WHATS: readonly string[] = [
   'watch',
   'give-up',
   'drive',
+  'stop',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -287,12 +292,13 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
       if ((what === 'image' || what === 'drive' || VIEW_WHATS.includes(what)) && worker === null) return null;
-      // Share live and Hold failures name the run alone, and Watch the run and its lane.
-      if ((what === 'share' || what === 'hold' || what === 'watch') && (worker !== null || since !== null)) return null;
+      // Share live, Hold failures and Stop the run name the run alone, and Watch the run and its lane.
+      if (['share', 'hold', 'stop', 'watch'].includes(what) && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
       // test while a Pause waits for a call names none, and its worker.
       if (what === 'give-up' && (since !== null || worker === null)) return null;
-      if (!['pause', 'image', 'share', 'hold', 'watch', 'give-up'].includes(what) && since === null) return null;
+      if (!['pause', 'image', 'share', 'hold', 'stop', 'watch', 'give-up'].includes(what) && since === null)
+        return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
       // its events, a pick on the image its point, Watch the lane and whether it is on.

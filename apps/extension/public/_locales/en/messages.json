@@ -7905,6 +7905,14 @@
     "message": "Pause every worker of this run before its next call",
     "description": "Runs window, the Pause all button’s tooltip."
   },
+  "runs_stopRun": {
+    "message": "Stop the run",
+    "description": "Runs window, a button under a run’s name that ends the whole run now, through the editor or the desktop app that started it."
+  },
+  "runs_stopRunTitle": {
+    "message": "End the whole run now, as its own Stop does where it was started",
+    "description": "Runs window, tooltip of the button that ends the whole run."
+  },
   "runs_resumeAll": {
     "message": "Resume all",
     "description": "Runs window, button on a run of several stopped workers: resumes each stopped test."

@@ -32,15 +32,15 @@ locator call, for how long), with [**End the test**](./end-the-test#while-a-paus
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
 stays in the editor. A live run of several workers shows one at a time, behind tabs marked with their state, with
 **Pause all** and **Resume all** under its name. A new stop takes the tab from a worker neither stopped nor watched,
-and **Resume** or **End the test** moves it to the next stopped test. Resume, Step and Finish have
+and **Resume** or **End the test** moves it to the next stopped test. **Stop the run** ends a run an editor or the
+desktop app started, not a terminal's or test runner's. Resume, Step and Finish have
 [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's
 [**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it
 end as it failed; **Pick** replaces the failing locator. **Hold failures**, on each run, turns it on or off.
 
-**Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
-project whose live view is on, as in the editor: [Share a run live](./share-live).
+**Share live**, under the run's name, shares the run with your team: [Share a run live](./share-live).
 
 Each run names who else has it open (**Also open in the desktop app**, **An agent follows this run**), and each worker
 who watches its page (**Watched by you and Visual Studio Code**). One tool drives a stop at a time: an agent that

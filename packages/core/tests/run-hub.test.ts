@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { EditorDiscovery } from '../src/editor-discovery';
 import { MAX_STOP_ERROR } from '../src/run-channel';
 import {
+  canStopRun,
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -845,6 +846,30 @@ describe('how far a run is, on the hub', () => {
     expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
       'progress',
     );
+  });
+});
+
+describe('Stop for a whole run on the hub', () => {
+  test('reads stop, naming the run, and refuses one without it', () => {
+    expect(parseHubCommand(json({ type: 'stop', id: 9, ref: 'ed-1' }))).toEqual({ type: 'stop', id: 9, ref: 'ed-1' });
+    expect(parseHubCommand(json({ type: 'stop', id: 9 }))).toEqual({
+      type: 'invalid',
+      id: 9,
+      message: 'The command needs the ref of a run.',
+    });
+    expect(parseHubCommand(json({ type: 'stop', id: 9, ref: 'ed 1' }))).toMatchObject({ type: 'invalid' });
+  });
+
+  test('stops a live run its host started, never one started in a terminal or by the editor’s runner', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(canStopRun({ ended: false })).toBe(true);
+    expect(canStopRun({ ended: true })).toBe(false);
+    expect(canStopRun({ ended: false, terminal: true })).toBe(false);
+    // A run whose own process said it ended, its session left a moment longer.
+    const progress = { done: 3, total: 3, failed: 0, flaky: 0, skipped: 0, status: 'passed' as const, failure: null };
+    expect(canStopRun({ ended: false, progress })).toBe(false);
+    expect(canStopRun({ ended: false, progress: { ...progress, status: 'running' } })).toBe(true);
+    expect(parseHubMessage(json({ ...welcome, features: ['stop'] }))).toEqual({ ...welcome, features: ['stop'] });
   });
 });
 
