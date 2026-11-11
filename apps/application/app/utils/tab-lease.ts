@@ -4,7 +4,8 @@
  * renewed it for `staleMs`. A tab that writes the lease waits `settleMs` and holds it only if its own id is still
  * there. A tab can see another tab's write late, so tabs that take it at once can each pass that check: as soon as a
  * holder sees another tab's fresh lease (a `storage` event, or its next renewal), the smaller id keeps it and writes
- * it again, and the other loses it. An id starts with its tab's start time, so the older tab keeps it.
+ * it again, and the other loses it. An id starts with the time its tab asked for the lease, so the tab that asked first
+ * keeps it.
  * `localStorage` works in every context, a page served over plain HTTP included.
  *
  * `staleMs` outlasts the minute a browser may wait between two timers of a tab hidden for a while, so a hidden holder

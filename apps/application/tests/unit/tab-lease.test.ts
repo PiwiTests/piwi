@@ -11,16 +11,23 @@ type Listener = (event: { key?: string | null; persisted?: boolean }) => void;
 
 /**
  * One browser's `localStorage`, shared by its tabs, which tells every other tab of a change, as browsers do. With a
- * `lag`, another tab sees a write that much later, as a tab in another process may.
+ * `lag`, another tab sees a write that much later, as a tab in another process may, and in the storage's own order: a
+ * write that reaches a tab after a later one changes nothing it sees.
  */
 class Browser {
   values = new Map<string, string>();
   tabs: Tab[] = [];
   lag = 0;
+  /** How many writes the storage has taken. */
+  writes = 0;
   /** The keys a full storage refuses to write; it still reads and removes. */
   refuses: (key: string) => boolean = () => false;
-  changed(by: Tab, key: string) {
-    const value = this.values.get(key);
+  /** Store `value` for `by` (`undefined` removes it), and tell every other tab. */
+  write(by: Tab, key: string, value: string | undefined) {
+    if (value === undefined) this.values.delete(key);
+    else this.values.set(key, value);
+    const order = ++this.writes;
+    by.see(key, value, order);
     for (const tab of this.tabs) {
       if (tab === by) continue;
       if (this.lag === 0) {
@@ -28,19 +35,32 @@ class Browser {
         continue;
       }
       setTimeout(() => {
-        tab.see(key, value);
+        tab.see(key, value, order);
         tab.fire('storage', { key });
       }, this.lag);
     }
   }
 }
 
-/** A tab of that browser; a frozen tab runs no timer, as a browser may freeze a hidden one. */
+/**
+ * A tab of that browser. A frozen tab runs no timer and hears no event until it runs again, as a browser may freeze a
+ * hidden one.
+ */
 class Tab {
   listeners = new Map<string, Listener[]>();
-  /** What this tab sees of the storage while the browser lags. */
+  /** What this tab sees of the storage while the browser lags, and the order of the write it last saw of each key. */
   seen = new Map<string, string>();
-  frozen = false;
+  orders = new Map<string, number>();
+  /** The events a frozen tab heard, given to it as it runs again. */
+  private heard: Array<[string, { key?: string | null; persisted?: boolean }]> = [];
+  private isFrozen = false;
+  get frozen(): boolean {
+    return this.isFrozen;
+  }
+  set frozen(frozen: boolean) {
+    this.isFrozen = frozen;
+    if (!frozen) for (const [type, event] of this.heard.splice(0)) this.fire(type, event);
+  }
   held = vi.fn();
   lost = vi.fn();
   stop: () => void = () => {};
@@ -54,15 +74,9 @@ class Tab {
         getItem: (key) => (browser.lag === 0 ? browser.values : this.seen).get(key) ?? null,
         setItem: (key, value) => {
           if (browser.refuses(key)) throw new Error('QuotaExceededError');
-          browser.values.set(key, value);
-          this.seen.set(key, value);
-          browser.changed(this, key);
+          browser.write(this, key, value);
         },
-        removeItem: (key) => {
-          browser.values.delete(key);
-          this.seen.delete(key);
-          browser.changed(this, key);
-        },
+        removeItem: (key) => browser.write(this, key, undefined),
       },
       now: () => Date.now(),
       setTimeout: (fn, ms) => setTimeout(() => !this.frozen && fn(), ms),
@@ -71,11 +85,17 @@ class Tab {
       on: (type, listener) => this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]),
     };
   }
-  see(key: string, value: string | undefined) {
+  see(key: string, value: string | undefined, order: number) {
+    if (order <= (this.orders.get(key) ?? 0)) return;
+    this.orders.set(key, order);
     if (value === undefined) this.seen.delete(key);
     else this.seen.set(key, value);
   }
   fire(type: string, event: { key?: string | null; persisted?: boolean }) {
+    if (this.isFrozen) {
+      this.heard.push([type, event]);
+      return;
+    }
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
   open() {
@@ -111,7 +131,7 @@ describe('holdInOneTab', () => {
     expect(first.held).not.toHaveBeenCalled();
   });
 
-  test('tabs that took it before seeing each other’s write agree on the first as soon as they see it', () => {
+  test('tabs that took it before seeing each other’s write agree on the first long before the next renewal', () => {
     const browser = new Browser();
     browser.lag = TAB_LEASE_SETTLE_MS * 2;
     const first = new Tab(browser).open();
@@ -119,7 +139,7 @@ describe('holdInOneTab', () => {
     const tabs = [first, new Tab(browser).open(), new Tab(browser).open()];
     vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
     expect(tabs.filter(holds)).toHaveLength(3);
-    vi.advanceTimersByTime(browser.lag * 2);
+    vi.advanceTimersByTime(TAB_LEASE_RENEW_MS / 2);
     expect(tabs.filter(holds)).toEqual([first]);
     vi.advanceTimersByTime(TAB_LEASE_STALE_MS * 2);
     expect(tabs.filter(holds)).toEqual([first]);
@@ -154,6 +174,7 @@ describe('holdInOneTab', () => {
     first.frozen = true;
     vi.advanceTimersByTime(TAB_LEASE_STALE_MS + TAB_LEASE_RENEW_MS);
     expect(second.held).toHaveBeenCalledOnce();
+    expect(first.lost).not.toHaveBeenCalled();
     first.frozen = false;
     vi.advanceTimersByTime(TAB_LEASE_RENEW_MS);
     expect(first.lost).toHaveBeenCalledOnce();
