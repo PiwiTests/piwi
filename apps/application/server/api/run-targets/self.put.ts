@@ -2,14 +2,14 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { runTargets } from '../../database/schema';
 import { can } from '#shared/permissions';
-import { requireRunTarget } from '../../utils/run-requests';
+import { requireRunTarget, storedProjectIds, targetProjectNames } from '../../utils/run-requests';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Run requests'],
     summary: 'Describe this connected app to the instance',
     description:
-      'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored.',
+      'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored, with `projects`, the `id` and `name` (its label, else its name) of each of its `projectIds` where its owner holds `run:receive`.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
@@ -51,6 +51,10 @@ export default eventHandler(async (event) => {
     platform: row!.platform,
     version: row!.version,
     projectIds: row!.projectIds ?? [],
+    projects: await targetProjectNames(
+      db,
+      storedProjectIds(row!).filter((id) => can(access, 'run:receive', id)),
+    ),
     lastSeenAt: row!.lastSeenAt?.toISOString() ?? null,
   };
 });

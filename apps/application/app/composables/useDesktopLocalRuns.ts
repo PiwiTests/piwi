@@ -1218,14 +1218,16 @@ export function useDesktopLocalRuns() {
     requestId: string;
     instance: string;
     projectId: number;
+    projectName?: string | null;
     cases: RetryCase[];
     title: string;
   }): LocalRun | null {
     if (!tauriCore()) return null;
+    const host = teamInstanceHost(input.instance);
     return spawn({
       kind: 'request',
       projectId: input.projectId,
-      projectLabel: teamInstanceHost(input.instance),
+      projectLabel: input.projectName ? `${input.projectName} on ${host}` : host,
       cases: input.cases,
       title: input.title,
       options: { ...DEFAULT_LOCAL_RUN_OPTIONS },

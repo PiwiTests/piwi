@@ -140,13 +140,13 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/');
 
     // Click on Projects in sidebar (Home's stat strip also links to /projects)
-    await page.locator('#dashboard-sidebar-default').getByRole('link', { name: 'Projects' }).click();
+    await page.locator('#dashboard-sidebar-default').getByRole('link', { name: 'Projects', exact: true }).click();
 
     // Check navigation
     await page.waitForURL('/projects');
 
     // Click on Home in sidebar
-    await page.locator('#dashboard-sidebar-default').getByRole('link', { name: 'Home' }).click();
+    await page.locator('#dashboard-sidebar-default').getByRole('link', { name: 'Home', exact: true }).click();
 
     // Check navigation
     await page.waitForURL('/');

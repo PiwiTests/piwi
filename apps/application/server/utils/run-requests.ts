@@ -19,7 +19,7 @@ import { RUN_TARGET_KEY_PERMISSIONS } from './extension-connect';
 import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
-import { ACTIVE_STATES, RUN_STATES } from '#shared/handlers/run-requests';
+import { ACTIVE_STATES, projectNamesOf, RUN_STATES } from '#shared/handlers/run-requests';
 
 export {
   countWaitingRequests,
@@ -87,7 +87,9 @@ export async function requireRunTarget(event: H3Event, { seen = true } = {}): Pr
   const value = extractApiKey(event);
   if (!value) throw apiError({ statusCode: 401, message: 'A connected app’s key is required' });
   const resolved = await resolveApiKey(value);
-  if (!resolved) throw apiError({ statusCode: 401, message: 'Invalid or expired API key' });
+  if (!resolved) {
+    throw apiError({ statusCode: 401, message: 'Invalid or expired API key', errorCode: 'RUN_TARGET_KEY_REVOKED' });
+  }
   const holds = resolved.permissions ?? [];
   if (
     holds.length !== RUN_TARGET_KEY_PERMISSIONS.length ||
@@ -238,12 +240,19 @@ export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectI
 /**
  * The requests a target should act on: those still waiting for one of its owner's targets, and its own stops: a run
  * to end, or a request that ended at a stop within the last 10 minutes (a claim to stop showing, or a run the second
- * stop ended).
+ * stop ended). `held` names the requests the instance counts as the target's, claimed or with their run, so a target
+ * that started again ends those it no longer holds. `projects` names the projects of those requests and the ones the
+ * target has a folder for, where its owner holds `run:receive`.
  */
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
   now = new Date(),
-): Promise<{ requests: RunRequestOffer[]; stops: string[] }> {
+): Promise<{
+  requests: RunRequestOffer[];
+  stops: string[];
+  held: { id: string; state: RunRequestState }[];
+  projects: TargetProjectName[];
+}> {
   const waiting = await db
     .select()
     .from(runRequests)
@@ -280,7 +289,34 @@ export async function requestsForTarget(
         ),
       ),
     );
-  return { requests, stops: stops.map((s) => s.id) };
+  const holding = await db
+    .select({ id: runRequests.id, state: runRequests.state })
+    .from(runRequests)
+    .where(and(eq(runRequests.targetId, target.id), inArray(runRequests.state, ACTIVE_STATES)));
+  const held = holding.map((row) => ({ id: row.id, state: row.state as RunRequestState }));
+  const named = [...new Set([...requests.map((r) => r.projectId), ...storedProjectIds(target)])].filter(
+    (id) => on.get(id) ?? can(access, 'run:receive', id),
+  );
+  return { requests, stops: stops.map((s) => s.id), held, projects: await targetProjectNames(db, named) };
+}
+
+/** The project ids a target said it has a folder for, as stored. */
+export function storedProjectIds(target: RunTarget): number[] {
+  return Array.isArray(target.projectIds)
+    ? target.projectIds.filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id))
+    : [];
+}
+
+/** A project's id and its label, else its name, as a target shows it. */
+export interface TargetProjectName {
+  id: number;
+  name: string;
+}
+
+/** The names of the projects a target may take requests for, by id; a project that is gone is left out. */
+export async function targetProjectNames(db: DbClient, ids: number[]): Promise<TargetProjectName[]> {
+  const names = await projectNamesOf(db, ids);
+  return [...names].map(([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id);
 }
 
 export type TargetMoveResult =

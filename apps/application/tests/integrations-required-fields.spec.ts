@@ -584,6 +584,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       // Jira leaves the Parent optional on the screen, so it is not asked for: add it.
       await expect(dialog.locator('[data-field-id="parent"]')).toHaveCount(0);
       await dialog.getByText('Add a field').click();
+      await expect(page.getByPlaceholder('Search fields…')).toBeFocused();
       await page.keyboard.type('Par');
       await page.getByRole('option', { name: 'Parent', exact: true }).click();
       const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
@@ -591,7 +592,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
 
       // Its input searches the Jira project's issues by key or summary.
       await parent.getByText('Search an issue').click();
+      await expect(page.getByPlaceholder('Search…')).toBeFocused();
       await page.keyboard.type('checkout');
+      await expect.poll(() => mock.pickerQueries).toContainEqual({ query: 'checkout', jql: 'project = "PROJ"' });
       // Each issue shows its type's icon, as Jira draws it.
       const epic = page.getByRole('option', { name: 'PROJ-7 — Checkout epic' });
       await expect
@@ -599,7 +602,6 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
         .toBeGreaterThan(0);
       await epic.click();
       await expect(parent).toContainText('PROJ-7 — Checkout epic');
-      expect(mock.pickerQueries).toContainEqual({ query: 'checkout', jql: 'project = "PROJ"' });
 
       await dialog.getByRole('button', { name: 'Create', exact: true }).click();
       await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();

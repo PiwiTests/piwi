@@ -14,6 +14,7 @@ import {
   instanceUrlOf,
   isRequestId,
   keyToKeep,
+  localRunsOf,
   launchOf,
   linksOf,
   planAgain,
@@ -23,7 +24,9 @@ import {
   runTargetConnection,
   useKeptKey,
   useLinks,
+  useLocalRuns,
   waitingRunRequests,
+  type EndedRun,
 } from './run-target';
 
 /** The path every run-target route sits under. */
@@ -59,6 +62,19 @@ const refused = (status: number, message: string) => ({ status, body: { message 
 const bodyOf = (request: RunTargetRequest) =>
   (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>;
 const TARGET_KEY = /^pd_[0-9a-f]{16,128}$/;
+
+/** The runs the shell hands as ended in `PUT /key`: at most 200, each a request id, its exit code and its stop. */
+function endedRunsOf(value: unknown): EndedRun[] | null {
+  if (!Array.isArray(value) || value.length > 200) return null;
+  const runs: EndedRun[] = [];
+  for (const run of value) {
+    if (!run || typeof run !== 'object') return null;
+    const { id, code, stopped } = run as Record<string, unknown>;
+    if (!isRequestId(id) || !(code === null || Number.isInteger(code)) || typeof stopped !== 'boolean') return null;
+    runs.push({ id, code: code as number | null, stopped });
+  }
+  return runs;
+}
 
 export const RUN_TARGET_ROUTES = {
   /** The connection and the requests the window asks about. */
@@ -96,20 +112,37 @@ export const RUN_TARGET_ROUTES = {
     shellOnly: true,
     handle: () => ok({ code: mintSessionCode() }),
   },
-  /** The kept key and the linked folders, from the shell after each start. */
+  /**
+   * The kept key, the linked folders, the requested runs the shell still holds, those that ended before a server
+   * took their end and the folders its local runs are going in, from the shell after each start. Answers the ends it
+   * reported (`ended`), which the shell forgets.
+   */
   useKey: {
     method: 'PUT',
     path: '/key',
     shellOnly: true,
-    handle: (request) => {
+    handle: async (request) => {
       const body = bodyOf(request);
       const instance = instanceUrlOf(body.instance);
       const links = linksOf(body.links ?? {});
-      if (!instance || typeof body.key !== 'string' || !TARGET_KEY.test(body.key) || !links) {
-        return refused(400, 'Invalid instance, key or links');
+      const running = body.running ?? [];
+      const localRuns = localRunsOf(body.localRuns ?? []);
+      const ended = endedRunsOf(body.ended ?? []);
+      if (
+        !instance ||
+        typeof body.key !== 'string' ||
+        !TARGET_KEY.test(body.key) ||
+        !links ||
+        !Array.isArray(running) ||
+        running.length > 200 ||
+        !running.every(isRequestId) ||
+        !localRuns ||
+        !ended
+      ) {
+        return refused(400, 'Invalid instance, key, links or runs');
       }
-      useKeptKey(instance, body.key, links);
-      return ok({ ok: true });
+      const told = await useKeptKey(instance, body.key, links, running, { localRuns, ended });
+      return ok({ ok: true, ended: told });
     },
   },
   /** Disconnect. */
@@ -131,6 +164,18 @@ export const RUN_TARGET_ROUTES = {
       const links = linksOf(bodyOf(request).links);
       if (!links) return refused(400, 'Invalid links');
       useLinks(links);
+      return ok({ ok: true });
+    },
+  },
+  /** The folders the shell's local runs are going in, whenever they change. */
+  localRuns: {
+    method: 'PUT',
+    path: '/local-runs',
+    shellOnly: true,
+    handle: (request) => {
+      const folders = localRunsOf(bodyOf(request).folders);
+      if (!folders) return refused(400, 'Invalid folders');
+      useLocalRuns(folders);
       return ok({ ok: true });
     },
   },
@@ -178,19 +223,19 @@ export const RUN_TARGET_ROUTES = {
       return ok({ ok: true });
     },
   },
-  /** The run ended, with its exit code. */
+  /** The run ended, with its exit code: 404 for a request this server does not know, whose end the shell keeps. */
   ended: {
     method: 'POST',
     path: '/requests/:id/ended',
     shellOnly: true,
     handle: async (request) => {
       const { code, stopped } = bodyOf(request);
-      await requestedRunEnded(
+      const known = await requestedRunEnded(
         request.id!,
         typeof code === 'number' && Number.isInteger(code) ? code : null,
         stopped === true,
       );
-      return ok({ ok: true });
+      return known ? ok({ ok: true }) : refused(404, 'This server holds no run of this request');
     },
   },
 } as const satisfies Record<string, RouteDef>;

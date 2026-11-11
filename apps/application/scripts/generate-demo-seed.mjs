@@ -2669,7 +2669,8 @@ for (const story of FAILURE_STORIES) {
 }
 
 // Screenshots on a few PASSING executions, so evidence isn't failure-only and
-// the visual diff has a real baseline execution to point at.
+// the visual diff has a real baseline execution to point at. An entry's `name`
+// is the attachment name the test gave it (Playwright's `screenshot` without).
 const PASSING_SCREENSHOTS = [
   {
     file: 'checkout-order-confirmed.png',
@@ -2685,6 +2686,9 @@ const PASSING_SCREENSHOTS = [
   },
   {
     file: 'cart-summary.png',
+    name:
+      'Step 2: Add one wireless mouse and two USB-C cables, then open the cart page | Expected: The cart lists ' +
+      'both items with their line prices ($24.00 and $18.00) and the total shows $42.00',
     projectId: 1,
     specFile: 'tests/checkout/cart.spec.ts',
     title: 'should display cart total correctly',
@@ -2704,7 +2708,7 @@ for (const shot of PASSING_SCREENSHOTS) {
   if (trc) {
     attach(trc, {
       type: 'attachment',
-      subtype: 'screenshot',
+      subtype: shot.name ?? 'screenshot',
       label: 'image/png',
       relPath: `demo/screenshots/${shot.file}`,
     });

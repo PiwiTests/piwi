@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: a run request from the team instance this app is connected to, which the app claimed. It
- * shows the instance that asked, the tests, the checks of the folder linked to the request's project on this machine
- * (with **Choose the folder** when none is), and the exact command. Nothing runs before **Run**; **Not now** declines
- * it, or refuses it with the checks that failed. The shell takes the command and the request token from this app's
- * server, never from this window. **Run**, **Not now** and closing the dialog answer the request shown, and only once
- * it has been shown, unchanged, in the visible and focused window for `ARM_AFTER_MS`, so a click or a key that brings
- * the window to the front, or lands as another request takes the place of the one shown, answers nothing. Once the
- * shell is told to run a request, the modal emits `start`: the host decides what shows the run.
+ * Desktop shell only: a run request from the team instance this app is connected to, which the app claimed. It shows
+ * the instance that asked, the project (by the name the instance gives it, else its id), the tests, the checks of the
+ * folder linked to the request's project on this machine (with **Choose the folder** when none is), and the exact
+ * command. Nothing runs before **Run**; **Not now** declines it, or refuses it with the checks that failed. The shell
+ * takes the command and the request token from this app's server, never from this window. **Run**, **Not now** and
+ * closing the dialog answer the request shown, and only once it has been shown, unchanged, in the visible and focused
+ * window for `ARM_AFTER_MS`, so a click or a key that brings the window to the front, or lands as another request takes
+ * the place of the one shown, answers nothing. Once the shell is told to run a request, the modal emits `start`: the
+ * host decides what shows the run.
  */
 import type { RunRequestPromptView } from '@piwitests/editor/run-target-view';
 
@@ -17,6 +18,7 @@ const emit = defineEmits<{
       requestId: string;
       instance: string;
       projectId: number;
+      projectName: string | null;
       cases: RunRequestPromptView['tests'];
       title: string;
     },
@@ -69,6 +71,9 @@ const open = computed({
 });
 
 const host = computed(() => teamInstanceHost(current.value?.instance));
+const project = computed(() =>
+  current.value ? current.value.projectName || `project ${current.value.projectId}` : '',
+);
 const testCount = computed(() => current.value?.tests.length ?? 0);
 const answerBy = computed(() => (current.value ? new Date(current.value.answerBy) : null));
 const options = computed(() => optionWords(current.value?.options));
@@ -113,6 +118,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
         requestId: request.id,
         instance: request.instance,
         projectId: request.projectId,
+        projectName: request.projectName,
         cases: request.tests,
         title: `${testCount.value === 1 ? request.tests[0]!.title : `${testCount.value} tests`} for ${host.value}`,
       });
@@ -134,9 +140,9 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
       <div v-if="current" :key="current.id" class="space-y-4" data-shot="desktop-team-run-request">
         <p class="text-sm text-muted">
           You asked <span class="font-medium text-highlighted">{{ host }}</span> to run
-          {{ testCountWords(testCount) }} here, in the folder linked to its project. It runs the code of that folder on
-          this machine; nothing runs until you click <strong>Run</strong>. The request ends unanswered at
-          {{ answerBy?.toLocaleTimeString() }}.
+          {{ testCountWords(testCount) }} of <span class="font-medium text-highlighted">{{ project }}</span> here, in
+          the folder linked to that project. It runs the code of that folder on this machine; nothing runs until you
+          click <strong>Run</strong>. The request ends unanswered at {{ answerBy?.toLocaleTimeString() }}.
         </p>
 
         <ul class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm">

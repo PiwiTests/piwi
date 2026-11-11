@@ -353,7 +353,9 @@ pub async fn desktop_run_repro(
         }
     };
     state.label(id, crate::runner::run_label("the bug report", &folder));
+    state.track_folder(id, &folder);
     state.track_child(id, child);
+    crate::run_target::hand_local_runs(&app);
 
     let emit_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -375,6 +377,7 @@ pub async fn desktop_run_repro(
                         runs.forget_child(id);
                         runs.remove_spec(id);
                     }
+                    crate::run_target::hand_local_runs(&emit_app);
                     let recorded = std::fs::read(&result_file)
                         .ok()
                         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());

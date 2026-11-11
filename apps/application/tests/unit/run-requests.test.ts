@@ -174,7 +174,11 @@ describe('a target key', () => {
     const wider = await target(userId, ['run:receive', 'project:read']);
     await expect(requireRunTarget(eventWithKey(wider.plaintext))).rejects.toMatchObject({ statusCode: 403 });
     await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ statusCode: 401 });
-    await expect(requireRunTarget(eventWithKey('pd_unknown'))).rejects.toMatchObject({ statusCode: 401 });
+    await expect(requireRunTarget(eventWithKey('pd_unknown'))).rejects.toMatchObject({
+      statusCode: 401,
+      data: { errorCode: 'RUN_TARGET_KEY_REVOKED' },
+    });
+    await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ data: { errorCode: 'UNAUTHORIZED' } });
   });
 
   test('an owner’s key still acts as its owner', async () => {
@@ -408,6 +412,39 @@ describe('the life of a request', () => {
     expect(await answerRequest(c, claimed, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 409 });
   });
 
+  test('names the requests a target holds, claimed or with their run, and none once they end', async () => {
+    const c = await caller();
+    const claimed = await request();
+    await claimRequest(c, claimed);
+    const run = await request();
+    await claimRequest(c, run);
+    await answerRequest(c, run, { decision: 'run' });
+    await request();
+    const held = (await requestsForTarget(c)).held;
+    expect(held).toHaveLength(2);
+    expect(held).toEqual(
+      expect.arrayContaining([
+        { id: claimed, state: 'claimed' },
+        { id: run, state: 'starting' },
+      ]),
+    );
+    await moveRequestState(c, run, { state: 'ended', outcome: 'error' }, null);
+    await answerRequest(c, claimed, { decision: 'not-now' });
+    expect((await requestsForTarget(c)).held).toEqual([]);
+  });
+
+  test('names the projects of its requests and its folders, where its owner may run them', async () => {
+    const c = await caller();
+    await request();
+    await request({ projectId: viewOnly });
+    const gone = 999_999;
+    const linked = { ...c, target: { ...c.target, projectIds: [allowed, viewOnly, gone] } };
+    expect((await requestsForTarget(linked)).projects).toEqual([{ id: allowed, name: 'shop' }]);
+    expect((await requestsForTarget({ ...c, target: { ...c.target, projectIds: [] } })).projects).toEqual([
+      { id: allowed, name: 'shop' },
+    ]);
+  });
+
   test('a stop of a run reaches its target, which ends it', async () => {
     const c = await caller();
     const id = await request();
@@ -516,6 +553,9 @@ describe('the life of a request', () => {
     const listed = await listOwnRequests(db as never, userId, viewer);
     expect(listed.map((r) => r.id)).toEqual([newer, older]);
     expect(listed[0]!.target).toMatchObject({ id: t.targetId, kind: 'desktop' });
+    expect(listed.map((r) => r.projectName)).toEqual(['shop', 'shop']);
+    await db.update(schema.projects).set({ label: 'Shop' }).where(eq(schema.projects.id, allowed));
+    expect((await listOwnRequests(db as never, userId, viewer))[0]!.projectName).toBe('Shop');
     expect(await listOwnRequests(db as never, userId, viewer, { projectId: viewOnly })).toEqual([]);
     expect((await listOwnRequests(db as never, userId, viewer, { projectId: allowed })).length).toBe(2);
   });

@@ -103,19 +103,16 @@ const baseConfig = defineConfig({
     // (and so a no-op) when not targeting the desktop.
     extraHTTPHeaders: targetAuthHeaders(e2eTarget),
 
-    /* Trace on failure, with per-action DOM, ARIA and screenshot snapshots so the
-       evidence timeline can show the page at each step. See https://playwright.dev/docs/trace-viewer */
-    trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
+    /* Trace on failure. A local run records per-action DOM, ARIA and screenshot snapshots, so the
+       evidence timeline can show the page at each step. CI keeps the DOM snapshots for the merged
+       HTML report and records no ARIA or screenshot snapshots and no screencast.
+       See https://playwright.dev/docs/trace-viewer */
+    trace: process.env.CI
+      ? { mode: 'retain-on-failure', screenshots: false }
+      : { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
 
     /* Capture screenshot on first retry for failure diagnostics */
     screenshot: 'only-on-failure',
-
-    // Chromium puts its shared renderer memory in /dev/shm, which is small on a
-    // CI runner. When it fills the renderer is killed mid-test and Playwright
-    // surfaces it as "Target page, context or browser has been closed" or an
-    // unbound protocol object rather than as a real assertion failure. Backing
-    // it with /tmp instead costs a little speed and removes that failure mode.
-    launchOptions: { args: ['--disable-dev-shm-usage'] },
   },
 
   /* Configure projects for major browsers */

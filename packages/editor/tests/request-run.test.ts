@@ -8,7 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
-import { planRequestedRun, requestedRunArgs } from '../src/request-run';
+import { argsLength, planRequestedRun, REQUESTED_RUN_ARGS_MAX_CHARS, requestedRunArgs } from '../src/request-run';
 
 let folder: string;
 
@@ -165,5 +165,45 @@ describe('planRequestedRun', () => {
     const failed = Object.fromEntries(plan.checks.filter((c) => c.level === 'fail').map((c) => [c.id, c.message]));
     expect(Object.keys(failed)).toEqual(['config', 'specs', 'playwright']);
     expect(failed.specs).toBe('Not in the folder: tests/missing.spec.ts, ../outside.spec.ts.');
+  });
+
+  test('a folder another run is going in fails, by its real path', async () => {
+    const link = `${folder}-link`;
+    fs.symlinkSync(folder, link);
+    try {
+      const plan = await planRequestedRun(request(), folder, [link]);
+      expect(plan.runnable).toBe(false);
+      expect(plan.args).toEqual([]);
+      expect(plan.checks.find((c) => c.id === 'busy')).toMatchObject({
+        level: 'fail',
+        message: 'Another run is going in this folder: this one can run once it ends.',
+      });
+
+      const elsewhere = await planRequestedRun(request(), folder, [path.join(folder, 'tests'), '/nowhere']);
+      expect(elsewhere.checks.some((c) => c.id === 'busy')).toBe(false);
+    } finally {
+      fs.rmSync(link);
+    }
+  });
+
+  test('a command past the cap fails and asks for fewer tests; one under it runs', async () => {
+    const title = 'x'.repeat(400);
+    const tests = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        filePath: 'tests/checkout.spec.ts',
+        title: `${title} ${i}`,
+        line: null,
+        projectName: null,
+      }));
+    const long = await planRequestedRun(request({ tests: tests(80) }), folder);
+    expect(long.runnable).toBe(false);
+    expect(long.checks.find((c) => c.id === 'command')).toMatchObject({
+      level: 'fail',
+      message: 'The command for these tests is longer than 24,000 characters: ask for fewer tests.',
+    });
+
+    const short = await planRequestedRun(request({ tests: tests(20) }), folder);
+    expect(short.runnable).toBe(true);
+    expect(argsLength(short.args)).toBeLessThanOrEqual(REQUESTED_RUN_ARGS_MAX_CHARS);
   });
 });
