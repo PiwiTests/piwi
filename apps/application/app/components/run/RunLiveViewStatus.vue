@@ -61,7 +61,10 @@ watch(
   },
   { immediate: true },
 );
-const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 15_000) });
+const tick = useTimestamp({ scheduler: (update) => useIntervalFn(update, 15_000) });
+/** When this page last heard of the viewer's ask, or of a refusal: the wait counts from no earlier than then. */
+const heardAt = ref(0);
+watch([latestAsk, refusedUntil], () => (heardAt.value = Date.now()));
 const askView = computed(() => {
   const ask = latestAsk.value;
   const fromAsk = ask ? ask.receivedAt + ask.view.waitMs : null;
@@ -71,7 +74,7 @@ const askView = computed(() => {
     canAsk: props.readiness.state?.canAsk === true,
     ask: ask?.view ?? null,
     askAgainAt,
-    now: now.value,
+    now: Math.max(tick.value, heardAt.value),
   });
 });
 

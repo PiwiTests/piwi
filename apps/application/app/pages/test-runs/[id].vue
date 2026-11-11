@@ -1465,7 +1465,7 @@ const moreMenuItems = computed(() => {
             />
             <p
               v-if="continuedRoute"
-              class="text-sm text-highlighted leading-relaxed max-sm:px-4"
+              class="mt-3 text-sm text-highlighted leading-relaxed max-sm:px-4"
               data-testid="run-continued"
               data-shot="run-continued"
             >
