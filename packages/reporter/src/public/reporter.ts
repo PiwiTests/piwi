@@ -634,6 +634,14 @@ export class PiwiDashboardReporter {
     );
     if (this.streamManager) {
       this.streamManager.onOpened = (runId, runUrl) => this.hubLink?.page(runId, runUrl);
+      // A teammate asks to watch the run: the hub's tool asks the developer, else the run's terminal says so.
+      this.streamManager.onAsk = (ask) => {
+        if (this.hubLink?.ask(ask)) return;
+        this.logger.info(
+          `${ask.by} asks to watch this run live on the dashboard. A run that no editor or Piwi Picker follows is shared from its start with PIWI_SHARE_LIVE=1.`,
+        );
+      };
+      if (this.hubLink) this.hubLink.onAskAnswer = (answer) => this.streamManager?.answerAsk(answer);
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();

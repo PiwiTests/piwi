@@ -16,6 +16,7 @@ import { proveDesktopServer } from '@piwitests/core/desktop-proof';
 import { defaultDesktopConfigPath, readDesktopConfig, sinceBoot } from '../internal/config/desktop.js';
 import { editorsFolder, folderOnDisk, realFolder, stillServing } from '../internal/config/hub.js';
 import { PIWI_DESKTOP_CONFIG_ENV } from '../internal/config/env.js';
+import { getReporterVersion } from '../internal/support/reporter-version.js';
 
 /** The MCP versions the router speaks, the newest first. */
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -196,7 +197,7 @@ export class McpRouter {
           protocolVersion:
             typeof asked === 'string' && PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: true } },
-          serverInfo: { name: 'piwi-runs', version: '1' },
+          serverInfo: { name: 'piwi-runs', version: getReporterVersion() },
           instructions:
             "Piwi's run control for the Playwright runs of this machine: the runs of every editor with Piwi and of the desktop app, as one set of tools. " +
             'Find a run with run_list (each run names its host), or start one with run_start while an editor with Piwi has the spec in its workspace; then run_follow or run_control. ' +

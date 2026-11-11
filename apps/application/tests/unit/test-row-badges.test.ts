@@ -55,6 +55,17 @@ describe('buildTestRowBadges', () => {
 describe('badgesFromTestCase', () => {
   const base: TestCaseResult = { executionId: 1, testCaseId: 1, title: 't', status: 'passed' };
 
+  test('marks a test ended at a stop as such, in place of its skip, and only while it stayed skipped', () => {
+    const ended = [{ type: 'skip', description: 'Ended from Piwi' }];
+    const [badge] = badgesFromTestCase({ ...base, status: 'skipped', testAnnotations: ended });
+    expect(badge).toMatchObject({ key: 'ended-at-stop', label: 'Ended at a stop', color: 'neutral' });
+    expect(badgesFromTestCase({ ...base, status: 'skipped', testAnnotations: ended })).toHaveLength(1);
+    // A hook that failed after it: the failure stands, the skip shows as Playwright's mark.
+    expect(badgesFromTestCase({ ...base, status: 'failed', testAnnotations: ended }).map((b) => b.key)).toEqual([
+      'mark:skip:Ended from Piwi',
+    ]);
+  });
+
   test('marks a passed-on-retry execution as an exceptional signal', () => {
     const badges = badgesFromTestCase({ ...base, status: 'passed', retries: 2 });
     expect(badges.map((b) => b.key)).toContain('passed-on-retry');

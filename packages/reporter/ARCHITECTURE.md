@@ -164,10 +164,11 @@ What the package does to a user's run, process by process.
   and `withEndSignal` in `pause-at.ts`, beside a signal the test gave, through
   `AbortSignal.any`): End aborts it before the debugger lets the held call go, so
   Playwright gives that call up before it runs. The attempt then stops nowhere more, and
-  is skipped by the runner's own `testInfo.skip(true, ENDED_REASON)` as the call
-  rejects, at its next locator call, as a `page.pause()` it stopped at goes on, or as its
-  function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it
-  passed). A call the proxy does not delegate (a navigation, a key press, a page's own
+  is skipped by the runner's own `testInfo.skip(true, ENDED_AT_STOP_REASON)` (from
+  `@piwitests/core/run-channel`, the reason every surface reads to mark the result ended
+  at a stop) as the call rejects, at its next locator call, as a `page.pause()` it stopped
+  at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
+  feature-checked, only when it passed). A call the proxy does not delegate (a navigation, a key press, a page's own
   assertion), or any call on an older Playwright, runs first, which the editor hears
   (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
   teardown), End goes on as Resume does, the result kept; the bar offers it at neither.
@@ -586,6 +587,12 @@ What the package does to a user's run, process by process.
 - **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
   service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`) and for `piwi mcp`,
   from a folder this user alone can enter, and never deletes one.
+- **A teammate's ask to watch** comes in the answers of the run's stream (`ask`, `StreamManager.onAsk`, once per ask):
+  `RunHubLink.ask` hands it to the hub, and a run with no hub says it in its terminal. The developer's Not now comes
+  back from the hub (`ask-answer`, the one line of the hub's the link reads) and goes with the next request of the
+  stream (`askAnswer`, a heartbeat at once) until one is answered. `shareLive` (`PIWI_SHARE_LIVE`) has the workers open
+  their live view stream from the start outside CI, and a share message's `after` reaches each stream as its `after`
+  parameter. `tests/stream-manager.spec.ts`, `tests/live-view-worker.spec.ts`.
 - **`piwi mcp`** (`src/cli/mcp.ts`, `McpRouter`) is an agents' MCP server over stdio with no run logic: it forwards
   the run tools of each editor whose file names its agents' server (`agents`) and of the desktop app, `run_list` to
   all of them, `run_start` to the editor whose workspace holds the spec, any other call to the host of its run. An

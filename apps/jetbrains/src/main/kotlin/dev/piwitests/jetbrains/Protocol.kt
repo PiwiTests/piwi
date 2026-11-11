@@ -344,7 +344,8 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
  * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
- * command that started it (`RunCommand.ref`), when the service still keeps it.
+ * command that started it (`RunCommand.ref`), when the service still keeps it. `endedAtStop` is how many of `skipped`
+ * were ended at a stop (End the Test), null for none.
  */
 data class RunEnded(
     val root: String? = null,
@@ -355,6 +356,7 @@ data class RunEnded(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val fixed: Int = 0,
     val stillFailing: List<String>? = null,
     val newFailures: List<String>? = null,
@@ -866,9 +868,10 @@ data class RunPage(val id: Int = 0, val url: String = "")
 
 /**
  * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
- * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`), whether it still runs or how it
- * ended (`status`: `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it
- * ended (null for none). Null for a run whose reporter predates it.
+ * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`, and of the skipped those ended at a
+ * stop, `endedAtStop`, null from a reporter that predates the count), whether it still runs or how it ended (`status`:
+ * `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it ended (null for
+ * none). Null for a run whose reporter predates it.
  */
 data class RunProgress(
     val total: Int = 0,
@@ -876,6 +879,7 @@ data class RunProgress(
     val failed: Int = 0,
     val flaky: Int = 0,
     val skipped: Int = 0,
+    val endedAtStop: Int? = null,
     val status: String = "running",
     val failure: RunFailure? = null,
 )
@@ -902,9 +906,19 @@ data class RunLive(
 
 /**
  * `piwi/shareRun`: Share live, the person's own choice after the plugin's warning: share the run of `ref` on the team
- * instance (`on`), or stop sharing it. Answered with what was done or why not.
+ * instance (`on`), or stop sharing it. Answered with what was done or why not. `scope` `window` shares this project's
+ * runs until the person stops or the project closes, the run of `ref` too when one is named; off, it stops them all.
  */
-data class ShareRunParams(val ref: String, val on: Boolean)
+data class ShareRunParams(val ref: String?, val on: Boolean, val scope: String? = null)
+
+/** `piwi/shareWindowChanged`: whether this project's runs are shared live. */
+data class ShareWindowParams(val on: Boolean = false)
+
+/** `piwi/askToWatch`: a signed-in teammate asks to watch the run of `ref`, which is not shared live. */
+data class AskToWatchParams(val ref: String? = null, val id: String? = null, val by: String? = null, val run: Int? = null)
+
+/** `piwi/answerAsk`: the developer's Not now to an ask, which the teammate's page shows. */
+data class AnswerAskParams(val ref: String, val id: String, val answer: String = "not-now")
 
 /**
  * `piwi/holdRun`: Hold failures for the run of `ref`, as the person asks: on, a failure no pause bar shows waits at its
@@ -1231,6 +1245,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/shareRun")
     fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/answerAsk")
+    fun answerAsk(params: AnswerAskParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/holdRun")
     fun holdRun(params: HoldRunParams): CompletableFuture<RunControlResult?>

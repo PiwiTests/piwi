@@ -37,6 +37,7 @@ import {
   parseRunToHub,
   type ActAnswer,
   type BindAnswer,
+  type HubToMain,
   type HubToRun,
   isPageOfInstance,
   type IntentAnswer,
@@ -80,6 +81,8 @@ import type {
   SetBreakpointsParams,
   SetRunBreakpointsParams,
   ShareRunParams,
+  AskToWatchParams,
+  AnswerAskParams,
 } from './protocol.js';
 import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
@@ -353,6 +356,10 @@ export interface RunSessionsOptions {
    * they were, whose code is the files as they stand now).
    */
   sessionStarted?(ref: string, again: boolean): void;
+  /** A teammate asks to watch the run of `ref` (`run-ask`): the client asks the developer. */
+  askedToWatch?(ask: AskToWatchParams): void;
+  /** This window's runs are shared live from now on, or no longer (`share` with `scope: 'window'`). */
+  shareWindowChanged?(on: boolean): void;
   /**
    * Whether the run of `ref` was started in a terminal, by no command of the host's (a ref it never built): it is shown
    * as one (`RunSession.terminal`), starts with the editor's breakpoints (`setEditorBreakpoints`), and holds a failure
@@ -465,6 +472,11 @@ interface Session {
    * streaming worker stopped though nobody asked, `stopped` saying why.
    */
   share: boolean | null;
+  /** Shared as one of this window's runs (`scope: 'window'`), said to the person once it is (`announced`). */
+  byWindow: boolean;
+  announced: boolean;
+  /** The run on the instance this one continues, as the window shared it before; undefined until known. */
+  after?: number | null;
   stopped: string | null;
   /** The run's live view as it was last summed up, kept while no worker that says it is connected. */
   live: RunLive | null;
@@ -564,6 +576,11 @@ const HEARD_REFS = 200;
 
 export class RunSessions {
   private readonly sessions = new Map<string, Session>();
+  /**
+   * How many tests of each run that ended were ended at a stop, as its own process counted them, by ref: the latest
+   * `MAX_KEPT_RUNS` that ended any (`endedAtStopOf`).
+   */
+  private readonly endedAtStop = new Map<string, number>();
   /** The refs of the runs whose reporter connected, latest last, `HEARD_REFS` at most (`heardFrom`). */
   private readonly heard = new Set<string>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
@@ -574,6 +591,10 @@ export class RunSessions {
   private editorBreakpoints: Array<{ file: string; line: number }> = [];
   /** The refs whose command ended (`commandEnded`), the latest 50: a session of one is a rerun's. */
   private readonly endedCommands = new Set<string>();
+  /** This window's runs are shared live (`share` with `scope: 'window'`), until the person stops or the window closes. */
+  private shareAll = false;
+  /** The run on the instance the window's latest shared run is, which the next one continues. */
+  private lastShared: number | null = null;
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
   private readonly followedRuns = new Set<string>();
   /** The surfaces that have the runs open (`presentOn`). */
@@ -603,6 +624,14 @@ export class RunSessions {
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
+  /**
+   * How many tests of the run of `ref` were ended at a stop (End the test), as its own process counted them: the live
+   * run's, else the last that ended under the ref; 0 for none, and for a reporter that predates the count.
+   */
+  endedAtStopOf(ref: string): number {
+    return this.sessions.get(ref)?.progress?.endedAtStop ?? this.endedAtStop.get(ref) ?? 0;
+  }
+
   /** Whether the reporter of a run of `ref` ran: the run's own process reached the service (`run-begin`). */
   heardFrom(ref: string): boolean {
     return this.heard.has(ref);
@@ -628,7 +657,10 @@ export class RunSessions {
       linger: null,
       stoppedAt: 0,
       resumedSaid: false,
-      share: null,
+      // While this window's runs are shared, each new one is.
+      share: this.shareAll ? true : null,
+      byWindow: this.shareAll,
+      announced: false,
       stopped: null,
       live: null,
       lanes: new Map(),
@@ -689,7 +721,17 @@ export class RunSessions {
         const { type: _page, ...page } = message;
         if (!isPageOfInstance(page.url, this.options.instances?.() ?? [])) return;
         session.page = page;
+        this.noteShared(session);
         return this.changed(session, true);
+      }
+      if (message.type === 'run-ask') {
+        this.options.askedToWatch?.({
+          ref: session.ref,
+          id: message.id,
+          by: message.by,
+          run: session.page?.id ?? null,
+        });
+        return;
       }
       const { type: _type, ...said } = message;
       session.progress = { ...session.progress, ...said, total: Math.max(session.progress.total, said.done) };
@@ -757,7 +799,7 @@ export class RunSessions {
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
       this.send(worker, { type: 'events', on: true });
     // A worker that comes later follows the sharing as a person left it.
-    if (session.share !== null && worker.takes.has('share')) this.send(worker, { type: 'share', on: session.share });
+    if (session.share !== null && worker.takes.has('share')) this.send(worker, this.shareMessage(session));
     // A worker Playwright starts in a lane someone watches shows it from its first test.
     if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
       void this.startLane(worker);
@@ -1025,6 +1067,7 @@ export class RunSessions {
   share(params: ShareRunParams): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     if (typeof params?.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
+    if (params.scope === 'window') return this.shareWindow(params);
     const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     if (!session) return refuse(this.noWorker(session));
     const live = this.liveOf(session);
@@ -1040,7 +1083,8 @@ export class RunSessions {
     }
     session.share = params.on;
     session.stopped = null;
-    for (const worker of workers) this.send(worker, { type: 'share', on: params.on });
+    for (const worker of workers) this.send(worker, this.shareMessage(session));
+    this.noteShared(session);
     this.changed(session, true);
     return {
       ok: true,
@@ -1048,6 +1092,72 @@ export class RunSessions {
         ? `Sharing the run live on ${instance}: whoever may open it there can watch its tests' pages while someone does.`
         : `Stopped sharing the run: nothing more goes to ${instance}.`,
     };
+  }
+
+  /**
+   * `share` with `scope: 'window'`: this window's runs are shared until the person stops or the window closes, the run
+   * of `ref` too when one is named; stopping stops every run of the window that is shared.
+   */
+  private shareWindow(params: ShareRunParams): RunControlResult {
+    const changed = this.shareAll !== params.on;
+    this.shareAll = params.on;
+    if (!params.on) {
+      for (const session of this.sessions.values()) {
+        session.byWindow = false;
+        if (session.share) this.share({ ref: session.ref, on: false });
+      }
+      this.lastShared = null;
+      if (changed) this.options.shareWindowChanged?.(false);
+      return { ok: true, message: "Stopped sharing this window's runs live." };
+    }
+    if (changed) this.options.shareWindowChanged?.(true);
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    if (session && !session.ended) {
+      session.byWindow = true;
+      const shared = this.share({ ref: session.ref, on: true });
+      if (!shared.ok) {
+        return { ok: true, message: `This window's runs are shared live from the next one on: ${shared.message}` };
+      }
+    }
+    return {
+      ok: true,
+      message:
+        "Sharing this window's runs live until you stop or close the window: whoever may open them on the team instance can watch their tests' pages, each run continuing the one before.",
+    };
+  }
+
+  /** Whether this window's runs are shared live. */
+  get sharingWindow(): boolean {
+    return this.shareAll;
+  }
+
+  /** The share message a worker of `session` hears: the earlier run of the window it continues, while one is known. */
+  private shareMessage(session: Session): HubToRun {
+    const on = session.share === true;
+    const after = on && session.byWindow ? (session.after === undefined ? this.lastShared : session.after) : null;
+    return after !== null && after !== session.page?.id ? { type: 'share', on, after } : { type: 'share', on };
+  }
+
+  /**
+   * A run of the window shared with its page known continues the one shared before it, and is the one the window's
+   * next run continues.
+   */
+  private noteShared(session: Session): void {
+    if (!session.byWindow || session.share !== true || !session.page) return;
+    if (session.after === undefined) session.after = this.lastShared !== session.page.id ? this.lastShared : null;
+    this.lastShared = session.page.id;
+  }
+
+  /** `piwi/answerAsk`: the developer's **Not now** goes back to the teammate through the run's own process. */
+  answerAsk(params: AnswerAskParams): RunControlResult {
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const main = session?.main;
+    if (!main || main.destroyed || typeof params.id !== 'string' || params.answer !== 'not-now') {
+      return { ok: false, message: 'The run no longer reaches the instance: its teammate sees no answer.' };
+    }
+    const line: HubToMain = { type: 'ask-answer', id: params.id, answer: 'not-now' };
+    main.write(`${JSON.stringify(line)}\n`);
+    return { ok: true, message: 'They see “Not now”.' };
   }
 
   /**
@@ -2044,6 +2154,17 @@ export class RunSessions {
           session.stopped = state.why;
           this.options.notice(session.root ?? worker.cwd, 'warning', state.why);
         }
+        // A run of the window's shared runs says so as it is shared.
+        if (session.byWindow && state.on && !session.announced) {
+          session.announced = true;
+          const run = session.page ? `Run #${session.page.id}` : 'This run';
+          const where = state.page ? ` on ${instanceOf(state.page)}` : '';
+          this.options.notice(
+            session.root ?? worker.cwd,
+            'information',
+            `${run} is shared live${where}, as this window's runs are until you stop sharing them.`,
+          );
+        }
         return this.changed(session, true);
       }
     }
@@ -2124,6 +2245,14 @@ export class RunSessions {
     session.main = null;
     // A run that ends before its process said how: its command ended, or nothing connected for a while.
     if (session.progress?.status === 'running') session.progress = { ...session.progress, status: 'interrupted' };
+    this.endedAtStop.delete(session.ref);
+    if (session.progress?.endedAtStop) {
+      this.endedAtStop.set(session.ref, session.progress.endedAtStop);
+      for (const oldest of this.endedAtStop.keys()) {
+        if (this.endedAtStop.size <= MAX_KEPT_RUNS) break;
+        this.endedAtStop.delete(oldest);
+      }
+    }
     for (const worker of workers) this.closeWorker(worker);
     if (this.sessions.get(session.ref) === session) {
       this.sessions.delete(session.ref);

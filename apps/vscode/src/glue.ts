@@ -786,7 +786,9 @@ export function runVerdict(
   if (!parts.length) {
     const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
     if (ended.flaky) counts.push(`${ended.flaky} flaky`);
-    if (ended.skipped) counts.push(`${ended.skipped} skipped`);
+    if (ended.skipped) {
+      counts.push(`${ended.skipped} skipped${ended.endedAtStop ? ` (${ended.endedAtStop} ended at a stop)` : ''}`);
+    }
     parts.push(counts.join(', '));
   }
   const failing = still + added > 0 || ended.failed > 0;

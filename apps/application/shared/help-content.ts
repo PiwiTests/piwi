@@ -732,7 +732,7 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. A test ended at a stop with End the test counts as skipped and reads **Ended at a stop**, as the header marks the run that holds one. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
     doc: 'reference/test-search',
   },
   'run.changes': {

@@ -261,6 +261,16 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRunSessions>().heard(session)
     }
 
+    @JsonNotification("piwi/shareWindowChanged")
+    fun shareWindowChanged(params: ShareWindowParams) {
+        project.service<PiwiRunSessions>().windowSharedChanged(params.on)
+    }
+
+    @JsonNotification("piwi/askToWatch")
+    fun askToWatch(ask: AskToWatchParams) {
+        project.service<PiwiRunSessions>().askedToWatch(ask)
+    }
+
     @JsonNotification("piwi/pageFrame")
     fun pageFrame(frame: PageFrame) {
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.frame(frame)

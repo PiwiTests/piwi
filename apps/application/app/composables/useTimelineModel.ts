@@ -8,6 +8,7 @@ import { formatTimelineTime } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
 import { testAttemptKey } from '~/utils/test-attempts';
 import { isFlakyExecution } from '#shared/utils/test-counts';
+import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { workerLane } from '#shared/worker-lane';
 
 /**
@@ -60,6 +61,8 @@ export interface TimelineItem {
   retries?: number | null;
   /** Passed after an earlier attempt failed or timed out (`isFlakyExecution`) — test bars only. */
   flaky?: boolean;
+  /** Ended at a stop (End the test, `isEndedAtStop`): skipped, its tooltip says so — test bars only. */
+  endedAtStop?: boolean;
   /**
    * The bars of every attempt of this test in the run, first attempt first —
    * test bars of a test that ran more than once only, one array shared by them.
@@ -673,6 +676,7 @@ export function useTimelineModel(props: TimelineModelInput): {
             locks: tc.locks ?? null,
             retries: tc.retries ?? null,
             flaky: isFlakyExecution(tc),
+            ...(isEndedAtStop(tc) ? { endedAtStop: true } : {}),
             reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
             ...(pausedMs > 0 ? { pausedMs } : {}),
             expanded: expanded?.has(tc.executionId) ?? false,

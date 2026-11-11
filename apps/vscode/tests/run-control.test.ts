@@ -72,6 +72,7 @@ import {
   runStarted,
   runTargetArg,
   shareLiveWarning,
+  askToWatchText,
   sharedText,
   sizeText,
   spelledSession,
@@ -604,7 +605,7 @@ describe('Share live', () => {
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
   });
 
-  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+  test('counts in the status bar the tests the runs ran, as their own processes say, their failures and ends', () => {
     expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
     const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
       ...session(ref, [worker(0, 'running')]),
@@ -627,6 +628,12 @@ describe('Share live', () => {
       markdown: true,
       command: null,
     });
+    // A test ended at a stop is marked so, not counted as a plain pass.
+    const ended: RunSession = {
+      ...session('ed-1', [worker(0, 'running')]),
+      progress: { total: 2, done: 2, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1, status: 'passed', failure: null },
+    };
+    expect(progressItem(sessionsOf(ended))?.tooltip).toMatch(/^Piwi: the run ran 2 of 2 tests: 1 ended at a stop\./);
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
@@ -1966,5 +1973,22 @@ describe('a run another tool asks the extension to stop', () => {
       ok: false,
       message: 'The run was not started in this VS Code window: stop it where it was started.',
     });
+  });
+});
+
+describe("this window's runs shared live, and a teammate's ask", () => {
+  test('says the window is shared, with or without a run, and stops it on a click', () => {
+    expect(liveItem(new Map(), true)).toMatchObject({
+      text: '$(broadcast) Live · this window',
+      command: 'piwi.stopSharingWindowLive',
+    });
+    expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
+      /^Share this window's runs live, each run you start from now on until you stop or close the window, on piwi\.example\.com\?/,
+    );
+  });
+
+  test('names who asks and the run', () => {
+    expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
+    expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
   });
 });

@@ -7809,6 +7809,26 @@
       }
     }
   },
+  "runs_progressEndedAtStop_one": {
+    "message": "$count$ ended at a stop",
+    "description": "Runs window, after runs_progress, and the desktop app’s Local runs tray, after a run’s outcome: how many of the run’s tests were ended at a stop (End the test), which are skipped and marked so.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressEndedAtStop_other": {
+    "message": "$count$ ended at a stop",
+    "description": "Runs window, after runs_progress, and the desktop app’s Local runs tray, after a run’s outcome: how many of the run’s tests were ended at a stop (End the test), which are skipped and marked so.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_endedPassed": {
     "message": "The run passed.",
     "description": "Runs window, on a run that ended with every test passed or skipped."
