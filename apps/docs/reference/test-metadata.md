@@ -281,8 +281,8 @@ test counts by its last attempt, so one whose retry passed names nothing:
   body Piwi writes does not list it. The sync refreshes its status and removes it once the issue leaves the bound
   project.
 - **It counts as tracked.** The cluster's known issue is its latest ticket filed or pinned, else the oldest link from
-  its tests that is not Done, else the oldest one. Automatic creation files no issue for it, it leaves *Needs ticket*,
-  and the pull-request comment and the `cluster.*` notifications name it.
+  its tests that is not Done, else the oldest one. While that issue is not Done, automatic creation files no issue and
+  the cluster leaves *Needs ticket*; the inbox, the pull-request comment and the `cluster.*` notifications name it.
 - Pinning it with *Link an issue* turns it into a pinned link, which the write-backs then act on.
 
 ### External test IDs

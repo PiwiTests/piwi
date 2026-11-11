@@ -191,6 +191,54 @@ export async function clusterKnownIssues(
   return out;
 }
 
+/** A cluster's ticket as a cluster list shows it: the chip, and whether the cluster counts as tracked. */
+export interface ClusterIssueChip {
+  /** The cluster's known issue, else its newest link the tests did not declare. */
+  issueLink: { url: string; provider: string; key: string | null; status: string | null } | null;
+  /** Whether the known issue still tracks the failure ({@link knownIssueTracks}), as the auto-create guard reads it. */
+  tracked: boolean;
+}
+
+/**
+ * The ticket of each listed cluster, by the cluster page's rule: its known issue ({@link clusterKnownIssues}),
+ * tracked while not Done or while a reopen moves it out of Done, so a cluster whose tests name only a Done issue
+ * counts as untracked. Clusters with no link are left out.
+ */
+export async function clusterIssueChips(db: DrizzleDB, clusterIds: number[]): Promise<Map<number, ClusterIssueChip>> {
+  const out = new Map<number, ClusterIssueChip>();
+  const ids = [...new Set(clusterIds.filter((id): id is number => typeof id === 'number'))];
+  if (ids.length === 0) return out;
+  const [knownIssues, links] = await Promise.all([
+    clusterKnownIssues(db, ids),
+    db
+      .select({
+        clusterId: entityLinks.failureClusterId,
+        url: entityLinks.url,
+        provider: entityLinks.provider,
+        key: entityLinks.key,
+        origin: entityLinks.origin,
+      })
+      .from(entityLinks)
+      .where(inArray(entityLinks.failureClusterId, ids))
+      .orderBy(desc(entityLinks.id)),
+  ]);
+  const reopenings = await clusterReopenings(db, knownIssues);
+  for (const [clusterId, issue] of knownIssues) {
+    out.set(clusterId, {
+      issueLink: { url: issue.url, provider: issue.provider, key: issue.key, status: issue.status },
+      tracked: knownIssueTracks(issue, { reopening: reopenings.has(clusterId) }),
+    });
+  }
+  for (const link of links) {
+    if (link.clusterId == null || out.has(link.clusterId) || isDeclaredLink(link)) continue;
+    out.set(link.clusterId, {
+      issueLink: { url: link.url, provider: link.provider, key: link.key ?? null, status: null },
+      tracked: false,
+    });
+  }
+  return out;
+}
+
 /**
  * An issue filing that ended for good, because the tracker refused it, every
  * retry failed, or Piwi could not send it: no retry is coming, and filing again

@@ -28,6 +28,8 @@ const { createEnrichedLink } = await import('../../server/utils/integrations/lin
 const { createLink, deleteLink, deleteLinksTo } = await import('../../shared/handlers/links');
 const { clusterKnownIssues } = await import('../../shared/handlers/known-issues');
 const { linkNamedIssues } = await import('../../shared/handlers/declared-issues');
+const { getOpenFailureClusters } = await import('../../shared/handlers/failure-clusters');
+const { getProjectFailureClusters } = await import('../../shared/handlers/projects');
 const { mergeFailureClusters, splitFailureCluster } = await import('../../shared/handlers/failure-cluster-ops');
 
 const SITE = 'https://declared.atlassian.net';
@@ -683,6 +685,36 @@ describe('the known issue', () => {
     await pin(cluster, 'PROJ-101', 'annotation', { metadata: { statusCategory: 'done' } });
     await pin(cluster, 'PROJ-102', 'annotation', { metadata: { statusCategory: 'done' } });
     expect((await clusterKnownIssues(db as never, [cluster])).get(cluster)?.key).toBe('PROJ-101');
+  });
+});
+
+describe('the cluster lists', () => {
+  test('a cluster whose tests name only a Done issue shows it and still counts as untracked', async () => {
+    const done = await newCluster();
+    const open = await newCluster();
+    await pin(done, 'PROJ-201', 'annotation', { metadata: { statusCategory: 'done' }, statusText: 'Done' });
+    await pin(open, 'PROJ-202', 'annotation', { metadata: { statusCategory: 'new' } });
+
+    const inbox = await getOpenFailureClusters(db as never, 'all', 500);
+    const row = (id: number) => inbox.find((c) => c.id === id)!;
+    expect(row(done)).toMatchObject({ issueLink: { key: 'PROJ-201', status: 'Done' }, hasKnownIssue: false });
+    expect(row(open)).toMatchObject({ issueLink: { key: 'PROJ-202' }, hasKnownIssue: true });
+
+    const list: any[] = await getProjectFailureClusters(db as never, 1);
+    expect(list.find((c) => c.id === done)?.issueLink?.key).toBe('PROJ-201');
+  });
+
+  test('the chip names the known issue before a newer plain link', async () => {
+    const cluster = await newCluster();
+    await pin(cluster, 'PROJ-203', 'annotation', { metadata: { statusCategory: 'new' } });
+    await db.insert(schema.entityLinks).values({
+      failureClusterId: cluster,
+      url: 'https://wiki.example/notes',
+      provider: 'generic',
+    } as never);
+
+    const [row] = (await getOpenFailureClusters(db as never, 'all', 500)).filter((c) => c.id === cluster);
+    expect(row?.issueLink?.key).toBe('PROJ-203');
   });
 });
 
