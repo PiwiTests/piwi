@@ -1636,6 +1636,8 @@ pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
         runs.kill_all();
     }
+    // The requested runs it held end too, while the server is up to tell their instance.
+    run_target::end_requested_runs_on_quit(app_handle);
     // Best-effort: stop the bundled server so no orphan process lingers.
     if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
         kill_server(child, server_wait);
@@ -3155,6 +3157,7 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            run_target::sweep_leftover_request_dirs(app.handle());
             app.manage(session::Session::new(
                 app.get_webview_window("main").and_then(|w| w.url().ok()),
                 app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),

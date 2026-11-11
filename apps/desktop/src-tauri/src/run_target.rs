@@ -13,9 +13,10 @@
 //   starts the folder's Playwright with it, tells the server the run started
 //   and ended, and stops it when the requester stops it from the dashboard.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde_json::json;
 use tauri::{AppHandle, Manager as _};
@@ -33,6 +34,18 @@ const DESKTOP_KEYCHAIN_SERVICE: &str = "Piwi Desktop run requests";
 /// The keychain service Piwi Runner keeps the instance's key under: the two apps are on the same machine, and each
 /// holds its own key for the same instance.
 const RUNNER_KEYCHAIN_SERVICE: &str = "Piwi Runner run requests";
+/// The start of the name of each requested run's private folder in the temp dir, per app, so neither app's sweep
+/// (`sweep_leftover_request_dirs`) reaches the other's.
+const REQUEST_DIR_PREFIX: &str = if cfg!(feature = "runner") {
+    "piwi-runner-request-"
+} else {
+    "piwi-request-"
+};
+/// How old a requested run's folder left in the temp dir by an earlier launch must be before the sweep at startup
+/// removes it.
+const LEFTOVER_REQUEST_DIR_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long the server gets, as the app quits, to take the end of each requested run still held.
+const QUIT_END_TIMEOUT: Duration = Duration::from_secs(2);
 /// The keychain service the instance's key is kept under, its account the instance's URL.
 const KEYCHAIN_SERVICE: &str = if cfg!(feature = "runner") {
     RUNNER_KEYCHAIN_SERVICE
@@ -49,11 +62,92 @@ pub struct KeptKey(Mutex<Option<(String, String)>>);
 pub struct RequestedRuns(Mutex<HashMap<String, RequestedRun>>);
 
 /// A requested run the shell is starting or running: its run id once spawned,
-/// and whether the dashboard stopped it before then.
+/// whether the dashboard stopped it before then, its private folder once made,
+/// and how it ended until the server has taken that.
 #[derive(Default)]
 pub struct RequestedRun {
     run: Option<u32>,
     stop: bool,
+    dir: Option<PathBuf>,
+    ended: Option<(Option<i32>, bool)>,
+}
+
+impl RequestedRuns {
+    /// Forget every requested run still held, removing each one's private
+    /// folder, and hand each request id to `end` with how its run ended: a run
+    /// with no end yet ends stopped. Called as the app quits.
+    fn end_all(&self, mut end: impl FnMut(&str, Option<i32>, bool)) {
+        let held: Vec<(String, RequestedRun)> = self.0.lock().unwrap().drain().collect();
+        for (id, run) in held {
+            if let Some(dir) = &run.dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            let (code, stopped) = run.ended.unwrap_or((None, true));
+            end(&id, code, stopped);
+        }
+    }
+
+    /// The private folders of the requested runs held now.
+    fn dirs(&self) -> HashSet<PathBuf> {
+        self.0.lock().unwrap().values().filter_map(|run| run.dir.clone()).collect()
+    }
+}
+
+/// The app is quitting: tell the server, while it is still up, that every
+/// requested run it still holds ended, and remove their private folders. Runs
+/// before the server stops (`shut_down`), after the local runs were stopped.
+pub(crate) fn end_requested_runs_on_quit(app: &AppHandle) {
+    let Some(runs) = app.try_state::<RequestedRuns>() else {
+        return;
+    };
+    let server = server_info(app);
+    runs.end_all(|id, code, stopped| {
+        if let Some(server) = &server {
+            let _ = local_call_within(
+                server,
+                "POST",
+                &format!("/api/desktop/run-target/requests/{id}/ended"),
+                Some(&json!({ "code": code, "stopped": stopped })),
+                QUIT_END_TIMEOUT,
+            );
+        }
+    });
+}
+
+/// Remove the requested runs' private folders an earlier launch left in the
+/// temp dir: only this app's, only those older than `LEFTOVER_REQUEST_DIR_AGE`,
+/// never one a requested run of this launch holds. On its own thread, at startup.
+pub(crate) fn sweep_leftover_request_dirs(app: &AppHandle) {
+    let in_use = app.try_state::<RequestedRuns>().map(|runs| runs.dirs()).unwrap_or_default();
+    std::thread::spawn(move || {
+        sweep_request_dirs(&std::env::temp_dir(), REQUEST_DIR_PREFIX, LEFTOVER_REQUEST_DIR_AGE, &in_use);
+    });
+}
+
+/// Remove each folder in `root` named `prefix…` that is older than `age` and
+/// not in `in_use`. A link or a file of that name is left alone.
+fn sweep_request_dirs(root: &Path, prefix: &str, age: Duration, in_use: &HashSet<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        let Ok(meta) = entry.path().symlink_metadata() else {
+            continue;
+        };
+        let old = meta
+            .modified()
+            .ok()
+            .and_then(|at| now.duration_since(at).ok())
+            .is_some_and(|since| since >= age);
+        let path = entry.path();
+        if meta.is_dir() && old && !in_use.contains(&path) {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
 }
 
 /// A request id: 32 lowercase hex digits, as `@piwitests/core/run-request` writes it.
@@ -160,9 +254,21 @@ pub(crate) fn local_call(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
+    local_call_within(server, method, path, body, Duration::from_secs(60))
+}
+
+/// `local_call`, waiting at most `timeout` for each read of the answer.
+fn local_call_within(
+    server: &ServerInfo,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    timeout: Duration,
+) -> Result<serde_json::Value, String> {
     use std::io::{Read, Write};
     let mut stream = crate::connect_proving_token(server.port, &server.token)?;
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
     stream
         .write_all(local_request(server, method, path, body).as_bytes())
         .map_err(|e| e.to_string())?;
@@ -474,9 +580,13 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     };
 
     // A stop that came while the run was being prepared ends it before anything runs.
-    let stopped_early = app
-        .try_state::<RequestedRuns>()
-        .is_some_and(|runs| runs.0.lock().unwrap().get(&request_id).is_some_and(|held| held.stop));
+    let stopped_early = app.try_state::<RequestedRuns>().is_some_and(|runs| {
+        let mut runs = runs.0.lock().unwrap();
+        runs.get_mut(&request_id).is_some_and(|held| {
+            held.dir = Some(dir.clone());
+            held.stop
+        })
+    });
     if stopped_early {
         forget(&app, &request_id);
         let _ = std::fs::remove_dir_all(&dir);
@@ -497,10 +607,13 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
+    // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`).
     let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         if let Some(runs) = ended_app.try_state::<RequestedRuns>() {
-            runs.0.lock().unwrap().remove(&ended_request);
+            if let Some(held) = runs.0.lock().unwrap().get_mut(&ended_request) {
+                held.ended = Some((code, stopped));
+            }
         }
         let app = ended_app.clone();
         std::thread::spawn(move || {
@@ -511,6 +624,9 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                     &format!("/api/desktop/run-target/requests/{ended_request}/ended"),
                     Some(&json!({ "code": code, "stopped": stopped })),
                 );
+            }
+            if let Some(runs) = app.try_state::<RequestedRuns>() {
+                runs.0.lock().unwrap().remove(&ended_request);
             }
         });
     })
@@ -568,7 +684,7 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
     }
     let cli = crate::runner::resolve_playwright_cli(&folder)
         .ok_or("no Playwright installation found in the linked folder: run your package manager's install first")?;
-    let dir = crate::repro::private_run_dir("piwi-request-").map_err(|e| e.to_string())?;
+    let dir = crate::repro::private_run_dir(REQUEST_DIR_PREFIX).map_err(|e| e.to_string())?;
     let token_file = dir.join("request-token");
     if let Err(e) = crate::private_fs::write_private(&token_file, launch.token.as_bytes()) {
         let _ = std::fs::remove_dir_all(&dir);
@@ -740,6 +856,119 @@ mod tests {
         let requests = seen.join().unwrap();
         assert!(requests[1].starts_with("POST /api/desktop/run-target/key HTTP/1.0\r\n"), "{requests:?}");
         assert!(requests[1].contains("\r\nx-piwi-token: pd_abc\r\n"), "{requests:?}");
+    }
+
+    /// A fresh folder in the temp dir for one test, removed when it ends.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("piwi-request-test-{label}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn quitting_ends_every_held_request_and_removes_its_folder() {
+        let root = TempRoot::new("quit");
+        let running = root.0.join("piwi-request-running");
+        let ended = root.0.join("piwi-request-ended");
+        for dir in [&running, &ended] {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("request-token"), "pdq_").unwrap();
+        }
+        let runs = RequestedRuns::default();
+        {
+            let mut held = runs.0.lock().unwrap();
+            let run = |dir: &PathBuf, ended| RequestedRun {
+                run: Some(1),
+                stop: false,
+                dir: Some(dir.clone()),
+                ended,
+            };
+            held.insert("a".into(), run(&running, None));
+            held.insert("b".into(), run(&ended, Some((Some(1), false))));
+            held.insert("c".into(), RequestedRun::default());
+        }
+
+        let mut told = Vec::new();
+        runs.end_all(|id, code, stopped| told.push((id.to_string(), code, stopped)));
+        told.sort();
+
+        assert_eq!(
+            told,
+            vec![
+                ("a".to_string(), None, true),
+                ("b".to_string(), Some(1), false),
+                ("c".to_string(), None, true),
+            ]
+        );
+        assert!(!running.exists());
+        assert!(!ended.exists());
+        assert!(runs.0.lock().unwrap().is_empty());
+        let mut again = 0;
+        runs.end_all(|_, _, _| again += 1);
+        assert_eq!(again, 0);
+    }
+
+    #[test]
+    fn the_sweep_removes_only_old_request_folders_no_run_holds() {
+        let root = TempRoot::new("sweep");
+        let make = |name: &str| {
+            let dir = root.0.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("request-token"), "pdq_").unwrap();
+            dir
+        };
+        let old = make("piwi-request-old");
+        let held = make("piwi-request-held");
+        let other = make("piwi-repro-old");
+        let file = root.0.join("piwi-request-file");
+        std::fs::write(&file, "").unwrap();
+        let in_use = HashSet::from([held.clone()]);
+
+        sweep_request_dirs(&root.0, "piwi-request-", Duration::from_secs(3600), &in_use);
+        assert!(old.exists(), "a folder younger than the age is kept");
+
+        sweep_request_dirs(&root.0, "piwi-request-", Duration::ZERO, &in_use);
+        assert!(!old.exists());
+        assert!(held.exists(), "a folder a run holds is kept");
+        assert!(other.exists(), "another prefix is kept");
+        assert!(file.exists(), "a file is kept");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_sweep_does_not_follow_a_link() {
+        let root = TempRoot::new("sweep-link");
+        let target = root.0.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep"), "").unwrap();
+        let link = root.0.join("piwi-request-link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        sweep_request_dirs(&root.0, "piwi-request-", Duration::ZERO, &HashSet::new());
+        assert!(target.join("keep").exists());
+        assert!(link.symlink_metadata().is_ok());
+    }
+
+    #[test]
+    fn each_app_sweeps_only_its_own_request_folders() {
+        let other = if cfg!(feature = "runner") {
+            "piwi-request-"
+        } else {
+            "piwi-runner-request-"
+        };
+        assert!(!other.starts_with(REQUEST_DIR_PREFIX));
+        assert!(!REQUEST_DIR_PREFIX.starts_with(other));
     }
 
     #[test]

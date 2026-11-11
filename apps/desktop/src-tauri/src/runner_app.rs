@@ -261,6 +261,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let log_path = log_dir.join(LOG_FILE);
             append_log(&log_path, "----- launch -----");
             app.manage(LogFile(log_path.clone()));
+            run_target::sweep_leftover_request_dirs(app.handle());
             app.manage(Session::new(
                 app.get_webview_window("main").and_then(|w| w.url().ok()),
                 app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
