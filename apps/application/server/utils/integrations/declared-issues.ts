@@ -19,7 +19,7 @@ export {
   type DeclaredLinksResult,
 } from '#shared/handlers/declared-issues';
 
-/** How long the step may take before it is aborted, writing nothing. */
+/** How long the whole step may take, from its start, before it is aborted, writing nothing more. */
 export const DECLARED_LINKS_TIMEOUT_MS = 10_000;
 
 /**
@@ -32,6 +32,7 @@ export async function linkDeclaredIssues(
   options: { timeoutMs?: number } = {},
 ): Promise<DeclaredLinksResult> {
   const result: DeclaredLinksResult = { looked: [], linked: [] };
+  const deadline = AbortSignal.timeout(options.timeoutMs ?? DECLARED_LINKS_TIMEOUT_MS);
   const run = await loadTrackerRun(db, runId, 'tracker');
   if (!run?.eligible) return { ...result, skipped: 'ineligible' };
   const binding = await readProjectIntegration(db, run.projectId);
@@ -42,7 +43,6 @@ export async function linkDeclaredIssues(
   const tracker = await createTracker(db, binding.connectionId);
   if (!tracker || tracker.provider !== 'jira' || !tracker.getIssues) return { ...result, skipped: 'no-lookup' };
 
-  const deadline = AbortSignal.timeout(options.timeoutMs ?? DECLARED_LINKS_TIMEOUT_MS);
   return linkNamedIssues(db, runId, {
     projectKey,
     connectionId: binding.connectionId,

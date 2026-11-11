@@ -66,7 +66,7 @@ export interface DeclaredIssuesLookup {
   projectKey: string;
   connectionId: number | null;
   tracker: Pick<IssueTracker, 'parseIssueUrl'> & Required<Pick<IssueTracker, 'getIssues'>>;
-  /** Aborts the lookup; once it fires nothing more is written. */
+  /** Aborts the step; once it fires nothing more is written. */
   deadline: AbortSignal;
 }
 
@@ -74,10 +74,10 @@ export interface DeclaredIssuesLookup {
  * Links the run's failing tests' named issues to their clusters: one bulk lookup for at most
  * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first, leaving out a key a cluster
  * already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
- * the keys it names and does not link.
+ * the keys it names and does not link, and to 0 for a failing cluster that names none this run.
  *
- * At the deadline the lookup is aborted and nothing is written. A lookup that fails links nothing; the next failing
- * run that names the key tries again.
+ * The writes come after the lookup, each only while the deadline has not fired: once it fires the lookup is aborted
+ * and nothing more is written. A lookup that fails links nothing; the next failing run that names the key tries again.
  */
 export async function linkNamedIssues(
   db: DrizzleDB,
@@ -85,16 +85,10 @@ export async function linkNamedIssues(
   { projectKey, connectionId, tracker, deadline }: DeclaredIssuesLookup,
 ): Promise<DeclaredLinksResult> {
   const result: DeclaredLinksResult = { looked: [], linked: [] };
+  if (deadline.aborted) return { ...result, failed: 'deadline' };
   const { clusters, failing } = await readClusterStates(db, runId, projectKey, tracker);
-  // A cluster whose executions name nothing this run has no key past the cap.
   const unnamed = failing.filter((id) => !clusters.has(id));
-  if (unnamed.length > 0) {
-    await db
-      .update(failureClusters)
-      .set({ declaredIssuesMore: 0 })
-      .where(and(inArray(failureClusters.id, unnamed), gt(failureClusters.declaredIssuesMore, 0)));
-  }
-  if (clusters.size === 0) return { ...result, skipped: 'nothing-named' };
+  if (clusters.size === 0 && unnamed.length === 0) return { ...result, skipped: 'nothing-named' };
 
   const keys = pickLookupKeys(clusters);
   result.looked = keys;
@@ -118,14 +112,22 @@ export async function linkNamedIssues(
     if (asked.has(issue.key) && issue.projectKey === projectKey && issue.id) byKey.set(issue.key, issue);
   }
 
+  const stopped = () => ({ ...result, failed: 'deadline' as const });
+  if (unnamed.length > 0) {
+    if (deadline.aborted) return stopped();
+    await db
+      .update(failureClusters)
+      .set({ declaredIssuesMore: 0 })
+      .where(and(inArray(failureClusters.id, unnamed), gt(failureClusters.declaredIssuesMore, 0)));
+  }
   const now = new Date();
   for (const [clusterId, state] of clusters) {
     let room = MAX_DECLARED_LINKS_PER_CLUSTER - state.declared;
-    if (deadline.aborted) return { ...result, failed: 'deadline' };
     for (const key of state.candidates) {
       if (room <= 0) break;
       const issue = byKey.get(key);
       if (!issue || state.dismissedIds.has(issue.id as string)) continue;
+      if (deadline.aborted) return stopped();
       const inserted = await db
         .insert(entityLinks)
         .values({
@@ -157,9 +159,10 @@ export async function linkNamedIssues(
     // The keys named and still not linked or dismissed, Jira's answer aside: left out at the cap, past the run's
     // budget, or not found.
     const more = state.candidates.filter((k) => !state.taken.has(k)).length;
+    if (deadline.aborted) return stopped();
     await db.update(failureClusters).set({ declaredIssuesMore: more }).where(eq(failureClusters.id, clusterId));
   }
-  return result;
+  return clusters.size === 0 ? { ...result, skipped: 'nothing-named' } : result;
 }
 
 /**

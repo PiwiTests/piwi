@@ -27,6 +27,7 @@ const { getClusterTrackerLink, getClusterKnownIssue } = await import('../../serv
 const { createEnrichedLink } = await import('../../server/utils/integrations/link-create');
 const { deleteLink, deleteLinksTo } = await import('../../shared/handlers/links');
 const { clusterKnownIssues } = await import('../../shared/handlers/known-issues');
+const { linkNamedIssues } = await import('../../shared/handlers/declared-issues');
 const { mergeFailureClusters, splitFailureCluster } = await import('../../shared/handlers/failure-cluster-ops');
 
 const SITE = 'https://declared.atlassian.net';
@@ -442,6 +443,45 @@ describe('the link step', () => {
 
     expect(lookups[0]![0]).toBe('PROJ-60');
     expect(lookups[0]![1]).not.toBe('PROJ-59');
+  });
+
+  test('once the deadline fires mid-write, nothing more is written', async () => {
+    const cluster = await newCluster();
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-17', 'PROJ-18', 'PROJ-19'] }]);
+    const more = (await clusterRow(cluster)).declaredIssuesMore;
+    // The deadline fires on its fourth read: the start, after the lookup and the first insert pass, the second does not.
+    let reads = 0;
+    const deadline = {
+      get aborted() {
+        return ++reads > 3;
+      },
+    } as AbortSignal;
+    const issue = (key: string) => ({
+      id: String(20000 + Number(key.split('-')[1])),
+      key,
+      url: `${SITE}/browse/${key}`,
+      title: `Issue ${key}`,
+      status: 'To Do',
+      statusCategory: 'new' as const,
+      statusColor: 'info',
+      assignee: null,
+      projectKey: 'PROJ',
+    });
+    const tracker = {
+      parseIssueUrl: () => null,
+      getIssues: async (keys: string[]) => ({ issues: keys.map(issue), missing: [] }),
+    };
+
+    const result = await linkNamedIssues(db as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: tracker as never,
+      deadline,
+    });
+
+    expect(result.failed).toBe('deadline');
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-17']);
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(more);
   });
 
   test('a binding without a project key links nothing', async () => {
