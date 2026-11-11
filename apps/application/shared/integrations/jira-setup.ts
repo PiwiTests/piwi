@@ -2,7 +2,8 @@
  * Pure helpers behind the Jira connect form: reading a pasted address down to the
  * site URL, the Atlassian pages an administrator opens while creating a token,
  * the scopes a scoped token must carry, plain-language hints for a failed check
- * or a failed search for assignable people, and the token-expiry reminder. Loads unchanged in the app, the server and the demo.
+ * or a failed search for assignable people, and the token-expiry reminder.
+ * Loads unchanged in the app, the server and the demo.
  */
 
 /** Where an Atlassian account creates and revokes its API tokens, classic or scoped. */
@@ -188,7 +189,10 @@ export function jiraFailureHint(stage: JiraCheckStage, failure: JiraCheckFailure
  * the search answered it. Null when Jira's own message says all there is.
  */
 export function assigneeSearchHint(providerStatus: number | null | undefined): string | null {
-  if (providerStatus === 401 || providerStatus === 403) {
+  if (providerStatus === 401) {
+    return "Jira refused the connection's email and token. Check them on the connection: the email of the account that created the token, the whole token, and that it has not expired or been revoked.";
+  }
+  if (providerStatus === 403) {
     return "The connection's account needs Assign Issues on this project or the Browse users and groups global permission. A scoped token also needs read:jira-user.";
   }
   if (providerStatus === 404) return "The connection's account does not see this Jira project. Check the project key.";
