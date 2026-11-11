@@ -11,32 +11,47 @@ import type {
 } from '@piwitests/core/run-hub';
 import { canStopRun } from '@piwitests/core/run-hub';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
-import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { copyWithFeedback } from '../shared/clipboard.js';
-import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
-import { formatUnit, initI18n, localizeDocument, t, tn, tNodes, type MessageKey } from '../shared/i18n.js';
+import {
+  CONTROLS,
+  FOLDED,
+  FOLD_FROM,
+  JOINED,
+  STEERING,
+  controlTitle,
+  controlsOf,
+  type Control,
+} from '@piwitests/run-model/controls';
+import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
+import { tabStatus, workerStatus, type WorkerStatus } from '@piwitests/run-model/status';
 import {
   IN_WINDOW,
-  RUNS_PING_MS,
-  RUNS_PORT,
-  RUN_COMMAND,
   heldUntilWatched,
   laneFrameNow,
   laneWatchOf,
-  pageHintOf,
   pagePoint,
-  shareRefusalOf,
   stopError,
+  stopIntents,
+  stopPlace,
+  testName,
+} from '@piwitests/run-model/stop';
+import { shownLaneOf } from '@piwitests/run-model/tabs';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
+import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
+import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
+import {
+  RUNS_PING_MS,
+  RUNS_PORT,
+  RUN_COMMAND,
+  pageHintOf,
+  shareRefusalOf,
   runLevelControls,
-  shownLaneOf,
   readRunsBounds,
   RUNS_BOUNDS_KEY,
   keyTargetOf,
   stopKeyOf,
   STOP_KEYS,
-  stopIntents,
-  stopPlace,
-  testName,
   slotKey,
   workerKey,
   type RunsAnswer,
@@ -52,9 +67,8 @@ import {
   type RunsView,
   type RunsWhat,
 } from '../shared/runs.js';
-import { driverOf, presenceLine, watchersLine } from '../shared/run-presence.js';
+import { runsSpeaker } from '../shared/run-words.js';
 import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
-import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../shared/view-input.js';
 
 /**
  * The Runs window: the runs the paired editor started, and the paired desktop app's beside them (`Desktop app`, their
@@ -668,8 +682,7 @@ function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean
     const now = stoppedAt(key)?.stop;
     if (now?.since !== stop.since || !hubAnswers(run.hub)) return;
     if (!state?.hubs.find((h) => h.id === run.hub)?.presence) return;
-    const driver = driverOf(now);
-    if (driver?.who !== 'self' && (driver || inputAt.get(slot) !== stop.since)) return;
+    if (!givesBack(driverOf(now, runsSpeaker), inputAt.get(slot) === stop.since)) return;
     inputAt.delete(slot);
     await giveBack(run, worker.worker, stop.since);
   });
@@ -1801,7 +1814,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
   }
   // Who else has the run open, from a hub that says so, while the run goes on and its hub is connected.
-  const present = session.ended || away ? null : presenceLine(session.presence);
+  const present = session.ended || away ? null : presenceLine(session.presence, runsSpeaker);
   if (present) {
     children.push(
       part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
@@ -2011,24 +2024,9 @@ function watchingWorker(run: RunsRun, worker: HubWorker): boolean {
   );
 }
 
-/** A worker's state on its tab, as an icon and the words of its state. */
-function tabState(worker: HubWorker): { icon: IconName; words: string } {
-  const stop = worker.state === 'stopped' ? worker.stop : null;
-  if (stop?.reason === 'failure') return { icon: 'x-circle', words: t('runs_stateFailed') };
-  if (stop) {
-    return {
-      icon: 'pause',
-      words: t((stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : null) ?? STOP_WORDS[stop.reason]),
-    };
-  }
-  if (worker.pausing) return { icon: 'clock', words: t('runs_statePausing') };
-  if (worker.state === 'running' || worker.state === 'other') return { icon: 'play', words: t('runs_stateRunning') };
-  return { icon: 'dot', words: t('runs_stateBetween') };
-}
-
 /**
  * A run's workers as tabs, by lane, one shown at a time (`shownLaneOf`): each names its worker and marks its state in
- * its tone (`statusTone`, `data-status`). The arrow keys, Home and End move between them. Each tab is drawn again only when its own
+ * its tone (`tabStatus`, `data-status`). The arrow keys, Home and End move between them. Each tab is drawn again only when its own
  * state changes.
  */
 function renderWorkerTabs(run: RunsRun, workers: readonly HubWorker[], shown: number | null): HTMLElement {
@@ -2042,8 +2040,9 @@ function renderWorkerTabs(run: RunsRun, workers: readonly HubWorker[], shown: nu
   });
   const items = workers.map((worker) => {
     const lane = worker.parallelIndex;
-    const state = tabState(worker);
-    const tone = statusTone(worker, worker.state === 'stopped' ? worker.stop : null);
+    const status = tabStatus(worker);
+    const state = { icon: status.icon, words: runsSpeaker.say(status.message.key, status.message.args) };
+    const tone = status.tone;
     const selected = lane === shown;
     return part(`${runKey}|tab|${lane}`, [state, tone, selected], () => {
       const tab = makeButton(t('runs_worker', { number: lane + 1 }), () => chooseTab(runKey, lane), {
@@ -2310,42 +2309,20 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
   });
 }
 
-/** The state line of a stop, by its reason; a failure's names where it failed instead (`runs_failedAt`). */
-const STOP_WORDS = {
-  breakpoint: 'runs_stoppedBreakpoint',
-  step: 'runs_stoppedStep',
-  pause: 'runs_stoppedPause',
-  'run-to': 'runs_stoppedRunTo',
-  'page-pause': 'runs_stoppedPagePause',
-  other: 'runs_stoppedOther',
-} as const satisfies Record<Exclude<HubStop['reason'], 'failure'>, string>;
-
-/** The words of a stop an agent asked for, by its reason: its Pause, its Step, its Run to; another reads as any stop. */
-const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], MessageKey>> = {
-  pause: 'runs_stoppedByAgent',
-  step: 'runs_stoppedByAgentStep',
-  'run-to': 'runs_stoppedByAgentRunTo',
-};
-
-function stateLine(worker: HubWorker, place: string | null): HTMLElement {
+/** The state line of a worker (`workerStatus`): a Pause waiting in a call names it as code, with how long it has run. */
+function stateLine(status: WorkerStatus): HTMLElement {
   const line = element('p', 'state');
-  const stop = worker.state === 'stopped' ? worker.stop : null;
-  if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
-  else if (stop)
-    iconText(line, 'pause', t((stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : null) ?? STOP_WORDS[stop.reason]));
-  else if (worker.pausing && worker.waiting) {
+  if (status.waiting) {
     // How long it has waited, kept up to date each second (`tickWaits`).
     const waited = element('span', 'waited');
-    const { since, title } = worker.waiting;
+    const { since, title } = status.waiting;
     if (since) {
       waited.dataset.since = since;
       waited.textContent = waitedText(since, Date.now());
     }
     const call = element('span', 'call', ...richText(title));
-    iconText(line, 'clock', ...tNodes('runs_statePausingIn', { call }), ' ', waited);
-  } else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
-  else if (worker.state === 'running' || worker.state === 'other') iconText(line, 'play', t('runs_stateRunning'));
-  else iconText(line, 'dot', t('runs_stateBetween'));
+    iconText(line, status.icon, ...tNodes(status.message.key, { call }), ' ', waited);
+  } else iconText(line, status.icon, runsSpeaker.say(status.message.key, status.message.args));
   return line;
 }
 
@@ -2365,45 +2342,6 @@ function tickWaits(): void {
 
 setInterval(tickWaits, 1000);
 
-/** The window's controls: each button's words, tooltip, icon and tone. */
-const CONTROLS = {
-  resume: { label: 'runs_resume', title: 'runs_resumeTitle', icon: 'play', tone: 'primary' },
-  step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
-  finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
-  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop', tone: 'remove' },
-  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop', tone: 'remove' },
-  front: { label: 'runs_front', title: 'runs_frontTitle', icon: 'browser', tone: 'ghost' },
-  pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick', tone: 'ghost' },
-  record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record', tone: 'ghost' },
-  assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle', tone: 'ghost' },
-  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'layers', tone: 'ghost' },
-  mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
-  pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
-} as const satisfies Record<
-  Exclude<
-    RunsWhat,
-    'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive' | 'stop'
-  >,
-  { label: string; title: string; icon: IconName; tone?: 'primary' | 'remove' | 'ghost' }
->;
-
-type Control = keyof typeof CONTROLS;
-
-/** The controls that steer the test, on a row of their own above the code a stop can write. */
-const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'front', 'end', 'give-up', 'pause']);
-
-/** The controls that move a stopped test on, joined in one group at the start of the steering row. */
-const JOINED: ReadonlySet<Control> = new Set(['resume', 'step', 'finish']);
-
-/**
- * The code a stop can write that folds under More, where the row holds all five actions, shown while More is open or
- * its list of requests is.
- */
-const FOLDED: ReadonlySet<Control> = new Set(['assert-region', 'mock']);
-
-/** How many of the code a stop can write show before More folds some: fewer stay on the row. */
-const FOLD_FROM = 5;
-
 /** The stops whose More is open, by worker and stop (`since`), the latest `MORE_KEPT`: a new stop folds them again. */
 const moreOpen = new Set<string>();
 const MORE_KEPT = 50;
@@ -2411,27 +2349,6 @@ const MORE_KEPT = 50;
 /** Whether a worker's More shows what it folds at the stop `since`. */
 function moreShown(key: string, since: string | null): boolean {
   return moreOpen.has(`${key}|${since}`);
-}
-
-/**
- * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
- * it as it failed), Show the browser at a stop its pause bar shows, and End the test where the stop takes it; then the actions the stop takes from this window
- * (`stopIntents`): Pick, Record, Assert and Assert a region, which start in the test's window where the pause bar
- * shows, or through the live view this window watches at a headless stop, those it takes once watched (`held`) among
- * them, and Mock a request.
- */
-function controlsOf(worker: HubWorker, stop: HubStop | null, held: readonly Control[]): Control[] {
-  // While a Pause waits for the call the test runs, End the test there, where its worker takes it.
-  if (!stop)
-    return worker.pausing ? (worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : []) : ['pause'];
-  const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
-  const intents = stopIntents(worker, stop);
-  // Show the browser, at a stop its pause bar shows, where its worker takes it.
-  if (intents.includes('front')) controls.push('front');
-  if (intents.includes('end')) controls.push('end');
-  controls.push(...IN_WINDOW.filter((what) => intents.includes(what) || held.includes(what)));
-  if (intents.includes('mock')) controls.push('mock');
-  return controls;
 }
 
 /**
@@ -2477,9 +2394,9 @@ function renderActions(
       if (what !== 'mock') void control(run, worker.worker, what, since);
       else if (since !== null) void toggleRequests(run, worker.worker, since);
     };
-    const title = what === 'resume' && stop?.reason === 'failure' ? t('runs_resumeFailureTitle') : t(look.title);
+    const title = runsSpeaker.say(controlTitle(what, stop));
     const keys = what === 'resume' || what === 'step' || what === 'finish' ? STOP_KEYS[what] : null;
-    const made = makeButton(t(look.label), onClick, {
+    const made = makeButton(runsSpeaker.say(look.label), onClick, {
       icon: look.icon,
       tone: 'tone' in look ? look.tone : undefined,
       title: waits ? t('runs_watchToUse') : keys ? t('runs_withKey', { title, key: keys.split(' ')[0]! }) : title,
@@ -2758,8 +2675,9 @@ function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker,
     };
     parts.push(
       part(`${key}|status`, shown, () => {
-        const card = element('div', 'status', stateLine(worker, where));
-        card.dataset.tone = statusTone(worker, stop);
+        const status = workerStatus(worker, where);
+        const card = element('div', 'status', stateLine(status));
+        card.dataset.tone = status.tone;
         if (stop && where) card.append(stopView(stop, where));
         return card;
       }),
@@ -2772,10 +2690,10 @@ function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker,
     const lane = can === 'watch' ? lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)) : undefined;
     const byLane = can === 'watch' && (!stop || !!worker.test);
     // Who watches its page, as a hub with `presence` says, while it answers: in the page's head, else on a line.
-    const watchers = away ? null : watchersLine(worker.watchers);
+    const watchers = away ? null : watchersLine(worker.watchers, runsSpeaker);
     // Who drives its stop, under its page, where it comes and goes without moving the page: while another tool or an
     // agent drives it, an agent follows the run, or this window drives it while another tool has the run open.
-    const driver = stop && hub?.presence && !away ? driverOf(stop) : null;
+    const driver = stop && hub?.presence && !away ? driverOf(stop, runsSpeaker) : null;
     const agentFollows = !!run.session.presence?.some((tool) => tool.kind === 'agent');
     const othersOpen = !!run.session.presence?.some((tool) => !tool.self);
     let drive: HTMLElement | null = null;
@@ -2853,13 +2771,6 @@ function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker,
   }
   place(item, parts);
   return item;
-}
-
-/** The tone of a worker's status card: its color and its edge. */
-function statusTone(worker: HubWorker, stop: HubStop | null): 'failed' | 'stopped' | 'pausing' | 'between' | 'running' {
-  if (stop) return stop.reason === 'failure' ? 'failed' : 'stopped';
-  if (worker.pausing) return 'pausing';
-  return worker.state === 'between' ? 'between' : 'running';
 }
 
 /** What to check in the code sent to the editor, as the hub said it: a line each. */

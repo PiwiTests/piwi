@@ -1,8 +1,9 @@
 /**
- * The input the Runs window plays on a stopped page through its live view (`@piwitests/core/run-view`): which key
- * presses go to the page and as what (`viewKey`), and the pointer's moves, presses and wheel turned into the view's
- * events and sent in batches (`ViewInputBatcher`). Pure: the window reads the browser's events into these, and sends
- * what comes out. Every point is in CSS pixels of the page's viewport.
+ * The input a surface plays on a stopped page through its live view (`@piwitests/core/run-view`): which key presses
+ * go to the page and as what (`keyOnView`), and the pointer's moves, presses and wheel turned into the view's events
+ * and sent in batches (`ViewInputBatcher`). Pure: the surface (the Runs window, the desktop app's tray, the editor's
+ * paused page) reads the browser's events into these, and sends what comes out. Every point is in CSS pixels of the
+ * page's viewport.
  */
 import {
   MAX_VIEW_EVENTS,

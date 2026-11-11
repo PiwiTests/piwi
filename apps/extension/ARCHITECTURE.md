@@ -893,7 +893,10 @@ starts again once the hub answers.
 
 ### The Runs window
 
-The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `src/shared/runs.ts`. The worker's side is
+The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `src/shared/runs.ts` and the run model it
+shares with the desktop app's Local runs tray in `@piwitests/run-model` (`packages/run-model`): what a stop takes, a
+worker's status and controls, who is present, the tab shown and the live view's input. The window says the model's
+words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worker's side is
 `background/runs-window.ts`.
 
 - The popup's **Runs** tile opens it (`piwi-open-runs`). An open one is brought to the front, found from its port or
@@ -923,7 +926,7 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   sentence as the hub said it.
 - From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the
   window's own `self` entry left out), each worker who watches its page (`watchers`, `self` as "you"), and a stop who
-  drives it (`driver`), each kind in the window's own words (`src/shared/run-presence.ts`). **Take control** shows
+  drives it (`driver`), each kind in the window's own words (`@piwitests/run-model/presence`). **Take control** shows
   while another tool drives the stop or an agent follows the run, **Give back** while this connection drives it and an
   agent follows the run or another tool has it open: the hub's `drive`, naming the stop. Who watches shows in the
   page card's head, who drives in its foot, under the image, which it never moves. Control taken from the agent is read out, and a stop an agent asked for
@@ -996,9 +999,9 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   and goes off with Watch live or Watch, a refused view or lane, Give back, Escape on the view, or as the run ends. Off,
   the input waiting goes first (`ViewInputBatcher.finish`), then a stop the window drives, as the latest state says
   (`stoppedAt`), or reached with its input (`inputAt`), is given back (`drive` off), past any command on its way
-  (`giveBack`). While it is on, the view takes `tabindex=0`, a focus ring and
+  (`giveBack`, when `givesBack` says so). While it is on, the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
-  `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
+  `@piwitests/run-model/view-input`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
   pointer event's own point, a mouse event's being whole pixels), a batch about every 50 ms, one on its way at a time,
   the moves coalesced, the wheel once the view has the focus, at most 50 events waiting and 200 sent a second. The
   buttons are read from `mousedown` and `mouseup`, whose `detail` counts a double click as the system does: where the
@@ -1041,7 +1044,7 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 ### Run-level controls, keys and the window's place
 
 - A live run of several workers shows one at a time, behind a tab each (`role="tablist"`), marked with its state
-  (`tabState`, `data-status`), by lane, so the worker Playwright starts in a lane's place keeps its tab. Which one is
+  (`tabStatus`, `data-status`), by lane, so the worker Playwright starts in a lane's place keeps its tab. Which one is
   `shownLaneOf`, kept by run in `tabs` (`RunTabs`): the one shown, the person's choice included, while it stands at a
   stop or is watched; else, once the person resumed or ended its test there (`advance`), the first stopped worker;
   else a stop that came since the tabs were last drawn (not in `known`): a stop takes the tab once, as it comes. The
@@ -1090,8 +1093,11 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   from a window that watches the lane, a run that ended, and a connection lost; the state sent again to a window that
   stops watching a view or a lane, the actions in the test's window refused to it, no viewer of a stop outside a
   test, `watch` turned off after an ask not answered in time; and a run of a ref that runs again listed once.
-- `view-input.test.ts` covers which keys go to the page and as what, and the input's batches: coalesced moves, double
-  and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
+- `packages/run-model/tests/` covers the run model: which keys go to the page and as what, and the input's batches
+  (`view-input.test.ts`: coalesced moves, double and triple clicks, drags, the wheel, texts joined, the bound, the
+  rate, a refusal and `dispose`), `stopIntents` and its fallback, `heldUntilWatched`, `laneWatchOf`, `laneFrameNow`,
+  `pagePoint`, `shownLaneOf`, a worker's status and controls, and who is present, in English. `run-words.test.ts`
+  holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
 - `piwi-client.test.ts` checks `fetchDesktopHubs`: the proof first, the token on `/api/desktop/live` alone, a hub
@@ -1101,8 +1107,7 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   control with the desktop token): its run beside the editor's, steered, its mock made for the app's window, and the
   window following the app alone.
 - `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands and Watch's field by field,
-  `stopIntents` and its fallback, `stateForViewer` by stop and by lane, `heldUntilWatched`, `laneWatchOf`,
-  `laneFrameNow`, `pageHintOf`, and `pagePoint`.
+  `stateForViewer` by stop and by lane, and `pageHintOf`.
 - `runs.spec.ts` runs the real extension against the real editor service, started in-process
   (`tests/e2e/runs-fixtures.ts`, on `packages/editor/tests/run-fixtures.ts`). A stub stands in for the Send to editor
   endpoint, and a fake worker plays a run on the run channel. It covers the popup's tile; the window's Pause, Step

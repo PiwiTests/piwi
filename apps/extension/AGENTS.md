@@ -146,9 +146,13 @@ each rule below ends with the section to read there.
   `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
   connection per hub")
 - **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
-  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). The view takes input only while
+  leaves it unless a click took the keyboard** (`keyOnView`, `packages/run-model/tests/view-input.test.ts`). The view takes input only while
   Interact is on, and Escape on it turns Interact off and gives the stop back, in the Runs window and the desktop tray
   alike. (see "The Runs window")
+- **What the Runs window shares with the desktop app's Local runs tray lives in `@piwitests/run-model`** (what a stop
+  takes, its place, a worker's status, controls and tab, who is present, the live view's input): change it there, never
+  copy it here. The window says its words through `runsSpeaker` (`src/shared/run-words.ts`), and `run-words.test.ts`
+  holds the model's English words to the catalogs. (see "The Runs window")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")
@@ -326,7 +330,7 @@ Run them from `apps/extension/`: the root `package.json` has no `extension:*` sc
 | `npm run extension:lab`               | The replay lab (`tests/lab/README.md`; not part of CI)                 |
 
 `extension:dev` watches `src/`, `public/`, the HTML pages, `manifest.json`, `scripts/build.mjs`, and the `src/` and
-`package.json` of `packages/core` and `packages/picker-dom`, which are bundled from source. The `--pseudo` build is never
+`package.json` of `packages/core`, `packages/picker-dom` and `packages/run-model`, which are bundled from source. The `--pseudo` build is never
 released. `extension:lab` records on a running Piwi dashboard, or with `LAB_SET=wild` on public sites (no dashboard needed).
 
 ## Loading it locally
