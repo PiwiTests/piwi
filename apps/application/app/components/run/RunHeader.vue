@@ -194,6 +194,12 @@ const runEnded = computed(
   () =>
     !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
 );
+/** When the run ended, from its start and duration, for what the header reads again just after the end. */
+const runEndedAt = computed(() => {
+  const start = props.testRun?.startTime ? new Date(props.testRun.startTime).getTime() : Number.NaN;
+  const duration = props.testRun?.duration;
+  return Number.isNaN(start) || duration == null ? null : new Date(start + duration).toISOString();
+});
 let primaryDecided = false;
 watch(
   runEnded,
@@ -764,6 +770,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           v-if="testRun?.id && runEnded"
           :run-id="testRun.id"
           :project-id="testRun.projectId"
+          :ended-at="runEndedAt"
           @changed="emit('label-updated')"
         />
       </div>

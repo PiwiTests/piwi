@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import type { RunSyncView } from '#shared/handlers/test-management-sync';
 import { getProviderIcon } from '#shared/link-detect';
+import { nextSyncRead, syncRetryPending } from '~/utils/run-sync-reads';
 
 /**
  * How the run's results went to the test management tool: the test run made there, what was sent (or would be, in a dry
  * run), the keys left out, and an unknown outcome with the action to look again. Renders nothing for a run that has no
  * sync. Maintainers and above send a failed sync again.
  */
-const props = defineProps<{ runId: number; projectId: number }>();
+const props = defineProps<{
+  runId: number;
+  projectId: number;
+  /** When the run ended, ISO 8601: a run that just ended is read again until its sync appears. */
+  endedAt?: string | null;
+}>();
 const emit = defineEmits<{ changed: [] }>();
 
 const toast = useToast();
@@ -26,20 +32,34 @@ const sync = computed(() => data.value?.sync ?? null);
 const icon = getProviderIcon('zephyr-scale');
 
 const inFlight = computed(() => sync.value?.status === 'pending' || sync.value?.status === 'processing');
-let poll: ReturnType<typeof setInterval> | null = null;
-watch(
-  inFlight,
-  (active) => {
-    if (active && !poll) poll = setInterval(() => void refresh(), 5000);
-    if (!active && poll) {
-      clearInterval(poll);
-      poll = null;
-    }
-  },
-  { immediate: true },
-);
+const retryAt = computed(() => {
+  const s = sync.value;
+  if (!s || !syncRetryPending(s) || !s.scheduledFor) return null;
+  return new Date(s.scheduledFor).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+});
+
+let timer: ReturnType<typeof setTimeout> | null = null;
+let emptyReads = 0;
+function planRead(): void {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  if (!data.value) return;
+  const wait = nextSyncRead(sync.value, {
+    endedAt: props.endedAt ? Date.parse(props.endedAt) : null,
+    emptyReads,
+    now: Date.now(),
+  });
+  if (wait == null) return;
+  timer = setTimeout(async () => {
+    timer = null;
+    if (!sync.value) emptyReads++;
+    await refresh();
+    planRead();
+  }, wait);
+}
+watch(data, planRead, { immediate: true });
 onBeforeUnmount(() => {
-  if (poll) clearInterval(poll);
+  if (timer) clearTimeout(timer);
 });
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
@@ -106,6 +126,9 @@ async function sendAgain(): Promise<void> {
       <span v-else-if="sync.status === 'done'" class="text-muted" data-testid="sync-dry-run">
         Dry run, nothing was sent. A live sync would send {{ sync.resultCount }}
         {{ plural(sync.resultCount, 'result', 'results') }}: {{ countsText }}
+      </span>
+      <span v-else-if="retryAt" class="text-error" data-testid="sync-retrying">
+        Sending failed, next attempt at {{ retryAt }}. {{ sync.error }}
       </span>
       <span v-else-if="inFlight" class="text-muted" data-testid="sync-pending">Sending results…</span>
       <span v-else-if="sync.status === 'skipped'" class="text-muted" data-testid="sync-skipped">

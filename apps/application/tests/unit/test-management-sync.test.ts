@@ -903,6 +903,23 @@ describe('what the run page reads', () => {
     });
   });
 
+  test('a sync that waits to retry reads its attempts and when the next one is due', async () => {
+    zephyr.upload = () => json({ message: 'slow down' }, 429, { 'Retry-After': '90' });
+    await queued();
+    const row = await syncRow();
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      error: expect.any(String),
+      scheduledFor: row.scheduledFor!.toISOString(),
+    });
+  });
+
+  test('a sync that is not pending reads no next attempt', async () => {
+    await queued();
+    expect((await readSync(at(RUN_ID))).sync).toMatchObject({ status: 'done', attempts: 1, scheduledFor: null });
+  });
+
   test('a refused sync reads that and not an unknown outcome', async () => {
     zephyr.upload = () => json({ message: 'bad' }, 422);
     await queued();

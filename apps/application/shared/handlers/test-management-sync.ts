@@ -39,6 +39,10 @@ export interface RunSyncView {
   unmappedCount: number;
   /** When the last attempt ended, ISO 8601; null while one is still to come. */
   finishedAt: string | null;
+  /** Attempts made so far; a pending sync with attempts and an error waits to retry. */
+  attempts: number;
+  /** When the next attempt is due, ISO 8601, while the sync is pending; null otherwise. */
+  scheduledFor: string | null;
 }
 
 const NO_COUNTS: SyncCounts = { passed: 0, failed: 0, flaky: 0, notExecuted: 0 };
@@ -62,6 +66,8 @@ export function runSyncView(row: IntegrationAction): RunSyncView {
     unknownKeyCount: payload.unknownKeyCount ?? 0,
     unmappedCount: payload.unmappedCount ?? 0,
     finishedAt: row.finishedAt ? new Date(row.finishedAt).toISOString() : null,
+    attempts: row.attempts,
+    scheduledFor: row.status === 'pending' && row.scheduledFor ? new Date(row.scheduledFor).toISOString() : null,
   };
 }
 
