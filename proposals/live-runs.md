@@ -155,8 +155,8 @@ the page meanwhile, else gives the stop back. Then attention and the ambient sta
 person is one state (`runAttention`, `runsAttention`: a test waiting at a stop, failing, running), which Piwi Picker's
 toolbar badge, Runs tile and Runs window title say (amber for the tests waiting, red for those failed, a run that
 failed while no Runs window had the focus counted until one takes it), as do the desktop app's taskbar or Dock, title
-and tray dot (amber, `1 test waits for you`); only a run the tray lists flashes its end (DK8), and the Windows
-thumbnail's Stop stops the tray's run started last. The editors' status bars say the same of their own runs. Remaining
+and tray dot (`1 test waits for you`, the dot amber); only a run the window started from its tray flashes its end, as
+it ends (DK8), and the Windows thumbnail's Stop stops the window's run started last. The editors' status bars say the same of their own runs. Remaining
 of attention: the tray menu's **Show the stopped test**, and a teammate asking to watch. The rest of P6 is proposed:
 the editors' unattended runs. The later phases are
 proposed. The bugs the analysis

@@ -55,7 +55,7 @@ Then confirm the running version at **Settings → About**, and that recent runs
 
 ## The desktop app
 
-The [desktop build](/features/desktop) bundles its own server, and its database and storage live in a per-machine data directory *outside* the app bundle, migrated on first launch exactly as the server does — so the same forward-only rule applies. Back up that data directory before a major version jump; a newer build will migrate it, an older one cannot open it.
+The [desktop build](/features/desktop) bundles its own server, and its database and storage live in a per-machine data directory *outside* the app bundle, migrated on first launch exactly as the server does — so the same forward-only rule applies. Back up the folder below before a major version jump; a newer build will migrate it, an older one cannot open it.
 
 The data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`

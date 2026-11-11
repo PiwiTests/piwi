@@ -11,13 +11,14 @@
  * `snapshot` of the runs already in flight when the shell connects, then live
  * lifecycle + progress deltas. The active runs are aggregated
  * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
- * command; when the last run finishes the outcome flashes (green pass / amber
- * interrupted / red fail) briefly before clearing, and a red one asks for the
- * user's attention: only a run the Local runs tray lists (`trayListsRun`), never an
- * editor's, a terminal's or another window's that reports into the app. While a test
- * of the app's runs waits at a stop for the person (the hub's runs, `runsAttention`),
- * the shell says so first, amber (`paused`): `1 test waits for you`. The Windows
- * thumbnail's Stop stops the tray's run started last (`thumbnailStopRun`). A step of a job of the Local runs tray (a reproduction, a
+ * command; as a run of this window's local runs ends (`trayListsRun`), its outcome
+ * flashes (green pass / amber interrupted / red fail) for a moment, whatever else
+ * runs, and a red one asks for the user's attention; an editor's, a terminal's,
+ * CI's, another window's run, or one from before a reload, never flashes. While a
+ * test of the app's runs waits at a stop for the person (the hub's runs,
+ * `runsAttention`), the shell says so first, amber (`paused`): `1 test waits for
+ * you`. The Windows thumbnail's Stop stops this window's run started last
+ * (`thumbnailStopRun`). A step of a job of the Local runs tray (a reproduction, a
  * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
  * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
@@ -136,25 +137,23 @@ export default defineNuxtPlugin(() => {
   }
 
   function pushUpdate() {
-    if (clearTimer) {
-      clearTimeout(clearTimer);
-      clearTimer = null;
-    }
-    const agg = aggregateRunProgress([...active.values()], waiting);
-    if (agg.state !== 'none') {
+    // An outcome flashes as its run or job ends, whatever else runs or waits, for its moment.
+    const flash = lastFinished;
+    if (flash) {
       lastFinished = null;
-      send(agg.state, agg.fraction, agg.label, agg.failing);
+      if (clearTimer) clearTimeout(clearTimer);
+      send(flash.progress.state, flash.progress.fraction, flash.progress.label, flash.progress.failing);
+      clearTimer = setTimeout(() => {
+        clearTimer = null;
+        pushUpdate();
+      }, flash.durationMs);
       return;
     }
-    // Nothing in flight — flash the last outcome, then clear.
-    const flash = lastFinished;
-    lastFinished = null;
-    if (flash) {
-      send(flash.progress.state, flash.progress.fraction, flash.progress.label, flash.progress.failing);
-      clearTimer = setTimeout(() => send('none', null, null), flash.durationMs);
-    } else {
-      send('none', null, null);
-    }
+    // A flash keeps its moment: the bar shows what stands once it ends.
+    if (clearTimer) return;
+    const agg = aggregateRunProgress([...active.values()], waiting);
+    if (agg.state === 'none') send('none', null, null);
+    else send(agg.state, agg.fraction, agg.label, agg.failing);
   }
 
   /** Tracks a run in flight with these counts, keeping what launched it once a message of it said so. */
@@ -230,16 +229,15 @@ export default defineNuxtPlugin(() => {
   // `active` without extra work here.
   subscribeDesktopEvents((message) => handle(message as unknown as LiveRunMessage));
 
-  // A test of the app's runs that waits at a stop shows first: the hub's runs say which (`useDesktopRunHub`).
+  // A test of the app's runs that waits at a stop shows first: the hub's runs say which (`useDesktopRunHub`). The bar
+  // is drawn from the first snapshot, never cleared as the window loads.
   const hub = useDesktopRunHub();
-  watch(
-    () => runsAttention(Object.values(hub.state.sessions))?.waiting ?? 0,
-    (now) => {
-      waiting = now;
-      pushUpdate();
-    },
-    { immediate: true },
-  );
+  const waitingNow = () => runsAttention(Object.values(hub.state.sessions))?.waiting ?? 0;
+  waiting = waitingNow();
+  watch(waitingNow, (now) => {
+    waiting = now;
+    pushUpdate();
+  });
 
   // Local ("Run locally") runs are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress

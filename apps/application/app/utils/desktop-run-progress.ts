@@ -104,7 +104,8 @@ export function aggregateRunProgress(runs: readonly RunCounts[], waiting = 0): A
   const waits = waiting === 1 ? '1 test waits for you' : `${waiting} tests wait for you`;
   return {
     state: 'paused',
-    fraction: running.fraction,
+    // A paused bar keeps the value it was given last: a full one while the progress is not known.
+    fraction: running.fraction ?? 1,
     label: running.label ? `${waits} · ${running.label.replace(/…$/, '')}` : waits,
     failing: running.failing,
   };
@@ -335,23 +336,26 @@ export function runsOfLocalRun(
 }
 
 /**
- * Whether the Local runs tray lists the run `id`: it is a run of one of the tray's runs (`runsOfLocalRun`). Only such a
- * run's end flashes on the shell and asks for attention: a run of an editor, of a terminal or of another window that
- * reports into the app never does.
+ * Whether the run `id`, which named what launched it (`liveRunFacts`), is a run of one of this window's local runs
+ * (`runsOfLocalRun`), one whose baseline was never read counting from the project's first run. Only such a run's end
+ * flashes on the shell and asks for attention: a run of an editor, of a terminal, of CI, of another window or of one
+ * from before a reload never does.
  */
 export function trayListsRun(id: number, run: LiveRun, owners: readonly LocalRunOwner[]): boolean {
   const one = new Map([[id, run]]);
-  return owners.some((owner) => runsOfLocalRun(one, owner, owners).includes(id));
+  return owners.some((owner) =>
+    runsOfLocalRun(one, { ...owner, piwiRunBaseline: owner.piwiRunBaseline ?? 0 }, owners).includes(id),
+  );
 }
 
 /**
- * The tray's run the taskbar thumbnail's Stop stops: the one started last of those still running; none when no run
- * runs.
+ * The run of this window the taskbar thumbnail's Stop stops: the one started last of those still running that no Stop
+ * was asked of yet, so a second click stops the next one rather than killing it; none when no such run runs.
  */
-export function thumbnailStopRun<T extends Pick<LocalRunOwner, 'startedAt'> & { status: string }>(
-  runs: readonly T[],
-): T | null {
+export function thumbnailStopRun<
+  T extends Pick<LocalRunOwner, 'startedAt'> & { status: string; stopRequested?: boolean },
+>(runs: readonly T[]): T | null {
   return runs
-    .filter((run) => run.status === 'running')
+    .filter((run) => run.status === 'running' && !run.stopRequested)
     .reduce<T | null>((latest, run) => (latest && latest.startedAt >= run.startedAt ? latest : run), null);
 }

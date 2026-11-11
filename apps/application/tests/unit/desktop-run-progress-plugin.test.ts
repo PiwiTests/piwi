@@ -189,6 +189,32 @@ describe('the OS progress of a job of the Local runs tray', () => {
     expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
   });
 
+  test('flashes a run of the tray as it ends while other runs go on or a test waits, then shows them again', async () => {
+    vi.useFakeTimers();
+    try {
+      const { shown, runs, hub, emit } = await plugin();
+      // Nothing is drawn before the stream says what runs: the bar is not cleared as the window loads.
+      expect(shown).toEqual([]);
+      const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
+      emit({ type: 'run-started', runId: 11, ...ci });
+      hub.state.sessions = {
+        'desktop-9': { ended: false, workers: [{ state: 'stopped', stop: { reason: 'pause' } }] },
+      };
+      await nextTick();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you · Running' });
+      const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+      runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+      emit({ type: 'run-started', runId: 12, ...own });
+      emit({ type: 'run-finished', runId: 12, status: 'failed', ...own });
+      expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
+      // Its moment over, the bar says again what goes on.
+      await vi.runAllTimersAsync();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you · Running' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('says first that a test of the app’s runs waits for the person, amber, as the hub tells it', async () => {
     const { shown, hub, emit } = await plugin();
     emit({

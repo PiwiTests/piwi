@@ -237,10 +237,11 @@ describe('aggregateRunProgress, with tests waiting for the person', () => {
       label: '2 tests wait for you · Running 3/12 · 1 failed',
       failing: true,
     });
-    // A run the event stream does not list (one the app's hub alone knows), waiting with nothing in flight.
+    // A run the event stream does not list (one the app's hub alone knows), waiting with nothing in flight: a full bar,
+    // as a paused bar keeps the value it was given last.
     expect(aggregateRunProgress([], 1)).toEqual({
       state: 'paused',
-      fraction: null,
+      fraction: 1,
       label: '1 test waits for you',
       failing: false,
     });
@@ -407,13 +408,20 @@ describe('the runs the Local runs tray lists, and the run the thumbnail stops', 
     expect(trayListsRun(7, live({ origin: 'terminal', originRef: null, name: null }), [owner()])).toBe(false);
     expect(trayListsRun(7, live({ originRef: 'desktop:b2', name: 'desktop-9' }), [owner()])).toBe(false);
     expect(trayListsRun(7, live(), [])).toBe(false);
+    // A run whose baseline was never read still lists its own runs, by what they recorded.
+    expect(trayListsRun(7, live(), [owner({ piwiRunBaseline: null })])).toBe(true);
+    expect(
+      trayListsRun(7, live({ originRef: 'desktop:b2', name: 'desktop-9' }), [owner({ piwiRunBaseline: null })]),
+    ).toBe(false);
   });
 
-  test('stops the run started last of those still running', () => {
+  test('stops the run started last of those still running, then the next as it stops', () => {
     const first = { ...owner({ key: 1, startedAt: 1000 }), status: 'running' };
     const last = { ...owner({ key: 2, startedAt: 3000 }), status: 'running' };
     const ended = { ...owner({ key: 3, startedAt: 5000 }), status: 'passed' };
     expect(thumbnailStopRun([first, last, ended])).toBe(last);
+    // A second click never kills the run it already stopped.
+    expect(thumbnailStopRun([first, { ...last, stopRequested: true }, ended])).toBe(first);
     expect(thumbnailStopRun([ended])).toBeNull();
     expect(thumbnailStopRun([])).toBeNull();
   });

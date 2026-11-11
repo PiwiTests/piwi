@@ -42,10 +42,11 @@ hidden in the tray. The windows open where you left them. The app has its own
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
 or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
 Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs waits at a
-stop for you (`1 test waits for you`). A run the tray lists flashes its outcome as it ends and, failed while you look
-away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; any other run never
-does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and **Stop**, which stops the
-tray's run started last. In the background,
+stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome as it ends, whatever
+else runs, and, failed while you look away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only
+at its verdict; an editor's, a terminal's or CI's run, or one from before a reload, never does. On Windows, the taskbar
+button's thumbnail has **Open**, which restores the window, and **Stop**, which stops the window's run started last, the
+next one at a second click. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
 
