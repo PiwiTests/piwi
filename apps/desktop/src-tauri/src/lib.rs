@@ -1204,9 +1204,10 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     if !file.0.exists() {
         return;
     }
-    let hub = app
-        .try_state::<DiscoveryHub>()
-        .and_then(|hub| hub.0.lock().unwrap().clone());
+    let hub = app.try_state::<DiscoveryHub>().and_then(|hub| {
+        let held = hub.0.lock().unwrap().clone();
+        held
+    });
     let body = discovery_body(info.port, &info.token, &runner::read_links(app), hub.as_ref());
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
@@ -3839,7 +3840,8 @@ mod tests {
 
     use super::{
         crash_decision, CrashDecision,
-        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, discovery_hub_fields,
+        download_file_name, is_run_ref,
         connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
