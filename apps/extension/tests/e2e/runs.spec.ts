@@ -324,6 +324,8 @@ test('End the test ends a stopped test there, Stop the run reaches the editor, a
   try {
     const runs = await openRuns(context, extensionId);
     const card = liveRun(runs);
+    // A run of an earlier test may still be listed until its end is heard.
+    await expect(card).toHaveCount(0);
     const run = await startRun(editor, 'pays', [...RUN_TAKES]);
     try {
       await expect(card.getByText('Running')).toBeVisible();
@@ -1269,6 +1271,8 @@ test.describe('the live view', () => {
 
         await watch.click();
         await expect(watch).toHaveAttribute('aria-pressed', 'true');
+        // Interact waits for the view the hub accepts.
+        await expect(card.getByRole('button', { name: 'Interact' })).toHaveCount(0);
         expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
         await expect(card.getByText('Starting the live view…')).toBeVisible();
         sendFrame(run.worker, 1, before);
@@ -1675,16 +1679,30 @@ test.describe('the live view', () => {
         await expect(card.locator('.run-driver')).toHaveCount(0);
         await expect(other.locator('.run-driver')).toHaveCount(0);
 
-        // Interact takes the stop, from the editor driving it again, and turned off gives it back.
+        // Interact sends the input on the view, and the first of it takes the stop, from the editor driving it again.
         expect(await editor.svc.client.sendRequest('piwi/pageInput', typed)).toMatchObject({ ok: true });
         await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
         const interact = card.getByRole('button', { name: 'Interact' });
+        const view = card.locator('img.live');
         await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+        await view.click({ position: { x: 20, y: 20 } });
         await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
         await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
+        // Turned off, its input sent, it gives the stop back.
+        await runs.evaluate(() => (document.getElementById('announce')!.textContent = ''));
         await interact.click();
         await expect(interact).toHaveAttribute('aria-pressed', 'false');
         await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(other.locator('.run-driver')).toHaveCount(0);
+        // Give back turns Interact off, as it gives the stop back.
+        await interact.click();
+        await view.click({ position: { x: 30, y: 30 } });
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await card.getByRole('button', { name: 'Give back' }).click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
         await expect(card.locator('.run-driver')).toHaveCount(0);
       } finally {
         input.stop();

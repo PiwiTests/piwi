@@ -991,11 +991,12 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   with Watch live, Interact and Escape included. A watched lane that stops is scrolled into view
   (`bringIntoView`) when its row is not wholly in it.
 - **Interact**, a toggle after Watch live or Watch where a live view shows a stop that takes `input` from the window
-  (only while it watches), sends the person's input to the page. It is kept by run and slot (`interacting`, `slotKey`)
-  across the slot's next stops, and goes off with Watch live or Watch, with Escape on the view, or as the run ends. On,
-  it drives the stop (`drive` on, at a hub with `presence`, unless the window drives it); off, a stop the window drives
-  is given back (`drive` off), who drives read from the latest state (`stoppedAt`), not the stop the toggle was drawn
-  for. While it is on, the view takes `tabindex=0`, a focus ring and
+  (only while it watches, once the hub accepted the view), sends the person's input to the page, whose first event that
+  is not a move drives the stop. It is kept by run and slot (`interacting`, `slotKey`) across the slot's next stops,
+  and goes off with Watch live or Watch, a refused view or lane, Give back, Escape on the view, or as the run ends. Off,
+  the input waiting goes first (`ViewInputBatcher.finish`), then a stop the window drives, as the latest state says
+  (`stoppedAt`), or reached with its input (`inputAt`), is given back (`drive` off), past any command on its way
+  (`giveBack`). While it is on, the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
   `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
   pointer event's own point, a mouse event's being whole pixels), a batch about every 50 ms, one on its way at a time,
