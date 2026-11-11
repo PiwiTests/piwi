@@ -218,20 +218,25 @@ async function recordLinkDismissals(db: DrizzleDB, removed: RemovedLink[], remov
   }
 }
 
-/** Remove a link by id. A keyed link on a failure cluster is recorded as dismissed, by `removedBy` when known. */
+/**
+ * Remove a link by id. A keyed link on a failure cluster is recorded as dismissed, by `removedBy` when known, in the
+ * same transaction as the delete.
+ */
 export async function deleteLink(db: DrizzleDB, id: number, removedBy: number | null = null) {
   const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
   if (!existing[0]) throw new Error('Link not found');
-  await db.delete(entityLinks).where(eq(entityLinks.id, id));
-  await recordLinkDismissals(db, existing, removedBy);
+  await db.transaction(async (tx) => {
+    await tx.delete(entityLinks).where(eq(entityLinks.id, id));
+    await recordLinkDismissals(tx, existing, removedBy);
+  });
   return { success: true };
 }
 
 /**
  * Remove every link of an entity to a URL, in one statement. Surrounding spaces
  * are ignored on both sides: a link may have been stored with them. A keyed link
- * on a failure cluster is recorded as dismissed, as `deleteLink` records it.
- * Returns how many links were removed.
+ * on a failure cluster is recorded as dismissed in the same transaction, as
+ * `deleteLink` records it. Returns how many links were removed.
  */
 export async function deleteLinksTo(
   db: DrizzleDB,
@@ -240,16 +245,18 @@ export async function deleteLinksTo(
   url: string,
   removedBy: number | null = null,
 ): Promise<number> {
-  const removed = await db
-    .delete(entityLinks)
-    .where(and(eq(fkColumnFor(entityType), entityId), eq(sql`trim(${entityLinks.url})`, url.trim())))
-    .returning({
-      id: entityLinks.id,
-      failureClusterId: entityLinks.failureClusterId,
-      key: entityLinks.key,
-      externalId: entityLinks.externalId,
-      origin: entityLinks.origin,
-    });
-  await recordLinkDismissals(db, removed, removedBy);
-  return removed.length;
+  return db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(entityLinks)
+      .where(and(eq(fkColumnFor(entityType), entityId), eq(sql`trim(${entityLinks.url})`, url.trim())))
+      .returning({
+        id: entityLinks.id,
+        failureClusterId: entityLinks.failureClusterId,
+        key: entityLinks.key,
+        externalId: entityLinks.externalId,
+        origin: entityLinks.origin,
+      });
+    await recordLinkDismissals(tx, removed, removedBy);
+    return removed.length;
+  });
 }

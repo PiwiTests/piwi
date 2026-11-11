@@ -559,6 +559,18 @@ describe('a link removed by hand', () => {
     expect((await clusterRow(cluster)).declaredIssuesMore).toBe(0);
   });
 
+  test('a delete whose dismissal cannot be written is undone', async () => {
+    const cluster = await newCluster();
+    const link = await pin(cluster, 'PROJ-27', 'annotation');
+
+    // User 999 does not exist, so the dismissal breaks its foreign key.
+    await expect(deleteLink(db as never, link.id, 999)).rejects.toThrow();
+    await expect(deleteLinksTo(db as never, 'failure_cluster', cluster, link.url, 999)).rejects.toThrow();
+
+    expect((await links(cluster)).map((l) => l.id)).toEqual([link.id]);
+    expect(await dismissals(cluster)).toEqual([]);
+  });
+
   test('a pinned link is recorded by its key only', async () => {
     const cluster = await newCluster();
     const link = await pin(cluster, 'PROJ-23', 'pinned');
