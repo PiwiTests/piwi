@@ -201,3 +201,4 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 - **Other test frameworks** (Cypress, Jest, JUnit…) — Piwi stays Playwright-only; depth over breadth is the point. See [Why Piwi?](https://piwitests.dev/guide/comparison) for alternatives that aggregate many frameworks.
 - **A hosted SaaS** — Piwi is built to be self-hosted; your data stays yours.
+- **Playwright for .NET, Java or Python** — Piwi reads Playwright Test suites in JavaScript and TypeScript; no adapter reports the other languages' runs. The ASP.NET Core and Serilog integrations instrument the app under test, not its tests.

@@ -93,7 +93,8 @@ errors, and the dashboard's desktop pages and hand-off page say it too, the name
 `desktop-app-name.test.ts`, [AC13](#ac13); its Setup card says Pair with Piwi
 Picker with Picker's link glyph, and Picker's hints name it in every catalog, [AC15](#ac15); remaining: the
 `productName`, which the Start menu, the Dock and Open with show, until §13's item 23 settles the upgrade path), and every command, setting and action id of both editors registered in D25 and held to the manifests
-(#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
+(#1124). §13's questions 1 to 4, 7, 9 to 14, 16's keys, 20 and 22 to 24 were decided on 2026-11-11, each answer
+beside its question. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet but the .NET non-goal of question 24. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
 views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's
@@ -1944,14 +1945,17 @@ it in D25 in the same pull request; v0.68.0's `piwi.watchWorker`, `piwi.pauseAnd
 
 1. **A debug session or not** ([LI10](#li10)): keep [run-control.md](../adr/run-control.md) §3.2's choice and give
    Piwi's controls the debugger's places ([LI9](#li9)), or an inline `DebugAdapter` and an `XDebugProcess`? To decide
-   before the run-control ids are registered in D25 and freeze at 1.0.
+   before the run-control ids are registered in D25 and freeze at 1.0. **Decided 2026-11-11:** Piwi's own controls in
+   the debugger's places ([LI9](#li9)), as run-control.md §3.2 chose; no debug session, and [L3](#l3) is not built.
 2. **Title Case for VS Code's command titles** ([AC8](#ac8)): adopt it in both IDEs, and drop leading articles ('Open
-   Latest Run') at the same time?
+   Latest Run') at the same time? **Decided 2026-11-11:** Title Case without leading articles for command and action
+   labels in both IDEs; messages and tooltips stay in sentence case, and the command ids stay as they are.
 3. **Caret or cursor**: [AC7](#ac7) names the control Run to Cursor, as JetBrains' own action does; does Run the Test at
-   the Caret take the same word in both clients, or keep each platform's?
+   the Caret take the same word in both clients, or keep each platform's? **Decided 2026-11-11:** Cursor in both
+   clients: Run Test at Cursor and Run to Cursor.
 4. **Failed in JetBrains**: the platform's red `TestError`, native in both UIs and already the held stop's, or a red X
    matching VS Code and the dashboard? The IDE's runner draws an assertion failure as the amber X, so either choice
-   departs from something.
+   departs from something. **Decided 2026-11-11:** the red `TestError`, which wave 16 draws on every JetBrains surface.
 5. **Record's color, and two marks**: flaky takes the dashboard's fuchsia shuffle (§2 principle 3, [IC4](#ic4)). Is
    Record's action icon red like Piwi Picker's dot, or gray, with red kept for the recording state as JetBrains' icon
    style asks? Can VS Code's margin show the flaky mark beside the Testing view's glyph ([TL13](#tl13)), and can
@@ -1961,30 +1965,42 @@ it in D25 in the same pull request; v0.68.0's `piwi.watchWorker`, `piwi.pauseAnd
    and `piwi-ecosystem.ts`? Both are FSL; `packages/core` is MIT and cannot take Piwi Picker's drawings. Are
    `package.json` and `plugin.xml` generated from them, or kept by hand under a test?
 7. **An icon font for VS Code, or codicons only**, writing 'flaky' where none fits ([IC8](#ic8)'s lean: the font)? The
-   codicons proposed exist in 1.143.1 and are unchecked against the 1.91 engines floor.
+   codicons proposed exist in 1.143.1 and are unchecked against the 1.91 engines floor. **Decided 2026-11-11:** a Piwi
+   icon font, generated with [M4](#m4)'s icon set.
 8. **VS Code's status click**: the status menu with the state's action preselected (Enter keeps today's refresh), or a
    refresh while a chord opens the menu?
 9. **What turns the status item to its alarm** ([HM2](#hm2)): failures new against the baseline, only those a run
-   started here or local edits produced, or both?
+   started here or local edits produced, or both? **Decided 2026-11-11:** both: failures new against the baseline, and
+   those a run started here or local edits produced.
 10. **Where VS Code's Runs view lives**: in the Piwi panel beside Failures, matching JetBrains' Runs tab (this
     document's lean), or in Run and Debug, where developers looked at a stop? Whether JetBrains draws its run views in
-    Swing or JCEF is the live-run study's open question 9.
+    Swing or JCEF is the live-run study's open question 9. **Decided 2026-11-11:** in the Piwi panel beside Failures, as
+    JetBrains' Runs tab is.
 11. **Plain Run and breakpoints**: does plain Run keep stopping at breakpoints, or leave stops to Debug with Piwi?
     `piwi.breakpoints` is a boolean, on by default (`apps/vscode/package.json:867-870`), and D25 does not list it: a
     value that limits stops to Debug runs needs a default for existing installs, and the key a D25 entry. Headedness is
-    the live-run study's question 10; its P6 holds failures for an editor's debug run.
+    the live-run study's question 10; its P6 holds failures for an editor's debug run. **Decided 2026-11-11:** plain Run
+    keeps stopping at breakpoints while `piwi.breakpoints` is on; the key keeps its boolean.
 12. **A CI run on the status line**: the study puts the developer's own run first (P5) and lists CI runs of the branch
-    read-only (P10). Does a CI run ever take the line while none of the developer's own is live?
+    read-only (P10). Does a CI run ever take the line while none of the developer's own is live? **Decided 2026-11-11:**
+    yes, read-only: the branch's latest CI run shows, marked as CI, while none of the developer's own is live.
 13. **Team or personal settings**: which does a team share (`failureSeverity` in particular)? The new switches go into
-    D25 before 1.0, and the service filters by them ([ST8](#st8), [LI11](#li11)).
+    D25 before 1.0, and the service filters by them ([ST8](#st8), [LI11](#li11)). **Decided 2026-11-11:** the team
+    shares `failureSeverity`, beside the instance and the project; headedness, notifications and the coverage marks are
+    personal.
 14. **JetBrains' Get Started tab**: opened once per installation, as SonarQube for IDE's welcome is ([ST1](#st1)'s
     lean), or only from Tools → Piwi and the first-run balloon, keeping
-    [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8's lighter touch?
+    [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M8's lighter touch? **Decided 2026-11-11:** from
+    Tools → Piwi and the first-run balloon only; nothing opens it uninvited.
 15. **Notification group ids**: settled. 'Piwi' stays the results group, so the settings users gave it keep applying
     to the results; the requests, suggestions, problems and confirmations groups are new, and D25 lists all five.
 16. **Rider's menus and keys**: whether Run Control goes in the Tests menu as well as the Run menu ([LR3](#lr3)); which
     Solution Explorer popup group works on Rider 2026.2; which letters are free in its Visual Studio 2022, Visual Studio
-    and ReSharper keymaps; and which action runs when a keymap gives a Piwi chord to another action too?
+    and ReSharper keymaps; and which action runs when a keymap gives a Piwi chord to another action too? **Decided
+    2026-11-11:** for the keys, chords per keymap: K, F and R stay in the default keymaps and VS Code, the Visual
+    Studio, Visual Studio 2022, ReSharper and Visual Assist keymaps take free letters of their own, and one Failures
+    chord joins both editors, from one table a test checks against every bundled keymap ([M16](#m16)). The menus and
+    which action wins a shared chord stay open.
 17. **The IDE run icon's group**: is `JSTestRunLineMarkersAdditionalActionGroup` present and read in Rider 2026.2 and in
     every IDE of `verifyIdes` ([M9](#m9))?
 18. **Rider's C# surfaces**: do Code Vision, LSP diagnostics and the hover appear on `.cs`, `.cshtml` and `.razor`
@@ -1995,16 +2011,20 @@ it in D25 in the same pull request; v0.68.0's `piwi.watchWorker`, `piwi.pauseAnd
     Junie or only external agents, which IDE versions bundle it, and does a module compiled against it pass
     `verifyPlugin` on 2024.1 and the latest Rider?
 20. **A local failure's diagnostic code** ([TL12](#tl12)): register `local-failure` in D25 before 1.0, or keep the
-    frozen `ci-failure` and word the origin in the message?
+    frozen `ci-failure` and word the origin in the message? **Decided 2026-11-11:** a `local-failure` code, registered
+    in D25 before 1.0; `ci-failure` keeps its meaning.
 21. **Code Vision entries per line**: how many can one line carry, and does the service cap a line at that number
     ([Q1](#q1))?
 22. **The in-editor debug action's name**: 'Debug with Piwi', pairing with Run with Piwi, the dashboard's 'Debug in my
     editor', or 'Debug This Failure' on a failure node? The choice goes in the catalog and in
-    [developer-loop-audit.md](developer-loop-audit.md) §9.
+    [developer-loop-audit.md](developer-loop-audit.md) §9. **Decided 2026-11-11:** Debug with Piwi, pairing with Run
+    with Piwi.
 23. **The desktop app's productName** ([AC13](#ac13)): what happens to installed copies on upgrade, on Windows and
-    macOS?
+    macOS? **Decided 2026-11-11:** Piwi Desktop, the identifier kept, once the upgrade from an installed Piwi Dashboard
+    is checked to replace it on Windows (MSI and NSIS) and macOS.
 24. **Playwright for .NET, Java and Python** ([LI17](#li17)): a non-goal stated everywhere a .NET user looks, or a NuGet
-    adapter in `integrations/`? The maintainer's scope decision.
+    adapter in `integrations/`? The maintainer's scope decision. **Decided 2026-11-11:** a non-goal, stated in
+    [`ROADMAP.md`](../ROADMAP.md); Rider keeps the notice it shows a C# Playwright project ([RD6](#rd6)).
 
 ## Appendix A. The concept table, first draft
 
