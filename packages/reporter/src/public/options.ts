@@ -347,6 +347,18 @@ export interface PiwiDashboardOptions {
    * with `PIWI_PICK_LOCATOR_ON_FAIL=true`.
    */
   pickLocatorOnFailure?: boolean;
+  /**
+   * Share this run live from its start, outside CI: people who may open the
+   * run on the instance watch each worker's page, its calls and its stops
+   * while it runs, as when it is shared from the editor or Piwi Picker, for a
+   * run started where no Piwi tool can share it (a terminal no editor
+   * follows). The reporter prints what goes out as the run starts. Needs the
+   * project's live view on, and Piwi's fixtures in the specs; the editor or
+   * Piwi Picker following the run can still stop it. A CI run is shared
+   * already. Defaults to `false`. Can also be enabled with
+   * `PIWI_SHARE_LIVE=1`.
+   */
+  shareLive?: boolean;
 
   // ── Streaming ──────────────────────────────────────────────────────────────
   /**

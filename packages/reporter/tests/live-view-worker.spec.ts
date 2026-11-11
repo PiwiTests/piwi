@@ -451,6 +451,16 @@ describe('Share live, in a run outside CI', () => {
     await waitFor(() => streams.length === 2);
   });
 
+  it('shares from its start a run asked to (PIWI_SHARE_LIVE), with no one sharing it, and stops as asked', async () => {
+    const env = { [LIVE_VIEW_ENV]: formatLiveViewEnv(server.url, RUN, KEY), PIWI_SHARE_LIVE: 'true' };
+    expect(openLiveView(worker, env, false)).toBe(true);
+    await waitFor(() => streams.length === 1);
+    expect(liveViewState()).toMatchObject({ can: true, on: true });
+    await shareLiveView(false);
+    expect(posts[posts.length - 1]).toEqual({ type: 'unshared', shard: null, worker: 0 });
+    expect(liveViewState()).toMatchObject({ can: true, on: false });
+  });
+
   it('says why a run without a key cannot be shared, and shares nothing for it', async () => {
     expect(openLiveView(worker, { [LIVE_VIEW_ENV]: formatLiveViewMissing('off') }, false)).toBe(false);
     expect(liveViewState()).toEqual({ can: false, on: false, viewers: 0, page: null, why: LIVE_SHARE_MISSING.off });

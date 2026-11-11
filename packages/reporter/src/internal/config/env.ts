@@ -92,6 +92,7 @@ export const PIWI_ENV_KEYS = {
   checkBaseUrl: 'PIWI_CHECK_BASE_URL',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
+  shareLive: 'PIWI_SHARE_LIVE',
   outputFile: 'PIWI_OUTPUT_FILE',
   aiMode: 'PIWI_AI',
   aiDir: 'PIWI_AI_DIR',
@@ -338,6 +339,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'checkBaseUrl', env: PIWI_ENV_KEYS.checkBaseUrl, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
+  { option: 'shareLive', env: PIWI_ENV_KEYS.shareLive, kind: 'bool' },
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
 ];
 
