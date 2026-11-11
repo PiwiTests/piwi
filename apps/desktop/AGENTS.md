@@ -100,7 +100,9 @@ shell and are feature-equivalent.
   (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
   The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
   each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a
-  restarted server ends only the requests the shell lost; a stop from the dashboard reaches the shell on its
+  restarted server ends only the requests the shell lost. A requested run's end stays held until the server answers its
+  `/ended` with a 200 (`tell_ended`); one still held goes in `PUT /key`'s `ended` and is forgotten once the server names
+  it back. A stop from the dashboard reaches the shell on its
   notification stream, and so does `key-revoked`, which forgets the key only when it names the connected instance
   (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to

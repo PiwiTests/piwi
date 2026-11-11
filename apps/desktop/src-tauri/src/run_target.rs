@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager as _};
 use tauri_plugin_store::StoreExt as _;
 
@@ -109,9 +109,50 @@ impl RequestedRuns {
     /// The request ids held now, starting or running, which the server is
     /// told of after each start so it ends only the requests the shell lost.
     fn ids(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.0.lock().unwrap().keys().cloned().collect();
+        let runs = self.0.lock().unwrap();
+        let mut ids: Vec<String> =
+            runs.iter().filter(|(_, run)| run.ended.is_none()).map(|(id, _)| id.clone()).collect();
         ids.sort();
         ids
+    }
+
+    /// How each held run ended that the server has not taken yet, by request
+    /// id: its exit code and whether it was stopped.
+    fn outcomes(&self) -> Vec<(String, Option<i32>, bool)> {
+        let runs = self.0.lock().unwrap();
+        let mut outcomes: Vec<_> = runs
+            .iter()
+            .filter_map(|(id, run)| run.ended.map(|(code, stopped)| (id.clone(), code, stopped)))
+            .collect();
+        outcomes.sort();
+        outcomes
+    }
+
+    /// Keep how the run of request `id` ended until the server takes it; its
+    /// folders are free from then on.
+    fn end(&self, id: &str, code: Option<i32>, stopped: bool) {
+        if let Some(held) = self.0.lock().unwrap().get_mut(id) {
+            held.ended = Some((code, stopped));
+            held.run = None;
+            held.folder = None;
+            held.dir = None;
+        }
+    }
+
+    /// The server took how the run of request `id` ended: forget the request.
+    /// A request whose run has not ended stays.
+    fn told_ended(&self, id: &str) {
+        let mut runs = self.0.lock().unwrap();
+        if runs.get(id).is_some_and(|run| run.ended.is_some()) {
+            runs.remove(id);
+        }
+    }
+
+    /// Forget the ended requests the server names in the `ended` of its answer.
+    fn told_ended_in(&self, answer: &Value) {
+        for id in answer.get("ended").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            self.told_ended(id);
+        }
     }
 
     /// The private folders of the requested runs held now.
@@ -124,10 +165,38 @@ impl RequestedRuns {
     /// not held here.
     fn stop(&self, id: &str) -> Option<u32> {
         let mut runs = self.0.lock().unwrap();
-        let held = runs.get_mut(id)?;
+        let held = runs.get_mut(id).filter(|held| held.ended.is_none())?;
         held.stop = true;
         held.run
     }
+}
+
+/// Tell the server how the run of request `id` ended, and forget the request
+/// once it took that. Otherwise the shell keeps it, for the next server start
+/// (`hand_kept_key`) or the quit (`end_all`).
+fn tell_ended(
+    server: &ServerInfo,
+    runs: &RequestedRuns,
+    id: &str,
+    code: Option<i32>,
+    stopped: bool,
+) -> Result<(), String> {
+    local_call(
+        server,
+        "POST",
+        &format!("/api/desktop/run-target/requests/{id}/ended"),
+        Some(&json!({ "code": code, "stopped": stopped })),
+    )?;
+    runs.told_ended(id);
+    Ok(())
+}
+
+/// The ended runs for the server, as `PUT /key` hands them.
+fn outcomes_json(runs: &RequestedRuns) -> Vec<Value> {
+    runs.outcomes()
+        .into_iter()
+        .map(|(id, code, stopped)| json!({ "id": id, "code": code, "stopped": stopped }))
+        .collect()
 }
 
 /// Why a requested run does not start in a folder another run is going in.
@@ -353,9 +422,10 @@ fn log(app: &AppHandle, line: &str) {
 }
 
 /// Hand the server the kept key of the connected instance, with its folders,
-/// the requested runs held (`running`) and the folders the local runs are
-/// going in (`localRuns`): after each start of the server, and whenever the
-/// folders change. Nothing without a connected instance, so the keychain is
+/// the requested runs held (`running`), how the held runs that ended did end
+/// (`ended`, forgotten once the server names them back) and the folders the
+/// local runs are going in (`localRuns`): after each start of the server, and
+/// whenever the folders change. Nothing without a connected instance, so the keychain is
 /// read only then.
 pub(crate) fn hand_kept_key(app: &AppHandle) {
     let Some(instance) = connected_instance(app) else {
@@ -388,16 +458,22 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
             }
         },
     };
-    let running = app.try_state::<RequestedRuns>().map(|runs| runs.ids()).unwrap_or_default();
+    let runs = app.try_state::<RequestedRuns>();
     let body = json!({
         "instance": instance,
         "key": key,
         "links": links_of(app, &instance),
-        "running": running,
+        "running": runs.as_ref().map(|runs| runs.ids()).unwrap_or_default(),
+        "ended": runs.as_ref().map(|runs| outcomes_json(runs)).unwrap_or_default(),
         "localRuns": local_runs(app),
     });
-    if let Err(e) = local_call(&server, "PUT", "/api/desktop/run-target/key", Some(&body)) {
-        log(app, &format!("could not hand the key to the server: {e}"));
+    match local_call(&server, "PUT", "/api/desktop/run-target/key", Some(&body)) {
+        Ok(answer) => {
+            if let Some(runs) = &runs {
+                runs.told_ended_in(&answer);
+            }
+        }
+        Err(e) => log(app, &format!("could not hand the key to the server: {e}")),
     }
 }
 
@@ -678,14 +754,13 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         }
     };
     if stopped_early {
-        forget(&app, &request_id);
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = local_call(
-            &server,
-            "POST",
-            &format!("/api/desktop/run-target/requests/{request_id}/ended"),
-            Some(&json!({ "code": null, "stopped": true })),
-        );
+        if let Some(runs) = app.try_state::<RequestedRuns>() {
+            runs.end(&request_id, None, true);
+            if let Err(e) = tell_ended(&server, &runs, &request_id, None, true) {
+                log(&app, &format!("could not tell the server a requested run ended: {e}"));
+            }
+        }
         return Err("the request was stopped before its run started".into());
     }
 
@@ -701,22 +776,15 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         if let Some(runs) = ended_app.try_state::<RequestedRuns>() {
-            if let Some(held) = runs.0.lock().unwrap().get_mut(&ended_request) {
-                held.ended = Some((code, stopped));
-            }
+            runs.end(&ended_request, code, stopped);
         }
         let app = ended_app.clone();
         std::thread::spawn(move || {
-            if let Some(server) = server_info(&app) {
-                let _ = local_call(
-                    &server,
-                    "POST",
-                    &format!("/api/desktop/run-target/requests/{ended_request}/ended"),
-                    Some(&json!({ "code": code, "stopped": stopped })),
-                );
-            }
-            if let Some(runs) = app.try_state::<RequestedRuns>() {
-                runs.0.lock().unwrap().remove(&ended_request);
+            let (Some(server), Some(runs)) = (server_info(&app), app.try_state::<RequestedRuns>()) else {
+                return;
+            };
+            if let Err(e) = tell_ended(&server, &runs, &ended_request, code, stopped) {
+                log(&app, &format!("could not tell the server a requested run ended: {e}"));
             }
         });
     })
@@ -1090,7 +1158,76 @@ mod tests {
         assert!(runs.ids().is_empty());
         runs.0.lock().unwrap().insert("b".into(), RequestedRun { run: Some(4), ..Default::default() });
         runs.0.lock().unwrap().insert("a".into(), RequestedRun::default());
+        runs.0.lock().unwrap().insert("c".into(), RequestedRun { run: Some(5), ..Default::default() });
+        runs.end("c", Some(1), false);
         assert_eq!(runs.ids(), ["a", "b"]);
+        assert_eq!(runs.outcomes(), [("c".to_string(), Some(1), false)]);
+        assert_eq!(outcomes_json(&runs), [serde_json::json!({ "id": "c", "code": 1, "stopped": false })]);
+    }
+
+    /// A server that proves it holds the token, then answers `status` and `body`.
+    fn answering(status: &'static str, body: &'static str) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        serve_requests(2, move |request, port| {
+            if let Some(challenge) = request
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            {
+                let proof = crate::proof_of("pd_abc", port, challenge);
+                return format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}");
+            }
+            format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n{body}")
+        })
+    }
+
+    fn ended_run(folder: &str) -> RequestedRuns {
+        let runs = RequestedRuns::default();
+        let held = RequestedRun {
+            run: Some(4),
+            folder: Some(PathBuf::from(folder)),
+            dir: Some(PathBuf::from("/tmp/a")),
+            ..Default::default()
+        };
+        runs.0.lock().unwrap().insert("a".into(), held);
+        runs.end("a", Some(0), false);
+        runs
+    }
+
+    #[test]
+    fn a_run_s_end_stays_held_until_the_server_takes_it() {
+        for refusal in ["500 Internal Server Error", "404 Not Found"] {
+            let runs = ended_run("/work/shop");
+            let (port, seen) = answering(refusal, r#"{"message":"no"}"#);
+            assert!(tell_ended(&server_at(port), &runs, "a", Some(0), false).is_err());
+            seen.join().unwrap();
+            assert_eq!(runs.outcomes(), [("a".to_string(), Some(0), false)], "kept after a {refusal}");
+            assert!(runs.ids().is_empty(), "an ended run is not running");
+            assert!(runs.dirs().is_empty());
+            assert_eq!(runs.stop("a"), None);
+            assert!(!runs.0.lock().unwrap()["a"].stop);
+            let free = runs.hold_folder("b", Path::new("/work/shop"), Path::new("/tmp/b"));
+            assert_eq!(free, Ok(false), "its folder is free");
+        }
+
+        let runs = ended_run("/work/shop");
+        let (port, seen) = answering("200 OK", r#"{"ok":true}"#);
+        assert_eq!(tell_ended(&server_at(port), &runs, "a", Some(0), false), Ok(()));
+        let requests = seen.join().unwrap();
+        assert!(requests[1].starts_with("POST /api/desktop/run-target/requests/a/ended HTTP/1.0\r\n"), "{requests:?}");
+        assert!(requests[1].ends_with(r#"{"code":0,"stopped":false}"#), "{requests:?}");
+        assert!(runs.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_server_names_back_the_ends_it_took_with_the_key() {
+        let runs = ended_run("/work/shop");
+        runs.0.lock().unwrap().insert("b".into(), RequestedRun::default());
+        runs.0.lock().unwrap().insert("c".into(), RequestedRun::default());
+        runs.end("c", None, true);
+        runs.told_ended_in(&serde_json::json!({ "ok": true, "ended": ["a", "b", 7] }));
+        assert_eq!(runs.ids(), ["b"], "a run still going stays");
+        assert_eq!(runs.outcomes(), [("c".to_string(), None, true)], "an end the server did not take stays");
+        runs.told_ended_in(&serde_json::json!({ "ok": true }));
+        assert_eq!(runs.outcomes().len(), 1);
     }
 
     #[test]

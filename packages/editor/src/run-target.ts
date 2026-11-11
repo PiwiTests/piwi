@@ -22,6 +22,9 @@ import {
 import { planRequestedRun, type RequestPlan } from './request-run';
 import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from './run-target-view';
 
+/** How long `useKeptKey` waits for the ends the shell hands it to be reported. */
+const ENDED_REPORT_WITHIN_MS = 10_000;
+
 /** How long a claimed request waits for the person's answer, as the instance counts it. */
 const ANSWER_WITHIN_MS = 10 * 60 * 1000;
 
@@ -41,6 +44,13 @@ interface HeldRequest {
   answering: boolean;
   /** Drops the request once nobody answered it, or once its token was never taken. */
   expiry: ReturnType<typeof setTimeout> | null;
+}
+
+/** How a requested run the shell holds ended, before this server took it. */
+export interface EndedRun {
+  id: string;
+  code: number | null;
+  stopped: boolean;
 }
 
 /** What the shell hears on its notification stream: stop the run a request started, or forget a revoked key. */
@@ -357,26 +367,34 @@ async function takeStop(host: RequestHost, id: string): Promise<void> {
 }
 
 /**
- * Use the key the shell kept, with the folders it links, the requests whose run it still holds (`running`) and the
- * folders its local runs are going in (`localRuns`): after each start, and when they change.
+ * Use the key the shell kept, with the folders it links, the requests whose run it still holds (`running`), the runs
+ * that ended before a server took their end (`ended`) and the folders its local runs are going in (`localRuns`):
+ * after each start, and when they change. Answers the ids of `ended` reported with their outcome within
+ * `ENDED_REPORT_WITHIN_MS`, which the shell forgets; it hands the others again.
  */
-export function useKeptKey(
+export async function useKeptKey(
   instance: string,
   key: string,
   links: Map<number, string>,
   running: readonly string[] = [],
-  shell: { localRuns?: readonly string[] } = {},
-): void {
+  shell: { localRuns?: readonly string[]; ended?: readonly EndedRun[] } = {},
+): Promise<string[]> {
+  const ended = shell.ended ?? [];
   state.links = links;
   state.keyToKeep = false;
-  state.adopted = new Set(running.filter((id) => !state.held.has(id)));
+  state.adopted = new Set([...running, ...ended.map((run) => run.id)].filter((id) => !state.held.has(id)));
   if (shell.localRuns) useLocalRuns(shell.localRuns);
   if (state.instance === instance && state.key === key && state.host) {
     void state.host.describe().catch(() => {});
     tellConnection();
-    return;
-  }
-  startHost(instance, key);
+  } else startHost(instance, key);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), ENDED_REPORT_WITHIN_MS)));
+  const told = await Promise.all(
+    ended.map((run) => Promise.race([requestedRunEnded(run.id, run.code, run.stopped), late])),
+  );
+  clearTimeout(timer);
+  return ended.filter((_, i) => told[i]).map((run) => run.id);
 }
 
 /** The folders the shell's local runs are going in changed: a request waiting for one of them is checked again. */
@@ -659,20 +677,31 @@ export function outcomeOf(code: number | null, stopRequested: boolean): RunReque
   return 'error';
 }
 
+/** The adopted requests whose end is being reported now, still held until it is. */
+const reportingEnd = new Set<string>();
+
 /**
  * The shell's run of a request ended with `code` (null when it was killed); `stopped` when a stop was asked for it,
- * from the dashboard or the window.
+ * from the dashboard or the window. Answers whether this server knew the request: false for one it never ran nor
+ * adopted, whose end the shell keeps for the next start (`useKeptKey`'s `ended`).
  */
-export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<void> {
+export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<boolean> {
   const held = state.held.get(id);
-  if (!held?.launched && !state.adopted.delete(id)) return;
+  if (reportingEnd.has(id)) return true;
+  if (!held?.launched && !state.adopted.has(id)) return false;
   if (held?.launched) {
     state.held.delete(id);
     void planWaiting();
-  }
+  } else reportingEnd.add(id);
   const outcome = outcomeOf(code, !!held?.stopRequested || stopped);
   const detail = outcome === 'error' ? `Playwright exited with ${code ?? 'no code'}` : undefined;
-  await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
+  try {
+    await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
+  } finally {
+    // Held until reported, so a server that started again does not end it as lost meanwhile.
+    if (reportingEnd.delete(id)) state.adopted.delete(id);
+  }
+  return true;
 }
 
 /** The run of a request the shell could not start. */

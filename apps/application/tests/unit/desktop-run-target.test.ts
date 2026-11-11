@@ -321,6 +321,24 @@ describe('a server that started again', () => {
   });
 });
 
+describe('a run that ended while no server held it', () => {
+  test('ends with its own outcome once the shell hands its end with the key, never as lost', async () => {
+    const ended = 'd'.repeat(32);
+    heldOnInstance = [{ id: ended, state: 'running' }];
+    const callsOf = () => instance.calls.filter((c) => c.path.startsWith(`/api/run-targets/requests/${ended}/`));
+    const told = await useKeptKey(instance.url, KEY, new Map([[3, folder]]), [], {
+      ended: [{ id: ended, code: 1, stopped: false }],
+    });
+    expect(told).toEqual([ended]);
+    await until(() => instance.calls.some((c) => c.path === '/api/run-targets/requests'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(callsOf().map((c) => c.body)).toEqual([{ state: 'ended', outcome: 'failed' }]);
+    // Told once: the shell's own end of it, posted late, reports nothing.
+    expect(await requestedRunEnded(ended, 1)).toBe(false);
+    expect(callsOf()).toHaveLength(1);
+  });
+});
+
 describe('a key the instance revoked', () => {
   test('tells the shell to forget it, once, and the window that the app is disconnected', async () => {
     const heard: RunTargetMessage[] = [];

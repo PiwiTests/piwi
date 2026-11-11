@@ -81,8 +81,9 @@ server the Playwright config names. It shows in the app's Local runs while it go
 Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its outcome,
 and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
 again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists your last 20
-requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. After a
-crash, it ends the requests it lost on reconnecting: unanswered ones are refused, runs end as errors.
+requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. A run
+that ends while the app's server restarts still ends with its own outcome. After a crash, it ends the requests it lost
+on reconnecting: unanswered ones are refused, runs end as errors.
 
 ## What leaves your machine
 

@@ -398,7 +398,7 @@ describe('every host of the run-target routes', () => {
 
   test('answers launch once, after Run, and keeps the shell’s answers out of caches', async () => {
     const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
-    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true } });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [] } });
     await until(async () => {
       const status = await host.call('GET', '', SHELL);
       return ((status.body?.requests ?? []) as unknown[]).length === 1;
@@ -422,6 +422,41 @@ describe('every host of the run-target routes', () => {
       body: { instance: instance.url, token: REQUEST_TOKEN, projectId: 3, folder },
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
+  });
+});
+
+describe('the end of a requested run', () => {
+  const ENDED_ID = 'f'.repeat(32);
+
+  test('answers 404 for a run this server does not hold, so the shell keeps its end', async () => {
+    expect(await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 0 })).toEqual({
+      status: 404,
+      noStore: true,
+      body: { message: 'This server holds no run of this request' },
+    });
+  });
+
+  test('takes an end the shell hands with the key, once, and names it back', async () => {
+    const ended = [{ id: ENDED_ID, code: 1, stopped: false }];
+    const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [ENDED_ID] } });
+    expect((await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 1 })).status).toBe(404);
+  });
+
+  test('the shell hands at most 200 ends, each with its request id, exit code and stop', async () => {
+    const one = { id: ENDED_ID, code: 0, stopped: false };
+    for (const ended of [
+      'x',
+      [{ ...one, id: 'x' }],
+      [{ ...one, code: 1.5 }],
+      [{ ...one, code: '0' }],
+      [{ ...one, stopped: 'yes' }],
+      [null],
+      Array.from({ length: 201 }, () => one),
+    ]) {
+      const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+      expect(used.status, JSON.stringify(ended).slice(0, 80)).toBe(400);
+    }
   });
 });
 
