@@ -73,8 +73,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
   request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
-  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or a 401 with the instance's JSON
-  message: a 403 or a proxy's 401 stops the host and keeps the key (`tests/request-host.test.ts`). On its first list it
+  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the instance's 401 for a key it no
+  longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance that sends no code): a 403
+  or any other 401, a proxy's among them, stops the host and keeps the key (`tests/request-host.test.ts`). The
+  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. On its first list it
   ends the requests the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being
   claimed, or a run the shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others
   end, and an instance that names none ends nothing. A run that ended while no server held it comes in `PUT /key`'s

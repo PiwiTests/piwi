@@ -25,10 +25,9 @@ defineRouteMeta({
   },
 });
 
-/** Whether a refusal says the key or its app no longer counts, as against a passing failure to read it. */
-function isRefusal(err: unknown): boolean {
-  const status = (err as { statusCode?: number } | null)?.statusCode;
-  return status === 401 || status === 403;
+/** Whether a refusal says the key no longer exists, as against a 403 or a passing failure to read it. */
+function isKeyGone(err: unknown): boolean {
+  return (err as { statusCode?: number } | null)?.statusCode === 401;
 }
 
 export default eventHandler(async (event) => {
@@ -65,7 +64,7 @@ export default eventHandler(async (event) => {
       if (ready) send(message);
       else held.push(message);
     });
-    const refused = (err: unknown) => (isRefusal(err) ? revoke() : close());
+    const refused = (err: unknown) => (isKeyGone(err) ? revoke() : close());
     const recheck = setInterval(() => {
       requireRunTarget(event, { seen: false }).catch(refused);
     }, RUN_TARGET_RECHECK_MS);

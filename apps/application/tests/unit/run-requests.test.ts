@@ -174,7 +174,11 @@ describe('a target key', () => {
     const wider = await target(userId, ['run:receive', 'project:read']);
     await expect(requireRunTarget(eventWithKey(wider.plaintext))).rejects.toMatchObject({ statusCode: 403 });
     await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ statusCode: 401 });
-    await expect(requireRunTarget(eventWithKey('pd_unknown'))).rejects.toMatchObject({ statusCode: 401 });
+    await expect(requireRunTarget(eventWithKey('pd_unknown'))).rejects.toMatchObject({
+      statusCode: 401,
+      data: { errorCode: 'RUN_TARGET_KEY_REVOKED' },
+    });
+    await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ data: { errorCode: 'UNAUTHORIZED' } });
   });
 
   test('an owner’s key still acts as its owner', async () => {

@@ -87,7 +87,9 @@ export async function requireRunTarget(event: H3Event, { seen = true } = {}): Pr
   const value = extractApiKey(event);
   if (!value) throw apiError({ statusCode: 401, message: 'A connected app’s key is required' });
   const resolved = await resolveApiKey(value);
-  if (!resolved) throw apiError({ statusCode: 401, message: 'Invalid or expired API key' });
+  if (!resolved) {
+    throw apiError({ statusCode: 401, message: 'Invalid or expired API key', errorCode: 'RUN_TARGET_KEY_REVOKED' });
+  }
   const holds = resolved.permissions ?? [];
   if (
     holds.length !== RUN_TARGET_KEY_PERMISSIONS.length ||

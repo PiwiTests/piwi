@@ -40,6 +40,8 @@ async function fakeInstance(handlers: {
   status?: (path: string) => number | null;
   /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
   refusalBody?: string;
+  /** The JSON a refusal carries instead of `{ message: 'answered <status>' }`. */
+  refusalJson?: unknown;
 }) {
   const calls: { method: string; path: string; authorization?: string; body: string }[] = [];
   const streams: http.ServerResponse[] = [];
@@ -52,7 +54,7 @@ async function fakeInstance(handlers: {
       const status = handlers.status?.(path) ?? null;
       if (status) {
         res.writeHead(status, { 'Content-Type': handlers.refusalBody ? 'text/html' : 'application/json' });
-        res.end(handlers.refusalBody ?? JSON.stringify({ message: `answered ${status}` }));
+        res.end(handlers.refusalBody ?? JSON.stringify(handlers.refusalJson ?? { message: `answered ${status}` }));
         return;
       }
       if (path === '/api/run-targets/stream') {
@@ -320,7 +322,7 @@ describe('the request host', () => {
     expect(refusing.calls.filter((c) => c.path === '/api/run-targets/stream').length).toBe(streamsAsked);
   });
 
-  test('tells the key is gone on the stream’s revoked event and on a 401 with the instance’s message, once', async () => {
+  test('tells the key is gone on the stream’s revoked event and on the instance’s 401 for a key it no longer holds, once', async () => {
     const revoking = await fakeInstance({ stream: (res) => revoking.send(res, { type: 'revoked' }) });
     cleanups.push(revoking.close);
     const onEvent = host(revoking.url);
@@ -328,29 +330,47 @@ describe('the request host', () => {
     await until(() => onEvent.statuses.includes('revoked'));
     expect(onEvent.keyGone).toEqual(['key revoked']);
 
-    const unauthorized = await fakeInstance({ status: () => 401 });
-    cleanups.push(unauthorized.close);
-    const onRefusal = host(unauthorized.url);
-    onRefusal.made.start();
-    await until(() => onRefusal.statuses.includes('revoked'));
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(onRefusal.keyGone).toEqual(['key revoked']);
+    for (const refusalJson of [
+      { message: 'Invalid or expired API key', data: { errorCode: 'RUN_TARGET_KEY_REVOKED' } },
+      { message: 'The key is gone', data: { errorCode: 'RUN_TARGET_KEY_REVOKED' } },
+      // An instance that sends no code yet.
+      { message: 'Invalid or expired API key' },
+    ]) {
+      const unauthorized = await fakeInstance({ status: () => 401, refusalJson });
+      cleanups.push(unauthorized.close);
+      const onRefusal = host(unauthorized.url);
+      onRefusal.made.start();
+      await until(() => onRefusal.statuses.includes('revoked'));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(onRefusal.keyGone, JSON.stringify(refusalJson)).toEqual(['key revoked']);
+    }
   });
 
-  test('keeps the key on a 403, and on a 401 that is not the instance’s own answer', async () => {
-    const forbidden = await fakeInstance({ status: () => 403 });
+  test('keeps the key on a 403, and on a 401 that is not the instance’s answer for a key it no longer holds', async () => {
+    const forbidden = await fakeInstance({
+      status: () => 403,
+      refusalJson: { message: 'This app is no longer connected', data: { errorCode: 'RUN_TARGET_KEY_REVOKED' } },
+    });
     cleanups.push(forbidden.close);
     const onForbidden = host(forbidden.url);
     onForbidden.made.start();
     await until(() => onForbidden.statuses.includes('revoked'));
     expect(onForbidden.keyGone).toEqual([]);
 
-    const proxied = await fakeInstance({ status: () => 401, refusalBody: '<html>Sign in</html>' });
-    cleanups.push(proxied.close);
-    const onProxy = host(proxied.url);
-    onProxy.made.start();
-    await until(() => onProxy.statuses.includes('revoked'));
-    expect(onProxy.keyGone).toEqual([]);
+    for (const refusal of [
+      { refusalBody: '<html>Sign in</html>' },
+      { refusalJson: { message: 'Unauthorized' } },
+      { refusalJson: { message: 'Unauthorized', data: { errorCode: 'UNAUTHORIZED' } } },
+      { refusalJson: { message: 'A connected app’s key is required', data: { errorCode: 'UNAUTHORIZED' } } },
+    ]) {
+      const proxied = await fakeInstance({ status: () => 401, ...refusal });
+      cleanups.push(proxied.close);
+      const onProxy = host(proxied.url);
+      onProxy.made.start();
+      await until(() => onProxy.statuses.includes('revoked'));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(onProxy.keyGone, JSON.stringify(refusal)).toEqual([]);
+    }
   });
 
   test('claims, answers and reports, and says what the instance refused', async () => {
