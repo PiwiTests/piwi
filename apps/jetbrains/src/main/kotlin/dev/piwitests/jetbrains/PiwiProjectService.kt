@@ -29,6 +29,7 @@ import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -353,9 +354,19 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .notify(project)
     }
 
-    /** Restart the Editor Service, from its action, a balloon or the tool window: said in the log, then [restartServer]. */
+    /**
+     * Restart the Editor Service, from its action, a balloon or the tool window, said in the log, then [restartServer].
+     * With none running and no test file open, the IDE has nothing to start it for: a balloon says to open one.
+     */
     fun restartService() {
-        project.service<PiwiLog>().write("Restarting the editor service.")
+        val log = project.service<PiwiLog>()
+        val open = FileEditorManager.getInstance(project).openFiles.any { PiwiLspServerSupportProvider.isSupported(it) }
+        if (!serverStarted() && !open) {
+            log.write(Glue.SERVICE_NEEDS_A_FILE)
+            PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.SERVICE_NEEDS_A_FILE, NotificationType.INFORMATION).notify(project)
+            return
+        }
+        log.write("Restarting the editor service.")
         ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
     }
 
@@ -382,22 +393,39 @@ class PiwiProjectService(private val project: Project) : Disposable {
         latestProcess = process
         serviceStopped = false
         changed()
+        val watching = Disposer.newDisposable(this, "Piwi editor service process")
         process.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
+                    Disposer.dispose(watching)
                     if (gone.value(null)) return
-                    project.service<PiwiLog>().write("The editor service stopped (exit code ${event.exitCode}).")
-                    // Until a service starts again, the tool window says it stopped and offers to start it.
-                    if (latestProcess === process) serviceStopped = true
-                    refreshStatus()
-                    changed()
+                    project.getServiceIfCreated(PiwiLog::class.java)?.write("The editor service stopped (exit code ${event.exitCode}).")
+                    if (latestProcess === process) stopped()
                     if (startProblem != null) return
                     if (!Glue.restartsService(startedAt, System.currentTimeMillis(), serverRestarts)) return
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
                 }
             },
-            this,
+            watching,
         )
+    }
+
+    /**
+     * The latest service's process ended: until another starts, the tool window says it stopped and offers to start it,
+     * and nothing it answered is shown. Its answers are dropped here, not read again from a service that is gone.
+     */
+    private fun stopped() {
+        synchronized(lock) {
+            serviceStopped = true
+            status = null
+            runs = null
+            failuresResult = null
+            failures = emptyList()
+            statusPushes++
+            runsPushes++
+            failuresPushes++
+        }
+        changed()
     }
 
     /** Start the editor service again unless another one starts or runs. */
@@ -421,7 +449,6 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (problem == before) return
         changed()
         if (problem == null) return
-        project.service<PiwiLog>().write("The editor service did not start: $problem")
         PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)

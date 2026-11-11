@@ -93,11 +93,19 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
      * end ends the sessions of its runs ([PiwiRunSessions.watch]).
      */
     override fun startServerProcess(): OSProcessHandler =
-        super.startServerProcess().also {
+        logged { super.startServerProcess() }.also {
             project.service<PiwiLog>().watch(it)
             project.service<PiwiProjectService>().watchServer(it)
             project.service<PiwiRunSessions>().watch(it)
         }
+
+    /** `start`'s result; a start that fails, its command line included (`createCommandLine`), says why in the log first. */
+    private fun <T> logged(start: () -> T): T = try {
+        start()
+    } catch (e: ExecutionException) {
+        project.service<PiwiLog>().write("The editor service did not start: ${e.message}")
+        throw e
+    }
 
     /**
      * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),

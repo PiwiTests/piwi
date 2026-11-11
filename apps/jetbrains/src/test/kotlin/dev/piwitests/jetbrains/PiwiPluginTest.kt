@@ -140,12 +140,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         try {
             log.write("The editor service stopped (exit code 1).")
+            // No other test fails `piwi/selections`, whose failures the shared log would hold back for a minute.
             val failing = java.lang.reflect.Proxy.newProxyInstance(
                 PiwiLanguageServer::class.java.classLoader,
                 arrayOf(PiwiLanguageServer::class.java),
             ) { _, method, _ ->
-                if (method.name == "status") {
-                    CompletableFuture.failedFuture<StatusResult?>(
+                if (method.name == "selections") {
+                    CompletableFuture.failedFuture<SelectionsResult?>(
                         org.eclipse.lsp4j.jsonrpc.ResponseErrorException(org.eclipse.lsp4j.jsonrpc.messages.ResponseError(-32603, "the index is gone", null)),
                     )
                 } else {
@@ -153,9 +154,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 }
             } as PiwiLanguageServer
             val logged = PiwiLog.logged(project, failing)
-            assertNull(logged.status().orNull())
-            assertNull(logged.status().orNull())
-            assertEquals(1, log.lines().count { it.endsWith("piwi/status failed: the index is gone") })
+            val before = log.lines().size
+            assertNull(logged.selections(SelectionsParams(null)).orNull())
+            assertNull(logged.selections(SelectionsParams(null)).orNull())
+            assertEquals(listOf(true), log.lines().drop(before).map { it.endsWith("piwi/selections failed: the index is gone") })
 
             log.show()
             val tab = window.contentManager.selectedContent!!
@@ -176,9 +178,67 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val again = window.contentManager.findContent(Glue.LOG_TAB).component as com.intellij.execution.impl.ConsoleViewImpl
             again.flushDeferredText()
             val text = again.editor!!.document.text
-            assertTrue(text, text.contains("piwi/status failed") && text.contains("Restarting") && text.contains("Starting the editor service."))
+            assertTrue(text, text.contains("piwi/selections failed") && text.contains("Restarting") && text.contains("Starting the editor service."))
         } finally {
             manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /** What the service's process writes to stderr reaches the log, a stack's frames under the line they continue. */
+    fun testTheServicesStderrIsLoggedUntilItsProcessEnds() {
+        val log = project.service<PiwiLog>()
+        val before = log.lines().size
+        val process = com.intellij.execution.process.OSProcessHandler(
+            com.intellij.execution.configurations.GeneralCommandLine(
+                "node", "-e", "process.stdout.write('{}'); process.stderr.write('Piwi: boom\\n    at main (server.js:1:1)\\n')",
+            ),
+        )
+        log.watch(process)
+        process.startNotify()
+        assertTrue(process.waitFor(10_000))
+        val written = log.lines().drop(before)
+        assertEquals(2, written.size)
+        assertTrue(written[0], Regex("""\d\d:\d\d:\d\d\.\d{3} Piwi: boom""").matches(written[0]))
+        assertEquals("                 at main (server.js:1:1)", written[1])
+    }
+
+    /**
+     * The tool window says the service stopped only once its latest process ended, and drops what it answered: a
+     * process that ends after another started says nothing of the running one.
+     */
+    fun testOnlyTheLatestProcessEndingSaysTheServiceStopped() {
+        val service = project.service<PiwiProjectService>()
+        fun waiting() = com.intellij.execution.process.OSProcessHandler(
+            com.intellij.execution.configurations.GeneralCommandLine("node", "-e", "setTimeout(() => {}, 60000)"),
+        ).also { it.startNotify() }
+        fun waitUntil(condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!condition()) {
+                assertTrue("timed out", System.currentTimeMillis() < deadline)
+                Thread.sleep(20)
+            }
+        }
+        val first = waiting()
+        val second = waiting()
+        try {
+            service.watchServer(first)
+            service.watchServer(second)
+            service.statusChanged(StatusResult(emptyList()))
+            first.destroyProcess()
+            assertTrue(first.waitFor(10_000))
+            assertFalse(service.serviceStopped)
+            assertNotNull(service.status)
+            second.destroyProcess()
+            assertTrue(second.waitFor(10_000))
+            waitUntil { service.serviceStopped }
+            assertNull(service.status)
+            assertEquals(
+                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES),
+                Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
+            )
+        } finally {
+            first.destroyProcess()
+            second.destroyProcess()
         }
     }
 
@@ -1149,6 +1209,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         try {
             writeFixture(dir)
             stub.coverageOf(git(dir, "hash-object", "src/BasketService.cs").trim())
+            val logged = project.service<PiwiLog>().lines().size
             val commandLine = PiwiLspServerDescriptor(project).createCommandLine()
                 .withWorkDirectory(dir)
                 .withEnvironment(
@@ -1158,7 +1219,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                         "PIWI_DESKTOP_CONFIG" to File(dir, "no-desktop.json").path,
                     ),
                 )
-            assertTrue(project.service<PiwiLog>().lines().any { "Starting the editor service with Node.js v" in it })
+            val started = project.service<PiwiLog>().lines().drop(logged)
+            assertTrue(started.toString(), started.any { "Starting the editor service with Node.js v" in it })
             val process = commandLine.createProcess()
             try {
                 val client = TestClient()

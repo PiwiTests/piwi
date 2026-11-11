@@ -56,15 +56,23 @@ class PiwiLog(private val project: Project) : Disposable {
 
     fun lines(): List<String> = synchronized(buffer) { buffer.lines() }
 
-    /** What the service's process writes to stderr, as it writes it. Called before the platform starts reading it. */
+    /**
+     * What the service's process writes to stderr, line by line as it writes it, until it ends. Called before the
+     * platform starts reading it.
+     */
     fun watch(process: ProcessHandler) {
+        val watching = Disposer.newDisposable(this, "Piwi editor service stderr")
         process.addProcessListener(
             object : ProcessListener {
                 override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
                     if (outputType == ProcessOutputTypes.STDERR) write(event.text)
                 }
+
+                override fun processTerminated(event: ProcessEvent) {
+                    Disposer.dispose(watching)
+                }
             },
-            this,
+            watching,
         )
     }
 

@@ -3128,6 +3128,8 @@ class GlueTest {
             Glue.logLines(at, "Piwi: boom\n    at main (server.js:1:1)\n\n"),
         )
         assertEquals(emptyList<String>(), Glue.logLines(at, "\n"))
+        // A stack's frame, written to stderr as a line of its own, continues the line before it.
+        assertEquals(listOf("                 at main (server.js:1:1)"), Glue.logLines(at, "    at main (server.js:1:1)\n"))
         val buffer = Glue.LogBuffer(max = 3)
         buffer.add(listOf("a", "b"))
         buffer.add(listOf("c", "d"))

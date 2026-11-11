@@ -122,7 +122,7 @@
                     description="Read the latest run and its failures again, not the indexes Refresh fetches"/>
             <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
                     text="Restart the Editor Service" icon="AllIcons.Actions.Restart"
-                    description="Stop the Piwi editor service and start it again, or start it when it does not run"/>
+                    description="Stop the Piwi editor service and start it again, or start it for the open test files when it does not run"/>
             <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open Log"
                     icon="AllIcons.Toolwindows.ToolWindowMessages"
                     description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>

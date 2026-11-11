@@ -1021,7 +1021,10 @@ object Glue {
 
     /** What an action says when the running service did not answer it: the request failed, or took too long. */
     const val SERVICE_NO_ANSWER =
-        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows a failure."
+        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows its log."
+
+    /** What Restart the Editor Service says with no service running and no test file open: the IDE starts it for one. */
+    const val SERVICE_NEEDS_A_FILE = "The Piwi editor service starts for a test file: open one of this project's."
 
     /** What the tool window says once the editor service that ran stopped, and nothing started it again. */
     const val SERVICE_STOPPED = "The Piwi editor service stopped."
@@ -1053,13 +1056,15 @@ object Glue {
 
     /**
      * The log's lines for `text` written at `at`: its first line after the time, the others indented under it, the blank
-     * lines at its end left out.
+     * lines at its end left out. Text that starts indented continues the line before it, as each line of a stack the
+     * service writes to stderr arrives on its own: it takes no time.
      */
     fun logLines(at: java.time.LocalTime, text: String): List<String> {
         val lines = text.lines().dropLastWhile { it.isBlank() }.ifEmpty { return emptyList() }
         val time = at.format(LOG_TIME)
         val indent = " ".repeat(time.length + 1)
-        return lines.mapIndexed { i, line -> if (i == 0) "$time $line" else "$indent$line" }
+        val continues = lines.first().firstOrNull()?.isWhitespace() == true
+        return lines.mapIndexed { i, line -> if (i == 0 && !continues) "$time $line" else "$indent$line" }
     }
 
     /**

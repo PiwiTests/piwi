@@ -369,9 +369,9 @@ object PiwiCommands {
 
     /**
      * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
-     * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone.
+     * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone. One
+     * saying the service does not run or did not answer offers Restart the Editor Service and Open Log.
      */
-    /** A balloon of `message`; one saying the service does not run or did not answer offers to restart it and its log. */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
         val notification = PiwiNotifier.create(PiwiNotifier.kindOf(type), StringUtil.escapeXmlEntities(message), type)
         if (Glue.offersServiceFixes(message)) {

@@ -12,7 +12,7 @@ import { editorsDir, removeDiscovery, writeDiscovery } from './discovery.js';
 import { startServer } from './server.js';
 
 const connection = createConnection(ProposedFeatures.all);
-/** An error, on stderr: VS Code's output channel and the JetBrains plugin's Log tab show it, a crash's stack included. */
+/** An error, on stderr, where Node.js writes a crash's stack: VS Code's output channel and the JetBrains Log tab show it. */
 const logError = (text: string) => process.stderr.write(`${text}\n`);
 // A rejected promise nothing waits on is logged in the editor's log; the service keeps serving.
 process.on('unhandledRejection', (reason) =>
