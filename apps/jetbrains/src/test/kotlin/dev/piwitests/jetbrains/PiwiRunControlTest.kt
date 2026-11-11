@@ -41,6 +41,7 @@ import com.intellij.xdebugger.breakpoints.XBreakpointProperties
 import com.intellij.xdebugger.breakpoints.XBreakpointType
 import com.intellij.xdebugger.breakpoints.XLineBreakpointType
 import java.awt.event.KeyEvent
+import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -73,6 +74,9 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
     private val drives = CopyOnWriteArrayList<DriveStopParams>()
+    /** The page's input and the stops given back as they reach `RunRemote`, each input answered `inputMillis` after. */
+    private val pageSends = CopyOnWriteArrayList<String>()
+    private var inputMillis = 0L
     private val binds = CopyOnWriteArrayList<StopBindParams>()
     private val shares = CopyOnWriteArrayList<ShareRunParams>()
     private val holds = CopyOnWriteArrayList<HoldRunParams>()
@@ -113,10 +117,15 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
             override fun pageView(params: PageViewParams) = RunControlResult(true, "Watching.")
 
-            override fun pageInput(params: PageInputParams) = RunControlResult(true, "Played.")
+            override fun pageInput(params: PageInputParams): RunControlResult {
+                pageSends += if (params.release) "release" else params.events.joinToString { listOfNotNull(it.type, it.action, it.key).joinToString(" ") }
+                Thread.sleep(inputMillis)
+                return RunControlResult(true, "Played.")
+            }
 
             override fun driveStop(params: DriveStopParams): RunControlResult {
                 drives += params
+                pageSends += if (params.on) "drive" else "give back"
                 return RunControlResult(true, if (params.on) "You drive this stop." else "You gave this stop back.")
             }
 
@@ -909,6 +918,49 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals(3, drives.size)
             assertTrue(drives.none { it.on })
         } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * The stop Interact goes off for is given back only once the input queued before it reached the service and was
+     * answered: Escape sends the click held back for a second one, then the release, and `piwi/driveStop` after them;
+     * a key sent as soon as Interact is on again goes after the give-back.
+     */
+    fun testTheStopIsGivenBackAfterTheInputQueuedBeforeIt() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        sessions.inSight = { true }
+        inputMillis = 100
+        try {
+            val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(1280, 800, BufferedImage.TYPE_INT_RGB), "jpg", it) }
+            image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()), 1280, 800)
+            val pageObject = file("tests/pages/order.page.ts", page)
+            val since = "2026-10-28T11:00:00.000Z"
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
+            hear(RunSession("ed-10", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
+            waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val interact = boxes.single { it.text == "Interact" }
+            boxes.single { it.text == "Watch live" }.doClick()
+            waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
+            interact.doClick()
+            waitFor("Interact's release") { pageSends.takeIf { it == listOf("release") } }
+            pageSends.clear()
+            val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
+            // A click the panel holds back for a second one, then Escape, then Interact on again and a key at once.
+            picture.mouseListeners.forEach { it.mousePressed(MouseEvent(picture, MouseEvent.MOUSE_PRESSED, 1L, 0, 100, 100, 1, false, MouseEvent.BUTTON1)) }
+            picture.mouseListeners.forEach { it.mouseReleased(MouseEvent(picture, MouseEvent.MOUSE_RELEASED, 1L, 0, 100, 100, 1, false, MouseEvent.BUTTON1)) }
+            picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
+            assertFalse(panel.interacting)
+            interact.doClick()
+            picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED)) }
+            waitFor("the give-back and the key") { pageSends.takeIf { sent -> "give back" in sent && sent.any { it.endsWith("Enter") } } }
+            assertEquals(listOf("mouse click", "release", "give back", "key press Enter"), pageSends)
+            assertEquals(DriveStopParams("ed-10", 0, since, false), drives.single())
+        } finally {
+            inputMillis = 0
+            sessions.inSight = { it.isShowing }
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }
     }

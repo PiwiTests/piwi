@@ -277,6 +277,8 @@ export function registerRunControl(
   let pickable = 0;
   let wantLive = false;
   let watchingPage: PageViewParams | null = null;
+  /** The watch the service accepted: the paused page offers Interact, and sends input, only for it. */
+  let acceptedPage: PageViewParams | null = null;
   /**
    * The stop Interact was last on for, while it is on: the paused page keeps it on for the next stops of that stop's
    * worker slot while Watch live stays on and the run goes on, and their input goes to each once its watch is
@@ -287,6 +289,7 @@ export function registerRunControl(
   const stopPageView = () => {
     const previous = watchingPage;
     watchingPage = null;
+    acceptedPage = null;
     if (previous) void lc.sendRequest(PAGE_VIEW_REQUEST, { ...previous, on: false }).catch(() => undefined);
   };
   /** Share live said what it sends in this window: it asks no more. */
@@ -502,6 +505,11 @@ export function registerRunControl(
       );
   };
 
+  /** The service accepted the watch the paused page asked last. */
+  const accepted = () => !!watchingPage && watchingPage === acceptedPage;
+  /** Whether the paused page offers Interact (`live.input`): its stop takes input, and a watch on was accepted. */
+  const offersInput = (on: boolean) => !!pageShows?.takes.includes('input') && (!on || accepted());
+
   const watchPage = async (on: boolean) => {
     if (!on) interactOff();
     stopPageView();
@@ -509,7 +517,7 @@ export function registerRunControl(
     const current = page;
     if (!stop || !current?.live || !panel?.visible) return;
     const shown = current.live.shown;
-    showPage({ ...current, live: { ...current.live, on, interacting: false }, note: null });
+    showPage({ ...current, live: { ...current.live, on, input: offersInput(on), interacting: false }, note: null });
     if (!on) return;
     const params: PageViewParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on: true };
     watchingPage = params;
@@ -520,13 +528,17 @@ export function registerRunControl(
       stopPageView();
       showPage({
         ...page,
-        live: { ...page.live, on: false, interacting: false },
+        live: { ...page.live, on: false, input: offersInput(false), interacting: false },
         note: answer?.message ?? 'The editor service did not answer.',
       });
-    } else if (!page.live.interacting && keepsInteract(interactOn, stop)) {
-      // Interact stays on for the slot: the new stop's input goes to its page at once.
-      showPage({ ...page, live: { ...page.live, interacting: true } });
+      return;
     }
+    acceptedPage = params;
+    // Accepted, the watch offers Interact, and Interact kept for the slot sends the new stop's input at once.
+    showPage({
+      ...page,
+      live: { ...page.live, input: offersInput(true), interacting: keepsInteract(interactOn, stop) },
+    });
   };
 
   /**
@@ -556,10 +568,11 @@ export function registerRunControl(
     }
     if (m.type === 'interact' && typeof m.on === 'boolean' && page.live.on) {
       const stop = pageShows;
-      const on = m.on && page.live.input && !!stop;
-      showPage({ ...page, live: { ...page.live, interacting: on } });
+      // Interact is offered once the service accepted the watch: until then, turning it on changes nothing.
+      if (m.on && (!stop || !page.live.input || !accepted())) return void showPage(page);
+      showPage({ ...page, live: { ...page.live, interacting: m.on } });
       // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
-      if (on) interactOn = stop;
+      if (m.on) interactOn = stop;
       else interactOff();
       return;
     }
@@ -567,7 +580,7 @@ export function registerRunControl(
     const refused = () => {
       if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
     };
-    if (!watchingPage || !page.live.on || !panel?.visible) return refused();
+    if (!watchingPage || !accepted() || !page.live.on || !panel?.visible) return refused();
     const events =
       m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
@@ -614,7 +627,8 @@ export function registerRunControl(
         if (change === 'end') {
           interactOff();
           stopPageView();
-          if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
+          if (page?.live)
+            showPage({ ...page, live: { ...page.live, on: false, input: offersInput(false), interacting: false } });
         } else if (change === 'watch') void watchPage(true);
       });
       panel.onDidDispose(() => {

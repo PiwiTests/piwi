@@ -202,10 +202,24 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var viewCalls = CompletableFuture.completedFuture(Unit)
     private val pendingPageFrame = AtomicReference<PageFrame?>(null)
     private val drawingPageFrame = AtomicBoolean(false)
-    private val pageInputs = ArrayDeque<PageInput>()
+    /**
+     * What the Paused Page tab sends next, in order: the events for its page (`PageInput`) and the stops Interact gives
+     * back (`Glue.ShownStop`), each once the events queued before it were sent and answered. On the event thread.
+     */
+    private val pageInputs = ArrayDeque<Any>()
+    /** A send of the queue waits for its alarm or for its answer: what comes meanwhile waits behind it. */
     private var pageInputBusy = false
+    /** The keys and buttons held are let go, after the events queued and before a stop given back after them. */
     private var pageRelease = false
     private val pageInputAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+    /** The Paused Page tab's input and the stops it gives back, each sent once the one before was answered. */
+    private var pageCalls = CompletableFuture.completedFuture(Unit)
+
+    /**
+     * Whether the Paused Page tab is in sight, where it watches its stop's page: the tests replace it, their tool
+     * window out of sight.
+     */
+    internal var inSight: (PausedPagePanel) -> Boolean = { it.isShowing }
 
     /** Draws again once the Paused Page tab stops waiting for a slot's next stop (`Glue.StopsShown.waitsUntil`). */
     private val waitAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
@@ -230,6 +244,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     internal var remote: RunRemote = object : RunRemote {
         private fun server() = project.service<PiwiProjectService>().server()
 
+        /** The running service, for a request that may outlive the plugin (a tab's disposer): none once it is gone. */
+        private fun existingServer() =
+            if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server()
+
         /** A control no service runs to take is refused here (`ok: false`): nothing sent it. */
         override fun control(params: RunControlParams): RunControlResult? {
             val server = server() ?: return RunControlResult(false, NOT_RUNNING)
@@ -242,17 +260,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
 
-        override fun pageView(params: PageViewParams) =
-            (if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server())
-                ?.pageView(params)?.orNull()
+        override fun pageView(params: PageViewParams) = existingServer()?.pageView(params)?.orNull()
 
         override fun pageInput(params: PageInputParams) = server()?.pageInput(params)?.orNull()
 
-        override fun driveStop(params: DriveStopParams) = server()?.driveStop(params)?.orNull()
+        override fun driveStop(params: DriveStopParams) = existingServer()?.driveStop(params)?.orNull()
 
-        override fun laneView(params: LaneViewParams) =
-            (if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server())
-                ?.laneView(params)?.orNull()
+        override fun laneView(params: LaneViewParams) = existingServer()?.laneView(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -280,7 +294,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun commandEnded(params: CommandEndedParams) {
             // The run may end after the plugin was unloaded: its service is then gone.
-            if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(params)
+            existingServer()?.commandEnded(params)
         }
     }
 
@@ -838,19 +852,21 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         acceptedPage = null
         pendingPageFrame.set(null)
         pageInputAlarm.cancelAllRequests()
+        val givenBack = pageInputs.filterIsInstance<Glue.ShownStop>()
         pageInputs.clear()
         pageInputBusy = false
         pageRelease = false
+        // The events dropped with the watch reach no page: the stops queued after them go now, after a send in flight.
+        givenBack.forEach(::sendGiveBack)
         if (previous != null) requestPageView(previous.copy(on = false))
     }
 
     private fun watchPage(stop: Glue.ShownStop, on: Boolean) {
         stopPageView()
-        pageInputs.clear()
         val panel = livePage()?.component as? PausedPagePanel ?: return
         // Interact goes off with Watch live, and stays on, unusable, until the new watch is accepted.
         panel.watching(false, keepInteract = on)
-        if (!on || !panel.isShowing || pageStop != Glue.stopKey(stop)) return
+        if (!on || !inSight(panel) || pageStop != Glue.stopKey(stop)) return
         val params = PageViewParams(stop.ref, stop.worker, stop.stop.since ?: return, true)
         watchingPage = params
         requestPageView(params) { result ->
@@ -869,25 +885,31 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Interact went off: the stop it was last on for is given back (`piwi/driveStop`, `on: false`), whichever of the
-     * IDE's views drove it, after the watches asked before it; a refusal is said under the caption while the tab shows
-     * that stop. Interact itself takes no stop: the person's first click, key, wheel or pick does. On the event thread.
+     * IDE's views drove it, from the input queue: once the events queued before it, the click held back and the release
+     * included, were sent and answered, and before those queued after it. Interact itself takes no stop: the person's
+     * first click, key, wheel or pick does. On the event thread.
      */
     private fun giveBack(stop: Glue.ShownStop) {
+        if (pageInputBusy) pageInputs.addLast(stop) else sendGiveBack(stop)
+    }
+
+    /** `piwi/driveStop` off for `stop`, after the tab's sends before it; a refusal is said while the tab shows it. */
+    private fun sendGiveBack(stop: Glue.ShownStop) {
         val params = DriveStopParams(stop.ref, stop.worker, stop.stop.since ?: return, false)
         val key = Glue.stopKey(stop)
-        requestDriveStop(params) { result ->
-            if (result?.ok != true && pageStop == key) {
-                (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
-            }
+        pageCall {
+            val result = runCatching { remote.driveStop(params) }.getOrNull()
+            ApplicationManager.getApplication().invokeLater({
+                if (result?.ok != true && pageStop == key) {
+                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
+                }
+            }, gone)
         }
     }
 
-    @Synchronized private fun requestDriveStop(params: DriveStopParams, answered: (RunControlResult?) -> Unit) {
-        viewCalls = viewCalls.handle { _, _ -> Unit }.thenApplyAsync({
-            val result = runCatching { remote.driveStop(params) }.getOrNull()
-            ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
-            Unit
-        }, AppExecutorUtil.getAppExecutorService())
+    /** Send `call` off the event thread once the tab's sends before it were answered. */
+    @Synchronized private fun pageCall(call: () -> Unit) {
+        pageCalls = pageCalls.handle { _, _ -> Unit }.thenApplyAsync({ call() }, AppExecutorUtil.getAppExecutorService())
     }
 
     /**
@@ -1066,9 +1088,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val own = watchingPage ?: return
         if (pageStop != Glue.stopKey(stop) || own.since != stop.stop.since) return
         for (event in events) {
-            if (event.type == "mouse" && event.action == "move" && pageInputs.lastOrNull()?.let { it.type == "mouse" && it.action == "move" } == true) pageInputs.removeLast()
+            if (event.type == "mouse" && event.action == "move" && (pageInputs.lastOrNull() as? PageInput)?.let { it.type == "mouse" && it.action == "move" } == true) pageInputs.removeLast()
             if (pageInputs.size >= 50) {
-                pageInputs.clear()
+                pageInputs.removeAll { it is PageInput }
                 pageRelease = true
                 (livePage()?.component as? PausedPagePanel)?.note("Too much input at once: the keys and buttons held were let go.")
                 break
@@ -1079,19 +1101,24 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         pageInputBusy = true
         pageInputAlarm.addRequest({
             if (watchingPage !== own) return@addRequest
-            val batch = pageInputs.toList()
-            pageInputs.clear()
-            // The input queued before a release goes first, and the release with the next request.
+            // A stop given back goes once the events and the release asked before it were answered.
+            while (!pageRelease && pageInputs.firstOrNull() is Glue.ShownStop) sendGiveBack(pageInputs.removeFirst() as Glue.ShownStop)
+            val batch = buildList { while (pageInputs.firstOrNull() is PageInput) add(pageInputs.removeFirst() as PageInput) }
+            // The events queued before a release go first, and the release with the next request.
             val release = batch.isEmpty() && pageRelease
             if (release) pageRelease = false
-            ApplicationManager.getApplication().executeOnPooledThread {
+            if (batch.isEmpty() && !release) {
+                pageInputBusy = false
+                return@addRequest
+            }
+            pageCall {
                 val result = runCatching { remote.pageInput(PageInputParams(own.ref, own.worker, own.since, batch, release)) }.getOrNull()
                 ApplicationManager.getApplication().invokeLater({
                     if (watchingPage !== own) return@invokeLater
                     pageInputBusy = false
                     if (result?.ok != true) {
                         (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
-                        pageInputs.clear()
+                        pageInputs.removeAll { it is PageInput }
                         if (!release) pageRelease = true
                     }
                     if (pageInputs.isNotEmpty() || pageRelease) pageInput(stop, emptyList())

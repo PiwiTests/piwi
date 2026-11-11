@@ -5,6 +5,11 @@ const path = require('node:path');
 const vscode = require('vscode');
 
 const workspace = process.env.PIWI_TEST_WORKSPACE;
+/** `SESSION_PACE_MS` in packages/editor: the service pushes a change of a run within it. */
+const SESSION_PACE_MS = 300;
+
+/** Past the pace, with room for the push to arrive: a change of a run not heard by then was not made. */
+const pastPace = () => new Promise((resolve) => setTimeout(resolve, SESSION_PACE_MS * 3));
 const pageObject = vscode.Uri.file(path.join(workspace, 'tests', 'pages', 'checkout.page.ts'));
 
 // Retries through cancellations too: a request made while a document opens can be canceled.
@@ -1061,21 +1066,42 @@ const tests = {
         () => (api.pausedPage()?.image ? api.pausedPage() : null),
         'the paused page in sight',
       );
-      // Watch live, then Interact: the input goes to the page, and a pointer moving drives nothing.
-      await api.pageMessage({ type: 'view', on: true, shown: first.live.shown });
-      await worker.heardOne('the watch', (m) => m.type === 'request' && m.what === 'view' && m.on === true);
+      // Watch live, its answer held: Interact is not offered, turning it on changes nothing, and the page posts no
+      // input, which the service would refuse, the refusal said under the caption.
+      const answered = worker.answers.view;
+      delete worker.answers.view;
+      const watching = api.pageMessage({ type: 'view', on: true, shown: first.live.shown });
+      const asked = await worker.heardOne(
+        'the watch',
+        (m) => m.type === 'request' && m.what === 'view' && m.on === true,
+      );
+      assert.equal(api.pausedPage().live.on, true);
+      assert.equal(api.pausedPage().live.input, false);
+      await api.pageMessage({ type: 'interact', on: true, shown: first.live.shown });
+      assert.equal(api.pausedPage().live.interacting, false);
+      await api.pageMessage({ type: 'input', id: 1, shown: first.live.shown, events: [click] });
+      assert.equal(api.pausedPage().note, null);
+      // Answered, the watch offers Interact: the input goes to the page, and a pointer moving drives nothing.
+      worker.answers.view = answered;
+      worker.send({ type: 'answer', request: asked.request, what: 'view', value: answered });
+      await watching;
+      await waitFor(
+        () => api.pausedPage()?.live.on && api.pausedPage().live.input,
+        'Interact offered once the watch is accepted',
+      );
       await api.pageMessage({ type: 'interact', on: true, shown: first.live.shown });
       assert.equal(api.pausedPage().live.interacting, true);
       await api.pageMessage({
         type: 'input',
-        id: 1,
+        id: 2,
         shown: first.live.shown,
         events: [{ type: 'mouse', action: 'move', x: 5, y: 5 }],
       });
       await worker.heardOne('the pointer moving', (m) => m.type === 'request' && m.what === 'input' && m.stop === 1);
+      await pastPace();
       assert.ok(!driven(), 'Interact and a pointer moving drive no stop');
       // The first click drives the stop.
-      await api.pageMessage({ type: 'input', id: 2, shown: first.live.shown, events: [click] });
+      await api.pageMessage({ type: 'input', id: 3, shown: first.live.shown, events: [click] });
       await waitFor(driven, 'the stop driven from the paused page');
       // The worker goes on and stops again: Interact stays on, and the next stop takes the input once watched.
       worker.send({ type: 'running', stop: 1 });
@@ -1085,8 +1111,9 @@ const tests = {
         return view?.caption.includes('Apply') && view.live?.interacting ? view : null;
       }, 'the next stop with Interact on');
       assert.equal(next.live.on, true);
+      await pastPace();
       assert.ok(!driven(), 'the next stop is nobody’s until the person acts on it');
-      await api.pageMessage({ type: 'input', id: 3, shown: next.live.shown, events: [click] });
+      await api.pageMessage({ type: 'input', id: 4, shown: next.live.shown, events: [click] });
       await worker.heardOne(
         'the click at the next stop',
         (m) => m.type === 'request' && m.what === 'input' && m.stop === 2,
@@ -1109,13 +1136,8 @@ const tests = {
     try {
       await waitFor(() => api.pausedPage()?.image, 'the rerun’s paused page');
       await vscode.commands.executeCommand('piwi.showPausedPage');
-      await waitFor(() => api.pausedPage()?.live?.on, 'the rerun’s watch');
-      await worker.heardOne(
-        'the rerun’s watch asked',
-        (m) => m.type === 'request' && m.what === 'view' && m.on === true,
-      );
-      // Past the watch's answer, which would turn a kept Interact on.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Once the watch is answered, which would turn a kept Interact on, Interact is offered, and off.
+      await waitFor(() => api.pausedPage()?.live?.on && api.pausedPage().live.input, 'the rerun’s watch answered');
       assert.equal(api.pausedPage().live.interacting, false);
     } finally {
       worker.socket.destroy();
@@ -1199,6 +1221,7 @@ const tests = {
       assert.equal(api.workerView().live.interacting, true);
       await api.workerMessage({ type: 'input', id: 1, shown, events: [{ type: 'mouse', action: 'move', x: 5, y: 5 }] });
       await heardOne('the input at the stop', (m) => m.type === 'request' && m.what === 'input' && m.stop === 1);
+      await pastPace();
       assert.ok(!driven(), 'Interact and a pointer moving drive no stop');
       // A pick on the image: the point in CSS pixels of the page, the answer under the caption, the stop driven.
       await api.workerMessage({ type: 'pick', shown, x: 320, y: 100, width: 640, height: 400 });
@@ -1230,6 +1253,7 @@ const tests = {
         'the next stop in the worker panel',
       );
       assert.equal(next.live.interacting, true);
+      await pastPace();
       assert.ok(!driven(), 'the next stop is nobody’s until the person acts on it');
       // The first click at the next stop drives it.
       await api.workerMessage({
@@ -1301,15 +1325,14 @@ const tests = {
       );
       assert.equal(view.live.on, true);
       assert.equal(view.live.input, false);
+      // Interact cannot be turned on, and the panel posts no input: the service would refuse it, the refusal said
+      // under the caption.
+      const click = { type: 'mouse', action: 'click', x: 6, y: 6, button: 'left', clickCount: 1 };
       await api.workerMessage({ type: 'interact', on: true, shown: view.live.shown });
       assert.equal(api.workerView().live.interacting, false);
-      await api.workerMessage({
-        type: 'input',
-        id: 1,
-        shown: view.live.shown,
-        events: [{ type: 'mouse', action: 'click', x: 6, y: 6, button: 'left', clickCount: 1 }],
-      });
-      // Accepted, the watch offers Interact.
+      await api.workerMessage({ type: 'input', id: 1, shown: view.live.shown, events: [click] });
+      assert.equal(api.workerView().note, null);
+      // Accepted, the watch offers Interact, and the input goes to the stop.
       send({
         type: 'answer',
         request: asked.request,
@@ -1318,7 +1341,11 @@ const tests = {
       });
       await opening;
       await waitFor(() => api.workerView()?.live.input, 'Interact offered once the watch is accepted');
-      assert.equal(worker.heard.filter((m) => m.what === 'input').length, 0, 'no input reached the stop before');
+      await api.workerMessage({ type: 'interact', on: true, shown: view.live.shown });
+      assert.equal(api.workerView().live.interacting, true);
+      await api.workerMessage({ type: 'input', id: 2, shown: view.live.shown, events: [click] });
+      await heardOne('the input once the watch is accepted', (m) => m.type === 'request' && m.what === 'input');
+      assert.equal(worker.heard.filter((m) => m.what === 'input').length, 1);
     } finally {
       worker.socket.destroy();
     }

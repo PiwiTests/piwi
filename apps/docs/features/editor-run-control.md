@@ -95,9 +95,10 @@ stopped line's, and the tab shows the result or refusal.
 
 **Watch live** updates the paused page until you hide or close the tab, resume the test or switch stops. Choose
 [**Interact**](./watch-running-test#interact) to click, scroll or type on it; your first one drives the stop.
-Interact stays on through the worker's stops, and goes off, giving the stop back, on Escape, another worker's stop, a
-stop without input, **Watch live** off or refused, the tab hidden or closed, or the run's end. The caption names who
-drives and watches the stop ([driving a stop](/guide/concepts#presence-driving-a-stop)).
+Interact stays on through the worker's stops, and goes off, giving the stop back, on Escape, another
+[lane](/guide/concepts#worker)'s stop, a stop without input, **Watch live** off or refused, the tab hidden or closed,
+or the run's end. The caption names who drives and watches the stop
+([driving a stop](/guide/concepts#presence-driving-a-stop)).
 The preview uses the editor's connection: no Picker, pairing, live-view setting or port forwarding. Older reporters
 keep the still image. To watch the test before it stops: [Watch a running test](./watch-running-test).
 

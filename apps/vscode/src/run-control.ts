@@ -700,7 +700,7 @@ function presentAt(stop: RunStop, takes: readonly RunTake[], worker: RunWorker |
 }
 
 /**
- * Who drives a stop and who else watches its worker's page, in words (`An agent drives this stop: Interact takes
+ * Who drives a stop and who else watches its worker's page, in words (`An agent drives this stop: your input takes
  * control · Watched by Piwi Picker and you`); null when nobody does.
  */
 export function stopPresence(stop: ShownStop, sessions: Sessions): string | null {
@@ -710,7 +710,7 @@ export function stopPresence(stop: ShownStop, sessions: Sessions): string | null
 
 /**
  * The paused page's caption of a stop: what it runs, its file and line, then who drives it and who else watches its
- * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: Interact takes
+ * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: your input takes
  * control · Watched by Piwi Picker and you`).
  */
 export function stopCaption(stop: ShownStop, sessions: Sessions): string {
