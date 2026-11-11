@@ -31,6 +31,8 @@ const MAX_TEST_META_CHARS = 120;
 const MAX_TEST_LINK_CHARS = 500;
 /** The most issues one test names with `piwi:issue`; later ones are dropped. */
 export const MAX_TEST_ISSUES = 10;
+/** The most `issues` entries `sanitizeTestMetadata` reads; the rest are dropped unread. */
+const MAX_TEST_ISSUE_ENTRIES = 4 * MAX_TEST_ISSUES;
 /** A bare issue key as a test may write it: a project part, a dash and a number. */
 const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 /** The largest `piwi:bug` id: bug report ids are 32-bit serials. */
@@ -394,7 +396,7 @@ export function sanitizeTestMetadata(raw: unknown): TestMetadata | null {
   const asAnnotations = Object.entries(raw as Record<string, unknown>).flatMap(([key, value]) => {
     // `issues` is the one list field: each entry becomes one `piwi:issue` annotation.
     if (key === 'issues') {
-      const entries = Array.isArray(value) ? value : [];
+      const entries = Array.isArray(value) ? value.slice(0, MAX_TEST_ISSUE_ENTRIES) : [];
       return entries.map((entry) => ({
         type: `${PIWI_ANNOTATION_PREFIX}issue`,
         description: typeof entry === 'string' ? entry : undefined,

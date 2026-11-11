@@ -415,6 +415,12 @@ describe('sanitizeTestMetadata', () => {
     const many = Array.from({ length: MAX_TEST_ISSUES + 5 }, (_, i) => `SHOP-${i + 1}`);
     expect(sanitizeTestMetadata({ issues: many })?.issues).toHaveLength(MAX_TEST_ISSUES);
   });
+
+  test('reads a bounded number of wire issue entries, however long the list', () => {
+    const junk = Array.from({ length: 100_000 }, () => 'not an issue');
+    expect(sanitizeTestMetadata({ issues: [...junk, 'SHOP-1'] })).toBeNull();
+    expect(sanitizeTestMetadata({ issues: ['SHOP-1', ...junk] })).toEqual({ issues: ['SHOP-1'] });
+  });
 });
 
 describe('isPiwiAnnotation', () => {
