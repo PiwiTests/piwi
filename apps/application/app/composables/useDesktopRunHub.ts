@@ -75,7 +75,8 @@ interface HubState {
   watchLive: Record<string, number[]>;
   /**
    * The lanes whose Interact is on (Playwright's `parallelIndex`), by run (ref): the clicks, the wheel and the keys on
-   * their views go to the page, at each next stop too, until it is turned off or their run ends.
+   * their views go to the page, at each next stop too, until it is turned off, their run ends, the window is no longer
+   * present or the stream opens again.
    */
   interacting: Record<string, number[]>;
   /**
@@ -161,6 +162,8 @@ function heard(text: string): void {
       viewer = value.viewer;
       state.connected = true;
       state.sessions = {};
+      // A new viewer drives no stop: the one before gave its stops back, and Interact goes off with them.
+      state.interacting = {};
       state.kept = [];
       state.epoch++;
       latestFrames.clear();
@@ -443,6 +446,8 @@ export function useDesktopRunHub() {
     present(on: boolean): void {
       if (on === present) return;
       present = on;
+      // Not present, the window gives back the stops it drove: Interact goes off with them.
+      if (!on) state.interacting = {};
       if (viewer) void command({ type: 'follow', on });
     },
     /** Hears each run another tool asks through the hub to stop (`stop-run`), until the returned function is called. */

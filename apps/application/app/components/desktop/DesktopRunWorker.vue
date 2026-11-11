@@ -136,16 +136,26 @@ const watchLive = computed({
   set: (on: boolean) => hub.setWatchLive(props.session.ref, props.worker.worker, on),
 });
 /**
- * Interact, kept by the window for the worker's lane: on, the clicks, the wheel and the keys on its view go to the page
- * and the window drives the stop; off, a stop the window drives is given back.
+ * Interact, kept by the window for the worker's lane while the worker is watched: on, the clicks, the wheel and the
+ * keys on its view go to the page, and the first of them drives the stop. Turned off on the page, the stop is given
+ * back once its input went (`released`).
  */
 const interact = computed({
   get: () => hub.interacts(props.session.ref, props.worker.parallelIndex),
-  set: (on: boolean) => {
-    hub.setInteract(props.session.ref, props.worker.parallelIndex, on);
-    if (stop.value && hub.state.connected && on !== !!stop.value.driver?.self) void drive(on);
-  },
+  set: (on: boolean) => hub.setInteract(props.session.ref, props.worker.parallelIndex, on),
 });
+/** The stop the window's input drove last (all but the pointer's moves). */
+const playedAt = ref<string | null>(null);
+/** The worker's page is watched: its own stop's Watch live, or its lane. */
+const watched = computed(() => watchLive.value || hub.watchesLane(props.session.ref, props.worker.parallelIndex));
+// Interact goes off with watching, a worker Playwright starts in the lane without Watch live included.
+watch(
+  watched,
+  (on) => {
+    if (!on && interact.value) interact.value = false;
+  },
+  { immediate: true },
+);
 /** What the last command answered, or what a code made here came to, for the stop it was sent at. */
 const answer = ref<{ since: string | null; ok: boolean; text: string; locator: string | null; warnings: string[] }>();
 /** The responses the test kept, listed for Mock a request at the stop they were asked at. */
@@ -189,6 +199,31 @@ async function steer(what: DesktopSteer): Promise<void> {
   const body = what === 'front' ? { type: 'front', since: at } : { type: 'runControl', action: what, since: at };
   const result = await send(body, at);
   if (result && !result.ok) say(result, at);
+}
+
+/**
+ * Interact went off at the stop `at` names, its input gone: a stop the window drives, or drove with that input, is
+ * given back, past any command on its way, leaving what the last one answered in place.
+ */
+async function released(at: string): Promise<void> {
+  if (since.value !== at || !hub.state.connected) return;
+  if (!stop.value?.driver?.self && playedAt.value !== at) return;
+  const result = await hub.command({
+    ref: props.session.ref,
+    worker: props.worker.worker,
+    type: 'drive',
+    since: at,
+    on: false,
+  });
+  if (since.value !== at) return;
+  if (!result.ok) say(result, at);
+  else if (result.message) emit('announce', result.message);
+}
+
+/** Give back: Interact goes off with it. */
+function giveBack(): void {
+  if (interact.value) interact.value = false;
+  void drive(false);
 }
 
 /** Drives the stop (`on`: an agent waits until it is given back), or gives it back. */
@@ -366,6 +401,8 @@ onBeforeUnmount(() => {
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @played="playedAt = $event"
+      @released="released"
     />
     <DesktopRunStopPage
       v-else-if="stop"
@@ -379,6 +416,8 @@ onBeforeUnmount(() => {
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @played="playedAt = $event"
+      @released="released"
     />
     <p v-else-if="worker.state !== 'between'" class="text-xs text-muted" data-testid="desktop-watch-needs-update">
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}
@@ -408,7 +447,7 @@ onBeforeUnmount(() => {
         icon="i-lucide-undo-2"
         title="Let an agent act on this stop again"
         :aria-disabled="busy || undefined"
-        @click="!busy && drive(false)"
+        @click="!busy && giveBack()"
       >
         Give back
       </UButton>

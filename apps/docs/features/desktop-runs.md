@@ -52,7 +52,7 @@ the output here**, brings the output back; the window closes with the app.
 ## Watch live
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off; at a stop, the image takes your input as **Watch live** does. After **Step**, **Resume**
+stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. After **Step**, **Resume**
 or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
 update it.
 

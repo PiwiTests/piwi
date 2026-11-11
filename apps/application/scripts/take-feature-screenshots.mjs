@@ -6129,6 +6129,7 @@ const SCENES = [
         };
         await send(session({ ...running, state: 'stopped', stop }));
         await laneFrame('s1');
+        await worker.getByRole('button', { name: 'Interact' }).click();
         await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
         await settle();
         await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });

@@ -36,6 +36,8 @@ const emit = defineEmits<{
   pick: [point: { x: number; y: number }];
   /** Escape on the image: Interact goes off, and its toggle takes the keyboard. */
   leave: [];
+  /** Input that drives the stop (all but the pointer's moves) reached the stop `since` names. */
+  played: [since: string];
 }>();
 
 /** Picking a point: the next click on the image names it. */
@@ -104,6 +106,7 @@ defineExpose({
   drop,
   clear,
   focus: () => img.value?.focus({ preventScroll: true }),
+  release,
   viewport,
 });
 
@@ -127,22 +130,34 @@ function stopInput(): void {
   captured = false;
 }
 
+/**
+ * The image takes no more input, and what it played ends well (`ViewInputBatcher.finish`): resolves once what waited
+ * went out, the image unmounted meanwhile included.
+ */
+function release(): Promise<void> {
+  const ending = batcher;
+  batcher = null;
+  captured = false;
+  return ending ? ending.finish() : Promise.resolve();
+}
+
 watch(
   inputKey,
   (key) => {
     stopInput();
     const target = props.input;
     if (!key || !target) return;
-    batcher = new ViewInputBatcher({
+    const mine = new ViewInputBatcher({
       clickCounts: target.clickCounts,
       send: async (events: ViewInput[]) => {
-        if (inputKey.value !== key) return false;
         const { ref, worker, since } = target;
         const answer = await hub.command({ type: 'input', ref, worker, since, events });
-        if (!answer.ok && inputKey.value === key) emit('said', answer);
+        if (answer.ok && events.some((e) => e.type !== 'mouse' || e.action !== 'move')) emit('played', since);
+        if (!answer.ok && batcher === mine) emit('said', answer);
         return answer.ok;
       },
     });
+    batcher = mine;
   },
   { immediate: true },
 );

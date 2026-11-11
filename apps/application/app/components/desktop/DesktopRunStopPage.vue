@@ -37,6 +37,10 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
+  /** Input that drives the stop reached the stop `since` names. */
+  played: [since: string];
+  /** Interact went off at the stop `since` names, the input waiting gone first: the stop may be given back. */
+  released: [since: string];
 }>();
 
 const hub = useDesktopRunHub();
@@ -100,6 +104,8 @@ function startView(): void {
     else {
       stopListening();
       view.value = { ...view.value, status: 'refused', note: answer.message };
+      // A refused view takes no input: Interact goes off, to be turned on again on a view that takes it.
+      if (interact.value) interact.value = false;
     }
   });
 }
@@ -134,7 +140,7 @@ function endView(tell: boolean): void {
 function toggleLive(): void {
   if (live.value) {
     watchLive.value = false;
-    if (interact.value) interact.value = false;
+    if (interact.value) interactOff();
     endView(true);
   } else {
     watchLive.value = true;
@@ -142,11 +148,11 @@ function toggleLive(): void {
   }
 }
 
-/** The view is on and the stop takes the clicks and keys on it: Interact sends them. */
-const canInteract = computed(() => live.value && props.takes.includes('input'));
-/** Where the clicks and keys on the view go, while the view is on and Interact sends them. */
+/** The hub accepted the view and the stop takes the clicks and keys on it: Interact sends them. */
+const canInteract = computed(() => live.value && view.value?.status === 'on' && props.takes.includes('input'));
+/** Where the clicks and keys on the view go, while Interact sends them. */
 const inputTarget = computed(() =>
-  view.value?.status === 'on' && canInteract.value && interact.value
+  canInteract.value && interact.value
     ? {
         ref: props.runRef,
         worker: props.worker,
@@ -157,9 +163,17 @@ const inputTarget = computed(() =>
 );
 const interactButton = ref<{ $el: HTMLElement } | null>(null);
 
+/** Interact goes off: the input waiting on the view goes first, then the stop may be given back (`released`). */
+function interactOff(): void {
+  const since = props.stop.since;
+  const drained = liveImage.value?.release() ?? Promise.resolve();
+  interact.value = false;
+  void drained.then(() => emit('released', since));
+}
+
 /** Escape on the view: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
-  interact.value = false;
+  interactOff();
   await nextTick();
   interactButton.value?.$el?.focus();
 }
@@ -278,7 +292,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="interact"
         :class="interact ? PRESSED_TOGGLE_CLASS : ''"
         title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
-        @click="interact = !interact"
+        @click="interact ? interactOff() : (interact = true)"
       >
         Interact
       </UButton>
@@ -307,6 +321,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       @pick="pickAt"
       @said="emit('said', $event, {})"
       @leave="leave"
+      @played="emit('played', $event)"
     />
     <img
       v-if="!framed && stillShown?.src"
