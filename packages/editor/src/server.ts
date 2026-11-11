@@ -178,7 +178,7 @@ import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
-import { RunAgent } from './run-agent.js';
+import { RunAgent, type AgentRunStart } from './run-agent.js';
 import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
@@ -225,6 +225,7 @@ import {
   FOLLOW_COMMAND_REQUEST,
   SET_BASELINE_NOTIFICATION,
   SET_RUN_PAIRING_NOTIFICATION,
+  START_RUN_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
   STATUS_NOTIFICATION,
@@ -322,6 +323,8 @@ import {
   type RunStatusResult,
   type SetBaselineParams,
   type SetRunPairingParams,
+  type StartRunParams,
+  type StartRunResult,
   type RunSelectionParams,
   type RunStartOptions,
   type ScreenshotParams,
@@ -1797,17 +1800,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let writesCode = false;
   /** Whether the client stops a run it started as another tool asks (`InitializationOptions.stopsRuns`). */
   let stopsRuns = false;
+  /** Whether the client runs a command the service built for an agent (`InitializationOptions.startsRuns`). */
+  let startsRuns = false;
   /** The editor's display language, as `initialize` names it. */
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
   let clientName: string | null = null;
   /** Where a run's picks go, as the client names it (`InitializationOptions.runPairing`, `piwi/setRunPairing`). */
   let runPairing: EditorPairing | null = null;
-  /** The discovery file as the service last wrote it, without `send`: null until it listens. */
+  /** The discovery file as the service last wrote it, without `send` and `agents`: null until it listens. */
   let discovered: EditorDiscovery | null = null;
   /** Write the discovery file again, naming where a run's picks go as the client last said. */
   const publishDiscovery = () => {
-    if (discovered) options.publish?.(runPairing ? { ...discovered, send: runPairing } : discovered);
+    if (!discovered) return;
+    options.publish?.({
+      ...discovered,
+      ...(runPairing ? { send: runPairing } : {}),
+      ...(agentServer ? { agents: { url: agentServer.url, token: agentServer.token } } : {}),
+    });
   };
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
   let runHub: RunHub | null = null;
@@ -2005,6 +2015,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         message,
       } satisfies Notice),
     command: (ref) => runCommands.get(ref) ?? null,
+    startRun: (start) => startAgentRun(start),
+    startsRuns: () => startsRuns,
     preferLocators: (root) => suiteLocators(root ? contextOfRoot(root) : null),
     ...(options.agentFollowIdleMs === undefined ? {} : { followIdleMs: options.agentFollowIdleMs }),
   });
@@ -2345,6 +2357,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     answersStops = init?.runControl === true;
     writesCode = init?.stopCode === true;
     stopsRuns = init?.stopsRuns === true;
+    startsRuns = init?.startsRuns === true;
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
@@ -3540,7 +3553,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return built;
   };
 
-  connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
+  connection.onRequest(RUN_ARGS_REQUEST, (params: RunTestsArgs) => runCommandFor(params));
+
+  /** The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. */
+  const runCommandFor = async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
     if (params.debug) return debugRunArgs(context, params);
@@ -3573,7 +3589,45 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     // A repeated run runs headless unless asked, and nobody attends it: it holds no failure.
     return withStartOptions(unattended(run), { headed: params.headed });
-  });
+  };
+
+  /**
+   * An agent's run (`run_start`): the spec it names, or the test at a line of it, built as a person's run of it is and
+   * run by the client where the developer sees it, labeled with the agent's name. Refused for a file no Playwright
+   * config of the workspace holds as a spec, and by a client that runs none for an agent.
+   */
+  const startAgentRun = async (start: AgentRunStart): Promise<{ ok: boolean; message: string; run?: string }> => {
+    if (!startsRuns)
+      return { ok: false, message: 'This editor starts no run for an agent: update its Piwi extension.' };
+    const file = path.isAbsolute(start.file)
+      ? path.resolve(start.file)
+      : (folders.map((folder) => path.resolve(folder, start.file)).find((candidate) => fs.existsSync(candidate)) ??
+        null);
+    const context = file ? contextFor(file) : null;
+    const relative = file && context ? relativeTo(context.root, file) : null;
+    if (!file || !context || !relative || !SPEC_FILE.test(relative)) {
+      return { ok: false, message: `${start.file} is no spec of a Playwright config of this workspace.` };
+    }
+    const command = await runCommandFor({
+      uri: pathToFileURL(file).href,
+      root: context.root,
+      testIds: [],
+      locations: [start.line === null ? relative : `${relative}:${start.line}`],
+      headed: start.headed,
+      holdFailures: start.hold,
+    });
+    if (!command?.ref) return { ok: false, message: `Piwi could not build a command that runs ${relative}.` };
+    const label = `Started by ${start.agent}`;
+    try {
+      const answer = (await connection.sendRequest(START_RUN_REQUEST, {
+        command: { ...command, ref: command.ref, label },
+      } satisfies StartRunParams)) as StartRunResult | null;
+      if (!answer?.ok) return { ok: false, message: answer?.message || 'The editor did not start the run.' };
+      return { ok: true, message: `${answer.message} Follow it with run_follow.`, run: command.ref };
+    } catch {
+      return { ok: false, message: 'The editor did not start the run.' };
+    }
+  };
 
   connection.onRequest(FOLLOW_COMMAND_REQUEST, (params: RunCommandArgs): RunCommand | null => {
     const context = contexts.find((c) => commandFolder(c) === params?.cwd);
@@ -4087,6 +4141,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const toldAgents = (answer: AgentsResult, asked: boolean): AgentsResult => {
     const held = JSON.stringify([answer.url, answer.token]);
     if (held !== agentsHeld && !asked) void connection.sendNotification(AGENTS_CHANGED_NOTIFICATION, answer);
+    // An agent's router reads where the runs are served from the discovery file.
+    if (held !== agentsHeld) publishDiscovery();
     agentsHeld = held;
     return answer;
   };

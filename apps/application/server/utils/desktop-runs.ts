@@ -149,6 +149,7 @@ const DECLINED: Partial<Record<RunIntent, string>> = {
 /** What the agents' tools say of this app's runs: watched in its window, their code made there to copy. */
 export const DESKTOP_AGENT_WORDS: AgentWords = {
   runs: 'the desktop app',
+  host: 'desktop app',
   start: "start one from the app's window",
   watch: "The developer sees each stop in the desktop app's window, said to be the agent's.",
   view: "the desktop app's view of the run",

@@ -386,9 +386,30 @@ export interface RunCommand {
    * (`PIWI_PAUSE_AT`). Absent otherwise.
    */
   pauses?: boolean;
+  /**
+   * Who started the run when a person did not: `Started by Claude Code`, for an agent's run (`piwi/startRun`), which
+   * the client shows with the run's task or tab. Absent for a person's run.
+   */
+  label?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
+
+/**
+ * `piwi/startRun` (request, server to client, for a client that sent `InitializationOptions.startsRuns`): run the
+ * command the service built for an agent's `run_start` where the developer sees it, as the client runs a person's,
+ * labeled `command.label`; the answer says whether it started.
+ */
+export interface StartRunParams {
+  command: RunCommand & { ref: string; label: string };
+}
+
+export interface StartRunResult {
+  ok: boolean;
+  message: string;
+}
+
+export const START_RUN_REQUEST = 'piwi/startRun';
 
 /** `piwi.runCommand`'s argument: a command line to run in a terminal. */
 export interface RunCommandArgs {
@@ -578,6 +599,11 @@ export interface InitializationOptions {
    * whole run (its `stop` feature).
    */
   stopsRuns?: boolean;
+  /**
+   * The client runs a command the service built for an agent (`piwi/startRun`). Without it, the agents' tools offer
+   * no `run_start`.
+   */
+  startsRuns?: boolean;
   /**
    * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
    * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256

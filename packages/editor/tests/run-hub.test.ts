@@ -23,7 +23,7 @@ import {
   type LiveHub,
 } from '@piwitests/core/run-hub';
 import { RUN_TAKES } from '@piwitests/core/run-channel';
-import type { RunSession } from '../src/protocol';
+import type { RunSession, StartRunParams } from '../src/protocol';
 import { writeDiscovery } from '../src/discovery';
 import { RunHub, type RunHubOptions } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
@@ -152,6 +152,69 @@ describe('the hub’s address', () => {
       });
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(other.published).toHaveLength(stopped);
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('names the agents’ MCP server while it serves the runs to them, and no more once it stops', async () => {
+    const other = await service(dir, false, {}, { agents: { enabled: true } });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      expect(named.agents).toEqual({
+        url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+        token: expect.stringMatching(/^[\w-]{32,256}$/),
+      });
+      // A client that runs no command for an agent is offered no run_start.
+      const listed = await fetch(named.agents!.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result.tools;
+      expect(tools.map((tool) => tool.name)).not.toContain('run_start');
+      await other.client.sendRequest('piwi/agents', { enabled: false });
+      const last = await waitFor(() => {
+        const file = other.published[other.published.length - 1];
+        return file && !file.agents ? file : undefined;
+      });
+      expect(last.runChannel).toEqual(named.runChannel);
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('starts an agent’s run as a person’s is built, labeled with its name, once the client runs it', async () => {
+    const other = await service(dir, false, {}, { agents: { enabled: true }, startsRuns: true });
+    const started: StartRunParams[] = [];
+    other.client.onRequest('piwi/startRun', (params: StartRunParams) => {
+      started.push(params);
+      return { ok: true, message: 'Test Editor runs it.' };
+    });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      const call = async (method: string, params: Record<string, unknown>) => {
+        const res = await fetch(named.agents!.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        });
+        return (await res.json()) as { result: { tools?: Array<{ name: string }>; content?: Array<{ text: string }> } };
+      };
+      expect((await call('tools/list', {})).result.tools![0]!.name).toBe('run_start');
+      const answer = await call('tools/call', {
+        name: 'run_start',
+        arguments: { file: 'tests/cart.spec.ts', line: 3, agent: 'Claude Code' },
+      });
+      const body = JSON.parse(answer.result.content![0]!.text) as { ok: boolean; run?: string };
+      expect(body).toMatchObject({ ok: true, run: expect.stringMatching(/^[\w-]+$/) });
+      expect(started).toHaveLength(1);
+      expect(started[0]!.command).toMatchObject({ ref: body.run, label: 'Started by Claude Code' });
+      expect(started[0]!.command.args.join(' ')).toContain('tests/cart.spec.ts:3');
+      // A file that is no spec of the workspace runs nothing.
+      const refused = await call('tools/call', { name: 'run_start', arguments: { file: '../elsewhere.spec.ts' } });
+      expect(JSON.parse(refused.result.content![0]!.text)).toMatchObject({ ok: false });
+      expect(started).toHaveLength(1);
     } finally {
       other.stop();
     }

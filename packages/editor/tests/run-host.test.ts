@@ -188,6 +188,7 @@ describe('a host of its own', () => {
 /** A host's words, each one told apart from the editor's. */
 const WORDS: AgentWords = {
   runs: 'the host',
+  host: 'host app',
   start: 'start one from the host',
   watch: 'The developer sees each stop in the host.',
   view: "the host's view of the run",
@@ -217,7 +218,8 @@ describe("the agents' tools on a host of its own", () => {
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name));
     expect(tools.map((t) => t.inputSchema)).toEqual(AGENT_TOOLS.map((t) => t.inputSchema));
     const described = (name: string) => tools.find((t) => t.name === name)!.description;
-    expect(described('run_list')).toMatch(/^The test runs the host started, /);
+    expect(described('run_list')).toMatch(/^The test runs the host follows, /);
+    expect(described('run_list')).toContain('(`launcher`: the host app, a terminal or a test runner)');
     expect(described('run_control')).toContain('The developer sees each stop in the host.');
     expect(described('page_act')).toContain("shows in the page and in the host's view of the run");
     expect(described('code_write')).toBe(WORDS.codeWrite);

@@ -24,7 +24,7 @@ import {
   type JsonRpcResponse,
 } from './mcp-protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolResult } from './run-agent.js';
+import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolDefinition, type ToolResult } from './run-agent.js';
 
 /** The endpoint's path. */
 export const AGENT_PATH = '/mcp';
@@ -43,6 +43,8 @@ export function isAgentToken(token: unknown): token is string {
 /** What the server answers with: the tools' results; `signal` aborts once nobody waits for the answer. */
 export interface AgentTools {
   call(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult>;
+  /** The tools `tools/list` names: the editor's own (`AGENT_TOOLS`) when absent. */
+  definitions?(): ToolDefinition[];
 }
 
 export interface AgentServerOptions {
@@ -273,7 +275,7 @@ export class AgentServer {
       case 'ping':
         return ok(id, {});
       case 'tools/list':
-        return ok(id, { tools: AGENT_TOOLS });
+        return ok(id, { tools: this.options.tools.definitions?.() ?? AGENT_TOOLS });
       case 'tools/call': {
         const name = typeof params.name === 'string' ? params.name : '';
         const own = new AbortController();

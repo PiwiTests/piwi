@@ -80,6 +80,7 @@ import {
   SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
   SET_RUN_PAIRING_NOTIFICATION,
+  START_RUN_REQUEST,
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
@@ -95,6 +96,8 @@ import {
   type McpAuthorization,
   type SetBaselineParams,
   type SetRunPairingParams,
+  type StartRunParams,
+  type StartRunResult,
   type FileSummary,
   type McpServersResult,
   type AgentsParams,
@@ -462,6 +465,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl: true,
       stopCode: true,
       stopsRuns: true,
+      // The service builds an agent's run_start, and the extension runs it as a person's (`piwi/startRun`).
+      startsRuns: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
       agents: {
         enabled: vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true,
@@ -854,7 +859,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
-      runTaskName(command.args, command.command),
+      command.label
+        ? `${runTaskName(command.args, command.command)} · ${command.label}`
+        : runTaskName(command.args, command.command),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -1095,6 +1102,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runInTerminal(command.cwd, command.command, env);
     }
   };
+
+  // An agent's run_start: the command the service built runs as a person's does, its task named after the agent.
+  lc.onRequest(START_RUN_REQUEST, async (params: StartRunParams): Promise<StartRunResult> => {
+    await startRun(params.command, []);
+    void vscode.window.showInformationMessage(`Piwi: ${params.command.label}: ${params.command.command}`);
+    return { ok: true, message: `${vscode.env.appName} runs it.` };
+  });
 
   /**
    * Run tests as the service's command for them says, started as the person chose for every run of the window

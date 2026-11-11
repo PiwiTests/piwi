@@ -20,6 +20,7 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
 import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
+import com.intellij.util.concurrency.AppExecutorUtil
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
@@ -162,6 +163,7 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "runControl" to true,
             "stopCode" to true,
             "stopsRuns" to true,
+            "startsRuns" to true,
             "agents" to service.agentsOptions(),
         )
         PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
@@ -279,6 +281,23 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
      * Another tool asks through the hub to stop a run this IDE started (Piwi Picker, the desktop app): its process ends,
      * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
      */
+    /**
+     * Run the command the service built for an agent's `run_start` as a person's run starts, on a pooled thread, and
+     * say who started it in a balloon; refused in an untrusted project.
+     */
+    @JsonRequest("piwi/startRun")
+    fun startRun(params: StartRunParams): CompletableFuture<StartRunResult> {
+        val command = params.command
+        if (!project.service<PiwiProjectService>().trusted()) {
+            return CompletableFuture.completedFuture(StartRunResult(false, Glue.UNTRUSTED))
+        }
+        return CompletableFuture.supplyAsync({
+            PiwiCommands.startRun(project, command, emptyList())
+            command.label?.let { PiwiCommands.notify(project, "$it: ${command.command.orEmpty()}") }
+            StartRunResult(true, "The IDE runs it.")
+        }, AppExecutorUtil.getAppExecutorService())
+    }
+
     @JsonRequest("piwi/stopRun")
     fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> {
         val stopped = project.getServiceIfCreated(PiwiRunSessions::class.java)?.stopRun(params.ref) ?: false
