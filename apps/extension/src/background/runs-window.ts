@@ -20,6 +20,7 @@ import {
   RUNS_BOUNDS_KEY,
   RUNS_PAGE,
   RUNS_PORT,
+  attentionOf,
   liveRuns,
   parseRunsRequest,
   readRunsBounds,
@@ -155,16 +156,43 @@ export async function openRunsWindow(): Promise<{ ok: boolean }> {
   return { ok: false };
 }
 
-/** What the popup's Runs tile shows: whether a hub answers, and how many runs are live. */
-export async function runsSummary(): Promise<{ connected: boolean; paired: boolean; runs: number }> {
+/**
+ * What the popup's Runs tile shows: whether a hub answers, how many runs are live, and how many of their tests wait
+ * for the person or failed (`attentionOf`).
+ */
+export async function runsSummary(): Promise<{
+  connected: boolean;
+  paired: boolean;
+  runs: number;
+  waiting: number;
+  failed: number;
+}> {
   await runHubs.ready();
   const state = runHubs.state();
+  const attention = attentionOf(state);
   return {
     connected: runHubs.connected(),
     paired: state.discovery !== 'unpaired' || state.desktop !== 'unpaired',
     runs: liveRuns({ runs: runHubs.answeringRuns() }).length,
+    waiting: attention?.waiting ?? 0,
+    failed: attention?.failed ?? 0,
   };
 }
+
+/**
+ * What the toolbar's badge says of the runs: how many tests wait for the person (amber), else how many failed (red),
+ * else nothing.
+ */
+export function runsBadge(): { text: string; color: string } | null {
+  const attention = attentionOf(runHubs.state());
+  const count = (n: number) => (n > 99 ? '99+' : String(n));
+  if (attention?.state === 'waiting') return { text: count(attention.waiting), color: RUNS_WAITING_COLOR };
+  if (attention?.state === 'failing') return { text: count(attention.failed), color: RUNS_FAILED_COLOR };
+  return null;
+}
+
+const RUNS_WAITING_COLOR = '#b45309';
+const RUNS_FAILED_COLOR = '#b91c1c';
 
 /** Starts finding the hubs, and follows the pairings and their grants. */
 export function startRunHubs(): void {

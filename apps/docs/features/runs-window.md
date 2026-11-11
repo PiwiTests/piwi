@@ -17,8 +17,11 @@ picks a locator on its image. The editor shows the same stops: [Pause and step f
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), or with the
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), the popup shows a **Runs** tile under
-**More tools**, muted with **Not connected** while none of them answers. It opens the Runs window, to keep beside the
-test's browser, where you left it last. For each run the editor [started](./editor-runs), it shows the folder and the command, how many of
+**More tools**, muted with **Not connected** while none of them answers. While a test waits at a stop for you (a
+breakpoint, a **Pause**, a failure held at its line), the tile says how many in amber, as do the toolbar's badge and the
+Runs window's title (`1 waiting · Runs · Piwi Picker`); while none waits and tests failed, they say how many failed, in
+red. A stop an agent drives is the agent's. It opens the Runs window, to keep beside the test's browser, where you left
+it last. For each run the editor [started](./editor-runs), it shows the folder and the command, how many of
 its tests ended (`3 of 9 tests · 1 failed`), then each worker's test and whether it runs or where it stopped: the file
 and line, the call about to run, and an image of the page. A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. While none
@@ -95,12 +98,9 @@ the view to the page as a person's would, the picker and the recorder included:
 
 - **The pointer**: moves, left and right clicks, double and triple clicks as your system counts them, drags, and the
   wheel once the view has the focus. `Ctrl`, `Alt` and `⌘` held with a click are held in the page too.
-- **The keys**, while the view has the focus (a focus ring around it): characters are typed, named keys (Enter, the
-  arrows, Backspace, Delete, Home, End) pressed, with Shift, and `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the
-  editing keys. A paste types the clipboard's text.
-- **What stays the window's**: the browser's other shortcuts, the function keys, `Esc` (but while a pick or a check
-  runs on the page) and `Tab`, as the [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window)
-  say.
+- **The keys**, while the view has the focus (a focus ring around it), and a paste, which types the clipboard's text.
+  Which keys go to the page and which stay the window's: the
+  [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A hint under the view says so the first time. What you hold down is let go before the test goes on.
 

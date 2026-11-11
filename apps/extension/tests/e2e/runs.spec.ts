@@ -224,6 +224,41 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
+test('says on the toolbar badge, the popup’s Runs tile and the Runs window’s title that a test waits for you', async () => {
+  const { context, worker, extensionId } = await pairedExtension(editor);
+  try {
+    const badge = () =>
+      worker.evaluate(async () => ({
+        text: await chrome.action.getBadgeText({}),
+        color: await chrome.action.getBadgeBackgroundColor({}),
+      }));
+    const run = await startRun(editor);
+    try {
+      await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
+      // A run that runs asks nothing: no badge.
+      await expect.poll(async () => (await badge()).text).toBe('');
+      run.worker.stopAt(1, 30, true);
+      await expect.poll(async () => (await badge()).text).toBe('1');
+      expect((await badge()).color).toEqual([180, 83, 9, 255]);
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.locator('#runs-hint')).toHaveText('1 test waits for you');
+      await expect(popup.locator('#runs')).toHaveAttribute('data-state', 'attention');
+      await popup.close();
+      const runs = await openRuns(context, extensionId);
+      await expect(runs).toHaveTitle('1 waiting · Runs · Piwi Picker');
+      // Answered, the stop asks nothing more: the badge and the title let go of it.
+      run.worker.send({ type: 'running', stop: 1 });
+      await expect.poll(async () => (await badge()).text).toBe('');
+      await expect(runs).toHaveTitle('Runs · Piwi Picker');
+    } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('a run of several workers pauses and resumes all from its header, and F10 steps the stopped test', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {

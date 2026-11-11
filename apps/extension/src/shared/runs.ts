@@ -7,16 +7,18 @@
  * alone, never stored.
  */
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
-import type {
-  HubCodeAction,
-  HubCodeIntent,
-  HubWindowAction,
-  HubControlAction,
-  HubImage,
-  HubIntent,
-  HubKeptRequest,
-  HubSession,
-  HubWorker,
+import {
+  runsAttention,
+  type HubCodeAction,
+  type HubCodeIntent,
+  type HubWindowAction,
+  type HubControlAction,
+  type HubImage,
+  type HubIntent,
+  type HubKeptRequest,
+  type HubSession,
+  type HubWorker,
+  type RunAttention,
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
@@ -381,6 +383,19 @@ export function viewKey(view: RunsView): string {
 /** The live runs of a state. */
 export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
+}
+
+/** The runs of the hubs whose connection answers now: a lost hub's runs, as last heard, are left out. */
+export function answeringRuns(state: Pick<RunsState, 'runs' | 'hubs'>): RunsRun[] {
+  return state.runs.filter((run) => state.hubs.some((hub) => hub.id === run.hub && hub.connected));
+}
+
+/**
+ * What the runs whose hub answers ask of the person now (`runsAttention`): the toolbar's badge, the popup's Runs tile
+ * and the Runs window's title say it.
+ */
+export function attentionOf(state: Pick<RunsState, 'runs' | 'hubs'>): RunAttention | null {
+  return runsAttention(answeringRuns(state).map((run) => run.session));
 }
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */

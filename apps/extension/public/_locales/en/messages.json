@@ -7417,9 +7417,105 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ test waits for you",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ tests wait for you",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ test failed",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ tests failed",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Runs · Piwi Picker",
     "description": "Runs window, its title in the browser’s window bar."
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ waiting · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests wait at a stop for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ waiting · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests wait at a stop for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ failed · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests of the runs have failed and none waits for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ failed · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests of the runs have failed and none waits for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Your editor’s runs",

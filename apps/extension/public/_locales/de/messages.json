@@ -6261,8 +6261,96 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ Test wartet auf Sie",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ Tests warten auf Sie",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ Test fehlgeschlagen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ Tests fehlgeschlagen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Läufe · Piwi Picker"
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ wartet · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Läufe · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ warten · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Läufe · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ fehlgeschlagen · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Läufe · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ fehlgeschlagen · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Läufe · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Die Läufe Ihres Editors"

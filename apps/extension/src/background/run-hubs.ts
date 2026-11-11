@@ -49,6 +49,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { LatestPacer, MAX_VIEW_FPS } from '@piwitests/core/run-view';
 import {
+  answeringRuns,
   shortcutCommands,
   slotKey,
   stateForViewer,
@@ -180,6 +181,7 @@ export class RunHubs {
   /** The peers the hubs named that no hub found holds, which the editor was asked for once. */
   private askedPeers = new Set<string>();
   private readonly listeners = new Set<RunsListener>();
+  private readonly observers = new Set<() => void>();
   /** The live views some window watches, by `viewKey`. */
   private readonly watches = new Map<string, Watch>();
   /** The lanes some window watches, by `slotKey`. */
@@ -209,6 +211,15 @@ export class RunHubs {
       if (this.refindTimer) clearInterval(this.refindTimer);
       this.refindTimer = null;
     };
+  }
+
+  /**
+   * Hears every change of the runs, as the toolbar's badge does, without following them: a window open is a listener
+   * (`listen`), an observer is not. Returns the way to stop.
+   */
+  observe(changed: () => void): () => void {
+    this.observers.add(changed);
+    return () => void this.observers.delete(changed);
   }
 
   /** Tells each open connection whether a person follows the runs, a Runs window open. */
@@ -605,8 +616,7 @@ export class RunHubs {
 
   /** The runs of the hubs whose connection answers now. */
   answeringRuns(): RunsRun[] {
-    const state = this.state();
-    return state.runs.filter((run) => state.hubs.some((hub) => hub.id === run.hub && hub.connected));
+    return answeringRuns(this.state());
   }
 
   /** The editor's hubs, through its pairing, or why there are none. */
@@ -767,6 +777,7 @@ export class RunHubs {
 
   private changed(): void {
     for (const listener of this.listeners) listener.changed();
+    for (const observer of this.observers) observer();
   }
 }
 
