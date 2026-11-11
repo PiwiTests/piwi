@@ -21,8 +21,9 @@ A run is sent once, when it finishes, if all of these hold:
 
 - the project is bound to a Zephyr project, the binding is **Enabled**, and the run is in the binding's branches and
   environments;
-- the run came from CI and ran the whole suite. A partial run (a filter, a selection, a rerun of the failed tests), a
-  run from a developer's machine, the desktop app or an editor, a lab run and an imported run send nothing;
+- the run came from CI and ran the whole suite to the end. A partial run (a filter, a selection, a rerun of the failed
+  tests), a run that was interrupted or timed out, a run from a developer's machine, the desktop app or an editor, a
+  lab run and an imported run send nothing;
 - the project's test case catalog has been read, and at least one test of the run carries a key the catalog holds.
 
 A run split across shards is sent once, after its last shard reports, with the results of every shard. Sending is a

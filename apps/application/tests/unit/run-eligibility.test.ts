@@ -219,12 +219,26 @@ describe('a developer’s runs and notifications', () => {
     }
   });
 
+  test('only a test management tool leaves out an interrupted or timed-out run', () => {
+    const metadata = { piwiOrigin: { kind: 'ci' } };
+    for (const use of USES) {
+      for (const status of ['interrupted', 'timedout']) {
+        expect(isEligibleRun({ metadata, isFullRun: 1, status }, use), `${use} ${status}`).toBe(
+          use !== 'test-management',
+        );
+      }
+    }
+  });
+
   test('a test management tool reads only a finished run of the whole suite from CI', () => {
     for (const kind of ['ci', 'ci-rerun']) {
       const metadata = { piwiOrigin: { kind } };
       expect(isEligibleRun({ metadata, ...full }, 'test-management'), kind).toBe(true);
       expect(isEligibleRun({ metadata, ...partial }, 'test-management'), kind).toBe(false);
       expect(isEligibleRun({ metadata, isFullRun: 1, status: 'finalizing' }, 'test-management'), kind).toBe(false);
+      for (const status of ['interrupted', 'timedout']) {
+        expect(isEligibleRun({ metadata, isFullRun: 1, status }, 'test-management'), `${kind} ${status}`).toBe(false);
+      }
     }
     expect(isEligibleRun({ metadata: { ci: { provider: 'Jenkins' } }, ...full }, 'test-management')).toBe(true);
     expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...full }, 'test-management')).toBe(false);
@@ -291,6 +305,8 @@ describe('the SQL form of the rule', () => {
     { isFullRun: 0, status: 'failed' },
     { isFullRun: 1, status: 'running' },
     { isFullRun: 0, status: 'running' },
+    { isFullRun: 1, status: 'interrupted' },
+    { isFullRun: 1, status: 'timedout' },
   ];
 
   async function seed(spelling: (value: unknown) => string) {
