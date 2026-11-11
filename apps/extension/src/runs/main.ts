@@ -1179,6 +1179,10 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
   );
   img.addEventListener('keydown', (event) => {
     if (!view.input) return;
+    const shown = target();
+    const at = shown ? stoppedAt(shown.key) : null;
+    // An action runs in the test's window at the stop shown (a pick, a recording, a check): its Escape is the page's.
+    const acting = !!at?.stop.acting && at.stop.since === shown?.since;
     const decided = keyOnView(
       {
         key: event.key,
@@ -1189,17 +1193,15 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
         altGraph: event.getModifierState?.('AltGraph') ?? false,
         isComposing: event.isComposing,
       },
-      { mac: MAC, captured: view.captured },
+      { mac: MAC, captured: view.captured, acting },
     );
     if (decided === 'leave') {
       // Interact goes off, the stop this window drives given back, and the focus goes to Interact; else to the toggle
       // that started the view. Pick on the image, waiting, stops too.
       event.preventDefault();
       view.captured = false;
-      const shown = target();
       if (!shown) return;
       if (picking.delete(shown.key)) render();
-      const at = stoppedAt(shown.key);
       const slot = at ? slotKey(at.run.hub, at.run.session.ref, at.worker.parallelIndex) : null;
       const toggle = at && slot && interacting.has(slot) ? 'interact' : shown.toggle;
       if (at && toggle === 'interact') void setInteract(at.run, at.worker, at.stop, false);
@@ -2877,6 +2879,8 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
       view.img.alt = t(view.inputOn ? 'runs_liveAltInput' : 'runs_liveAlt');
       if (view.inputOn) view.img.tabIndex = 0;
       else view.img.removeAttribute('tabindex');
+      // An action runs in the test's window there: Escape on the view goes to the page (`keyOnView`).
+      view.img.toggleAttribute('data-acting', !!stop.acting);
     }
     place(box, framed ? [shown, part(`${key}|badge`, null, liveBadge)] : [shown]);
     children.push(box);
@@ -3099,6 +3103,7 @@ function renderLanePage(
       lane.img.alt = t(now ? (lane.inputOn ? 'runs_liveAltInput' : 'runs_liveAlt') : 'runs_laneAltLast');
       if (lane.inputOn) lane.img.tabIndex = 0;
       else lane.img.removeAttribute('tabindex');
+      lane.img.toggleAttribute('data-acting', now && !!stop?.acting);
       if (now) badge = part(`${key}|badge`, null, liveBadge);
       else if (!stop) badge = part(`${key}|running`, null, runningBadge);
     }

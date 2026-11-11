@@ -810,6 +810,20 @@ describe('the run channel', () => {
   });
 
   describe('the lane view', () => {
+    test('reads the action that runs in the test’s window at a stop, and its end', () => {
+      for (const what of ['pick', 'record', 'assert', 'assert-region'] as const) {
+        expect(parseRunToHub(line({ type: 'acting', stop: 3, what }))).toEqual({ type: 'acting', stop: 3, what });
+      }
+      expect(parseRunToHub(line({ type: 'acting', stop: 3, what: null }))).toEqual({
+        type: 'acting',
+        stop: 3,
+        what: null,
+      });
+      for (const wrong of [{ what: 'dance' }, { what: undefined }, { stop: 0 }, { stop: '3' }]) {
+        expect(parseRunToHub(line({ type: 'acting', stop: 3, what: 'pick', ...wrong }))).toBeNull();
+      }
+    });
+
     test('reads the call a pausing worker waits in, and End the test there', () => {
       const waiting = {
         type: 'waiting',

@@ -114,7 +114,7 @@ export const RUN_WORDS_EN = {
   runs_imageLoading: 'Taking an image of the page…',
   runs_liveStarting: 'Starting the live view…',
   runs_liveHint:
-    'Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back; Shift+click picks a locator.',
+    'Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick, a recording or a check runs there; Shift+click picks a locator.',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',

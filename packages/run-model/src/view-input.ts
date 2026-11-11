@@ -32,9 +32,9 @@ export interface KeyPress {
 
 /**
  * What a key press on the view does: it goes to the page (`send`); Escape gives the keyboard back to the window
- * (`leave`); it stays the window's or the browser's (`window`: Tab while the view does not hold the keyboard, a
- * function key, a shortcut of the browser or the system); or it is no key of its own (`none`: a modifier alone, a
- * dead key).
+ * (`leave`), but while an action runs in the test's window, whose Escape it is; it stays the window's or the browser's
+ * (`window`: Tab while the view does not hold the keyboard, a function key, a shortcut of the browser or the system);
+ * or it is no key of its own (`none`: a modifier alone, a dead key).
  */
 export type KeyOnView = { send: ViewInput } | 'leave' | 'window' | 'none';
 
@@ -76,12 +76,14 @@ function pressed(combo: string): KeyOnView {
  * as text; a named key (Enter, the arrows, Backspace) as a press, with Shift; Control on Windows and Linux, ⌘ on macOS,
  * goes as `ControlOrMeta`, and only with the editing keys, Enter, A, Y and Z: every other shortcut stays the
  * browser's, as do Alt's outside macOS (where Option writes a character, or moves by a word) and the function keys.
- * Tab goes to the page only while the view holds the keyboard (`captured`); Escape always gives it back.
+ * Tab goes to the page only while the view holds the keyboard (`captured`). Escape gives it back, but while an action
+ * runs in the test's window (`acting`: a pick, a recording, a check, the stop's `acting`), where it goes to the page,
+ * which ends or leaves it as the action does.
  */
-export function keyOnView(press: KeyPress, options: { mac: boolean; captured: boolean }): KeyOnView {
+export function keyOnView(press: KeyPress, options: { mac: boolean; captured: boolean; acting?: boolean }): KeyOnView {
   const { key } = press;
   if (press.isComposing || NO_KEY.has(key)) return 'none';
-  if (key === 'Escape') return 'leave';
+  if (key === 'Escape') return options.acting ? { send: { type: 'key', action: 'press', key } } : 'leave';
   if (/^F\d{1,2}$/.test(key)) return 'window';
   if (key === 'Tab' && !options.captured) return 'window';
   const primary = options.mac ? press.metaKey : press.ctrlKey;

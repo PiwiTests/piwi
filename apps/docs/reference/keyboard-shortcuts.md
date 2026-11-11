@@ -45,7 +45,8 @@ stopped test shown: a run's worker tabs show one worker at a time. Step and Fini
 
 While **Interact** is on at a [watched stop](/features/runs-window#click-and-type-on-the-view), the view takes your
 keys, but the browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` turns **Interact** off, gives
-the stop back and moves the focus to **Interact**. `Tab` moves the focus on past the view, unless you clicked into
+the stop back and moves the focus to **Interact**. While a pick, a recording or a check runs on the page, `Esc` goes to
+the page instead, as its own key. `Tab` moves the focus on past the view, unless you clicked into
 it: then `Tab` and `Shift+Tab` go to the page too, until `Esc`. Characters an input method composes (Chinese,
 Japanese, Korean) do not reach the page; paste them instead. The desktop app's Local runs tray takes the same keys.
 On a run's worker tabs, the arrow keys, `Home` and `End` move between the workers.

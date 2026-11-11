@@ -499,6 +499,12 @@ export type RunToHub =
    */
   | { type: 'region'; stop: number; locator: string; snapshot: string }
   | { type: 'region'; stop: number; refused: string }
+  /**
+   * At the stop `stop`, an action runs in the test's window (`what`): a pick, a recording, a check or a region's pick,
+   * started from the pause bar or as an intent; null once it ended. Its Escape is the page's: a viewer's view sends it
+   * there while one runs. A worker of a reporter that predates it says none.
+   */
+  | { type: 'acting'; stop: number; what: RunIntent | null }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
   | { type: 'notice'; message: string }
   /**
@@ -1055,6 +1061,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (!isInt(stop, 1) || !isLocatorText(locator)) return null;
       if (typeof snapshot !== 'string' || !snapshot.trim() || snapshot.length > MAX_REGION_SNAPSHOT) return null;
       return { type: 'region', stop, locator, snapshot };
+    }
+    case 'acting': {
+      const { stop, what } = value;
+      if (!isInt(stop, 1)) return null;
+      if (what === null) return { type: 'acting', stop, what: null };
+      return RUN_INTENTS.includes(what as RunIntent) ? { type: 'acting', stop, what: what as RunIntent } : null;
     }
     case 'notice':
       return typeof value.message === 'string' ? { type: 'notice', message: value.message.slice(0, 500) } : null;

@@ -101,6 +101,26 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   await state();
   await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeFocused();
   await expect(page.getByRole('status')).toHaveText('Live');
+  // While a pick runs in the test's window, Escape is the page's: it goes there, and Interact stays on.
+  view.acting = true;
+  await state();
+  const acting = await page.evaluate(() => window.messages.length);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (from) =>
+          window.messages
+            .slice(from)
+            .filter((m) => m.type === 'input')
+            .flatMap((m) => m.events),
+        acting,
+      ),
+    )
+    .toEqual([{ type: 'key', action: 'press', key: 'Escape' }]);
+  await expect(page.getByLabel('Interact', { exact: true })).toBeChecked();
+  view.acting = false;
+  await state();
   // Checking Watch live and Interact posted releases of their own: only what follows Escape counts.
   const before = await page.evaluate(() => window.messages.length);
   await page.keyboard.press('Escape');

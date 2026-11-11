@@ -148,8 +148,11 @@ task, the JetBrains plugin's process) and the desktop app through the window who
 started in a terminal. Then one input model (IO19, RW5, E15): **Interact** after **Watch live** or **Watch** in every
 view, the Runs window and the desktop tray included, sticky for the worker's slot across its stops, its first input
 driving the stop, and turned off with watching, **Give back** or by `Esc` on the view, which gives the stop back once
-the input sent before has reached the page (the hub's `drive`, the editors' `piwi/driveStop`). The rest of P6 is proposed: `Esc` reaching the page while an action runs there, attention and the
-ambient state, and the editors' unattended runs. The later phases are
+the input sent before has reached the page (the hub's `drive`, the editors' `piwi/driveStop`). Then `Esc` reaching the
+page while an action runs there (RW20): the worker says when a pick, a recording or a check runs in the test's window
+(the run channel's `acting`), the stop carries it (`RunStop.acting`, `HubStop.acting`), and every view sends `Esc` to
+the page meanwhile, else gives the stop back. The rest of P6 is proposed: attention and the ambient state, and the
+editors' unattended runs. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

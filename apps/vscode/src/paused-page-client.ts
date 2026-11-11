@@ -155,7 +155,8 @@ picture.addEventListener('keydown', (e) => {
       isComposing: e.isComposing,
       altGraph: e.getModifierState('AltGraph'),
     },
-    { mac: /Mac/.test(navigator.platform), captured },
+    // An action runs in the test's window at the stop (a pick, a recording, a check): its Escape is the page's.
+    { mac: /Mac/.test(navigator.platform), captured, acting: !!view?.acting },
   );
   if (key === 'leave') {
     // Escape turns Interact off: the input held goes out and is let go of, then the stop is given back.

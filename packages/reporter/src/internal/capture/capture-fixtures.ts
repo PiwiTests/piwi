@@ -181,6 +181,7 @@ import {
   runChannelOpen,
   runHost,
   stopLine,
+  tellActing,
   tellHub,
   viewEnded,
   type RunControl,
@@ -1899,7 +1900,9 @@ async function showStop(
   const handoffReason = reason === 'page-pause' ? 'pause' : 'breakpoint';
   // A stop no bar shows starts them in its page while its live view is watched.
   const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
-  const intents = page ? new BarIntents() : null;
+  // Each action that runs in the test's window at the stop is said to the editor, whose views leave its Escape to it.
+  let heldStop: number | null = null;
+  const intents = page ? new BarIntents((what) => heldStop !== null && tellActing(heldStop, what)) : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   // How long the attempt stood stopped before this stop.
   const pausedBefore = sink.stops.reduce((sum, earlier) => sum + Math.max(0, earlier.duration), 0);
@@ -2004,6 +2007,7 @@ async function showStop(
         },
       )
     : null;
+  heldStop = held?.stop ?? null;
   const onIntent =
     page && held
       ? (intent: CodeIntent, ended?: AbortSignal) =>

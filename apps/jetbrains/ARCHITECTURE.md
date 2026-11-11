@@ -576,7 +576,8 @@ drives the stop no more. A watch ending sends what was queued for it, in order, 
 (`stopPageView`); where Interact is on as it ends (Watch live off, the tab hidden or closed, a watch refused, another
 slot's stop), Interact goes off first (`PausedPagePanel.letGo`), so the input held, the give-back and the watch-off
 reach the service in that order. Escape while Interact is on lets go of the input held, then turns Interact off and
-focuses its checkbox. Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
+focuses its checkbox, but goes to the page while an action runs in the test's window there (`PausedPagePanel.acting`,
+from the stop's `acting`). Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
 worker's new stop does not.
 Watch live is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
 Watch live stays on (`Glue.keepsInteract`, `PiwiRunSessions.pageSlot`), disabled until that stop's watch is accepted

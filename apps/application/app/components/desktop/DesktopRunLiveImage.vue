@@ -237,7 +237,8 @@ function onKeyDown(event: KeyboardEvent): void {
       altGraph: event.getModifierState?.('AltGraph') ?? false,
       isComposing: event.isComposing,
     },
-    { mac: MAC, captured },
+    // An action runs in the test's window at the stop (a pick, a recording, a check): its Escape is the page's.
+    { mac: MAC, captured, acting: !!props.input?.acting },
   );
   if (decided === 'leave') {
     // The keyboard back to the tray; Pick on the image, waiting, stops too.
@@ -278,6 +279,7 @@ onBeforeUnmount(() => {
         :alt="alt"
         :tabindex="inputOn ? 0 : undefined"
         :data-stale="dimmed || undefined"
+        :data-acting="input?.acting ? '' : undefined"
         draggable="false"
         class="block w-full bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary select-none transition-opacity"
         :class="[dimmed ? 'opacity-50' : '', picking ? 'cursor-crosshair' : inputOn ? 'cursor-default' : '']"

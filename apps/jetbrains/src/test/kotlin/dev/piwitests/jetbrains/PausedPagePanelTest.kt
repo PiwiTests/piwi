@@ -114,6 +114,25 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals(listOf("given back"), heard)
     }
 
+    fun testEscapeGoesToThePageWhileAnActionRunsInTheTestsWindow() {
+        val (panel, picture, sent) = interacting(clickCounts = true)
+        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val heard = mutableListOf<String>()
+        panel.interactOff = { heard += "given back" }
+        panel.releaseInput = { heard += "released" }
+        // A pick, a recording or a check runs on the page: Escape is its own, and Interact stays on.
+        panel.acting = true
+        picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
+        assertEquals(listOf(PageInput("key", "press", key = "Escape")), sent)
+        assertEmpty(heard)
+        assertTrue(interact.isSelected)
+        // Once it ended, Escape gives the stop back again.
+        panel.acting = false
+        picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
+        assertEquals(listOf("released", "given back"), heard)
+        assertFalse(interact.isSelected)
+    }
+
     /**
      * Watch live turned off with Interact on, and Interact going off as its watch ends (`letGo`), send the click held
      * back for a second one, then the release, then give the stop back: Watch live's change is told last.

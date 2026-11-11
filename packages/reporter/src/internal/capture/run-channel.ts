@@ -481,6 +481,14 @@ export function tellHub(message: RunToHub): void {
   if (socket && !socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
 
+/**
+ * Tell the editor that an action runs in the test's window at the stop `stop` (`what`: a pick, a recording, a check, a
+ * region's pick), or that it ended (null), while the worker still holds that stop.
+ */
+export function tellActing(stop: number, what: RunIntent | null): void {
+  if (held?.stop === stop) tellHub({ type: 'acting', stop, what });
+}
+
 /** Whether the editor wants the running test's events now: it asked for them, and a test runs. */
 export function runEventsWanted(): boolean {
   return eventsOn && testRunning && runChannelOpen();

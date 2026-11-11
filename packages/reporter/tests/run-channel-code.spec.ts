@@ -463,6 +463,13 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       said.push(await ask(connection, { what: 'assert-region', ...at }));
       said.push(await waitFor(() => connection.heard.find((m) => m.type === 'region' && m.stop === stop.stop)));
       await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
+      // The region's pick said it ran in the test's window, and that it ended.
+      said.push(
+        await waitFor(() => {
+          const acting = connection.heard.filter((m) => m.type === 'acting' && m.stop === stop.stop);
+          return acting.length >= 2 ? acting : undefined;
+        }),
+      );
       break;
     case 'checks an element':
       said.push(await ask(connection, { what: 'assert', ...at }));
@@ -953,7 +960,13 @@ describe('code from a stop, the worker’s part', () => {
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {
-    const [started, region] = heard['asserts a region']!;
+    const [started, region, acting] = heard['asserts a region']!;
+    const stop = stops['asserts a region']![0]!.stop;
+    // Its Escape is the page's while the pick runs: the editor's views hear when it starts and when it ends.
+    expect(acting).toEqual([
+      { type: 'acting', stop, what: 'assert-region' },
+      { type: 'acting', stop, what: null },
+    ]);
     expect(started).toEqual({
       ok: true,
       message: "Pick the region in the test's window: the editor writes its ARIA snapshot above the stopped line.",

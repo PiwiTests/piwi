@@ -123,6 +123,8 @@ export function createWorkerPanel(
         interacting,
         clickCounts: lane.worker?.takes.includes('input-clicks') ?? true,
       },
+      // An action runs in the test's window at the stop shown: Escape on the view goes to the page.
+      acting: current && !!stop?.stop.acting,
     };
     if (!panel) return;
     if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());

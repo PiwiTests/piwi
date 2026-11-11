@@ -2006,6 +2006,14 @@ export class RunSessions {
         worker.requests.delete(message.request);
         return asked.settle(message.value);
       }
+      case 'acting': {
+        // An action that runs in the test's window at the stop the worker stands at: its Escape is the page's.
+        const stop = worker.stop;
+        if (stop?.id !== message.stop || (stop.view.acting ?? null) === message.what) return;
+        const { acting: _acting, ...view } = stop.view;
+        stop.view = message.what ? { ...view, acting: message.what } : view;
+        return this.changed(session, true);
+      }
       case 'region': {
         const region = 'refused' in message ? { refused: message.refused } : message;
         if (worker.stop?.id === message.stop) return this.options.onRegion?.(this.refOf(session, worker), region);

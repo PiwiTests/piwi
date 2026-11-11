@@ -186,6 +186,7 @@ const inputTarget = computed(() =>
         worker: props.worker,
         since: props.stop.since,
         clickCounts: props.takes.includes('input-clicks'),
+        acting: !!props.stop.acting,
       }
     : null,
 );

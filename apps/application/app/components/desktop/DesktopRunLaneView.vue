@@ -153,6 +153,7 @@ const inputTarget = computed(() => {
         worker: props.worker.worker,
         since: at.since,
         clickCounts: takes.value.includes('input-clicks'),
+        acting: !!at.acting,
       }
     : null;
 });

@@ -376,6 +376,22 @@ test.describe('Desktop run live view', () => {
     expect(commands.filter((c) => c.type === 'drive')).toEqual([]);
     await view.click({ position: { x: 20, y: 20 } });
     await expect.poll(() => commands.find((c) => c.type === 'input')).toMatchObject({ since: 's1' });
+    // While a region's pick runs in the test's window, Escape is the page's: it goes there, and Interact stays on.
+    const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session(stopped('s1', { intents, acting: 'assert-region' })),
+    );
+    await expect(view).toHaveAttribute('data-acting', '');
+    const typed = commands.length;
+    await page.keyboard.press('Escape');
+    await expect
+      .poll(() => commands.slice(typed).flatMap((c) => (c.type === 'input' ? (c.events as unknown[]) : [])))
+      .toContainEqual({ type: 'key', action: 'press', key: 'Escape' });
+    await expect(interact).toHaveAttribute('aria-pressed', 'true');
+    expect(commands.slice(typed).filter((c) => c.type === 'drive')).toEqual([]);
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s1', { intents })));
+    await expect(view).not.toHaveAttribute('data-acting');
     // Escape turns Interact off, on Interact, and gives back the stop its input drove, once that input went.
     await page.keyboard.press('Escape');
     await expect(interact).toBeFocused();

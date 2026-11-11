@@ -492,7 +492,11 @@ export function registerRunControl(
     clearTimeout(timer);
   };
 
-  const showPage = (view: PausedPageView) => {
+  /** Whether an action runs in the test's window at the stop the paused page shows: its Escape is the page's. */
+  const actingOnPage = () => !!pageStop && !!stops().find((s) => stopKey(s) === pageStop)?.stop.acting;
+
+  const showPage = (shown: PausedPageView) => {
+    const view = { ...shown, acting: actingOnPage() };
     const same = view.live && page?.live?.shown === view.live.shown;
     page = view;
     if (!panel) return;
@@ -765,6 +769,8 @@ export function registerRunControl(
       }
     }
     if (panel && !pageStop && !sessions.size) showPage({ image: null, caption: 'The run ended.' });
+    // An action that starts or ends in the test's window there decides where Escape on the view goes.
+    if (panel && page && pageStop && !!page.acting !== actingOnPage()) showPage(page);
   };
 
   /**
