@@ -20,6 +20,20 @@ export interface TagKeyOverlapReport {
   overlaps: TagKeyOverlap[];
 }
 
+/** The project's last complete run (the whole suite, finished): its ID and metadata, or null when it has none. */
+export async function lastCompleteRun(
+  db: DrizzleDB,
+  projectId: number,
+): Promise<{ id: number; metadata: unknown } | null> {
+  const [run] = await db
+    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), eligibleRunSql('run-baseline')))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(1);
+  return run ?? null;
+}
+
 /**
  * The tags of the project's last complete run (the whole suite, finished) that both patterns match, each with a test
  * that carries it. Empty while either pattern is off or the project has no complete run. Reads only.
@@ -32,12 +46,7 @@ export async function lastCompleteRunTagOverlap(
 ): Promise<TagKeyOverlapReport> {
   if (!patterns.issue || !patterns.testCase) return { runId: null, overlaps: [] };
 
-  const [run] = await db
-    .select({ id: testRuns.id })
-    .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), eligibleRunSql('run-baseline')))
-    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(1);
+  const run = await lastCompleteRun(db, projectId);
   if (!run) return { runId: null, overlaps: [] };
 
   const rows: Array<{ caseId: number; title: string; tags: unknown }> = await db

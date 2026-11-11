@@ -208,6 +208,23 @@ describe('listStatuses', () => {
   });
 });
 
+describe('listFolders', () => {
+  test('returns the test cycle folders with their parents', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('folders-test-cycle')));
+    expect(await client().listFolders('SHOP')).toEqual([
+      { id: '40001', name: 'Nightly', parentId: null },
+      { id: '40002', name: 'Release 4.2', parentId: '40001' },
+    ]);
+    expect(requested().searchParams.get('folderType')).toBe('TEST_CYCLE');
+    expect(requested().searchParams.get('projectKey')).toBe('SHOP');
+  });
+
+  test('refuses a project key that is not one', async () => {
+    await expect(client().listFolders('shop;drop')).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 test('caseUrl names no address: Zephyr documents no web URL for a case', () => {
   expect(client().caseUrl()).toBeNull();
 });

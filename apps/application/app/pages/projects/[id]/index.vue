@@ -52,6 +52,7 @@ const refresh = refetchKeeping(project, () =>
   $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery.value }),
 );
 provideExternalIdUrl(() => project.value?.externalIdUrl);
+provideTestManagementKeys(() => project.value?.id);
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 

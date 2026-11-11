@@ -69,6 +69,8 @@ export function demoTags(filePath, index) {
   if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
     if (index === 1) tags.push('SHOP-1234');
     if (index === 2) tags.push('SHOP-T123');
+    // A test case key the demo's test management catalog does not hold (`DEMO_UNKNOWN_TEST_CASE_KEY`).
+    if (index === 3) tags.push('SHOP-T124');
   }
   if (/\/api\//.test(`/${filePath}`)) tags.push('api');
   if (index % 3 === 0) tags.push('regression');

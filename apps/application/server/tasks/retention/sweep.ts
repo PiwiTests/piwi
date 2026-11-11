@@ -9,6 +9,7 @@ import {
   pruneAssistantConversations,
   pruneNotificationDeliveries,
   pruneReportSnapshots,
+  pruneTestManagementCatalogs,
   reclaimSpace,
   retentionMinRuns,
   sweepOrphans,
@@ -34,7 +35,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -113,6 +114,10 @@ export default defineTask({
       const pruned = await pruneIntegrationActions(db, notificationDays);
       if (pruned > 0) result.integrationActionsPruned = pruned;
     }
+
+    // Test cases read from a test management tool for a project no binding names any more.
+    const catalogsPruned = await pruneTestManagementCatalogs(db);
+    if (catalogsPruned > 0) result.testManagementCatalogRowsPruned = catalogsPruned;
 
     // …and for the agents' write log.
     if (notificationDays > 0) {

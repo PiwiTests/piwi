@@ -12,6 +12,7 @@ import type {
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
+  TestManagementConnectionSummary,
   TrackerSummary,
 } from '#shared/integrations/types';
 import {
@@ -36,6 +37,8 @@ import {
   type ZephyrClientOptions,
 } from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
+import { connectionPausedUntil } from './connection-pauses';
+import { INTERACTIVE_MAX_WAIT_MS, limiterForConnection, RequestLimiterBusyError } from './test-management/limiter';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
 const ENV_JIRA_NAME = 'Jira (environment)';
@@ -383,18 +386,38 @@ export async function createTestManagement(db: DbClient, connectionId: number): 
 }
 
 /**
+ * How a test management client spends its time. `maxWaitMs` caps how long one request queues behind the limiter;
+ * `deadlineAt` (epoch ms) is when the caller's whole budget ends, so a request whose turn comes after it is refused
+ * rather than queued.
+ */
+export type TestManagementClientOptions = ZephyrClientOptions & { maxWaitMs?: number; deadlineAt?: number };
+
+/** The longest a request may queue now: the smaller of its own cap and what is left of the caller's budget. */
+function waitBudget(maxWaitMs: number | undefined, deadlineAt: number | undefined): number | undefined {
+  if (deadlineAt === undefined) return maxWaitMs;
+  const left = Math.max(0, deadlineAt - Date.now());
+  return maxWaitMs === undefined ? left : Math.min(maxWaitMs, left);
+}
+
+/**
  * Build a test management client from an already-loaded connection row. It calls the host of the row's region from the
  * registry; the row's stored address is never used.
  */
 export function testManagementForRow(
   row: IntegrationConnection,
-  options: ZephyrClientOptions = {},
+  options: TestManagementClientOptions = {},
 ): TestManagementProvider | null {
   if (!isProviderOfKind(row.provider, 'test-management')) return null;
   const credentials = resolveTestManagementCredentials(row);
   if (!credentials) return null;
   const region = (row.config as Record<string, unknown> | null)?.region;
-  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, options) : null;
+  // Every call of a saved connection goes through its limiter, whoever makes it.
+  const { maxWaitMs, deadlineAt, ...clientOptions } = options;
+  const limited: ZephyrClientOptions = {
+    beforeRequest: () => limiterForConnection(row.id).wait({ maxWaitMs: waitBudget(maxWaitMs, deadlineAt) }),
+    ...clientOptions,
+  };
+  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, limited) : null;
 }
 
 /** Every tracker connection with usable credentials — what drives the UI entry points. */
@@ -512,6 +535,47 @@ async function recordTest(
     .where(eq(integrationConnections.id, id));
 }
 
+/**
+ * Record the outcome of a read of a connection that is not a sign-in test: the reason it failed on the row, or null to
+ * clear an earlier one. The connection's status is left as it is: a timeout does not make a token bad.
+ */
+export async function recordConnectionError(db: DbClient, id: number, error: string | null): Promise<void> {
+  await db
+    .update(integrationConnections)
+    .set({ lastError: error, updatedAt: new Date() })
+    .where(eq(integrationConnections.id, id));
+}
+
+/**
+ * Record that a provider refused a connection's credentials (a 401 from a picker, a catalog read or a test): the
+ * connection shows as failed, with the provider's reason, until the next successful test.
+ */
+export async function markConnectionFailed(db: DbClient, id: number, error: string): Promise<void> {
+  await recordTest(db, id, { ok: false, error });
+}
+
+/**
+ * Record that a provider accepted a connection's credentials by answering a real read (a full catalog read): the
+ * connection shows as ok, and any earlier failure is cleared.
+ */
+export async function markConnectionOk(db: DbClient, id: number): Promise<void> {
+  await recordTest(db, id, { ok: true });
+}
+
+/** Every test management connection with a stored token — what the project's binding form offers. */
+export async function listTestManagementConnections(db: DbClient): Promise<TestManagementConnectionSummary[]> {
+  await ensureEnvManagedConnections(db);
+  const rows = await db.select().from(integrationConnections).orderBy(integrationConnections.id);
+  return rows
+    .filter((r) => isProviderOfKind(r.provider, 'test-management') && hasStoredCredentials(r))
+    .map((r) => ({
+      id: r.id,
+      provider: r.provider as IntegrationProviderName,
+      name: r.name,
+      status: r.status as ConnectionSummary['status'],
+    }));
+}
+
 /** Verify a connection with the provider's `whoAmI`, recording the outcome. */
 export async function testConnection(db: DbClient, id: number): Promise<ConnectionTestResult | null> {
   const row = await getConnectionRow(db, id);
@@ -540,11 +604,21 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
 }
 
 /**
- * {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host, within
- * {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}.
+ * {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host, the queue
+ * for the limiter included, within {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}. A connection the provider rate limited is
+ * not called until its pause ends.
  */
 async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
-  const client = testManagementForRow(row, { timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS });
+  const paused = connectionPausedUntil(row.id, new Date());
+  if (paused) {
+    return { ok: false, error: `Paused until ${paused.toISOString()}: the provider rate limited this connection` };
+  }
+  const client = testManagementForRow(row, {
+    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
+    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+    deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+  });
   if (!client) {
     // A token the row holds but the client refuses to send is not the same as no token at all.
     return {
@@ -560,6 +634,7 @@ async function testTestManagementConnection(db: DbClient, row: IntegrationConnec
     return { ok: true, account };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof RequestLimiterBusyError) return { ok: false, error: message };
     await recordTest(db, row.id, { ok: false, error: message });
     return { ok: false, error: message, hint: zephyrFailureHint(err) };
   }

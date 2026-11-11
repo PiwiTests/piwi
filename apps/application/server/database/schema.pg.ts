@@ -1508,6 +1508,81 @@ export const projectIntegrations = pgTable(
   }),
 );
 
+// Project test management table — the per-project binding of a test management connection (Zephyr Scale first): the
+// provider project, where a test's case keys come from, which runs are in scope, how a run is named and which status
+// names its results carry. One row per project, kept apart from the tracker binding (`project_integrations`) so
+// saving one never touches the other. Dry run is on for a new binding.
+export const projectTestManagement = pgTable(
+  'project_test_management',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(true),
+    dryRun: boolean('dry_run').notNull().default(true), // true = nothing is sent to the tool
+    providerProjectKey: text('provider_project_key').notNull(), // the tool's project key (`SHOP`)
+    keySources: jsonb('key_sources'), // { tags: true, externalId: false }
+    runScope: jsonb('run_scope'), // TrackerRunScope: branches, environments
+    runPolicy: jsonb('run_policy'), // { mode: 'per-run' | 'reuse', nameTemplate, runKey?, folderId?, version? }
+    statuses: jsonb('statuses'), // { pass, fail, flaky, notExecuted }: the tool's status names
+    options: jsonb('options'), // { flakyAs, skippedAs, includeError, includeComment }
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('idx_project_test_management_project').on(t.projectId),
+    connectionIdx: index('idx_project_test_management_connection').on(t.connectionId),
+  }),
+);
+
+// Test management case catalog — a cached copy of the test case keys of a provider project, read through `listCases`
+// by the catalog task and the Refresh button. It holds what the screens show (key, the tool's ID, name, status name and
+// folder ID).
+export const testManagementCases = pgTable(
+  'test_management_cases',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key').notNull(),
+    key: text('key').notNull(),
+    providerId: text('provider_id').notNull(),
+    name: text('name').notNull(),
+    statusName: text('status_name'),
+    folder: text('folder'), // the folder's ID in the tool, null at the project's root
+    fetchedAt: timestamp('fetched_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    keyIdx: uniqueIndex('idx_test_management_cases_key').on(t.connectionId, t.projectKey, t.key),
+  }),
+);
+
+// When a project's catalog was last read from the tool, kept apart from the case rows because a read that found no
+// cases leaves none to carry the time.
+export const testManagementCatalogReads = pgTable(
+  'test_management_catalog_reads',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key').notNull(),
+    fetchedAt: timestamp('fetched_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('idx_test_management_catalog_reads_project').on(t.connectionId, t.projectKey),
+  }),
+);
+
 // Integration actions outbox — every outbound write to an external system is a
 // durable row, retried with backoff, deduped by a unique key, and listable. The
 // payload is snapshotted at enqueue so a retry is deterministic.
@@ -2545,6 +2620,11 @@ export type IntegrationConnection = typeof integrationConnections.$inferSelect;
 export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
 export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
 export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type ProjectTestManagement = typeof projectTestManagement.$inferSelect;
+export type NewProjectTestManagement = typeof projectTestManagement.$inferInsert;
+export type TestManagementCase = typeof testManagementCases.$inferSelect;
+export type NewTestManagementCase = typeof testManagementCases.$inferInsert;
+export type TestManagementCatalogRead = typeof testManagementCatalogReads.$inferSelect;
 export type IntegrationAction = typeof integrationActions.$inferSelect;
 export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;

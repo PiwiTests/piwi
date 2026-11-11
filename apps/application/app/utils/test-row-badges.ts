@@ -17,6 +17,8 @@ export interface TestRowBadge {
   title?: string;
   /** Render monospaced — Playwright marks (`@fixme`) and tags. */
   mono?: boolean;
+  /** The test tag this badge shows (without its `@`), so a tag that is a test case key can carry its hover card. */
+  tag?: string;
 }
 
 const PRIORITY_COLOR: Record<(typeof TEST_PRIORITIES)[number], TestRowBadge['color']> = {
@@ -162,7 +164,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
     });
   }
   for (const tag of input.tags ?? []) {
-    badges.push({ key: `tag:${tag}`, label: `@${tag}`, color: 'primary', variant: 'soft', mono: true });
+    badges.push({ key: `tag:${tag}`, label: `@${tag}`, color: 'primary', variant: 'soft', mono: true, tag });
   }
   for (const lock of input.locks ?? []) {
     badges.push({

@@ -9,11 +9,16 @@ import type {
   IssueDraft,
   IssueEntityType,
   TrackerIssueOption,
+  TestManagementConnectionSummary,
   TrackerSummary,
 } from '#shared/integrations/types';
 import { foldText } from '#shared/utils/fold-text';
 import { connectionBaseUrl, credentialFieldError, nonSecretCredentials } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import {
+  DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+} from '#shared/demo/demo-test-management.mjs';
 import { demoHttpError } from './http-error';
 import {
   missingFieldsMessage,
@@ -63,11 +68,9 @@ const DEMO_CONNECTION: ConnectionSummary = {
 
 /** The canned Zephyr Scale connection, on the US region as the server would save it. */
 const DEMO_ZEPHYR_CONNECTION: ConnectionSummary = {
-  id: 3,
+  id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  ...DEMO_TEST_MANAGEMENT_CONNECTION,
   provider: 'zephyr-scale',
-  name: 'Zephyr Scale Cloud (United States)',
-  baseUrl: 'https://api.zephyrscale.smartbear.com/v2',
-  config: { region: 'us' },
   status: 'ok',
   lastCheckedAt: DEMO_TIME,
   lastError: null,
@@ -88,6 +91,12 @@ function demoConnection(): ConnectionSummary {
 
 export function listDemoConnections(): { connections: ConnectionSummary[]; canStoreSecrets: boolean } {
   return { connections: [demoConnection(), DEMO_ZEPHYR_CONNECTION], canStoreSecrets: true };
+}
+
+/** The test management connections the demo's binding form offers: the canned Zephyr Scale connection. */
+export function listDemoTestManagementConnections(): TestManagementConnectionSummary[] {
+  const { id, provider, name, status } = DEMO_ZEPHYR_CONNECTION;
+  return [{ id, provider, name, status }];
 }
 
 export function getDemoConnection(id: number): { connection: ConnectionSummary } | null {

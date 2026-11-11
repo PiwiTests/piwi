@@ -48,6 +48,7 @@ async function refresh(): Promise<void> {
 // A read asked from outside the page (the assistant, once a proposal is applied); the diagnosis panel adds its own.
 usePageReload(refresh);
 provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
+provideTestManagementKeys(() => testCase.value?.testRun?.project?.id);
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();

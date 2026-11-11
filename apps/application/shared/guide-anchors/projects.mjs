@@ -623,6 +623,31 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=tag-keys', persona: 1, expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-test-management',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'test-management' } }],
+    describes:
+      'The Test management section: the Zephyr Scale Cloud project the tests match against, where a case key comes from, and how the last run maps onto its catalog.',
+    requires: { permission: 'project:manage' },
+    help: 'integrations.test-management',
+    doc: 'operate/zephyr-scale#bind-a-project',
+    sample: { route: '/projects/1?tab=settings&section=test-management', persona: 1, expect: PROJECT_1 },
+  },
+  {
+    id: 'test-management-run-name',
+    kind: 'block',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'test-management' } }],
+    describes:
+      'The test run: the name template each Piwi run gives its test run in the tool, which must hold {runId}, and the folder and version it goes under.',
+    shownWhen: 'When the project is bound to a test management connection.',
+    requires: { permission: 'project:manage' },
+    help: 'integrations.test-management-run-name',
+    doc: 'operate/zephyr-scale#the-test-run-name',
+    sample: { route: '/projects/1?tab=settings&section=test-management', persona: 1, expect: PROJECT_1 },
+  },
+  {
     id: 'issue-tracker-required-fields',
     kind: 'block',
     pages: ['/projects/[id]'],

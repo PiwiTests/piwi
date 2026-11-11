@@ -61,6 +61,7 @@ const reloadCluster = refetchKeeping(cluster, () => $fetch<FailureClusterDetail>
 usePageReload(() => Promise.all([reloadCluster(), fetchDiagnosis()]));
 const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
 provideExternalIdUrl(() => cluster.value?.project?.externalIdUrl);
+provideTestManagementKeys(() => cluster.value?.project?.id);
 const canTriage = computed(() => can('triage:write', clusterProjectId.value));
 const canQuarantine = computed(() => can('quarantine:write', clusterProjectId.value));
 const canRerun = computed(() => can('run:control', clusterProjectId.value));
