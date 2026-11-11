@@ -435,7 +435,7 @@ import {
   apiLiveResourcesTestRun,
 } from './reporter';
 import { demoLiveSteps, demoRunningCases } from './stuck-tests';
-import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { isVisibleRun, UNFINISHED_RUN_STATUSES, type RunVisibilityFields } from '#shared/run-eligibility';
 import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
@@ -608,13 +608,44 @@ type DemoEntity =
  * `requireResolvedProjectAccess` does: resolve the owning project (404 when the
  * entity does not exist), then check the route's permission there. Returns the
  * project id, or null for an administrator, whose request is not resolved.
+ * Another person's private run, and an execution of one, are answered as
+ * missing whoever asks, an administrator included, as the server's
+ * `resolveRunProjectId` answers.
  */
 async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntity, id: number): Promise<number | null> {
-  if (!ctx || isAdministrator(ctx.access)) return null;
+  if (!ctx) return null;
+  if (entity === 'run' || entity === 'execution') {
+    const run = await demoRunRow(entity, id);
+    if (run && !isVisibleRun(run, ctx.actingUserId)) throw demoHttpError(404, 'Not found');
+    if (isAdministrator(ctx.access)) return null;
+    if (!run) throw demoHttpError(404, 'Not found');
+    assertDemoScope(ctx, run.projectId);
+    return run.projectId;
+  }
+  if (isAdministrator(ctx.access)) return null;
   const projectId = await demoEntityProjectId(entity, id);
   if (projectId === null) throw demoHttpError(404, 'Not found');
   assertDemoScope(ctx, projectId);
   return projectId;
+}
+
+/** A run, or the run of an execution, with what its visibility reads; undefined when it does not exist. */
+async function demoRunRow(
+  entity: 'run' | 'execution',
+  id: number,
+): Promise<(RunVisibilityFields & { projectId: number }) | undefined> {
+  const db = await getDemoDb();
+  const columns = { projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId };
+  if (entity === 'run') {
+    const [row] = await db.select(columns).from(testRuns).where(eq(testRuns.id, id));
+    return row;
+  }
+  const [row] = await db
+    .select(columns)
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(eq(testRunsCases.id, id));
+  return row;
 }
 
 /** The project an entity belongs to, or null when it does not exist. */
@@ -624,8 +655,7 @@ async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<numb
   if (entity === 'project') {
     projectId = id;
   } else if (entity === 'run') {
-    const [row] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, id));
-    projectId = row?.projectId ?? null;
+    projectId = (await demoRunRow('run', id))?.projectId ?? null;
   } else if (entity === 'case') {
     const [row] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, id));
     projectId = row?.projectId ?? null;
@@ -650,12 +680,7 @@ async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<numb
   } else if (entity === 'suggestion') {
     projectId = await getSuggestionProjectId(db, id);
   } else {
-    const [row] = await db
-      .select({ projectId: testRuns.projectId })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.id, id));
-    projectId = row?.projectId ?? null;
+    projectId = (await demoRunRow('execution', id))?.projectId ?? null;
   }
   return projectId;
 }
@@ -755,7 +780,7 @@ async function assertDemoConnectionAccess(ctx: DemoCtx | undefined, connectionId
 
 /** Check the route's permission on the project of an existing link's target (the server's `resolveLinkProjectId`). */
 async function assertDemoLinkScope(ctx: DemoCtx | undefined, linkId: number): Promise<void> {
-  if (!ctx || isAdministrator(ctx.access)) return;
+  if (!ctx) return;
   const [link] = await (await getDemoDb()).select().from(entityLinks).where(eq(entityLinks.id, linkId));
   if (!link) throw demoHttpError(404, 'Link not found');
   if (link.testRunId != null) await assertDemoEntityScope(ctx, 'run', link.testRunId);
@@ -2023,7 +2048,7 @@ const routes: RouteEntry[] = [
     method: 'PATCH',
     pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
     handler: async (m, body, _q, ctx) => {
-      if (ctx && ctx.scope !== 'all') {
+      if (ctx) {
         const db = await getDemoDb();
         const [diag] = await db
           .select({ clusterId: failureDiagnoses.clusterId, testRunsCaseId: failureDiagnoses.testRunsCaseId })
@@ -3700,12 +3725,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/links$/,
-    handler: async (_, __, q) => {
+    handler: async (_, __, q, ctx) => {
       const entityType = q?.get('entityType') ?? '';
       const entityId = parseInt(q?.get('entityId') ?? '0', 10);
       if (!(LINK_ENTITY_TYPES as readonly string[]).includes(entityType) || !entityId) {
         throw demoHttpError(400, 'Invalid entityType or entityId');
       }
+      await assertDemoLinkTargetScope(ctx, entityType, entityId);
       return { items: (await listLinks(await getDemoDb(), entityType as LinkEntityType, entityId)).links };
     },
   },
