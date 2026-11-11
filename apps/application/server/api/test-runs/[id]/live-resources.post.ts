@@ -62,7 +62,8 @@ export default eventHandler(async (event): Promise<WireLiveResourcesAnswer & { a
     declined = await isPassiveCapabilityDeclined(db, projectId, 'resources');
     runEventBus.noteLiveResourcesDeclined(id, declined);
   }
-  if (declined) return { watched: false, declined: true, ...liveAsks.handOverAnswer(id) };
+  // A reporter told `declined` reads nothing else of the answer: the ask waits for its next events or heartbeat.
+  if (declined) return { watched: false, declined: true };
 
   const post = sanitizeLiveResources(body);
   if (!post) throw apiError({ statusCode: 400, message: 'The post carries no resource series' });

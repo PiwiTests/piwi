@@ -94,6 +94,7 @@ beforeEach(async () => {
     [30, 3],
   ] as const) {
     liveViewRelay.mintKey(runId, projectId);
+    liveAsks.noteTakesAsks(runId, { takesAsks: true });
   }
 });
 
@@ -134,6 +135,24 @@ describe('asking to watch a run', () => {
     state.caller = readerOf(3);
     expect((await refusal(30))?.status).toBe(409);
     expect(liveAsks.handOver(11) ?? liveAsks.handOver(20) ?? liveAsks.handOver(30)).toBeNull();
+  });
+
+  test('refuses a run whose reporter has not said it takes asks, and asks once it says so', async () => {
+    liveAsks.endRun(10);
+    expect((await refusal(10))?.status).toBe(409);
+    liveAsks.noteTakesAsks(10, { takesAsks: 'yes' });
+    expect((await refusal(10))?.status).toBe(409);
+    liveAsks.noteTakesAsks(10, { streamToken: 's', takesAsks: true });
+    expect(await refusal(10)).toBeNull();
+  });
+
+  test('refuses everyone while sign-in is off: an ask names who asks', async () => {
+    state.authOff = true;
+    try {
+      expect((await refusal(10))?.status).toBe(403);
+    } finally {
+      state.authOff = false;
+    }
   });
 
   test('refuses a run shared now', async () => {

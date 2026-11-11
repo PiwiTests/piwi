@@ -126,6 +126,9 @@ describe('the end of a run’s asks', () => {
       registry.ask(7, 1, 3, 'Dana');
       registry.ask(8, 1, 3, 'Dana');
       registry.ask(9, 2, 3, 'Dana');
+      // A run held as interrupted may go on: its asks wait.
+      runEventBus.publishGlobal({ type: 'run-finished', runId: 7, projectId: 1, status: 'interrupted' });
+      expect(registry.viewOf(7, 3)).not.toBeNull();
       runEventBus.publishGlobal({ type: 'run-finished', runId: 7, projectId: 1, status: 'passed' });
       expect(registry.viewOf(7, 3)).toBeNull();
       expect(registry.handOver(7)).toBeNull();

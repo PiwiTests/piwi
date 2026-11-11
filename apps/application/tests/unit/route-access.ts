@@ -36,6 +36,8 @@ export interface RouteAccessState {
   caller: RouteCaller | null;
   /** The permission of the route being called, from its `x-required-permission`. */
   routePermission: RoutePermission[];
+  /** Sign-in is off on the instance (`isAuthEnabled` false). */
+  authOff?: boolean;
 }
 
 /** The meta a route declared when its module was loaded. */
@@ -112,7 +114,7 @@ export function authMock(state: RouteAccessState) {
     },
     refuseApiKey: () => refuseApiKey(state),
     getRequestAccess: async () => caller(state).access,
-    isAuthEnabled: () => true,
+    isAuthEnabled: () => !state.authOff,
     isSignedInPerson: () => !caller(state).apiKey,
   };
 }

@@ -21,7 +21,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The answer's `ask` (`{ id, by }`, once) is a teammate's ask to watch the run (Ask to watch), the oldest of the run not handed over yet, for the reporter to put to the developer; the body's `askAnswer` (`{ id, answer: 'not-now' }`) is the developer's answer to an ask of this run. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
+      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The answer's `ask` (`{ id, by }`, once) is a teammate's ask to watch the run (Ask to watch), the oldest of the run not handed over yet, for the reporter to put to the developer; the body's `askAnswer` (`{ id, answer: 'not-now' }`) is the developer's answer to an ask of this run, and its `takesAsks: true` says the reporter takes asks. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -81,6 +81,7 @@ export default eventHandler(async (event) => {
   }
 
   const { projectId } = await authorizeStreamToken(db, id, body.streamToken);
+  liveAsks.noteTakesAsks(id, body);
   liveAsks.answer(id, body.askAnswer);
 
   // Process test cases (supports single or batch)

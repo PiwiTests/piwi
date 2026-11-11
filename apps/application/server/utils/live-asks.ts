@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   ASK_TO_WATCH_MS,
+  TAKES_ASKS_FIELD,
   parseLiveAsk,
   parseLiveAskAnswer,
   type LiveAsk,
@@ -57,6 +58,8 @@ export interface LiveAskEvent extends LiveAskView {
 export class LiveAsks {
   /** By `runId:userId`, oldest first. */
   private readonly asks = new Map<string, PendingAsk>();
+  /** The runs whose reporter said it takes asks (`TAKES_ASKS_FIELD`), the latest `MAX_ASKS`. */
+  private readonly takers = new Set<number>();
 
   constructor(
     private readonly publish: (runId: number, event: LiveAskEvent) => void = (runId, event) =>
@@ -92,6 +95,18 @@ export class LiveAsks {
     this.asks.set(key, pending);
     this.changed(pending, now);
     return { ok: true, ask: this.view(pending, now) };
+  }
+
+  /** The run's reporter said it takes asks, in a body of the run's stream (`TAKES_ASKS_FIELD`). */
+  noteTakesAsks(runId: number, body: unknown): void {
+    if ((body as Record<string, unknown> | null)?.[TAKES_ASKS_FIELD] !== true || this.takers.has(runId)) return;
+    this.takers.add(runId);
+    if (this.takers.size > MAX_ASKS) this.takers.delete(this.takers.values().next().value!);
+  }
+
+  /** Whether the run's reporter said it takes asks: an older one would never put an ask to the developer. */
+  takesAsks(runId: number): boolean {
+    return this.takers.has(runId);
   }
 
   /** The run's oldest ask not handed over to its reporter and not answered, now handed over; null for none. */
@@ -140,6 +155,7 @@ export class LiveAsks {
   /** The run ended: its asks are dropped. */
   endRun(runId: number): void {
     for (const pending of this.ofRun(runId)) this.asks.delete(askKey(runId, pending.userId));
+    this.takers.delete(runId);
   }
 
   /** The project turned its live view or Ask to watch off: the asks of its runs are dropped, none handed over. */
@@ -147,9 +163,13 @@ export class LiveAsks {
     for (const [key, pending] of this.asks) if (pending.projectId === projectId) this.asks.delete(key);
   }
 
-  /** Drop the asks of each run that ends, as the run's lifecycle says. */
+  /**
+   * Drop the asks of each run that ends, as the run's lifecycle says. A run held as interrupted keeps them: it goes on
+   * when its reporter is heard again, as its live view keys do.
+   */
   followRuns(): () => void {
     return runEventBus.subscribeGlobal((event) => {
+      if (event.type === 'run-finished' && event.status === 'interrupted') return;
       if (RUN_ENDS.has(event.type)) this.endRun(event.runId);
     });
   }

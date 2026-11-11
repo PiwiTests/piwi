@@ -245,14 +245,31 @@ function heard(text: string): void {
               color: 'primary' as const,
               onClick: () => {
                 shareWarned = true;
-                void command({ type: 'share', ref, on: true });
+                void command({ type: 'share', ref, on: true }).then((answer) => {
+                  if (answer.ok) return;
+                  toastApi?.add({
+                    title: 'Share live',
+                    description: answer.message,
+                    color: 'warning',
+                    icon: 'i-lucide-info',
+                  });
+                });
               },
             },
             {
               label: 'Not now',
               color: 'neutral' as const,
               variant: 'outline' as const,
-              onClick: () => void command({ type: 'answer-ask', ref, ask }),
+              onClick: () =>
+                void command({ type: 'answer-ask', ref, ask }).then((answer) => {
+                  if (answer.ok) return;
+                  toastApi?.add({
+                    title: 'Not now',
+                    description: answer.message,
+                    color: 'warning',
+                    icon: 'i-lucide-info',
+                  });
+                }),
             },
           ],
         });

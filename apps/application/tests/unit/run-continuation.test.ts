@@ -30,14 +30,22 @@ beforeEach(async () => {
     { id: 2, name: 'admin' },
   ]);
   const at = new Date();
+  // The runs of one machine (`instanceId`), each keyed for the live view.
+  const local = { startTime: at, instanceId: 'machine-a', liveViewKeyDigests: ['d'] };
   await db.insert(schema.testRuns).values([
-    { id: 76, projectId: 1, status: 'cancelled', startTime: at, origin: 'editor' },
-    { id: 77, projectId: 1, status: 'passed', startTime: at, origin: 'editor' },
-    { id: 78, projectId: 1, status: 'running', startTime: at, origin: 'editor' },
-    { id: 79, projectId: 2, status: 'passed', startTime: at, origin: 'editor' },
-    { id: 80, projectId: 1, status: 'passed', startTime: at, origin: 'request', requesterId: 9 },
-    { id: 81, projectId: 1, status: 'running', startTime: at, origin: 'request', requesterId: 9 },
-    { id: 90, projectId: 1, status: 'running', startTime: at, origin: 'editor' },
+    { id: 70, projectId: 1, status: 'passed', origin: 'ci', ...local },
+    { id: 71, projectId: 1, status: 'passed', origin: 'import', ...local },
+    { id: 72, projectId: 1, status: 'passed', origin: 'editor', ...local, liveViewKeyDigests: null },
+    { id: 73, projectId: 1, status: 'running', origin: 'editor', ...local },
+    { id: 74, projectId: 1, status: 'passed', origin: 'editor', ...local, instanceId: 'machine-b' },
+    { id: 76, projectId: 1, status: 'cancelled', origin: 'editor', ...local },
+    { id: 77, projectId: 1, status: 'passed', origin: 'editor', ...local },
+    { id: 78, projectId: 1, status: 'running', origin: 'editor', ...local },
+    { id: 79, projectId: 2, status: 'passed', origin: 'editor', ...local },
+    { id: 80, projectId: 1, status: 'passed', origin: 'request', requesterId: 9, ...local },
+    { id: 81, projectId: 1, status: 'running', origin: 'request', requesterId: 9, ...local },
+    { id: 90, projectId: 1, status: 'running', origin: 'editor', ...local },
+    { id: 91, projectId: 1, status: 'running', origin: 'ci', ...local },
   ]);
   runEvents.length = 0;
   globalEvents.length = 0;
@@ -52,11 +60,18 @@ afterEach(async () => {
   await close();
 });
 
-const run = (id: number, projectId = 1, origin = 'editor', requesterId: number | null = null) => ({
+const run = (
+  id: number,
+  projectId = 1,
+  origin = 'editor',
+  requesterId: number | null = null,
+  instanceId: string | null = 'machine-a',
+) => ({
   id,
   projectId,
   origin,
   requesterId,
+  instanceId,
 });
 
 async function continuedIn(id: number): Promise<number | null> {
@@ -93,6 +108,24 @@ describe('a run that continues an earlier one', () => {
     expect(await continuedIn(90)).toBeNull();
     expect(runEvents).toEqual([]);
     expect(globalEvents).toEqual([]);
+  });
+
+  test('links only an ended run of a developer’s machine, the same one, keyed for the live view', async () => {
+    const db_ = db as unknown as DbClient;
+    // A CI run, an imported report, a run never keyed, one still running and one of another machine stay as they are.
+    for (const earlier of [70, 71, 72, 73, 74])
+      expect(await continueRun(db_, run(78), earlier), `run #${earlier}`).toBe(false);
+    // A CI run continues none, nor a run whose machine is unknown.
+    expect(await continueRun(db_, run(91, 1, 'ci'), 77)).toBe(false);
+    expect(await continueRun(db_, run(78, 1, 'editor', null, null), 77)).toBe(false);
+    for (const earlier of [70, 71, 72, 73, 74, 77]) expect(await continuedIn(earlier)).toBeNull();
+    expect(globalEvents).toEqual([]);
+  });
+
+  test('has a run continue one run at most', async () => {
+    expect(await continueRun(db as unknown as DbClient, run(78), 77)).toBe(true);
+    expect(await continueRun(db as unknown as DbClient, run(78), 76)).toBe(false);
+    expect(await continuedIn(76)).toBeNull();
   });
 
   test('links runs the same people see: a private run to its requester’s private run alone', async () => {

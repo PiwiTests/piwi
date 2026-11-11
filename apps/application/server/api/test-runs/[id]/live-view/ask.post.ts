@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Ask to watch a run nobody shares',
     description:
-      "Asks the developer of a running run outside CI that is not shared live to share it (Ask to watch), naming the caller. The ask reaches the run's reporter in the answer of its next stream request, once, and the tool the run was launched from asks the developer, or its terminal prints it. Answers the caller's ask: its `id`, `by` (the caller's name, as the developer reads it), `answer` (null until the developer answers; `not-now`, or `shared` once a worker of the run shares it) and `waitMs` (how long before the caller may ask again). Each change of the ask comes to the caller on the run's event stream (`live-ask`). A person asks once per five minutes on one run: 429 with `Retry-After` and `waitMs` before that. 403 with authentication off or with an API key: a signed-in person asks. 409 while the project's live view or Ask to watch is off, the run is not running, is a CI run, holds no live view key, or is shared now. Asks are kept in memory, and end with the run. Requires `project:read` on the run's project.",
+      "Asks the developer of a running run outside CI that is not shared live to share it (Ask to watch), naming the caller. The ask reaches the run's reporter in the answer of its next stream request, once, and the tool the run was launched from asks the developer, or its terminal prints it. Answers the caller's ask: its `id`, `by` (the caller's name, as the developer reads it), `answer` (null until the developer answers; `not-now`, or `shared` once a worker of the run shares it) and `waitMs` (how long before the caller may ask again). Each change of the ask comes to the caller on the run's event stream (`live-ask`). A person asks once per five minutes on one run: 429 with `Retry-After` and `waitMs` before that. 403 with authentication off or with an API key: a signed-in person asks. 409 while the project's live view or Ask to watch is off, the run is not running, is a CI run, holds no live view key, is shared now, or its reporter has not said it takes asks (`takesAsks` in the bodies of its stream requests: an older reporter never puts an ask to the developer). Asks are kept in memory, and end with the run. Requires `project:read` on the run's project.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -44,6 +44,14 @@ export default eventHandler(async (event) => {
   if (refusal) throw apiError({ statusCode: 409, message: refusal });
   if (liveViewRelay.workersOf(id).length > 0) {
     throw apiError({ statusCode: 409, message: 'The run is shared live now: watch it from its page.' });
+  }
+  // An older reporter would never put the ask to the developer.
+  if (!liveAsks.takesAsks(id)) {
+    throw apiError({
+      statusCode: 409,
+      message:
+        "This run's reporter does not take asks to watch: the developer needs a newer @piwitests/reporter, or shares the run themselves.",
+    });
   }
 
   const outcome = liveAsks.ask(id, projectId, user.id, user.name || user.username);

@@ -328,7 +328,8 @@ watch(runOver, (over) => {
 /**
  * The run that continued this one, shared after it from the same editor window: as the run said it when the page read
  * it, or as the instance tells it while the page is open (`continued` on the run's stream, `run-continued` once it
- * ended). Told while the page is open, the page says so and opens that run, on the lane its address names.
+ * ended). Told while the page is open, the page says so, and opens that run, on the lane its address names, only when
+ * it followed this run live: a page opened to read an ended run stays where it is.
  */
 const continuedInId = ref<number | null>(testRun.value?.continuedInId ?? null);
 watch(
@@ -346,9 +347,19 @@ const continuedRoute = computed(() => {
 /** How long the page says the run continues elsewhere before it opens that run. */
 const FOLLOW_DELAY_MS = 1500;
 let followTimer: ReturnType<typeof setTimeout> | null = null;
+/** The page showed this run live: a run that continues it is followed there. */
+let followedLive = false;
+watch(
+  isLive,
+  (live) => {
+    if (live) followedLive = true;
+  },
+  { immediate: true },
+);
 function followContinuation(next: unknown): void {
   if (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= Number(runId) || followTimer) return;
   continuedInId.value = next;
+  if (!followedLive) return;
   followTimer = setTimeout(() => {
     followTimer = null;
     if (!pageLeft && continuedRoute.value) void navigateTo(continuedRoute.value);
@@ -615,6 +626,7 @@ function flushPendingEvents() {
         tags?: string[] | null;
         locks?: string[] | null;
         testMeta?: TestCaseResult['testMeta'];
+        testAnnotations?: TestCaseResult['testAnnotations'];
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
@@ -647,6 +659,7 @@ function flushPendingEvents() {
         tags: d.tags ?? null,
         locks: d.locks ?? null,
         testMeta: d.testMeta ?? null,
+        testAnnotations: d.testAnnotations ?? null,
       });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
@@ -701,6 +714,8 @@ function flushPendingEvents() {
             tags: d.tags ?? existing.tags,
             locks: d.locks ?? existing.locks,
             testMeta: d.testMeta ?? existing.testMeta,
+            // The attempt's annotations: a skip ended at a stop reads so on its row and in the header's count.
+            testAnnotations: d.testAnnotations !== undefined ? d.testAnnotations : existing.testAnnotations,
           };
           liveTestCases.value = copy;
           showLive();
