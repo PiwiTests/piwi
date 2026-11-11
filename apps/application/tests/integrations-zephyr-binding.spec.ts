@@ -35,6 +35,8 @@ test.describe('Zephyr Scale — binding and catalog', () => {
       tempDir: resolve('.test-temp', 'zephyr-binding'),
       env: {
         PIWI_E2E_ZEPHYR_MOCK: zephyr.url,
+        // The form's reads wait in the connection's request queue, which allows 20 a minute by default.
+        PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE: '600',
         NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${redirect}`.trim(),
       },
     });
