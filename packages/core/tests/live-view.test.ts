@@ -25,6 +25,9 @@ import {
   readWorkerToInstance,
   compressCallLog,
   MAX_LIVE_CALL_LOG_LINES,
+  MAX_ASK_BY,
+  parseLiveAsk,
+  parseLiveAskAnswer,
 } from '../src/live-view';
 import { LatestPacer, fitViewSize } from '../src/run-view';
 
@@ -445,5 +448,28 @@ describe('the call log a worker posts', () => {
     ]);
     expect(compressCallLog(['a', 'b', 'a', 'b', 'c'])).toEqual(['2 × a', '  - b', '- c']);
     expect(compressCallLog([])).toEqual([]);
+  });
+});
+
+describe('an ask to watch', () => {
+  test('reads an ask, its name on one line without control or direction characters, and refuses a broken one', () => {
+    expect(parseLiveAsk({ id: 'ask_1-a', by: 'Dana' })).toEqual({ id: 'ask_1-a', by: 'Dana' });
+    expect(parseLiveAsk({ id: 'a1', by: ' Dana\n\u202Eevil ' })).toEqual({ id: 'a1', by: 'Dana evil' });
+    expect(parseLiveAsk({ id: 'a1', by: 'x'.repeat(300) })!.by).toHaveLength(MAX_ASK_BY);
+    for (const broken of [
+      null,
+      {},
+      { id: 'a 1', by: 'Dana' },
+      { id: 'a'.repeat(65), by: 'Dana' },
+      { id: 'a1', by: '\u0007' },
+    ]) {
+      expect(parseLiveAsk(broken)).toBeNull();
+    }
+  });
+
+  test('reads the answer that is not to share, and no other', () => {
+    expect(parseLiveAskAnswer({ id: 'a1', answer: 'not-now' })).toEqual({ id: 'a1', answer: 'not-now' });
+    expect(parseLiveAskAnswer({ id: 'a1', answer: 'yes' })).toBeNull();
+    expect(parseLiveAskAnswer({ id: '', answer: 'not-now' })).toBeNull();
   });
 });

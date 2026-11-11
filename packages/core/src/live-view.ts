@@ -541,3 +541,57 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }
+
+/**
+ * **Ask to watch**: a signed-in teammate reading a run that is not shared live asks its developer to share it, once per
+ * `ASK_TO_WATCH_MS` at most. The instance hands the ask to the run's reporter in an answer of the run's stream (`ask` of
+ * the events, heartbeat and live resources answers), once; the reporter hands it to the hub its run reports to
+ * (`run-ask`), whose tool asks the developer where the run was launched, or prints it in its terminal. The developer
+ * shares the run, which the instance sees as its workers stream, or answers `not-now` (`LiveAskAnswer`), which goes back
+ * the same way (`ask-answer`, then `askAnswer` of the next heartbeat).
+ */
+export interface LiveAsk {
+  /** The ask on the instance: 1 to 64 characters of letters, digits, `_` and `-`. */
+  id: string;
+  /** Who asks, as the instance names its user: 1 to 100 characters. */
+  by: string;
+}
+
+/** The developer's answer to an ask that is not to share the run: `not-now`. */
+export interface LiveAskAnswer {
+  id: string;
+  answer: 'not-now';
+}
+
+/** The least time between two asks of one person on one run, in milliseconds. */
+export const ASK_TO_WATCH_MS = 5 * 60_000;
+
+/** The longest name an ask carries. */
+export const MAX_ASK_BY = 100;
+
+/**
+ * The query parameter of a worker's stream that names the run it continues on the instance: the run of the same editor
+ * window shared before it, while the window's runs are shared (`after`). The instance links the earlier run to this one.
+ */
+export const LIVE_VIEW_AFTER_PARAM = 'after';
+
+const ASK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** An ask as the instance sent it, its name on one line; null when it is not one. */
+export function parseLiveAsk(value: unknown): LiveAsk | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id) || typeof value.by !== 'string') {
+    return null;
+  }
+  const by = value.by
+    .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_ASK_BY);
+  return by ? { id: value.id, by } : null;
+}
+
+/** An answer to an ask; null when it is not one. */
+export function parseLiveAskAnswer(value: unknown): LiveAskAnswer | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id)) return null;
+  return value.answer === 'not-now' ? { id: value.id, answer: 'not-now' } : null;
+}

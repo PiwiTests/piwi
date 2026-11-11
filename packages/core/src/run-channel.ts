@@ -21,6 +21,7 @@
  * Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
  * sides. A side ignores a message it cannot read.
  */
+import { parseLiveAsk, parseLiveAskAnswer, type LiveAsk, type LiveAskAnswer } from './live-view';
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
@@ -634,9 +635,11 @@ export type HubToRun =
   | { type: 'events'; on: boolean }
   /**
    * Share the run on the team instance from now on (`on`): open the live view stream with the run's key, or close it,
-   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`.
+   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`. `after`
+   * names the run on the instance this one continues, shared before it from the same editor window
+   * (`LIVE_VIEW_AFTER_PARAM`).
    */
-  | { type: 'share'; on: boolean };
+  | { type: 'share'; on: boolean; after?: number };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -1204,8 +1207,12 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'events':
       return typeof value.on === 'boolean' ? { type: 'events', on: value.on } : null;
-    case 'share':
-      return typeof value.on === 'boolean' ? { type: 'share', on: value.on } : null;
+    case 'share': {
+      if (typeof value.on !== 'boolean') return null;
+      return isInt(value.after, 1)
+        ? { type: 'share', on: value.on, after: value.after }
+        : { type: 'share', on: value.on };
+    }
     default:
       return typeof value.type === 'string' && value.type ? unknown(value.type) : null;
   }
@@ -1338,6 +1345,8 @@ export type RunMainToHub =
       runner?: true;
     }
   | ({ type: 'run-page' } & RunPage)
+  /** A teammate asks to watch the run (`LiveAsk`): the hub's tool asks the developer. */
+  | ({ type: 'run-ask' } & LiveAsk)
   | ({ type: 'run-progress' } & RunCounts)
   | ({
       type: 'run-end';
@@ -1350,6 +1359,17 @@ function readCounts(value: Record<string, unknown>): RunCounts | null {
   const { done, failed, flaky, skipped } = value;
   if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
   return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+}
+
+/** What the hub tells the run's own process: the developer's answer to a teammate's ask to watch. */
+export type HubToMain = { type: 'ask-answer' } & LiveAskAnswer;
+
+/** A line the hub sent the run's own process; null when it is not one. */
+export function parseHubToMain(line: string): HubToMain | null {
+  const value = readJson(line);
+  if (!value || value.type !== 'ask-answer') return null;
+  const answer = parseLiveAskAnswer(value);
+  return answer ? { type: 'ask-answer', ...answer } : null;
 }
 
 /** A line the run's own process sent, checked field by field; null when it is not one. */
@@ -1383,6 +1403,10 @@ export function parseRunMainToHub(line: string): RunMainToHub | null {
     case 'run-page': {
       const page = readRunPage(value);
       return page ? { type: 'run-page', ...page } : null;
+    }
+    case 'run-ask': {
+      const ask = parseLiveAsk(value);
+      return ask ? { type: 'run-ask', ...ask } : null;
     }
     case 'run-progress': {
       const counts = readCounts(value);
