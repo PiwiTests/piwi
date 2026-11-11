@@ -8,7 +8,6 @@ import {
   shareRefusalOf,
   keyTargetOf,
   readRunsBounds,
-  runLevelControls,
   stopKeyOf,
   workerKey,
   shortcutCommands,
@@ -227,34 +226,6 @@ describe('the keys of the stop controls', () => {
     expect(keyTargetOf([one, two], null, (hub) => hub !== two.hub || false)).toBeNull();
     const lost = { ...two, hub: 'ws://127.0.0.1:50999/piwi/hub' };
     expect(keyTargetOf([one, lost], null, (hub) => hub === one.hub)).toMatchObject({ worker: 1 });
-  });
-});
-
-describe('a run’s own controls', () => {
-  it('pauses all while a worker runs, and resumes all while tests are stopped, for a run of several workers', () => {
-    const two = run('a', [worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
-    expect(runLevelControls(two)).toEqual({ pauseAll: true, resumeAll: [] });
-    const both = run('a', [
-      worker({ state: 'stopped', stop: stop('s1') }),
-      worker({ worker: 1, state: 'stopped', stop: stop('s2') }),
-    ]);
-    expect(runLevelControls(both)).toEqual({
-      pauseAll: false,
-      resumeAll: [
-        { hub: both.hub, ref: 'a', worker: 0, action: 'resume', since: 's1' },
-        { hub: both.hub, ref: 'a', worker: 1, action: 'resume', since: 's2' },
-      ],
-    });
-    // One worker has its own Pause and Resume; an ended run, none; a Pause on its way, no second.
-    expect(runLevelControls(run('a', [worker({})]))).toEqual({ pauseAll: false, resumeAll: [] });
-    expect(runLevelControls(run('a', [worker({}), worker({ worker: 1 })], true))).toEqual({
-      pauseAll: false,
-      resumeAll: [],
-    });
-    expect(runLevelControls(run('a', [worker({ pausing: true }), worker({ worker: 1, pausing: true })]))).toEqual({
-      pauseAll: false,
-      resumeAll: [],
-    });
   });
 });
 

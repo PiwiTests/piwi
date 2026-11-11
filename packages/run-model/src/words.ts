@@ -1,5 +1,6 @@
 /**
- * The words of the run model. Each key the model's functions return or use is a key of Piwi Picker's catalogs
+ * The words of the run model: those its functions return or use, and the words of the interface the surfaces share
+ * (a stop's card, its page, its controls). Each key is a key of Piwi Picker's catalogs
  * (`apps/extension/public/_locales/<code>/messages.json`), and a surface says it through its own `RunSpeaker`: the
  * Runs window through its catalogs, in the interface language, and an English surface through `englishRunSpeaker`.
  * `RUN_WORDS_EN` holds the English catalog's message of each key, with its `$name$` placeholders; the extension's
@@ -63,9 +64,65 @@ export const RUN_WORDS_EN = {
     'Choose a request the page made: a page.route() answering it as the server did goes to the editor, which writes it above this line',
   runs_pause: 'Pause',
   runs_pauseTitle: 'Stop the test before its next call',
+  // A run of several workers: its own controls, and a tab for each worker.
+  runs_runControls: 'Run controls',
+  runs_pauseAll: 'Pause all',
+  runs_pauseAllTitle: 'Pause every worker of this run before its next call',
+  runs_resumeAll: 'Resume all',
+  runs_resumeAllTitle: 'Let every stopped test of this run go on',
+  runs_workerTabs: 'Workers',
+  runs_worker: 'worker $number$',
+  // A worker: its test, where it stands, and the code a stop can write.
+  runs_attempt: 'attempt $attempt$',
+  runs_nextLabel: 'Next',
+  runs_whereLabel: 'At',
+  runs_waitedFor: 'for $time$',
+  runs_codeLabel: 'Code',
+  runs_codeActions: 'Code from this stop',
+  runs_codeWarnings: 'What to review in this code',
+  runs_requestsTitle: 'Choose the request to mock',
+  runs_requestsClose: 'Close the list',
+  runs_requestsFilter: 'Filter by address, method or status',
+  runs_requestsNone: 'The test kept no response yet: Piwi keeps the text answers of its fetch and XHR requests.',
+  runs_requestsNoMatch: 'No request matches the filter.',
+  runs_requestNoSize: 'size unknown',
+  runs_requestAt: 'at $time$',
+  runs_run: 'Run',
+  runs_announceStopped: '$test$ stopped at $place$.',
+  runs_announceFailed: '$test$ failed at $place$.',
+  // The test's page: its card, its tools, its image and its live view.
+  runs_pageCaption: 'The test’s page',
+  runs_live: 'Watch live',
+  runs_liveTitle:
+    'Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it',
+  runs_watch: 'Watch',
+  runs_watchTitle:
+    'Show the test’s page as it runs, through its stops and its next tests: at a stop, Interact sends your clicks and keys to it',
+  runs_watchOutdated: 'Update the reporter to watch a running test',
+  runs_watchToUse: 'Watch to use',
+  runs_interact: 'Interact',
+  runs_interactTitle: 'Send your clicks, scrolling and keys to the test’s page, driving this stop: Esc gives it back',
+  runs_pickAt: 'Pick on the image',
+  runs_liveBadge: 'Live',
+  runs_laneRunning: 'Running…',
+  runs_liveAlt: 'Live view of the test’s page',
+  runs_liveAltInput: 'Live view of the test’s page: keys and clicks go to the page',
+  runs_laneAltLast: 'The test’s page, as last seen',
+  runs_imageAlt: 'The test’s page, stopped before: $call$',
+  runs_imageAltFailure: 'The test’s page where it failed: $error$',
+  runs_imageNone: 'No image of the page.',
+  runs_imageLoading: 'Taking an image of the page…',
+  runs_liveStarting: 'Starting the live view…',
+  runs_liveHint:
+    'Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back; Shift+click picks a locator.',
+  // Who drives a stop, taken or given back.
+  runs_takeControl: 'Take control',
+  runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',
+  runs_giveBack: 'Give back',
+  runs_giveBackTitle: 'Give this stop back: an agent may act on it again',
 } as const;
 
-/** A key of the catalogs that the run model's functions return or use. */
+/** A key of the catalogs that the run model's functions return or use, or a word of the interface the surfaces share. */
 export type RunWordKey = keyof typeof RUN_WORDS_EN;
 
 /** The values of a message's placeholders, by name. */

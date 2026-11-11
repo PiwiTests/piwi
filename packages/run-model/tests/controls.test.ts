@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { HubAction, HubStop } from '@piwitests/core/run-hub';
-import { CONTROLS, FOLDED, FOLD_FROM, JOINED, STEERING, controlTitle, controlsOf } from '../src/controls';
+import type { HubAction, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import {
+  CONTROLS,
+  FOLDED,
+  FOLD_FROM,
+  JOINED,
+  STEERING,
+  controlTitle,
+  controlsOf,
+  runLevelControls,
+} from '../src/controls';
 import { englishRunSpeaker as en } from '../src/words';
 import { stop, worker } from './fixtures';
 
@@ -85,5 +94,51 @@ describe('each control’s look', () => {
     expect([...JOINED].every((what) => STEERING.has(what))).toBe(true);
     expect([...FOLDED].some((what) => STEERING.has(what))).toBe(false);
     expect(FOLD_FROM).toBe(5);
+  });
+});
+
+describe('a run’s own controls', () => {
+  const run = (workers: HubWorker[], ended = false): HubSession => ({
+    ref: 'a',
+    root: null,
+    label: null,
+    command: null,
+    project: null,
+    workers,
+    ended,
+  });
+
+  it('pauses all while a worker runs, and resumes all while tests are stopped, for a run of several workers', () => {
+    const two = run([worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
+    expect(runLevelControls(two)).toEqual({ pauseAll: true, resumeAll: [] });
+    const both = run([
+      worker({ state: 'stopped', stop: stop('s1') }),
+      worker({ worker: 1, state: 'stopped', stop: stop('s2') }),
+    ]);
+    expect(runLevelControls(both)).toEqual({
+      pauseAll: false,
+      resumeAll: [
+        { worker: 0, since: 's1' },
+        { worker: 1, since: 's2' },
+      ],
+    });
+    // One worker has its own Pause and Resume; an ended run, none; a Pause on its way, no second.
+    expect(runLevelControls(run([worker({})]))).toEqual({ pauseAll: false, resumeAll: [] });
+    expect(runLevelControls(run([worker({}), worker({ worker: 1 })], true))).toEqual({
+      pauseAll: false,
+      resumeAll: [],
+    });
+    expect(runLevelControls(run([worker({ pausing: true }), worker({ worker: 1, pausing: true })]))).toEqual({
+      pauseAll: false,
+      resumeAll: [],
+    });
+  });
+
+  it('pauses no worker between tests, nor one whose test never stops', () => {
+    const never = { id: 't', title: ['a'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: 'CI' };
+    expect(runLevelControls(run([worker({ state: 'between' }), worker({ worker: 1, test: never })]))).toEqual({
+      pauseAll: false,
+      resumeAll: [],
+    });
   });
 });

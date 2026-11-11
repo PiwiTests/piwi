@@ -1,29 +1,23 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
  * tray a hub session is (`desktopRunRef`, `desktopRunOf`), which live runs report a run's page and which worker runs
- * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), what a worker says and which controls it takes,
- * who else has a run open, watches a worker's page or drives its stop, where a stop stands, and what a code made at a
- * stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s; the stop's place and
- * error, a test's name and what a stop takes come from the run model the tray shares with Piwi Picker's Runs window
- * (`@piwitests/run-model/stop`), as its live view's input does (`@piwitests/run-model/view-input`).
+ * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), where a stop stands, and what a code made at a
+ * stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s. What a worker says,
+ * the controls it takes, who is present, the worker a run's tabs show and which frame is the page now are the run
+ * model's, which the tray shares with Piwi Picker's Runs window (`@piwitests/run-model`), said in its English words
+ * (`desktopSay`), its icons mapped once to the app's (`DESKTOP_RUN_ICONS`).
  */
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
-import type {
-  HubAction,
-  HubCodeAction,
-  HubLive,
-  HubPresence,
-  HubSession,
-  HubStop,
-  HubWorker,
-} from '@piwitests/core/run-hub';
+import type { HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
-import { pagePoint, runFile, stopError, stopIntents, stopPlace, testName } from '@piwitests/run-model/stop';
+import type { ControlIcon } from '@piwitests/run-model/controls';
+import type { WorkerIcon, WorkerTone } from '@piwitests/run-model/status';
+import { pagePoint, runFile, runName, stopSaid } from '@piwitests/run-model/stop';
+import { englishRunSpeaker, type RunWordArgs, type RunWordKey } from '@piwitests/run-model/words';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
-import { stopWords } from '~/utils/stop-words';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -185,31 +179,14 @@ export function desktopLaneRun(key: string): string {
   return key.slice(0, key.lastIndexOf('|lane '));
 }
 
-/** What a running worker says in place of **Watch** when its reporter shows a stopped test alone. */
-export const DESKTOP_WATCH_NEEDS_UPDATE = 'Update the reporter to watch a running test.';
-
-/** Whether a worker's lane can be watched while its test runs (`watch` among what its reporter takes). */
-export function desktopWatchesLane(worker: Pick<HubWorker, 'intents'>): boolean {
-  return worker.intents.includes('watch');
-}
+/** The desktop app's hub, as the run model reads it (`laneWatchOf`): it shows a worker's lane while its test runs. */
+export const DESKTOP_RUN_HUB = { lanes: true } as const;
 
 /** Where a frame of a lane stands: the worker that sent it, its test and the stop it shows (null while it runs). */
 export interface DesktopLaneAt {
   worker: number;
   test: string | null;
   since: string | null;
-}
-
-/**
- * Whether a lane's frame shows the worker's page as it is now: the stop it stands at, else the test it runs. A frame of
- * a stop it went on from, of an earlier test, between two tests or of the worker Playwright ran in the lane before is
- * the page as it last showed.
- */
-export function desktopLaneFrameCurrent(frame: DesktopLaneAt, worker: HubWorker): boolean {
-  if (frame.worker !== worker.worker) return false;
-  const stop = desktopRunStop(worker);
-  if (stop) return frame.since === stop.since;
-  return frame.since === null && worker.state !== 'between' && !!worker.test && frame.test === worker.test.id;
 }
 
 /** Where the clicks and keys on a live image go: a stop of a worker, and whether its input carries click counts. */
@@ -255,84 +232,50 @@ export function desktopRunStop(worker: HubWorker): HubStop | null {
   return worker.state === 'stopped' ? worker.stop : null;
 }
 
-/** What the state line says of a stop an agent asked for (its Pause, Step or Run to), for the person watching. */
-const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], string>> = {
-  pause: 'Paused by the agent',
-  step: 'Stopped after the agent’s step',
-  'run-to': 'Stopped at the line the agent ran it to',
+/** The run model's words as the window says them, in English (`englishRunSpeaker`). */
+export function desktopSay(key: RunWordKey, args?: RunWordArgs): string {
+  return englishRunSpeaker.say(key, args);
+}
+
+/**
+ * The run model's words around one of their placeholders (`slot`), for a surface that sets its value apart (the call
+ * a Pause waits in, as code): the words before it and after it, the other placeholders filled from `args`.
+ */
+export function desktopSaidAround(key: RunWordKey, slot: string, args: RunWordArgs = {}): [string, string] {
+  const mark = '\u0000';
+  const [before = '', after = ''] = desktopSay(key, { ...args, [slot]: mark }).split(mark);
+  return [before, after];
+}
+
+/** The run model's icons (a worker's state, a control) as the app's own (lucide), by their meaning. */
+export const DESKTOP_RUN_ICONS: Record<WorkerIcon | ControlIcon, string> = {
+  'x-circle': 'i-lucide-circle-x',
+  pause: 'i-lucide-pause',
+  clock: 'i-lucide-clock',
+  play: 'i-lucide-play',
+  dot: 'i-lucide-dot',
+  skip: 'i-lucide-redo-dot',
+  next: 'i-lucide-skip-forward',
+  stop: 'i-lucide-square',
+  browser: 'i-lucide-app-window',
+  pick: 'i-lucide-crosshair',
+  record: 'i-lucide-circle-dot',
+  'check-circle': 'i-lucide-circle-check',
+  layers: 'i-lucide-layers',
+  network: 'i-lucide-arrow-down-up',
 };
 
-/** A worker's state line: where it stopped and why, the call a Pause waits in, or whether it runs. */
-export function desktopWorkerState(worker: HubWorker, root: string | null): string {
-  const stop = desktopRunStop(worker);
-  if (stop?.reason === 'failure') return `Failed at ${stopPlace(stop, root)}`;
-  if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? stopWords(stop.reason);
-  if (worker.pausing && worker.waiting) return `Pausing: waits in ${worker.waiting.title}`;
-  if (worker.pausing) return 'Pausing before its next call…';
-  if (worker.state === 'running' || worker.state === 'other') return 'Running';
-  return 'Between tests';
-}
-
-/** Names in a sentence: `A`, `A and B`, `A, B and C`, each once. */
-function namesSaid(names: readonly string[]): string {
-  const once = [...new Set(names)];
-  return once.length < 2 ? (once[0] ?? '') : `${once.slice(0, -1).join(', ')} and ${once.at(-1)}`;
-}
-
-/** A sentence's first letter in capitals. */
-function capitalized(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-/** A tool present on a run as the window names it in a sentence: `you` for this window, another of the app's apart. */
-function presenceName(presence: HubPresence): string {
-  if (presence.self) return 'you';
-  if (presence.kind === 'agent') return 'an agent';
-  if (presence.kind === 'desktop') return 'another window of the app';
-  return presence.name;
-}
-
 /**
- * Who else has a run open, beside this window (`Also open in Piwi Picker · An agent follows this run`); null while
- * nobody does, and from a hub without `presence`.
+ * The color of a worker's tone, from the app's tokens: stopped in the warning color, failed in the error color, running
+ * (and pausing) in the running status color, between tests muted.
  */
-export function desktopRunPresence(session: Pick<HubSession, 'presence'>): string | null {
-  const others = (session.presence ?? []).filter((presence) => !presence.self);
-  const tools = others.filter((presence) => presence.kind !== 'agent').map(presenceName);
-  const said: string[] = [];
-  if (tools.length) said.push(`Also open in ${namesSaid(tools)}`);
-  if (others.some((presence) => presence.kind === 'agent')) said.push('An agent follows this run');
-  return said.length ? said.join(' · ') : null;
-}
-
-/**
- * Who watches a worker's page now (`Watched by Piwi Picker and you`), this window last; null while nobody else does,
- * the window's own view alone being no news.
- */
-export function desktopWorkerWatchers(worker: Pick<HubWorker, 'watchers'>): string | null {
-  const watchers = worker.watchers ?? [];
-  const others = watchers.filter((presence) => !presence.self);
-  if (!others.length) return null;
-  const names = others.map(presenceName);
-  if (watchers.some((presence) => presence.self)) names.push('you');
-  return `Watched by ${namesSaid(names)}`;
-}
-
-/**
- * Who drives a worker's stop, and what the window offers there: **Take control** (`drive` on) from another tool, or
- * while nobody drives it and an agent follows the run (`agentFollows`), and **Give back** what this window drives
- * (`drive` off). Null while nobody drives and no agent follows.
- */
-export function desktopStopDriver(
-  stop: Pick<HubStop, 'driver'>,
-  agentFollows = false,
-): { text: string; offer: 'take' | 'give' | null } | null {
-  const driver = stop.driver;
-  if (!driver) return agentFollows ? { text: 'An agent may act on this stop', offer: 'take' } : null;
-  if (driver.self) return { text: 'You drive this stop', offer: 'give' };
-  if (driver.kind === 'agent') return { text: 'An agent drives this stop', offer: 'take' };
-  return { text: `${capitalized(presenceName(driver))} drives this stop`, offer: 'take' };
-}
+export const DESKTOP_TONE_COLORS: Record<WorkerTone, string> = {
+  stopped: 'var(--ui-warning)',
+  failed: 'var(--ui-error)',
+  pausing: 'var(--color-status-running)',
+  running: 'var(--color-status-running)',
+  between: 'var(--ui-text-muted)',
+};
 
 /**
  * How long the call a Pause waits in has run at `now` (`for 12 s`, `for 2 min 5 s`); null while no Pause waits in a
@@ -343,7 +286,8 @@ export function desktopWaitedFor(worker: HubWorker, now: number): string | null 
   const ms = since ? now - Date.parse(since) : Number.NaN;
   if (!Number.isFinite(ms)) return null;
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  return seconds < 60 ? `for ${seconds} s` : `for ${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  const time = seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  return desktopSay('runs_waitedFor', { time });
 }
 
 /** A Local runs entry, as far as finding the runs it reports goes. */
@@ -428,7 +372,7 @@ export function desktopRowWorker(sessions: readonly HubSession[], row: DesktopRu
 /**
  * A stop's file, relative to the run's folder, and its 1-based line, for a link that opens it in the editor; null for
  * a run with no folder of its own (a reproduction or a bisect step, in a throwaway worktree) or a file outside its
- * folder, whose place shows as text (`desktopStopPlace`).
+ * folder, whose place shows as text (`stopPlace`).
  */
 export function desktopStopLink(
   stop: Pick<HubStop, 'uri' | 'line'>,
@@ -439,71 +383,14 @@ export function desktopStopLink(
   return /^(?:\/|[a-z][a-z\d+.-]*:)/i.test(file) ? null : { file, line: stop.line + 1 };
 }
 
-/** A worker's test, its `describe` blocks' titles then its own; null between tests. */
-export function desktopWorkerTest(worker: HubWorker): string | null {
-  return worker.test ? testName(worker.test) : null;
-}
-
-/** What a worker's test runs under: its Playwright project and its attempt. */
-export function desktopWorkerMeta(worker: HubWorker): string | null {
-  const test = worker.test;
-  if (!test) return null;
-  return [test.project, `attempt ${test.retry + 1}`].filter(Boolean).join(' · ');
-}
-
-/** Where a stop stands, relative to the run's folder: `tests/checkout.spec.ts:5`. */
-export function desktopStopPlace(stop: Pick<HubStop, 'uri' | 'line'>, root: string | null): string {
-  return stopPlace(stop, root);
-}
-
-/** What the window says of a stop it hears: the test, and where it failed or stopped. */
+/** What the window says of a stop it hears: the test, and where it failed or stopped (`stopSaid`). */
 export function desktopStopSaid(session: HubSession, worker: HubWorker, stop: HubStop): string {
-  const test = desktopWorkerTest(worker) ?? desktopRunName(session);
-  const place = desktopStopPlace(stop, session.root);
-  return stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
+  return stopSaid(session, worker, stop, englishRunSpeaker);
 }
 
-/** The error a failure's stop names, its lines kept. */
-export function desktopStopError(stop: Pick<HubStop, 'error' | 'title'>): string {
-  return stopError(stop);
-}
-
-/**
- * The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, Show the browser (`front`)
- * and End the test where the stop takes them (`stop.intents`); Resume alone at a failure, which it ends as it failed,
- * with Show the browser. While a Pause waits for the call the test runs, End the test there (`give-up`), where its
- * worker takes it.
- */
-export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'front' | 'end' | 'give-up';
-
-export function desktopSteering(worker: HubWorker): DesktopSteer[] {
-  const stop = desktopRunStop(worker);
-  if (!stop && worker.pausing) return worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : [];
-  if (!stop) return worker.state === 'between' ? [] : ['pause'];
-  const intents = stopIntents(worker, stop);
-  const front: DesktopSteer[] = intents.includes('front') ? ['front'] : [];
-  if (stop.reason === 'failure') return ['resume', ...front];
-  return ['resume', 'step', 'finish', ...front, ...(intents.includes('end') ? (['end'] as const) : [])];
-}
-
-/**
- * What a stop takes from the window (`stop.intents`): its live view, the input on it while the window watches it, a
- * pick on its image, and the code actions the desktop app makes, Assert a region and Mock a request. Pick, Record and
- * Assert in the test's window end in an editor, and the server refuses them, so they are never offered.
- */
-export function desktopStopTakes(worker: HubWorker, stop: HubStop): HubAction[] {
-  return stopIntents(worker, stop);
-}
-
-/** The code actions a stop offers, in the window's order. */
-export function desktopCodeActions(worker: HubWorker, stop: HubStop): Array<'assert-region' | 'mock'> {
-  const takes = desktopStopTakes(worker, stop);
-  return (['assert-region', 'mock'] as const).filter((what) => takes.includes(what));
-}
-
-/** A run's name: its Piwi project, else its folder. */
+/** A run's name: its Piwi project, else its folder (`runName`). */
 export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): string {
-  return session.project ?? session.label ?? 'Run';
+  return runName(session, englishRunSpeaker);
 }
 
 /**

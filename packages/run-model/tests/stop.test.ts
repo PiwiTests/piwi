@@ -5,11 +5,14 @@ import {
   laneWatchOf,
   pagePoint,
   runFile,
+  runName,
   stopError,
   stopIntents,
   stopPlace,
+  stopSaid,
   testName,
 } from '../src/stop';
+import { englishRunSpeaker } from '../src/words';
 import { stop, worker } from './fixtures';
 
 describe('where a test stands, as text', () => {
@@ -32,6 +35,27 @@ describe('where a test stands, as text', () => {
 
   it('names a test by its describe blocks, then its title', () => {
     expect(testName({ title: ['cart', 'coupons', 'applies WELCOME10'] })).toBe('cart › coupons › applies WELCOME10');
+  });
+
+  it('names a run by its project, else its folder, else as a run', () => {
+    expect(runName({ project: 'Shop', label: 'shop' }, englishRunSpeaker)).toBe('Shop');
+    expect(runName({ project: null, label: 'shop' }, englishRunSpeaker)).toBe('shop');
+    expect(runName({ project: null, label: null }, englishRunSpeaker)).toBe('Run');
+  });
+
+  it('says a stop as it comes: the test, else the run, and where it failed or stopped', () => {
+    const session = { project: 'Shop', label: 'shop', root: '/home/me/shop' };
+    const at = { uri: 'file:///home/me/shop/tests/cart.spec.ts', line: 11 };
+    const test = { test: { title: ['cart', 'applies WELCOME10'] } } as Parameters<typeof stopSaid>[1];
+    expect(stopSaid(session, test, { ...at, reason: 'pause' }, englishRunSpeaker)).toBe(
+      'cart › applies WELCOME10 stopped at tests/cart.spec.ts:12.',
+    );
+    expect(stopSaid(session, test, { ...at, reason: 'failure' }, englishRunSpeaker)).toBe(
+      'cart › applies WELCOME10 failed at tests/cart.spec.ts:12.',
+    );
+    expect(stopSaid(session, { test: null }, { ...at, reason: 'pause' }, englishRunSpeaker)).toBe(
+      'Shop stopped at tests/cart.spec.ts:12.',
+    );
   });
 
   it('names the error a failure stopped at, as its stop says it, else as an older one titles it', () => {

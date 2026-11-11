@@ -1,10 +1,11 @@
 /**
  * A worker's stop as a surface that follows a run reads it (`@piwitests/core/run-hub`): what the stop takes from the
  * surface, whether its worker's lane can be watched and whether a lane's frame shows the worker as it is now, a point
- * of an image of the stopped page in the page's pixels, and where the stop stands, its error and its test's name, as
- * text.
+ * of an image of the stopped page in the page's pixels, and where the stop stands, its error, its test's and its run's
+ * names, and what a surface says of it as it comes, as text.
  */
-import type { HubAction, HubStop, HubTest, HubWorker } from '@piwitests/core/run-hub';
+import type { HubAction, HubSession, HubStop, HubTest, HubWorker } from '@piwitests/core/run-hub';
+import type { RunSpeaker } from './words';
 
 /** The actions in the test's window, which the pause bar shows, or a viewer drives through a headless stop's view. */
 export const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
@@ -120,4 +121,21 @@ export function stopError(stop: Pick<HubStop, 'error' | 'title'>): string {
 /** A test's name: its `describe` blocks' titles, then its own. */
 export function testName(test: Pick<HubTest, 'title'>): string {
   return test.title.join(' › ');
+}
+
+/** A run's name: its Piwi project, else its folder, else the word for a run. */
+export function runName(session: Pick<HubSession, 'project' | 'label'>, speaker: RunSpeaker): string {
+  return session.project ?? session.label ?? speaker.say('runs_run');
+}
+
+/** What a surface says of a stop as it comes: the test (its name, else the run's), and where it failed or stopped. */
+export function stopSaid(
+  session: Pick<HubSession, 'project' | 'label' | 'root'>,
+  worker: Pick<HubWorker, 'test'>,
+  stop: Pick<HubStop, 'reason' | 'uri' | 'line'>,
+  speaker: RunSpeaker,
+): string {
+  const test = worker.test ? testName(worker.test) : runName(session, speaker);
+  const place = stopPlace(stop, session.root);
+  return speaker.say(stop.reason === 'failure' ? 'runs_announceFailed' : 'runs_announceStopped', { test, place });
 }
