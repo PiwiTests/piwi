@@ -15,7 +15,8 @@
  * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a command
  * answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands there.
  * Who else watches its page shows under its test, and at a stop who drives it: **Take control** from an agent, which
- * waits until **Give back**. Everything the hub sends is shown as text.
+ * waits until **Give back**, or **Interact** on its page, turned off again the same. Everything the hub sends is shown
+ * as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
@@ -133,6 +134,17 @@ const busy = ref(false);
 const watchLive = computed({
   get: () => hub.watchesLive(props.session.ref, props.worker.worker),
   set: (on: boolean) => hub.setWatchLive(props.session.ref, props.worker.worker, on),
+});
+/**
+ * Interact, kept by the window for the worker's lane: on, the clicks, the wheel and the keys on its view go to the page
+ * and the window drives the stop; off, a stop the window drives is given back.
+ */
+const interact = computed({
+  get: () => hub.interacts(props.session.ref, props.worker.parallelIndex),
+  set: (on: boolean) => {
+    hub.setInteract(props.session.ref, props.worker.parallelIndex, on);
+    if (stop.value && hub.state.connected && on !== !!stop.value.driver?.self) void drive(on);
+  },
 });
 /** What the last command answered, or what a code made here came to, for the stop it was sent at. */
 const answer = ref<{ since: string | null; ok: boolean; text: string; locator: string | null; warnings: string[] }>();
@@ -351,6 +363,7 @@ onBeforeUnmount(() => {
       :session="session"
       :worker="worker"
       :busy="busy"
+      v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
     />
@@ -363,6 +376,7 @@ onBeforeUnmount(() => {
       :busy="busy"
       :lane-refused="laneRefused"
       v-model:watch-live="watchLive"
+      v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
     />

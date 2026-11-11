@@ -341,7 +341,7 @@ test.describe('Desktop run live view', () => {
       'Mock a request',
     ]);
 
-    // Watch live: its frames take the image's place, and the input goes to the page once the stop takes it.
+    // Watch live: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
     await worker.getByRole('button', { name: 'Watch live' }).click();
     await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => commands.find((c) => c.type === 'view')).toMatchObject({ since: 's1', on: true });
@@ -354,18 +354,28 @@ test.describe('Desktop run live view', () => {
       (event) => window.__hub.send(event),
       session(stopped('s1', { intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'] })),
     );
+    await expect(worker.getByRole('img', { name: 'The page, live', exact: true })).not.toHaveAttribute('tabindex');
+    const interact = worker.getByRole('button', { name: 'Interact' });
+    await expect(interact).toHaveAttribute('aria-pressed', 'false');
+    // Interact takes the stop, and sends the clicks and keys on the view to the page.
+    await interact.click();
+    await expect(interact).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => commands.find((c) => c.type === 'drive')).toMatchObject({ since: 's1', on: true });
     const view = worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
     await expect(view).toBeVisible();
     await expect(view).toHaveAttribute('tabindex', '0');
     await view.click({ position: { x: 20, y: 20 } });
     await expect.poll(() => commands.find((c) => c.type === 'input')).toMatchObject({ since: 's1' });
-    // Escape gives the keyboard back to the tray, on Watch live.
+    // Escape turns Interact off, on Interact.
     await page.keyboard.press('Escape');
-    await expect(worker.getByRole('button', { name: 'Watch live' })).toBeFocused();
+    await expect(interact).toBeFocused();
+    await expect(interact).toHaveAttribute('aria-pressed', 'false');
+    const watched = worker.getByRole('img', { name: 'The page, live', exact: true });
+    await expect(watched).toBeVisible();
 
-    // Pick on the image: the point goes in CSS pixels of the page; the locator shows, to copy.
+    // Pick on the image, Interact off: the point goes in CSS pixels of the page; the locator shows, to copy.
     await worker.getByRole('button', { name: 'Pick on the image' }).click();
-    await view.click({ position: { x: 100, y: 50 } });
+    await watched.click({ position: { x: 100, y: 50 } });
     await expect.poll(() => commands.find((c) => c.type === 'pick-at')).toMatchObject({ since: 's1' });
     await expect(
       worker.getByText("getByRole('button', { name: 'Pay' }): copy it in the desktop app's window."),
@@ -439,13 +449,23 @@ test.describe('Desktop run live view', () => {
         since: 's1',
       });
 
-    // Watch live, left on, watches the worker's next stop too.
+    // Watch live and Interact, left on, watch the worker's next stop too, and send it the input.
+    await interact.click();
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
-    await page.evaluate((event) => window.__hub.send(event), session(stopped('s2', { reason: 'step' })));
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session(stopped('s2', { reason: 'step', intents: ['view', 'input', 'pick-at'] })),
+    );
     await expect(worker.getByText('Stopped after a step')).toBeVisible();
     await expect.poll(() => commands.filter((c) => c.type === 'view').at(-1)).toMatchObject({ since: 's2', on: true });
     await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(interact).toHaveAttribute('aria-pressed', 'true');
+    // Watch live off turns Interact off.
+    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await expect(interact).toHaveCount(0);
+    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await expect(interact).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('shows every stop it hears, ends a test there, a failure with its error, the hub’s text as text, and lets go as it ends', async ({
@@ -804,23 +824,26 @@ test.describe('Desktop run live view', () => {
     await expect(live).not.toHaveAttribute('data-stale');
     await expect(lane.getByText('Live', { exact: true })).toBeVisible();
 
-    // A stop: the lane's frame of the stopped page comes, and the stop takes the clicks on it through the lane, with no
-    // view of its own; Watch live is not offered, the lane shows the stop.
+    // A stop: the lane's frame of the stopped page comes, and with Interact the stop takes the clicks on it through the
+    // lane, with no view of its own; Watch live is not offered, the lane shows the stop.
     const atStop = { ...stopped('s1', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents };
     await page.evaluate((event) => window.__hub.send(event), session(atStop));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
     await expect(lane.getByText('Taking an image of the page…')).toBeVisible();
     await frame('s1');
-    const view = lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
-    await expect(view).toBeVisible();
+    await expect(live).toBeVisible();
     await expect(worker.getByRole('button')).toHaveText([
       'Watch',
+      'Interact',
       'Pick on the image',
       'Resume',
       'Step',
       'Finish',
       'Mock a request',
     ]);
+    await lane.getByRole('button', { name: 'Interact' }).click();
+    const view = lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
+    await expect(view).toBeVisible();
     await view.click({ position: { x: 20, y: 20 } });
     await expect.poll(() => commands.find((c) => c.type === 'input')).toMatchObject({ since: 's1', worker: 0 });
     await worker.getByRole('button', { name: 'Pick on the image' }).click();
@@ -965,7 +988,7 @@ test.describe('Desktop run live view', () => {
     await send(session(WATCHABLE));
     await send(atStop('s3'));
     await frame('s3');
-    await expect(lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' })).toBeVisible();
+    await expect(live).toBeVisible();
     await watch.focus();
     await page.keyboard.press('Enter');
     await expect(watchLive).toBeFocused();

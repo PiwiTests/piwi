@@ -7,8 +7,9 @@
  * (`DesktopRunLiveImage`), which keeps the last one, dimmed and marked as running, until a frame of the page as it is
  * now comes: across a Step, a Resume and between two tests, as the tray opens again or the window shows again (a frame
  * of an earlier view of the lane), and while the lane says why it sends none. At a stop of a test, the stop takes the
- * clicks, the keys and **Pick on the image** on the image as it does on a stop watched live: the window watches the
- * stop through the lane. Turned off, Watch live goes off for the worker too.
+ * clicks, the keys (with **Interact** on, `interact`, which Escape on the image turns off) and **Pick on the image** on
+ * the image as it does on a stop watched live: the window watches the stop through the lane. Turned off, Watch live
+ * and Interact go off for the worker too.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -37,6 +38,8 @@ const emit = defineEmits<{
 }>();
 
 const hub = useDesktopRunHub();
+/** Interact, as the person left it for the worker's lane, kept by the window. */
+const interact = defineModel<boolean>('interact', { default: false });
 
 const runRef = computed(() => props.session.ref);
 const lane = computed(() => props.worker.parallelIndex);
@@ -112,10 +115,12 @@ onBeforeUnmount(() => {
 
 // ── At a stop ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Where the clicks and keys on the image go: the stop it shows, while it takes them. */
+/** The stop the image shows takes the clicks and keys on it: Interact sends them. */
+const canInteract = computed(() => !!stop.value && current.value && takes.value.includes('input'));
+/** Where the clicks and keys on the image go: the stop it shows, while Interact is on. */
 const inputTarget = computed(() => {
   const at = stop.value;
-  return at && current.value && takes.value.includes('input')
+  return at && canInteract.value && interact.value
     ? {
         ref: runRef.value,
         worker: props.worker.worker,
@@ -155,13 +160,23 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape));
 
 // ── Watch ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const watchButton = ref<{ $el: HTMLElement } | null>(null);
+const interactButton = ref<{ $el: HTMLElement } | null>(null);
 
 function toggle(): void {
   const on = !watched.value;
-  // Watch off watches the worker no more, at its stops either.
-  if (!on) hub.setWatchLive(runRef.value, props.worker.worker, false);
+  // Watch off watches the worker no more, at its stops either, and sends nothing to its page.
+  if (!on) {
+    hub.setWatchLive(runRef.value, props.worker.worker, false);
+    if (interact.value) interact.value = false;
+  }
   void hub.setLaneWatch(runRef.value, lane.value, on);
+}
+
+/** Escape on the image: Interact goes off, and the keyboard to its toggle. */
+async function leave(): Promise<void> {
+  interact.value = false;
+  await nextTick();
+  interactButton.value?.$el?.focus();
 }
 
 /** What the image is: live while frames of the page as it is now come, and whether it takes the clicks and keys. */
@@ -189,13 +204,13 @@ const note = computed((): { icon?: string; text: string } | null => {
   >
     <div class="flex flex-wrap gap-1.5">
       <UButton
-        ref="watchButton"
         data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
         icon="i-lucide-eye"
         :aria-pressed="watched"
+        :class="watched ? PRESSED_TOGGLE_CLASS : ''"
         :title="
           watched
             ? 'Stop showing the page of this worker'
@@ -206,6 +221,21 @@ const note = computed((): { icon?: string; text: string } | null => {
         Watch
       </UButton>
       <UButton
+        v-if="canInteract"
+        ref="interactButton"
+        data-focus="page:interact"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-hand"
+        :aria-pressed="interact"
+        :class="interact ? PRESSED_TOGGLE_CLASS : ''"
+        title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
+        @click="interact = !interact"
+      >
+        Interact
+      </UButton>
+      <UButton
         v-if="pickable"
         size="xs"
         color="neutral"
@@ -213,6 +243,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         icon="i-lucide-mouse-pointer-click"
         :aria-pressed="picking"
         :aria-disabled="busy || undefined"
+        :class="picking ? PRESSED_TOGGLE_CLASS : ''"
         title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
         @click="!busy && (picking = !picking)"
       >
@@ -228,7 +259,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       :mark="live ? 'Live' : stop ? null : 'Running…'"
       @pick="pickAt"
       @said="emit('said', $event, {})"
-      @leave="watchButton?.$el?.focus()"
+      @leave="leave"
     />
     <p v-if="note" class="flex items-center gap-1.5 text-xs text-muted">
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" />

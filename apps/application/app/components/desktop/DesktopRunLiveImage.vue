@@ -3,11 +3,11 @@
  * Desktop shell only: the one image element a live view of a worker's page draws into, in the Local runs tray, for a
  * stop's view (`DesktopRunStopPage`) and a lane's (`DesktopRunLaneView`). Each frame is decoded aside and shown once
  * whole, the latest alone waiting meanwhile, and is kept nowhere else (`draw`). While the stop it shows takes the
- * window's input (`input`), the pointer, the wheel and the keys on it go to the page: Tab leaves the image unless a
- * click took the keyboard, and Escape gives it back (`leave`). A Shift+click, or a click while `picking`, names the
- * point under the pointer instead (`pick`). The input and the points come from the Runs window's own logic
- * (`view-input.ts`, `pagePoint`). `dimmed` shows an image that is no longer the page as it is now, and `mark` says
- * over it what it shows.
+ * window's input (`input`, while Interact is on), the pointer, the wheel and the keys on it go to the page: Tab leaves
+ * the image unless a click took the keyboard, and Escape turns Interact off (`leave`). A Shift+click, or a click while
+ * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the Runs window's
+ * own logic (`view-input.ts`, `pagePoint`). `dimmed` shows an image that is no longer the page as it is now, and `mark`
+ * says over it what it shows.
  */
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
 import {
@@ -34,7 +34,7 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer];
   /** A point of the page to name the element at, in CSS pixels of its viewport. */
   pick: [point: { x: number; y: number }];
-  /** Escape gave the keyboard back: the view's own control takes it. */
+  /** Escape on the image: Interact goes off, and its toggle takes the keyboard. */
   leave: [];
 }>();
 
@@ -292,7 +292,8 @@ onBeforeUnmount(() => {
       </span>
     </div>
     <p v-if="inputOn" class="text-xs text-muted">
-      Clicks and keys on the view go to the page. Escape gives the keyboard back; Tab leaves unless a click took it.
+      Clicks and keys on the view go to the page. Escape turns Interact off and gives the stop back; Tab leaves unless a
+      click took it.
     </p>
   </div>
 </template>

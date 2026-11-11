@@ -139,8 +139,8 @@ views are exempt only where a rule says so.
   `variant="ghost"` for a disclosure or a menu trigger; no `warning`, `success` or `soft` buttons for ordinary actions.
   A selection is neutral too: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
   `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
-  of status-colored marks), all in `app/utils/index.ts`. The one exception is a card's header icon (`CARD_ICON_CLASS`,
-  marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
+  of status-colored marks), `PRESSED_TOGGLE_CLASS` (a toggle button that is on), all in `app/utils/index.ts`. The one
+  exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
   affected tests' components (add a new one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered
   pages.
 - **A link inside a sentence keeps the sentence's color**:
