@@ -21,7 +21,7 @@ import {
   noteDemoComplete,
   noteDemoSteps,
 } from './stuck-tests';
-import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
+import { publishDemoGlobalEvent, publishDemoRunEvent, publishDemoRunProgress } from '../run-events';
 import {
   projects,
   testRuns,
@@ -1075,6 +1075,16 @@ export async function apiPostRunEvents(
       skippedTests: updatedRun.skippedTests,
       didNotRunTests: updatedRun.didNotRunTests,
     },
+  });
+  // Also to every list showing the run (the server's `publishRunProgress`).
+  publishDemoRunProgress({
+    runId: id,
+    projectId: testRun.projectId,
+    totalTests: updatedRun.totalTests,
+    passedTests: updatedRun.passedTests,
+    failedTests: updatedRun.failedTests,
+    skippedTests: updatedRun.skippedTests,
+    didNotRunTests: updatedRun.didNotRunTests,
   });
 
   return { success: true, processed: insertedRunCases.length + beginEvents.length, watched: DEMO_RUN_WATCHED };

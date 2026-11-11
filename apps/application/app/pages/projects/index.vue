@@ -25,6 +25,8 @@ const {
   getCachedData: reuseWithinRender,
 });
 const { data: tagsData, refresh: refreshTags } = useFetch<TagsResponse>('/api/tags', { lazy: true });
+// A project whose latest run runs shows that run's latest tally as it comes, with no read of the list.
+const liveRow = useLiveRunProgress();
 const toast = useToast();
 // Creating a project is an instance permission; editing one needs `project:manage` on it.
 const { can } = useAuth();
@@ -366,15 +368,23 @@ function statusFilterText(project: ProjectWithStats): string {
               :ms="row.original.latestRun.duration"
               class="text-sm text-gray-600"
             />
-            <span v-else class="text-xs text-gray-600 italic">No data</span>
+            <span
+              v-else-if="!(row.original.latestRun && isLiveRun(row.original.latestRun))"
+              class="text-xs text-gray-600 italic"
+              >No data</span
+            >
           </template>
           <template #status-cell="{ row }">
             <RunStatusBadge v-if="row.original.latestRun" :status="row.original.latestRun.status" />
             <span v-else class="text-xs text-gray-600 italic">No data</span>
           </template>
           <template #testRatio-cell="{ row }">
+            <RunLiveProgress
+              v-if="row.original.latestRun && isLiveRun(row.original.latestRun)"
+              :run="liveRow(row.original.latestRun)"
+            />
             <TestStatusBar
-              v-if="row.original.latestRun"
+              v-else-if="row.original.latestRun"
               :passed="row.original.latestRun.passedTests"
               :failed="row.original.latestRun.failedTests"
               :skipped="row.original.latestRun.skippedTests"
