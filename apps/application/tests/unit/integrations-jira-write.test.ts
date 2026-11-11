@@ -59,6 +59,69 @@ describe('JiraClient write methods', () => {
     expect(sent.fields.issuetype).toEqual({ id: '10001' });
   });
 
+  test('getIssues reads several issues in one bulk fetch and leaves out the keys Jira rejects', async () => {
+    fetchMock.mockResolvedValueOnce(
+      response({
+        issues: [
+          {
+            id: '10412',
+            key: 'SHOP-412',
+            fields: {
+              summary: 'Saved card declined',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              assignee: null,
+              project: { key: 'SHOP' },
+              issuetype: { name: 'Bug' },
+            },
+          },
+          { id: '10077', key: 'OPS-9', fields: { summary: 'Moved', project: { key: 'OPS' } } },
+        ],
+        issueErrors: [{ issueIdsOrKeys: ['SHOP-999'], status: 404, elementErrors: {} }],
+      }),
+    );
+    const { signal } = new AbortController();
+    const { issues } = await client.getIssues(['SHOP-412', 'SHOP-7', 'SHOP-999'], { signal });
+    expect(issues).toEqual([
+      expect.objectContaining({
+        id: '10412',
+        key: 'SHOP-412',
+        title: 'Saved card declined',
+        status: 'In Progress',
+        statusCategory: 'indeterminate',
+        projectKey: 'SHOP',
+        issueType: 'Bug',
+        url: 'https://acme.atlassian.net/browse/SHOP-412',
+      }),
+      // A moved issue keeps the key Jira gives it now, for the caller to compare with the key it asked.
+      expect.objectContaining({ id: '10077', key: 'OPS-9', projectKey: 'OPS', issueType: null }),
+    ]);
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(url).toBe('https://acme.atlassian.net/rest/api/3/issue/bulkfetch');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      issueIdsOrKeys: ['SHOP-412', 'SHOP-7', 'SHOP-999'],
+      fields: ['summary', 'status', 'assignee', 'project', 'issuetype'],
+    });
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('getIssues sends no request for no keys and stops at the caller abort', async () => {
+    expect(await client.getIssues([])).toEqual({ issues: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const controller = new AbortController();
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) => {
+      expect(init.signal?.aborted).toBe(true);
+      throw init.signal?.reason;
+    });
+    controller.abort(new Error('deadline'));
+    await expect(client.getIssues(['SHOP-1'], { signal: controller.signal })).rejects.toThrow('deadline');
+  });
+
+  test('a failed bulk fetch throws, so the caller links nothing', async () => {
+    fetchMock.mockResolvedValueOnce(response({ errorMessages: ['down'] }, { ok: false, status: 503 }));
+    await expect(client.getIssues(['SHOP-1'])).rejects.toBeInstanceOf(JiraError);
+  });
+
   test('addComment posts an ADF body to the comment endpoint', async () => {
     fetchMock.mockResolvedValueOnce(response({ id: '1' }));
     await client.addComment('PROJ-1', body);

@@ -52,6 +52,18 @@ export interface TrackerIssue {
   /** Badge color token resolved from the category (info / warning / success). */
   statusColor: string | null;
   assignee: TrackerUser | null;
+  /** The key of the project the issue is in now; absent when the tracker did not say. */
+  projectKey?: string | null;
+  /** The issue type's name, e.g. "Bug"; absent when the tracker did not say. */
+  issueType?: string | null;
+}
+
+/** The most keys one bulk lookup takes (Jira Cloud's bulk fetch limit). */
+export const MAX_BULK_ISSUE_KEYS = 100;
+
+/** The issues one bulk lookup found; a key it could not read is left out. */
+export interface TrackerIssueBatch {
+  issues: TrackerIssue[];
 }
 
 export interface CreateIssueInput {
@@ -113,6 +125,11 @@ export interface IssueTracker {
   fetchIcon?(path: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
+  /**
+   * Several issues in one request, at most `MAX_BULK_ISSUE_KEYS`. A key the tracker does not find, or the account
+   * cannot read, is left out instead of failing the request. Throws when the tracker cannot answer.
+   */
+  getIssues?(keys: string[], options?: { signal?: AbortSignal }): Promise<TrackerIssueBatch>;
   addComment(key: string, body: IssueDocument): Promise<void>;
   /** Replace an issue's title and/or description. A tracker without it keeps what Piwi first wrote. */
   updateIssue?(key: string, input: UpdateIssueInput): Promise<void>;
