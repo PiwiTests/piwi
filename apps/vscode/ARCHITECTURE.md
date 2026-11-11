@@ -296,8 +296,8 @@ second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the 
 A test run carries its own ref (`RunCommand.ref`, also in its environment). It runs as a VS Code task (`runAsTask`):
 
 - a `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`);
-- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments
-  (`runTaskName` in `src/glue.ts`);
+- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments, or
+  the command itself when it runs no `playwright test` (`runTaskName` in `src/glue.ts`);
 - it runs in a dedicated terminal, shown and cleared.
 
 Its start sends `piwi/commandStarted`, and `tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on
@@ -305,8 +305,10 @@ every VS Code version and in every shell. **Tasks: Rerun Last Task** runs the sa
 `tasks.onDidStartTaskProcess` sends `piwi/commandStarted` for it, and the service follows it as a rerun of a ref it
 knows.
 
-A command without a ref (`piwi.runCommand`: the Flake Lab, a trace viewer) runs in a terminal instead (`runInTerminal`),
-reused per folder and environment.
+A command the service follows (`piwi.runCommand` with `RunCommandArgs.follow`: a Flake Lab line, a fix plan's
+verification) is asked of `piwi/followCommand` and runs as a test run's task. A command without a ref (a trace viewer,
+an install, a followed command the service did not answer) runs in a terminal instead (`runInTerminal`), reused per
+folder and environment.
 
 ### Running the test at the cursor
 

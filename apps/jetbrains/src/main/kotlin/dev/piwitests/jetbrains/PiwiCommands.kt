@@ -60,7 +60,7 @@ object PiwiCommands {
             "piwi.runTests" -> arg<RunTestsArgs>(arguments.firstOrNull())?.let { runTests(project, it) }
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
             "piwi.openScreenshot" -> arg<TraceParams>(arguments.firstOrNull())?.let { openScreenshot(project, it) }
-            "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command, it.env) }
+            "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { runCommand(project, it) }
             "piwi.copyAgentContext" -> arg<TraceParams>(arguments.firstOrNull())?.let { copyAgentContext(project, it) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
@@ -196,6 +196,22 @@ object PiwiCommands {
                 else -> null
             }
             if (refusal == null) startRun(project, command!!, breakpoints) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
+        }
+    }
+
+    /**
+     * Run a command line of the service: as a test run of its own when the service follows it (`RunCommandArgs.follow`,
+     * `piwi/followCommand`), listed, paused and stopped as the others, else in the Run tool window as it is.
+     */
+    private fun runCommand(project: Project, args: RunCommandArgs) {
+        if (args.follow != true) return run(project, args.cwd, args.command, args.env)
+        background(project, "Piwi: starting the command") {
+            val followed = project.service<PiwiProjectService>().server()?.followCommand(args)?.orNull()
+            if (followed?.ref != null && !followed.command.isNullOrBlank()) {
+                startRun(project, followed, emptyList())
+            } else {
+                run(project, args.cwd, args.command, args.env)
+            }
         }
     }
 
@@ -354,7 +370,7 @@ object PiwiCommands {
                     handler.destroyProcess()
                 } else {
                     RunContentExecutor(project, handler)
-                        .withTitle("Piwi")
+                        .withTitle(Glue.runTabName(command))
                         .withFilter(RunOutputLinks(project, cwd))
                         .withActivateToolWindow(true)
                         .withRerun {

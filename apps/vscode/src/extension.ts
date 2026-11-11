@@ -23,6 +23,7 @@ import {
   AGENT_CONTEXT_REQUEST,
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
+  FOLLOW_COMMAND_REQUEST,
   COMMAND_STARTED_NOTIFICATION,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
@@ -847,7 +848,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
-      runTaskName(command.args),
+      runTaskName(command.args, command.command),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -1354,9 +1355,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
     }),
-    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) =>
-      runInTerminal(args.cwd, args.command, args.env),
-    ),
+    vscode.commands.registerCommand('piwi.runCommand', async (args: RunCommandArgs) => {
+      // A command the service follows runs as a test run of its own, listed, paused and stopped as the others.
+      const followed = args.follow
+        ? await lc.sendRequest<RunCommand | null>(FOLLOW_COMMAND_REQUEST, args).catch(() => null)
+        : null;
+      if (followed) await startRun(followed, []);
+      else runInTerminal(args.cwd, args.command, args.env);
+    }),
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');

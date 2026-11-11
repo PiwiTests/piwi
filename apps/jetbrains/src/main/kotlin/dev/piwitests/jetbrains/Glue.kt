@@ -1481,6 +1481,17 @@ object Glue {
         return if (targets.size > 1) "Piwi: $first and ${targets.size - 1} more" else "Piwi: $first"
     }
 
+    /**
+     * The title of a run's tab in the Run tool window, after what it runs: its first test file and how many more
+     * ([playwrightRunName]), else the tool the command runs (`Piwi: piwi flake`).
+     */
+    fun runTabName(command: String): String {
+        playwrightTestArgs(command)?.let { return playwrightRunName(it) }
+        val parts = splitCommand(command)
+        val tool = parts.drop(if (parts.firstOrNull() == "npx") 1 else 0).take(2).joinToString(" ")
+        return if (tool.isEmpty()) "Piwi" else "Piwi: $tool"
+    }
+
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */
     fun splitCommand(command: String): List<String> {
         val out = mutableListOf<String>()

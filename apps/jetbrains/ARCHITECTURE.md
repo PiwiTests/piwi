@@ -379,7 +379,10 @@ runner does not take, runs in the console; without the runner, the settings page
 
 ### Commands and notifications
 
-`PiwiCommands.run` runs a command in the Run tool window:
+`PiwiCommands.run` runs a command in the Run tool window, its tab named after what it runs (`Glue.runTabName`: the
+first test file and how many more, else the command's tool, `Piwi: piwi flake`). A command the service follows
+(`piwi.runCommand` with `RunCommandArgs.follow`: a Flake Lab line, a fix plan's verification) is asked of
+`piwi/followCommand` and started as a test run (`startRun`), or run as it is when the service answers none. The tab:
 
 - its **Rerun** (`RunContentExecutor.withRerun`) stops the command if it runs, and starts it again with the same
   environment once its process ended and the service heard it (`piwi/commandEnded`), so the rerun's workers start a

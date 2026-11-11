@@ -1312,9 +1312,16 @@ export function coalesced(fn: () => void, schedule: (run: () => void) => void): 
 /** The longest name a test run's task gets: the start of `playwright test` and its arguments. */
 const TASK_NAME_LENGTH = 80;
 
-/** The name of a test run's task: `playwright test` and its arguments, cut at `TASK_NAME_LENGTH` characters. */
-export function runTaskName(args: readonly string[]): string {
-  const name = ['playwright test', ...args].join(' ');
+/**
+ * The name of a test run's task: `playwright test` and its arguments, or, for a command that runs no `playwright test`
+ * itself (`piwi flake …`, a fix plan's verification of several projects), the command, cut at `TASK_NAME_LENGTH`
+ * characters.
+ */
+export function runTaskName(args: readonly string[], command?: string): string {
+  const name =
+    !args.length && command && !/^npx playwright test\b/.test(command)
+      ? command
+      : ['playwright test', ...args].join(' ');
   return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
 }
 

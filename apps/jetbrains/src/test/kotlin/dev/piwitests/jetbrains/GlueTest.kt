@@ -105,6 +105,9 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
         assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
+        // A Run tab is named after what it runs: the tests, else the tool the command runs.
+        assertEquals("Piwi: a.spec.ts:3", Glue.runTabName("npx playwright test tests/a.spec.ts:3 --repeat-each=3"))
+        assertEquals("Piwi: piwi flake", Glue.runTabName("npx piwi flake --test 12 --plan plan.json"))
     }
 
     @Test
