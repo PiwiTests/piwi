@@ -1151,7 +1151,6 @@ class PiwiPluginTest : BasePlatformTestCase() {
             stub.coverageOf(git(dir, "hash-object", "src/BasketService.cs").trim())
             val commandLine = PiwiLspServerDescriptor(project).createCommandLine()
                 .withWorkDirectory(dir)
-            assertTrue(project.service<PiwiLog>().lines().any { "Starting the editor service with Node.js v" in it })
                 .withEnvironment(
                     mapOf(
                         "PIWI_DASHBOARD_URL" to stub.url,
@@ -1159,6 +1158,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                         "PIWI_DESKTOP_CONFIG" to File(dir, "no-desktop.json").path,
                     ),
                 )
+            assertTrue(project.service<PiwiLog>().lines().any { "Starting the editor service with Node.js v" in it })
             val process = commandLine.createProcess()
             try {
                 val client = TestClient()
