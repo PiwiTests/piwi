@@ -114,7 +114,7 @@ function privateFolder(dir: string): boolean {
  * Windows, naming a run channel in a folder this user owns and no other user can enter, which a socket of another
  * user's cannot be in. A named pipe tells no owner, and a file with no time passes as far as the time goes.
  */
-function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
+export function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
   const written = Date.parse(editor.startedAt);
   if (Number.isFinite(written) && !sinceBoot(written, now)) return false;
   if (!editor.runChannel || process.platform === 'win32') return true;

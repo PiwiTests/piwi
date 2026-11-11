@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { formatEditorDiscovery, type EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { McpRouter, machineHosts, type RouterHost } from '../src/cli/mcp.js';
 
@@ -47,7 +48,10 @@ async function fakeHost(token: string, runs: string[], starts: boolean): Promise
           tools: [...(starts ? ['run_start'] : []), ...tools].map((name) => ({
             name,
             description: `${name} of ${token.slice(0, 1)}`,
-            inputSchema: { type: 'object' },
+            inputSchema:
+              name === 'run_start'
+                ? { type: 'object', properties: { file: { type: 'string' }, agent: { type: 'string' } } }
+                : { type: 'object' },
           })),
         });
       }
@@ -86,6 +90,7 @@ beforeAll(async () => {
   folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-mcp-router-'));
   fs.mkdirSync(path.join(folder, 'shop', 'tests'), { recursive: true });
   fs.mkdirSync(path.join(folder, 'admin', 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'admin', 'tests', 'users.spec.ts'), '');
   a = await fakeHost(TOKEN_A, ['ed-a1'], true);
   b = await fakeHost(TOKEN_B, ['ed-b1', 'terminal-1-2'], true);
   hosts = [
@@ -127,7 +132,11 @@ describe('the agents’ router', () => {
   it('forwards one set of the hosts’ run tools, run_start first, and no other tool they serve', async () => {
     const router = new McpRouter({ hosts: async () => hosts });
     const listed = await router.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
-    const tools = (listed!.result as { tools: Array<{ name: string; description: string }> }).tools;
+    const tools = (
+      listed!.result as {
+        tools: Array<{ name: string; description: string; inputSchema: { properties?: Record<string, unknown> } }>;
+      }
+    ).tools;
     expect(tools.map((tool) => tool.name)).toEqual([
       'run_start',
       'run_list',
@@ -136,8 +145,12 @@ describe('the agents’ router', () => {
       'page_snapshot',
       'code_write',
     ]);
-    // One definition per name: the first host's.
-    expect(tools[1]!.description).toBe('run_list of a');
+    // One definition per name: the first host's, run_list saying each run names its host.
+    expect(tools[1]!.description).toBe(
+      'run_list of a Through `piwi mcp`, the runs of every editor with Piwi and of the desktop app, each naming its host (`host`).',
+    );
+    // The router names the agent that starts a run, from its `initialize`: run_start takes no name.
+    expect(Object.keys(tools[0]!.inputSchema.properties ?? {})).toEqual(['file']);
   });
 
   it('lists every host’s runs, each named with its host, and routes a call to the host of its run', async () => {
@@ -177,7 +190,8 @@ describe('the agents’ router', () => {
       params: { protocolVersion: '2025-06-18', clientInfo: { name: 'Claude Code' } },
     });
     b.calls.length = 0;
-    const { body } = await call(router, 'run_start', { file: 'admin/tests/users.spec.ts', line: 4 });
+    // The agent's own `agent` gives way to the name its `initialize` gave.
+    const { body } = await call(router, 'run_start', { file: 'admin/tests/users.spec.ts', line: 4, agent: 'x' });
     expect(body).toMatchObject({ ok: true, run: 'started-b' });
     expect(b.calls).toEqual([
       {
@@ -191,6 +205,138 @@ describe('the agents’ router', () => {
     // A spec no editor's workspace holds starts nothing.
     const elsewhere = await call(router, 'run_start', { file: path.join(os.tmpdir(), 'x.spec.ts') });
     expect(elsewhere.result.isError).toBe(true);
+  });
+
+  it('reads a relative spec against the editors’ folders when the working directory does not hold it', async () => {
+    const router = new McpRouter({ hosts: async () => hosts, cwd: os.tmpdir() });
+    b.calls.length = 0;
+    expect((await call(router, 'run_start', { file: 'tests/users.spec.ts' })).body).toMatchObject({ ok: true });
+    expect(b.calls[0]!.arguments.file).toBe(path.join(folder, 'admin', 'tests', 'users.spec.ts'));
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'names a spec reached through a link under the editor’s own folder',
+    async () => {
+      const link = path.join(folder, 'linked-admin');
+      if (!fs.existsSync(link)) fs.symlinkSync(path.join(folder, 'admin'), link);
+      const router = new McpRouter({ hosts: async () => hosts });
+      b.calls.length = 0;
+      await call(router, 'run_start', { file: path.join(link, 'tests', 'users.spec.ts') });
+      expect(b.calls[0]!.arguments.file).toBe(path.join(folder, 'admin', 'tests', 'users.spec.ts'));
+    },
+  );
+
+  it('answers a message that is no JSON-RPC request, and a failure of its own, with an error', async () => {
+    const router = new McpRouter({ hosts: async () => hosts });
+    expect(await router.handle(null)).toMatchObject({ id: null, error: { code: -32600 } });
+    expect(await router.handle({ jsonrpc: '2.0', id: 3 })).toMatchObject({ id: 3, error: { code: -32600 } });
+    const broken = new McpRouter({
+      hosts: () => Promise.reject(new Error('unreadable discovery folder')),
+    });
+    expect(await broken.handle({ jsonrpc: '2.0', id: 4, method: 'tools/list' })).toMatchObject({
+      id: 4,
+      error: { code: -32603 },
+    });
+  });
+
+  it('cancels a call at its host when the agent cancels it', async () => {
+    let aborted = false;
+    const router = new McpRouter({
+      hosts: async () => hosts.slice(0, 1),
+      post: (_host, body, _ms, signal) => {
+        const name = (body.params as { name?: string }).name;
+        if (name === 'run_list') {
+          const runs = JSON.stringify({ ok: true, message: '', runs: [{ run: 'ed-a1' }] });
+          return Promise.resolve({ jsonrpc: '2.0', id: body.id, result: { content: [{ type: 'text', text: runs }] } });
+        }
+        return new Promise((_resolve, reject) =>
+          signal?.addEventListener('abort', () => {
+            aborted = true;
+            reject(new Error('the agent cancelled the call'));
+          }),
+        );
+      },
+    });
+    const following = router.handle({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'run_follow', arguments: { run: 'ed-a1' } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await router.handle({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 7 } })).toBe(
+      null,
+    );
+    const answer = await following;
+    expect(aborted).toBe(true);
+    expect((answer!.result as { isError?: boolean }).isError).toBe(true);
+  });
+
+  it('sends the desktop app’s token only to a server that proved it holds it', async () => {
+    const heard: string[] = [];
+    const desktop = http.createServer((req, res) => {
+      heard.push(`${req.url} ${req.headers.authorization ?? ''}`);
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{}');
+    });
+    await new Promise<void>((resolve) => desktop.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(desktop.address() as AddressInfo).port}`;
+    try {
+      const unproven: RouterHost = {
+        key: 'desktop',
+        name: 'the desktop app',
+        url: `${base}/mcp`,
+        headers: { authorization: `Bearer ${TOKEN_A}` },
+        roots: [],
+        proves: { server: base, token: TOKEN_A },
+      };
+      const router = new McpRouter({ hosts: async () => [unproven] });
+      const { body } = await call(router, 'run_list');
+      expect(body.message).toContain('the desktop app did not answer');
+      expect(heard.length).toBeGreaterThan(0);
+      expect(heard.every((line) => line.startsWith('/api/health') && !line.includes(TOKEN_A))).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => desktop.close(() => resolve()));
+    }
+  });
+
+  it('reaches a desktop app whose server proved it holds the token', async () => {
+    const heard: string[] = [];
+    const desktop = http.createServer(async (req, res) => {
+      heard.push(req.url ?? '');
+      if (req.url === '/api/health') {
+        const challenge = String(req.headers[DESKTOP_CHALLENGE_HEADER]);
+        const { port } = desktop.address() as AddressInfo;
+        res.writeHead(200, { [DESKTOP_PROOF_HEADER]: await desktopTokenProof(TOKEN_B, port, challenge) }).end('{}');
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        const message = JSON.parse(body) as { id: number };
+        const runs = JSON.stringify({ ok: true, message: '', runs: [{ run: 'desk-1' }] });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: runs }] } }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => desktop.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(desktop.address() as AddressInfo).port}`;
+    try {
+      const proven: RouterHost = {
+        key: 'desktop',
+        name: 'the desktop app',
+        url: `${base}/mcp`,
+        headers: { authorization: `Bearer ${TOKEN_B}` },
+        roots: [],
+        proves: { server: base, token: TOKEN_B },
+      };
+      const { body } = await call(new McpRouter({ hosts: async () => [proven] }), 'run_list');
+      expect(body.runs).toEqual([{ host: 'the desktop app', run: 'desk-1' }]);
+      expect(heard).toEqual(['/api/health', '/mcp']);
+    } finally {
+      await new Promise<void>((resolve) => desktop.close(() => resolve()));
+    }
   });
 
   it('says a host that does not answer, and refuses a tool that is no run tool', async () => {
@@ -212,6 +358,27 @@ describe('the agents’ router', () => {
     now = hosts.slice(0, 1);
     await router.checkHosts();
     expect(told).toEqual([{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+  });
+
+  it('tells the agent once a host that did not answer its tools answers them', async () => {
+    let answers = false;
+    const told: unknown[] = [];
+    const router = new McpRouter({
+      hosts: async () => hosts.slice(0, 1),
+      notify: (message) => told.push(message),
+      post: (_host, body) =>
+        answers
+          ? Promise.resolve({ jsonrpc: '2.0', id: body.id, result: { tools: [] } })
+          : Promise.reject(new Error('starting')),
+    });
+    await router.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    await router.checkHosts();
+    expect(told).toEqual([]);
+    answers = true;
+    await router.checkHosts();
+    expect(told).toEqual([{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+    await router.checkHosts();
+    expect(told.length).toBe(1);
   });
 });
 
@@ -243,6 +410,17 @@ describe('the hosts of this machine', () => {
         mode: 0o600,
       },
     );
+    // A service whose run channel is no socket of this user's is not the one that wrote the file.
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: 'ignore' });
+    fs.writeFileSync(path.join(editors, 'not-a-socket'), '');
+    fs.writeFileSync(
+      path.join(editors, `${other.pid}.json`),
+      formatEditorDiscovery({
+        ...discovery(other.pid!, { url: b.url, token: b.token }),
+        runChannel: { path: path.join(editors, 'not-a-socket'), token: 'c'.repeat(32) },
+      }),
+      { mode: 0o600 },
+    );
     try {
       const found = await machineHosts({
         PIWI_EDITORS_DIR: editors,
@@ -251,20 +429,21 @@ describe('the hosts of this machine', () => {
       expect(found).toEqual([
         {
           key: `editor-${process.pid}`,
-          name: `Editor ${process.pid}`,
+          name: `Editor ${process.pid} (${path.basename(folder)})`,
+          startedAt: expect.any(String),
           url: a.url,
           headers: { authorization: `Bearer ${a.token}` },
           roots: [folder],
         },
       ]);
     } finally {
+      other.kill();
       fs.rmSync(editors, { recursive: true, force: true });
     }
   });
 
-  it('serves them over stdio as `piwi mcp`', async () => {
-    const cli = path.join(__dirname, '..', 'dist', 'cli', 'index.js');
-    if (!fs.existsSync(cli)) return;
+  const cli = path.join(__dirname, '..', 'dist', 'cli', 'index.js');
+  it.skipIf(!fs.existsSync(cli))('serves them over stdio as `piwi mcp`', async () => {
     const child = spawn(process.execPath, [cli, 'mcp'], {
       env: {
         ...process.env,
@@ -281,6 +460,9 @@ describe('the hosts of this machine', () => {
     child.stdin.write(
       `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'run_list', arguments: {} } })}\n`,
     );
+    // A message that is no request, alone or in a batch, is answered with an error.
+    child.stdin.write('null\n');
+    child.stdin.write(`${JSON.stringify([null, { jsonrpc: '2.0', id: 3, method: 'ping' }])}\n`);
     child.stdin.end();
     const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
     expect(code).toBe(0);
@@ -295,5 +477,23 @@ describe('the hosts of this machine', () => {
     };
     expect(listed.isError).toBe(true);
     expect(listed.content[0]!.text).toContain('No editor with Piwi nor the desktop app serves runs');
+    const lines = out.trim().split('\n');
+    expect(lines).toContain(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: 'Invalid Request: a message is a JSON-RPC object.' },
+      }),
+    );
+    expect(lines).toContain(
+      JSON.stringify([
+        {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32600, message: 'Invalid Request: a message is a JSON-RPC object.' },
+        },
+        { jsonrpc: '2.0', id: 3, result: {} },
+      ]),
+    );
   });
 });
