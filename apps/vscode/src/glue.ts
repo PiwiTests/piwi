@@ -893,6 +893,17 @@ export function mcpConfiguration(servers: McpServerDefinition[], format: RunsMcp
   return JSON.stringify(format === 'vscode' ? { servers: entries } : { mcpServers: entries }, null, 2);
 }
 
+/**
+ * The address the editor's agent is given for one of Piwi's servers: the desktop app's leaves its run tools out
+ * (`?runs=off`) while this window lists its own runs' server, so the agent hears one set of run tools.
+ */
+export function agentMcpUrl(server: McpServerDefinition, ownRunsListed: boolean): string {
+  if (!server.desktop || !ownRunsListed) return server.url;
+  const url = new URL(server.url);
+  url.searchParams.set('runs', 'off');
+  return url.href;
+}
+
 /** The formats Piwi's MCP configuration is copied in (`mcpConfiguration`), as the copy command offers them. */
 export const MCP_FORMATS: ReadonlyArray<{ format: RunsMcpFormat; label: string; detail: string }> = [
   {

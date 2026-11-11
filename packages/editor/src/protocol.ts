@@ -388,7 +388,7 @@ export interface RunCommand {
   pauses?: boolean;
   /**
    * Who started the run when a person did not: `Started by Claude Code`, for an agent's run (`piwi/startRun`), which
-   * the client shows with the run's task or tab. Absent for a person's run.
+   * the client says as the run starts (VS Code in its task's name too). Absent for a person's run.
    */
   label?: string;
 }
@@ -880,6 +880,11 @@ export interface McpServerDefinition {
    * connects (no `headers`); `none`, the connection has no key and the instance asks for none.
    */
   authorization: 'key' | 'sign-in' | 'none';
+  /**
+   * The desktop app's bundled server, whose run tools a client that lists its own runs' server to its agent leaves out
+   * by listing this one with `?runs=off`. Absent for another instance.
+   */
+  desktop?: true;
 }
 
 /** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */

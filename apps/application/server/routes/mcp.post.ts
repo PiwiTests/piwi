@@ -140,6 +140,8 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Protocol handshake ──────────────────────────────────────────────────
     case 'initialize': {
       const requested = (params as { protocolVersion?: unknown } | undefined)?.protocolVersion;
+      // `?runs=off` lists no run tool, so the instructions name none.
+      const runsOff = getRequestURL(event).searchParams.get('runs') === 'off';
       return ok(id, {
         protocolVersion: negotiateProtocolVersion(requested),
         capabilities: { tools: {}, prompts: {} },
@@ -158,7 +160,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here; the other prompts are the Piwi workflow skills.' +
           (IS_DESKTOP
             ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file). ' +
-              DESKTOP_AGENT_WORDS.instructions
+              (runsOff ? '' : DESKTOP_AGENT_WORDS.instructions)
             : ''),
       });
     }

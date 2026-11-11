@@ -1816,7 +1816,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     options.publish?.({
       ...discovered,
       ...(runPairing ? { send: runPairing } : {}),
-      ...(agentServer ? { agents: { url: agentServer.url, token: agentServer.token } } : {}),
+      // The token of this process alone: the one the client keeps outlives it, and stays off the disk.
+      ...(agentServer ? { agents: { url: agentServer.url, token: agentServer.localToken } } : {}),
     });
   };
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
@@ -3592,27 +3593,63 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
-   * An agent's run (`run_start`): the spec it names, or the test at a line of it, built as a person's run of it is and
-   * run by the client where the developer sees it, labeled with the agent's name. Refused for a file no Playwright
-   * config of the workspace holds as a spec, and by a client that runs none for an agent.
+   * The file an agent names, as the workspace holds it: an absolute path, or one relative to a folder of the workspace;
+   * a path through a link to a workspace folder is named under that folder. Null when no folder holds it.
    */
-  const startAgentRun = async (start: AgentRunStart): Promise<{ ok: boolean; message: string; run?: string }> => {
+  const workspaceFile = (named: string): string | null => {
+    const candidates = path.isAbsolute(named)
+      ? [path.resolve(named)]
+      : folders.map((folder) => path.resolve(folder, named)).filter((candidate) => fs.existsSync(candidate));
+    for (const candidate of candidates) {
+      if (folders.some((folder) => relativeTo(folder, candidate) !== null)) return candidate;
+      const real = realPath(candidate);
+      for (const folder of folders) {
+        const realFolder = realPath(folder);
+        const inside = real && realFolder ? relativeTo(realFolder, real) : null;
+        if (inside !== null) return path.join(folder, inside);
+      }
+    }
+    return null;
+  };
+  const realPath = (file: string): string | null => {
+    try {
+      return fs.realpathSync(file);
+    } catch {
+      return null;
+    }
+  };
+  /**
+   * The line, from 1, of the test of `file` whose lines hold `line`; `line` itself when no test the spec's text shows
+   * holds it, for Playwright to read.
+   */
+  const testLineAt = (file: string, line: number): number => {
+    const text = readText(file);
+    const call = text === null ? null : testCallAt(text.split(/\r?\n/), line - 1);
+    return call ? call.line + 1 : line;
+  };
+  /**
+   * An agent's run (`run_start`): the spec it names, or the test at a line of it, built as a person's run of it is and
+   * run by the client where the developer sees it, labeled with the agent's name. A line inside a test runs that test.
+   * Refused for a file no Playwright config of the workspace holds as a spec, and by a client that runs none for an
+   * agent.
+   */
+  const startAgentRun = async (
+    start: AgentRunStart,
+  ): Promise<{ ok: boolean; message: string; run?: string; root?: string | null }> => {
     if (!startsRuns)
       return { ok: false, message: 'This editor starts no run for an agent: update its Piwi extension.' };
-    const file = path.isAbsolute(start.file)
-      ? path.resolve(start.file)
-      : (folders.map((folder) => path.resolve(folder, start.file)).find((candidate) => fs.existsSync(candidate)) ??
-        null);
+    const file = workspaceFile(start.file);
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) {
       return { ok: false, message: `${start.file} is no spec of a Playwright config of this workspace.` };
     }
+    const line = start.line === null ? null : testLineAt(file, start.line);
     const command = await runCommandFor({
       uri: pathToFileURL(file).href,
       root: context.root,
       testIds: [],
-      locations: [start.line === null ? relative : `${relative}:${start.line}`],
+      locations: [line === null ? relative : `${relative}:${line}`],
       headed: start.headed,
       holdFailures: start.hold,
     });
@@ -3623,7 +3660,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         command: { ...command, ref: command.ref, label },
       } satisfies StartRunParams)) as StartRunResult | null;
       if (!answer?.ok) return { ok: false, message: answer?.message || 'The editor did not start the run.' };
-      return { ok: true, message: `${answer.message} Follow it with run_follow.`, run: command.ref };
+      return {
+        ok: true,
+        message: `${answer.message} Follow it with run_follow.`,
+        run: command.ref,
+        root: context.root,
+      };
     } catch {
       return { ok: false, message: 'The editor did not start the run.' };
     }
@@ -3820,14 +3862,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }
       // The desktop app has no sign-in: its MCP server takes the app's token alone.
       const authorization = !conn.apiKey ? 'none' : signIn && c.source !== 'desktop' ? 'sign-in' : 'key';
-      // While this window serves its own runs to agents, the desktop app's run tools of the same names are left out:
-      // an agent reaches every run of the machine through `piwi mcp`.
-      const runsOff = c.source === 'desktop' && agentServer !== null;
       servers.push({
         label: `Piwi (${host})`,
-        url: `${conn.serverUrl}/mcp${runsOff ? '?runs=off' : ''}`,
+        url: `${conn.serverUrl}/mcp`,
         headers: authorization === 'key' ? { Authorization: `Bearer ${conn.apiKey}` } : {},
         authorization,
+        ...(c.source === 'desktop' ? { desktop: true as const } : {}),
       });
     }
     return { servers };
@@ -3998,6 +4038,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const { ref } = params;
     runSessions.commandEnded(ref);
     const exitCode = typeof params.exitCode === 'number' ? params.exitCode : null;
+    runAgent.commandEnded(ref, exitCode);
     void runWatch.commandEnded(ref, exitCode).then((reached) => {
       const repeated = repeatedCommands.get(ref);
       if (!repeated || reached) return;

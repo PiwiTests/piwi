@@ -151,6 +151,7 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  agentMcpUrl,
   MCP_FORMATS,
   RUNS_MCP_FORMATS,
   RUNS_MCP_LABEL,
@@ -854,7 +855,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // command with the same ref, which the service follows as a rerun of a run it knows.
   /** The refs of the tasks started from Piwi whose process has not started yet: their start was already sent. */
   const pendingStarts = new Set<string>();
-  const runAsTask = async (command: RunCommand & { ref: string }, env: Record<string, string> | undefined) => {
+  /** Run a test command as a task: whether VS Code started it. */
+  const runAsTask = async (
+    command: RunCommand & { ref: string },
+    env: Record<string, string> | undefined,
+  ): Promise<boolean> => {
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(command.cwd));
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
@@ -874,11 +879,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref: command.ref } satisfies CommandStartedParams);
     try {
       await vscode.tasks.executeTask(task);
+      return true;
     } catch (err) {
       pendingStarts.delete(command.ref);
       void vscode.window.showErrorMessage(`Piwi: could not run the tests: ${(err as Error).message}`);
-      // No task ran, so none will end: the Testing view's run hears it now.
+      // No task ran, so none will end: the Testing view's run hears it now, and the service as its command's end.
       explorer?.taskEnded(command.ref, null);
+      void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
+        ref: command.ref,
+        exitCode: null,
+      } satisfies CommandEndedParams);
+      return false;
     }
   };
   /** The ref of a test run's task; null for another task. */
@@ -1082,9 +1093,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /**
    * Run a test command started with `breakpoints`: its notice shown once, and, when it can pause in the browser
    * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
-   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
+   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`). Whether it started.
    */
-  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]) => {
+  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]): Promise<boolean> => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
@@ -1097,18 +1108,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lastRun = { ...command, env };
     if (command.ref) {
       runControl.started(command.ref, breakpoints);
-      await runAsTask({ ...command, ref: command.ref }, env);
-    } else {
-      runInTerminal(command.cwd, command.command, env);
+      return runAsTask({ ...command, ref: command.ref }, env);
     }
+    runInTerminal(command.cwd, command.command, env);
+    return true;
   };
 
   // An agent's run_start: the command the service built runs as a person's does, its task named after the agent.
-  lc.onRequest(START_RUN_REQUEST, async (params: StartRunParams): Promise<StartRunResult> => {
-    await startRun(params.command, []);
-    void vscode.window.showInformationMessage(`Piwi: ${params.command.label}: ${params.command.command}`);
-    return { ok: true, message: `${vscode.env.appName} runs it.` };
-  });
+  context.subscriptions.push(
+    lc.onRequest(START_RUN_REQUEST, async (params: StartRunParams): Promise<StartRunResult> => {
+      if (!(await startRun(params.command, []))) {
+        return { ok: false, message: `${vscode.env.appName} could not start the task that runs it.` };
+      }
+      void vscode.window.showInformationMessage(`Piwi: ${params.command.label}: ${params.command.command}`);
+      return { ok: true, message: `${vscode.env.appName} runs it.` };
+    }),
+  );
 
   /**
    * Run tests as the service's command for them says, started as the person chose for every run of the window
@@ -1585,6 +1600,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await context.secrets.store(agentsKey, agents.token);
     }
     if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
+    // The desktop app's server is listed without its run tools while this window lists its own runs' server.
+    if (!!agents?.url !== (before !== 'null')) mcpChanged.fire();
   };
   const agentsChanged = async (newToken = false) => {
     const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
@@ -1690,8 +1707,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         onDidChangeMcpServerDefinitions: mcpChanged.event,
         async provideMcpServerDefinitions() {
           const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
+          const ownRunsListed = !!(agents?.url && agents.token);
           return (servers?.servers ?? []).map(
-            (s) => new McpHttpServerDefinition(s.label, vscode.Uri.parse(s.url), s.headers),
+            (s) => new McpHttpServerDefinition(s.label, vscode.Uri.parse(agentMcpUrl(s, ownRunsListed)), s.headers),
           );
         },
       }),

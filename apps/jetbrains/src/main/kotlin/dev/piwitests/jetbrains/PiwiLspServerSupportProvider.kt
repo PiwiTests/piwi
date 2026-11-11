@@ -278,10 +278,6 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     }
 
     /**
-     * Another tool asks through the hub to stop a run this IDE started (Piwi Picker, the desktop app): its process ends,
-     * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
-     */
-    /**
      * Run the command the service built for an agent's `run_start` as a person's run starts, on a pooled thread, and
      * say who started it in a balloon; refused in an untrusted project.
      */
@@ -292,12 +288,19 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
             return CompletableFuture.completedFuture(StartRunResult(false, Glue.UNTRUSTED))
         }
         return CompletableFuture.supplyAsync({
-            PiwiCommands.startRun(project, command, emptyList())
-            command.label?.let { PiwiCommands.notify(project, "$it: ${command.command.orEmpty()}") }
-            StartRunResult(true, "The IDE runs it.")
+            if (!PiwiCommands.startRun(project, command, emptyList())) {
+                StartRunResult(false, "The IDE has no command to run.")
+            } else {
+                command.label?.let { PiwiCommands.notify(project, "$it: ${command.command.orEmpty()}") }
+                StartRunResult(true, "The IDE runs it.")
+            }
         }, AppExecutorUtil.getAppExecutorService())
     }
 
+    /**
+     * Another tool asks through the hub to stop a run this IDE started (Piwi Picker, the desktop app): its process ends,
+     * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
+     */
     @JsonRequest("piwi/stopRun")
     fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> {
         val stopped = project.getServiceIfCreated(PiwiRunSessions::class.java)?.stopRun(params.ref) ?: false

@@ -262,12 +262,16 @@ object PiwiCommands {
      * Run a test command of the service, built with the IDE's `breakpoints`: its notice shown once, and, when it can
      * pause in the browser (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run
      * channel, `PIWI_RUN_CHANNEL`), the Send to editor pairing a locator picked while paused is posted to
-     * (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     * (`PIWI_EDITOR_SEND`). Call it off the event thread. Whether it starts: false for a command with nothing to run, and
+     * in an untrusted project.
      */
-    fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>) {
-        val cwd = command.cwd ?: return
-        val line = command.command?.takeIf { it.isNotBlank() } ?: return
-        if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
+    fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>): Boolean {
+        val cwd = command.cwd ?: return false
+        val line = command.command?.takeIf { it.isNotBlank() } ?: return false
+        if (!project.service<PiwiProjectService>().trusted()) {
+            notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
+            return false
+        }
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
         command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
@@ -283,9 +287,10 @@ object PiwiCommands {
                 val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref) }.getOrDefault(false)
                 if (!started) run(project, cwd, line, env, ref)
             }, project.disposed)
-            return
+            return true
         }
         run(project, cwd, line, env, command.ref)
+        return true
     }
 
     /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread, then run `then`. */
@@ -355,6 +360,8 @@ object PiwiCommands {
                 KillableColoredProcessHandler(commandLine)
             } catch (e: ExecutionException) {
                 notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
+                // No process ran, so none will end: the service hears the command's end now.
+                if (ref != null) commandEnded(project, CommandEndedParams(ref, null))
                 return@executeOnPooledThread
             }
             // Done once the process ended, and the service heard it: what Rerun waits for.
