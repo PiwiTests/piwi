@@ -39,7 +39,8 @@ import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { RunHubLink } from '../internal/streaming/run-hub-link.js';
+import { RunHubLink, countedOutcome } from '../internal/streaming/run-hub-link.js';
+import { TerminalProgress, terminalFeatures } from '../internal/support/terminal.js';
 import {
   collectStepMetrics,
   extractTestStepEvents,
@@ -265,6 +266,8 @@ export class PiwiDashboardReporter {
   private runningTests = new Map<string, { test: TestCase; result: TestResult }>();
   /** Reads the stops the workers note (`readStopNotes`). */
   private stopNotes: StopNotesReader | null = null;
+  /** The run's progress in its terminal's tab or taskbar, for a run outside CI that reports to the dashboard. */
+  private terminalProgress: TerminalProgress | null = null;
   /**
    * The failed attempts with retries left, by `test.id`: each is its test's last failure when no later attempt has a
    * say in its outcome (`decidesOutcome`), the run stopping before the retry or the retry not running.
@@ -445,6 +448,10 @@ export class PiwiDashboardReporter {
     // The run the global setup registered names its page now; the stream names the run it opens, another on a refusal.
     const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
     if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
+    if (this.enabled && terminalFeatures(process.env, !!process.stdout.isTTY).progress) {
+      this.terminalProgress = new TerminalProgress(suite.allTests().length, (text) => process.stdout.write(text));
+      this.terminalProgress.begin();
+    }
     if (!this.enabled) {
       if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
       else if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
@@ -1023,6 +1030,8 @@ export class PiwiDashboardReporter {
     this.stopNotes?.read();
     this.runningTests.delete(test.id);
     this.hubLink?.testEnded(test, result);
+    const counted = this.terminalProgress ? countedOutcome(test, result) : null;
+    if (counted) this.terminalProgress?.testEnded(test.id, counted === 'failed');
     this.totalTests++;
     // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
     const worker = workerIndexOf(result);
@@ -1419,6 +1428,8 @@ export class PiwiDashboardReporter {
     this.stopNotes?.stop();
     this.stopNotes = null;
     await this.hubLink?.end(result?.status ?? 'other');
+    this.terminalProgress?.end();
+    this.terminalProgress = null;
     this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =

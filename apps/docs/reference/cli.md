@@ -132,6 +132,12 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 
 The run source is resolved first-match-wins: `--run-id`, then `--from-file`, then `PIWI_OUTPUT_FILE`, then `./piwi-run.json`. At least one policy rule is required.
 
+- **A quarantined test does not count** toward the failure rules ([CI & sharding](/guide/ci#blocking-a-merge)).
+- **A test that passed on retry satisfies `--require-tag`.**
+- **A required tag that matches no test is a violation**, so a typo cannot pass.
+- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
+  are counted; a read-only key gets the verdict only.
+
 ## `report`
 
 Print a [quality report](/features/quality-reports) from the dashboard, so a CI scheduler can post it every

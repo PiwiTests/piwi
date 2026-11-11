@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Logger } from './logger.js';
 import type { FailureLink } from './failure-links.js';
 import { errorMessage } from './errors.js';
+import { terminalFeatures, terminalLink } from './terminal.js';
 
 /**
  * The facts about a just-submitted run that CI pipelines want to consume: the
@@ -53,11 +54,30 @@ export function emitRunOutputs(
   outputFile?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  logger.info(`View run: ${output.runUrl}`);
+  logger.info(`View run: ${shownUrl(output.runUrl, env)}`);
 
   if (outputFile) writeOutputFile(outputFile, output, logger);
   if (env.GITHUB_ACTIONS) emitGitHubActions(output, env, logger);
   if (env.GITLAB_CI) emitGitLabDotenv(output, env, logger);
+}
+
+/**
+ * The run's page as it starts: `View live progress: <url>` once, a link in a terminal outside CI (`terminalLink`), and on
+ * GitHub Actions a `::notice` with it too, so the job's log and its summary link the run while it runs.
+ */
+export function announceLiveRun(runUrl: string, logger: Logger, env: NodeJS.ProcessEnv = process.env): void {
+  logger.info(`View live progress: ${shownUrl(runUrl, env)}`);
+  if (env.GITHUB_ACTIONS) process.stdout.write(`::notice title=Piwi live run::${workflowCommandValue(runUrl)}\n`);
+}
+
+/** A URL as the run's own terminal shows it: a link (OSC 8) where `terminalFeatures` allows one. */
+function shownUrl(url: string, env: NodeJS.ProcessEnv): string {
+  return terminalFeatures(env, !!process.stdout.isTTY).links ? terminalLink(url) : url;
+}
+
+/** A value of a GitHub Actions workflow command, its `%`, carriage returns and line feeds escaped. */
+function workflowCommandValue(value: string): string {
+  return value.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }
 
 /** Portable machine-readable output: a JSON file readable by any CI system. */
@@ -123,7 +143,7 @@ function emitGitHubActions(output: RunOutput, env: NodeJS.ProcessEnv, logger: Lo
     );
   }
   // A workflow annotation must be a bare stdout line (no logger prefix).
-  process.stdout.write(`::notice title=Piwi test run::${output.runUrl}\n`);
+  process.stdout.write(`::notice title=Piwi test run::${workflowCommandValue(output.runUrl)}\n`);
 }
 
 /** Markdown list of the failed tests for the job summary, capped at `SUMMARY_MAX_FAILURES`. */

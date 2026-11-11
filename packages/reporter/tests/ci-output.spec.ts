@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  announceLiveRun,
   emitResourceSummary,
   emitRunOutputs,
   ciBuildUrlFromMetadata,
@@ -177,13 +178,43 @@ describe('emitRunOutputs — GitHub Actions', () => {
   });
 });
 
+describe('announceLiveRun', () => {
+  it('names the run’s page as it starts, and on GitHub Actions links it from a notice too', () => {
+    const info = vi.spyOn(silentLogger, 'info').mockImplementation(() => {});
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    announceLiveRun(OUTPUT.runUrl, silentLogger, { GITHUB_ACTIONS: 'true' });
+    expect(info).toHaveBeenCalledWith('View live progress: https://dash.example.com/test-runs/42');
+    expect(stdout).toHaveBeenCalledWith('::notice title=Piwi live run::https://dash.example.com/test-runs/42\n');
+
+    stdout.mockClear();
+    announceLiveRun(OUTPUT.runUrl, silentLogger, { GITLAB_CI: 'true' });
+    expect(stdout).not.toHaveBeenCalled();
+  });
+
+  it('escapes what a workflow command would read as its end', () => {
+    vi.spyOn(silentLogger, 'info').mockImplementation(() => {});
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    announceLiveRun('https://dash.example.com/test-runs/42?q=100%\n::error::x', silentLogger, {
+      GITHUB_ACTIONS: 'true',
+    });
+    expect(stdout).toHaveBeenCalledWith(
+      '::notice title=Piwi live run::https://dash.example.com/test-runs/42?q=100%25%0A::error::x\n',
+    );
+  });
+});
+
 describe('emitResourceSummary', () => {
-  const lines = ['Resources: 1 leak', '  leaked   context     tests/cart.spec.ts:4 · 1 test · open 2.0 s past its test'];
+  const lines = [
+    'Resources: 1 leak',
+    '  leaked   context     tests/cart.spec.ts:4 · 1 test · open 2.0 s past its test',
+  ];
 
   it('adds the resource summary to the GitHub job summary as preformatted text', () => {
     const summaryFile = path.join(tmpDir, 'gh-summary');
     emitResourceSummary(lines, silentLogger, { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summaryFile });
-    expect(fs.readFileSync(summaryFile, 'utf8')).toBe(['### Piwi resources', '', '```text', ...lines, '```', '', ''].join('\n'));
+    expect(fs.readFileSync(summaryFile, 'utf8')).toBe(
+      ['### Piwi resources', '', '```text', ...lines, '```', '', ''].join('\n'),
+    );
   });
 
   it('writes nothing outside GitHub Actions, or with nothing to report', () => {
