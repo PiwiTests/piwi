@@ -280,8 +280,9 @@ test counts by its last attempt, so one whose retry passed names nothing:
   comments on it, moves it or updates its description, its status never resolves or reopens the cluster on its own
   (a person can still mark the cluster resolved once it is Done), and the issue body Piwi writes does not list it. The sync refreshes its status and removes it once the issue leaves the bound
   project.
-- **It counts as tracked.** The cluster's known issue is its latest ticket filed or pinned, else the oldest link from
-  its tests that is not Done, else the oldest one. While that issue is not Done, automatic creation files no issue and
+- **It counts as tracked.** The cluster's known issue is its latest ticket filed or pinned while that is not Done,
+  else the oldest link from its tests that is not Done, else that Done ticket, else the oldest link from its tests. So
+  a Done pinned issue gives way to an open one its tests name, though the write-backs still act on the pinned one. While that issue is not Done, automatic creation files no issue and
   the cluster leaves *Needs ticket*; the inbox, the pull-request comment and the `cluster.*` notifications name it.
 - Pinning it with *Link an issue*, by its URL on the connection's site, turns it into a pinned link, which the
   write-backs then act on. The same key on another site stays a plain link beside it.

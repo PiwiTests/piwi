@@ -29,10 +29,12 @@ const { createLink, deleteLink, deleteLinksTo } = await import('../../shared/han
 const { clusterKnownIssues } = await import('../../shared/handlers/known-issues');
 const { linkNamedIssues } = await import('../../shared/handlers/declared-issues');
 const { getOpenFailureClusters } = await import('../../shared/handlers/failure-clusters');
+const { needsTicket } = await import('../../shared/inbox-queues');
 const { getProjectFailureClusters } = await import('../../shared/handlers/projects');
 const { enqueueFixPolicies, enqueueRegressionPolicies } = await import('../../server/utils/integrations/policies');
 const { buildRunIssue } = await import('../../server/utils/integrations/documents');
 const { mergeFailureClusters, splitFailureCluster } = await import('../../shared/handlers/failure-cluster-ops');
+const { gatherAutoCreateFacts } = await import('../../shared/handlers/tracker-automation');
 
 const SITE = 'https://declared.atlassian.net';
 
@@ -777,15 +779,46 @@ describe('links from the tests are read-only', () => {
 });
 
 describe('the known issue', () => {
-  test('is the oldest open link from the tests, before a Done one, and the tracker link above both', async () => {
+  test('is the oldest open link from the tests, before a Done one, and an open tracker link above both', async () => {
     const cluster = await newCluster();
     await pin(cluster, 'PROJ-100', 'annotation', { metadata: { statusCategory: 'done' } });
     await pin(cluster, 'PROJ-412', 'annotation', { metadata: { statusCategory: 'indeterminate' } });
     await pin(cluster, 'PROJ-413', 'annotation', { metadata: { statusCategory: 'new' } });
     expect((await getClusterKnownIssue(dbc, cluster))?.key).toBe('PROJ-412');
 
-    await pin(cluster, 'PROJ-500', 'pinned', { metadata: { statusCategory: 'done' } });
+    await pin(cluster, 'PROJ-500', 'pinned', { metadata: { statusCategory: 'new' } });
     expect((await getClusterKnownIssue(dbc, cluster))?.key).toBe('PROJ-500');
+  });
+
+  /** Whether each list and the automatic creation count a cluster as tracked. */
+  async function trackedBy(cluster: number) {
+    const [row] = (await getOpenFailureClusters(db as never, 'all', 500)).filter((c) => c.id === cluster);
+    const facts = await gatherAutoCreateFacts(db as never, [cluster], { defaultBranch: 'main' });
+    return {
+      inbox: row?.hasKnownIssue,
+      needsTicket: needsTicket({ ...row!, onDefaultBranch: true, firstSeenAt: new Date(0).toISOString() }),
+      autoCreate: facts.get(cluster)?.tracked,
+    };
+  }
+
+  test('a Done pinned issue gives way to an open one its tests name, and the cluster stays tracked', async () => {
+    const cluster = await newCluster();
+    await pin(cluster, 'PROJ-510', 'annotation', { metadata: { statusCategory: 'new' }, statusText: 'To Do' });
+    const pinned = await pin(cluster, 'PROJ-511', 'pinned', { metadata: { statusCategory: 'done' } });
+
+    expect((await getClusterKnownIssue(dbc, cluster))?.key).toBe('PROJ-510');
+    expect(await trackedBy(cluster)).toEqual({ inbox: true, needsTicket: false, autoCreate: true });
+    // The write-backs still go to the pinned issue only.
+    expect((await getClusterTrackerLink(dbc, cluster))?.id).toBe(pinned.id);
+  });
+
+  test('a Done pinned issue stays the known issue when its tests name only Done ones', async () => {
+    const cluster = await newCluster();
+    await pin(cluster, 'PROJ-512', 'annotation', { metadata: { statusCategory: 'done' } });
+    await pin(cluster, 'PROJ-513', 'pinned', { metadata: { statusCategory: 'done' } });
+
+    expect((await getClusterKnownIssue(dbc, cluster))?.key).toBe('PROJ-513');
+    expect(await trackedBy(cluster)).toEqual({ inbox: false, needsTicket: true, autoCreate: false });
   });
 
   test('is the oldest link from the tests when all are Done', async () => {

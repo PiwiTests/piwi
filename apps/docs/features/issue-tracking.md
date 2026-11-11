@@ -45,9 +45,9 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 
 ## The key travels
 
-A cluster's **known issue** is its latest ticket filed or pinned, else one [its tests
-name](#links-the-tests-declare); others stay among its links, which an execution's *Details* also lists. Its key
-follows the failure everywhere:
+A cluster's **known issue** is its ticket filed or pinned, else one [its tests name](#links-the-tests-declare),
+open ones first; others stay among its links, which an execution's *Details* also lists. Its key follows the failure
+everywhere:
 
 - the cluster's **Issue** line and a failing execution's **Cluster** line, the **inbox row** and the execution's row in
   the **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;

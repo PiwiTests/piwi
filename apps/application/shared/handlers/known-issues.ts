@@ -130,8 +130,9 @@ export async function clusterReopenings(db: DrizzleDB, knownIssues: Map<number, 
 
 /**
  * The known issue of each cluster that has one, keyed by cluster id, in one query: the cluster's newest tracker link
- * pinned or created, else its oldest link from the tests whose issue is not Done, else its oldest link from the tests.
- * With `declared` false, links from the tests are left out, as for an issue body Piwi writes.
+ * pinned or created while its issue is not Done, else its oldest link from the tests whose issue is not Done, else
+ * that Done tracker link, else its oldest link from the tests. So a Done pinned issue gives way to an open one its tests
+ * name. With `declared` false, links from the tests are left out, as for an issue body Piwi writes.
  */
 export async function clusterKnownIssues(
   db: DrizzleDB,
@@ -158,6 +159,7 @@ export async function clusterKnownIssues(
     .from(entityLinks)
     .where(and(inArray(entityLinks.failureClusterId, ids), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
+  const tracker = new Map<number, (typeof rows)[number]>();
   const declared = new Map<number, (typeof rows)[number]>();
   const toRef = (row: (typeof rows)[number]): KnownIssueRef => {
     const meta = (row.metadata ?? null) as { statusCategory?: string | null; assignee?: string | null } | null;
@@ -177,9 +179,9 @@ export async function clusterKnownIssues(
   const isDone = (row: (typeof rows)[number]) =>
     (row.metadata as { statusCategory?: string | null } | null)?.statusCategory === 'done';
   for (const row of rows) {
-    if (row.clusterId == null || out.has(row.clusterId) || !isTrackerLink(row)) continue;
+    if (row.clusterId == null || !isTrackerLink(row)) continue;
     if (!isDeclaredLink(row)) {
-      out.set(row.clusterId, toRef(row));
+      if (!tracker.has(row.clusterId)) tracker.set(row.clusterId, row);
       continue;
     }
     if (opts.declared === false) continue;
@@ -187,7 +189,12 @@ export async function clusterKnownIssues(
     const kept = declared.get(row.clusterId);
     if (!kept || !isDone(row) || isDone(kept)) declared.set(row.clusterId, row);
   }
-  for (const [clusterId, row] of declared) if (!out.has(clusterId)) out.set(clusterId, toRef(row));
+  for (const clusterId of new Set([...tracker.keys(), ...declared.keys()])) {
+    const pinned = tracker.get(clusterId);
+    const named = declared.get(clusterId);
+    const row = pinned && (!isDone(pinned) || !named || isDone(named)) ? pinned : named!;
+    out.set(clusterId, toRef(row));
+  }
   return out;
 }
 
