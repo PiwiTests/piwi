@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Per-browser configuration for the "Open in IDE" affordance — which method to
+ * Per-browser configuration for the "Open in editor" affordance — which method to
  * use, the local workspace root that maps a repo-relative path to an absolute
  * one, the VS Code flavor and whether the Piwi extension is installed there,
  * and the JetBrains product/port. Persisted to
@@ -10,13 +10,8 @@
  * Mounted once (in the default layout) and toggled from the file-path chooser
  * and the user menu through the composable's shared `settingsOpen` state.
  */
-import {
-  IDE_METHOD_LABELS,
-  JETBRAINS_PRODUCTS,
-  VSCODE_SCHEME_LABELS,
-  type IdeMethod,
-} from '~/composables/useOpenInIde';
-import type { VscodeScheme } from '~/utils/ide-links';
+import { JETBRAINS_PRODUCTS, VSCODE_SCHEME_LABELS } from '~/composables/useOpenInIde';
+import { IDE_METHOD_LABELS, type IdeMethod, type VscodeScheme } from '~/utils/ide-links';
 import { JETBRAINS_PLUGIN_URL, VSCODE_EXTENSION_URL } from '#shared/companion-links';
 
 const { prefs, settingsOpen, settingsContext, openInIde } = useOpenInIde();
@@ -89,7 +84,7 @@ function testOpen(filePath: string) {
     <template #header>
       <div class="flex items-center gap-2" data-tour="open-in-ide-settings">
         <UIcon name="i-lucide-external-link" class="size-5 text-primary" />
-        <h2 class="text-base font-semibold">Open in IDE</h2>
+        <h2 class="text-base font-semibold">Open in editor</h2>
         <HelpHint topic="ide.open" />
       </div>
     </template>

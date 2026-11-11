@@ -25,7 +25,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 - **`reveal` lists, in order, what makes the anchor show**: `{ query }` selects a tab or pane through the URL;
   `{ unfold: <anchor> }` clicks a folded section's toggle while it reads `aria-expanded="false"`; `{ open: <anchor> }`
   clicks the opener of a menu, drawer or modal when the anchor is not rendered, one step per level (as for the user
-  menu's Open in IDE settings).
+  menu's Open in editor settings).
 - **`parts` lists the parts inside it a stop can number**: an element inside the anchor's element carrying a static
   `data-tour-part` (one line of a block, one control of a row), each with its `id` (kebab-case, unique within the
   anchor), `describes` and, when it does not always render, `shownWhen`. The value is a template's

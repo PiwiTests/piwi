@@ -209,6 +209,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
+     * Call `listener` on the event thread as `onChange` does, also while a modal dialog shows, such as the settings page
+     * that registers it: it only reads what changed.
+     */
+    fun onChangeInDialogs(parent: Disposable, listener: () -> Unit) {
+        dialogListeners += listener
+        com.intellij.openapi.util.Disposer.register(parent) { dialogListeners -= listener }
+    }
+
+    private val dialogListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val dialogChangeQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
      * Whether the project is trusted. In a project opened in safe mode Piwi starts no editor service, runs no command
      * and reads no `.env`: each of them runs what the repository says.
      */
@@ -289,8 +301,30 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
             offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+            noteDotnetPlaywright(found)
         }
     }
+
+    /**
+     * Once per project, on a pooled thread: a trusted project with no Playwright config whose MSBuild project, in the
+     * folders the configs are searched, references Playwright for .NET hears that Piwi reads Playwright Test suites in
+     * JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`). One search at a time reads the flag and sets it.
+     */
+    fun noteDotnetPlaywright(found: Glue.PlaywrightSearch) {
+        if (found.configDirs.isNotEmpty() || !trusted()) return
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+        synchronized(dotnetNoteLock) {
+            if (properties.getBoolean(DOTNET_PLAYWRIGHT_NOTED)) return
+            val home = System.getProperty("user.home")?.let { runCatching { Path.of(it) }.getOrNull() }
+            if (!Glue.holdsDotnetPlaywright(Glue.searchedFolders(found.roots, home)) || gone.value(null)) return
+            properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
+        }
+        PiwiNotifier.create(PiwiNotice.RESULT, Glue.DOTNET_PLAYWRIGHT_NOTE)
+            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
+            .notify(project)
+    }
+
+    private val dotnetNoteLock = Any()
 
     /**
      * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it
@@ -369,6 +403,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)
     }
+
+    /** The id of the Node.js settings page, which **Node.js Settings…** opens. */
+    val nodeSettingsId get() = NODE_SETTINGS_ID
 
     /** The Node.js settings, then the service started again with the interpreter chosen there. */
     fun openNodeSettings() {
@@ -785,6 +822,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     private fun changed() {
         pushed.incrementAndGet()
+        if (dialogListeners.isNotEmpty() && dialogChangeQueued.compareAndSet(false, true)) {
+            ApplicationManager.getApplication().invokeLater({
+                dialogChangeQueued.set(false)
+                dialogListeners.forEach { it() }
+            }, com.intellij.openapi.application.ModalityState.any(), gone)
+        }
         if (!changeQueued.compareAndSet(false, true)) return
         ApplicationManager.getApplication().invokeLater({
             changeQueued.set(false)
@@ -903,6 +946,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
         /** Whether the first-run notification was shown on this installation: an application-level property. */
         const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
+
+        /** Set in the project once it heard `Glue.DOTNET_PLAYWRIGHT_NOTE`. */
+        const val DOTNET_PLAYWRIGHT_NOTED = "piwi.dotnetPlaywrightNoted"
 
         /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
         const val SUMMARY_TTL_MILLIS = 5_000L

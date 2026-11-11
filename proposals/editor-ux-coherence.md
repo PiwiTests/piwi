@@ -19,13 +19,16 @@ JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet), [Q4](
 and actions: the release builds the searchable options index, and a contributor adds the words the labels lack, #1119),
 [Q6](#q6) (a project in safe mode says Piwi waits for its trust, and trusting it starts Piwi, #1119), [Q5](#q5) in part
 (Connect on the settings page applies nothing, Disconnect only when something is saved, worded certificate and 404
-errors and labels on top, #1119; the page opening on the connection in use, [ST9](#st9), and one word per refresh with
-Node.js Settings…, [ST18](#st18), remain), [Q7](#q7) (both failures views say the state the service reads, an
+errors and labels on top, #1119; the page opening on the connection in use with Reconnect, the instance before the desktop
+app, whose field reads Desktop app project:, and what overrides the instance said above its fields, [ST9](#st9);
+Reconnect for the In use group's refresh and Node.js Settings… on the page and in the tool window, [ST18](#st18);
+remaining: a Test Connection apart from Reconnect, and one word per refresh scope), [Q7](#q7) (both failures views say the state the service reads, an
 unreachable instance, no run, a desktop app to restart or no connection, and the commands that read the instance wait
 for a connection, #1120; and [HM7](#hm7)'s '…' menu, Follow worded by its state, as two commands rather than one
 toggled, beside Connect, Open settings and Open the log, #1120), [Q16](#q16) in part (Piwi: Restart the editor service,
 and no toast for a failed request, #1120; [HM19](#hm19)'s status item saying 'Piwi: not running', with Restart and the
-log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [Q8](#q8) in part (Open
+log; Restart in the unreachable tooltip; JetBrains' restart link in its empty text remains, since the plugin's
+status does not yet say that a service which ran has stopped), [Q8](#q8) in part (Open
 in Dashboard on the tool window's selection, [HM5](#hm5), #1120; the tool window's tab named Failures, its icon dotted
 red while tests fail, [HM13](#hm13); each node's hover the service's, [HM9](#hm9); one Group By drop-down and a gear
 menu holding Connect…, Pair, the MCP copies, Refresh and Settings…, [HM6](#hm6); a registered `Piwi.RefreshRun`, Refresh
@@ -61,8 +64,33 @@ the new UI drawing no status bar text under its navigation bar), [Q10](#q10) (a 
 button by state, Stop recording, else Resume at a stop, else Record here, the run's other controls and the recording's
 in its '…' menu as the palette offers them, and the spec, the test at the cursor and Verify ×3 under its Run button,
 [AC5](#ac5), with the VS Code half of [LR3](#lr3)'s title; each button a glyph no other command has, Re-run failing
-taking the table's `$(run-errors)` and the recording's controls the table's recording glyphs; the other commands' icons
-are [Q9](#q9)'s), and every command, setting and action id of both editors registered in D25 and held to the manifests
+taking the table's `$(run-errors)` and the recording's controls the table's recording glyphs), [Q9](#q9) in part (every
+command and action but JetBrains' two toggles with its concept's platform glyph, one with a New UI glyph on 2024.1 and
+2026.3 and a codicon of VS Code 1.91, checked by hand, under a manifest test in each editor that fails on a bare one,
+the stop's code actions in both popups included, [IC1](#ic1); JetBrains' failed mark `TestError` on every surface,
+[IC3](#ic3); Open in Dashboard as an external link, [IC10](#ic10), the run pages keeping the globe until the run node's
+glyph is drawn; the hand-offs' glyphs at the JetBrains end, [IC11](#ic11); remaining, for [M4](#m4) or a platform icon
+found later: JetBrains' Disconnect, Pair, Assert a Region, Mock a Request, Share the Run Live, Run the Tests That Reach
+This File, Reset the Runs' MCP Server Token, Show the Stopped Test's Browser and Share with Playwright Tools, Pause and
+watch and Stop sharing in both, VS Code's Refresh and Run to the cursor, which have no Appendix A row, a glyph of its own
+for JetBrains' Refresh, which shares Refresh the Latest Run's, Record's glyph, `Ide.Macro.Recording_1` having no New UI
+glyph on 2024.1, and JetBrains' Connect, which keeps the user icon), [Q14](#q14) (the timelines word each stop as the run page's rows
+do, `pauseReasonText` reading `stopWords`, [LR15](#lr15), the editors having taken the rows' words before), [Q22](#q22)
+(the dashboard says Open in editor wherever it said Open in IDE, its feature page and the help included, and each
+JetBrains method names the Piwi plugin it asks first, [AC14](#ac14); the VS Code method keeps its name, since it
+reaches the Piwi extension only without a workspace root), [Q21](#q21) (both Marketplace listings, the plugin's
+README and the editors page say what Piwi needs, a desktop app, `npx @piwitests/server` or the Docker image, that it
+reads Playwright Test in JavaScript and TypeScript, and that it is self-hosted with zero telemetry and sends no file of
+the workspace, under `editor-listings.test.ts`, [ST5](#st5); the coverage page says the plugin is verified for compatibility with Rider,
+[RD4](#rd4), whose Rider scene of [M17](#m17) remains; the IDE's Playwright runner named for Rider, documented, and
+its option saying why it is off, [RD5](#rd5); a trusted project with no Playwright config whose MSBuild project, in
+the folders and repository searched for configs, references Playwright for .NET told so once, [RD6](#rd6); the C#
+lines of both listings and the coverage page wait for that scene too), [Q23](#q23) in part (the desktop app says Piwi
+Desktop in its windows, splash, tray, taskbar, quit question, notifications (an update's included) and its MCP bridge's
+errors, and the dashboard's desktop pages and hand-off page say it too, the name `ECOSYSTEM_PIECES` gives it, under
+`desktop-app-name.test.ts`, [AC13](#ac13); its Setup card says Pair with Piwi
+Picker with Picker's link glyph, and Picker's hints name it in every catalog, [AC15](#ac15); remaining: the
+`productName`, which the Start menu, the Dock and Open with show, until §13's item 23 settles the upgrade path), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
@@ -1850,7 +1878,7 @@ in its row unless the row names more, and each quick win lands with the test tha
 | <a id="q18"></a>Q18 | **Run keys give way only to a paused debugger in both editors, and Pause leaves F5 to the debugger in Rider**; VS Code's four keys on `debugState != 'stopped'`, both AGENTS.md bullets updated; a `PiwiRunControlTest` case with a running session | `ide` | [RD1](#rd1), [RD2](#rd2) |
 | <a id="q19"></a>Q19 | **Specs beside a Rider solution open and debug alike**: one list of project roots; a `PiwiOpenHandlerTest` with a sibling `e2e/` | `ide` | [RD3](#rd3) |
 | <a id="q20"></a>Q20 | **Run This Spec runs every test of the file as it stands**, by location; a service test of a spec the instance does not know | `ide` | [AC16](#ac16) |
-| <a id="q21"></a>Q21 | **The listings and the editor pages say what Piwi needs, reads and checks**; `docs-drift.test.ts` holds both listings | `docs` | [ST5](#st5), [RD6](#rd6), [RD5](#rd5), [RD4](#rd4) |
+| <a id="q21"></a>Q21 | **The listings and the editor pages say what Piwi needs, reads and checks**; `editor-listings.test.ts` holds both listings | `docs` | [ST5](#st5), [RD6](#rd6), [RD5](#rd5), [RD4](#rd4) |
 | <a id="q22"></a>Q22 | **The dashboard says Open in editor, and which entry reaches Piwi's plugin**; the localStorage keys kept; `ide-links.test.ts` | `ui` | [AC14](#ac14) |
 | <a id="q23"></a>Q23 | **The desktop app names itself Piwi Desktop, and says Pair**; productName once its upgrade path is checked (§13); a test reads `tauri.conf.json` against `ECOSYSTEM_PIECES` | `desktop` | [AC13](#ac13), [AC15](#ac15) |
 | <a id="q24"></a>Q24 | **One name per worker in both editors**: the stop chooser, JetBrains' Go to rows and both End the test choosers take `workerName(parallelIndex)`; `glue.test.ts` and `GlueTest` | `ide` | [LR17](#lr17) |

@@ -97,7 +97,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         private val at: RangeMarker,
     ) : GutterIconRenderer(), DumbAware {
         override fun getIcon(): Icon = when (line.status) {
-            "failed" -> AllIcons.RunConfigurations.TestFailed
+            "failed" -> PiwiIcons.FAILED
             "flaky" -> AllIcons.General.Warning
             "passed" -> AllIcons.RunConfigurations.TestPassed
             "skipped" -> AllIcons.RunConfigurations.TestIgnored

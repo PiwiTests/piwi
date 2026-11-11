@@ -41,6 +41,8 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private lateinit var urlField: JBTextField
     private lateinit var projectField: JBTextField
     private lateinit var disconnectButton: JButton
+    private lateinit var nodeButton: JButton
+    private lateinit var overridden: JEditorPane
 
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
@@ -54,25 +56,20 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     maxLineLength = 90,
                 )
             }
-            group("Piwi Desktop App") {
+            group("In use") {
                 row {
-                    desktopState = text("").component
+                    inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
                 row {
-                    desktopCheck = checkBox("Read this project from the desktop app while it runs")
-                        .bindSelected({ local.desktop }, { local.desktop = it })
-                        .comment("Before the environment, the .env and the instance below. Kept for you only, in .idea/workspace.xml")
-                        .component
-                }
-                row("Project:") {
-                    desktopProjectField = textField()
-                        .bindText({ local.desktopProject }, { local.desktopProject = it.trim() })
-                        .columns(COLUMNS_LARGE)
-                        .comment("The project's name in the desktop app; empty uses the one linked there to this folder")
-                        .component
+                    button("Reconnect") { service.sendCredentials() }
+                        .comment("Hand the connection to the editor service again, which reads everything with it")
+                    nodeButton = button("Node.js Settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
             group("Instance") {
+                row {
+                    overridden = text("", maxLineLength = 90).align(AlignX.FILL).component
+                }
                 row("Server URL:") {
                     urlField = textField()
                         .bindText({ settings.serverUrl }, { settings.serverUrl = Glue.normalizeServerUrl(it) ?: it.trim() })
@@ -98,6 +95,24 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     button("Connect…") { connect() }
                         .comment("Sign in with the browser, or paste a key, then pick the project")
                     disconnectButton = button("Disconnect") { disconnect() }.component
+                }
+            }
+            group("Piwi Desktop App") {
+                row {
+                    desktopState = text("").component
+                }
+                row {
+                    desktopCheck = checkBox("Read this project from the desktop app while it runs")
+                        .bindSelected({ local.desktop }, { local.desktop = it })
+                        .comment("Before the environment, the .env and the instance below. Kept for you only, in .idea/workspace.xml")
+                        .component
+                }
+                row("Desktop app project:") {
+                    desktopProjectField = textField()
+                        .bindText({ local.desktopProject }, { local.desktopProject = it.trim() })
+                        .columns(COLUMNS_LARGE)
+                        .comment("The project's name in the desktop app; empty uses the one linked there to this folder")
+                        .component
                 }
             }
             group("Runs") {
@@ -153,8 +168,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.playwrightRunner }, { local.playwrightRunner = it })
                         .enabled(PlaywrightRunnerGate.available())
                         .comment(
-                            "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
-                                "(a selection's own). Kept for you only, in .idea/workspace.xml",
+                            if (PlaywrightRunnerGate.available()) {
+                                "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
+                                    "(a selection's own). Kept for you only, in .idea/workspace.xml"
+                            } else {
+                                Glue.NO_PLAYWRIGHT_RUNNER
+                            },
                         )
                 }
             }
@@ -180,20 +199,27 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
             }
-            group("In use") {
-                row {
-                    inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
-                }
-                row {
-                    button("Refresh") {
-                        service.sendCredentials()
-                    }
-                }
-            }
             onReset { show() }
         }
-        service.onChange(disposable!!) { show() }
+        service.onChangeInDialogs(disposable!!) { show() }
         return content
+    }
+
+    /** Whether **Node.js Settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
+    private var nodeSettingsShown = false
+
+    /** The Node.js page in this Settings dialog, else in a dialog of its own. */
+    private fun openNodeSettings(source: java.awt.Component?) {
+        val dialog = source?.let { com.intellij.openapi.options.ex.Settings.KEY.getData(com.intellij.ide.DataManager.getInstance().getDataContext(it)) }
+        val node = dialog?.find(service.nodeSettingsId)
+        if (dialog == null || node == null) return service.openNodeSettings()
+        nodeSettingsShown = true
+        dialog.select(node)
+    }
+
+    override fun disposeUIResources() {
+        super.disposeUIResources()
+        if (nodeSettingsShown) ApplicationManager.getApplication().executeOnPooledThread { service.restartServer() }
     }
 
     override fun apply() {
@@ -229,7 +255,14 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val url = service.settings().serverUrl
         disconnectButton.isEnabled = Glue.disconnectQuestion(url, service.settings().project, service.local().desktop) != null
         if (url.isBlank()) key.text = "None: no instance saved"
-        inUse.text = Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted())
+        inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted()))
+        nodeButton.isVisible = service.startProblem != null
+        // The instance the environment or a .env names comes first: the page shows it, its own fields left as saved.
+        val over = Glue.overriding(service.status, url)
+        overridden.text = over?.let { Glue.escapeHtml(Glue.overriddenText(it)) } ?: ""
+        overridden.isVisible = over != null
+        urlField.emptyText.text = over?.serverUrl ?: ""
+        projectField.emptyText.text = over?.project ?: ""
         // The password safe and the discovery file: read off the event thread.
         val keyLabel = key
         val label = desktopState

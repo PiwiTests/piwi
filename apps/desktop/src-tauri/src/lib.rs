@@ -400,10 +400,14 @@ struct TrayStatusInner {
     run_failed: bool,
 }
 
-const TRAY_TOOLTIP_IDLE: &str = "Piwi Dashboard (click to open)";
+/// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
+/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
+pub(crate) const APP_NAME: &str = "Piwi Desktop";
+const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
 /// it while a run is active and it is restored when the run ends.
-const MAIN_WINDOW_TITLE: &str = "Piwi Dashboard";
+const MAIN_WINDOW_TITLE: &str = APP_NAME;
 
 /// Compose the tray tooltip from the ambient signals. An active run leads; the
 /// unread count follows; the free-form notification status line shows only
@@ -424,7 +428,7 @@ fn compose_tooltip(unread: u32, activity: Option<&str>, progress: Option<&str>) 
     if parts.is_empty() {
         TRAY_TOOLTIP_IDLE.to_string()
     } else {
-        format!("Piwi Dashboard — {}", parts.join(" — "))
+        format!("{APP_NAME} — {}", parts.join(" — "))
     }
 }
 
@@ -1456,7 +1460,7 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
                         .idle(true)
                         .sleep(cfg!(target_os = "linux"))
                         .reason("Playwright tests are running")
-                        .app_name("Piwi Dashboard")
+                        .app_name(APP_NAME)
                         .app_reverse_domain("io.piwitests.dashboard")
                         .create()
                     {
@@ -1975,7 +1979,7 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
     }
     let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
     let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
-        .title("Piwi Dashboard")
+        .title(APP_NAME)
         .inner_size(1200.0, 820.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
@@ -2046,7 +2050,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
     );
     let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
-        .title("Piwi Dashboard")
+        .title(APP_NAME)
         .inner_size(960.0, 640.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .on_document_title_changed(|window, title| {
@@ -2248,7 +2252,8 @@ fn show_server_notification(app: &AppHandle, notification: ServerNotification) {
     if !wanted || main_window_in_front(app) {
         return;
     }
-    let _ = show_notification(app, &notification.title, &notification.body, None, notification.path.as_deref());
+    // Titled with the app's name: the server's title is the dashboard's, for a browser tab, and the facts are its body.
+    let _ = show_notification(app, APP_NAME, &notification.body, None, notification.path.as_deref());
 }
 
 /// How long the notification stream may stay silent before the shell connects
@@ -2676,7 +2681,7 @@ fn quit_after_confirming(app: &AppHandle, app_name: &str) {
 }
 
 /// What the desktop app's questions call it ([`quit_question`]).
-const DESKTOP_APP_NAME: &str = "Piwi";
+const DESKTOP_APP_NAME: &str = APP_NAME;
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -3349,7 +3354,7 @@ pub fn run() {
             });
 
             // --- tray ---
-            let open_i = MenuItemBuilder::with_id("open", "Open Piwi Dashboard").build(app)?;
+            let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
             let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
             let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
             let bg_i = CheckMenuItemBuilder::with_id("run_bg", "Run in background")
@@ -3359,7 +3364,7 @@ pub fn run() {
             let login_i = CheckMenuItemBuilder::with_id("autostart", "Start on login")
                 .checked(autostart_enabled)
                 .build(app)?;
-            let quit_i = MenuItemBuilder::with_id("quit", "Quit Piwi Dashboard").build(app)?;
+            let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&open_i)
@@ -3377,7 +3382,7 @@ pub fn run() {
             let menu_run_bg = run_bg.clone();
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Piwi Dashboard (click to open)")
+                .tooltip(TRAY_TOOLTIP_IDLE)
                 .menu(&menu)
                 // Left-click opens the window; right-click shows the menu.
                 .show_menu_on_left_click(false)
@@ -4268,26 +4273,26 @@ mod tests {
     #[test]
     fn tooltip_composes_run_progress_unread_and_idle() {
         // Idle: nothing to say.
-        assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
+        assert_eq!(compose_tooltip(0, None, None), "Piwi Desktop (click to open)");
         // Unread only, no run in flight.
-        assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
+        assert_eq!(compose_tooltip(2, None, None), "Piwi Desktop — 2 unread");
         assert_eq!(
             compose_tooltip(2, Some("acme-web: failure"), None),
-            "Piwi Dashboard — 2 unread — acme-web: failure"
+            "Piwi Desktop — 2 unread — acme-web: failure"
         );
         // A run in flight leads and its label is what shows.
         assert_eq!(
             compose_tooltip(0, None, Some("Running 7/12…")),
-            "Piwi Dashboard — Running 7/12…"
+            "Piwi Desktop — Running 7/12…"
         );
         // Both signals: the run leads, the count follows, the notification status
         // line is dropped (the run is the more useful thing to surface).
         assert_eq!(
             compose_tooltip(3, Some("acme-web: failure"), Some("Running 7/12…")),
-            "Piwi Dashboard — Running 7/12… — 3 unread"
+            "Piwi Desktop — Running 7/12… — 3 unread"
         );
         // Empty strings are treated as absent, not shown as blanks.
-        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Dashboard (click to open)");
+        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Desktop (click to open)");
     }
 
     #[test]

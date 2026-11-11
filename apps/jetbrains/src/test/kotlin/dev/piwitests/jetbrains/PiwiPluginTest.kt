@@ -104,6 +104,32 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
     }
 
+    /**
+     * Every action draws a platform icon, but a toggle (its menu row shows a check mark) and those waiting for a glyph
+     * Piwi draws; a stop's code actions draw the same in its popups (`PiwiIcons.stopAction`).
+     */
+    fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
+        val actions = ActionManager.getInstance()
+        val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
+        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
+        val awaiting = setOf(
+            "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
+            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright",
+        )
+        val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
+        val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
+        assertEquals(toggles + awaiting, bare)
+        for (id in toggles) assertTrue(id, actions.getAction(id) is com.intellij.openapi.actionSystem.ToggleAction)
+        val registered = mapOf(
+            Glue.StopAction.PICK to "Piwi.PickAtStop", Glue.StopAction.RECORD to "Piwi.RecordAtStop",
+            Glue.StopAction.ASSERT to "Piwi.AssertAtStop", Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
+            Glue.StopAction.MOCK to "Piwi.MockAtStop",
+        )
+        for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
+        assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+    }
+
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
     fun testTheEditorsPiwiSubmenuShowsNothingAtRestOnAFileOfNoTests() {
         myFixture.configureByText("notes.md", "# Notes")

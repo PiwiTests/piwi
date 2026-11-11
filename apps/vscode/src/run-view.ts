@@ -985,7 +985,7 @@ export function registerRunControl(
     const offered = stopActions(stop);
     if (!offered.length) return say('no code can be written from this stop.');
     const picked = await vscode.window.showQuickPick(
-      offered.map((a) => ({ label: a.title, detail: a.detail, action: a.action })),
+      offered.map((a) => ({ label: `${a.icon} ${a.title}`, detail: a.detail, action: a.action })),
       { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}: write what?` },
     );
     if (picked) await startAction(picked.action, targetOf(stop));

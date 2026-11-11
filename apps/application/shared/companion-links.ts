@@ -1,7 +1,7 @@
 /**
  * Where Piwi's separately installed tools are published: the store listings and
  * download pages the dashboard links to (the user menu's Piwi tools, Settings →
- * Companion tools, the Open in IDE dialog).
+ * Companion tools, the Open in editor dialog).
  */
 
 /** Piwi Picker for Chrome, Edge and other Chromium browsers. */

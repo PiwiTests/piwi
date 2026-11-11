@@ -116,7 +116,7 @@ Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` [opti
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
 
 - **Source → Full stack**: the failing action's whole call stack, each frame with its source,
-  dependency frames folded, Open in IDE on your project's frames.
+  dependency frames folded, Open in editor on your project's frames.
 - **Network → Full trace**: every request the page made, on a waterfall with the failing action's window shaded, with
   timing phases, headers and a capped body preview. Sensitive headers and token-shaped strings are masked on the server.
 

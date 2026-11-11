@@ -324,7 +324,7 @@ export function statusBarView(
         which,
         'Piwi reads it again on its own.',
         hint,
-        `[Retry](command:piwi.refresh) · ${connect}`,
+        `[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · ${connect}`,
       ),
       action: 'retry',
       url: null,

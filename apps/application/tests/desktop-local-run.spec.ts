@@ -421,7 +421,7 @@ test.describe('Desktop local run', () => {
     const output = outputPage.getByRole('region', { name: 'Run output' });
     await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect(output.getByRole('heading', { name: `1 failed test of run #${runId}` })).toBeVisible();
-    await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Dashboard`);
+    await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Desktop`);
 
     // Lines keep arriving in the window, and the run stops from it.
     await page.evaluate(() => window.__piwiFakeTauri.emitLine('  \u001b[32m1 passed\u001b[39m (2.0s)'));

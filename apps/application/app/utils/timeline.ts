@@ -4,6 +4,7 @@
  * and the presentational sub-components can all share one source of truth.
  */
 import { statusPalette } from './status-palette';
+import { stopWords } from './stop-words';
 
 /** Fixed pixel geometry for the timeline SVG. */
 export const TIMELINE_LAYOUT = {
@@ -152,13 +153,12 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
-/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`, `Paused` for a Pause. */
+/**
+ * What a stop at Piwi's pause bar or in the editor was, in the run page's words for its reason (`stopWords`): `Stopped
+ * at a breakpoint`, `Paused` for a Pause. A stop whose reporter named no reason was at a breakpoint.
+ */
 export function pauseReasonText(reason: string | null | undefined): string {
-  if (reason === 'step') return 'Paused after Step';
-  if (reason === 'pause') return 'Paused';
-  if (reason === 'run-to') return 'Paused at the line run to';
-  if (reason === 'page-pause') return 'Paused at page.pause()';
-  return 'Paused at a breakpoint';
+  return stopWords(reason ?? 'breakpoint');
 }
 
 /**

@@ -187,6 +187,7 @@
       {
         "command": "piwi.disconnect",
         "title": "Disconnect",
+        "icon": "$(debug-disconnect)",
         "category": "Piwi"
       },
       {
@@ -198,11 +199,13 @@
       {
         "command": "piwi.openLog",
         "title": "Open the log",
+        "icon": "$(output)",
         "category": "Piwi"
       },
       {
         "command": "piwi.getStarted",
         "title": "Get started",
+        "icon": "$(book)",
         "category": "Piwi"
       },
       {
@@ -213,6 +216,7 @@
       {
         "command": "piwi.restartService",
         "title": "Restart the editor service",
+        "icon": "$(debug-restart)",
         "category": "Piwi"
       },
       {
@@ -224,6 +228,7 @@
       {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
+        "icon": "$(beaker)",
         "category": "Piwi"
       },
       {
@@ -247,18 +252,20 @@
       {
         "command": "piwi.runSelection",
         "title": "Run selection…",
+        "icon": "$(checklist)",
         "category": "Piwi"
       },
       {
         "command": "piwi.runOptions",
         "title": "Run options…",
+        "icon": "$(settings)",
         "category": "Piwi"
       },
       {
         "command": "piwi.openInDashboard",
         "title": "Open in dashboard",
         "category": "Piwi",
-        "icon": "$(globe)"
+        "icon": "$(link-external)"
       },
       {
         "command": "piwi.openRun",
@@ -287,26 +294,31 @@
       {
         "command": "piwi.copyMcpConfiguration",
         "title": "Copy the MCP server configuration",
+        "icon": "$(copy)",
         "category": "Piwi"
       },
       {
         "command": "piwi.copyRunsMcpConfiguration",
         "title": "Copy the runs' MCP server configuration for agents",
+        "icon": "$(copy)",
         "category": "Piwi"
       },
       {
         "command": "piwi.resetRunsMcpToken",
         "title": "Reset the runs' MCP server token",
+        "icon": "$(key)",
         "category": "Piwi"
       },
       {
         "command": "piwi.pairPicker",
         "title": "Pair with Piwi Picker",
+        "icon": "$(link)",
         "category": "Piwi"
       },
       {
         "command": "piwi.runTests",
         "title": "Run tests",
+        "icon": "$(play)",
         "category": "Piwi"
       },
       {
@@ -348,21 +360,25 @@
       {
         "command": "piwi.copyAgentContext",
         "title": "Copy context for agent",
+        "icon": "$(copy)",
         "category": "Piwi"
       },
       {
         "command": "piwi.toggleCoverage",
         "title": "Toggle the coverage marks",
+        "icon": "$(run-coverage)",
         "category": "Piwi"
       },
       {
         "command": "piwi.reproduceInDesktop",
         "title": "Reproduce in the desktop app",
+        "icon": "$(device-desktop)",
         "category": "Piwi"
       },
       {
         "command": "piwi.bisectInDesktop",
         "title": "Find the breaking commit in the desktop app",
+        "icon": "$(git-branch)",
         "category": "Piwi"
       },
       {
@@ -375,21 +391,24 @@
         "command": "piwi.openScreenshot",
         "title": "Open the failure screenshot",
         "category": "Piwi",
-        "icon": "$(file-media)"
+        "icon": "$(device-camera)"
       },
       {
         "command": "piwi.runCommand",
         "title": "Run a command",
+        "icon": "$(terminal)",
         "category": "Piwi"
       },
       {
         "command": "piwi.copyText",
         "title": "Copy text",
+        "icon": "$(copy)",
         "category": "Piwi"
       },
       {
         "command": "piwi.desktopJob",
         "title": "Reproduce, bisect or run Flake Lab in the desktop app",
+        "icon": "$(device-desktop)",
         "category": "Piwi"
       },
       {
@@ -466,6 +485,7 @@
       {
         "command": "piwi.showPausedPage",
         "title": "Show the paused page",
+        "icon": "$(preview)",
         "category": "Piwi"
       },
       {
@@ -482,36 +502,43 @@
       {
         "command": "piwi.pickAtStop",
         "title": "Pick a locator in the stopped test's page",
+        "icon": "$(target)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordAtStop",
         "title": "Record in the stopped test's page",
+        "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertAtStop",
         "title": "Assert in the stopped test's page",
+        "icon": "$(pass)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertRegionAtStop",
         "title": "Assert a region of the stopped test's page",
+        "icon": "$(screen-full)",
         "category": "Piwi"
       },
       {
         "command": "piwi.mockAtStop",
         "title": "Mock a request of the stopped test",
+        "icon": "$(arrow-swap)",
         "category": "Piwi"
       },
       {
         "command": "piwi.shareWithPlaywright",
         "title": "Share the stopped test's browser with Playwright tools",
+        "icon": "$(tools)",
         "category": "Piwi"
       },
       {
         "command": "piwi.showBrowser",
         "title": "Show the stopped test's browser",
+        "icon": "$(browser)",
         "category": "Piwi"
       },
       {

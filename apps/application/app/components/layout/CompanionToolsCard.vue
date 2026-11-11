@@ -133,7 +133,7 @@ const isDesktop = useIsDesktop();
           <UIcon name="i-lucide-code" class="size-5" />
         </div>
         <div class="flex-1 min-w-0">
-          <h3 class="font-medium mb-1">Open in IDE</h3>
+          <h3 class="font-medium mb-1">Open in editor</h3>
           <p class="text-sm text-gray-600 dark:text-gray-400">
             Every source path in the dashboard is a click away from your editor — VS Code, JetBrains, or a custom URL
             scheme. Configured per browser from any source path, since the source lives on your machine.

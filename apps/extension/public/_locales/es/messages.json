@@ -788,13 +788,13 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
+    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece en la página Configuración de la aplicación, en Conectar Piwi Picker. Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
+    "message": "Aparece en la página Configuración de la aplicación, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Vincular"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "El token está en la página Configuración de la aplicación, en Conectar Piwi Picker, junto a su dirección."
+    "message": "El token está en la página Configuración de la aplicación, en «Pair with Piwi Picker», junto a su dirección."
   },
   "options_desktopSave": {
     "message": "Guardar y probar"

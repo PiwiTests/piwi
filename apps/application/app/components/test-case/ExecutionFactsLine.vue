@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The facts line under an execution's situation block: the failing line's source
- * path (open in IDE) when it is not the test's own line, the run facts that
+ * path (open in editor) when it is not the test's own line, the run facts that
  * collapse to Details on mobile (browser, duration, attempts, branch, build,
  * age), the Details popover with everything else, and the shared "Raw error ▸"
  * disclosure with its Copy failure action. Its Links section lists the links
@@ -132,7 +132,7 @@ const browser = computed(() => props.testCase?.browser ?? null);
 const stepsCount = computed(() => (props.testCase?.steps as unknown[] | null)?.length ?? 0);
 
 // Where the failure enters the test's code (`failurePlace`: the innermost
-// captured source frame) for the "open in IDE" link. The test's own file and
+// captured source frame) for the "open in editor" link. The test's own file and
 // line are on the identity line above, so a stack that names no other line
 // shows no link here.
 const ideTarget = computed(() => failurePlace(props.testCase));

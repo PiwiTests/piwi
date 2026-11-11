@@ -2217,6 +2217,98 @@ class GlueTest {
     }
 
     @Test
+    fun `reads a Playwright for dotnet reference in any form MSBuild takes`() {
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.Playwright.NUnit" Version="1.49.0" />""",
+            """<PackageReference Version="1.49.0" Include="Microsoft.Playwright"/>""",
+            """<PackageReference Include="Microsoft.Playwright.Xunit.v3" Version="1.55.0" />""",
+            """<PackageReference Include='Microsoft.Playwright.MSTest.v4' />""",
+            """<PackageReference Include="NUnit; Microsoft.Playwright.NUnit" />""",
+            """<PackageReference Condition="${'$'}(X) > 1" Include="Microsoft.Playwright" />""",
+        )) {
+            assertTrue(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.PlaywrightSharp" />""",
+            """<PackageReference Include="NUnit" />""",
+            """<PackageReference Update="Microsoft.Playwright" Version="1.49.0" />""",
+            """<!-- <PackageReference Include="Microsoft.Playwright" /> -->""",
+        )) {
+            assertFalse(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+    }
+
+    @Test
+    fun `the settings page names what overrides its instance, the environment or a dotenv`() {
+        val named = NamedInstance("https://ci.example.com", "environment")
+        val env = ContextStatus(
+            connected = true, serverUrl = "https://ci.example.com", source = "environment", projectName = "Acme", instance = named,
+        )
+        val overriding = Glue.overriding(StatusResult(contexts = listOf(env)), "https://piwi.example.com")
+        assertEquals(Glue.Overriding("https://ci.example.com", "Acme", "the environment (PIWI_DASHBOARD_URL)"), overriding)
+        assertEquals(
+            "Overridden by the environment (PIWI_DASHBOARD_URL): Piwi reads https://ci.example.com, project Acme, not the " +
+                "server URL below.",
+            Glue.overriddenText(overriding!!),
+        )
+        // The same address as the page's overrides nothing.
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(env)), "https://ci.example.com/"))
+        // The desktop app in use: the .env's instance comes before the page's only while the app is not.
+        val desktop = ContextStatus(
+            connected = true, serverUrl = "http://127.0.0.1:3000", source = "desktop", projectName = "Local",
+            instance = NamedInstance("https://team.example.com", "dotenv"),
+        )
+        val behind = Glue.overriding(StatusResult(contexts = listOf(desktop)), "")
+        assertEquals(Glue.Overriding("https://team.example.com", null, "the workspace .env", desktopFirst = true), behind)
+        assertEquals(
+            "The workspace .env names https://team.example.com, which Piwi reads before the server URL below while the " +
+                "desktop app is not in use.",
+            Glue.overriddenText(behind!!),
+        )
+        // With several configs, the one whose environment names it.
+        val settings = ContextStatus(
+            connected = true, serverUrl = "https://piwi.example.com", source = "editor", label = "api",
+            instance = NamedInstance("https://piwi.example.com", "editor"),
+        )
+        val web = ContextStatus(
+            connected = false, serverUrl = "https://ci.example.com", source = "dotenv", label = "web",
+            instance = NamedInstance("https://ci.example.com", "dotenv"),
+        )
+        val several = Glue.overriding(StatusResult(contexts = listOf(settings, web)), "https://piwi.example.com")
+        assertEquals(
+            "Overridden by the workspace .env for web: Piwi reads https://ci.example.com, not the server URL below.",
+            Glue.overriddenText(several!!),
+        )
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(settings)), "https://piwi.example.com"))
+        assertNull(Glue.overriding(null, ""))
+    }
+
+    @Test
+    fun `finds a project referencing Playwright for dotnet where the configs are searched`() {
+        val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.fsproj", "node_modules/x/Other.csproj")
+        assertFalse(Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("node_modules/x/Other.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        assertFalse("a dependency's project is skipped", Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("tests/Shop.E2E/Shop.E2E.fsproj"), """<ItemGroup>
+            <PackageReference Include="Microsoft.Playwright.MSTest" Version="1.49.0" />
+        </ItemGroup>""")
+        assertTrue(Glue.holdsDotnetPlaywright(listOf(dir)))
+        val props = tree("Directory.Build.props")
+        Files.writeString(props.resolve("Directory.Build.props"), """<PackageReference Include="Microsoft.Playwright.NUnit" />""")
+        assertTrue("the props every project imports", Glue.holdsDotnetPlaywright(listOf(props)))
+    }
+
+    @Test
+    fun `searches a solution's repository for its dotnet tests`() {
+        val repo = tree(".git/HEAD", "backend/Shop.sln", "tests/Shop.E2E/Shop.E2E.csproj")
+        Files.writeString(repo.resolve("tests/Shop.E2E/Shop.E2E.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        val backend = repo.resolve("backend")
+        assertEquals(listOf(repo), Glue.searchedFolders(listOf(backend), null))
+        assertTrue(Glue.holdsDotnetPlaywright(Glue.searchedFolders(listOf(backend), null)))
+        assertEquals("the home folder's repository holds other projects", listOf(backend), Glue.searchedFolders(listOf(backend), repo))
+    }
+
+    @Test
     fun `a solution in a subfolder finds the tests beside it in the repository`() {
         val repo = tree(".git/HEAD", "backend/Shop.sln", "e2e/playwright.config.ts")
         val found = Glue.findPlaywright(listOf(repo.resolve("backend"), repo.resolve("backend/.idea/.idea.Shop")), null)

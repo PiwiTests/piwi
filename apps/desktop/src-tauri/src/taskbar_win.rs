@@ -148,7 +148,7 @@ unsafe fn add_buttons(hwnd: HWND) {
             "Stop run",
             STOP_ENABLED.load(Ordering::SeqCst),
         ),
-        thumb_button(ID_OPEN, Glyph::Open, "Open Piwi Dashboard", true),
+        thumb_button(ID_OPEN, Glyph::Open, "Open Piwi Desktop", true),
     ];
     if taskbar.ThumbBarAddButtons(hwnd, &buttons).is_ok() {
         BUTTONS_WINDOW.store(hwnd.0 as usize, Ordering::SeqCst);

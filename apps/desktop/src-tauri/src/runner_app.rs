@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn the_quit_question_names_the_app() {
         assert_eq!(crate::quit_question(APP_NAME), "Quit Piwi Runner?");
-        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi?");
+        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi Desktop?");
     }
 
     #[test]

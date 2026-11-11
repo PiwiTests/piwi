@@ -1436,7 +1436,7 @@ export const HELP_TOPICS = {
     text: 'Links to external systems (Jira, GitHub, etc.) attached to this item. The provider is detected automatically from the URL.',
   },
   'ide.open': {
-    title: 'Open in IDE',
+    title: 'Open in editor',
     text: [
       'Click a source path to open it in your local editor.',
       '',

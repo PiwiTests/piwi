@@ -146,7 +146,7 @@ export const LAYOUT_ANCHORS = [
     kind: 'action',
     pages: ['*'],
     describes:
-      'The user menu at the foot of the sidebar: the settings pages, the theme, Open in IDE and the Piwi tools to install.',
+      'The user menu at the foot of the sidebar: the settings pages, the theme, Open in editor and the Piwi tools to install.',
     doc: 'features/ui-overview#settings',
     sample: { route: '/projects' },
   },
@@ -156,7 +156,7 @@ export const LAYOUT_ANCHORS = [
     pages: ['*'],
     reveal: [{ open: 'user-menu' }],
     describes:
-      'The user menu’s Open in IDE entry, which sets how a source path clicked in the dashboard opens in your editor.',
+      'The user menu’s Open in editor entry, which sets how a source path clicked in the dashboard opens in your editor.',
     doc: 'features/ide-integration#set-it-up',
     sample: { route: '/projects' },
   },
@@ -166,7 +166,7 @@ export const LAYOUT_ANCHORS = [
     pages: ['*'],
     reveal: [{ open: 'user-menu' }, { open: 'user-menu-open-in-ide' }],
     describes:
-      'The Open in IDE settings: the editor, workspace root and method a clicked source path opens with, kept in this browser.',
+      'The Open in editor settings: the editor, workspace root and method a clicked source path opens with, kept in this browser.',
     help: 'ide.open',
     doc: 'features/ide-integration#set-it-up',
     sample: { route: '/projects' },

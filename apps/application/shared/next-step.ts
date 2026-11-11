@@ -332,7 +332,7 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
       primary: { label: 'Copy apply command', action: 'copy-git-apply', payload: withCluster },
       secondary: [
         { label: 'Download .patch', action: 'download-patch', payload: withCluster },
-        { label: 'Open in IDE', action: 'open-in-ide', payload: withCluster },
+        { label: 'Open in editor', action: 'open-in-ide', payload: withCluster },
         { label: 'Read the diagnosis', action: 'read-diagnosis', payload: withCluster },
         // The fix was verified, so whoever knows it is in the code can still close it.
         ...(patchFirst ? [{ label: 'Mark resolved', action: 'mark-resolved', payload: withCluster }] : []),

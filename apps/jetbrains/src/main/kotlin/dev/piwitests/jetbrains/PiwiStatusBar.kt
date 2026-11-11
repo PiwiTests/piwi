@@ -134,7 +134,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         label.icon = when {
             recording != null -> PIWI_ICON
             // A held failure shows the error's icon, any other stop the pause's.
-            stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) AllIcons.RunConfigurations.TestError else AllIcons.Actions.Pause
+            stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
             shared != null -> AllIcons.Actions.Show
             progress != null -> AnimatedIcon.Default.INSTANCE
             refreshing -> AnimatedIcon.Default.INSTANCE
@@ -155,7 +155,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         Glue.StatusIcon.CONNECT -> AllIcons.General.User
         Glue.StatusIcon.UNREACHABLE -> AllIcons.Actions.OfflineMode
         Glue.StatusIcon.RUNNING -> AnimatedIcon.Default.INSTANCE
-        Glue.StatusIcon.FAILING -> AllIcons.RunConfigurations.TestFailed
+        Glue.StatusIcon.FAILING -> PiwiIcons.FAILED
         Glue.StatusIcon.PASSED -> AllIcons.RunConfigurations.TestPassed
         Glue.StatusIcon.WARNING -> AllIcons.General.Warning
     }
@@ -228,7 +228,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private inner class GoToStopAction(private val stop: Glue.ShownStop) : DumbAwareAction(
         Glue.stopLabel(stop),
         listOfNotNull("Go to the line the test is stopped at", runs()?.let { Glue.stopPresence(stop, it.sessions) }).joinToString(". "),
-        if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement,
+        if (Glue.isFailure(stop.stop)) PiwiIcons.FAILED else AllIcons.Debugger.NextStatement,
     ) {
         init {
             templatePresentation.setText(Glue.stopLabel(stop), false)

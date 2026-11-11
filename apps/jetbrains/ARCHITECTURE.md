@@ -276,6 +276,17 @@ The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommand
   `Glue.FailureNode.root`);
 - on a run's node: choose its baseline and open its run.
 
+**Icons.** Every action of `plugin.xml` draws a platform icon from the concept table of
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), one that has
+a New UI glyph on 2024.1 and 2026.3 (checked by hand against each `PlatformIconMappings.json`). The exceptions are the
+two toggles, whose menu rows show a check mark; the record actions' `Ide.Macro.Recording_1`, which waits for Piwi's
+record glyph; and the actions that wait for a glyph of their own: Disconnect, Pair, Pause and Watch, Assert a Region,
+Mock a Request, Share the Run Live, Stop Sharing, and the four no mapped platform icon says (Run the Tests That Reach
+This File, Reset the Runs' MCP Server Token, Show the Stopped Test's Browser, Share with Playwright Tools). The icons
+drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree and a
+held failure, Open in Dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a branch)
+and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
+
 **Re-run the Failing Tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
 (`Glue.failingRuns`). **Run This Test** runs `Glue.failureRunArgs`. Both name the failure's config
@@ -361,8 +372,10 @@ still reports. That variable is also how the reporter of a run Piwi did not star
 test runner started it, and follows the IDE ([Run control](#run-control)).
 
 The runner's classes belong to the `JavaScript` plugin (`intellij.aqua.runners.playwright.js`, the same signatures in
-2024.1 and 2026.x). The plugin reaches them only once `PlaywrightRunnerGate.available()`, which names none of them. Any
-other command, an IDE without the runner, or a run the runner does not take, runs in the console.
+2024.1 and 2026.x), which WebStorm, IntelliJ IDEA Ultimate and Rider bundle, among others. The plugin reaches them only once
+`PlaywrightRunnerGate.available()`, which names none of them. Any other command, an IDE without the runner, or a run the
+runner does not take, runs in the console; without the runner, the settings page's option is off and says why
+(`Glue.NO_PLAYWRIGHT_RUNNER`).
 
 ### Commands and notifications
 
@@ -641,6 +654,12 @@ installation (`piwi.firstRunShown`, an application-level `PropertiesComponent` f
 The balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…** (`PiwiConnectFlow.run`, as `Piwi.Connect`),
 **Open the Failures** (the tool window) and **Learn More** (`Glue.DOCS_URL`). `PiwiPluginTest` checks the flag.
 
+A trusted project with no Playwright config whose MSBuild project (a `.csproj`, `.fsproj`, `.vbproj` or
+`Directory.Build.props`, in the folders and repository the configs are searched in, `Glue.searchedFolders`) references
+Playwright for .NET (`Glue.holdsDotnetPlaywright`) hears once, per project (`piwi.dotnetPlaywrightNoted`), that Piwi
+reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a result balloon,
+`PiwiProjectService.noteDotnetPlaywright`). A reference added later is heard once the project opens again.
+
 ## Recording
 
 What the service does during a recording: [Recorder](../../packages/editor/ARCHITECTURE.md#recorder) in the editor
@@ -823,7 +842,14 @@ An instance on this machine is tried on every loopback address (`Glue.loopbackAl
 one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and **Tools
 → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
 save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
-Apply or Cancel. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
+Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
+(`sendCredentials`) and, while the service cannot start, **Node.js Settings…**, which selects the Node.js page of the
+open Settings dialog and starts the service again as the dialog closes; then the instance; then the desktop app, whose
+field reads **Desktop app project:**. When the environment or a `.env` names another instance than the saved one
+(`Glue.overriding`, the first config that does), the page says so above the fields (`Glue.overriddenText`), the
+desktop app's place before it included, and the empty fields show its address and, while it is read, its project. The
+page follows the status while the dialog shows (`PiwiProjectService.onChangeInDialogs`). The tool window's empty text
+links the Node.js settings while the service cannot start. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
 otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does not
 trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi instance.
 
@@ -994,7 +1020,7 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
 The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
-code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestFailed` icon and
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestError` icon and
 the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
 directory instead (`statusItemFailing`).
 

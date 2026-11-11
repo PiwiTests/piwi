@@ -9,6 +9,7 @@ import {
   debugTargetOf,
   encodePathForUrl,
   failurePlace,
+  IDE_METHOD_LABELS,
   isJetbrainsProduct,
   jetbrainsPorts,
   joinWorkspacePath,
@@ -365,5 +366,16 @@ describe('Debug in my editor', () => {
     ]);
     const check = new URL(buildPiwiPluginOpenUrl({ port: 63342, path: 'a.ts', line: 3, check: true, debug }));
     expect([...check.searchParams.keys()]).toEqual(['file', 'line', 'check']);
+  });
+});
+
+describe('the methods’ names', () => {
+  test('name the Piwi plugin each JetBrains method asks first, and the fallback after it', () => {
+    expect(IDE_METHOD_LABELS).toEqual({
+      auto: 'Auto (try all)',
+      vscode: 'VS Code',
+      'jetbrains-url': 'JetBrains: Piwi plugin, else URL',
+      'jetbrains-http': 'JetBrains: Piwi plugin, else local server',
+    });
   });
 });
