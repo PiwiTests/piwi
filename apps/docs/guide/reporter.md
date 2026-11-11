@@ -210,7 +210,7 @@ With authentication enabled, pass an **API key**: create one ([API keys](/operat
 creates one in place); keep it in a CI secret (locally, `.env`), and pass it as `PIWI_API_KEY` or the `apiKey` option.
 
 The key is sent as an `Authorization: Bearer` header. `username` (or the account's email) and `password`
-(`PIWI_USERNAME`, `PIWI_PASSWORD`) work too: the reporter logs in once and reuses the session.
+(`PIWI_USERNAME`, `PIWI_PASSWORD`) work too, signing in once per run; prefer an API key in CI.
 
 ## Troubleshooting
 
