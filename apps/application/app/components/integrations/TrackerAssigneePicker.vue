@@ -23,9 +23,10 @@ const accountId = computed({
 });
 
 const trackerIcon = useTrackerIcon();
-const { people, loading, problem, known, ready, search, searchSoon, lookUp } = useAssignableSearch(
+const { people, loading, problem, known, ready, searchSoon, onOpen } = useAssignableSearch(
   () => props.connectionId,
   () => props.projectKey,
+  () => [accountId.value],
 );
 
 const itemOf = (id: string) => {
@@ -42,14 +43,6 @@ const items = computed(() => {
   return chosen && !listed.some((item) => item.value === chosen) ? [itemOf(chosen), ...listed] : listed;
 });
 const avatar = computed(() => (accountId.value ? itemOf(accountId.value).avatar : undefined));
-
-watch(
-  [accountId, () => props.connectionId, () => props.projectKey],
-  () => {
-    if (accountId.value) void lookUp([accountId.value]);
-  },
-  { immediate: true },
-);
 </script>
 
 <template>
@@ -66,7 +59,7 @@ watch(
       :clear="{ 'aria-label': 'Clear the assignee' }"
       :placeholder="ready() ? placeholder : 'Choose the Jira project first'"
       class="w-full"
-      @update:open="(isOpen: boolean) => isOpen && search()"
+      @update:open="onOpen"
       @update:search-term="(words: string) => searchSoon(words)"
     />
     <CheckResultLine v-if="problem" :state="problem.state" :text="problem.text" :hint="problem.hint" />

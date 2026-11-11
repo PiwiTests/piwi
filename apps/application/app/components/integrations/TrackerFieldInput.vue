@@ -117,9 +117,10 @@ function addTag(text: string) {
 // ── People, searched among the project's assignable users ─────────────────────
 const {
   people,
+  loading: peopleLoading,
   problem: peopleProblem,
-  search: searchPeople,
   searchSoon: searchPeopleSoon,
+  onOpen: onPeopleOpen,
 } = useAssignableSearch(
   () => props.connectionId,
   () => props.projectKey,
@@ -277,11 +278,12 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
       :items="peopleItems"
       :avatar="personAvatar"
       value-key="value"
-      searchable
+      ignore-filter
+      :loading="peopleLoading"
       :placeholder="placeholderFor('Search a person')"
       :title="fullLabel"
       class="w-full"
-      @update:open="(isOpen: boolean) => isOpen && searchPeople()"
+      @update:open="onPeopleOpen"
       @update:search-term="(q: string) => searchPeopleSoon(q)"
     />
     <USelectMenu
@@ -290,11 +292,12 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
       :items="peopleItems"
       value-key="value"
       multiple
-      searchable
+      ignore-filter
+      :loading="peopleLoading"
       :placeholder="placeholderFor('Search people')"
       :title="fullLabel"
       class="w-full"
-      @update:open="(isOpen: boolean) => isOpen && searchPeople()"
+      @update:open="onPeopleOpen"
       @update:search-term="(q: string) => searchPeopleSoon(q)"
     />
     <CheckResultLine

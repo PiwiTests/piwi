@@ -222,13 +222,16 @@ function startMockJira(port: number): MockJira {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
     if (path === '/rest/api/3/user/assignable/search') {
-      return send([
+      const people = [
         {
           accountId: 'acct-2',
           displayName: 'Assignee',
           avatarUrls: { '24x24': `http://127.0.0.1:${port}${USER_AVATAR_PATH}` },
         },
-      ]);
+      ];
+      // Jira answers a lookup by account id with that one person, or no one.
+      const accountId = url.searchParams.get('accountId');
+      return send(accountId ? people.filter((person) => person.accountId === accountId) : people);
     }
     if (`${path}${url.search}` === USER_AVATAR_PATH) {
       res.setHeader('Content-Type', 'image/svg+xml');
@@ -535,6 +538,26 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     await expect(picker).toContainText('Unassigned');
     await save.click();
     await expect.poll(savedAssignee).toBeNull();
+  });
+
+  test('a search Jira refuses says why under the assignee picker, and what to grant', async ({ page }) => {
+    await page.route(/\/api\/integrations\/connections\/\d+\/assignable\?/, (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          statusCode: 502,
+          message: 'Jira request failed (403 Forbidden): You do not have the permission to browse users.',
+          data: { errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 },
+        }),
+      }),
+    );
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
+    const picker = page.getByTestId('binding-default-assignee');
+    await expect(picker.locator('button').first()).toBeEnabled({ timeout: 30_000 });
+    await picker.locator('button').first().click();
+    await expect(picker).toContainText('You do not have the permission to browse users.');
+    await expect(picker).toContainText('Browse users and groups');
   });
 
   test('the create dialog asks for what is still required and files the issue with it', async ({ page }) => {
