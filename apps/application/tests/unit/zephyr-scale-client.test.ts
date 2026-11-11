@@ -556,6 +556,15 @@ describe('findRun', () => {
     expect(await client().findRun('SHOP', marker)).toBeNull();
   });
 
+  test('run 12 does not match a cycle named Piwi #12a', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+      )
+      .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Piwi #12a main' }));
+    expect(await client().findRun('SHOP', marker)).toBeNull();
+  });
+
   test('matches a cycle named exactly as the run was', async () => {
     fetchMock
       .mockResolvedValueOnce(

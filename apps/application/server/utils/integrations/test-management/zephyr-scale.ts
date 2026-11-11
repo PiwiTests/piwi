@@ -484,7 +484,7 @@ export class ZephyrScaleClient implements TestManagementProvider {
           .filter((id): id is number | string => typeof id === 'number' || typeof id === 'string'),
       ),
     ].slice(0, FIND_RUN_MAX_CYCLES);
-    const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\d)`);
+    const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\w)`);
     for (const id of ids) {
       const cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown; links?: { self?: unknown } }>(
         `/testcycles/${encodeURIComponent(String(id))}`,
