@@ -196,7 +196,8 @@ the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
-  - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
+  - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
+    `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/agents`;
@@ -444,8 +445,9 @@ that stack shows the message and the call chain.
 A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`):
 
 - its flaky N% (the share of its recent runs that failed or passed on a retry) and top suspect;
-- the `piwi flake` commands, run through `piwi.runCommand`. A command carries `--server-url` only when, run from the
-  config's folder, it would find another instance or none (`withServerUrl`);
+- the `piwi flake` commands, run through `piwi.runCommand` as runs nobody attends (`follow`,
+  [The editor's own run](#the-editors-own-run)). A command carries `--server-url` only when, run from the config's
+  folder, it would find another instance or none (`withServerUrl`);
 - while the desktop app runs beside a team instance, the reproduction as a desktop job (`piwi.desktopJob`, kind
   `flake-lab`).
 
@@ -506,7 +508,18 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 
 `piwi/runArgs` and `piwi/runSelection` give each command a ref: `ed-` and 8 hexadecimal characters. The ref goes in the
 command's environment, as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor`, and in `RunCommand.ref`. The Flake Lab lines
-and the fix plan's verification carry `PIWI_ORIGIN=editor` alone.
+and the fix plan's verification carry `PIWI_ORIGIN=editor` alone, with `RunCommandArgs.follow`: the client asks
+`piwi/followCommand` for them, which gives them a ref and the run channel, and runs the answer as it runs a test run,
+its end told (`piwi/commandEnded`) and Stop ending it; a plain terminal command when the answer is null. The ref goes
+in `PIWI_RUN_REF`, which names the run on the run channel alone: a command of several runs (a Flake Lab line's batches)
+is not the editor's own run on the instance. The service follows only the commands it gives so (`followableCommand`: a
+fix plan's verification as `verificationCommand` builds it, a Flake Lab line).
+
+A repeated run and a followed command are runs nobody attends (`unattended`, its own `MAX_RUN_COMMANDS` latest): their
+workers keep a run connection, so they are listed, paused and stopped as the others, but they hold no failure
+(`holdsFailures`, the session's `hold` absent), turn headed for no `page.pause()`, take none of the editor's breakpoints
+(`setBreakpoints`), and let a stop no one asked for go on at once (`UNASKED_STOPS`: a breakpoint, a `page.pause()`),
+said once per run; a Pause, a Step or a Run to someone asked for waits.
 
 `piwi/runArgs` runs tests either way:
 
@@ -517,7 +530,8 @@ and the fix plan's verification carry `PIWI_ORIGIN=editor` alone.
   at the failing line ([A run that debugs a failure](#a-run-that-debugs-a-failure)).
 
 With `repeat`, it runs each test that many times without retries (`repeatArgs`: `--repeat-each=3 --retries=0`, for
-**Verify ×3**), headless: neither the breakpoints nor the record and run channels are passed. A repeated command's
+**Verify ×3**), headless: neither the breakpoints nor the record channel are passed, and the run channel only for a
+run nobody attends. A repeated command's
 run counts the `test-completed` results of its stream, once per execution (`RunWatch.tally`), beside the run's own
 counts, which hold one result per attempt, project and repetition (an older instance kept one per attempt and
 project). Its `piwi/runEnded` carries `repeat` (`repeatVerdict`): `Passed 3 of 3`, `Failed 1 of 3`, or
@@ -556,8 +570,8 @@ those in files under the context's folder:
 
 The person's start options (`RunStartOptions`, the clients' settings, sent with every test run the editor starts) go
 over that: `headed` appends `--headed` (a repeated run takes it too), and `holdFailures` turns the run's Hold failures on
-or off from its start for a run with a run channel (`withStartOptions`). A debug run, and a command the service names
-(`piwi.runCommand`: a Flake Lab line, a fix plan's verification), take none.
+or off from its start for a run with a run channel that holds failures (`withStartOptions`). A debug run, and a
+command the service names (`piwi.runCommand`: a Flake Lab line, a fix plan's verification), take none.
 
 The client adds its Send to editor address as `PIWI_EDITOR_SEND` to a command that carries `PIWI_PAUSE_AT` or
 `PIWI_RUN_CHANNEL`, or whose `RunCommand.pauses` is set. The reporter's capture fixtures pause the run, with Piwi's

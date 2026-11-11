@@ -10,9 +10,9 @@
 //! with `THBN_CLICKED`, which Tauri does not surface). Clicks are turned into
 //! app actions: **Open** restores, shows and focuses the window here in the
 //! shell (`bring_to_front`); **Stop**, enabled only while a local run is running
-//! (`set_stop_enabled`), emits `piwi:taskbar-stop`, which the dashboard's run
-//! store listens for and stops its active runs (the shell does not own which
-//! run is "current").
+//! (`set_stop_enabled`), emits `piwi:taskbar-stop`, which the dashboard hears
+//! and stops the run its window started last of those not stopping yet (the
+//! shell does not own which run is "current").
 //!
 //! NOTE: this module is compile-verified (native build + a Windows cross-check)
 //! but its COM / subclass / GDI behaviour has not been exercised on a real

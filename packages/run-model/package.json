@@ -1,11 +1,12 @@
 {
   "name": "@piwitests/run-model",
   "version": "0.68.0",
-  "description": "The run model Piwi Picker's Runs window and the desktop app's Local runs tray share: what a worker's stop takes, says and offers, who drives it, and the input played on its live view",
+  "description": "The run model Piwi Picker's Runs window and the desktop app's Local runs tray share: what the runs ask of the person, what a worker's stop takes, says and offers, who drives it, and the input played on its live view",
   "private": true,
   "license": "FSL-1.1-MIT",
   "type": "module",
   "exports": {
+    "./attention": "./src/attention.ts",
     "./controls": "./src/controls.ts",
     "./presence": "./src/presence.ts",
     "./status": "./src/status.ts",

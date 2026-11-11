@@ -6261,8 +6261,96 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ prueba te espera",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ pruebas te esperan",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ prueba falló",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ pruebas fallaron",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Ejecuciones · Piwi Picker"
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ en espera · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ en espera · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ fallida · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ fallidas · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Ejecuciones · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Las ejecuciones de tu editor"

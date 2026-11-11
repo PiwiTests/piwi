@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
-import { HUB_CLOSE, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
+import { HUB_CLOSE, type HubProgress, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
 import type { HubSocket } from '../../src/background/hub-connection.js';
 import { RunHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
 import type { RunsFrame, RunsLane, RunsLaneFrame, RunsView } from '../../src/shared/runs.js';
@@ -470,6 +470,94 @@ describe('a hub’s connection', () => {
     expect(hubs.state().runs.map((run) => run.session.ended)).toEqual([true]);
     sockets[0]!.hear({ type: 'session', session: session([RUNNING]) });
     expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
+  });
+
+  it('keeps a run that failed while no Runs window had the focus unseen, until one takes it', async () => {
+    let looking = false;
+    const { hubs, sockets } = setup({ looking: () => looking });
+    await hubs.find();
+    const changed = vi.fn();
+    hubs.observe(changed);
+    await welcome(sockets[0]!, [session([RUNNING], { ref: 'a' }), session([RUNNING], { ref: 'b' })]);
+    const end = (ref: string, status: HubProgress['status']) =>
+      sockets[0]!.hear({
+        type: 'session',
+        session: session([], {
+          ref,
+          ended: true,
+          progress: {
+            total: 3,
+            done: 3,
+            failed: status === 'passed' ? 0 : 2,
+            flaky: 0,
+            skipped: 0,
+            status,
+            failure: null,
+          },
+        }),
+      });
+    end('a', 'failed');
+    end('b', 'passed');
+    const unseen = () => hubs.state().runs.map((run) => [run.session.ref, !!run.unseen]);
+    // A run that passed is never unseen; one that failed is, until a Runs window takes the focus.
+    expect(unseen()).toEqual([
+      ['b', false],
+      ['a', true],
+    ]);
+    changed.mockClear();
+    hubs.seen();
+    expect(unseen()).toEqual([
+      ['b', false],
+      ['a', false],
+    ]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    // Nothing unseen left: nothing changes.
+    hubs.seen();
+    expect(changed).toHaveBeenCalledTimes(1);
+    // A run that fails while a Runs window has the focus is seen as it ends.
+    looking = true;
+    sockets[0]!.hear({ type: 'session', session: session([RUNNING], { ref: 'c' }) });
+    end('c', 'timedout');
+    expect(hubs.state().runs.find((run) => run.session.ref === 'c')?.unseen).toBeUndefined();
+  });
+
+  it('keeps a run unseen past the ten minutes and the newer runs that end, then ten minutes once seen', async () => {
+    const { hubs, sockets } = setup({ looking: () => false });
+    await hubs.find();
+    const refs = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    await welcome(
+      sockets[0]!,
+      refs.map((ref) => session([RUNNING], { ref })),
+    );
+    const end = (ref: string, status: HubProgress['status']) =>
+      sockets[0]!.hear({
+        type: 'session',
+        session: session([], {
+          ref,
+          ended: true,
+          progress: {
+            total: 1,
+            done: 1,
+            failed: status === 'failed' ? 1 : 0,
+            flaky: 0,
+            skipped: 0,
+            status,
+            failure: null,
+          },
+        }),
+      });
+    end('a', 'failed');
+    // Six runs that pass end after it: five ended runs are kept, the one unseen besides.
+    for (const ref of refs.slice(1)) end(ref, 'passed');
+    const kept = () => hubs.state().runs.map((run) => run.session.ref);
+    expect(kept()).toEqual(['g', 'f', 'e', 'd', 'c', 'a']);
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 1);
+    expect(kept()).toEqual(['a']);
+    hubs.seen();
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
+    expect(kept()).toEqual(['a']);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(kept()).toEqual([]);
   });
 
   it('ignores a message it cannot read, and anything before the welcome', async () => {

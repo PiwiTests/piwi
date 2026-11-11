@@ -6261,8 +6261,96 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ test vous attend",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ tests vous attendent",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ test en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ tests en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Exécutions · Piwi Picker"
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ en attente · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Exécutions · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ en attente · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Exécutions · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ en échec · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Exécutions · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ en échec · $title$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Exécutions · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Les exécutions de votre éditeur"

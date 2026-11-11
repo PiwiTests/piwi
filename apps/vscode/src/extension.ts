@@ -23,6 +23,7 @@ import {
   AGENT_CONTEXT_REQUEST,
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
+  FOLLOW_COMMAND_REQUEST,
   COMMAND_STARTED_NOTIFICATION,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
@@ -847,7 +848,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const task = new vscode.Task(
       { type: RUN_TASK_TYPE, ref: command.ref },
       folder ?? vscode.TaskScope.Workspace,
-      runTaskName(command.args),
+      runTaskName(command.args, command.command),
       'Piwi',
       new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
     );
@@ -1354,9 +1355,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
     }),
-    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) =>
-      runInTerminal(args.cwd, args.command, args.env),
-    ),
+    vscode.commands.registerCommand('piwi.runCommand', async (args: RunCommandArgs) => {
+      // A command the service follows runs as a test run of its own, listed, paused and stopped as the others.
+      const followed = args.follow
+        ? await lc.sendRequest<RunCommand | null>(FOLLOW_COMMAND_REQUEST, args).catch(() => null)
+        : null;
+      if (followed) await startRun(followed, []);
+      else runInTerminal(args.cwd, args.command, args.env);
+    }),
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
@@ -1708,12 +1714,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
     }),
     // A run started here: a worker started or ended a test, stopped or went on.
-    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),
+    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => {
+      runControl.heard(session);
+      explorer?.sessionChanged(session);
+    }),
     // The code made at a stop, from here or Piwi Picker: written above the stopped line.
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
-      if (e.newState === State.Stopped) runControl.clear();
+      if (e.newState === State.Stopped) {
+        runControl.clear();
+        explorer?.sessionsCleared();
+      }
       // A service started again hears the editor's breakpoints, for a run a terminal starts.
       else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),

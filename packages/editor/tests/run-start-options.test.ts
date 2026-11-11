@@ -74,7 +74,7 @@ describe('a run started as the person chose', () => {
     expect(await holdOf(letGo)).toEqual({ on: false, by: 'start' });
   });
 
-  test('runs a repeated run headed when asked, holding no failure as it has no run channel', async () => {
+  test('runs a repeated run headed when asked, holding no failure even when asked, as nobody attends it', async () => {
     const repeated = (await svc.client.sendRequest('piwi/runArgs', {
       uri: uri('tests/cart.spec.ts'),
       testIds: [],
@@ -84,7 +84,15 @@ describe('a run started as the person chose', () => {
       holdFailures: true,
     })) as RunCommand;
     expect(repeated.args).toEqual(['tests/cart.spec.ts:3', '--repeat-each=3', '--retries=0', '--headed']);
-    expect(repeated.env?.PIWI_RUN_CHANNEL).toBeUndefined();
+    // Its workers keep a run connection, but the run has no Hold failures to turn on.
+    const [channelPath, token] = repeated.env!.PIWI_RUN_CHANNEL!.split('#') as [string, string];
+    const worker = new FakeWorker(channelPath, dir).attach(token, repeated.ref!, 0, [...RUN_TAKES]);
+    try {
+      expect(await worker.next('attached')).toMatchObject({ holds: [] });
+      expect(await waitFor(() => svc.latest(repeated.ref!))).not.toHaveProperty('hold');
+    } finally {
+      worker.socket.destroy();
+    }
   });
 
   test('lets the failures of a spec that pauses go on when asked, headed still', async () => {

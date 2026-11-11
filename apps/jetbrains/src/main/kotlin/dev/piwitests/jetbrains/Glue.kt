@@ -1468,17 +1468,43 @@ object Glue {
     /** A test file among a run's arguments, with its line and column: `tests/a.spec.ts:3`. */
     private val TEST_FILE_ARG = Regex("[^-\\s][^\\s]*\\.[cm]?[jt]sx?(:\\d+){0,2}")
 
-    /** The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command. */
+    /**
+     * The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command,
+     * a chain of several (`… && …`, [chained]) included.
+     */
     fun playwrightTestArgs(command: String): List<String>? {
         val parts = splitCommand(command)
-        return if (parts.take(3) == listOf("npx", "playwright", "test")) parts.drop(3) else null
+        return if (parts.take(3) == listOf("npx", "playwright", "test") && CHAIN !in parts) parts.drop(3) else null
     }
+
+    /** What joins the commands of a chain: a fix plan's verification of several Playwright projects. */
+    private const val CHAIN = "&&"
+
+    /** Whether a command chains several (`a && b`): a shell runs it, each one only once the one before it passed. */
+    fun chained(command: String): Boolean = CHAIN in splitCommand(command)
 
     /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
     fun playwrightRunName(args: List<String>): String {
         val targets = args.filter { TEST_FILE_ARG.matches(it) }
         val first = targets.firstOrNull()?.substringAfterLast('/') ?: return "Piwi"
         return if (targets.size > 1) "Piwi: $first and ${targets.size - 1} more" else "Piwi: $first"
+    }
+
+    /**
+     * The title of a run's tab in the Run tool window, after what it runs: the first test file of a `playwright test` and
+     * how many more ([playwrightRunName], a chain's included), else the command up to its first option, the reporter's
+     * package named as its command (`Piwi: piwi flake verify 12`).
+     */
+    fun runTabName(command: String): String {
+        val parts = splitCommand(command)
+        val words = parts.drop(if (parts.firstOrNull() == "npx") 1 else 0)
+        if (words.take(2) == listOf("playwright", "test")) return playwrightRunName(words.drop(2))
+        val tool = words
+            .map { if (it == "@piwitests/reporter") "piwi" else it }
+            .takeWhile { !it.startsWith("-") }
+            .take(4)
+            .joinToString(" ")
+        return if (tool.isEmpty()) "Piwi" else "Piwi: $tool"
     }
 
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */
@@ -2112,6 +2138,33 @@ object Glue {
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /**
+     * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
+     * stopped there (`· stopped`), or between tests; each run's name before them when several run. Null while no worker
+     * runs, as the VS Code extension's `workersNow` says it.
+     */
+    fun workersNowText(sessions: Map<String, RunSession>): String? {
+        val live = sessions.values.filter { !it.ended && !it.workers.isNullOrEmpty() }
+        val lines = live.flatMap { session ->
+            session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val run = if (live.size > 1) "${runLabel(session)} · " else ""
+                // A title's own line breaks as spaces: one line per worker.
+                val test = w.test?.title?.joinToString(" › ")?.replace(Regex("\\s+"), " ")
+                val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
+                "$run${workerName(w.parallelIndex)} · $what"
+            }
+        }
+        val shown = if (lines.size > MAX_WORKER_LINES) {
+            lines.take(MAX_WORKER_LINES - 1) + "and ${lines.size - MAX_WORKER_LINES + 1} more workers"
+        } else {
+            lines
+        }
+        return shown.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /** How many workers the tooltip lists, the last line counting the others. */
+    private const val MAX_WORKER_LINES = 8
 
     /**
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in

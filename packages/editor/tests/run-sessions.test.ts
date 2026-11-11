@@ -972,6 +972,49 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
+  test('lets a run nobody attends go on past a stop no one asked for, and sends it no breakpoint', () => {
+    const notices: string[] = [];
+    const { sessions, attach } = harness({
+      holdsFailures: (ref) => ref !== 'ed-9',
+      notice: (_root, _severity, message) => void notices.push(message),
+    });
+    const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    const controls = (socket: ReturnType<typeof fakeSocket>) => lines(socket).filter((m) => m.type === 'control');
+    const unattended = attach(0, { ref: 'ed-9', takes: [...RUN_TAKES] });
+    const attended = attach(0, { ref: 'ed-1', takes: [...RUN_TAKES] });
+    const stop = (id: number, reason: 'page-pause' | 'breakpoint' | 'pause'): RunToHub => ({
+      type: 'stopped',
+      stop: id,
+      reason,
+      title: 'Click',
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: false,
+    });
+    // A `page.pause()` and a breakpoint go on at once in the run nobody attends, said once; they wait in the other.
+    unattended.read(stop(1, 'page-pause'));
+    unattended.read({ type: 'running', stop: 1 });
+    unattended.read(stop(2, 'breakpoint'));
+    attended.read(stop(1, 'page-pause'));
+    expect(controls(unattended.socket)).toEqual([
+      { type: 'control', action: 'resume', stop: 1 },
+      { type: 'control', action: 'resume', stop: 2 },
+    ]);
+    expect(controls(attended.socket)).toEqual([]);
+    expect(notices).toEqual(['Piwi let the test stopped at a.spec.ts:4 go on: nobody attends this run.']);
+    // A Pause someone asked for waits there too.
+    unattended.read({ type: 'running', stop: 2 });
+    unattended.read(stop(3, 'pause'));
+    expect(controls(unattended.socket)).toHaveLength(2);
+    // The editor's breakpoints reach the run someone attends alone.
+    const places = [{ uri: 'file:///work/shop/tests/a.spec.ts', line: 3 }];
+    sessions.setBreakpoints({ ref: 'ed-9', places });
+    sessions.setBreakpoints({ ref: 'ed-1', places });
+    expect(lines(unattended.socket).filter((m) => m.type === 'breakpoints')).toEqual([]);
+    expect(lines(attended.socket).filter((m) => m.type === 'breakpoints')).toHaveLength(1);
+    sessions.dispose();
+  });
+
   test('offers Piwi Picker the actions that write code only while the client writes it', () => {
     let writes = false;
     const { sessions } = harness({ writesCode: () => writes });

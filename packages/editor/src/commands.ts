@@ -149,6 +149,18 @@ export function verificationCommand(command: unknown): string | null {
   return parts.every((p) => p !== null) ? parts.join(' && ') : null;
 }
 
+/** A Flake Lab line's command (`flakeCommand`), with the `--server-url` it may carry (`withServerUrl`). */
+const FLAKE_LINE = /^npx @piwitests\/reporter flake (?:verify )?[1-9]\d*(?: --server-url (?:[^\s"]+|"[^"$`\\]+"))?$/;
+
+/**
+ * Whether a command a client sends back to be followed (`piwi/followCommand`) is one the service gives with `follow`: a
+ * fix plan's verification as `verificationCommand` builds it, or a Flake Lab line.
+ */
+export function followableCommand(command: unknown): command is string {
+  if (typeof command !== 'string') return false;
+  return verificationCommand(command) === command || FLAKE_LINE.test(command);
+}
+
 /** The `piwi flake` command that reproduces a test, or verifies its fix. */
 export function flakeCommand(testCaseId: number, kind: 'reproduce' | 'verify'): string | null {
   if (!Number.isSafeInteger(testCaseId) || testCaseId <= 0) return null;

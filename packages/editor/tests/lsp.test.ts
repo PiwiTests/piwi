@@ -975,7 +975,13 @@ describe('the Piwi language server', () => {
       title: 'Run the verification',
       command: 'piwi.runCommand',
       arguments: [
-        { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
+        // A run nobody attends, which the client asks the service to follow.
+        {
+          cwd: dir,
+          command: 'npx playwright test tests/checkout.spec.ts:3',
+          env: { PIWI_ORIGIN: 'editor' },
+          follow: true,
+        },
       ],
     });
     // The context is gathered once the action is picked.
@@ -1426,7 +1432,9 @@ describe('the Piwi language server', () => {
         command: {
           title: 'Reproduce this flake',
           command: 'piwi.runCommand',
-          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake 1', env: { PIWI_ORIGIN: 'editor' } }],
+          arguments: [
+            { cwd: dir, command: 'npx @piwitests/reporter flake 1', env: { PIWI_ORIGIN: 'editor' }, follow: true },
+          ],
         },
       },
       {
@@ -1435,7 +1443,14 @@ describe('the Piwi language server', () => {
         command: {
           title: 'Verify the flake fix',
           command: 'piwi.runCommand',
-          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake verify 1', env: { PIWI_ORIGIN: 'editor' } }],
+          arguments: [
+            {
+              cwd: dir,
+              command: 'npx @piwitests/reporter flake verify 1',
+              env: { PIWI_ORIGIN: 'editor' },
+              follow: true,
+            },
+          ],
         },
       },
     ]);
@@ -2836,7 +2851,11 @@ describe('runs as they happen', () => {
   test('a run of a test three times says how many of its runs passed, counted from its stream', async () => {
     const command = await verifyPays();
     expect(command.command).toBe('npx playwright test tests/checkout.spec.ts:3 --repeat-each=3 --retries=0');
-    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+    expect(command.env).toEqual({
+      PIWI_ORIGIN: 'editor',
+      PIWI_ORIGIN_REF: command.ref,
+      PIWI_RUN_CHANNEL: RECORD_CHANNEL,
+    });
     const startTime = '2026-09-27T16:00:00.000Z';
     runDetails.set(62, editorRun(62, command.ref, 'running', startTime));
     refRuns.set(command.ref!, { id: 62, status: 'running' });
@@ -4670,7 +4689,8 @@ describe('a test the instance does not know yet', () => {
       cwd: repo,
       args: ['tests/checkout.spec.ts:5', '--repeat-each=3', '--retries=0'],
       command: 'npx playwright test tests/checkout.spec.ts:5 --repeat-each=3 --retries=0',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref },
+      // On the run channel, nobody attending it: no breakpoint, no record channel.
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
     expect(await runArgs({ locations: ['tests/checkout.spec.ts:5'], repeat: 0 })).toBeNull();
