@@ -143,6 +143,15 @@ describe('the hub’s address', () => {
       const last = await waitFor(() => other.published[2] ?? undefined);
       expect(last).not.toHaveProperty('send');
       expect(last.runChannel).toEqual(other.published[0]!.runChannel);
+      // Once the service stopped, a pairing it hears writes no file again.
+      await other.client.sendRequest('shutdown');
+      const stopped = other.published.length;
+      expect(other.published.at(-1)).toBeNull();
+      await other.client.sendNotification('piwi/setRunPairing', {
+        address: `http://127.0.0.1:41004/piwi/send#${pairing(41004).token}`,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(other.published).toHaveLength(stopped);
     } finally {
       other.stop();
     }

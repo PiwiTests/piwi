@@ -207,7 +207,7 @@ the custom messages of `src/protocol.ts`:
   - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`,
     `piwi/newTestFile`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
-  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
+  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`.

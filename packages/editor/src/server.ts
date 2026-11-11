@@ -4184,6 +4184,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     agentServer = null;
     runAgent.dispose();
     runSessions.dispose();
+    // Gone with the service: a pairing named after this writes no file again.
+    discovered = null;
     if (open) options.publish?.(null);
   };
   connection.onShutdown(() => {

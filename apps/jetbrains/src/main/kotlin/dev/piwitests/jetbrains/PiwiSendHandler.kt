@@ -55,11 +55,14 @@ object PiwiSendToken {
 
     fun current(): String = cached ?: (PasswordSafe.instance.getPassword(attributes) ?: "").also { cached = it }
 
+    /** The token, minted once when none is kept; every open project's service hears the pairing it makes. */
+    @Synchronized
     fun ensure(): String = current().ifEmpty {
         val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also {
             PasswordSafe.instance.setPassword(attributes, it)
             cached = it
+            PiwiSendHandler.announceRunPairing()
         }
     }
 }
@@ -371,6 +374,23 @@ class PiwiSendHandler : HttpRequestHandler() {
             val port = BuiltInServerManager.getInstance().waitForStart().port
             "http://127.0.0.1:$port$PATH#${PiwiSendToken.ensure()}"
         }.getOrNull()
+
+        /**
+         * [runPairing] while a token is kept, for the editor service as it starts; null before one is minted, which
+         * mints none: [PiwiSendToken.ensure] tells the services once it does. Call it off the event thread.
+         */
+        fun keptRunPairing(): String? = if (PiwiSendToken.current().isEmpty()) null else runPairing()
+
+        /** Tell every open project's editor service where a run's picks go (`piwi/setRunPairing`), on a pooled thread. */
+        fun announceRunPairing() {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val address = runPairing() ?: return@executeOnPooledThread
+                for (project in ProjectManager.getInstance().openProjects) {
+                    if (project.isDisposed) continue
+                    project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.setRunPairing(SetRunPairingParams(address))
+                }
+            }
+        }
         private val EXTENSION_ORIGIN = Regex("^(chrome|moz)-extension://.+")
 
         /** The answers carry `file: null` for a scratch file, as the VS Code extension's do. */

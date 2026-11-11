@@ -943,7 +943,7 @@ data class SetBreakpointsParams(val places: List<EditorBreakpoint>)
 /**
  * `piwi/setRunPairing`: where a run's picks go (`PIWI_EDITOR_SEND`, `<url>#<token>`), which the service names in its
  * discovery file for a run started in a terminal; null for none. The plugin gives it in the initialization options
- * (`runPairing`) as the service starts.
+ * (`runPairing`) as the service starts while a token is kept, and with this once it mints one.
  */
 data class SetRunPairingParams(val address: String?)
 

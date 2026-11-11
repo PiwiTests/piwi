@@ -1009,6 +1009,9 @@ describe('an editor’s run on the run page', () => {
 
   test('is the page’s run when its page is that run on this app’s own server', () => {
     expect(desktopEditorRunOf(session({ id: 77, url: `${ORIGIN}/test-runs/77` }), 77, ORIGIN)).toBe(true);
+    // The same server under another name of the loopback interface; not another port.
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3000/test-runs/77' }), 77, ORIGIN)).toBe(true);
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3001/test-runs/77' }), 77, ORIGIN)).toBe(false);
     // A run of the same number on the team instance, another run, an ended one, or one with no page yet.
     expect(desktopEditorRunOf(session({ id: 77, url: 'https://piwi.example.com/test-runs/77' }), 77, ORIGIN)).toBe(
       false,

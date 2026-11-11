@@ -164,7 +164,7 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "stopsRuns" to true,
             "agents" to service.agentsOptions(),
         )
-        PiwiSendHandler.runPairing()?.let { options["runPairing"] = it }
+        PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
         return options
     }
 

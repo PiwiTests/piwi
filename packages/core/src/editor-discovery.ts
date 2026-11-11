@@ -3,8 +3,9 @@
  * on Windows; `PIWI_EDITORS_DIR` names another folder) once it listens, readable by its user only, and removes it as
  * it stops. A file names the service's process and machine, its version and its client, the workspace's folders, the
  * hub's WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
- * (`@piwitests/core/run-channel`), the recorder's bundle and where a run's picks go (`@piwitests/core/editor-send`). A reader lists the folder (`readLiveEditors`): it takes
- * only a file this user owns that reads as a service's file of this machine naming the process its name names, and
+ * (`@piwitests/core/run-channel`), the recorder's bundle and where a run's picks go (`@piwitests/core/editor-send`).
+ * A reader lists the folder (`readLiveEditors`): it takes only a file this user owns that reads as a service's file of
+ * this machine naming the process its name names, and
  * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
  * user's file, and skips, never deleting, any other file and another machine's (a home folder several machines share).
  * A test run started in a terminal attaches to the service whose workspace holds it (`editorForRun`). Readers ignore

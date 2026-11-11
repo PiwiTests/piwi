@@ -634,9 +634,10 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
   (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
   Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
-  does. Which port it takes: [Breakpoints](#breakpoints). The extension names it to the service as it starts, and
-  again when the listener takes the saved port (`piwi/setRunPairing`, `InitializationOptions.runPairing` on a
-  restart), so a run started in a terminal that follows the window posts its picks here too.
+  does. Which port it takes: [Breakpoints](#breakpoints). The extension names it to the service once the window
+  listens (the saved port, Piwi Picker's pairing or a run's own) and again as the listener or the token changes
+  (`piwi/setRunPairing`, `InitializationOptions.runPairing` on a restart), so a run started in a terminal that follows
+  the window posts its picks here too. It starts no listener for this: a window with none names no pairing.
 - One window holds the saved port. A window with no listener tries it as it starts and every 10 s after
   (`takeSavedPort`, `SAVED_PORT_RETRY_MS`), so it takes the port once the window holding it closes, and Piwi Picker's
   pairing reaches every window's hub through it. A window listening on another port for a run's pairing keeps it.

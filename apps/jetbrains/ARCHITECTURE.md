@@ -454,9 +454,10 @@ The checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoin
 
 When the command carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or says the
 run pauses at a `page.pause()` (`RunCommand.pauses`), `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing
-address `PiwiSendHandler` serves, with its token from `PasswordSafe` (created when missing, `runPairing`); the
-descriptor names the same address to the service as it starts (`runPairing` in its initialization options), so a run
-started in a terminal that follows the IDE posts its picks there too. `startRun` also shows
+address `PiwiSendHandler` serves, with its token from `PasswordSafe` (created when missing, `runPairing`). The
+descriptor names the same address to the service as it starts while a token is kept (`keptRunPairing`, `runPairing` in
+its initialization options), and `PiwiSendToken.ensure` tells every open project's service once it mints one
+(`piwi/setRunPairing`), so a run started in a terminal that follows the IDE posts its picks there too. `startRun` also shows
 `RunCommand.notice` (a reporter too old for breakpoints) once, as a warning balloon. What the service does with the
 breakpoints: [Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators)
 in the editor service's reference.

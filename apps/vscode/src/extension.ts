@@ -448,10 +448,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // The extension's own log, kept when the client stops for a restart.
   const outputChannel = vscode.window.createOutputChannel('Piwi', { log: true });
   context.subscriptions.push(outputChannel);
-  /** Where a run's picks go (`runPairing` below), once known: the service names it again as it starts again. */
+  /** Where a run's picks go, once this window listens: the service names it again as it starts again. */
   let runPairingAddress: string | null = null;
-  /** Tell the running service where a run's picks go, once `runPairing` exists. */
-  let announceRunPairing: (() => void) | null = null;
   const clientOptions: LanguageClientOptions = {
     outputChannel,
     // A failed request is logged, never a toast: the Failures view says when the service is down.
@@ -961,8 +959,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
+  /**
+   * Tell the service where a run's picks go once this window listens (the saved port, Piwi Picker's pairing, or a run's
+   * own), and again as the listener or the token changes. It never starts a listener itself: one started for this alone
+   * would keep the window off the saved port another window lets go.
+   */
+  const announceRunPairing = () => {
+    const listener = sendListener;
+    const address = listener && sendStore.token ? formatPairing({ url: listener.url, token: sendStore.token }) : null;
+    if (address === runPairingAddress) return;
+    runPairingAddress = address;
+    if (lc.isRunning()) {
+      void lc
+        .sendNotification(SET_RUN_PAIRING_NOTIFICATION, { address } satisfies SetRunPairingParams)
+        .catch(() => undefined);
+    }
+  };
   const startListener = async (port: number) => {
-    sendListener = await startSendListener({
+    const started = await startSendListener({
       port,
       token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
@@ -975,7 +989,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         }),
       forwarded: () => pairingForwarded,
     });
-    return sendListener;
+    sendListener = started;
+    announceRunPairing();
+    return started;
   };
   // A pairing asked while another start is on its way waits for that one.
   const listen = oneStartAtATime(startListener);
@@ -992,7 +1008,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     listen,
     started: (started) => {
       if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
-      announceRunPairing?.();
     },
   });
   context.subscriptions.push(savedPort);
@@ -1002,6 +1017,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (change.key !== SEND_TOKEN) return;
       void context.secrets.get(SEND_TOKEN).then((token) => {
         sendStore.token = token ?? '';
+        announceRunPairing();
       });
     }),
   );
@@ -1026,14 +1042,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * port of the run's time when another window holds the saved one, which stays saved.
    */
   const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
-  announceRunPairing = () =>
-    void runPairing()
-      .then(async (address) => {
-        runPairingAddress = address;
-        if (lc.isRunning())
-          await lc.sendNotification(SET_RUN_PAIRING_NOTIFICATION, { address } satisfies SetRunPairingParams);
-      })
-      .catch(() => undefined);
 
   /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
   const breakpointsForRun = () =>
