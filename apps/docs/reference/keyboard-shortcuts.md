@@ -44,7 +44,9 @@ stopped test shown: a run's worker tabs show one worker at a time. Step and Fini
 | `Shift` + `F11` | Finish |
 
 While **Interact** is on at a [watched stop](/features/runs-window#click-and-type-on-the-view), the view takes your
-keys, but the browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` turns **Interact** off, gives
+keys: characters are typed, named keys (Enter, the arrows, Backspace, Delete, Home, End) pressed, with Shift, and
+`Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the editing keys. The browser's other shortcuts, the function keys and
+`Esc` stay the window's: `Esc` turns **Interact** off, gives
 the stop back and moves the focus to **Interact**. While a pick or a check runs on the page, `Esc` goes to the page
 instead, as its own key. `Tab` moves the focus on past the view, unless you clicked into
 it: then `Tab` and `Shift+Tab` go to the page too, until `Esc` turns **Interact** off. Characters an input method composes (Chinese,

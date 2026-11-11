@@ -5,6 +5,8 @@ import {
   finishedRunFlash,
   liveRunFacts,
   runsOfLocalRun,
+  thumbnailStopRun,
+  trayListsRun,
   unbegunRunsOf,
   FAIL_FLASH_MS,
   NO_LIVE_RUN_FACTS,
@@ -222,6 +224,32 @@ describe('finishedJobFlash', () => {
   });
 });
 
+describe('aggregateRunProgress, with tests waiting for the person', () => {
+  test('says the tests that wait first, amber, over what runs or failed', () => {
+    expect(aggregateRunProgress([run('running', 3, 12)], 1)).toEqual({
+      state: 'paused',
+      fraction: 3 / 12,
+      label: '1 test waits for you · Running 3/12',
+      failing: false,
+    });
+    expect(aggregateRunProgress([run('running', 3, 12, 1)], 2)).toMatchObject({
+      state: 'paused',
+      label: '2 tests wait for you · Running 3/12 · 1 failed',
+      failing: true,
+    });
+    // A run the event stream does not list (one the app's hub alone knows), waiting with nothing in flight: a full bar,
+    // as a paused bar keeps the value it was given last.
+    expect(aggregateRunProgress([], 1)).toEqual({
+      state: 'paused',
+      fraction: 1,
+      label: '1 test waits for you',
+      failing: false,
+    });
+    expect(aggregateRunProgress([run('running', 0, 0)], 1).label).toBe('1 test waits for you · Running');
+    expect(aggregateRunProgress([], 0)).toEqual(NO_RUN_PROGRESS);
+  });
+});
+
 describe('runsOfLocalRun', () => {
   const live = (over: Partial<LiveRun> = {}): LiveRun => ({
     status: 'running',
@@ -345,5 +373,56 @@ describe('runsOfLocalRun', () => {
     expect(runsOfLocalRun(active, owner({ piwiRunBaseline: null }), [])).toEqual([]);
     expect(runsOfLocalRun(active, owner({ kind: 'flake' }), [])).toEqual([]);
     expect(runsOfLocalRun(active, owner({ piwiRunBaseline: 7 }), [])).toEqual([]);
+  });
+});
+
+describe('the runs the Local runs tray lists, and the run the thumbnail stops', () => {
+  const live = (over: Partial<LiveRun> = {}): LiveRun => ({
+    status: 'running',
+    done: 1,
+    total: 10,
+    failed: 0,
+    projectId: 1,
+    origin: 'desktop',
+    originRef: 'desktop:a1',
+    name: 'desktop-7',
+    job: false,
+    ...over,
+  });
+  const owner = (over: Partial<LocalRunOwner> = {}): LocalRunOwner => ({
+    key: 1,
+    kind: 'tests',
+    projectId: '1',
+    originRef: 'desktop:a1',
+    hubRefs: ['desktop-7'],
+    piwiRunBaseline: 4,
+    flakeTestCaseId: null,
+    startedAt: 1000,
+    finishedAt: null,
+    ...over,
+  });
+
+  test('lists a run of one of its runs, never an editor’s, a terminal’s or another window’s', () => {
+    expect(trayListsRun(7, live(), [owner()])).toBe(true);
+    expect(trayListsRun(7, live({ origin: 'editor', originRef: 'editor:x', name: null }), [owner()])).toBe(false);
+    expect(trayListsRun(7, live({ origin: 'terminal', originRef: null, name: null }), [owner()])).toBe(false);
+    expect(trayListsRun(7, live({ originRef: 'desktop:b2', name: 'desktop-9' }), [owner()])).toBe(false);
+    expect(trayListsRun(7, live(), [])).toBe(false);
+    // A run whose baseline was never read still lists its own runs, by what they recorded.
+    expect(trayListsRun(7, live(), [owner({ piwiRunBaseline: null })])).toBe(true);
+    expect(
+      trayListsRun(7, live({ originRef: 'desktop:b2', name: 'desktop-9' }), [owner({ piwiRunBaseline: null })]),
+    ).toBe(false);
+  });
+
+  test('stops the run started last of those still running, then the next as it stops', () => {
+    const first = { ...owner({ key: 1, startedAt: 1000 }), status: 'running' };
+    const last = { ...owner({ key: 2, startedAt: 3000 }), status: 'running' };
+    const ended = { ...owner({ key: 3, startedAt: 5000 }), status: 'passed' };
+    expect(thumbnailStopRun([first, last, ended])).toBe(last);
+    // A second click never kills the run it already stopped.
+    expect(thumbnailStopRun([first, { ...last, stopRequested: true }, ended])).toBe(first);
+    expect(thumbnailStopRun([ended])).toBeNull();
+    expect(thumbnailStopRun([])).toBeNull();
   });
 });

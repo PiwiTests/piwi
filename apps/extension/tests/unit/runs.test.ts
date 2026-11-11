@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-view';
-import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
+import type { HubProgress, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
+  attentionOf,
   pageHintOf,
   parseRunsRequest,
   shareRefusalOf,
@@ -532,5 +533,56 @@ describe('a lane watched while it runs', () => {
     // A stop outside a test, which no lane shows: watching the lane makes no viewer of it.
     const outside = stateForViewer(state([{ ...stopped, test: null }]), (_view, lane) => lane === 1);
     expect(outside.runs[0]!.session.workers[0]!.stop?.intents).toEqual(['mock', 'view', 'pick-at']);
+  });
+});
+
+describe('what the runs ask of the person', () => {
+  const hub = 'ws://127.0.0.1:50123/piwi/hub';
+  const hubs: RunsState['hubs'] = [
+    {
+      id: hub,
+      connected: true,
+      client: null,
+      desktop: false,
+      lanes: true,
+      presence: false,
+      holds: false,
+      stops: false,
+    },
+  ];
+  const progress = (status: HubProgress['status'], failed: number): HubProgress => ({
+    total: 4,
+    done: 4,
+    failed,
+    flaky: 0,
+    skipped: 0,
+    status,
+    failure: null,
+  });
+  const failedRun = (ref: string, failed: number, unseen?: boolean) => ({
+    ...run(ref, [], true),
+    session: { ...run(ref, [], true).session, progress: progress('failed', failed) },
+    ...(unseen ? { unseen } : {}),
+  });
+
+  it('counts the failed tests of a run that ended unseen, a run with none failed as one, until it is seen', () => {
+    expect(attentionOf({ hubs, runs: [failedRun('a', 2)] })).toBeNull();
+    expect(attentionOf({ hubs, runs: [failedRun('a', 2, true), failedRun('b', 0, true)] })).toEqual({
+      state: 'failing',
+      waiting: 0,
+      heldFailures: 0,
+      failed: 3,
+    });
+  });
+
+  it('says a test waiting first, the unseen failures added to the live ones', () => {
+    const waiting = run('w', [worker({ state: 'stopped', stop: stop('s1') })]);
+    const live = { ...waiting, session: { ...waiting.session, progress: progress('running', 1) } };
+    expect(attentionOf({ hubs, runs: [live, failedRun('a', 2, true)] })).toEqual({
+      state: 'waiting',
+      waiting: 1,
+      heldFailures: 0,
+      failed: 3,
+    });
   });
 });

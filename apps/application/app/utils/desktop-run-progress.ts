@@ -93,10 +93,26 @@ export const ACTIVE_RUN_STATUSES: ReadonlySet<string> = new Set(['running', 'ini
 /**
  * Fold the in-flight runs into one progress descriptor. Only active runs count;
  * with none active it returns the cleared state (the plugin decides whether to
- * flash a finished run's outcome first).
+ * flash a finished run's outcome first). While tests wait at a stop for the
+ * person (`waiting`, from the hub's runs: `runsAttention`), the shell shows that
+ * first, amber (`paused`), whatever runs or failed: `1 test waits for you`.
  */
-export function aggregateRunProgress(runs: readonly RunCounts[]): AggregatedRunProgress {
+export function aggregateRunProgress(runs: readonly RunCounts[], waiting = 0): AggregatedRunProgress {
   const active = runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status));
+  const running = aggregateRunning(active);
+  if (waiting <= 0) return running;
+  const waits = waiting === 1 ? '1 test waits for you' : `${waiting} tests wait for you`;
+  return {
+    state: 'paused',
+    // A paused bar keeps the value it was given last: a full one while the progress is not known.
+    fraction: running.fraction ?? 1,
+    label: running.label ? `${waits} · ${running.label.replace(/…$/, '')}` : waits,
+    failing: running.failing,
+  };
+}
+
+/** The active runs' progress alone, as the shell shows it while no test waits. */
+function aggregateRunning(active: readonly RunCounts[]): AggregatedRunProgress {
   if (active.length === 0) return NO_RUN_PROGRESS;
 
   const done = active.reduce((sum, r) => sum + Math.max(0, r.done), 0);
@@ -317,4 +333,29 @@ export function runsOfLocalRun(
     ids.push(id);
   }
   return ids.sort((a, b) => a - b);
+}
+
+/**
+ * Whether the run `id`, which named what launched it (`liveRunFacts`), is a run of one of this window's local runs
+ * (`runsOfLocalRun`), one whose baseline was never read counting from the project's first run. Only such a run's end
+ * flashes on the shell and asks for attention: a run of an editor, of a terminal, of CI, of another window or of one
+ * from before a reload never does.
+ */
+export function trayListsRun(id: number, run: LiveRun, owners: readonly LocalRunOwner[]): boolean {
+  const one = new Map([[id, run]]);
+  return owners.some((owner) =>
+    runsOfLocalRun(one, { ...owner, piwiRunBaseline: owner.piwiRunBaseline ?? 0 }, owners).includes(id),
+  );
+}
+
+/**
+ * The run of this window the taskbar thumbnail's Stop stops: the one started last of those still running that no Stop
+ * was asked of yet, so a second click stops the next one rather than killing it; none when no such run runs.
+ */
+export function thumbnailStopRun<
+  T extends Pick<LocalRunOwner, 'startedAt'> & { status: string; stopRequested?: boolean },
+>(runs: readonly T[]): T | null {
+  return runs
+    .filter((run) => run.status === 'running' && !run.stopRequested)
+    .reduce<T | null>((latest, run) => (latest && latest.startedAt >= run.startedAt ? latest : run), null);
 }

@@ -174,7 +174,18 @@ data class DebugRun(
     val ref: String? = null,
 )
 
-data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
+/**
+ * `piwi.runCommand`'s argument: a command line to run in a terminal. `follow` says it runs Playwright for nobody
+ * watching (a fix plan's verification, a Flake Lab command): the plugin asks `piwi/followCommand` for it and runs the
+ * command it answers as a test run, so its runs are listed, paused and stopped as the IDE's; as a plain command when the
+ * answer is null.
+ */
+data class RunCommandArgs(
+    val cwd: String,
+    val command: String,
+    val env: Map<String, String>? = null,
+    val follow: Boolean? = null,
+)
 
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
@@ -1126,6 +1137,14 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/runArgs")
     fun runArgs(params: RunTestsArgs): CompletableFuture<RunCommand?>
+
+    /**
+     * `piwi/followCommand`: a command given with `RunCommandArgs.follow`, answered with a ref of the service's own and
+     * the run channel in its environment, its runs held to no failure since nobody attends them; null when the service
+     * cannot follow it.
+     */
+    @JsonRequest("piwi/followCommand")
+    fun followCommand(params: RunCommandArgs): CompletableFuture<RunCommand?>
 
     @JsonRequest("piwi/status")
     fun status(): CompletableFuture<StatusResult?>

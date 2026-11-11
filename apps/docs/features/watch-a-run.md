@@ -39,6 +39,10 @@ The reporter's own process tells the editor or the desktop app how many tests th
 and how the run ended with its first failure. The editors' status bars and the Runs window count it the same way: each
 test once, by its last attempt. The desktop tray counts the lines of the run's output instead, a retry again.
 
+The status bar item's tooltip also says what each worker runs now (`Worker 2 · cart › adds a mug · stopped`). In VS
+Code, the Testing view's test run of your run writes in its output each test a worker starts, each stop and why, with
+the line it stands at, and each stop answered.
+
 In VS Code, a run in progress that is not yours, a CI run or a teammate's on your branch or on the branch your results
 are compared with, names itself so: the status bar says `CI run #125` or `run #126`, and the Testing view shows it as
 `Piwi: CI run #125 on main`, its tests' results as they end, never as your tests running. Your own run stays in the status bar whichever Playwright config the

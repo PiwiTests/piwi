@@ -105,6 +105,16 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
         assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
+        // A Run tab is named after what it runs: the tests, a chain's included, else the command up to its first option.
+        assertEquals("Piwi: a.spec.ts:3", Glue.runTabName("npx playwright test tests/a.spec.ts:3 --repeat-each=3"))
+        val chain = "npx playwright test tests/a.spec.ts --project=chromium && npx playwright test tests/b.spec.ts --project=firefox"
+        assertEquals("Piwi: a.spec.ts and 1 more", Glue.runTabName(chain))
+        assertEquals("Piwi: piwi flake 12", Glue.runTabName("npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000"))
+        assertEquals("Piwi: piwi flake verify 12", Glue.runTabName("npx @piwitests/reporter flake verify 12"))
+        // A chain is the shell's: the IDE's runner takes none.
+        assertTrue(Glue.chained(chain))
+        assertNull(Glue.playwrightTestArgs(chain))
+        assertFalse(Glue.chained("npx playwright test tests/a.spec.ts"))
     }
 
     @Test
@@ -772,6 +782,33 @@ class GlueTest {
         val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
         assertEquals(stops.single(), stopped.stop)
         assertEquals("Worker 2 · Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+    }
+
+    @Test
+    fun `what each worker runs now is said by its lane, each run named when several run`() {
+        val one = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5)),
+            RunWorker(0, 0, "running", runTest()),
+            RunWorker(2, 2, "between"),
+        )
+        assertEquals(
+            "Worker 1 · checkout › pays\nWorker 2 · checkout › pays · stopped\nWorker 3 · between tests",
+            Glue.workersNowText(mapOf("ed-1" to one)),
+        )
+        val two = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest())), "ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))
+        assertEquals(
+            "Run in shop (ed-1) · Worker 1 · checkout › pays\nRun in shop (ed-2) · Worker 1 · checkout › pays",
+            Glue.workersNowText(two),
+        )
+        assertNull(Glue.workersNowText(mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest()), ended = true))))
+        // Many workers: the first seven, then how many more; a title's line break as a space.
+        val wrapped = runTest().copy(title = listOf("cart", "adds\na mug"))
+        val many = session("ed-1", *Array(12) { RunWorker(it, it, "running", wrapped) })
+        val listed = Glue.workersNowText(mapOf("ed-1" to many))!!.split("\n")
+        assertEquals(8, listed.size)
+        assertEquals("Worker 1 · cart › adds a mug", listed.first())
+        assertEquals("and 5 more workers", listed.last())
     }
 
     @Test
