@@ -15,6 +15,8 @@ import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { splitSuitePath } from '../utils/suites';
+import { isEndedAtStop } from '../utils/skip-kind';
+import type { TestAnnotation } from '../types';
 import { caseOutput, inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
@@ -131,6 +133,7 @@ export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | 
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
         failureClusterId: testRunsCases.failureClusterId,
+        testAnnotations: testRunsCases.testAnnotations,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -188,10 +191,14 @@ export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | 
       ...c,
       status: c.status ?? 'open',
     })),
-    recentExecutions: recentExecutions.map((e: { failureClusterId: number | null }) => ({
-      ...e,
-      knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
-    })),
+    // An execution ended at a stop (End the test) is marked so; its annotations stay on the execution's own page.
+    recentExecutions: recentExecutions.map(
+      ({ testAnnotations, ...e }: { status: string; failureClusterId: number | null; testAnnotations: unknown }) => ({
+        ...e,
+        endedAtStop: isEndedAtStop({ status: e.status, testAnnotations: testAnnotations as TestAnnotation[] | null }),
+        knownIssue: e.failureClusterId != null ? (knownIssues.get(e.failureClusterId) ?? null) : null,
+      }),
+    ),
     links,
   };
 }

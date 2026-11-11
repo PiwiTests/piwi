@@ -291,6 +291,7 @@ useViewScroll(
                 :href="`/test-run-cases/${exec.id}`"
                 :title="formatRelativeTime(exec.startTime)"
                 :status="exec.status"
+                :ended-at-stop="exec.endedAtStop"
                 :error="exec.error"
                 :issue="exec.knownIssue"
                 :project-key="testCase?.project?.id"

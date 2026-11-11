@@ -37,6 +37,8 @@ const props = defineProps<{
     skippedTests: number;
     /** `test.fixme()` skips — a subset of `skippedTests`. */
     fixmeTests?: number;
+    /** Tests ended at a stop (End the test) — a subset of `skippedTests`, marked beside the status. */
+    endedAtStopTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
     /** Tests the run's interruption cut short: in no outcome, known from the loaded cases only. */
@@ -160,6 +162,12 @@ const passed = computed(() => props.displayProgress?.passedTests ?? props.testRu
 const failed = computed(() => props.displayProgress?.failedTests ?? props.testRun?.failedTests ?? 0);
 const skipped = computed(() => props.displayProgress?.skippedTests ?? props.testRun?.skippedTests ?? 0);
 const fixme = computed(() => props.displayProgress?.fixmeTests ?? 0);
+const endedAtStop = computed(() => props.displayProgress?.endedAtStopTests ?? 0);
+const endedAtStopTitle = computed(() =>
+  endedAtStop.value === 1
+    ? 'A test of this run was ended at a stop with End the test: it counts as skipped, not passed'
+    : `${endedAtStop.value} tests of this run were ended at a stop with End the test: they count as skipped, not passed`,
+);
 const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?.totalTests ?? 0);
 // Flaky and didn't-run track the live progress too (both are 0 on the persisted
 // row until the run finishes), so the bar shows passed-on-retry and didn't-run
@@ -378,6 +386,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           + label
         </button>
       </template>
+
+      <!-- A mark on the run's outcome: its status stays as it is. -->
+      <UTooltip v-if="endedAtStop > 0" :text="endedAtStopTitle">
+        <span class="shrink-0 text-xs text-muted" data-shot="run-ended-at-stop">{{
+          endedAtStopMark(endedAtStop)
+        }}</span>
+      </UTooltip>
 
       <UTooltip v-if="testRun?.keptAt" :text="describeKeep(testRun)">
         <span class="shrink-0 inline-flex items-center gap-1 text-xs text-muted" data-shot="run-kept">

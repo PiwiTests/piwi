@@ -5,12 +5,15 @@ import type { BadgeProps } from '@nuxt/ui';
  * Status verdict for detail summaries: icon and label in a single subtle
  * badge, the label in sentence case ("Didn't run"). The icon spins while the
  * status is in flight. Given an execution's verdict, a pass after a failed
- * attempt reads "Passed on retry" in the flaky color and icon.
+ * attempt reads "Passed on retry" in the flaky color and icon, and a test
+ * ended at a stop "Ended at a stop" in the skipped color and icon.
  */
 const props = defineProps<{
   status: string;
   /** The execution passed after an earlier attempt failed or timed out (`passedAfterFailure`). */
   flaky?: boolean | null;
+  /** The execution was ended at a stop (End the test, `isEndedAtStop`): skipped, marked so. */
+  endedAtStop?: boolean | null;
   size?: BadgeProps['size'];
   /** The page no longer follows the object (it can no longer read it): an in-flight status's icon stands still. */
   still?: boolean;
@@ -26,6 +29,6 @@ const key = computed(() => (statusPaletteKey(props.status, props.flaky) === 'fla
       class="size-3.5 shrink-0"
       :class="{ 'animate-spin': !still && isStatusInFlight(status) }"
     />
-    {{ statusChipLabel(status, flaky) }}
+    {{ statusChipLabel(status, flaky, endedAtStop) }}
   </UBadge>
 </template>

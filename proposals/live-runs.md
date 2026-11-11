@@ -183,8 +183,11 @@ the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page 
 to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
 reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
 worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
-be decided; and the tray as a compact list. The later phases are
-proposed. The bugs the analysis
+be decided; and the tray as a compact list. Built from P9: a run whose test was ended at a stop is marked so, not a
+plain pass, as a mark on the result with every status kept (open question 8): the reporter counts those tests in
+`run-progress` and `run-end` (`endedAtStop`, by `ENDED_AT_STOP_REASON` of `@piwitests/core/run-channel`), and the
+dashboard's run and test pages, Piwi Picker's Runs window, the desktop app's tray and both editors say **Ended at a
+stop**. The rest of P9 and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -860,6 +863,7 @@ runs the performance check.
 7. The pending pull-request status: on by default where pull-request feedback is set up? A commit status or a check
    run? What is GitLab's equivalent?
 8. Should a run whose test was ended at a stop get a run status of its own rather than a mark (a wire change)?
+   Answered: a mark, every status kept (built in P9).
 9. JetBrains: keep Swing, fed with the service's words, or host the lane view in JCEF?
 10. Should a run with breakpoints stay headed by default, now that a headless stop can be watched?
 11. `run_start`: a spec and a line only, or any argument the service's checker accepts? Should an agent's first run in

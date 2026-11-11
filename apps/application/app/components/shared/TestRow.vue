@@ -28,7 +28,8 @@ import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worke
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
-import { badgesFromTestCase } from '~/utils/test-row-badges';
+import { ENDED_AT_STOP_BADGE, badgesFromTestCase } from '~/utils/test-row-badges';
+import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { testLabel } from '#shared/utils/test-label';
 import { shownWorkerNumber } from '#shared/worker-lane';
 
@@ -46,6 +47,8 @@ const props = withDefaults(
     externalId?: string | null;
     /** Status override that drives the left icon (defaults to the execution's). */
     status?: string | null;
+    /** The result was ended at a stop (End the test), when the row is not built from an execution: marked so. */
+    endedAtStop?: boolean | null;
     /** Left-icon override; defaults to the status glyph. */
     icon?: string | null;
     iconClass?: string | null;
@@ -109,6 +112,7 @@ const props = withDefaults(
     displayTitle: null,
     externalId: null,
     status: null,
+    endedAtStop: null,
     icon: null,
     iconClass: null,
     location: null,
@@ -203,16 +207,28 @@ const stepsData = computed(() => props.steps ?? tc.value?.steps ?? null);
 const locationPath = computed(() => props.location ?? tc.value?.location ?? null);
 
 const badges = computed<TestRowBadge[]>(
-  () => props.badges ?? (tc.value ? badgesFromTestCase(tc.value, { quarantined: props.quarantined }) : []),
+  () =>
+    props.badges ??
+    (tc.value
+      ? badgesFromTestCase(tc.value, { quarantined: props.quarantined })
+      : endedAtStop.value
+        ? [ENDED_AT_STOP_BADGE]
+        : []),
 );
 
 const statusIcon = computed(() => props.icon ?? getStatusIcon(status.value));
 const statusIconClass = computed(() => props.iconClass ?? getStatusTextClass(status.value));
 
+/** The row's result was ended at a stop (End the test): skipped, marked so. */
+const endedAtStop = computed(() =>
+  props.status != null || !tc.value ? !!props.endedAtStop && status.value === 'skipped' : isEndedAtStop(tc.value),
+);
+
+/** What the status icon says: why a test did not run, and a test ended at a stop as such rather than as skipped. */
 const statusHint = computed(() =>
-  tc.value && tc.value.status === 'didnotrun'
+  tc.value?.status === 'didnotrun'
     ? formatDidNotRunReason(tc.value.didNotRunReason)
-    : formatStatusLabel(status.value),
+    : formatExecutionStatus(status.value, false, endedAtStop.value),
 );
 
 const suiteSegments = computed(() => props.suitePath ?? []);

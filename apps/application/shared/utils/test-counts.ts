@@ -14,7 +14,7 @@
  */
 
 import { isFlakyResult } from '@piwitests/core/status-classify';
-import { isFixmeSkip } from './skip-kind';
+import { isEndedAtStop, isFixmeSkip } from './skip-kind';
 
 /**
  * Per-status tally keys that should be counted as "failed".
@@ -337,6 +337,8 @@ export interface RunCaseSummary {
   flaky: number;
   /** Skipped by `test.fixme()` — a subset of `skipped`, not an extra bucket. */
   fixme: number;
+  /** Ended at a stop (End the test, `isEndedAtStop`) — a subset of `skipped`, not an extra bucket. */
+  endedAtStop: number;
   /** Still in flight (not yet settled). */
   running: number;
   /** Cut short by the run's interruption: in no outcome, so the gap the other buckets leave, named. */
@@ -347,7 +349,8 @@ export interface RunCaseSummary {
  * Tally a run's cases the way the live run views count them: timed-out folds
  * into `failed`, a case that passed after an earlier attempt failed
  * (`isFlakyExecution`) counts as `passed` **and** as `flaky` (never as a
- * failure), a `test.fixme()` skip counts as `skipped` **and** as `fixme`,
+ * failure), a `test.fixme()` skip counts as `skipped` **and** as `fixme`, a
+ * test ended at a stop as `skipped` **and** as `endedAtStop`,
  * `running` is the in-flight remainder and `interrupted` the cases the run's
  * interruption cut short, in no outcome. Pass one entry per test, its final
  * attempt with its attempt history (de-duplicate attempts first), and the
@@ -360,7 +363,7 @@ export function summarizeRunCases(
     status: string;
     retries?: number | null;
     attempts?: ReadonlyArray<AttemptHistoryEntry> | null;
-    testAnnotations?: ReadonlyArray<{ type: string }> | null;
+    testAnnotations?: ReadonlyArray<{ type: string; description?: string | null }> | null;
   }>,
 ): RunCaseSummary {
   const s: RunCaseSummary = {
@@ -371,6 +374,7 @@ export function summarizeRunCases(
     didNotRun: 0,
     flaky: 0,
     fixme: 0,
+    endedAtStop: 0,
     running: 0,
     interrupted: 0,
   };
@@ -382,6 +386,7 @@ export function summarizeRunCases(
     } else if (tc.status === 'skipped') {
       s.skipped++;
       if (isFixmeSkip(tc)) s.fixme++;
+      if (isEndedAtStop(tc)) s.endedAtStop++;
     } else if (tc.status === 'didnotrun') s.didNotRun++;
     else if (tc.status === 'running') s.running++;
     else if (tc.status === 'interrupted') s.interrupted++;

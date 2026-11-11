@@ -3,6 +3,8 @@ import { testLabel } from '#shared/utils/test-label';
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
+import { endedAtStopIn } from '@piwitests/core/run-channel';
+import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
@@ -389,10 +391,14 @@ const verifySummary = computed(() => {
 });
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
-// Playwright test marks only — `piwi:` annotations are ownership, not marks.
+/** The execution was ended at a stop (End the test): its status chip says so, in place of Skipped. */
+const endedAtStop = computed(() => (testCase.value ? isEndedAtStop(testCase.value) : false));
+// Playwright test marks only — `piwi:` annotations are ownership, not marks, and the skip of a test ended at a stop is
+// the status chip's.
 const annotations = computed(() =>
   (testCase.value?.testAnnotations ?? []).filter(
-    (ann: { type: string; description?: string | null }) => !isPiwiAnnotation(ann.type),
+    (ann: { type: string; description?: string | null }) =>
+      !isPiwiAnnotation(ann.type) && !(endedAtStop.value && endedAtStopIn([ann])),
   ),
 );
 
@@ -868,7 +874,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="execution-heading">
-              <StatusChip :status="testCase?.status ?? ''" :flaky="testCase?.passedAfterFailure" class="shrink-0" />
+              <StatusChip
+                :status="testCase?.status ?? ''"
+                :flaky="testCase?.passedAfterFailure"
+                :ended-at-stop="endedAtStop"
+                class="shrink-0"
+              />
               <!-- The path in the meta style, the title in the body style -->
               <TestTitlePath
                 data-shot="test-title-path"

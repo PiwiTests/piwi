@@ -12,6 +12,8 @@ export interface RunSummaryFacts {
   failed: number;
   skipped: number;
   fixme: number;
+  /** Tests ended at a stop (End the test): a subset of `skipped`, named beside it. */
+  endedAtStop?: number;
   flaky: number;
   didNotRun: number;
   /** Results the run's interruption cut short: in no outcome, named apart. */
@@ -26,11 +28,15 @@ export function runSummaryText(run: RunSummaryFacts): string {
   const flakyPart = run.flaky > 0 ? ` · ${run.flaky} passed on retry` : '';
   const didNotRunPart = run.didNotRun > 0 ? ` · ${run.didNotRun} didn't run` : '';
   const interruptedPart = run.interrupted > 0 ? ` · ${run.interrupted} interrupted` : '';
-  const fixmePart = run.fixme > 0 ? ` (${run.fixme} fixme)` : '';
+  const skippedKinds = [
+    run.fixme > 0 ? `${run.fixme} fixme` : '',
+    run.endedAtStop ? `${run.endedAtStop} ended at a stop` : '',
+  ].filter(Boolean);
+  const skippedPart = skippedKinds.length ? ` (${skippedKinds.join(', ')})` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${run.project}`,
-    `Tests: ${run.total} total · ${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped${fixmePart}${didNotRunPart}${interruptedPart}${flakyPart}`,
+    `Tests: ${run.total} total · ${run.passed} passed · ${run.failed} failed · ${run.skipped} skipped${skippedPart}${didNotRunPart}${interruptedPart}${flakyPart}`,
     `Duration: ${formatLongDuration(run.duration)}`,
   ].join('\n');
 }

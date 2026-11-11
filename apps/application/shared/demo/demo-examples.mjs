@@ -335,6 +335,15 @@ export const DEMO_EXAMPLES = [
     route: '/test-run-cases/533',
     expect: { execution: { id: 533, title: 'Button primary variant renders correctly' } },
   },
+  {
+    id: 'test-ended-at-stop',
+    doc: 'features/end-the-test',
+    title: 'E2E Checkout › a cart test ended at its breakpoint',
+    shows:
+      'A run started from the editor stopped the test at its breakpoint and ended it there with End the test: Playwright skipped it, and its execution reads Ended at a stop.',
+    route: '/test-run-cases/834',
+    expect: { execution: { id: 834, title: 'should remove item from cart' } },
+  },
 ];
 
 /** The examples a docs page renders, in registry order. */
