@@ -101,6 +101,17 @@ pub struct LocalRuns {
     specs: Mutex<HashMap<u32, PathBuf>>,
     /// What each running run is, for the tray's Stop items (`run_label`).
     labels: Mutex<HashMap<u32, String>>,
+    /// The linked folder each plain run is going in (`runs_in`).
+    folders: Mutex<HashMap<u32, PathBuf>>,
+    /// Set once the app quits (`kill_all`): every run that ends from then on
+    /// was stopped.
+    quitting: AtomicBool,
+}
+
+/// The real path of `path`, as Windows writes it without the `\\?\` verbatim
+/// prefix; `path` itself when it cannot be resolved.
+pub(crate) fn real_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// What a local run is, as the tray names it: `tests in shop`, `the bisect in
@@ -141,6 +152,25 @@ impl LocalRuns {
         self.labels.lock().unwrap().insert(id, label);
     }
 
+    /// Record the linked folder plain run `id` is going in.
+    pub(crate) fn track_folder(&self, id: u32, folder: &Path) {
+        self.folders.lock().unwrap().insert(id, folder.to_path_buf());
+    }
+
+    /// The linked folders the plain runs are going in, each once.
+    pub(crate) fn folders(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = self.folders.lock().unwrap().values().cloned().collect();
+        folders.sort();
+        folders.dedup();
+        folders
+    }
+
+    /// Whether a plain run is going in `folder`, compared by real path.
+    pub(crate) fn runs_in(&self, folder: &Path) -> bool {
+        let folder = real_path(folder);
+        self.folders.lock().unwrap().values().any(|other| real_path(other) == folder)
+    }
+
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.
     pub(crate) fn register_job(&self, id: u32, job: Job) {
         self.jobs.lock().unwrap().insert(id, job);
@@ -150,6 +180,7 @@ impl LocalRuns {
     pub(crate) fn drop_job(&self, id: u32) {
         self.jobs.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Record (or clear) the child currently running for a job, so a stop or
@@ -182,11 +213,20 @@ impl LocalRuns {
         }
     }
 
+    /// Forget plain run `id` once its process has exited, and answer whether
+    /// it was stopped: asked to stop, or still going when the app quit.
+    fn end_child(&self, id: u32) -> bool {
+        let stopped = self.stopping.lock().unwrap().contains(&id) || self.quitting.load(Ordering::SeqCst);
+        self.drop_child(id);
+        stopped
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
     }
 
     /// Kill a plain run's process tree now, if it is still running.
@@ -194,6 +234,7 @@ impl LocalRuns {
         let child = self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
         self.labels.lock().unwrap().remove(&id);
+        self.folders.lock().unwrap().remove(&id);
         if let Some(child) = child {
             crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
@@ -217,6 +258,7 @@ impl LocalRuns {
     /// closes its webServer and browsers itself; whatever still runs
     /// `QUIT_GRACE` later is killed with its process tree.
     pub fn kill_all(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
         let mut interrupted = false;
         for child in self.children.lock().unwrap().values() {
             interrupted |= crate::interrupt::interrupt(child.pid());
@@ -248,6 +290,7 @@ impl LocalRuns {
             crate::repro::remove_spec(&spec);
         }
         self.labels.lock().unwrap().clear();
+        self.folders.lock().unwrap().clear();
     }
 
     /// Whether a plain run, or a job's test or browser install, is still running.
@@ -752,8 +795,20 @@ pub(crate) async fn spawn_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    state.label(id, run_label("tests", folder));
-    state.children.lock().unwrap().insert(id, child);
+    {
+        // Checked under the lock `kill_all` drains, so a run spawned as the app quits never outlives it.
+        let mut children = state.children.lock().unwrap();
+        if state.quitting.load(Ordering::SeqCst) {
+            drop(children);
+            crate::worktree::kill_child_tree(child.pid());
+            let _ = child.kill();
+            return Err("the app is quitting".into());
+        }
+        state.label(id, run_label("tests", folder));
+        state.track_folder(id, folder);
+        children.insert(id, child);
+    }
+    crate::run_target::hand_local_runs(app);
 
     let emit_app = app.clone();
     let mut on_exit = Some(on_exit);
@@ -772,11 +827,8 @@ pub(crate) async fn spawn_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
-                    let mut stopped = false;
-                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        stopped = runs.stopping.lock().unwrap().contains(&id);
-                        runs.drop_child(id);
-                    }
+                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| runs.end_child(id));
+                    crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
                     }
@@ -880,6 +932,38 @@ mod tests {
         for bad in ["", "../../etc", "1/2", "1.0", "-1", " 1", "abc", &"9".repeat(21)] {
             assert!(!valid_project_id(bad), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn a_run_is_found_by_its_folder_until_it_is_forgotten() {
+        let folder = std::env::temp_dir().join(format!("piwi-runs-in-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("sub")).unwrap();
+        let runs = LocalRuns::default();
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(4, &folder);
+        assert!(runs.runs_in(&folder));
+        assert!(runs.runs_in(&folder.join("sub").join("..")));
+        assert!(!runs.runs_in(&folder.join("sub")));
+        runs.forget_child(4);
+        assert!(!runs.runs_in(&folder));
+        runs.track_folder(5, &folder);
+        runs.track_folder(6, &folder.join("sub"));
+        runs.track_folder(7, &folder);
+        assert_eq!(runs.folders(), vec![folder.clone(), folder.join("sub")]);
+        runs.kill_all();
+        assert!(!runs.runs_in(&folder));
+        assert!(runs.folders().is_empty());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_run_that_ends_once_the_app_quits_ends_stopped() {
+        let runs = LocalRuns::default();
+        runs.track_folder(4, Path::new("/work/shop"));
+        runs.track_folder(5, Path::new("/work/admin"));
+        assert!(!runs.end_child(4), "a run that ends on its own");
+        runs.kill_all();
+        assert!(runs.end_child(5), "killed as the app quits");
     }
 
     #[test]

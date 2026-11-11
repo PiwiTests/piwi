@@ -72,10 +72,24 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
-  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`).
-  ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
+  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the instance's 401 for a key it no
+  longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance that sends no code): a 403
+  or any other 401, a proxy's among them, stops the host and keeps the key (`tests/request-host.test.ts`). The
+  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. On its first list it
+  ends the requests the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being
+  claimed, or a run the shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others
+  end, and an instance that names none ends nothing. A run that ended while no server held it comes in `PUT /key`'s
+  `ended`: it ends with its own outcome, and the answer's `ended` names those reported so the shell forgets them;
+  `/ended` for a request this server holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project names the instance gives beside the requests and in
+  its describe answer (`projects`) reach the window through `onProjectNames`; a request object never carries one, as
+  the parser refuses fields it does not know. ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
-  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`).
+  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
+  fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
+  runs' folders in `PUT /local-runs` and `PUT /key`'s `localRuns`), and a request still asked about is checked again
+  whenever such a run starts or ends (`planWaiting`). It also fails past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
+  argument plus one): the shell refuses both again (`run_target.rs`), and keeps its cap equal to this one.
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).

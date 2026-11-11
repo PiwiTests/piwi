@@ -30,6 +30,8 @@ export interface RunTargetConnectionView {
   keyToKeep: boolean;
   /** The project ids of the instance with a folder linked on this machine. */
   linkedProjectIds: number[];
+  /** The names the instance gave for its projects, by id; a project it did not name shows as its id. */
+  projectNames: Record<number, string>;
 }
 
 /** One row of the confirmation, as `@piwitests/editor/request-run` checks it. */
@@ -44,6 +46,8 @@ export interface RunRequestPromptView {
   id: string;
   instance: string;
   projectId: number;
+  /** The project's name on the instance, or null when it gave none. */
+  projectName: string | null;
   tests: RunRequestTest[];
   options: RunRequestOptions;
   source: RunRequestSource;

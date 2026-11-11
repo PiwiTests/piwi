@@ -9,7 +9,8 @@ import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src/host-guard';
 import type * as RunTargetStream from '../src/run-target-stream';
 import { MAX_HUB_BUFFERED } from '../src/run-hub';
-import { resetDesktopRunTarget } from '../src/run-target';
+import { resetDesktopRunTarget, subscribeRunTargetWindow } from '../src/run-target';
+import type { RunTargetMessage } from '../src/run-target-view';
 import { MAX_RUN_TARGET_BODY, serveRunTarget } from '../src/run-target-http';
 import { matchRunTargetRoute, RUN_TARGET_BASE, RUN_TARGET_ROUTES } from '../src/run-target-routes';
 import {
@@ -70,9 +71,12 @@ const REQUEST_ID = 'c'.repeat(32);
 const SHELL = { 'x-piwi-token': TOKEN };
 const BROWSER = { ...SHELL, origin: 'http://127.0.0.1:3000' };
 
-function offer(): RunRequestOffer {
+/** The requests the fake instance offers, by id. */
+let offered = [REQUEST_ID];
+
+function offer(id = REQUEST_ID): RunRequestOffer {
   return {
-    id: REQUEST_ID,
+    id,
     kind: 'run',
     projectId: 3,
     tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: 'chromium' }],
@@ -91,14 +95,16 @@ async function fakeInstance() {
       const url = req.url ?? '';
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [offer()], stops: [] })}\n\n`);
+        res.write(
+          `data: ${JSON.stringify({ type: 'snapshot', requests: offered.map((id) => offer(id)), stops: [] })}\n\n`,
+        );
         streams.push(res);
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (url === '/api/run-targets/requests') res.end(JSON.stringify({ requests: [], stops: [] }));
       else if (url.endsWith('/claim')) {
-        const { expiresAt: _expiresAt, ...request } = offer();
+        const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
       else res.end('{}');
@@ -253,6 +259,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  offered = [REQUEST_ID];
   resetDesktopRunTarget();
   await host.close();
   await instance.close();
@@ -320,6 +327,9 @@ describe('every host of the run-target routes', () => {
     expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: 'secret', links: {} })).status).toBe(
       400,
     );
+    for (const running of ['x', ['x'], Array.from({ length: 201 }, () => REQUEST_ID)]) {
+      expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, running })).status).toBe(400);
+    }
     expect((await host.call('PUT', '/links', SHELL, { links: { x: folder } })).status).toBe(400);
     expect((await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'yes' })).status).toBe(400);
     for (const call of ROUTE_CALLS.filter((c) => c.route.includes(REQUEST_ID))) {
@@ -388,7 +398,7 @@ describe('every host of the run-target routes', () => {
 
   test('answers launch once, after Run, and keeps the shell’s answers out of caches', async () => {
     const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
-    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true } });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [] } });
     await until(async () => {
       const status = await host.call('GET', '', SHELL);
       return ((status.body?.requests ?? []) as unknown[]).length === 1;
@@ -412,6 +422,110 @@ describe('every host of the run-target routes', () => {
       body: { instance: instance.url, token: REQUEST_TOKEN, projectId: 3, folder },
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
+  });
+});
+
+describe('the end of a requested run', () => {
+  const ENDED_ID = 'f'.repeat(32);
+
+  test('answers 404 for a run this server does not hold, so the shell keeps its end', async () => {
+    expect(await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 0 })).toEqual({
+      status: 404,
+      noStore: true,
+      body: { message: 'This server holds no run of this request' },
+    });
+  });
+
+  test('takes an end the shell hands with the key, once, and names it back', async () => {
+    const ended = [{ id: ENDED_ID, code: 1, stopped: false }];
+    const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+    expect(used).toEqual({ status: 200, noStore: true, body: { ok: true, ended: [ENDED_ID] } });
+    expect((await host.call('POST', `/requests/${ENDED_ID}/ended`, SHELL, { code: 1 })).status).toBe(404);
+  });
+
+  test('the shell hands at most 200 ends, each with its request id, exit code and stop', async () => {
+    const one = { id: ENDED_ID, code: 0, stopped: false };
+    for (const ended of [
+      'x',
+      [{ ...one, id: 'x' }],
+      [{ ...one, code: 1.5 }],
+      [{ ...one, code: '0' }],
+      [{ ...one, stopped: 'yes' }],
+      [null],
+      Array.from({ length: 201 }, () => one),
+    ]) {
+      const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
+      expect(used.status, JSON.stringify(ended).slice(0, 80)).toBe(400);
+    }
+  });
+});
+
+describe('a request waiting for a folder another run is going in', () => {
+  const OTHER_ID = 'e'.repeat(32);
+  type Asked = { id: string; command: string; runnable: boolean; checks: { id: string }[] };
+  const waiting = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as Asked[];
+  const busy = (asked: Asked | undefined) => !!asked && !asked.runnable && asked.checks.some((c) => c.id === 'busy');
+  /** The window's last word on each request, as the window hears it. */
+  const shown = (heard: RunTargetMessage[], id: string) =>
+    [...heard]
+      .reverse()
+      .find((m) => (m.type === 'run-request' && m.request.id === id) || (m.type === 'run-request-gone' && m.id === id));
+
+  test('is shown runnable again once the requested run there ends', async () => {
+    offered = [REQUEST_ID, OTHER_ID];
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    await until(async () => (await waiting()).length === 2);
+    const first = (await waiting()).find((r) => r.id === REQUEST_ID)!;
+    const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+      decision: 'run',
+      command: first.command,
+    });
+    expect(answered.body).toEqual({ launch: true });
+    await until(async () => busy((await waiting()).find((r) => r.id === OTHER_ID)));
+    expect(shown(heard, OTHER_ID)).toMatchObject({ type: 'run-request', request: { runnable: false } });
+
+    expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(200);
+    await host.call('POST', `/requests/${REQUEST_ID}/started`, SHELL, {});
+    expect((await host.call('POST', `/requests/${OTHER_ID}/plan`, SHELL)).body).toMatchObject({ runnable: false });
+    await host.call('POST', `/requests/${REQUEST_ID}/ended`, SHELL, { code: 0 });
+    await until(async () => (await waiting()).find((r) => r.id === OTHER_ID)?.runnable === true);
+    expect(shown(heard, OTHER_ID)).toMatchObject({ type: 'run-request', request: { runnable: true } });
+  });
+
+  test('is shown runnable again once the person’s own run there ends', async () => {
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    await host.call('PUT', '/key', SHELL, {
+      instance: instance.url,
+      key: KEY,
+      links: { 3: folder },
+      localRuns: [folder],
+    });
+    await until(async () => (await waiting()).length === 1);
+    expect(busy((await waiting())[0])).toBe(true);
+
+    expect(await host.call('PUT', '/local-runs', SHELL, { folders: [] })).toEqual({
+      status: 200,
+      noStore: true,
+      body: { ok: true },
+    });
+    await until(async () => (await waiting())[0]?.runnable === true);
+    expect(shown(heard, REQUEST_ID)).toMatchObject({ type: 'run-request', request: { runnable: true } });
+
+    await host.call('PUT', '/local-runs', SHELL, { folders: [path.join(folder, '.')] });
+    await until(async () => busy((await waiting())[0]));
+    expect(shown(heard, REQUEST_ID)).toMatchObject({ type: 'run-request', request: { runnable: false } });
+  });
+
+  test('the shell names at most 200 folders, each a path', async () => {
+    for (const folders of [undefined, 'x', [''], [5], Array.from({ length: 201 }, () => folder)]) {
+      expect((await host.call('PUT', '/local-runs', SHELL, { folders })).status, JSON.stringify(folders)).toBe(400);
+    }
+    expect(
+      (await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, localRuns: 'x' })).status,
+    ).toBe(400);
   });
 });
 

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * **Run on my machine**, the app taking run requests from one team instance. Connect starts the
- * device flow there: the person allows the app on the instance's page, and the shell keeps the key it gives in the OS
- * keychain. While connected, the folders linked to the instance's projects are listed here; a request for a project
- * with none asks for its folder in its confirmation. Disconnecting removes the key from the keychain; it stays listed
- * in the instance's Connected apps until it is revoked there.
+ * **Run on my machine**, the app taking run requests from one team instance. Connect starts the device flow there: the
+ * person allows the app on the instance's page, and the shell keeps the key it gives in the OS keychain. While
+ * connected, the folders linked to the instance's projects are listed here, each by the name the instance gives its
+ * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
+ * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
+ * there.
  */
 import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
 
@@ -138,7 +139,9 @@ async function unlink(projectId: string) {
         </p>
         <ul v-else class="space-y-1">
           <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-start gap-2 min-w-0">
-            <span class="text-xs text-muted shrink-0">Project {{ projectId }}</span>
+            <span class="text-xs text-muted shrink-0">{{
+              connection.projectNames[Number(projectId)] || `Project ${projectId}`
+            }}</span>
             <code class="text-xs break-all flex-1">{{ folder }}</code>
             <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">Unlink</UButton>
           </li>

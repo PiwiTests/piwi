@@ -13,6 +13,7 @@ const NO_CONNECTION: RunTargetConnectionView = {
   error: null,
   keyToKeep: false,
   linkedProjectIds: [],
+  projectNames: {},
 };
 
 export function useDesktopTeamRequests() {

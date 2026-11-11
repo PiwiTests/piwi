@@ -8142,6 +8142,7 @@ const SCENES = [
         id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
         instance: 'https://piwi.example.com',
         projectId: 1,
+        projectName: 'Acme Checkout',
         tests: [
           { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
           {
@@ -8203,6 +8204,7 @@ const SCENES = [
         error: null,
         keyToKeep: false,
         linkedProjectIds: [1],
+        projectNames: { 1: 'Acme Checkout' },
       };
       await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
       await page.route('**/api/desktop/events', (route) =>

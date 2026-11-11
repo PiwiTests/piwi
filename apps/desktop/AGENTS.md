@@ -91,10 +91,23 @@ shell and are feature-equivalent.
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
-  `isBrowserRequest`), refuses no arguments or a folder linked since, writes the token to a private file for the
-  reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. The instance's key lives in the OS keychain,
-  read only while `runTargetInstance` is set, handed to the server after each start (`hand_kept_key`), never to the
-  window; a stop from the dashboard reaches the shell on its notification stream.
+  `isBrowserRequest`), refuses no arguments, a folder linked since, a folder another local or requested run is going in
+  (`runs_in`, `hold_folder`; the server hears those folders whenever a local run starts or ends, `hand_local_runs`, so
+  it checks a waiting request again) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
+  the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
+  `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
+  2 s each, each on its own thread, waited for 3 s in all) and deletes its folder before it stops the server. A run
+  that ends once the quit began ends stopped (`end_child`), and only that quit post tells the server of it
+  (`quit_requested_runs`); from then on no requested run is held or takes its folder (`hold`, `hold_folder`), and a run
+  spawned meanwhile is killed (`spawn_tests`). At startup each app removes its own leftover folders
+  (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
+  The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
+  each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a
+  restarted server ends only the requests the shell lost. A requested run's end stays held until the server answers its
+  `/ended` with a 200 (`tell_ended`); one still held goes in `PUT /key`'s `ended` and is forgotten once the server names
+  it back. A stop from the dashboard reaches the shell on its
+  notification stream, and so does `key-revoked`, which forgets the key only when it names the connected instance
+  (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:
@@ -130,8 +143,8 @@ shell and are feature-equivalent.
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
 - **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
-  product, the sidecar's script and the keychain service, and shares the rest of `run_target.rs`, the window guards and
-  the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
+  product, the sidecar's script, the keychain service and the request folders' prefix, and shares the rest of
+  `run_target.rs`, the window guards and the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
 - **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
   `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of

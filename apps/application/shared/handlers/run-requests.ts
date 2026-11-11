@@ -13,6 +13,7 @@ import {
   type RunRequestTest,
 } from '@piwitests/core/run-request';
 import {
+  projects,
   runRequests,
   runTargets,
   testCases,
@@ -169,6 +170,8 @@ export interface RunRequestView {
   id: string;
   kind: string;
   projectId: number;
+  /** The project's label, else its name; null once the project is gone. */
+  projectName: string | null;
   tests: RunRequestTest[];
   options: RunRequestOptions;
   source: RunRequestSource;
@@ -187,7 +190,7 @@ export interface RunRequestView {
 
 export async function runRequestView(db: DrizzleDB, row: RunRequestRow, now = new Date()): Promise<RunRequestView> {
   const targets = await targetsOf(db, row.targetId == null ? [] : [row.targetId]);
-  return viewOf(row, targets, now);
+  return viewOf(row, targets, await projectNamesOf(db, [row.projectId]), now);
 }
 
 type TargetSummary = NonNullable<RunRequestView['target']>;
@@ -201,11 +204,27 @@ async function targetsOf(db: DrizzleDB, ids: number[]): Promise<Map<number, Targ
   return new Map(rows.map((t) => [t.id, t]));
 }
 
-function viewOf(row: RunRequestRow, targets: Map<number, TargetSummary>, now: Date): RunRequestView {
+/** The names of projects, by id: each one's label, else its name. */
+export async function projectNamesOf(db: DrizzleDB, ids: number[]): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: projects.id, name: projects.name, label: projects.label })
+    .from(projects)
+    .where(inArray(projects.id, ids));
+  return new Map(rows.map((p) => [p.id, p.label || p.name]));
+}
+
+function viewOf(
+  row: RunRequestRow,
+  targets: Map<number, TargetSummary>,
+  names: Map<number, string>,
+  now: Date,
+): RunRequestView {
   return {
     id: row.id,
     kind: row.kind,
     projectId: row.projectId,
+    projectName: names.get(row.projectId) ?? null,
     tests: row.tests as RunRequestTest[],
     options: row.options as RunRequestOptions,
     source: row.source as RunRequestSource,
@@ -253,7 +272,8 @@ export async function listOwnRequests(
     .limit(OWN_REQUESTS_LIMIT);
   const targetIds = [...new Set(readable.flatMap((row) => (row.targetId == null ? [] : [row.targetId])))];
   const targets = await targetsOf(db, targetIds);
-  return readable.map((row) => viewOf(row, targets, now));
+  const names = await projectNamesOf(db, [...new Set(readable.map((row) => row.projectId))]);
+  return readable.map((row) => viewOf(row, targets, names, now));
 }
 
 /**
