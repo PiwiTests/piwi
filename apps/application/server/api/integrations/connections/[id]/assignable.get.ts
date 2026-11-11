@@ -43,7 +43,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Search assignable users',
     description:
-      "Assignable users for a tracker project, for the create-issue modal and the project's Issue tracker settings: those matching `q`, or the one person `accountId` names, so a saved account id shows with its name. Cached for five minutes. When the tracker refuses the search, answers 502 with `errorCode` `TRACKER_SEARCH_FAILED`, the tracker's own message and its status in `data.providerStatus` (a 403 when the account may not browse users); when Jira does not answer, the same 502 with a null `providerStatus`. A failed search is kept for 30 seconds. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.",
+      "Assignable users for a tracker project, for the create-issue modal and the project's Issue tracker settings: those matching `q`, or the one person `accountId` names, so a saved account id shows with its name. Cached for five minutes. When the tracker refuses the search, answers 502 with `errorCode` `TRACKER_SEARCH_FAILED`, the tracker's own message and its status in `data.providerStatus` (a 403 when the account may not browse users); when Jira does not answer, the same 502 with a null `providerStatus`. A failed search is kept for 30 seconds and answers every search of that project meanwhile. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { in: 'query', name: 'project', required: true, schema: { type: 'string' }, description: 'Tracker project key' },
@@ -76,9 +76,11 @@ export default eventHandler(async (event) => {
   if (accountId.length > ACCOUNT_ID_MAX) throw apiError({ statusCode: 400, message: 'accountId is too long' });
 
   const cacheKey = JSON.stringify([id, project, accountId ? '' : q, accountId]);
+  // A refusal or a Jira that does not answer does not depend on the words: one covers every search of the project.
+  const failureKey = JSON.stringify([id, project, accountId]);
   const cached = assignableCache.get(cacheKey);
   if (cached) return { users: cached };
-  const failed = assignableFailureCache.get(cacheKey);
+  const failed = assignableFailureCache.get(failureKey);
   if (failed) throw searchFailed(failed);
 
   const tracker = await createTracker(db, id);
@@ -90,7 +92,7 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const failure = searchFailure(err);
     if (!failure) throw err;
-    assignableFailureCache.set(cacheKey, failure);
+    assignableFailureCache.set(failureKey, failure);
     throw searchFailed(failure);
   }
   assignableCache.set(cacheKey, users);

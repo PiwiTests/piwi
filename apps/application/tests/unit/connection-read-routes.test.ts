@@ -301,6 +301,22 @@ describe('the search for assignable people', () => {
     }
   });
 
+  test('answers every search of a refused project from the one refusal, and a lookup apart from it', async () => {
+    state.caller = sam;
+    const first = await failure({ project: 'LOCKED', q: 'al' });
+    expect(first?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+    for (const q of ['ali', '']) {
+      const error = await failure({ project: 'LOCKED', q });
+      expect(error?.statusCode).toBe(502);
+      expect(error?.message).toBe(first?.message);
+      expect(error?.data).toMatchObject({ errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 });
+    }
+    expect(assignableSearches).toHaveLength(1);
+    expect((await failure({ project: 'LOCKED', accountId: 'billing-1' }))?.statusCode).toBe(502);
+    expect(assignableSearches).toHaveLength(2);
+    expect(assignableSearches[1]!.get('accountId')).toBe('billing-1');
+  });
+
   test.each([
     ['times out', 'SLOW'],
     ['cannot reach Jira', 'OFFLINE'],
