@@ -43,7 +43,20 @@ vi.mock('../../server/utils/ci-rerun', () => ({ matchCiRerunRun }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 const runTrackerAutomation = vi.fn((_db: unknown, _id: number) => Promise.resolve(0));
-vi.mock('../../server/utils/integrations/automation', () => ({ runTrackerAutomation }));
+const runTestManagementSync = vi.fn((_db: unknown, _id: number) => Promise.resolve(null));
+vi.mock('../../server/utils/integrations/automation', () => ({ runTrackerAutomation, runTestManagementSync }));
+/** The uses the eligibility check answers false for, whatever the run. */
+const refusedUses = new Set<string>();
+vi.mock('#shared/run-eligibility', async (importOriginal) => {
+  const original = await importOriginal<typeof import('#shared/run-eligibility')>();
+  return {
+    ...original,
+    isEligibleRun: (
+      run: Parameters<typeof original.isEligibleRun>[0],
+      use: Parameters<typeof original.isEligibleRun>[1],
+    ) => !refusedUses.has(use) && original.isEligibleRun(run, use),
+  };
+});
 
 const { runFinalizeSideEffects } = await import('../../server/utils/run-finalize-side-effects');
 const { runEventBus } = await import('../../server/utils/run-events');
@@ -82,6 +95,55 @@ describe('runFinalizeSideEffects', () => {
     upsertDailyRollup.mockClear();
     emitIncidentNotification.mockClear();
     recordRunHealth.mockClear();
+    runTestManagementSync.mockClear();
+    refusedUses.clear();
+  });
+
+  test('a complete run sends its results to the test management tool once fix verification is done', async () => {
+    let verified!: (fixed: never[]) => void;
+    const fixed = new Promise<never[]>((resolve) => (verified = resolve));
+    analyzeFinishedRunInBackground.mockImplementationOnce(() => ({ fixed, coverage: Promise.resolve(null) }));
+    runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    await vi.waitFor(() => expect(autoDiagnoseRun).toHaveBeenCalled());
+    expect(runTestManagementSync).not.toHaveBeenCalled();
+    verified([]);
+    await vi.waitFor(() => expect(runTestManagementSync).toHaveBeenCalledWith(db, 42));
+  });
+
+  test('the results are sent for a run the notifications leave out', async () => {
+    refusedUses.add('notifications');
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    await vi.waitFor(() => expect(runTestManagementSync).toHaveBeenCalledWith(db, 42));
+    for (const fn of outbound) expect(fn).not.toHaveBeenCalled();
+  });
+
+  test('a run the notifications leave out files no issue by the rules', async () => {
+    runTrackerAutomation.mockClear();
+    refusedUses.add('notifications');
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    await vi.waitFor(() => expect(runTestManagementSync).toHaveBeenCalledWith(db, 42));
+    expect(runTrackerAutomation).not.toHaveBeenCalled();
+  });
+
+  test('a run the test management use leaves out sends no results, and the rest goes out', async () => {
+    refusedUses.add('test-management');
+    runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    await everyEffectOnce();
+    expect(runTestManagementSync).not.toHaveBeenCalled();
+  });
+
+  test('a failing results sync is logged and leaves the notifications going out', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      runTestManagementSync.mockRejectedValueOnce(new Error('tool down') as never);
+      runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+      await everyEffectOnce();
+      await vi.waitFor(() =>
+        expect(errors).toHaveBeenCalledWith('[integrations] runTestManagementSync failed', expect.any(Error)),
+      );
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   test('a run the classifier flags sends one incident event in place of the verdicts', async () => {

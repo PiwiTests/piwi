@@ -11,6 +11,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { bugReports, entityLinks, failureClusters, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
+import { isTrackerLink } from '#shared/handlers/known-issues';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
@@ -62,7 +63,7 @@ async function linkedCandidates(db: DbClient, clusterId: number): Promise<Existi
     .from(entityLinks)
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)));
   return links
-    .filter((l) => l.provider === 'jira' || l.connectionId != null)
+    .filter(isTrackerLink)
     .filter((l) => (l.metadata as { statusCategory?: string | null } | null)?.statusCategory !== 'done')
     .map((l) => ({
       key: l.key ?? '',
@@ -116,7 +117,7 @@ async function fixedBeforeCandidates(db: DbClient, clusterId: number): Promise<E
       .select()
       .from(entityLinks)
       .where(and(eq(entityLinks.failureClusterId, match.clusterId), isNotNull(entityLinks.key)));
-    const jira = links.find((l) => l.provider === 'jira' || l.connectionId != null);
+    const jira = links.find(isTrackerLink);
     if (jira?.key) {
       out.push({
         key: jira.key,
@@ -271,16 +272,14 @@ export async function buildIssueDraft(
 
 /** The issues linked to an entity, as the draft's existing candidates. */
 function linkedIssueCandidates(links: (typeof entityLinks.$inferSelect)[]): ExistingIssueCandidate[] {
-  return links
-    .filter((l) => l.provider === 'jira' || l.connectionId != null)
-    .map((l) => ({
-      key: l.key ?? '',
-      url: l.url,
-      title: l.title ?? null,
-      statusText: l.statusText ?? null,
-      statusColor: l.statusColor ?? null,
-      reason: 'linked' as const,
-    }));
+  return links.filter(isTrackerLink).map((l) => ({
+    key: l.key ?? '',
+    url: l.url,
+    title: l.title ?? null,
+    statusText: l.statusText ?? null,
+    statusColor: l.statusColor ?? null,
+    reason: 'linked' as const,
+  }));
 }
 
 /**

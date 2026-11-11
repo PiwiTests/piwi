@@ -194,6 +194,12 @@ const runEnded = computed(
   () =>
     !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
 );
+/** When the run ended, from its start and duration, for what the header reads again just after the end. */
+const runEndedAt = computed(() => {
+  const start = props.testRun?.startTime ? new Date(props.testRun.startTime).getTime() : Number.NaN;
+  const duration = props.testRun?.duration;
+  return Number.isNaN(start) || duration == null ? null : new Date(start + duration).toISOString();
+});
 let primaryDecided = false;
 watch(
   runEnded,
@@ -743,8 +749,8 @@ function onLabelKeydown(e: KeyboardEvent) {
       </div>
     </template>
 
-    <template v-if="runErrors.length || incident" #below>
-      <div class="space-y-3">
+    <template #below>
+      <div class="space-y-3 empty:hidden">
         <RunErrors
           v-if="runErrors.length"
           :errors="runErrors"
@@ -758,6 +764,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :project-id="testRun.projectId"
           :incident="incident"
           :review="incidentReview"
+          @changed="emit('label-updated')"
+        />
+        <RunTestManagementSync
+          v-if="testRun?.id && runEnded"
+          :run-id="testRun.id"
+          :project-id="testRun.projectId"
+          :ended-at="runEndedAt"
           @changed="emit('label-updated')"
         />
       </div>

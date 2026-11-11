@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { strFromU8, unzipSync, zipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '../../shared/integrations/registry';
 import { IntegrationHttpError } from '../../server/utils/integrations/http-error';
 import {
+  FIND_RUN_MAX_CYCLES,
+  FIND_RUN_MAX_PAGES,
   ZEPHYR_MAX_PAGES,
+  ZEPHYR_MAX_UPLOAD_BYTES,
   ZEPHYR_TIMEOUT_STATUS,
   ZephyrScaleClient,
   ZephyrScaleError,
@@ -13,6 +17,12 @@ import {
  * The Zephyr Scale Cloud client against a stubbed `fetch`. The bodies are in `tests/fixtures/zephyr-scale/`, each
  * written from a schema of SmartBear's public OpenAPI document and named in the file's `_spec` field.
  */
+
+// The real zip by default; a test sets the size of the zip it makes, since compressing 10 MB is slow under coverage.
+vi.mock('fflate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fflate')>();
+  return { ...actual, zipSync: vi.fn(actual.zipSync) };
+});
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.secret-payload.secret-signature';
 
@@ -362,5 +372,384 @@ describe('failures', () => {
   test('an explanation longer than the cap is cut', async () => {
     const err = await failure(reply({ errorCode: 500, message: 'x'.repeat(5000) }, { status: 500 }));
     expect(err.message.length).toBeLessThan(700);
+  });
+});
+
+describe('uploadRun', () => {
+  const input = {
+    projectKey: 'SHOP',
+    name: 'Piwi #12 main',
+    description: 'Piwi run #12',
+    results: [
+      { key: 'SHOP-T1', status: 'Pass' },
+      { key: 'SHOP-T2', status: 'Fail' },
+    ],
+  };
+
+  const sentBody = async (call = 0) => {
+    const init = fetchMock.mock.calls[call]![1] as RequestInit;
+    const contentType = new Headers(init.headers).get('content-type') ?? '';
+    const form = await new Response(init.body as BodyInit, { headers: { 'content-type': contentType } }).formData();
+    return { init, form, contentType };
+  };
+
+  test('posts the zip and the cycle as multipart, without creating test cases', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    const run = await client().uploadRun({ ...input, folderId: '77', version: '9' });
+    expect(run).toEqual({
+      key: 'SHOP-R42',
+      id: '3001',
+      url: '',
+    });
+
+    const url = requested();
+    expect(url.pathname).toBe('/v2/automations/executions/custom');
+    expect(url.searchParams.get('projectKey')).toBe('SHOP');
+    expect(url.searchParams.get('autoCreateTestCases')).toBe('false');
+
+    const { init, form, contentType } = await sentBody();
+    expect(init.method).toBe('POST');
+    expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+    expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(init.body).toBeInstanceOf(Uint8Array);
+
+    const files = unzipSync(new Uint8Array(await (form.get('file') as File).arrayBuffer()));
+    expect(Object.keys(files)).toEqual(['results.json']);
+    expect(JSON.parse(strFromU8(files['results.json']!))).toEqual({
+      version: 1,
+      executions: [
+        { result: 'Pass', testCase: { key: 'SHOP-T1' } },
+        { result: 'Fail', testCase: { key: 'SHOP-T2' } },
+      ],
+    });
+    expect(JSON.parse(await (form.get('testCycle') as File).text())).toEqual({
+      name: 'Piwi #12 main',
+      description: 'Piwi run #12',
+      folderId: 77,
+      jiraProjectVersion: 9,
+    });
+  });
+
+  test('leaves the folder and the version out when the run has none', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    await client().uploadRun(input);
+    const { form } = await sentBody();
+    expect(Object.keys(JSON.parse(await (form.get('testCycle') as File).text()))).toEqual(['name', 'description']);
+  });
+
+  test('refuses a folder or a version that is not a whole number before sending anything', async () => {
+    await expect(client().uploadRun({ ...input, folderId: 'abc' })).rejects.toMatchObject({ status: 422 });
+    await expect(client().uploadRun({ ...input, version: '1.5' })).rejects.toMatchObject({ status: 422 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('refuses results that do not fit in the 10 MB Zephyr accepts, before sending anything', async () => {
+    vi.mocked(zipSync).mockReturnValueOnce(new Uint8Array(ZEPHYR_MAX_UPLOAD_BYTES + 1));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({
+      status: 413,
+      message: expect.stringContaining('10 MB'),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('sends results that fill the 10 MB exactly', async () => {
+    vi.mocked(zipSync).mockReturnValueOnce(new Uint8Array(ZEPHYR_MAX_UPLOAD_BYTES));
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    await expect(client().uploadRun(input)).resolves.toMatchObject({ key: 'SHOP-R42' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused key or project is not sent', async () => {
+    await expect(client().uploadRun({ ...input, projectKey: 'shop' })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [400, 400],
+    [422, 422],
+    [429, 429],
+    [503, 503],
+  ])('a %i answer is the same status on the error', async (status, expected) => {
+    fetchMock.mockResolvedValueOnce(reply({ errorCode: status, message: 'no' }, { status }));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({ status: expected });
+  });
+
+  test('a 429 carries the Retry-After the server sent', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ message: 'slow' }, { status: 429, headers: { 'Retry-After': '30' } }));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
+  });
+
+  test('an answer without a cycle key is a 502', async () => {
+    for (const body of [
+      {},
+      { testCycle: {} },
+      { testCycle: { id: 1, key: 'not a key' } },
+      { testCycle: { key: 'SHOP-R1' } },
+    ]) {
+      fetchMock.mockResolvedValueOnce(reply(body));
+      await expect(client().uploadRun(input)).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  test('a network failure passes through unchanged', async () => {
+    const down = new TypeError('fetch failed');
+    fetchMock.mockRejectedValueOnce(down);
+    await expect(client().uploadRun(input)).rejects.toBe(down);
+  });
+});
+
+describe('linkRun', () => {
+  const run = { key: 'SHOP-R42', id: '3001', url: '' };
+
+  test('posts the web link to the cycle', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ id: 1 }, { status: 201 }));
+    await client().linkRun(run, { url: 'https://piwi.example.com/test-runs/12', title: 'Piwi run #12' });
+    expect(requested().pathname).toBe('/v2/testcycles/SHOP-R42/links/weblinks');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json');
+    expect(JSON.parse(String(init.body))).toEqual({
+      url: 'https://piwi.example.com/test-runs/12',
+      description: 'Piwi run #12',
+    });
+  });
+
+  test('does not send a key that is not a cycle key', async () => {
+    await expect(
+      client().linkRun({ ...run, key: '../SHOP-R42' }, { url: 'https://x.test', title: 't' }),
+    ).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a refusal is an error with the status', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    await expect(client().linkRun(run, { url: 'https://x.test', title: 't' })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('findRun', () => {
+  const marker = {
+    runId: 12,
+    startedAt: '2026-11-10T12:30:45.000Z',
+    testCaseKey: 'SHOP-T1',
+    name: 'Piwi #12 main',
+  };
+
+  test('reads the cycle of each execution and matches it by the run number', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'found',
+      run: { key: 'SHOP-R42', id: '3001', url: '' },
+    });
+
+    const list = requested(0);
+    expect(list.pathname).toBe('/v2/testexecutions');
+    expect(list.searchParams.get('projectKey')).toBe('SHOP');
+    expect(list.searchParams.get('testCase')).toBe('SHOP-T1');
+    expect(list.searchParams.has('onlyLastExecutions')).toBe(false);
+    // A minute before the attempt began, in the form the API takes.
+    expect(list.searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
+    expect(requested(1).pathname).toBe('/v2/testcycles/2999');
+    expect(requested(2).pathname).toBe('/v2/testcycles/3001');
+    // One read per cycle, not per execution.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  test('reads every execution of the test case in both passes, not only the last ones', async () => {
+    fetchMock.mockImplementation(async () => reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }));
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of [0, 1]) {
+      expect(requested(call).pathname).toBe('/v2/testexecutions');
+      expect(requested(call).searchParams.has('onlyLastExecutions')).toBe(false);
+    }
+  });
+
+  test('run 12 does not match the cycle of run 123', async () => {
+    const page = reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![0]] });
+    fetchMock
+      .mockResolvedValueOnce(page.clone())
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(page);
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    // The pass without the end date reads no cycle the first pass read.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  test('run 12 does not match a cycle named Piwi #12a', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+      )
+      .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Piwi #12a main' }))
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+      );
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+  });
+
+  test('matches a cycle named exactly as the run was', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+      )
+      .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Nightly' }));
+    expect(await client().findRun('SHOP', { ...marker, name: 'Nightly' })).toMatchObject({
+      outcome: 'found',
+      run: { key: 'SHOP-R42' },
+    });
+  });
+
+  test('finds nothing when neither pass finds an execution', async () => {
+    fetchMock.mockImplementation(async () => reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }));
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requested(0).searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
+    expect(requested(1).searchParams.has('actualEndDateAfter')).toBe(false);
+  });
+
+  test('finds the cycle of an upload whose executions carry no end date, without the end date filter', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }))
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'found',
+      run: { key: 'SHOP-R42', id: '3001', url: '' },
+    });
+    const all = requested(1);
+    expect(all.pathname).toBe('/v2/testexecutions');
+    expect(all.searchParams.has('actualEndDateAfter')).toBe(false);
+    expect(all.searchParams.get('testCase')).toBe('SHOP-T1');
+    expect(all.searchParams.has('onlyLastExecutions')).toBe(false);
+  });
+
+  test(`is unsure when the executions without the end date filter run past ${FIND_RUN_MAX_PAGES} pages`, async () => {
+    let page = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) =>
+      new URL(String(input)).searchParams.has('actualEndDateAfter')
+        ? reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] })
+        : reply({
+            startAt: page,
+            maxResults: 1,
+            isLast: false,
+            values: [{ id: page, testCycle: { id: 4000 + page++ } }],
+          }),
+    );
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 has more than ${FIND_RUN_MAX_PAGES} pages of executions`,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1 + FIND_RUN_MAX_PAGES);
+  });
+
+  test(`is unsure when the executions without the end date filter name more than ${FIND_RUN_MAX_CYCLES} cycles`, async () => {
+    const values = Array.from({ length: FIND_RUN_MAX_CYCLES + 1 }, (_, i) => ({ id: i, testCycle: { id: 4000 + i } }));
+    fetchMock
+      .mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }))
+      .mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values }));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 ran in more than ${FIND_RUN_MAX_CYCLES} test cycles`,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('is unsure when a cycle only the pass without the end date filter names cannot be read', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }))
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    const found = await client().findRun('SHOP', marker);
+    expect(found.outcome === 'unsure' && found.reason).toMatch(/^reading test cycle 2999 failed \(.*403/);
+  });
+
+  test('reads every page of executions', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ startAt: 0, maxResults: 1, total: 2, isLast: false, values: [{ id: 1, testCycle: { id: 2999 } }] }),
+      )
+      .mockResolvedValueOnce(
+        reply({ startAt: 1, maxResults: 1, total: 2, isLast: true, values: [{ id: 2, testCycle: { id: 3001 } }] }),
+      )
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
+    expect(await client().findRun('SHOP', marker)).toMatchObject({ outcome: 'found', run: { key: 'SHOP-R42' } });
+    expect(requested(1).pathname).toBe('/v2/testexecutions');
+    expect(requested(1).searchParams.get('startAt')).toBe('1');
+    expect(requested(1).searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
+  });
+
+  test(`is unsure when the executions run past ${FIND_RUN_MAX_PAGES} pages`, async () => {
+    let page = 0;
+    fetchMock.mockImplementation(async () =>
+      reply({ startAt: page, maxResults: 1, isLast: false, values: [{ id: page, testCycle: { id: 4000 + page++ } }] }),
+    );
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 has more than ${FIND_RUN_MAX_PAGES} pages of executions since the run began`,
+    });
+    // No cycle is read from a list that was not read to its end.
+    expect(fetchMock).toHaveBeenCalledTimes(FIND_RUN_MAX_PAGES);
+  });
+
+  test(`reads up to ${FIND_RUN_MAX_CYCLES} cycles before it finds nothing`, async () => {
+    const values = Array.from({ length: FIND_RUN_MAX_CYCLES * 2 }, (_, i) => ({
+      id: i,
+      testCycle: { id: 4000 + (i % FIND_RUN_MAX_CYCLES) },
+    }));
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) =>
+      String(input).includes('/testexecutions')
+        ? reply({ startAt: 0, maxResults: 1000, isLast: true, values })
+        : reply({ id: 1, key: 'SHOP-R1', name: 'Unrelated' }),
+    );
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    // Both passes list the executions; each cycle is read once.
+    expect(fetchMock).toHaveBeenCalledTimes(2 + FIND_RUN_MAX_CYCLES);
+  });
+
+  test(`is unsure, reading no cycle, when the executions name more than ${FIND_RUN_MAX_CYCLES} cycles`, async () => {
+    const values = Array.from({ length: FIND_RUN_MAX_CYCLES + 1 }, (_, i) => ({ id: i, testCycle: { id: 4000 + i } }));
+    fetchMock.mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values }));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 ran in more than ${FIND_RUN_MAX_CYCLES} test cycles since the run began`,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('is unsure when a cycle cannot be read, without reading on', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    const found = await client().findRun('SHOP', marker);
+    expect(found).toMatchObject({ outcome: 'unsure' });
+    expect(found.outcome === 'unsure' && found.reason).toMatch(/^reading test cycle 2999 failed \(.*403/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('is unsure when a cycle has an unexpected shape, without reading on', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply({ id: 2999, key: 'not a key', name: 'Piwi #12 main' }));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: 'Zephyr Scale answered test cycle 2999 with an unexpected shape',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('a list of executions that cannot be read is an error', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    await expect(client().findRun('SHOP', marker)).rejects.toMatchObject({ status: 403 });
+  });
+
+  test('refuses a marker with no date', async () => {
+    await expect(client().findRun('SHOP', { ...marker, startedAt: 'never' })).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

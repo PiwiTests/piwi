@@ -54,6 +54,18 @@ const EXCLUDED: Record<RunUse, string[]> = {
     'bug',
   ],
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'test-management': [
+    'flake-lab',
+    'probe',
+    'bisect',
+    'reproduce',
+    'request',
+    'local',
+    'desktop',
+    'editor',
+    'preflight',
+    'bug',
+  ],
   'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
   'run-health': ['flake-lab', 'probe', 'request'],
   'pass-reuse': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
@@ -73,11 +85,12 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'notifications',
   'stuck-notifications',
   'tracker',
+  'test-management',
   'pass-reuse',
 ];
 
 /** The uses that read complete runs only. */
-const COMPLETE_ONLY: RunUse[] = ['run-baseline', 'branch-failures', 'change-coverage'];
+const COMPLETE_ONLY: RunUse[] = ['run-baseline', 'branch-failures', 'change-coverage', 'test-management'];
 
 /** The uses that read the runs of some origins only when complete, and those origins. */
 const COMPLETE_ONLY_FOR: Partial<Record<RunUse, string[]>> = {
@@ -129,10 +142,10 @@ describe('the run eligibility table', () => {
     expect(isEligibleRun({ metadata, isFullRun: 1, status: 'passed' }, use)).toBe(true);
   });
 
-  test('only shared state leaves out a historical import', () => {
+  test('only shared state and test management leave out a historical import', () => {
     for (const use of USES) {
       const run = { metadata: { piwiOrigin: { kind: 'import' } }, historicalImport: true };
-      expect(isEligibleRun(run, use), use).toBe(use !== 'shared-state');
+      expect(isEligibleRun(run, use), use).toBe(use !== 'shared-state' && use !== 'test-management');
     }
   });
 
@@ -145,13 +158,14 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('a complete local run counts wherever a CI run does but in test.stuck, and an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
+  test('a complete local run counts wherever a CI run does but in test.stuck and a test management tool, and an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
     const outbound: RunUse[] = ['notifications', 'tracker', 'cluster-occurrences'];
+    const ciOnly: RunUse[] = ['stuck-notifications', 'test-management'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
         expect(eligible, `${use} ${kind}`).toBe(
-          use !== 'stuck-notifications' && (!outbound.includes(use) || kind !== 'editor'),
+          !ciOnly.includes(use) && (!outbound.includes(use) || kind !== 'editor'),
         );
       }
     }
@@ -203,6 +217,31 @@ describe('a developer’s runs and notifications', () => {
     for (const kind of ['ci', 'ci-rerun']) {
       expect(isEligibleRun({ metadata: { piwiOrigin: { kind } }, ...partial }, 'notifications'), kind).toBe(true);
     }
+  });
+
+  test('only a test management tool leaves out an interrupted or timed-out run', () => {
+    const metadata = { piwiOrigin: { kind: 'ci' } };
+    for (const use of USES) {
+      for (const status of ['interrupted', 'timedout']) {
+        expect(isEligibleRun({ metadata, isFullRun: 1, status }, use), `${use} ${status}`).toBe(
+          use !== 'test-management',
+        );
+      }
+    }
+  });
+
+  test('a test management tool reads only a finished run of the whole suite from CI', () => {
+    for (const kind of ['ci', 'ci-rerun']) {
+      const metadata = { piwiOrigin: { kind } };
+      expect(isEligibleRun({ metadata, ...full }, 'test-management'), kind).toBe(true);
+      expect(isEligibleRun({ metadata, ...partial }, 'test-management'), kind).toBe(false);
+      expect(isEligibleRun({ metadata, isFullRun: 1, status: 'finalizing' }, 'test-management'), kind).toBe(false);
+      for (const status of ['interrupted', 'timedout']) {
+        expect(isEligibleRun({ metadata, isFullRun: 1, status }, 'test-management'), `${kind} ${status}`).toBe(false);
+      }
+    }
+    expect(isEligibleRun({ metadata: { ci: { provider: 'Jenkins' } }, ...full }, 'test-management')).toBe(true);
+    expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...full }, 'test-management')).toBe(false);
   });
 
   test('the editor overlays partial and full runs of every origin but lab and investigation runs', () => {
@@ -266,6 +305,8 @@ describe('the SQL form of the rule', () => {
     { isFullRun: 0, status: 'failed' },
     { isFullRun: 1, status: 'running' },
     { isFullRun: 0, status: 'running' },
+    { isFullRun: 1, status: 'interrupted' },
+    { isFullRun: 1, status: 'timedout' },
   ];
 
   async function seed(spelling: (value: unknown) => string) {

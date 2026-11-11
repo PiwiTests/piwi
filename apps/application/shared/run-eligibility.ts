@@ -106,6 +106,7 @@ export type RunUse =
   | 'notifications'
   | 'stuck-notifications'
   | 'tracker'
+  | 'test-management'
   | 'cluster-occurrences'
   | 'run-health'
   | 'pass-reuse';
@@ -119,6 +120,8 @@ export interface RunUseRule {
   completeOnly: boolean;
   /** The origins whose runs this use reads only when complete; none when absent. */
   completeOnlyFor?: readonly RunOriginKind[];
+  /** The run statuses this use never reads, past the unfinished ones a complete run excludes; none when absent. */
+  excludesStatuses?: readonly string[];
   /** Leave out a historical import: a report imported after newer runs were stored. */
   excludesHistoricalImports: boolean;
 }
@@ -255,6 +258,18 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
     excludesHistoricalImports: false,
+  },
+  /**
+   * The test run Piwi writes to a test management tool: a run of the whole suite that finished, from CI. A partial run
+   * (a filter, a selection, a rerun of the failed tests) would read in the tool as a suite that ran, and a developer's
+   * own run is not the suite's state. A run that was interrupted or timed out stopped before its tests ran.
+   */
+  'test-management': {
+    excludes: [...NO_TEAM_USE, ...DEVELOPER_MACHINE_RUN_ORIGINS],
+    excludesIncidents: true,
+    completeOnly: true,
+    excludesStatuses: ['interrupted', 'timedout'],
+    excludesHistoricalImports: true,
   },
   /**
    * A failure cluster's occurrences: their count, the runs the cluster was first
@@ -435,6 +450,7 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
   if (rule.excludesIncidents && isIncidentRun(run.metadata)) return false;
   if (rule.completeOnly && !isCompleteRun(run)) return false;
   if (((rule.completeOnlyFor ?? []) as readonly string[]).includes(origin) && !isCompleteRun(run)) return false;
+  if (rule.excludesStatuses?.includes(run.status ?? '')) return false;
   if (rule.excludesHistoricalImports && run.historicalImport) return false;
   return true;
 }
@@ -576,6 +592,14 @@ export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_R
   const completeOnlyFor = rule.completeOnlyFor ?? [];
   if (completeOnlyFor.length) {
     parts.push(sql`NOT (${runOriginIn(columns.origin, completeOnlyFor)} AND NOT ${completeRunSql(columns)})`);
+  }
+  const excludedStatuses = rule.excludesStatuses ?? [];
+  if (excludedStatuses.length) {
+    const listed = sql.join(
+      excludedStatuses.map((s) => sql`${s}`),
+      sql`, `,
+    );
+    parts.push(sql`COALESCE(${columns.status}, '') NOT IN (${listed})`);
   }
   return sql`(${sql.join(parts, sql` AND `)})`;
 }

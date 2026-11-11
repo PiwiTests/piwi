@@ -160,10 +160,11 @@ describe('Retry-After', () => {
 });
 
 describe('integration kinds', () => {
-  test('every tracker action belongs to the tracker kind; an unknown kind to none', () => {
+  test('every tracker action belongs to the tracker kind, a results sync to test management; an unknown kind to none', () => {
     for (const kind of ['create-issue', 'comment', 'update-issue', 'attach', 'transition']) {
       expect(integrationKindOf(kind)).toBe('tracker');
     }
+    expect(integrationKindOf('sync-results')).toBe('test-management');
     expect(integrationKindOf('sync-status')).toBeNull();
     expect(integrationKindOf('toString')).toBeNull();
   });

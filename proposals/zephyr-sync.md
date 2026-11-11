@@ -379,10 +379,10 @@ Retries and idempotency:
 - **A 429 on the upload clears the marker.** The tool answered without creating a cycle, so the action removes
   `uploadStartedAt` in the same write that schedules the backoff, and the retry uploads normally. Any 5xx on the
   upload is an outcome unknown.
-- `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>
-  &onlyLastExecutions=true`, then the cycle of each hit, matched on `Piwi #<runId>` in its name. It depends on the
-  upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun` itself before a
-  retry; until then, the safe default above stands.
+- `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>`
+  (every execution, not only the last ones), then the cycle of each hit, matched on `Piwi #<runId>` in its name. It
+  depends on the upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun`
+  itself before a retry; until then, the safe default above stands.
 - Final refusals (400, 401, 403, 404, 413, 422) fail the action at once with the tool's message, as the Jira actions
   do; 401 also marks the connection `failed` so the settings page shows the token is rejected.
 - Other calls' 429 and 5xx with a response follow the outbox backoff; `Retry-After` wins (seconds or an HTTP date, capped at one
