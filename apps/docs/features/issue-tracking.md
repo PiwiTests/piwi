@@ -9,8 +9,8 @@ lang: en-US
 <Needs reporter admin />
 
 An investigation ends with what a ticket needs: a headline, the affected tests and owners, the diagnosis, a
-validated patch, the verify command. **Create issue** makes it a Jira issue, linked back as the cluster's *known
-issue*.
+validated patch, the verify command. **Create issue** makes it a Jira issue, linked back as the cluster's
+*known issue*.
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
@@ -21,8 +21,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 
 ## What it does, exactly
 
-- **Create issue** appears on a failure cluster, a failing execution, each inbox row (plus the `c` key and a
-  *Create issues* button in the bulk bar), and a [bug report](./bug-reports#filing-it-in-jira). The cluster's
+- **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
+  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's
   **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
   ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
 - **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
@@ -33,21 +33,21 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer
   for JQL.
 - **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or another of its
-  executions names the issue already filed; once that link is removed or the issue is Done, the next create files a
-  new one, and a Done issue stays linked. The modal first surfaces any issue already tracking the failure (a pinned
+  executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
+  Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
   link, a matching label, or a *fixed-before* match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
   cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
   write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
   Jira's reason atop the modal and on the Issue or Cluster line; creating again replaces it.
-- **Comment** places your words first in the issue, or adds them to the issue already filed. Runs and tests:
-  [Issues about a run or a test](./run-issues).
+- **Comment** places your words first in the issue, or adds them to the cluster's issue already filed. Runs and
+  tests: [Issues about a run or a test](./run-issues).
 
 ## The key travels
 
-A cluster's **known issue** is its latest ticket filed or pinned, else the oldest open one [its tests
+A cluster's **known issue** is its latest ticket filed or pinned, else one [its tests
 name](#links-the-tests-declare); others stay among its links, which an execution's *Details* also lists. Its key
-follows the failure:
+follows the failure everywhere:
 
 - the cluster's **Issue** line and a failing execution's **Cluster** line, the **inbox row** and the execution's row in
   the **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
@@ -62,17 +62,16 @@ follows the failure:
 
 ## Links the tests declare
 
-When a [run that writes](./issue-automation#the-runs-that-write) finishes, each cluster is linked to the issues of the
-bound Jira project its failing tests name with [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare), up to
-10 (*and N more named by its tests*); one removed by hand stays removed. Such a link counts as tracked: no issue is
-filed, it leaves *Needs ticket*, the pull request says *tracked in*. Nothing writes to it or acts on its status until
-you pin it with *Link an issue*.
+A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) links its cluster to up to 10 issues
+of the bound Jira project; a link removed stays removed. It counts as tracked, yet Piwi never writes to it and its
+status never resolves or reopens the cluster on its own.
 
 ## Keep the ticket honest
 
-A background sync ([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked
-issue back and caches its status, title and assignee (open clusters every sweep, resolved ones daily). Per-project
-**policies**, all **off by default**, each a durable deduped outbox action, write back as the cluster evolves:
+A background sync
+([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
+its status, title and assignee (open clusters every sweep, resolved ones daily). Per-project **policies**, all **off by
+default**, each a durable deduped outbox action, write back as the cluster evolves:
 
 | When Piwi observes | What Piwi does |
 |---|---|
@@ -97,7 +96,7 @@ type, default labels and assignee, the [ticket language](#language), what a tick
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route.
 
-Tickets linked through a connection the project is no longer bound to keep their last status; the sync and
+Tickets linked through a connection the project is no longer bound to keep their last status; the sync and the
 policies skip them.
 
 <figure>
@@ -117,10 +116,10 @@ Piwi reads the issue type's create screen and asks for every required field it d
 - The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
   what it takes; an agent passes them in `fields`.
 
-Transitions too: for *transition on fix* and the reopen, the binding suggests the issue's transitions and asks for
-their required fields, such as a *Resolution*; a move leaving one empty fails at once, naming it. A requirement no
-screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, which the modal then asks
-for.
+Transitions are checked the same way: for *transition on fix* and the reopen transition, the binding suggests the
+transitions an issue offers and asks for their required fields, such as a *Resolution*; a move that would leave one
+empty fails at once, naming it. A requirement no screen shows, such as a workflow validator, comes back as Jira's
+refusal naming the field, which the modal then asks for.
 
 <figure>
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal's Required by Jira block: Severity Major, from the project settings, Team empty, Found in on Jira's default, and the footer saying Jira still needs Team">
@@ -130,29 +129,29 @@ for.
 ## Requirements
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
-- A [project binding](#the-project-binding) naming the connection, the only one a project's issues are filed, read
-  and written back through.
+- A [project binding](#the-project-binding) naming the connection: a project's issues are filed, read and written
+  back through that one connection, never through another.
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
 - The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
   who reads the project sees the key and status.
 
 ## Enable it
 
-The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the bound
-site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off). A share
-link, created when the issue is filed, needs the **Maintainer** role. The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket for an AI agent once the
+The modal files through the connection of the [project binding](#the-project-binding) and prefills its fields from
+the binding, else offers pickers over the bound site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+A share link needs the **Maintainer** role and is created when the issue is filed.
+From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.
 
 ## Language
 
-A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default,
-else **English**. The create modal's *Language* select and the `create_issue` MCP tool's `locale` set it per issue.
-**English and French ship.**
+A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default, else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
+`locale`. **English and French ship.**
 
 Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data
 (test titles, errors, locators, paths, commands, the patch) is **never** translated. The model's
 prose follows the separate [AI response-language setting](/features/ai-diagnosis#response-language), so a French ticket's
-*Most likely* reads in French too.
+*Most likely* section reads in French too.
 
 ## Limits
 

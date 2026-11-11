@@ -277,8 +277,8 @@ test counts by its last attempt, so one whose retry passed names nothing:
   to that cluster again, even once the issue moves; a merge keeps the removal on the surviving cluster and a split
   copies it to the new one. Pinning the issue on that cluster by hand lifts it.
 - **Read-only.** No [policy](/features/issue-tracking#keep-the-ticket-honest) or [rule](/features/issue-automation)
-  comments on it, moves it or updates its description, its status never resolves or reopens the cluster, and the issue
-  body Piwi writes does not list it. The sync refreshes its status and removes it once the issue leaves the bound
+  comments on it, moves it or updates its description, its status never resolves or reopens the cluster on its own
+  (a person can still mark the cluster resolved once it is Done), and the issue body Piwi writes does not list it. The sync refreshes its status and removes it once the issue leaves the bound
   project.
 - **It counts as tracked.** The cluster's known issue is its latest ticket filed or pinned, else the oldest link from
   its tests that is not Done, else the oldest one. While that issue is not Done, automatic creation files no issue and
