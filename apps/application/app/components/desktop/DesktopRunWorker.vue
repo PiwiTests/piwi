@@ -26,7 +26,15 @@ import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-
 import { CONTROLS, JOINED, STEERING, controlTitle, controlsOf, type Control } from '@piwitests/run-model/controls';
 import { driverOf, watchersLine } from '@piwitests/run-model/presence';
 import { workerStatus } from '@piwitests/run-model/status';
-import { heldUntilWatched, laneWatchOf, stopError, stopIntents, stopPlace, testName } from '@piwitests/run-model/stop';
+import {
+  heldUntilWatched,
+  laneWatchOf,
+  runFile,
+  stopError,
+  stopIntents,
+  stopPlace,
+  testName,
+} from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
@@ -54,6 +62,12 @@ const hub = useDesktopRunHub();
 const stop = computed(() => desktopRunStop(props.worker));
 const since = computed(() => stop.value?.since ?? null);
 const place = computed(() => (stop.value ? stopPlace(stop.value, props.session.root) : null));
+/** The stop's file in the run's linked folder, which opens in the editor; null for one outside it. */
+const placeFile = computed(() => {
+  if (!stop.value || !props.session.root) return null;
+  const file = runFile(stop.value.uri, props.session.root);
+  return file.startsWith('/') || /^[A-Za-z]:/.test(file) || file.includes('://') ? null : file;
+});
 const takes = computed(() => (stop.value ? stopIntents(props.worker, stop.value) : []));
 const failed = computed(() => stop.value?.reason === 'failure');
 
@@ -435,7 +449,10 @@ onBeforeUnmount(() => {
         <dt class="text-muted">{{ desktopSay('runs_nextLabel') }}</dt>
         <dd class="font-mono break-words text-highlighted">{{ stop.title }}</dd>
         <dt class="text-muted">{{ desktopSay('runs_whereLabel') }}</dt>
-        <dd class="font-mono break-all text-highlighted">{{ place }}</dd>
+        <dd class="min-w-0 text-highlighted">
+          <OpenInIdeLink v-if="placeFile" :file-path="placeFile" :line="stop.line + 1" :root="session.root" inline />
+          <span v-else class="font-mono break-all">{{ place }}</span>
+        </dd>
       </dl>
     </div>
 
