@@ -24,7 +24,8 @@ whose project enables live view, and connect to an editor or the desktop app for
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing** |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing** |
 
-The first share in a window asks for confirmation. The shared run shows its destination, viewer count and a link to copy.
+The first share in a window asks for confirmation, and for this run or [the window's runs](#a-window-s-runs). The shared
+run shows its destination, viewer count and a link to copy.
 
 Until then, its workers send nothing, and the run's **Tests** tab says **Not shared live** once, beside its search,
 with [**Ask to watch**](#ask-to-watch) for a teammate who may ask; its running tests say where they
@@ -56,9 +57,11 @@ $env:PIWI_SHARE_LIVE='1'; npx playwright test
 
 ### A window's runs
 
-When your editor shares a window's runs together, each run it starts in that window is shared as it starts, until you
-stop. On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who has it
-open is taken to the new run, on the worker they were watching.
+**Piwi: Share this window's runs live until I stop** in VS Code, and **Tools → Piwi → Share This Project's Runs Live
+Until I Stop** in a JetBrains IDE, share each run the window starts from then on, each one said as it is shared, until
+you stop (**…Stop sharing this window's runs live**, or a click on the status bar's **Live · this window**) or close
+the window. On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who
+has it open is taken to the new run, on the worker they were watching.
 
 ## Ask to watch
 
