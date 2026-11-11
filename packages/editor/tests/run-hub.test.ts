@@ -146,7 +146,7 @@ describe('the hub’s address', () => {
       // Once the service stopped, a pairing it hears writes no file again.
       await other.client.sendRequest('shutdown');
       const stopped = other.published.length;
-      expect(other.published.at(-1)).toBeNull();
+      expect(other.published[stopped - 1]).toBeNull();
       await other.client.sendNotification('piwi/setRunPairing', {
         address: `http://127.0.0.1:41004/piwi/send#${pairing(41004).token}`,
       });
