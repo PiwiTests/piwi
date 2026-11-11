@@ -903,10 +903,16 @@ export class RunSessions {
   }
 
   /**
-   * The hub's `drive`: at the stop `since` names, `viewer` drives it (`on`: an agent's actions there are refused until
-   * it gives it back), or gives it back. Refused without the stop.
+   * The hub's `drive` and the editors' `piwi/driveStop`: at the stop `since` names, `viewer` drives it (`on`: an agent's
+   * actions there are refused until it gives it back), or gives it back, as does any of the same tool's `others` that
+   * drives it. Refused without the stop.
    */
-  driveStop(params: StopParams & { since: string }, viewer: Viewer, on: boolean): RunControlResult {
+  driveStop(
+    params: StopParams & { since: string },
+    viewer: Viewer,
+    on: boolean,
+    others: readonly Viewer[] = [],
+  ): RunControlResult {
     if (typeof params?.since !== 'string' || !params.since) {
       return { ok: false, message: 'The command needs the stop it answers.' };
     }
@@ -924,7 +930,9 @@ export class RunSessions {
           : 'You drive this stop: an agent would wait until you give it back.',
       };
     }
-    if (worker.driver !== viewer) return { ok: true, message: 'You did not drive this stop.' };
+    if (worker.driver !== viewer && !others.includes(worker.driver!)) {
+      return { ok: true, message: 'You did not drive this stop.' };
+    }
     this.giveBack(session, worker);
     return { ok: true, message: 'You gave this stop back: an agent may act on it.' };
   }

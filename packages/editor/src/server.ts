@@ -3916,11 +3916,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ? clientLaneView!.input(params)
       : clientPageView!.input(params),
   );
-  // Interact takes the stop, and Esc gives it back, as the view that shows it, the one its input comes through.
+  // The person takes a stop one of this client's views watches, as that view; turning Interact off, or Esc, gives back
+  // what either view drove there.
   connection.onRequest(DRIVE_STOP_REQUEST, (params: DriveStopParams): RunControlResult => {
+    if (!answersStops) return { ok: false, message: 'This client does not show stopped pages.' };
     const at = { ref: params?.ref, worker: params?.worker, since: params?.since, events: [] };
-    const view = !clientPageView!.takes(at) && clientLaneView!.takes(at) ? clientLaneView! : clientPageView!;
-    return runSessions.driveStop(at, view.viewer, params?.on === true);
+    const watching = [clientPageView!, clientLaneView!].find((view) => view.takes(at));
+    if (params?.on === true) {
+      if (!watching) return { ok: false, message: 'Watch the stopped page first: you drive the stop you watch.' };
+      return runSessions.driveStop(at, watching.viewer, true);
+    }
+    return runSessions.driveStop(at, clientPageView!.viewer, false, [clientLaneView!.viewer]);
   });
   connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
     answersStops
