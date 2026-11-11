@@ -63,25 +63,43 @@ const stop = computed(() => desktopRunStop(props.worker));
 const since = computed(() => stop.value?.since ?? null);
 const place = computed(() => (stop.value ? stopPlace(stop.value, props.session.root) : null));
 
+/**
+ * The window that shows the worker: the app's main window, which alone holds the shell's commands (Open in a window,
+ * the editor's launcher), or a worker's window, which holds none. Outside the shell (no window), the main window's.
+ */
+const mainWindow = ref(true);
 /** Open in a window: offered in the app's main window alone, whose tray shows the worker. */
 const windowable = ref(false);
 onMounted(() => {
-  windowable.value = !!tauriCore() && tauriWindowLabel() === 'main';
+  const label = tauriWindowLabel();
+  mainWindow.value = label === null || label === 'main';
+  windowable.value = !!tauriCore() && label === 'main';
 });
 
-/** This worker in a window of its own, kept above the others, its status, controls and page live. */
+const toast = useToast();
+/** This worker in a window of its own, kept above the others, its status, controls and page live; by its lane. */
 async function openWindow() {
   try {
-    await tauriCore()?.invoke('desktop_open_worker_window', { runRef: props.session.ref, worker: props.worker.worker });
-  } catch {
-    emit('announce', 'The window could not open: the app’s server is not running.');
+    await tauriCore()?.invoke('desktop_open_worker_window', {
+      runRef: props.session.ref,
+      lane: props.worker.parallelIndex,
+    });
+  } catch (error) {
+    toast.add({ title: 'The window could not open', description: errorMessage(error), color: 'error' });
   }
 }
-/** The stop's file in the run's linked folder, which opens in the editor; null for one outside it. */
+/**
+ * The stop's file in the run's folder, which opens in the editor, relative to it; null for one outside it. The folder
+ * is the file's as it spells it, but for a Windows path, whose case the file system ignores.
+ */
 const placeFile = computed(() => {
-  if (!stop.value || !props.session.root) return null;
-  const file = runFile(stop.value.uri, props.session.root);
-  return file.startsWith('/') || /^[A-Za-z]:/.test(file) || file.includes('://') ? null : file;
+  const root = props.session.root;
+  if (!stop.value || !root || !stop.value.uri.startsWith('file:')) return null;
+  const whole = runFile(stop.value.uri, null);
+  const file = runFile(stop.value.uri, root);
+  if (file === whole) return null;
+  const base = whole.slice(0, whole.length - file.length - 1);
+  return /^[A-Za-z]:/.test(base) || base === root.replace(/\\/g, '/').replace(/\/+$/, '') ? file : null;
 });
 const takes = computed(() => (stop.value ? stopIntents(props.worker, stop.value) : []));
 const failed = computed(() => stop.value?.reason === 'failure');
@@ -476,7 +494,13 @@ onBeforeUnmount(() => {
         <dd class="font-mono break-words text-highlighted">{{ stop.title }}</dd>
         <dt class="text-muted">{{ desktopSay('runs_whereLabel') }}</dt>
         <dd class="min-w-0 text-highlighted">
-          <OpenInIdeLink v-if="placeFile" :file-path="placeFile" :line="stop.line + 1" :root="session.root" inline />
+          <OpenInIdeLink
+            v-if="placeFile && mainWindow"
+            :file-path="placeFile"
+            :line="stop.line + 1"
+            :root="session.root"
+            inline
+          />
           <span v-else class="font-mono break-all">{{ place }}</span>
         </dd>
       </dl>

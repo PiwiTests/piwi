@@ -36,6 +36,30 @@ function processAlive(pid: number): boolean {
 }
 
 /**
+ * Whether a process of this user runs with this id. A file this user owns was written by a process of this user, so a
+ * process of another user's that took its id since (`EPERM`) is not that one.
+ */
+export function ownProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The longest a clock may have moved between a process writing its file and this run reading it. */
+const CLOCK_SLACK_MS = 60_000;
+
+/**
+ * Whether a time a file names, in milliseconds since the epoch, is since this machine started: a file of before names
+ * a process its restart ended, whose id another may have taken since.
+ */
+export function sinceBoot(time: number, now: number = Date.now()): boolean {
+  return time >= now - os.uptime() * 1000 - CLOCK_SLACK_MS;
+}
+
+/**
  * Read the desktop app's published connection details, or `null` when the app
  * is not running and the file is absent, unreadable or malformed.
  *
@@ -69,7 +93,7 @@ export function readDesktopToken(filePath: string): string | null {
  * Piwi Picker, and the folders linked to a project.
  */
 export interface DesktopHub {
-  pid: number | null;
+  pid: number;
   runChannel: ChannelAddress;
   /** Where the runs' picks go, as `PIWI_EDITOR_SEND` names it; null when the file names none. */
   send: EditorPairing | null;
@@ -79,15 +103,17 @@ export interface DesktopHub {
 }
 
 /**
- * The app's bundled server as a hub (`DesktopHub`), from the discovery file of an app that still runs; null when the
- * file is absent, unreadable or malformed, its app is gone, or it names no run channel: an app that predates the field
- * or whose server has not proved itself yet. Never throws.
+ * The app's bundled server as a hub (`DesktopHub`), from the discovery file of an app of this user that still runs and
+ * named the hub since this machine started (`hubSince`); null when the file is absent, unreadable or malformed, its
+ * app is gone, or it names no run channel: an app that predates the field or whose server has not proved itself yet.
+ * Never throws.
  */
 export function readDesktopHub(filePath: string): DesktopHub | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    const file = readDesktopFile(filePath);
-    if (!file || (file.pid !== null && !processAlive(file.pid))) return null;
+    const file = desktopFields(parsed);
+    if (!file || file.pid === null || !ownProcessAlive(file.pid)) return null;
+    if (typeof parsed.hubSince !== 'number' || !sinceBoot(parsed.hubSince)) return null;
     const channel = parsed?.runChannel;
     const runChannel =
       typeof channel?.path === 'string' && typeof channel?.token === 'string'
@@ -116,14 +142,19 @@ export function readDesktopHub(filePath: string): DesktopHub | null {
 /** The fields of the discovery file the readers use; `pid` is null when the file names none. */
 function readDesktopFile(filePath: string): (DesktopConfig & { pid: number | null }) | null {
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    const url = parsed?.url;
-    const token = parsed?.token;
-    if (typeof url !== 'string' || !url) return null;
-    if (typeof token !== 'string' || !token) return null;
-    const pid = Number.isInteger(parsed?.pid) && parsed.pid > 0 ? (parsed.pid as number) : null;
-    return { url, token, pid };
+    return desktopFields(JSON.parse(fs.readFileSync(filePath, 'utf8')));
   } catch {
     return null;
   }
+}
+
+/** The fields the readers use of the discovery file's parsed content; null when it holds no address and token. */
+function desktopFields(parsed: unknown): (DesktopConfig & { pid: number | null }) | null {
+  const file = parsed as { url?: unknown; token?: unknown; pid?: unknown } | null;
+  const url = file?.url;
+  const token = file?.token;
+  if (typeof url !== 'string' || !url) return null;
+  if (typeof token !== 'string' || !token) return null;
+  const pid = Number.isInteger(file?.pid) && (file!.pid as number) > 0 ? (file!.pid as number) : null;
+  return { url, token, pid };
 }

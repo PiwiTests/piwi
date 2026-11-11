@@ -3,15 +3,18 @@
  * window's title and the tray dot say a test of an editor's run waits at a stop), steered by none of them. The server
  * lists the editors' discovery files (`readLiveHubs`), connects to each live hub as a process of this machine, with no
  * `Origin`, its `hello` holding the hub's token from the file, and subscribes to observe (`subscribe` with `observe`):
- * a stop no pause bar shows never waits for it. A hub that refuses (an editor service that predates it) is not asked
- * again while it runs; one that closes or leaves the folder is let go, with its runs. The folder is read again every
- * `EDITOR_RUNS_READ_MS`.
+ * a stop no pause bar shows never waits for it. A hub that refuses (an editor service that predates it), or closes or
+ * stays silent before its `welcome`, is not asked again while its file lists it; one that closes after or leaves the
+ * folder is let go, with its runs. The folder is read again every `EDITOR_RUNS_READ_MS`.
  */
 import { WebSocket } from 'ws';
 import { parseHubMessage, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
 
 /** How often the editors' discovery files are read again. */
 export const EDITOR_RUNS_READ_MS = 5_000;
+
+/** How long a hub has to open the connection and then welcome it. */
+const EDITOR_HUB_WELCOME_MS = 10_000;
 
 /** A live run of an editor: the editor as it names itself, and the run as its hub tells it. */
 export interface EditorRun {
@@ -35,7 +38,10 @@ export interface EditorRunsOptions {
 
 export class EditorRuns {
   private readonly followed = new Map<string, Followed>();
-  /** The hubs that refused a connection with no `Origin`, by address: an editor service that predates it. */
+  /**
+   * The hubs that refused a connection with no `Origin` (an editor service that predates it), or closed or stayed silent
+   * before welcoming it, by address.
+   */
   private readonly refused = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
@@ -51,7 +57,7 @@ export class EditorRuns {
   close(): void {
     this.closed = true;
     if (this.timer) clearInterval(this.timer);
-    for (const followed of this.followed.values()) followed.socket.close();
+    for (const followed of this.followed.values()) followed.socket.terminate();
     this.followed.clear();
   }
 
@@ -77,7 +83,7 @@ export class EditorRuns {
     for (const [url, followed] of this.followed) {
       if (urls.has(url)) continue;
       this.followed.delete(url);
-      followed.socket.close();
+      followed.socket.terminate();
       if (followed.sessions.size > 0) this.options.changed();
     }
     for (const hub of live) if (!this.followed.has(hub.url) && !this.refused.has(hub.url)) this.follow(hub);
@@ -86,12 +92,15 @@ export class EditorRuns {
   private follow(hub: LiveHub): void {
     let socket: WebSocket;
     try {
-      socket = new WebSocket(hub.url);
+      socket = new WebSocket(hub.url, { handshakeTimeout: EDITOR_HUB_WELCOME_MS });
     } catch {
       return;
     }
     const followed: Followed = { socket, client: hub.client, sessions: new Map() };
     this.followed.set(hub.url, followed);
+    let welcomed = false;
+    const silent = setTimeout(() => socket.terminate(), EDITOR_HUB_WELCOME_MS);
+    silent.unref?.();
     const send = (message: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
     };
@@ -101,9 +110,12 @@ export class EditorRuns {
     });
     socket.on('open', () => send({ type: 'hello', token: hub.token }));
     socket.on('message', (data) => {
+      if (this.followed.get(hub.url) !== followed) return;
       const message = parseHubMessage(String(data));
       if (!message) return;
       if (message.type === 'welcome') {
+        welcomed = true;
+        clearTimeout(silent);
         followed.client = message.client ?? followed.client;
         send({ type: 'subscribe', id: 1, observe: true });
       } else if (message.type === 'session') {
@@ -114,8 +126,10 @@ export class EditorRuns {
     });
     socket.on('error', () => socket.terminate());
     socket.on('close', () => {
+      clearTimeout(silent);
       if (this.followed.get(hub.url) !== followed) return;
       this.followed.delete(hub.url);
+      if (!welcomed) this.refused.add(hub.url);
       if (followed.sessions.size > 0) this.options.changed();
     });
   }

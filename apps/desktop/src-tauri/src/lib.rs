@@ -86,10 +86,13 @@ const WINDOW_STATE_FLAGS: StateFlags =
 
 /// The key the window-state plugin keeps a window's state under: the
 /// dashboard window's own, and one for each kind of window opened at run time
-/// (`aux-<n>`, `output-<name>_<n>`), so the next one opens where the last was.
+/// (`aux-<n>`, `output-<name>_<n>`, `worker-<run>-<lane>`), so the next one
+/// opens where the last was.
 fn window_state_key(label: &str) -> &str {
     if label.starts_with("aux-") {
         "aux"
+    } else if label.starts_with(WORKER_WINDOW_PREFIX) {
+        "worker"
     } else if output_window_name(label).is_some() {
         "output"
     } else {
@@ -179,9 +182,17 @@ struct DataDir(PathBuf);
 struct DiscoveryFile(PathBuf);
 
 /// What the discovery file names of the bundled server as a hub (`discovery_hub_fields`), once its session loaded;
-/// none while no server that proved its token runs.
+/// none while no server that proved its token runs. Held, with the file's writes, under one lock.
 #[derive(Default)]
-struct DiscoveryHub(Mutex<Option<serde_json::Value>>);
+struct DiscoveryHub(Mutex<HeldHub>);
+
+/// The hub fields of the discovery file, and the count of the publishes and withdrawals that set them: a publish whose
+/// answer comes after a later one stores nothing.
+#[derive(Default)]
+struct HeldHub {
+    generation: u64,
+    fields: Option<serde_json::Value>,
+}
 
 /// The server log path, shared so the webview error bridge (`desktop_log`) can
 /// append to the *same* `logs/server.log` the server sidecar writes to — a
@@ -1159,10 +1170,11 @@ fn discovery_hub_fields(answer: &serde_json::Value) -> Option<serde_json::Value>
 /// loaded the session of a server that proved its token: read from
 /// `GET /api/desktop/run-channel` over a connection that proves it again.
 /// Nothing for an app that publishes no discovery file (Piwi Runner).
-pub(crate) fn publish_discovery_hub(app: &AppHandle) {
-    let (Some(_), Some(info)) = (
+pub(crate) fn publish_discovery_hub(app: &AppHandle, holds: session::ProofHolds) {
+    let (Some(_), Some(info), Some(hub)) = (
         app.try_state::<DiscoveryFile>(),
         app.try_state::<mcp_clients::ServerInfo>(),
+        app.try_state::<DiscoveryHub>(),
     ) else {
         return;
     };
@@ -1170,23 +1182,50 @@ pub(crate) fn publish_discovery_hub(app: &AppHandle) {
         port: info.port,
         token: info.token.clone(),
     };
+    let generation = {
+        let mut held = hub.0.lock().unwrap();
+        held.generation += 1;
+        held.generation
+    };
     let app = app.clone();
     std::thread::spawn(move || {
+        // `hubSince`, in milliseconds since the epoch: a reader takes no hub named before the machine started.
         let fields = crate::repro::local_get_json(&server, "/api/desktop/run-channel")
             .ok()
-            .and_then(|answer| discovery_hub_fields(&answer));
-        if let Some(hub) = app.try_state::<DiscoveryHub>() {
-            *hub.0.lock().unwrap() = fields;
+            .and_then(|answer| discovery_hub_fields(&answer))
+            .map(|mut fields| {
+                fields["hubSince"] = json!(unix_millis());
+                fields
+            });
+        // Stored only while the server that answered still holds its proof and no later publish or withdrawal came.
+        let current = app.try_state::<DiscoveryHub>().is_some_and(|hub| {
+            let mut held = hub.0.lock().unwrap();
+            if held.generation != generation || !holds() {
+                return false;
+            }
+            held.fields = fields;
+            true
+        });
+        if current {
+            refresh_discovery_file(&app);
         }
-        refresh_discovery_file(&app);
     });
+}
+
+/// Now, in milliseconds since the Unix epoch.
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64)
 }
 
 /// Name no hub in the discovery file: the window left the server, whose run
 /// channel goes with it.
 pub(crate) fn withdraw_discovery_hub(app: &AppHandle) {
     if let Some(hub) = app.try_state::<DiscoveryHub>() {
-        *hub.0.lock().unwrap() = None;
+        let mut held = hub.0.lock().unwrap();
+        held.generation += 1;
+        held.fields = None;
     }
     refresh_discovery_file(app);
 }
@@ -1204,11 +1243,11 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     if !file.0.exists() {
         return;
     }
-    let hub = app.try_state::<DiscoveryHub>().and_then(|hub| {
-        let held = hub.0.lock().unwrap().clone();
-        held
-    });
-    let body = discovery_body(info.port, &info.token, &runner::read_links(app), hub.as_ref());
+    // The hub's lock is held until the file is written, so two rewrites never land out of order.
+    let hub = app.try_state::<DiscoveryHub>();
+    let held = hub.as_ref().map(|hub| hub.0.lock().unwrap());
+    let fields = held.as_ref().and_then(|held| held.fields.as_ref());
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app), fields);
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
@@ -2228,7 +2267,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
 }
 
 /// Label prefix of a worker's window ([`desktop_open_worker_window`]):
-/// `worker-<run>-<worker>`, one per worker.
+/// `worker-<run>-<lane>`, one per lane of a run.
 const WORKER_WINDOW_PREFIX: &str = "worker-";
 
 /// Whether `value` is a run's name on the hub (`PIWI_RUN_REF`): 1 to 64
@@ -2242,24 +2281,25 @@ fn is_run_ref(value: &str) -> bool {
 
 /// Open a worker of a run in a window of its own, kept above the others, and
 /// return its label: the dashboard's `/desktop/run-worker` page for the run
-/// named `run_ref` and Playwright's worker `worker`, its status, controls and
-/// live view. The page reads the runs' hub itself, behind the desktop guard as
+/// named `run_ref` and its lane `lane` (Playwright's `parallelIndex`, which the
+/// worker that replaces a failed one keeps), its status, controls and live
+/// view. The page reads the runs' hub itself, behind the desktop guard as
 /// the dashboard window does: the window holds no IPC grant (the capabilities
 /// name the main window only) and stays on the sidecar's origin. A window
-/// already open on that worker comes forward instead.
+/// already open on that lane comes forward instead.
 #[tauri::command]
-async fn desktop_open_worker_window(app: tauri::AppHandle, run_ref: String, worker: u32) -> Result<String, String> {
+async fn desktop_open_worker_window(app: tauri::AppHandle, run_ref: String, lane: u32) -> Result<String, String> {
     if !is_run_ref(&run_ref) {
         return Err("invalid run".into());
     }
-    let label = format!("{WORKER_WINDOW_PREFIX}{run_ref}-{worker}");
+    let label = format!("{WORKER_WINDOW_PREFIX}{run_ref}-{lane}");
     if let Some(window) = app.get_webview_window(&label) {
         bring_to_front(&window);
         return Ok(label);
     }
     let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     let url = tauri::Url::parse(&format!(
-        "{}/desktop/run-worker?ref={run_ref}&worker={worker}",
+        "{}/desktop/run-worker?ref={run_ref}&lane={lane}",
         sidecar_origin(port)
     ))
     .map_err(|e| e.to_string())?;
@@ -4514,6 +4554,8 @@ mod tests {
         assert_eq!(window_state_key("main"), "main");
         assert_eq!(window_state_key("aux-0"), "aux");
         assert_eq!(window_state_key("aux-17"), "aux");
+        assert_eq!(window_state_key("worker-desktop-41-0"), "worker");
+        assert_eq!(window_state_key("worker-terminal-12-1700000000000-unattended-3"), "worker");
         assert_eq!(window_state_key("output-run-12_3"), "output");
         // Not a run output window's label: kept as it is.
         assert_eq!(window_state_key("output-"), "output-");

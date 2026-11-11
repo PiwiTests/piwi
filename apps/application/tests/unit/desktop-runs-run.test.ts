@@ -613,6 +613,7 @@ describe.skipIf(!runnable)('a run started in a terminal in a linked folder', () 
         projects: [{ id: 1, path: fs.realpathSync(project) }],
         runChannel: { path: channel.slice(0, hash), token: channel.slice(hash + 1) },
         hub: { url: hub!.url, token: hub!.token },
+        hubSince: Date.now(),
       }),
       { mode: 0o600 },
     );

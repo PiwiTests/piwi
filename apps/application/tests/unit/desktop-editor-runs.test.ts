@@ -72,7 +72,9 @@ async function fakeHub(refuse = false): Promise<FakeHub> {
       ws.on('message', (data) => {
         const message = JSON.parse(String(data)) as Record<string, unknown>;
         heard.push(message);
-        if (message.type === 'hello' && message.token === TOKEN) {
+        // A hub closes a connection whose hello holds another token.
+        if (message.type === 'hello' && message.token !== TOKEN) return void ws.close(4001);
+        if (message.type === 'hello') {
           ws.send(
             JSON.stringify({
               type: 'welcome',
@@ -167,6 +169,16 @@ describe('the editors’ runs the desktop server observes', () => {
     follower = new EditorRuns({ live: () => [hub.live], changed: () => {}, readMs: 20 });
     follower.start();
     await waitFor(() => hub.origins.length === 1);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(hub.origins).toHaveLength(1);
+    expect(follower.runs()).toEqual([]);
+  });
+
+  it('asks a hub that closed before its welcome no more while it is listed', async () => {
+    const hub = await fakeHub();
+    follower = new EditorRuns({ live: () => [{ ...hub.live, token: 'another-token' }], changed: () => {}, readMs: 20 });
+    follower.start();
+    await waitFor(() => hub.heard.length === 1);
     await new Promise((r) => setTimeout(r, 150));
     expect(hub.origins).toHaveLength(1);
     expect(follower.runs()).toEqual([]);

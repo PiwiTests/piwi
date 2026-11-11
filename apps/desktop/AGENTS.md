@@ -32,7 +32,7 @@ shell and are feature-equivalent.
     over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
     IPC.
-  - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<worker>`, the ref checked by
+  - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<lane>`, the ref checked by
     `is_run_ref`) shows the dashboard's `/desktop/run-worker` page, kept above the other windows, stays on the
     sidecar's origin and holds no IPC grant: the page reads the runs' hub through the routes behind the desktop guard,
     as the dashboard window does.
@@ -101,9 +101,10 @@ shell and are feature-equivalent.
   window; a stop from the dashboard reaches the shell on its notification stream.
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
-  linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`)
-  once the window loaded a session of a server that proved its token and takes it out as the window leaves the server
-  (`publish_discovery_hub`, `withdraw_discovery_hub`), and deletes it on quit. Its readers:
+  linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`,
+  and `hubSince`) once the window loaded a session of a server that proved its token and takes it out as the window
+  leaves the server (`publish_discovery_hub`, `withdraw_discovery_hub`, a late publish storing nothing), and deletes it
+  on quit. Its readers:
   - `@piwitests/reporter`, from `src/internal/config/desktop.ts`, and its hub pick (`hub.ts`) for a run started in a
     terminal in a linked folder;
   - `src-tauri/src/mcp_stdio.rs`, which resolves the app's address from it on every message;

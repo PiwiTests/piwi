@@ -20,8 +20,8 @@ process is the terminal's or the IDE's. It says so as it starts:
 ```
 
 With no editor window on its folder, a run in a folder [the desktop app](./desktop) links follows the app (a reporter
-newer than 0.68.0): its Local runs tray lists it, pauses it, watches its workers and holds its failures as you ask, as
-for [the runs it starts](./desktop-runs).
+newer than 0.68.0): its Local runs tray lists it, pauses it and watches its workers, as it does
+[the runs it starts](./desktop-runs), and Piwi Picker's Runs window holds its failures as you ask.
 
 It runs as its config says, headless by default, so the editor shows a stop as
 [a headless run's](./editor-run-control#a-headless-run): an image of its page, which the editor's paused page and Piwi

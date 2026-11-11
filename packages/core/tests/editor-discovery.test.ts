@@ -75,6 +75,9 @@ describe('the editors’ discovery files', () => {
       roots: ['/a'],
       client: null,
     });
+    // A service knows a run nobody attends only when it says so.
+    expect(parseEditorDiscovery(text({ unattended: true }))).toMatchObject({ unattended: true });
+    expect(parseEditorDiscovery(text({ unattended: 'yes' }))).not.toHaveProperty('unattended');
     for (const broken of ['{', '[]', text({ pid: 0 }), text({ pid: '4242' }), 'null']) {
       expect(parseEditorDiscovery(broken), broken).toBeNull();
     }

@@ -204,10 +204,10 @@ impl SessionWindows for AppHandle {
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.eval(&format!("window.location.replace('{bootstrap_url}')"));
                 }
+                // The server proved its token: the discovery file names it as the hub of a terminal's runs.
+                crate::publish_discovery_hub(&handle, holds.clone());
             });
         });
-        // The server proved its token: the discovery file names it as the hub of a terminal's runs.
-        crate::publish_discovery_hub(self);
     }
 }
 

@@ -36,6 +36,8 @@ import {
   RUN_CHANNEL_FOLDER_PREFIX,
   clearStaleRunChannels,
   insideFolder,
+  linkHolding,
+  linkedSpelling,
 } from '../../server/utils/desktop-runs';
 import {
   desktopPicksToken,
@@ -1068,6 +1070,28 @@ describe('the code from a stop of a desktop run', () => {
       fs.symlinkSync(outside, link);
       expect(insideFolder(folder, link)).toBe(false);
       fs.rmSync(link);
+    }
+  });
+
+  it('names a run by its own folder as the linked folder holding it spells it', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-linked-'));
+    onTestFinished(() => fs.rmSync(base, { recursive: true, force: true }));
+    const shop = path.join(base, 'shop');
+    const e2e = path.join(shop, 'e2e');
+    fs.mkdirSync(e2e, { recursive: true });
+    const links = [
+      { id: 1, path: shop },
+      { id: 2, path: path.join(base, 'other') },
+    ];
+    expect(linkHolding(links, e2e)).toBe(shop);
+    expect(linkedSpelling(links, e2e)).toBe(e2e);
+    expect(linkedSpelling(links, shop)).toBe(shop);
+    expect(linkedSpelling(links, base)).toBeNull();
+    // A folder linked through a link of its own: the run's folder in the link's spelling.
+    if (process.platform !== 'win32') {
+      const spelled = path.join(base, 'shop-link');
+      fs.symlinkSync(shop, spelled);
+      expect(linkedSpelling([{ id: 3, path: spelled }], e2e)).toBe(path.join(spelled, 'e2e'));
     }
   });
 });

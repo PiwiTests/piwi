@@ -7,7 +7,6 @@
  */
 import type { HubSession } from '@piwitests/core/run-hub';
 import { localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
-import { desktopHeldSessions, desktopRunHoldRefusal, desktopRunHolds } from '~/utils/desktop-run-view';
 
 const props = defineProps<{
   /** The page's Piwi run. */
@@ -17,29 +16,12 @@ const props = defineProps<{
 }>();
 
 const store = useDesktopLocalRuns();
-const { runs, holds } = store;
-const hub = useDesktopRunHub();
-const liveSessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
+const { runs } = store;
 
 /** The tray's run of this page's run, while it goes on. */
 const run = computed<LocalRun | undefined>(() =>
   runs.value.find((candidate) => candidate.piwiRunId === props.runId && candidate.status === 'running'),
 );
-
-const holdRefusal = computed(() => (run.value ? desktopRunHoldRefusal(run.value, liveSessions.value) : null));
-const holdsFailures = computed(() =>
-  run.value ? desktopRunHolds(run.value, holds.value[run.value.key], liveSessions.value) : false,
-);
-
-/** The person turns the run's Hold failures over, as in the tray: its live steps at once, the steps to come as they start. */
-function setHold(on: boolean) {
-  const current = run.value;
-  if (!current) return;
-  for (const session of desktopHeldSessions(current, liveSessions.value)) {
-    void hub.command({ type: 'hold', ref: session.ref, on });
-  }
-  holds.value = { ...holds.value, [current.key]: on };
-}
 
 const outputShown = ref(false);
 
@@ -66,33 +48,18 @@ function announce(text: string) {
       <UButton
         v-if="run.stopRequested"
         size="xs"
-        color="error"
-        variant="solid"
-        icon="i-lucide-square"
+        color="neutral"
+        variant="outline"
         title="Kill the process without waiting"
         @click="store.stopRun(run)"
       >
         Force stop
       </UButton>
-      <UButton v-else size="xs" color="neutral" variant="outline" icon="i-lucide-square" @click="store.stopRun(run)">
-        Stop
-      </UButton>
+      <UButton v-else size="xs" color="neutral" variant="outline" @click="store.stopRun(run)">Stop</UButton>
     </template>
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <USwitch
-          :model-value="holdsFailures"
-          :disabled="!!holdRefusal"
-          label="Hold failures"
-          size="sm"
-          :aria-describedby="`desktop-run-home-hold-${run.key}`"
-          :ui="{ label: 'text-xs font-medium' }"
-          @update:model-value="(on: boolean) => setHold(on)"
-        />
-        <p :id="`desktop-run-home-hold-${run.key}`" class="min-w-0 text-xs text-muted">
-          {{ holdRefusal ?? 'A failing test waits at its line for you to look at it and resume.' }}
-        </p>
-      </div>
+    <!-- From lg the page's summary does not scroll: the card scrolls inside, so the tabs below keep their room. -->
+    <div class="flex flex-col gap-3 lg:max-h-[40dvh] lg:overflow-y-auto">
+      <DesktopRunHoldSwitch :run="run" :described-id="`desktop-run-home-hold-${run.key}`" />
       <DesktopRunSession
         v-for="session in sessions"
         :key="session.ref"

@@ -5961,12 +5961,12 @@ const SCENES = [
   {
     name: 'desktop-run-home',
     description:
-      'Run page in the desktop app while a run it started goes on: On your machine, the run’s Stop, Hold failures, its worker with its controls and the output, as the Local runs tray shows them, wide and at 390 px',
+      'Run page in the desktop app while a run it started goes on: On your machine, the run’s Stop, Hold failures, its worker with its controls and the output, as the Local runs tray shows them, scrolling inside the card so the tabs keep their room at 1280×800, and at 390 px',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: 41,
     route: '/test-runs/2',
-    viewport: { width: 1280, height: 1100 },
+    viewport: { width: 1280, height: 800 },
     outputs: ['desktop-run-home.png', 'desktop-run-home-narrow.png'],
     async run({ page, base, goto, settle, shoot }) {
       await playDesktopRunHub(page, () => ({}));
@@ -5981,7 +5981,7 @@ const SCENES = [
           .click({ timeout: 1000 })
           .catch(() => {});
         await settle();
-        await shoot('', { of: '[data-shot="desktop-run-home"]', pad: 8 });
+        await shoot('');
         await page.setViewportSize({ width: 390, height: 1100 });
         await settle();
         await shoot('narrow', { of: '[data-shot="desktop-run-home"]', pad: 0 });
@@ -5996,14 +5996,14 @@ const SCENES = [
       'A worker of a run the desktop app started, in a window of its own kept above the others (Open in a window): its test, where it stands, its controls and its page',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
-    route: '/desktop/run-worker?ref=desktop-41&worker=0',
+    route: '/desktop/run-worker?ref=desktop-41&lane=0',
     viewport: { width: 520, height: 680 },
     async run({ page, goto, settle, shoot }) {
       const image = await shopPageJpeg(page.context());
       await playDesktopRunHub(page, (command) =>
         command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
       );
-      await goto('/desktop/run-worker?ref=desktop-41&worker=0');
+      await goto('/desktop/run-worker?ref=desktop-41&lane=0');
       await page.waitForFunction(() => window.__hub?.open() === 1);
       const root = '/home/dev/code/acme-checkout';
       const uri = `file://${root}/tests/checkout.spec.ts`;

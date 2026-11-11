@@ -25,9 +25,10 @@ responsibilities.
      (`terminal-<pid>-<time>`) of its hub, the editor whose workspace holds it, else the desktop app whose linked folder
      does (`internal/config/hub.ts`: never under CI, Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`), with
      an editor's `PIWI_RECORD_CHANNEL` and the app's `PIWI_EDITOR_SEND` unless the run names its own, the ref ending in
-     `-unattended` for a run with no terminal nor test runner unless `PIWI_EDITOR=on`, with one line saying so
-     (`tests/terminal-run.spec.ts`); and outside CI `PIWI_STOP_NOTES`, the private file each worker notes
-     its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
+     `-unattended` for a run with no terminal nor test runner unless `PIWI_EDITOR=on` (such a run follows only an
+     editor whose discovery file says `unattended`), with one line saying so (`tests/terminal-run.spec.ts`); and
+     outside CI `PIWI_STOP_NOTES`, the private file each worker notes its stops in for the run's stream
+     (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
    - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
      `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
      `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
@@ -135,7 +136,7 @@ responsibilities.
    (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`), and for a run started in a
-   terminal its `runChannel`, `send` and `projects` (`readDesktopHub`, `internal/config/hub.ts`)
+   terminal its `runChannel`, `send`, `projects` and `hubSince` (`readDesktopHub`, `internal/config/hub.ts`)
    ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
    release cycles, so a path or shape change must land in both, and a request that carries the token goes through the
    proof described in [`ARCHITECTURE.md`](ARCHITECTURE.md#the-desktop-apps-discovery-file).

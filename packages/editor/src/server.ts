@@ -2444,6 +2444,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         hub: hub && { url: hub.url, token: hub.token },
         runChannel: channel && { path: channel.path, token: channel.token },
         recorderBundle: fs.existsSync(bundle) ? bundle : null,
+        unattended: true,
       });
     });
   });

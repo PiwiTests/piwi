@@ -246,6 +246,17 @@ export function linkHolding(links: readonly DesktopLink[], cwd: string): string 
   return holding[0]?.path ?? null;
 }
 
+/**
+ * `cwd` as the linked folder holding it spells it: the link's path, then the rest of `cwd` below it; null outside every
+ * linked folder. A session's root names its run's working directory, in the spelling the window opens files under.
+ */
+export function linkedSpelling(links: readonly DesktopLink[], cwd: string): string | null {
+  const link = linkHolding(links, cwd);
+  if (link === null) return null;
+  const rest = path.relative(real(link), real(cwd));
+  return rest ? path.join(link, rest) : link;
+}
+
 /** Whether `file` is inside `folder`, both resolved through their links. */
 export function insideFolder(folder: string, file: string): boolean {
   const relative = path.relative(real(folder), real(file));
@@ -314,9 +325,9 @@ export class DesktopRuns {
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
-      // The linked folder that holds the run: a run the shell starts runs in it, one started in a terminal there or
-      // below.
-      rootOf: (cwd) => linkHolding(this.links(), cwd),
+      // The run's folder as its linked folder spells it: a run the shell starts runs in the linked folder, one
+      // started in a terminal there or below.
+      rootOf: (cwd) => linkedSpelling(this.links(), cwd),
       writesCode: () => true,
       onRegion: (stop, region) =>
         'refused' in region
@@ -398,11 +409,10 @@ export class DesktopRuns {
       RunHub.open({
         sessions: runs.sessions,
         actions: runs.actions,
-        runInfo: (_ref, root) => ({
-          command: null,
-          label: root ? path.basename(root) : null,
-          project: root ? runs.project(root) : null,
-        }),
+        runInfo: (_ref, root) => {
+          const link = root ? linkHolding(runs.links(), root) : null;
+          return { command: null, label: link ? path.basename(link) : null, project: link ? runs.project(link) : null };
+        },
         welcome: () => ({
           pid: process.pid,
           version: options.version,

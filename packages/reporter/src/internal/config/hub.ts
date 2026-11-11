@@ -15,7 +15,7 @@ import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, UNATTENDED_REF_SUFFI
 import { isRunOriginKind, type RunInteractive } from '@piwitests/core/wire';
 import { detectCi } from '../support/ci.js';
 import { isMergeReports } from '../support/run-mode.js';
-import { defaultDesktopConfigPath, readDesktopHub, type DesktopHub } from './desktop.js';
+import { defaultDesktopConfigPath, ownProcessAlive, readDesktopHub, sinceBoot, type DesktopHub } from './desktop.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from './env.js';
 
 /**
@@ -109,22 +109,6 @@ function privateFolder(dir: string): boolean {
 }
 
 /**
- * Whether a process of this user runs with this id. A file this user owns was written by a service of this user, so a
- * process of another user's that took its id since (`EPERM`) is not that service.
- */
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The longest a clock may have moved between a service writing its file and this run reading it. */
-const CLOCK_SLACK_MS = 60_000;
-
-/**
  * Whether a service's file may still be its own, by what the platform tells: written since this machine started (a
  * file of before, its process gone with the restart, names an id another process may have taken since), and, but on
  * Windows, naming a run channel in a folder this user owns and no other user can enter, which a socket of another
@@ -132,7 +116,7 @@ const CLOCK_SLACK_MS = 60_000;
  */
 function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
   const written = Date.parse(editor.startedAt);
-  if (Number.isFinite(written) && written < now - os.uptime() * 1000 - CLOCK_SLACK_MS) return false;
+  if (Number.isFinite(written) && !sinceBoot(written, now)) return false;
   if (!editor.runChannel || process.platform === 'win32') return true;
   return privateFolder(path.dirname(editor.runChannel.path)) && ownSocket(editor.runChannel.path);
 }
@@ -173,7 +157,7 @@ function folderOnDisk(dir: string): DiscoveryFolder {
         return null;
       }
     },
-    alive: processAlive,
+    alive: ownProcessAlive,
     remove: () => {},
   };
 }
@@ -213,7 +197,7 @@ function desktopForRun(hub: DesktopHub | null, dirs: readonly string[]): Desktop
     return null;
   }
   const asEditor: EditorDiscovery = {
-    pid: hub.pid ?? 0,
+    pid: hub.pid,
     host: os.hostname(),
     version: '',
     client: null,
@@ -222,6 +206,7 @@ function desktopForRun(hub: DesktopHub | null, dirs: readonly string[]): Desktop
     hub: hub.hub,
     runChannel: channel,
     recorderBundle: null,
+    unattended: true,
   };
   return editorForRun([asEditor], dirs, realFolder, process.platform === 'win32') ? hub : null;
 }
@@ -244,6 +229,8 @@ export function followHub(
     const ref = `${TERMINAL_REF_PREFIX}${process.pid}-${Date.now()}${attended ? '' : UNATTENDED_REF_SUFFIX}`;
     const live = readLiveEditors(folderOnDisk(folder)).filter((editor) => stillServing(editor));
     const editor = editorForRun(live, dirs, realFolder, process.platform === 'win32');
+    // An editor service that does not know a run nobody attends would hold it at its breakpoints: the run runs alone.
+    if (editor?.runChannel && !attended && !editor.unattended) return null;
     if (editor?.runChannel) {
       const channel = formatRecordChannel(editor.runChannel);
       gate.env[RUN_CHANNEL_ENV] = channel;

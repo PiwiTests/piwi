@@ -108,6 +108,7 @@ function listDesktop(patch: Record<string, unknown> | null): void {
     runChannel: { path: path.join(folder, 'channel.sock'), token: TOKEN },
     send: PICKS,
     hub: { url: 'ws://127.0.0.1:4318/api/desktop/hub', token: 'desktop-hub-token-0123456789' },
+    hubSince: Date.now(),
     ...patch,
   };
   fs.writeFileSync(desktopFile, JSON.stringify(body), { mode: 0o600 });
@@ -293,8 +294,14 @@ describe('a run started in a terminal', () => {
   }, 120_000);
 
   it('attaches a run piped to another program unattended: no breakpoint stops it, and it says so', async () => {
+    // An editor service that does not know a run nobody attends would stop it at its breakpoints: it runs alone.
     listEditors({ [`${process.pid}.json`]: discovery() });
     listDesktop(null);
+    const alone = await run({});
+    expect(alone.output).not.toContain('Following this run');
+    expect(alone.opened).toEqual([]);
+
+    listEditors({ [`${process.pid}.json`]: discovery({ unattended: true }) });
     const { output, opened } = await run({});
     expect(output).toContain(
       `Following this run in Test Editor (pid ${process.pid}), unattended: its output goes to no terminal, so no ` +
@@ -340,7 +347,8 @@ describe('a run started in a terminal', () => {
       `Following this run in Test Editor (pid ${process.pid})`,
     );
     listEditors({});
-    // Its process is gone, it links another folder, or it names no run channel: an app that predates it.
+    // Its process is gone, it links another folder, it names no run channel (an app that predates it), or it named
+    // its hub before this machine started, or at no time.
     const gone = await new Promise<number>((resolve) => {
       const child = execFile(process.execPath, ['-e', '0'], () => resolve(child.pid!));
     });
@@ -348,13 +356,15 @@ describe('a run started in a terminal', () => {
       { pid: gone },
       { projects: [{ id: '3', path: path.join(folder, 'elsewhere') }] },
       { runChannel: undefined },
+      { hubSince: Date.now() - os.uptime() * 1000 - 3_600_000 },
+      { hubSince: undefined },
     ]) {
       listDesktop(patch);
       const { output, opened } = await run({ PIWI_EDITOR: 'on' });
       expect(opened, JSON.stringify(patch)).toEqual([]);
       expect(output, JSON.stringify(patch)).not.toContain('Following this run');
     }
-  }, 180_000);
+  }, 240_000);
 
   it('follows none whose file is another machine’s, another user’s, or holds another workspace', async () => {
     listDesktop(null);

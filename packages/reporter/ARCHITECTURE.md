@@ -558,10 +558,12 @@ What the package does to a user's run, process by process.
   compared (`editorForRun`: the most specific, then the latest started), and sets
   `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket and
   `PIWI_RUN_REF` to `terminal-<pid>-<time>` for the workers, which connect as an editor's
-  run's do. With no editor's workspace holding it, it attaches to the desktop app whose
-  linked folder holds it (`readDesktopHub`: the app's process alive, its `runChannel`
-  this user's socket in a private folder, as an editor's), with `PIWI_EDITOR_SEND` set
-  to the app's `send`. One `[Piwi Dashboard]` line names the hub, whether the run is
+  run's do; a run nobody attends follows only an editor whose file says `unattended`, and
+  else runs alone. With no editor's workspace holding it, it attaches to the desktop app
+  whose linked folder holds it (`readDesktopHub`: the app's process this user's and alive,
+  its hub named since the machine started, `hubSince`, its `runChannel` this user's
+  socket in a private folder, as an editor's), with `PIWI_EDITOR_SEND` set to the app's
+  `send`. One `[Piwi Dashboard]` line names the hub, whether the run is
   attended and `PIWI_EDITOR` (`tests/terminal-run.spec.ts`). A worker of a run a test
   runner started says so in its `run-attach` (`runner`).
 - With server coverage on, it calls each origin's `/__piwi/coverage/collect` and
