@@ -653,10 +653,22 @@ describe.skipIf(!runnable)('a run started in a terminal in a linked folder', () 
       expect(
         await send({ type: 'runControl', ref: begun.ref, worker: null, action: 'pause', since: null }),
       ).toMatchObject({ ok: true });
-      const paused = await waitFor(() =>
+      let paused = await waitFor(() =>
         session()?.workers[0]?.state === 'stopped' ? session()?.workers[0]?.stop : undefined,
       );
       expect(paused.reason).toBe('pause');
+      // A pause heard before the test's page loaded steps on, to a call made once the page is there.
+      while (paused.title.startsWith('Navigate')) {
+        const before = paused.since;
+        const worker = session()!.workers[0]!.worker;
+        expect(await send({ type: 'runControl', ref: begun.ref, worker, action: 'step', since: before })).toMatchObject(
+          { ok: true },
+        );
+        paused = await waitFor(() => {
+          const now = session()?.workers[0];
+          return now?.state === 'stopped' && now.stop && now.stop.since !== before ? now.stop : undefined;
+        });
+      }
       const at = { ref: begun.ref, worker: session()!.workers[0]!.worker, since: paused.since };
       expect(await send({ type: 'view', ...at, on: true })).toMatchObject({ ok: true });
       await waitFor(() => session()?.workers[0]?.stop?.intents?.includes('input'));
