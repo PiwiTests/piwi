@@ -30,6 +30,8 @@ const props = defineProps<{
   busy: boolean;
   /** Why the hub would not show the worker's lane (**Watch**), when it would not. */
   laneRefused?: string | null;
+  /** Gives back the stop `since` names, once Interact went off and its input went. */
+  giveBack: (since: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -37,10 +39,6 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
-  /** Input that drives the stop reached the stop `since` names. */
-  played: [since: string];
-  /** Interact went off at the stop `since` names, the input waiting gone first: the stop may be given back. */
-  released: [since: string];
 }>();
 
 const hub = useDesktopRunHub();
@@ -137,10 +135,19 @@ function endView(tell: boolean): void {
   }
 }
 
-function toggleLive(): void {
+/** Watch live is being turned off, the stop given back first. */
+let leaving = false;
+
+async function toggleLive(): Promise<void> {
+  if (leaving) return;
   if (live.value) {
     watchLive.value = false;
-    if (interact.value) interactOff();
+    // The stop is given back, once its input went, before the view ends, which would give it back unsaid.
+    if (interact.value) {
+      leaving = true;
+      await interactOff();
+      leaving = false;
+    }
     endView(true);
   } else {
     watchLive.value = true;
@@ -163,17 +170,30 @@ const inputTarget = computed(() =>
 );
 const interactButton = ref<{ $el: HTMLElement } | null>(null);
 
-/** Interact goes off: the input waiting on the view goes first, then the stop may be given back (`released`). */
-function interactOff(): void {
+/** The stop the view's input drove last (all but the pointer's moves). */
+const playedAt = ref<string | null>(null);
+
+/**
+ * Interact goes off: the input waiting on the view goes first, then a stop the window drives, or reached with its
+ * input while nobody else took it, is given back, unless Interact is on again by then.
+ */
+async function interactOff(): Promise<void> {
   const since = props.stop.since;
   const drained = liveImage.value?.release() ?? Promise.resolve();
   interact.value = false;
-  void drained.then(() => emit('released', since));
+  await drained;
+  if (interact.value || props.stop.since !== since) return;
+  const driver = props.stop.driver;
+  if (!driver?.self && (driver || playedAt.value !== since)) return;
+  playedAt.value = null;
+  await props.giveBack(since);
 }
+
+defineExpose({ interactOff });
 
 /** Escape on the view: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
-  interactOff();
+  void interactOff();
   await nextTick();
   interactButton.value?.$el?.focus();
 }
@@ -321,7 +341,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       @pick="pickAt"
       @said="emit('said', $event, {})"
       @leave="leave"
-      @played="emit('played', $event)"
+      @played="playedAt = $event"
     />
     <img
       v-if="!framed && stillShown?.src"

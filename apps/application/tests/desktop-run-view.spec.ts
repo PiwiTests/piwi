@@ -484,6 +484,10 @@ test.describe('Desktop run live view', () => {
     await expect
       .poll(() => commands.filter((c) => c.type === 'drive').at(-1))
       .toMatchObject({ since: 's2', on: false });
+    // Given back before the view ends, which would give it back unsaid.
+    await expect
+      .poll(() => commands.findLastIndex((c) => c.type === 'view' && c.since === 's2' && c.on === false))
+      .toBeGreaterThan(commands.findLastIndex((c) => c.type === 'drive'));
     // A stop another tool drives is left to it.
     const drives = commands.filter((c) => c.type === 'drive').length;
     await worker.getByRole('button', { name: 'Watch live' }).click();

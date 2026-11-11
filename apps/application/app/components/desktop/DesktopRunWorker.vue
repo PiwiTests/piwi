@@ -144,8 +144,7 @@ const interact = computed({
   get: () => hub.interacts(props.session.ref, props.worker.parallelIndex),
   set: (on: boolean) => hub.setInteract(props.session.ref, props.worker.parallelIndex, on),
 });
-/** The stop the window's input drove last (all but the pointer's moves). */
-const playedAt = ref<string | null>(null);
+
 /** The worker's page is watched: its own stop's Watch live, or its lane. */
 const watched = computed(() => watchLive.value || hub.watchesLane(props.session.ref, props.worker.parallelIndex));
 // Interact goes off with watching, a worker Playwright starts in the lane without Watch live included.
@@ -202,12 +201,11 @@ async function steer(what: DesktopSteer): Promise<void> {
 }
 
 /**
- * Interact went off at the stop `at` names, its input gone: a stop the window drives, or drove with that input, is
- * given back, past any command on its way, leaving what the last one answered in place.
+ * Gives back the stop `at` names as Interact goes off on its page, past any command on its way, leaving what the last
+ * one answered in place.
  */
-async function released(at: string): Promise<void> {
+async function giveBackAt(at: string): Promise<void> {
   if (since.value !== at || !hub.state.connected) return;
-  if (!stop.value?.driver?.self && playedAt.value !== at) return;
   const result = await hub.command({
     ref: props.session.ref,
     worker: props.worker.worker,
@@ -220,10 +218,14 @@ async function released(at: string): Promise<void> {
   else if (result.message) emit('announce', result.message);
 }
 
-/** Give back: Interact goes off with it. */
+const lanePage = useTemplateRef<{ interactOff(): Promise<void> }>('lanePage');
+const stopPage = useTemplateRef<{ interactOff(): Promise<void> }>('stopPage');
+
+/** Give back: with Interact on, it goes off on the page, which gives the stop back once its input went. */
 function giveBack(): void {
-  if (interact.value) interact.value = false;
-  void drive(false);
+  const page = lanePage.value ?? stopPage.value;
+  if (interact.value && page) void page.interactOff();
+  else void drive(false);
 }
 
 /** Drives the stop (`on`: an agent waits until it is given back), or gives it back. */
@@ -395,29 +397,29 @@ onBeforeUnmount(() => {
     </dl>
     <DesktopRunLaneView
       v-if="laneShown"
+      ref="lanePage"
       :session="session"
       :worker="worker"
       :busy="busy"
+      :give-back="giveBackAt"
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
-      @played="playedAt = $event"
-      @released="released"
     />
     <DesktopRunStopPage
       v-else-if="stop"
+      ref="stopPage"
       :run-ref="session.ref"
       :worker="worker.worker"
       :stop="stop"
       :takes="takes"
       :busy="busy"
       :lane-refused="laneRefused"
+      :give-back="giveBackAt"
       v-model:watch-live="watchLive"
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
-      @played="playedAt = $event"
-      @released="released"
     />
     <p v-else-if="worker.state !== 'between'" class="text-xs text-muted" data-testid="desktop-watch-needs-update">
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}
