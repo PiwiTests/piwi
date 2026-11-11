@@ -98,8 +98,10 @@ shell and are feature-equivalent.
   2 s each) and deletes its folder before it stops the server. At startup each app removes its own leftover folders
   (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
   The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
-  each start (`hand_kept_key`), never to the window; a stop from the dashboard reaches the shell on its notification
-  stream, and so does `key-revoked`, which forgets the key only when it names the connected instance (`key_revoked`).
+  each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a
+  restarted server ends only the requests the shell lost; a stop from the dashboard reaches the shell on its
+  notification stream, and so does `key-revoked`, which forgets the key only when it names the connected instance
+  (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

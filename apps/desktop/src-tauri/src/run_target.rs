@@ -106,6 +106,14 @@ impl RequestedRuns {
         }
     }
 
+    /// The request ids held now, starting or running, which the server is
+    /// told of after each start so it ends only the requests the shell lost.
+    fn ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.0.lock().unwrap().keys().cloned().collect();
+        ids.sort();
+        ids
+    }
+
     /// The private folders of the requested runs held now.
     fn dirs(&self) -> HashSet<PathBuf> {
         self.0.lock().unwrap().values().filter_map(|run| run.dir.clone()).collect()
@@ -334,8 +342,9 @@ fn log(app: &AppHandle, line: &str) {
     }
 }
 
-/// Hand the server the kept key of the connected instance, with its folders:
-/// after each start of the server, and whenever the folders change. Nothing
+/// Hand the server the kept key of the connected instance, with its folders
+/// and the requested runs held (`running`): after each start of the server,
+/// and whenever the folders change. Nothing
 /// without a connected instance, so the keychain is read only then.
 pub(crate) fn hand_kept_key(app: &AppHandle) {
     let Some(instance) = connected_instance(app) else {
@@ -368,7 +377,8 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
             }
         },
     };
-    let body = json!({ "instance": instance, "key": key, "links": links_of(app, &instance) });
+    let running = app.try_state::<RequestedRuns>().map(|runs| runs.ids()).unwrap_or_default();
+    let body = json!({ "instance": instance, "key": key, "links": links_of(app, &instance), "running": running });
     if let Err(e) = local_call(&server, "PUT", "/api/desktop/run-target/key", Some(&body)) {
         log(app, &format!("could not hand the key to the server: {e}"));
     }
@@ -1031,6 +1041,15 @@ mod tests {
         runs.0.lock().unwrap().insert("c".into(), RequestedRun { stop: true, ..Default::default() });
         assert_eq!(runs.hold_folder("c", shop, Path::new("/tmp/c")), Ok(true), "a stop that came meanwhile");
         assert_eq!(runs.dirs(), HashSet::from([PathBuf::from("/tmp/b"), PathBuf::from("/tmp/c")]));
+    }
+
+    #[test]
+    fn the_server_is_told_every_request_held_starting_or_running() {
+        let runs = RequestedRuns::default();
+        assert!(runs.ids().is_empty());
+        runs.0.lock().unwrap().insert("b".into(), RequestedRun { run: Some(4), ..Default::default() });
+        runs.0.lock().unwrap().insert("a".into(), RequestedRun::default());
+        assert_eq!(runs.ids(), ["a", "b"]);
     }
 
     #[test]

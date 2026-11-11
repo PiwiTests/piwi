@@ -238,12 +238,13 @@ export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectI
 /**
  * The requests a target should act on: those still waiting for one of its owner's targets, and its own stops: a run
  * to end, or a request that ended at a stop within the last 10 minutes (a claim to stop showing, or a run the second
- * stop ended).
+ * stop ended). `held` names the requests the instance counts as the target's, claimed or with their run, so a target
+ * that started again ends those it no longer holds.
  */
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
   now = new Date(),
-): Promise<{ requests: RunRequestOffer[]; stops: string[] }> {
+): Promise<{ requests: RunRequestOffer[]; stops: string[]; held: { id: string; state: RunRequestState }[] }> {
   const waiting = await db
     .select()
     .from(runRequests)
@@ -280,7 +281,12 @@ export async function requestsForTarget(
         ),
       ),
     );
-  return { requests, stops: stops.map((s) => s.id) };
+  const holding = await db
+    .select({ id: runRequests.id, state: runRequests.state })
+    .from(runRequests)
+    .where(and(eq(runRequests.targetId, target.id), inArray(runRequests.state, ACTIVE_STATES)));
+  const held = holding.map((row) => ({ id: row.id, state: row.state as RunRequestState }));
+  return { requests, stops: stops.map((s) => s.id), held };
 }
 
 export type TargetMoveResult =

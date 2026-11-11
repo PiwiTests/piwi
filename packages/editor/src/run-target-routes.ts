@@ -96,7 +96,7 @@ export const RUN_TARGET_ROUTES = {
     shellOnly: true,
     handle: () => ok({ code: mintSessionCode() }),
   },
-  /** The kept key and the linked folders, from the shell after each start. */
+  /** The kept key, the linked folders and the requested runs the shell still holds, from the shell after each start. */
   useKey: {
     method: 'PUT',
     path: '/key',
@@ -105,10 +105,19 @@ export const RUN_TARGET_ROUTES = {
       const body = bodyOf(request);
       const instance = instanceUrlOf(body.instance);
       const links = linksOf(body.links ?? {});
-      if (!instance || typeof body.key !== 'string' || !TARGET_KEY.test(body.key) || !links) {
-        return refused(400, 'Invalid instance, key or links');
+      const running = body.running ?? [];
+      if (
+        !instance ||
+        typeof body.key !== 'string' ||
+        !TARGET_KEY.test(body.key) ||
+        !links ||
+        !Array.isArray(running) ||
+        running.length > 200 ||
+        !running.every(isRequestId)
+      ) {
+        return refused(400, 'Invalid instance, key, links or runs');
       }
-      useKeptKey(instance, body.key, links);
+      useKeptKey(instance, body.key, links, running);
       return ok({ ok: true });
     },
   },

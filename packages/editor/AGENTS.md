@@ -74,7 +74,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
   request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
   shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or a 401 with the instance's JSON
-  message: a 403 or a proxy's 401 stops the host and keeps the key (`tests/request-host.test.ts`).
+  message: a 403 or a proxy's 401 stops the host and keeps the key (`tests/request-host.test.ts`). On its first list it
+  ends the requests the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being
+  claimed, or a run the shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others
+  end, and an instance that names none ends nothing.
   ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan

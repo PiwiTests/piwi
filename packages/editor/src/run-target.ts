@@ -70,6 +70,8 @@ const state: {
   /** The requests being claimed and checked, and the stops heard for them meanwhile. */
   claiming: Set<string>;
   stoppedWhileClaiming: Set<string>;
+  /** The requests whose run the shell started for a server before this one, and still holds. */
+  adopted: Set<string>;
 } = {
   instance: null,
   key: null,
@@ -83,6 +85,7 @@ const state: {
   held: new Map(),
   claiming: new Set(),
   stoppedWhileClaiming: new Set(),
+  adopted: new Set(),
 };
 
 const windowListeners = new Set<(message: RunTargetMessage) => void>();
@@ -235,6 +238,7 @@ function startHost(instance: string, key: string): void {
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
+    holds: (id) => state.held.has(id) || state.claiming.has(id) || state.adopted.has(id),
     onKeyRevoked: () => tellShell({ type: 'key-revoked', instance }),
     onStatus: (status, detail) => {
       state.status = status;
@@ -308,7 +312,12 @@ async function takeStop(host: RequestHost, id: string): Promise<void> {
     return;
   }
   const held = state.held.get(id);
-  if (!held) return;
+  if (!held) {
+    if (!state.adopted.has(id)) return;
+    tellShell({ type: 'requested-run-stop', requestId: id });
+    await host.report(id, { state: 'stopping', detail: 'Stopped from the dashboard' }).catch(() => {});
+    return;
+  }
   held.stopRequested = true;
   if (held.launched) {
     tellShell({ type: 'requested-run-stop', requestId: id });
@@ -323,10 +332,19 @@ async function takeStop(host: RequestHost, id: string): Promise<void> {
   drop(id, 'stopped');
 }
 
-/** Use the key the shell kept, with the folders it links: after each start, and when they change. */
-export function useKeptKey(instance: string, key: string, links: Map<number, string>): void {
+/**
+ * Use the key the shell kept, with the folders it links and the requests whose run it still holds (`running`): after
+ * each start, and when they change.
+ */
+export function useKeptKey(
+  instance: string,
+  key: string,
+  links: Map<number, string>,
+  running: readonly string[] = [],
+): void {
   state.links = links;
   state.keyToKeep = false;
+  state.adopted = new Set(running.filter((id) => !state.held.has(id)));
   if (state.instance === instance && state.key === key && state.host) {
     void state.host.describe().catch(() => {});
     tellConnection();
@@ -353,6 +371,7 @@ export function disconnectRunTarget(): void {
   state.flowTimer = null;
   state.flow = null;
   stopHost();
+  state.adopted.clear();
   state.instance = null;
   state.key = null;
   state.keyToKeep = false;
@@ -551,7 +570,7 @@ export function launchOf(
 /** The shell started the run of a request. */
 export async function requestedRunStarted(id: string): Promise<void> {
   const held = state.held.get(id);
-  if (!held?.launched || !state.host) return;
+  if (!(held?.launched || state.adopted.has(id)) || !state.host) return;
   await state.host.report(id, { state: 'running' }).catch(() => {});
 }
 
@@ -572,9 +591,9 @@ export function outcomeOf(code: number | null, stopRequested: boolean): RunReque
  */
 export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<void> {
   const held = state.held.get(id);
-  if (!held?.launched) return;
-  state.held.delete(id);
-  const outcome = outcomeOf(code, held.stopRequested || stopped);
+  if (!held?.launched && !state.adopted.delete(id)) return;
+  if (held?.launched) state.held.delete(id);
+  const outcome = outcomeOf(code, !!held?.stopRequested || stopped);
   const detail = outcome === 'error' ? `Playwright exited with ${code ?? 'no code'}` : undefined;
   await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
 }
@@ -582,8 +601,8 @@ export async function requestedRunEnded(id: string, code: number | null, stopped
 /** The run of a request the shell could not start. */
 export async function requestedRunFailed(id: string, detail: string): Promise<void> {
   const held = state.held.get(id);
-  if (!held) return;
-  if (held.expiry) clearTimeout(held.expiry);
+  if (!held && !state.adopted.delete(id)) return;
+  if (held?.expiry) clearTimeout(held.expiry);
   state.held.delete(id);
   await state.host?.report(id, { state: 'ended', outcome: 'error', detail: detail.slice(0, 500) }).catch(() => {});
 }

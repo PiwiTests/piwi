@@ -408,6 +408,27 @@ describe('the life of a request', () => {
     expect(await answerRequest(c, claimed, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 409 });
   });
 
+  test('names the requests a target holds, claimed or with their run, and none once they end', async () => {
+    const c = await caller();
+    const claimed = await request();
+    await claimRequest(c, claimed);
+    const run = await request();
+    await claimRequest(c, run);
+    await answerRequest(c, run, { decision: 'run' });
+    await request();
+    const held = (await requestsForTarget(c)).held;
+    expect(held).toHaveLength(2);
+    expect(held).toEqual(
+      expect.arrayContaining([
+        { id: claimed, state: 'claimed' },
+        { id: run, state: 'starting' },
+      ]),
+    );
+    await moveRequestState(c, run, { state: 'ended', outcome: 'error' }, null);
+    await answerRequest(c, claimed, { decision: 'not-now' });
+    expect((await requestsForTarget(c)).held).toEqual([]);
+  });
+
   test('a stop of a run reaches its target, which ends it', async () => {
     const c = await caller();
     const id = await request();

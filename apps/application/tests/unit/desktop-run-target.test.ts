@@ -57,6 +57,8 @@ let folder: string;
 let instance: Awaited<ReturnType<typeof fakeInstance>>;
 /** The sign-in page the fake instance names, else its own `/connect`. */
 let verifyAt: string | null = null;
+/** The requests the fake instance counts as this target's. */
+let heldOnInstance: { id: string; state: string }[] = [];
 
 function offer(): RunRequestOffer {
   return {
@@ -81,7 +83,8 @@ async function fakeInstance() {
       calls.push({ method: req.method ?? '', path: url, body: raw ? JSON.parse(raw) : null });
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [offer()], stops: [] })}\n\n`);
+        const snapshot = { type: 'snapshot', requests: [offer()], stops: [], held: heldOnInstance };
+        res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
         streams.push(res);
         return;
       }
@@ -99,7 +102,7 @@ async function fakeInstance() {
       } else if (url === '/api/extension/connect/token') {
         res.end(JSON.stringify({ status: 'approved', apiKey: KEY }));
       } else if (url === '/api/run-targets/requests') {
-        res.end(JSON.stringify({ requests: [], stops: [] }));
+        res.end(JSON.stringify({ requests: [], stops: [], held: heldOnInstance }));
       } else if (url.endsWith('/claim')) {
         const { expiresAt: _expiresAt, ...request } = offer();
         res.end(JSON.stringify(request));
@@ -148,6 +151,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   verifyAt = null;
+  heldOnInstance = [];
   resetDesktopRunTarget();
   await instance.close();
   fs.rmSync(folder, { recursive: true, force: true });
@@ -264,6 +268,38 @@ describe('a request from the team instance', () => {
       detail: 'No folder is linked to this project on this machine.',
     });
     expect(launchOf(REQUEST_ID)).toBe(null);
+  });
+});
+
+describe('a server that started again', () => {
+  test('ends the requests the shell no longer holds, and follows the runs it still does', async () => {
+    const [kept, lost, unanswered] = ['d', 'e', 'f'].map((c) => c.repeat(32));
+    heldOnInstance = [
+      { id: kept!, state: 'running' },
+      { id: lost!, state: 'running' },
+      { id: unanswered!, state: 'claimed' },
+    ];
+    const shell: ShellRunTargetCommand[] = [];
+    subscribeRunTargetShell((command) => shell.push(command));
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]), [kept!]);
+    const callsOf = (id: string) => instance.calls.filter((c) => c.path.startsWith(`/api/run-targets/requests/${id}/`));
+    await until(() => callsOf(lost!).length > 0 && callsOf(unanswered!).length > 0);
+    expect(callsOf(lost!)).toMatchObject([{ path: expect.stringMatching(/\/state$/), body: { outcome: 'error' } }]);
+    expect(callsOf(unanswered!)).toMatchObject([
+      { path: expect.stringMatching(/\/answer$/), body: { decision: 'refused' } },
+    ]);
+
+    instance.stop(kept!);
+    await until(() => shell.some((c) => c.type === 'requested-run-stop'));
+    expect(shell).toContainEqual({ type: 'requested-run-stop', requestId: kept });
+    await requestedRunEnded(kept!, 130, true);
+    expect(callsOf(kept!).map((c) => c.body)).toEqual([
+      { state: 'stopping', detail: 'Stopped from the dashboard' },
+      { state: 'ended', outcome: 'stopped' },
+    ]);
+    // Told once: a second end of the same run reports nothing.
+    await requestedRunEnded(kept!, 130, true);
+    expect(callsOf(kept!)).toHaveLength(2);
   });
 });
 

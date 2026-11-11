@@ -20,7 +20,7 @@ import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
 type StreamEvent =
-  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[] }
+  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[]; held?: unknown }
   | { type: 'request'; request: RunRequestOffer }
   | { type: 'stop'; id: string }
   | { type: 'withdrawn'; id: string }
@@ -42,6 +42,12 @@ export interface RequestHostOptions {
   onWithdrawn: (id: string) => void;
   /** The requester asked to stop a request this target holds. */
   onStop: (id: string) => void;
+  /**
+   * Whether this app still holds a request the instance counts as this target's: one it asks the person about, or whose
+   * run is going. On its first list the host ends each one it does not hold, which the instance kept for an app that
+   * started again: unanswered ones are refused, one being stopped ends as stopped and the others as an error.
+   */
+  holds?: (id: string) => boolean;
   /** The connection changed: `revoked` once the key or its app was disconnected, after which the host stops. */
   onStatus?: (status: RequestHostStatus, detail?: string) => void;
   /**
@@ -54,6 +60,9 @@ export interface RequestHostOptions {
   /** The pauses, in milliseconds, so tests can shorten them. */
   timing?: Partial<typeof DEFAULT_TIMING>;
 }
+
+/** Why a request the instance counted as this target's ended once the app started again without it. */
+const RESTARTED = 'The app started again and no longer holds this request';
 
 /** How long a request token starts a run after **Run**, in milliseconds: the instance's grant, and the target's wait. */
 export const REQUEST_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
@@ -174,6 +183,8 @@ export class RequestHost {
   private readonly claimed = new Set<string>();
   /** The stops already told, so a stop listed every minute is told once. */
   private readonly stopsTold = new Set<string>();
+  /** Whether the requests the instance counts as held were checked against `holds`, once a start. */
+  private reconciled = false;
   /** The latest list asked for: an older one that answers later is left out. */
   private listing = 0;
   private status: RequestHostStatus = 'offline';
@@ -310,7 +321,7 @@ export class RequestHost {
     if (this.stopped) return;
     switch (event.type) {
       case 'snapshot':
-        this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY);
+        this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY, event.held);
         break;
       case 'request':
         this.offer(event.request);
@@ -328,7 +339,8 @@ export class RequestHost {
   }
 
   /** Take a list of the requests read at `askedAt`: an offer made since then stays, whatever the list says. */
-  private takeList(requests: unknown, stops: unknown, askedAt: number): void {
+  private takeList(requests: unknown, stops: unknown, askedAt: number, held?: unknown): void {
+    this.reconcile(held);
     const offers = Array.isArray(requests) ? requests : [];
     const stopIds = (Array.isArray(stops) ? stops : []).filter(isRequestId);
     const listed = new Set<string>();
@@ -343,6 +355,26 @@ export class RequestHost {
     }
     for (const id of stopIds) this.tellStop(id);
     for (const id of Array.from(this.stopsTold)) if (!stopIds.includes(id)) this.stopsTold.delete(id);
+  }
+
+  /**
+   * End the requests the instance counts as this target's that this app no longer holds, on the first list that names
+   * them. An instance that names none leaves them to its own timeouts.
+   */
+  private reconcile(held: unknown): void {
+    if (this.reconciled || !Array.isArray(held)) return;
+    this.reconciled = true;
+    const holds = this.options.holds;
+    if (!holds) return;
+    for (const raw of held) {
+      const { id, state } = (raw ?? {}) as { id?: unknown; state?: unknown };
+      if (!isRequestId(id) || this.claimed.has(id) || holds(id)) continue;
+      const ended =
+        state === 'claimed'
+          ? this.answer(id, { decision: 'refused', detail: RESTARTED })
+          : this.report(id, { state: 'ended', outcome: state === 'stopping' ? 'stopped' : 'error', detail: RESTARTED });
+      void ended.catch(() => {});
+    }
   }
 
   private offer(raw: unknown): void {
@@ -385,9 +417,12 @@ export class RequestHost {
     const asked = ++this.listing;
     const askedAt = Date.now();
     try {
-      const listed = await this.call<{ requests?: unknown; stops?: unknown }>('GET', '/api/run-targets/requests');
+      const listed = await this.call<{ requests?: unknown; stops?: unknown; held?: unknown }>(
+        'GET',
+        '/api/run-targets/requests',
+      );
       if (this.stopped || asked !== this.listing) return;
-      this.takeList(listed.requests, listed.stops, askedAt);
+      this.takeList(listed.requests, listed.stops, askedAt, listed.held);
       if (!this.streamOpen) this.setStatus('online');
     } catch (error) {
       if (this.stopped || asked !== this.listing) return;

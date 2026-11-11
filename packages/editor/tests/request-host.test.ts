@@ -1,7 +1,7 @@
 /**
  * The request host against a fake instance on this machine: the stream's snapshot and events, the minute list that
  * keeps the app online, stops told once, withdrawn and expired offers, a revoked key, the stream opened again after it
- * ends, and the target's calls with its key as a bearer token.
+ * ends, the requests it no longer holds ended once it starts, and the target's calls with its key as a bearer token.
  */
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -28,7 +28,7 @@ const id = (n: number) => n.toString(16).padStart(32, '0');
 /** A fake instance: the stream sends what `streams` gives it, the list answers `list`, every request is recorded. */
 async function fakeInstance(handlers: {
   stream?: (res: http.ServerResponse) => void;
-  list?: () => { requests: RunRequestOffer[]; stops: string[] };
+  list?: () => { requests: RunRequestOffer[]; stops: string[]; held?: { id: string; state: string }[] };
   status?: (path: string) => number | null;
   /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
   refusalBody?: string;
@@ -188,6 +188,47 @@ describe('the request host', () => {
     expect(describeCall.method).toBe('PUT');
     expect(JSON.parse(describeCall.body)).toEqual({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2] });
     expect(instance.calls.every((c) => c.authorization === `Bearer ${KEY}`)).toBe(true);
+  });
+
+  test('ends once, on its first list, the requests counted as its own that it no longer holds', async () => {
+    const held = [
+      { id: id(4), state: 'claimed' },
+      { id: id(5), state: 'running' },
+      { id: id(6), state: 'running' },
+      { id: id(7), state: 'stopping' },
+    ];
+    const instance = await fakeInstance({
+      stream: (res) => instance.send(res, { type: 'snapshot', requests: [], stops: [], held }),
+      list: () => ({ requests: [], stops: [], held }),
+    });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url, { holds: (i) => i === id(6) });
+    made.start();
+    const ends = () => instance.calls.filter((c) => c.path.endsWith('/answer') || c.path.endsWith('/state'));
+    await until(() => ends().length >= 3);
+    await until(() => instance.calls.filter((c) => c.path === '/api/run-targets/requests').length >= 3);
+    const detail = 'The app started again and no longer holds this request';
+    expect(ends().map((c) => [c.path.split('/').slice(4).join('/'), JSON.parse(c.body)])).toEqual([
+      [`${id(4)}/answer`, { decision: 'refused', detail }],
+      [`${id(5)}/state`, { state: 'ended', outcome: 'error', detail }],
+      [`${id(7)}/state`, { state: 'ended', outcome: 'stopped', detail }],
+    ]);
+  });
+
+  test('ends nothing when the instance names no held requests, or the app says what it holds by no check', async () => {
+    const held = [{ id: id(4), state: 'running' }];
+    const older = await fakeInstance({
+      stream: (res) => older.send(res, { type: 'snapshot', requests: [], stops: [] }),
+    });
+    cleanups.push(older.close);
+    host(older.url, { holds: () => false }).made.start();
+    const unchecked = await fakeInstance({ list: () => ({ requests: [], stops: [], held }) });
+    cleanups.push(unchecked.close);
+    host(unchecked.url).made.start();
+    for (const instance of [older, unchecked])
+      await until(() => instance.calls.filter((c) => c.path === '/api/run-targets/requests').length >= 2);
+    for (const instance of [older, unchecked])
+      expect(instance.calls.some((c) => c.path.endsWith('/answer') || c.path.endsWith('/state'))).toBe(false);
   });
 
   test('withdraws an offer the list no longer holds, and one past its time', async () => {

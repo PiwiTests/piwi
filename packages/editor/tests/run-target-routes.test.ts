@@ -320,6 +320,9 @@ describe('every host of the run-target routes', () => {
     expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: 'secret', links: {} })).status).toBe(
       400,
     );
+    for (const running of ['x', ['x'], Array.from({ length: 201 }, () => REQUEST_ID)]) {
+      expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, running })).status).toBe(400);
+    }
     expect((await host.call('PUT', '/links', SHELL, { links: { x: folder } })).status).toBe(400);
     expect((await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'yes' })).status).toBe(400);
     for (const call of ROUTE_CALLS.filter((c) => c.route.includes(REQUEST_ID))) {
