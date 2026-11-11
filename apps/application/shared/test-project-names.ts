@@ -46,11 +46,6 @@ export const PROJECT = {
   COMBINED_COVERAGE_RESTART: 'combined-coverage-restart-test',
   COVERAGE_INSIGHTS: 'coverage-insights-test',
   COVERAGE_INSIGHTS_OFF: 'coverage-insights-off-test',
-  // Deliberately does not contain "projects" (case-insensitive substring) — the
-  // sidebar's static "Projects" nav link is matched with getByRole('link', {
-  // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches
-  // accessible names by substring and would pick up a project literally named
-  // "...projects...", causing a strict-mode violation in unrelated tests.
   DASHBOARD_OVERVIEW: 'dashboard-overview-test',
   DASHBOARD_PERF: 'dashboard-perf-tracking',
   DASHBOARDS_OPEN: 'saved-dashboards-open',
