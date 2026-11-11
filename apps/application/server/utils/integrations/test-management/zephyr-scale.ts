@@ -1,8 +1,9 @@
 /**
  * Zephyr Scale Cloud client (REST v2, `Authorization: Bearer <token>`). It reads the connection's projects, a
- * project's test cases and the result statuses; the host comes from the connection's region in the registry, never
- * from a typed address.
+ * project's test cases and the result statuses, uploads a run's results as a new test cycle and links the cycle back
+ * to Piwi; the host comes from the connection's region in the registry, never from a typed address.
  */
+import { strToU8, zipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '#shared/integrations/registry';
 import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import type {
@@ -11,9 +12,12 @@ import type {
   TestManagementProvider,
   TmCase,
   TmFolder,
+  RunMarker,
   TmPage,
   TmProject,
+  TmRun,
   TmStatus,
+  UploadRunInput,
 } from './types';
 
 /** The budget of one request: well under the outbox's lease, so a stuck call ends before the lease does. */
@@ -35,6 +39,15 @@ export interface ZephyrClientOptions {
   beforeRequest?: () => Promise<void>;
 }
 
+/** The largest results file Zephyr accepts. */
+export const ZEPHYR_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** The most cycles `findRun` reads the name of: one call each. */
+const FIND_RUN_MAX_CYCLES = 10;
+
+/** How long before an attempt began an execution may end and still be taken for the attempt's, for clock drift. */
+const FIND_RUN_SLACK_MS = 60_000;
+
 /** The most results Zephyr returns in one call. */
 const PAGE_SIZE = 1000;
 
@@ -46,6 +59,9 @@ const MAX_START_AT = 1_000_000;
 
 /** A Jira project key as Zephyr's `projectKey` parameter takes it. */
 const PROJECT_KEY = /^[A-Z][A-Z0-9_]+$/;
+
+/** A test cycle key as Zephyr issues it. */
+const CYCLE_KEY = /^[A-Z][A-Z_0-9]+-R[0-9]+$/;
 
 /** A token is sent as a header value: visible ASCII only, no whitespace. */
 const TOKEN_CHARACTERS = /^[\x21-\x7E]+$/;
@@ -163,6 +179,12 @@ function checkedProjectKey(projectKey: string): string {
   return projectKey;
 }
 
+/** A folder or version ID as Zephyr's integer; anything else is refused before the call. */
+function numericId(value: string, what: string): number {
+  if (!/^[1-9][0-9]{0,15}$/.test(value)) throw new ZephyrScaleError(422, `The ${what} ID must be a number`);
+  return Number(value);
+}
+
 /**
  * Zephyr documents no web address for a test case: it opens inside a Jira site this connection does not know. Kept
  * apart from the client so a read of the stored catalog can ask without a token.
@@ -211,44 +233,77 @@ export class ZephyrScaleClient implements TestManagementProvider {
   }
 
   /** The signal of one request: its own budget, and the caller's signal when there is one. */
-  private requestSignal(): AbortSignal {
-    const own = AbortSignal.timeout(this.timeoutMs);
+  private requestSignal(timeoutMs: number): AbortSignal {
+    const own = AbortSignal.timeout(timeoutMs);
     return this.signal ? AbortSignal.any([own, this.signal]) : own;
   }
 
-  private async get<T>(path: string, params: Record<string, string | number>): Promise<T> {
+  private timedOut(timeoutMs: number): ZephyrScaleError {
+    return new ZephyrScaleError(
+      ZEPHYR_TIMEOUT_STATUS,
+      `Zephyr Scale did not answer within ${timeoutMs / 1000} seconds`,
+    );
+  }
+
+  /**
+   * One request, after the limiter's wait: the response when it is a success, else the error it maps to. `timeoutMs`
+   * is the budget of the request and of reading its body.
+   */
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    params: Record<string, string | number>,
+    init: { body?: BodyInit; contentType?: string; timeoutMs?: number } = {},
+  ): Promise<Response> {
     const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
-    const timedOut = () =>
-      new ZephyrScaleError(
-        ZEPHYR_TIMEOUT_STATUS,
-        `Zephyr Scale did not answer within ${this.timeoutMs / 1000} seconds`,
-      );
+    const timeoutMs = init.timeoutMs ?? this.timeoutMs;
     await this.beforeRequest?.();
     // A wait that used up the budget leaves nothing to send a request with.
-    if (this.signal?.aborted) throw timedOut();
+    if (this.signal?.aborted) throw this.timedOut(timeoutMs);
+    const headers: Record<string, string> = { Authorization: `Bearer ${this.apiToken}`, Accept: 'application/json' };
+    if (init.contentType) headers['Content-Type'] = init.contentType;
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}?${query}`, {
-        headers: { Authorization: `Bearer ${this.apiToken}`, Accept: 'application/json' },
-        signal: this.requestSignal(),
+      response = await fetch(`${this.baseUrl}${path}${query.size ? `?${query}` : ''}`, {
+        method,
+        headers,
+        body: init.body,
+        signal: this.requestSignal(timeoutMs),
       });
     } catch (err) {
-      if (isTimeout(err)) throw timedOut();
+      if (isTimeout(err)) throw this.timedOut(timeoutMs);
       throw err;
     }
     if (!response.ok) throw await toZephyrError(response, this.apiToken);
+    return response;
+  }
+
+  /** The JSON of a successful response; a stall while the body is read is a timeout. */
+  private async readJson<T>(response: Response, timeoutMs: number): Promise<T> {
     try {
       return (await response.json()) as T;
     } catch (err) {
       // The same budget covers the body: a stall while it is read is a timeout, not a body that is not JSON.
-      if (isTimeout(err)) throw timedOut();
+      if (isTimeout(err)) throw this.timedOut(timeoutMs);
       throw new ZephyrScaleError(502, 'Zephyr Scale answered with something that is not JSON');
     }
   }
 
+  private async get<T>(
+    path: string,
+    params: Record<string, string | number>,
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<T> {
+    return this.readJson<T>(await this.request('GET', path, params, { timeoutMs }), timeoutMs);
+  }
+
   /** One page of a paged list; an answer without its `values` is an error, not an empty page. */
-  private async getPage<T>(path: string, params: Record<string, string | number>): Promise<PagedBody<T>> {
-    const body = await this.get<PagedBody<T>>(path, params);
+  private async getPage<T>(
+    path: string,
+    params: Record<string, string | number>,
+    timeoutMs?: number,
+  ): Promise<PagedBody<T>> {
+    const body = await this.get<PagedBody<T>>(path, params, timeoutMs);
     if (!body || !Array.isArray(body.values)) {
       throw new ZephyrScaleError(502, `Zephyr Scale answered ${path} with an unexpected shape`);
     }
@@ -330,6 +385,121 @@ export class ZephyrScaleClient implements TestManagementProvider {
       name: f.name,
       parentId: f.parentId === null || f.parentId === undefined ? null : String(f.parentId),
     }));
+  }
+
+  /**
+   * Create a test cycle with every result in one call: the results as Zephyr's custom format in a zip, and the cycle's
+   * name and description beside it. Test cases are never created (`autoCreateTestCases=false`): Zephyr cannot delete
+   * one. Not idempotent, so a caller that gets no answer must not call again before it knows nothing was created.
+   */
+  async uploadRun(input: UploadRunInput): Promise<TmRun> {
+    const projectKey = checkedProjectKey(input.projectKey);
+    const results = JSON.stringify({
+      version: 1,
+      executions: input.results.map((r) => ({ result: r.status, testCase: { key: r.key } })),
+    });
+    const zip = zipSync({ 'results.json': strToU8(results) });
+    if (zip.byteLength > ZEPHYR_MAX_UPLOAD_BYTES) {
+      throw new ZephyrScaleError(
+        413,
+        `The results are larger than Zephyr Scale accepts (${ZEPHYR_MAX_UPLOAD_BYTES / 1024 / 1024} MB)`,
+      );
+    }
+    const form = new FormData();
+    form.append('file', new Blob([zip], { type: 'application/zip' }), 'results.zip');
+    form.append(
+      'testCycle',
+      new Blob(
+        [
+          JSON.stringify({
+            name: input.name,
+            description: input.description,
+            ...(input.folderId ? { folderId: numericId(input.folderId, 'folder') } : {}),
+            ...(input.version ? { jiraProjectVersion: numericId(input.version, 'version') } : {}),
+          }),
+        ],
+        { type: 'application/json' },
+      ),
+    );
+    // The encoded body, not the form, goes to fetch: the request then carries a Content-Length, which the API requires.
+    const encoded = new Response(form);
+    const response = await this.request(
+      'POST',
+      '/automations/executions/custom',
+      { projectKey, autoCreateTestCases: 'false' },
+      {
+        body: new Uint8Array(await encoded.arrayBuffer()),
+        contentType: encoded.headers.get('content-type') ?? undefined,
+      },
+    );
+    const body = await this.readJson<{ testCycle?: { id?: unknown; key?: unknown; url?: unknown } } | null>(
+      response,
+      this.timeoutMs,
+    );
+    const cycle = body?.testCycle;
+    if (!cycle || typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || cycle.id == null) {
+      throw new ZephyrScaleError(502, 'Zephyr Scale answered the upload with an unexpected shape');
+    }
+    return { key: cycle.key, id: String(cycle.id), url: typeof cycle.url === 'string' ? cycle.url : '' };
+  }
+
+  /** Add a web link to a test cycle. */
+  async linkRun(run: TmRun, link: { url: string; title: string }): Promise<void> {
+    if (!CYCLE_KEY.test(run.key)) throw new RangeError('Invalid test cycle key');
+    await this.request(
+      'POST',
+      `/testcycles/${run.key}/links/weblinks`,
+      {},
+      {
+        body: JSON.stringify({ url: link.url, description: link.title }),
+        contentType: 'application/json',
+        timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+      },
+    );
+  }
+
+  /**
+   * The test cycle an earlier upload created, or null when none is found. Zephyr cannot list cycles by name, so this
+   * reads the last executions of one test case the run reports on since the attempt began, and the name of each
+   * cycle they belong to: the cycle whose name holds `Piwi #<runId>` (or is the name the run was given) is the one.
+   */
+  async findRun(projectKey: string, marker: RunMarker): Promise<TmRun | null> {
+    const since = new Date(Date.parse(marker.startedAt) - FIND_RUN_SLACK_MS);
+    if (Number.isNaN(since.getTime())) throw new RangeError('Invalid run marker');
+    const executions = await this.getPage<{ testCycle?: { id?: unknown } | null }>(
+      '/testexecutions',
+      {
+        projectKey: checkedProjectKey(projectKey),
+        testCase: marker.testCaseKey,
+        actualEndDateAfter: `${since.toISOString().slice(0, 19)}Z`,
+        onlyLastExecutions: 'true',
+        maxResults: PAGE_SIZE,
+      },
+      ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    );
+    const ids = [
+      ...new Set(
+        executions.values
+          .map((execution) => execution.testCycle?.id)
+          .filter((id): id is number | string => typeof id === 'number' || typeof id === 'string'),
+      ),
+    ].slice(0, FIND_RUN_MAX_CYCLES);
+    const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\d)`);
+    for (const id of ids) {
+      const cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown; links?: { self?: unknown } }>(
+        `/testcycles/${encodeURIComponent(String(id))}`,
+        {},
+        ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+      );
+      if (typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || typeof cycle.name !== 'string') continue;
+      if (cycle.name !== marker.name && !named.test(cycle.name)) continue;
+      return {
+        key: cycle.key,
+        id: String(cycle.id ?? id),
+        url: typeof cycle.links?.self === 'string' ? cycle.links.self : '',
+      };
+    }
+    return null;
   }
 
   caseUrl(): null {

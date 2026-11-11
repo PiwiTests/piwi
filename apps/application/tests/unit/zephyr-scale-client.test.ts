@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { strFromU8, unzipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '../../shared/integrations/registry';
 import { IntegrationHttpError } from '../../server/utils/integrations/http-error';
 import {
@@ -362,5 +363,227 @@ describe('failures', () => {
   test('an explanation longer than the cap is cut', async () => {
     const err = await failure(reply({ errorCode: 500, message: 'x'.repeat(5000) }, { status: 500 }));
     expect(err.message.length).toBeLessThan(700);
+  });
+});
+
+describe('uploadRun', () => {
+  const input = {
+    projectKey: 'SHOP',
+    name: 'Piwi #12 main',
+    description: 'Piwi run #12',
+    results: [
+      { key: 'SHOP-T1', status: 'Pass' },
+      { key: 'SHOP-T2', status: 'Fail' },
+    ],
+  };
+
+  const sentBody = async (call = 0) => {
+    const init = fetchMock.mock.calls[call]![1] as RequestInit;
+    const contentType = new Headers(init.headers).get('content-type') ?? '';
+    const form = await new Response(init.body as BodyInit, { headers: { 'content-type': contentType } }).formData();
+    return { init, form, contentType };
+  };
+
+  test('posts the zip and the cycle as multipart, without creating test cases', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    const run = await client().uploadRun({ ...input, folderId: '77', version: '9' });
+    expect(run).toEqual({
+      key: 'SHOP-R42',
+      id: '3001',
+      url: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+    });
+
+    const url = requested();
+    expect(url.pathname).toBe('/v2/automations/executions/custom');
+    expect(url.searchParams.get('projectKey')).toBe('SHOP');
+    expect(url.searchParams.get('autoCreateTestCases')).toBe('false');
+
+    const { init, form, contentType } = await sentBody();
+    expect(init.method).toBe('POST');
+    expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+    expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(init.body).toBeInstanceOf(Uint8Array);
+
+    const files = unzipSync(new Uint8Array(await (form.get('file') as File).arrayBuffer()));
+    expect(Object.keys(files)).toEqual(['results.json']);
+    expect(JSON.parse(strFromU8(files['results.json']!))).toEqual({
+      version: 1,
+      executions: [
+        { result: 'Pass', testCase: { key: 'SHOP-T1' } },
+        { result: 'Fail', testCase: { key: 'SHOP-T2' } },
+      ],
+    });
+    expect(JSON.parse(await (form.get('testCycle') as File).text())).toEqual({
+      name: 'Piwi #12 main',
+      description: 'Piwi run #12',
+      folderId: 77,
+      jiraProjectVersion: 9,
+    });
+  });
+
+  test('leaves the folder and the version out when the run has none', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('automation-upload-response')));
+    await client().uploadRun(input);
+    const { form } = await sentBody();
+    expect(Object.keys(JSON.parse(await (form.get('testCycle') as File).text()))).toEqual(['name', 'description']);
+  });
+
+  test('refuses a folder or a version that is not a whole number before sending anything', async () => {
+    await expect(client().uploadRun({ ...input, folderId: 'abc' })).rejects.toMatchObject({ status: 422 });
+    await expect(client().uploadRun({ ...input, version: '1.5' })).rejects.toMatchObject({ status: 422 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('refuses results that do not fit in the 10 MB Zephyr accepts, before sending anything', async () => {
+    // Incompressible keys: a zip of repeated text would shrink far below the cap.
+    const results = Array.from({ length: 200_000 }, (_, i) => ({
+      key: `SHOP-T${i}`,
+      status: Array.from({ length: 8 }, () => Math.random().toString(36).slice(2)).join(''),
+    }));
+    await expect(client().uploadRun({ ...input, results })).rejects.toMatchObject({
+      status: 413,
+      message: expect.stringContaining('10 MB'),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a refused key or project is not sent', async () => {
+    await expect(client().uploadRun({ ...input, projectKey: 'shop' })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [400, 400],
+    [422, 422],
+    [429, 429],
+    [503, 503],
+  ])('a %i answer is the same status on the error', async (status, expected) => {
+    fetchMock.mockResolvedValueOnce(reply({ errorCode: status, message: 'no' }, { status }));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({ status: expected });
+  });
+
+  test('a 429 carries the Retry-After the server sent', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ message: 'slow' }, { status: 429, headers: { 'Retry-After': '30' } }));
+    await expect(client().uploadRun(input)).rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
+  });
+
+  test('an answer without a cycle key is a 502', async () => {
+    for (const body of [
+      {},
+      { testCycle: {} },
+      { testCycle: { id: 1, key: 'not a key' } },
+      { testCycle: { key: 'SHOP-R1' } },
+    ]) {
+      fetchMock.mockResolvedValueOnce(reply(body));
+      await expect(client().uploadRun(input)).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  test('a network failure passes through unchanged', async () => {
+    const down = new TypeError('fetch failed');
+    fetchMock.mockRejectedValueOnce(down);
+    await expect(client().uploadRun(input)).rejects.toBe(down);
+  });
+});
+
+describe('linkRun', () => {
+  const run = { key: 'SHOP-R42', id: '3001', url: '' };
+
+  test('posts the web link to the cycle', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ id: 1 }, { status: 201 }));
+    await client().linkRun(run, { url: 'https://piwi.example.com/test-runs/12', title: 'Piwi run #12' });
+    expect(requested().pathname).toBe('/v2/testcycles/SHOP-R42/links/weblinks');
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json');
+    expect(JSON.parse(String(init.body))).toEqual({
+      url: 'https://piwi.example.com/test-runs/12',
+      description: 'Piwi run #12',
+    });
+  });
+
+  test('does not send a key that is not a cycle key', async () => {
+    await expect(
+      client().linkRun({ ...run, key: '../SHOP-R42' }, { url: 'https://x.test', title: 't' }),
+    ).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a refusal is an error with the status', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    await expect(client().linkRun(run, { url: 'https://x.test', title: 't' })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('findRun', () => {
+  const marker = {
+    runId: 12,
+    startedAt: '2026-11-10T12:30:45.000Z',
+    testCaseKey: 'SHOP-T1',
+    name: 'Piwi #12 main',
+  };
+
+  test('reads the cycle of the last executions and matches it by the run number', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      key: 'SHOP-R42',
+      id: '3001',
+      url: 'https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R42',
+    });
+
+    const list = requested(0);
+    expect(list.pathname).toBe('/v2/testexecutions');
+    expect(list.searchParams.get('projectKey')).toBe('SHOP');
+    expect(list.searchParams.get('testCase')).toBe('SHOP-T1');
+    expect(list.searchParams.get('onlyLastExecutions')).toBe('true');
+    // A minute before the attempt began, in the form the API takes.
+    expect(list.searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
+    expect(requested(1).pathname).toBe('/v2/testcycles/2999');
+    expect(requested(2).pathname).toBe('/v2/testcycles/3001');
+    // One read per cycle, not per execution.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  test('run 12 does not match the cycle of run 123', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![0]] }),
+      )
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')));
+    expect(await client().findRun('SHOP', marker)).toBeNull();
+  });
+
+  test('matches a cycle named exactly as the run was', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+      )
+      .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Nightly' }));
+    expect(await client().findRun('SHOP', { ...marker, name: 'Nightly' })).toMatchObject({ key: 'SHOP-R42' });
+  });
+
+  test('is null when no execution is found', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }));
+    expect(await client().findRun('SHOP', marker)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('reads no more than ten cycles', async () => {
+    const values = Array.from({ length: 30 }, (_, i) => ({ id: i, testCycle: { id: 4000 + i } }));
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) =>
+      String(input).includes('/testexecutions')
+        ? reply({ startAt: 0, maxResults: 1000, isLast: true, values })
+        : reply({ id: 1, key: 'SHOP-R1', name: 'Unrelated' }),
+    );
+    expect(await client().findRun('SHOP', marker)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+  });
+
+  test('refuses a marker with no date', async () => {
+    await expect(client().findRun('SHOP', { ...marker, startedAt: 'never' })).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

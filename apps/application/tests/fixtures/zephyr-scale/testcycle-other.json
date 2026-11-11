@@ -1,0 +1,7 @@
+{
+  "_spec": "TestCycle",
+  "id": 2999,
+  "key": "SHOP-R40",
+  "name": "Piwi #123 main",
+  "links": { "self": "https://api.zephyrscale.smartbear.com/v2/testcycles/SHOP-R40" }
+}

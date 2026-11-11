@@ -1,0 +1,25 @@
+{
+  "_spec": "TestExecutionList",
+  "next": null,
+  "startAt": 0,
+  "maxResults": 1000,
+  "total": 3,
+  "isLast": true,
+  "values": [
+    {
+      "id": 5001,
+      "testCase": { "id": 1, "self": "https://api.zephyrscale.smartbear.com/v2/testcases/SHOP-T1/versions/1" },
+      "testCycle": { "id": 2999, "self": "https://api.zephyrscale.smartbear.com/v2/testcycles/2999" }
+    },
+    {
+      "id": 5002,
+      "testCase": { "id": 1, "self": "https://api.zephyrscale.smartbear.com/v2/testcases/SHOP-T1/versions/1" },
+      "testCycle": { "id": 3001, "self": "https://api.zephyrscale.smartbear.com/v2/testcycles/3001" }
+    },
+    {
+      "id": 5003,
+      "testCase": { "id": 1, "self": "https://api.zephyrscale.smartbear.com/v2/testcases/SHOP-T1/versions/1" },
+      "testCycle": { "id": 3001, "self": "https://api.zephyrscale.smartbear.com/v2/testcycles/3001" }
+    }
+  ]
+}
