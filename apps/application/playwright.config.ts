@@ -113,13 +113,6 @@ const baseConfig = defineConfig({
 
     /* Capture screenshot on first retry for failure diagnostics */
     screenshot: 'only-on-failure',
-
-    // Chromium puts its shared renderer memory in /dev/shm, which is small on a
-    // CI runner. When it fills the renderer is killed mid-test and Playwright
-    // surfaces it as "Target page, context or browser has been closed" or an
-    // unbound protocol object rather than as a real assertion failure. Backing
-    // it with /tmp instead costs a little speed and removes that failure mode.
-    launchOptions: { args: ['--disable-dev-shm-usage'] },
   },
 
   /* Configure projects for major browsers */
