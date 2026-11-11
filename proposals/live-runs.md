@@ -204,7 +204,10 @@ in memory and hands it to the run's reporter in an answer of the run's stream, w
 whose tool asks the developer (`piwi/askToWatch`, the desktop app's toast) or, with no hub, prints it; **Not now** goes
 back the same way (`ask-answer`, `askAnswer`), and sharing answers it. `PIWI_SHARE_LIVE=1` shares a run from its start
 outside CI, and **Not shared live** shows once, in the run page's toolbar, with **Ask to watch**. Left of P9: Piwi
-Picker's Runs window offers no window scope. The later phases are proposed. The bugs the analysis
+Picker's Runs window offers no window scope. Built from P10: the live Timeline reads as lanes, grouped by shard, its
+header saying which shards have started; each running attempt is a bar to now over the pale bar of its test's usual
+time (the passes the Stuck? rule reads, one query a run), amber once marked **Stuck?**; the test search takes
+`is:stuck`, `worker:` and `shard:`. The rest of P10 and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

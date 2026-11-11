@@ -6,10 +6,11 @@ import { stepPhases } from '#shared/step-tree';
 import { pauseSpans, pausedOverlap } from '#shared/step-analysis';
 import { formatTimelineTime } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
-import { testAttemptKey } from '~/utils/test-attempts';
+import { isStuckAttempt, testAttemptKey } from '~/utils/test-attempts';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { workerLane } from '#shared/worker-lane';
+import { usualDurationKey } from '#shared/stuck-tests';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
@@ -70,6 +71,13 @@ export interface TimelineItem {
   attemptKeys?: string[] | null;
   /** Whether a later attempt of this test ran: Playwright retried it after this one — test bars only. */
   retried?: boolean;
+  /**
+   * The test's usual duration, the longest of its last passing executions (`usualDurationMs`), drawn as a ghost behind
+   * the bar — running test bars only, null when its passes are too few to tell.
+   */
+  usualMs?: number | null;
+  /** The server said this running attempt is stuck (`isStuckAttempt`): its bar is amber — running test bars only. */
+  stuck?: boolean;
   /**
    * The duration Playwright reported, when the bar is noticeably longer — test
    * bars only. Playwright leaves `beforeAll` / `afterAll` hooks and worker
@@ -220,6 +228,32 @@ export interface TimelineModelInput {
   stepsByExecution?: Map<number, PerformanceStep[]> | null;
   /** A run still in progress: its lanes' empty stretches are not marked yet. */
   live?: boolean;
+  /** Epoch ms of now on the run's clock, while it is live: each running attempt's bar reaches it. */
+  now?: number | null;
+  /** Each test's usual duration by `usualDurationKey`, for the ghost behind its running attempt. */
+  usualDurations?: ReadonlyMap<string, number> | null;
+}
+
+/** The usual duration of a running attempt's test: what its Stuck? mark says, else what the run's project knows. */
+function usualOf(tc: TestCaseResult, usual: ReadonlyMap<string, number> | null | undefined): number | null {
+  if (tc.stuck) return tc.stuck.usualMs;
+  if (!usual) return null;
+  const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? null;
+  return (
+    usual.get(usualDurationKey({ filePath: tc.filePath, suitePath: tc.suitePath, title: tc.title, browser })) ?? null
+  );
+}
+
+/**
+ * What a running attempt's tooltip says about its time: how long its test usually takes, and, when the Stuck? rule
+ * marks it, that it has run far longer.
+ */
+export function runningTimeNotes(item: Pick<TimelineItem, 'usualMs' | 'stuck'>): string[] {
+  if (item.usualMs == null) return [];
+  const usual = formatTimelineTime(item.usualMs);
+  return item.stuck
+    ? [`Stuck?: it has run far longer than its last passing runs, which took ${usual} at most.`]
+    : [`Its last passing runs took ${usual} at most: the pale bar behind it.`];
 }
 
 /** One Playwright worker process: the cases run under one `workerIndex` in one shard. */
@@ -551,6 +585,11 @@ export function useTimelineModel(props: TimelineModelInput): {
   maxTime: ComputedRef<number>;
   /** Epoch ms of the timeline's zero, its first test's start; null when no test carries a start. */
   origin: ComputedRef<number | null>;
+  /**
+   * Epoch ms of the latest moment the results tell on the run's clock: the last end of a finished attempt, or the last
+   * start of a running one, or how far a stuck one had run when the server said so; null when no test carries a start.
+   */
+  knownUntil: ComputedRef<number | null>;
   runLocks: ComputedRef<string[]>;
   lockSummary: ComputedRef<LockSummary[]>;
 } {
@@ -617,7 +656,8 @@ export function useTimelineModel(props: TimelineModelInput): {
     return { rows, laneCount: row };
   });
 
-  const timelineData = computed<TimelineItem[]>(() => {
+  // Every item but the running attempts' reach: built again when the results change, never as the clock ticks.
+  const baseData = computed<TimelineItem[]>(() => {
     const rows = workerLayout.value.rows;
     const patterns = wastedPatterns.value;
     const absolute = hasStartedAt.value;
@@ -677,6 +717,9 @@ export function useTimelineModel(props: TimelineModelInput): {
             retries: tc.retries ?? null,
             flaky: isFlakyExecution(tc),
             ...(isEndedAtStop(tc) ? { endedAtStop: true } : {}),
+            ...(tc.status === 'running'
+              ? { usualMs: usualOf(tc, props.usualDurations), stuck: isStuckAttempt(tc) }
+              : {}),
             reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
             ...(pausedMs > 0 ? { pausedMs } : {}),
             expanded: expanded?.has(tc.executionId) ?? false,
@@ -796,6 +839,22 @@ export function useTimelineModel(props: TimelineModelInput): {
     return result;
   });
 
+  // While the run is live, each running attempt's bar reaches now on the run's clock: a copy of it alone, so the
+  // other bars stay the same objects as the clock ticks.
+  const timelineData = computed<TimelineItem[]>(() => {
+    const base = baseData.value;
+    const now = props.now;
+    if (now == null || !hasStartedAt.value) return base;
+    const origin = minStartedAt.value;
+    let running = false;
+    const items = base.map((item) => {
+      if (item.kind !== 'test' || item.status !== 'running') return item;
+      running = true;
+      return { ...item, duration: Math.max(0, now - origin - item.start) };
+    });
+    return running ? items : base;
+  });
+
   /** Ordered worker lanes with their flat-lane bands; items render on the lane at `rowIndex`. */
   const workerRows = computed<WorkerRow[]>(() => workerLayout.value.rows);
 
@@ -817,12 +876,28 @@ export function useTimelineModel(props: TimelineModelInput): {
     return groups;
   });
 
+  // From the results alone: a running attempt's reach moves the plot's end only through the timeline's own clock.
   const maxTime = computed(() => {
     let max = 0;
-    for (const item of timelineData.value) {
+    for (const item of baseData.value) {
       max = Math.max(max, item.start + item.duration);
     }
     return max || 60000;
+  });
+
+  const knownUntil = computed(() => {
+    if (!hasStartedAt.value) return null;
+    let max = -Infinity;
+    for (const process of processes.value) {
+      for (const tc of process.cases) {
+        const start = toMs(tc.startedAt);
+        if (start == null) continue;
+        // A running attempt the server said is stuck had run its `elapsedMs` (its stops left out) when it said so.
+        const end = tc.status === 'running' ? start + (tc.stuck?.elapsedMs ?? 0) : (caseSpan(tc)?.end ?? start);
+        max = Math.max(max, end);
+      }
+    }
+    return Number.isFinite(max) ? max : null;
   });
 
   /** Distinct lock names declared anywhere in the run, sorted for stable colors. */
@@ -832,9 +907,9 @@ export function useTimelineModel(props: TimelineModelInput): {
     return [...locks].sort((a, b) => a.localeCompare(b));
   });
 
-  const lockSummary = computed(() => computeLockSummary(timelineData.value, maxTime.value));
+  const lockSummary = computed(() => computeLockSummary(baseData.value, maxTime.value));
 
   const origin = computed(() => (hasStartedAt.value ? minStartedAt.value : null));
 
-  return { timelineData, workerRows, laneCount, shardGroups, maxTime, origin, runLocks, lockSummary };
+  return { timelineData, workerRows, laneCount, shardGroups, maxTime, origin, knownUntil, runLocks, lockSummary };
 }

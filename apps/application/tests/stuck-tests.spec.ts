@@ -4,9 +4,10 @@ import { PROJECT } from '#shared/test-project-names';
 /**
  * Stuck? on the run page: a test of a live run that has run far longer than its passing runs took (`#shared/stuck-
  * tests`) is marked on its row, with how long it has run against the longest of its passes, within the server's next
- * check; a page opened later shows it too, and the mark leaves as the attempt completes. A test of a run outside CI
- * that its reporter says stands stopped shows where, as text, in place of the mark, which the server's check never
- * gives it while it stands stopped.
+ * check; a page opened later shows it too, the Timeline draws its bar amber over the pale bar of its usual time,
+ * `is:stuck` finds it, and the mark leaves as the attempt completes. A test of a run outside CI that its reporter says
+ * stands stopped shows where, as text, in place of the mark, which the server's check never gives it while it stands
+ * stopped.
  */
 
 const TITLE = 'pays with PayPal';
@@ -41,9 +42,9 @@ test.describe('Stuck tests', () => {
     test.setTimeout(120_000);
     await passedTwice(request);
 
-    // A live run whose test began five minutes ago.
+    // A live run whose test began five minutes ago, beside a test with no passing runs that began just now.
     const started = await request.post('/api/test-runs/start', {
-      data: { projectName: PROJECT.STUCK_TESTS, startTime: new Date().toISOString(), totalTests: 1 },
+      data: { projectName: PROJECT.STUCK_TESTS, startTime: new Date().toISOString(), totalTests: 2 },
     });
     expect(started.ok()).toBeTruthy();
     const { runId, streamToken } = (await started.json()) as { runId: number; streamToken: string };
@@ -51,7 +52,26 @@ test.describe('Stuck tests', () => {
     const begun = await request.post(`/api/test-runs/${runId}/events`, {
       data: {
         streamToken,
-        testCases: [{ type: 'begin', title: TITLE, location: LOCATION, workerIndex: 0, startedAt, browser: BROWSER }],
+        testCases: [
+          {
+            type: 'begin',
+            title: TITLE,
+            location: LOCATION,
+            workerIndex: 0,
+            parallelIndex: 0,
+            startedAt,
+            browser: BROWSER,
+          },
+          {
+            type: 'begin',
+            title: 'pays by card',
+            location: 'tests/checkout.spec.ts:30:3',
+            workerIndex: 1,
+            parallelIndex: 1,
+            startedAt: Date.now(),
+            browser: BROWSER,
+          },
+        ],
       },
     });
     expect(begun.ok()).toBeTruthy();
@@ -71,6 +91,31 @@ test.describe('Stuck tests', () => {
 
       // A page opened later shows it too.
       await page.reload();
+      await expect(page.locator('[data-testid="stuck-time"]:visible').first()).toBeVisible({ timeout: 30_000 });
+
+      // The Timeline draws each running test as a bar to now: the stuck one amber, over the pale bar of its usual time;
+      // the other, with no passing runs, without one.
+      await page.goto(`/test-runs/${runId}?tab=workers`);
+      const timeline = page.locator('[data-shot="run-timeline"]');
+      const stuckBar = timeline.locator('[data-timeline-running][data-stuck]');
+      await expect(stuckBar).toHaveCount(1, { timeout: 30_000 });
+      await expect(timeline.locator('[data-timeline-running]')).toHaveCount(2);
+      await expect(timeline.locator('[data-timeline-ghost]')).toHaveCount(1);
+      await expect(page.getByTestId('timeline-stuck')).toHaveText('1 stuck');
+      await stuckBar.hover();
+      await expect(page.getByTestId('timeline-tooltip')).toContainText(
+        'Stuck?: it has run far longer than its last passing runs, which took 6.0s at most.',
+      );
+      await page.screenshot({ path: testInfo.outputPath('stuck-timeline.png') });
+
+      // The Tests tab's search finds the stuck test alone, and leaves it out.
+      await page.goto(`/test-runs/${runId}?search=is%3Astuck`);
+      await expect(page.locator('[data-testid="stuck-time"]:visible')).toHaveCount(1, { timeout: 30_000 });
+      await expect(page.getByText('pays by card')).toHaveCount(0);
+      await page.goto(`/test-runs/${runId}?search=-is%3Astuck`);
+      await expect(page.getByText('pays by card').first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('[data-testid="stuck-time"]:visible')).toHaveCount(0);
+      await page.goto(`/test-runs/${runId}?search=`);
       await expect(page.locator('[data-testid="stuck-time"]:visible').first()).toBeVisible({ timeout: 30_000 });
 
       // The attempt completes: the mark leaves its row.
@@ -95,7 +140,7 @@ test.describe('Stuck tests', () => {
       await expect(page.locator('[data-testid="stuck-time"]:visible')).toHaveCount(0, { timeout: 15_000 });
       await expect(page.getByText('Stuck?', { exact: true })).toHaveCount(0);
     } finally {
-      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 1 } });
+      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 2 } });
     }
   });
 
