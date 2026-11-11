@@ -200,7 +200,7 @@ which the cross-shard clue points out.
 
 ### Ownership metadata (`piwi:` annotations)
 
-Five `piwi:`-prefixed annotations attach ownership to a test, and a sixth, `piwi:id`, its [external ID](#external-test-ids). They are ordinary Playwright annotations, so no new API is
+Six `piwi:`-prefixed annotations attach ownership to a test, and a seventh, `piwi:id`, its [external ID](#external-test-ids). They are ordinary Playwright annotations, so no new API is
 involved:
 
 ```typescript
@@ -228,6 +228,7 @@ test(
 | `piwi:feature` | Any text — the product area, for grouping across spec files |
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
 | `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
+| `piwi:issue` | The issue the test's failures are tracked in: its absolute `http(s)` URL or its key (`SHOP-412`). Repeat the annotation to name several, up to 10; a failure cluster is [linked to it](/features/issue-tracking#links-the-tests-declare) |
 | `piwi:id` | The test's ID in your test management tool, see [External test IDs](#external-test-ids) |
 
 Metadata shows as badges next to the test wherever it is listed, is searchable with `owner:`, `priority:` and `feature:`
