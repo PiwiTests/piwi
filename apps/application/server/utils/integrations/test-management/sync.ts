@@ -134,9 +134,9 @@ function runLinkTitle(runId: number): string {
 
 /**
  * Send one attempt of a sync: the upload, unless the row already names the test run it made; then the link back to the
- * run's page, and the entity link with the action's final result in one transaction. The upload start is written
- * before the call and the test run's key right after it, so no later step uploads again. The caller has checked that
- * the row does not hold an upload start without a test run.
+ * run's page, unless the row says it was added; and the entity link with the action's final result in one transaction.
+ * The upload start is written before the call, the test run's key right after it and the link once it is added, so no
+ * later step repeats them. The caller has checked that the row does not hold an upload start without a test run.
  */
 export async function applySyncResults(
   db: DbClient,
@@ -145,7 +145,7 @@ export async function applySyncResults(
   attempts: number,
 ): Promise<{ runKey: string; runUrl: string; sent: number }> {
   const payload = action.payload as SyncActionPayload;
-  const state = readSyncState(action.result);
+  let state = readSyncState(action.result);
   let run: Pick<TmRun, 'key' | 'url'> & { id?: string };
   if (state.runKey) {
     run = { key: state.runKey, url: state.runUrl ?? '' };
@@ -165,10 +165,14 @@ export async function applySyncResults(
     } catch (err) {
       throw new SyncUploadError(err);
     }
-    await writeSyncState(db, action.id, { uploadStartedAt, runKey: run.key, runUrl: run.url });
+    state = { uploadStartedAt, runKey: run.key, runUrl: run.url };
+    await writeSyncState(db, action.id, state);
   }
 
-  if (payload.runUrl && tm.linkRun) await tm.linkRun(run, { url: payload.runUrl, title: runLinkTitle(payload.runId) });
+  if (payload.runUrl && tm.linkRun && !state.linked) {
+    await tm.linkRun(run, { url: payload.runUrl, title: runLinkTitle(payload.runId) });
+    await writeSyncState(db, action.id, { ...state, linked: true });
+  }
 
   const result = { runKey: run.key, runUrl: run.url, sent: payload.results.length };
   await db.transaction(async (tx) => {

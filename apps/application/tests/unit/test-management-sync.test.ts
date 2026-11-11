@@ -552,6 +552,35 @@ describe('what each failure of the upload leaves', () => {
     expect(links()).toHaveLength(1);
   });
 
+  test('a retry after the final write failed does not link the test cycle again', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    vi.spyOn(db, 'transaction').mockRejectedValueOnce(new Error('database is locked'));
+    await runTestManagementSync(db, RUN_ID);
+    const retrying = await syncRow();
+    expect(retrying).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(retrying.result).toMatchObject({ runKey: 'SHOP-R42', linked: true });
+
+    expect(await runActionNow(db, retrying.id)).toMatchObject({ status: 'done' });
+    expect(uploads()).toHaveLength(1);
+    expect(links()).toHaveLength(1);
+    expect(await testRunLinks()).toMatchObject([{ key: 'SHOP-R42' }]);
+  });
+
+  test('Sync again keeps the link the test cycle already carries', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    vi.spyOn(db, 'transaction').mockRejectedValueOnce(new RangeError('final'));
+    await runTestManagementSync(db, RUN_ID);
+    expect(await syncRow()).toMatchObject({ status: 'failed', result: { runKey: 'SHOP-R42', linked: true } });
+
+    expect(await syncAgain(at(RUN_ID))).toMatchObject({ status: 'done' });
+    expect(uploads()).toHaveLength(1);
+    expect(links()).toHaveLength(1);
+  });
+
   test('runAction on a reclaimed row with an upload start and no test cycle sends nothing', async () => {
     await seedRun();
     await fillCatalog();

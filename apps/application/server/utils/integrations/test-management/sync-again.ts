@@ -40,7 +40,12 @@ export async function requeueFailedSync(
   const payload = action.payload as SyncActionPayload;
   const state = readSyncState(action.result);
   let result: Record<string, unknown> | null = state.runKey
-    ? { uploadStartedAt: state.uploadStartedAt, runKey: state.runKey, runUrl: state.runUrl }
+    ? {
+        uploadStartedAt: state.uploadStartedAt,
+        runKey: state.runKey,
+        runUrl: state.runUrl,
+        ...(state.linked ? { linked: true } : {}),
+      }
     : null;
 
   if (uploadOutcomeUnknown(state) && tm.findRun && payload.results.length > 0) {

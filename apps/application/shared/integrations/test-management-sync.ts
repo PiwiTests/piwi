@@ -100,6 +100,8 @@ export interface SyncState {
   uploadStartedAt?: number;
   runKey?: string;
   runUrl?: string;
+  /** Set once the test run carries its link back to the run's page in Piwi, so a retry does not add it again. */
+  linked?: true;
   sent?: number;
   dryRun?: true;
   payload?: SyncPayload;
@@ -113,6 +115,7 @@ export function readSyncState(result: unknown): SyncState {
     ...(typeof value.uploadStartedAt === 'number' ? { uploadStartedAt: value.uploadStartedAt } : {}),
     ...(typeof value.runKey === 'string' ? { runKey: value.runKey } : {}),
     ...(typeof value.runUrl === 'string' ? { runUrl: value.runUrl } : {}),
+    ...(value.linked === true ? { linked: true as const } : {}),
     ...(typeof value.sent === 'number' ? { sent: value.sent } : {}),
     ...(value.dryRun === true ? { dryRun: true as const } : {}),
     ...(value.payload && typeof value.payload === 'object' ? { payload: value.payload as SyncPayload } : {}),
