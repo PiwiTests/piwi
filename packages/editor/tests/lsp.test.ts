@@ -3049,9 +3049,21 @@ describe('the desktop app', () => {
       });
       // The desktop app's MCP server takes its token, whichever way the agent is set to sign in.
       await desktopClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      // Said to be the desktop app's, whose run tools a client listing its own runs' server leaves out
+      // (`?runs=off`); the address any client copies stays whole.
       expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
-        expect.objectContaining({ headers: { Authorization: 'Bearer pd_desktop' }, authorization: 'key' }),
+        expect.objectContaining({
+          url: `${url}/mcp`,
+          headers: { Authorization: 'Bearer pd_desktop' },
+          authorization: 'key',
+          desktop: true,
+        }),
       ]);
+      await desktopClient.sendRequest('piwi/agents', { enabled: true });
+      expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
+        expect.objectContaining({ url: `${url}/mcp`, desktop: true }),
+      ]);
+      await desktopClient.sendRequest('piwi/agents', { enabled: false });
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();

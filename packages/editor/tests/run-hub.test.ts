@@ -23,7 +23,7 @@ import {
   type LiveHub,
 } from '@piwitests/core/run-hub';
 import { RUN_TAKES } from '@piwitests/core/run-channel';
-import type { RunSession } from '../src/protocol';
+import type { AgentsResult, RunSession, StartRunParams } from '../src/protocol';
 import { writeDiscovery } from '../src/discovery';
 import { RunHub, type RunHubOptions } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
@@ -154,6 +154,156 @@ describe('the hub’s address', () => {
       expect(other.published).toHaveLength(stopped);
     } finally {
       other.stop();
+    }
+  });
+
+  test('names the agents’ MCP server while it serves the runs to them, and no more once it stops', async () => {
+    const other = await service(dir, false, {}, { agents: { enabled: true } });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      expect(named.agents).toEqual({
+        url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
+        token: expect.stringMatching(/^[\w-]{32,256}$/),
+      });
+      // A client that runs no command for an agent is offered no run_start.
+      const listed = await fetch(named.agents!.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result.tools;
+      expect(tools.map((tool) => tool.name)).not.toContain('run_start');
+      // The file names a token of this process alone: the one the client keeps works too, and a new one ends both.
+      const kept = (await other.client.sendRequest('piwi/agents', { enabled: true })) as AgentsResult;
+      expect(kept.token).not.toBe(named.agents!.token);
+      const status = async (token: string) =>
+        (
+          await fetch(named.agents!.url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }),
+          })
+        ).status;
+      expect(await status(kept.token!)).toBe(200);
+      const renewed = (await other.client.sendRequest('piwi/agents', {
+        enabled: true,
+        newToken: true,
+      })) as AgentsResult;
+      expect(await status(kept.token!)).toBe(401);
+      expect(await status(named.agents!.token)).toBe(401);
+      expect(await status(renewed.token!)).toBe(200);
+      const republished = await waitFor(() => {
+        const file = other.published[other.published.length - 1];
+        return file?.agents && file.agents.token !== named.agents!.token ? file : undefined;
+      });
+      expect(republished.agents!.token).not.toBe(renewed.token);
+      expect(await status(republished.agents!.token)).toBe(200);
+      await other.client.sendRequest('piwi/agents', { enabled: false });
+      const last = await waitFor(() => {
+        const file = other.published[other.published.length - 1];
+        return file && !file.agents ? file : undefined;
+      });
+      expect(last.runChannel).toEqual(named.runChannel);
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('starts an agent’s run as a person’s is built, labeled with its name, once the client runs it', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'tests', 'checkout.spec.ts'),
+      "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {\n  await page.goto('/');\n});\n",
+    );
+    const other = await service(dir, false, {}, { agents: { enabled: true }, startsRuns: true });
+    const started: StartRunParams[] = [];
+    let refuses = false;
+    other.client.onRequest('piwi/startRun', (params: StartRunParams) => {
+      if (refuses) return { ok: false, message: 'Test Editor could not start the task that runs it.' };
+      started.push(params);
+      return { ok: true, message: 'Test Editor runs it.' };
+    });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      const call = async (method: string, params: Record<string, unknown>) => {
+        const res = await fetch(named.agents!.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        });
+        return (await res.json()) as { result: { tools?: Array<{ name: string }>; content?: Array<{ text: string }> } };
+      };
+      expect((await call('tools/list', {})).result.tools![0]!.name).toBe('run_start');
+      const tool = async (name: string, args: Record<string, unknown>) => {
+        const answer = await call('tools/call', { name, arguments: args });
+        return JSON.parse(answer.result.content![0]!.text) as Record<string, unknown>;
+      };
+      const body = await tool('run_start', { file: 'tests/cart.spec.ts', line: 3, agent: 'Claude Code' });
+      expect(body).toMatchObject({ ok: true, run: expect.stringMatching(/^[\w-]+$/) });
+      expect(started).toHaveLength(1);
+      expect(started[0]!.command).toMatchObject({ ref: body.run, label: 'Started by Claude Code' });
+      expect(started[0]!.command.args.join(' ')).toContain('tests/cart.spec.ts:3');
+      // The run is followed from its start, before its workers connect, and ends with its command when none does.
+      expect(await tool('run_follow', { run: body.run, wait: 0 })).toMatchObject({ ok: true, state: 'starting' });
+      expect(((await tool('run_list', {})).runs as unknown[]).length).toBe(1);
+      expect(await tool('run_list', {})).toMatchObject({ runs: [{ run: body.run, starting: true }] });
+      await other.client.sendNotification('piwi/commandEnded', { ref: body.run, exitCode: 1 });
+      const until = async <T>(read: () => Promise<T | undefined>): Promise<T> => {
+        for (let tries = 0; tries < 250; tries++) {
+          const value = await read();
+          if (value !== undefined) return value;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error('timed out');
+      };
+      const ended = await until(async () => {
+        const followed = await tool('run_follow', { run: body.run, wait: 0 });
+        return followed.state === 'ended' ? followed : undefined;
+      });
+      expect(ended.events).toEqual([expect.objectContaining({ kind: 'run-ended', exitCode: 1 })]);
+      // A line inside a test runs that test, headed when asked; the agent's name shows without its control characters.
+      const inside = await tool('run_start', {
+        file: path.join(dir, 'tests', 'checkout.spec.ts'),
+        line: 4,
+        headed: true,
+        agent: 'Bot\n\u202Eevil',
+      });
+      expect(inside).toMatchObject({ ok: true });
+      expect(started[1]!.command.args.join(' ')).toContain('tests/checkout.spec.ts:3');
+      expect(started[1]!.command.args).toContain('--headed');
+      expect(started[1]!.command.label).toBe('Started by Bot evil');
+      // Agents' runs that have not ended are three at most.
+      await tool('run_start', { file: 'tests/cart.spec.ts' });
+      await tool('run_start', { file: 'tests/cart.spec.ts' });
+      const fourth = await tool('run_start', { file: 'tests/cart.spec.ts' });
+      expect(fourth).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('3 runs agents started have not ended'),
+      });
+      expect(started).toHaveLength(4);
+      for (const run of started.slice(1)) {
+        await other.client.sendNotification('piwi/commandEnded', { ref: run.command.ref, exitCode: 0 });
+      }
+      await until(async () => ((await tool('run_list', {})).runs as unknown[]).length === 0 || undefined);
+      // A client that could not run it says so, and no run is followed.
+      refuses = true;
+      expect(await tool('run_start', { file: 'tests/cart.spec.ts' })).toMatchObject({
+        ok: false,
+        message: 'Test Editor could not start the task that runs it.',
+      });
+      refuses = false;
+      // A file that is no spec of the workspace runs nothing, as one outside it does.
+      expect(await tool('run_start', { file: '../elsewhere.spec.ts' })).toMatchObject({ ok: false });
+      const outside = path.join(os.tmpdir(), 'piwi-outside.spec.ts');
+      fs.writeFileSync(outside, '');
+      try {
+        expect(await tool('run_start', { file: outside })).toMatchObject({ ok: false });
+      } finally {
+        fs.rmSync(outside, { force: true });
+      }
+      expect(started).toHaveLength(4);
+    } finally {
+      other.stop();
+      fs.rmSync(path.join(dir, 'tests', 'checkout.spec.ts'), { force: true });
     }
   });
 

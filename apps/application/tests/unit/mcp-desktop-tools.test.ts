@@ -58,7 +58,7 @@ describe("the run tools of the desktop app's runs", () => {
   it("speak of the desktop app's runs and its window, never of an editor's", () => {
     const tools = desktopRunTools(true);
     const described = (name: string) => tools.find((t) => t.name === name)!.description;
-    expect(described('run_list')).toMatch(/^The test runs the desktop app started, /);
+    expect(described('run_list')).toMatch(/^The test runs the desktop app follows, /);
     expect(described('run_control')).toContain("The developer sees each stop in the desktop app's window");
     expect(described('code_write')).toContain('writes no file');
     for (const tool of tools) {

@@ -576,15 +576,22 @@ What the package does to a user's run, process by process.
   shell starts with `PIWI_DESKTOP_KEY=1`, is sent only after `proveDesktopServer` (`@piwitests/core/desktop-proof`)
   returns `proven` for the address (the proof header decides, whatever the status of `/api/health`). Each request gets
   a proof of its own (requests that start together share one, never one that has arrived), and the request follows no
-  redirect. `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the commands;
-  any new request that carries the token goes through one of them.
+  redirect. `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the commands,
+  and `piwi mcp`'s `postToHost` for the desktop app's MCP server; any new request that carries the token goes through
+  one of them.
 - **A copy of the token stays held.** A key equal to the file's token is held to the proof while the file exists,
   whether or not its `pid` is alive (`readDesktopToken`): the app deletes the file only on a clean quit, so a copy of
   the token never goes unproven to whatever holds the port. The URL still comes from the pid-checked file, so an
   ordinary run makes no extra request.
 - **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
-  service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`), from a folder
-  this user alone can enter, and never deletes one.
+  service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`) and for `piwi mcp`,
+  from a folder this user alone can enter, and never deletes one.
+- **`piwi mcp`** (`src/cli/mcp.ts`, `McpRouter`) is an agents' MCP server over stdio with no run logic: it forwards
+  the run tools of each editor whose file names its agents' server (`agents`) and of the desktop app, `run_list` to
+  all of them, `run_start` to the editor whose workspace holds the spec, any other call to the host of its run. An
+  editor is a host only while its run channel is a socket of this user's (`stillServing`, as for a terminal's run).
+  Each request to the desktop app's `/mcp` follows a proof of its own (`RouterHost.proves`), and the agent's
+  `notifications/cancelled` aborts the host's request; `tests/mcp-router.spec.ts`.
 
 ## Two processes, two paths
 
@@ -733,7 +740,7 @@ src/
   cli/         the `piwi` command line (package.json `bin`, its own tsup entry):
                index (the command switch), one file per command (init, skills, gate,
                quality-report for `report`, coverage, select for `select` and `run`,
-               probe, flake, ai, codegen, preflight, bug); detect, configure (what
+               probe, flake, ai, codegen, preflight, bug, mcp); detect, configure (what
                init inspects and edits), add-reporter (`run`'s --add-reporter),
                report (the step results init and skills print)
   internal/

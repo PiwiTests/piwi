@@ -215,9 +215,11 @@ the custom messages of `src/protocol.ts`:
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
-another tool asks (`piwi/stopRun`), as both clients do, and `agents` for the agents' MCP server ([Agents](#agents)).
-`piwi/stopRun` is the one request the service sends a client: VS Code ends the run's task, the JetBrains plugin its
-process, and the answer (`RunControlResult`) refuses a run the client did not start.
+another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
+agent (`piwi/startRun`), and `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
+requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
+(`RunControlResult`) refuses a run the client did not start; and `piwi/startRun`, whose answer says whether the client
+started the run.
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -1058,7 +1060,9 @@ answered with its address and token), and closes as the client turns it off or t
   to copy the configuration again, and `piwi/agentsChanged` with the new address and token, which the clients keep
   as they keep `piwi/agents`'s answer; it is sent only when they differ from what the client holds. `piwi/agents`
   with `newToken` (the clients' Reset the token) gives the server a new token (`AgentServer.newToken`), the one
-  before refused from the next request on.
+  before refused from the next request on. The server also takes a token of its process alone (`localToken`), which
+  the client never keeps: the one the discovery file names for `piwi mcp`, so the kept token stays off the disk, and a
+  file a killed service left names a token nothing takes. A new token renews it too.
 - A request whose `Host` is not `127.0.0.1` or `localhost` at its port is a 403 (`isHubHost`: DNS rebinding), and so is
   one that carries an `Origin`: a browser sends one with every POST, MCP clients are native. Another path is a 404,
   another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token
@@ -1071,9 +1075,29 @@ answered with its address and token), and closes as the client turns it off or t
 As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
 registration of the server (VS Code's provider) or a configuration the developer copies.
 
-**The tools** (`src/run-agent.ts`, `RunAgent`): `run_list`, `run_follow`, `run_control`, `page_snapshot`, `page_act`,
-`page_locator` and `code_write`, each with a closed set of arguments read one by one (`Args`, an unknown one refused)
-and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`).
+**The tools** (`src/run-agent.ts`, `RunAgent`): `run_start` (for a client that runs one, below), `run_list`,
+`run_follow`, `run_control`, `page_snapshot`, `page_act`, `page_locator` and `code_write`, each with a closed set of
+arguments read one by one (`Args`, an unknown one refused) and a JSON schema that names them (`AGENT_TOOLS`,
+`runStartTool`, `additionalProperties: false`; the server lists `RunAgent.definitions()`).
+
+- **Starting a run.** `run_start { file, line?, headed?, hold?, agent? }` builds the run as `piwi/runArgs` builds a
+  person's (`runCommandFor`, from the spec and, for a line, the line of the test holding it as a location), holding
+  failures unless `hold` is false, and asks the client to run it (`piwi/startRun`, `RunCommand.label`:
+  `Started by <agent>`, the name without its control and direction characters, `agentLabel`); a file no folder of the
+  workspace holds, through a link too, or that is no spec of a config runs nothing. It is listed only for a client
+  that sent `InitializationOptions.startsRuns`. The run is followed from its start: `run_list` lists it as `starting`
+  and `run_follow` waits on it until its workers connect, and a command that ends before any does
+  (`piwi/commandEnded`, `RunAgent.commandEnded`) ends it with its exit code. Three runs agents started run at once at
+  most (`MAX_AGENT_RUNS`); once no agent follows one, the stops an agent asked for and the failures it holds go on,
+  unless a person drives them.
+- **The list.** `run_list` names, for each run, what started it (`launcher`: the host, a terminal or a test runner),
+  its page, progress, Hold failures, whether it is shared live and who has it open, and each worker's lane. A failed
+  test's error, which may quote the page, goes in the page-content block with the stops' errors.
+- **The router.** The discovery file names the server while it serves (`agents`, with `localToken`), and the
+  reporter's `piwi mcp` forwards the tools of every editor and of the desktop app to an agent as one set, each call to
+  the host of its run. `piwi/mcp` says which server is the desktop app's (`McpServerDefinition.desktop`): VS Code
+  lists it for its agent with `?runs=off` while it lists its own runs' server, which leaves that app's run tools of
+  the same names out, and a configuration copied keeps them.
 
 - **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
   start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of

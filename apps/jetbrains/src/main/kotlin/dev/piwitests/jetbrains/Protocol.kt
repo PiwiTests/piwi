@@ -192,7 +192,8 @@ data class RunCommandArgs(
  * `piwi/commandEnded` names once the command ends; may be null. `notice` is a sentence to show once
  * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
- * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`).
+ * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`). `label` says who
+ * started it when a person did not (`Started by Claude Code`, an agent's `run_start`).
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -202,7 +203,13 @@ data class RunCommand(
     val ref: String? = null,
     val notice: String? = null,
     val pauses: Boolean? = null,
+    val label: String? = null,
 )
+
+/** `piwi/startRun`: run the command the service built for an agent's `run_start`, as a person's run starts. */
+data class StartRunParams(val command: RunCommand)
+
+data class StartRunResult(val ok: Boolean, val message: String)
 
 /**
  * `piwi/commandStarted`: the command of a `RunCommand` built with `ref` was sent to a terminal; `terminalRef` is the ref

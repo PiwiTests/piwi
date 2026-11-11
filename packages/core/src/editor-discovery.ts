@@ -3,7 +3,8 @@
  * on Windows; `PIWI_EDITORS_DIR` names another folder) once it listens, readable by its user only, and removes it as
  * it stops. A file names the service's process and machine, its version and its client, the workspace's folders, the
  * hub's WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
- * (`@piwitests/core/run-channel`), the recorder's bundle and where a run's picks go (`@piwitests/core/editor-send`).
+ * (`@piwitests/core/run-channel`), the recorder's bundle, where a run's picks go (`@piwitests/core/editor-send`) and
+ * the agents' MCP server.
  * A reader lists the folder (`readLiveEditors`): it takes only a file this user owns that reads as a service's file of
  * this machine naming the process its name names, and
  * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
@@ -23,6 +24,12 @@ export const EDITORS_DIR_PARTS: readonly string[] = ['.piwi', 'editors'];
 /** A WebSocket address on this machine and the token its first message carries. */
 export interface HubAddress {
   /** `ws://127.0.0.1:<port>/piwi/hub`. */
+  url: string;
+  token: string;
+}
+
+/** The agents' MCP server of a service: `http://127.0.0.1:<port>/mcp`, and the bearer token it takes. */
+export interface AgentAddress {
   url: string;
   token: string;
 }
@@ -63,6 +70,11 @@ export interface EditorDiscovery {
    * on this machine's loopback interface. Absent while the client named none.
    */
   send?: EditorPairing;
+  /**
+   * The service's MCP server for agents, while it serves the runs to them (the client's `agents.enabled`): an agent's
+   * router (`piwi mcp`) forwards a tool call there. Absent while it serves none.
+   */
+  agents?: AgentAddress;
 }
 
 /** The operations `readLiveEditors` takes from its caller. */
@@ -124,6 +136,14 @@ function readChannel(value: unknown): ChannelAddress | null {
   return path && typeof value.token === 'string' && TOKEN.test(value.token) ? { path, token: value.token } : null;
 }
 
+/** The agents' MCP server a file names, on `127.0.0.1` with a token of 32 to 256 base64url characters; else none. */
+function readAgents(value: unknown): { agents?: AgentAddress } {
+  if (!isObject(value) || typeof value.url !== 'string' || typeof value.token !== 'string') return {};
+  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/mcp$/.test(value.url) || !/^[A-Za-z0-9_-]{32,256}$/.test(value.token))
+    return {};
+  return { agents: { url: value.url, token: value.token } };
+}
+
 /** The pairing a file names, as `PIWI_EDITOR_SEND` takes it (a loopback address): none for anything else. */
 function readSend(value: unknown): { send?: EditorPairing } {
   if (!isObject(value) || typeof value.url !== 'string' || typeof value.token !== 'string') return {};
@@ -160,6 +180,7 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     recorderBundle: text(value.recorderBundle, 4096),
     ...(value.unattended === true ? { unattended: true } : {}),
     ...readSend(value.send),
+    ...readAgents(value.agents),
   };
 }
 
