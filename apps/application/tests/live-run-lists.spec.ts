@@ -5,7 +5,8 @@ import { waitForHydration } from './utils';
 
 /**
  * Home and a project's runs list show a running run's progress, "4 of 6 · 2 failed", and move its row on as results
- * come in, from the instance stream's `run-progress`, without reading the list again. The run's end still reads it.
+ * come in, from the instance stream's `run-progress`: with every read of the list held, the row still moves on. The
+ * run's end still reads the list.
  */
 
 const TOTAL = 6;
@@ -53,13 +54,14 @@ async function startRun(request: APIRequestContext) {
   };
 }
 
-/** Count the page's reads of `path` from now on. */
-function countReads(page: Page, path: string): () => number {
-  let reads = 0;
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname === path) reads++;
-  });
-  return () => reads;
+/**
+ * Hold every read of `path` the page makes from now on, unanswered, so it keeps the list it has: a row that moves on
+ * then moved on from the stream. Another spec's runs, which refresh the lists, change nothing. Returns the release.
+ */
+async function holdReads(page: Page, path: string): Promise<() => Promise<void>> {
+  const reads = (url: URL) => url.pathname === path;
+  await page.route(reads, () => {});
+  return () => page.unroute(reads);
 }
 
 /** Open `path` and wait until its run stream listens. */
@@ -77,7 +79,7 @@ async function expectProgress(row: Locator, text: string) {
 test.describe.serial('Running runs in the lists', () => {
   test.setTimeout(90_000);
 
-  test('Home’s Recent activity moves a running run’s row on as results come in, with no read of the list', async ({
+  test('Home’s Recent activity moves a running run’s row on as results come in, from the stream', async ({
     page,
     request,
   }) => {
@@ -91,23 +93,22 @@ test.describe.serial('Running runs in the lists', () => {
       const row = card.locator(`a[href="/test-runs/${run.runId}"]`);
       await expectProgress(row, `2 of ${TOTAL} · 1 failed`);
 
-      const reads = countReads(page, '/api/test-runs/recent');
+      const release = await holdReads(page, '/api/test-runs/recent');
       await run.report(2);
       await expectProgress(row, `4 of ${TOTAL} · 2 failed`);
-      expect(reads()).toBe(0);
 
       // The run's end reads the list again: the row shows how it ended, its pass rate in place of its progress.
+      await release();
       await run.report(2);
       await run.finish();
       await expect(row.locator('[data-live-progress]')).toHaveCount(0, { timeout: 15_000 });
       await expect(row).toContainText('50%');
-      expect(reads()).toBeGreaterThan(0);
     } finally {
       await run.finish();
     }
   });
 
-  test('the project’s runs list moves a running run’s row on as results come in, with no read of the project', async ({
+  test('the project’s runs list moves a running run’s row on as results come in, from the stream', async ({
     page,
     request,
   }) => {
@@ -122,10 +123,9 @@ test.describe.serial('Running runs in the lists', () => {
       await expectProgress(row, `1 of ${TOTAL}`);
       await expect(row.locator('[data-live-progress]')).not.toContainText('failed');
 
-      const reads = countReads(page, `/api/projects/${projectId}`);
+      await holdReads(page, `/api/projects/${projectId}`);
       await run.report(4);
       await expectProgress(row, `5 of ${TOTAL} · 2 failed`);
-      expect(reads()).toBe(0);
     } finally {
       await run.finish();
     }
