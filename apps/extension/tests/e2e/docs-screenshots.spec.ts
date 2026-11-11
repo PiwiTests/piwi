@@ -337,6 +337,7 @@ test('picker-runs-live', async ({ context }) => {
       await answerNext(run.worker, 'view', { ok: true, message: 'The live view is on.' });
       run.worker.send({ type: 'frame', stop: 1, ...STOP_VIEWPORT, data: frame });
       await expect(runs.locator('img.live')).toBeVisible();
+      await runs.getByRole('button', { name: 'Interact' }).click();
       await runs.getByRole('button', { name: 'Pick', exact: true }).click();
       await answerNext(run.worker, 'pick', {
         ok: true,

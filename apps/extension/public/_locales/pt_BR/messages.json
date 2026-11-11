@@ -6927,7 +6927,13 @@
     "message": "Ver ao vivo"
   },
   "runs_liveTitle": {
-    "message": "Mostrar a página do teste enquanto ela é desenhada, no lugar da imagem: seus cliques e teclas nela vão para a página"
+    "message": "Mostrar a página do teste enquanto ela é desenhada, no lugar da imagem: Interagir então envia seus cliques e teclas para ela"
+  },
+  "runs_interact": {
+    "message": "Interagir"
+  },
+  "runs_interactTitle": {
+    "message": "Enviar seus cliques, a rolagem e suas teclas para a página do teste, controlando esta parada: Esc a devolve"
   },
   "runs_liveBadge": {
     "message": "Ao vivo"
@@ -6945,13 +6951,13 @@
     "message": "A conexão com o editor foi perdida: a visualização ao vivo recomeça quando ela voltar."
   },
   "runs_liveHint": {
-    "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."
+    "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc desativa Interagir e devolve a parada; Shift+clique escolhe um locator."
   },
   "runs_watch": {
     "message": "Assistir"
   },
   "runs_watchTitle": {
-    "message": "Mostrar a página do teste enquanto ele é executado, por suas paradas e seus próximos testes: em uma parada, seus cliques e teclas nela vão para a página"
+    "message": "Mostrar a página do teste enquanto ele é executado, por suas paradas e seus próximos testes: em uma parada, Interagir envia seus cliques e teclas para ela"
   },
   "runs_pauseWatch": {
     "message": "Pausar e assistir"

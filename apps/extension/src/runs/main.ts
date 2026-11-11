@@ -557,6 +557,12 @@ const lanes = new Map<string, LaneView>();
  * the run ends.
  */
 const watchLive = new Map<string, { hub: string; run: string }>();
+/**
+ * The slots whose Interact the person turned on (`slotKey`), each with its hub and run: the views of the slot's stops
+ * send the person's clicks, wheel and keys to the page, through each next stop, until Interact, Watch live or Watch is
+ * turned off, `Esc` is pressed on the view, or the run ends.
+ */
+const interacting = new Map<string, { hub: string; run: string }>();
 /** The workers whose Pick on the image waits for a click on the image. */
 const picking = new Set<string>();
 /** The view (worker and stop) the hint on its input shows under: the first one this window gave input to. */
@@ -609,10 +615,32 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   const view = views.get(key);
   if (view?.since === stop.since && isLive(view)) {
     watchLive.delete(slot);
+    const shown = run.session.workers.find((w) => w.worker === worker);
+    if (shown && interacting.has(slot)) setInteract(run, shown, stop, false);
     endView(key, true);
   } else {
     watchLive.set(slot, { hub: run.hub, run: run.session.ref });
     startView(run, worker, stop);
+  }
+  render();
+}
+
+/**
+ * Interact, on or off for a worker's slot. On, the slot's views send the person's input to the page and the stop is
+ * theirs to drive, where its hub names who drives (`presence`); off, a stop this window drives is given back. Watch
+ * live or Watch turned off turns it off too.
+ */
+function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean): void {
+  const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
+  if (on) interacting.set(slot, { hub: run.hub, run: run.session.ref });
+  else interacting.delete(slot);
+  const hub = state?.hubs.find((h) => h.id === run.hub);
+  // Who drives as the hub says now: the toggle that calls this may have been drawn before it changed.
+  const now = stoppedAt(workerKey(run.hub, run.session.ref, worker))?.stop;
+  if (hub?.presence && hubAnswers(run.hub) && now?.since === stop.since) {
+    const driver = driverOf(now);
+    if (on && driver?.who !== 'self') void drive(run, worker.worker, stop.since, true, driver?.who ?? null);
+    if (!on && driver?.who === 'self') void drive(run, worker.worker, stop.since, false, 'self');
   }
   render();
 }
@@ -784,8 +812,12 @@ function toggleLane(run: RunsRun, worker: HubWorker): void {
   // The run of a hub not connected now is shown as last heard: its Watch waits for the hub.
   if (!hubAnswers(run.hub)) return;
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
-  if (isWatched(lanes.get(slot))) endLane(slot, true);
-  else startLane(run, worker);
+  if (isWatched(lanes.get(slot))) {
+    endLane(slot, true);
+    if (interacting.has(slot) && worker.state === 'stopped' && worker.stop)
+      setInteract(run, worker, worker.stop, false);
+    else interacting.delete(slot);
+  } else startLane(run, worker);
   render();
 }
 
@@ -1085,13 +1117,18 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
       { mac: MAC, captured: view.captured },
     );
     if (decided === 'leave') {
-      // The keyboard back to the window, on the toggle that started the view; Pick on the image, waiting, stops too.
+      // Interact goes off, the stop this window drives given back, and the focus goes to Interact; else to the toggle
+      // that started the view. Pick on the image, waiting, stops too.
       event.preventDefault();
       view.captured = false;
       const shown = target();
       if (!shown) return;
       if (picking.delete(shown.key)) render();
-      document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${shown.key}|${shown.toggle}`)}"]`)?.focus();
+      const at = stoppedAt(shown.key);
+      const slot = at ? slotKey(at.run.hub, at.run.session.ref, at.worker.parallelIndex) : null;
+      const toggle = at && slot && interacting.has(slot) ? 'interact' : shown.toggle;
+      if (at && toggle === 'interact') setInteract(at.run, at.worker, at.stop, false);
+      document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${shown.key}|${toggle}`)}"]`)?.focus();
       return;
     }
     if (decided === 'window' || decided === 'none') return;
@@ -1230,7 +1267,7 @@ async function openShortcutSettings(): Promise<void> {
     }
   } catch {
     await chrome.tabs
-      .create({ url: 'https://piwitests.dev/features/runs-window#the-run-shortcut' })
+      .create({ url: 'https://piwitests.dev/reference/keyboard-shortcuts#the-run-shortcut' })
       .catch(() => undefined);
   }
 }
@@ -1431,6 +1468,9 @@ function forgetGone(current: RunsState): void {
   const liveRuns = new Set(current.runs.filter((r) => !r.session.ended).map((r) => `${r.hub}|${r.session.ref}`));
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
+  }
+  for (const [slot, { hub, run }] of interacting) {
+    if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) interacting.delete(slot);
   }
   // A run's tabs, and why its Stop was refused, last while it does.
   for (const key of tabs.keys()) if (!liveRuns.has(key)) tabs.delete(key);
@@ -2848,10 +2888,11 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
   const view = views.get(key);
   const live = isLive(view);
   const framed = live && !!view.viewport;
+  const interact = interacting.has(slotKey(run.hub, run.session.ref, worker.parallelIndex));
   if (view) {
     syncInput(
       view,
-      framed && view.status === 'on' && intents.includes('input'),
+      framed && view.status === 'on' && intents.includes('input') && interact,
       intents.includes('input-clicks'),
       (events) => sendInput(view, () => views.get(key) === view && view.inputOn, events),
       `${key}|${view.since}`,
@@ -2868,6 +2909,7 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
     watchers: around.watchers,
     live: canView ? live || (away && watched) : null,
     watch: null,
+    interact: live && intents.includes('input') ? interact : null,
     pickable,
     picking: picking.has(key),
   };
@@ -2937,6 +2979,7 @@ function pageHead(
     watchers: string | null;
     live: boolean | null;
     watch: boolean | null;
+    interact: boolean | null;
     pickable: boolean;
     picking: boolean;
   },
@@ -2955,7 +2998,7 @@ function pageHead(
     return made;
   });
   const items = [title];
-  if (tools.live !== null || tools.watch !== null || tools.pickable) {
+  if (tools.live !== null || tools.watch !== null || tools.interact !== null || tools.pickable) {
     const row = part(`${key}|page-tools`, tools, () => {
       const made = element('div', 'piwi-actions page-tools');
       if (tools.live !== null && stop) {
@@ -2969,6 +3012,19 @@ function pageHead(
         made.append(live);
       }
       if (tools.watch !== null) made.append(watchButton(run, worker, 'watch', tools.watch, true));
+      if (tools.interact !== null && stop) {
+        const on = tools.interact;
+        const interact = makeButton(
+          t('runs_interact'),
+          (event) => {
+            if (!pressedHeld(event)) setInteract(run, worker, stop, !on);
+          },
+          { icon: 'hand', small: true, title: t('runs_interactTitle') },
+        );
+        interact.setAttribute('aria-pressed', String(on));
+        interact.dataset.focus = `${key}|interact`;
+        made.append(interact);
+      }
       if (tools.pickable) made.append(pickAtButton(key, tools.picking));
       return made;
     });
@@ -3054,7 +3110,7 @@ function renderLanePage(
     const at: RunsView = { hub: run.hub, ref: run.session.ref, worker: worker.worker, since: viewing ?? '' };
     syncInput(
       lane,
-      viewing !== null && lane.status === 'on' && intents.includes('input'),
+      viewing !== null && lane.status === 'on' && intents.includes('input') && interacting.has(slot),
       intents.includes('input-clicks'),
       (events) => sendInput(at, () => lanes.get(slot) === lane && lane.inputOn && lane.inputSince === at.since, events),
       `${key}|${viewing}`,
@@ -3071,6 +3127,7 @@ function renderLanePage(
     watchers: around.watchers,
     live: null,
     watch: stop ? isWatched(lane) : null,
+    interact: stop && isLive(lane) && intents.includes('input') ? interacting.has(slot) : null,
     pickable,
     picking: picking.has(key),
   };

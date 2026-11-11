@@ -1272,8 +1272,8 @@ test.describe('the live view', () => {
         expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
         await expect(card.getByText('Starting the live view…')).toBeVisible();
         sendFrame(run.worker, 1, before);
-        const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
-        await expect(live).toBeVisible();
+        const live = card.locator('img.live');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         await expect(still).toHaveCount(0);
         await expect(card.locator('.live-badge')).toHaveText('Live');
         // As wide as the window lets it, its aspect kept.
@@ -1282,9 +1282,16 @@ test.describe('the live view', () => {
           img.naturalWidth,
         ]);
         expect(shown[0]).toBeCloseTo(VIEWPORT.width / VIEWPORT.height, 1);
-        await expect(
-          card.getByText('Your clicks, the wheel and your keys on the view go to the test’s page.', { exact: false }),
-        ).toBeVisible();
+        // Watching sends nothing to the page: Interact does, and says so the first time.
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(live).not.toHaveAttribute('tabindex');
+        const inputHint = 'Your clicks, the wheel and your keys on the view go to the test’s page.';
+        await expect(card.getByText(inputHint, { exact: false })).toHaveCount(0);
+        await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page: keys and clicks go to the page');
+        await expect(card.getByText(inputHint, { exact: false })).toBeVisible();
         // Watched, the headless stop takes the actions in its page, driven through the view; More stays open.
         await expect(buttons).toHaveText([
           'Resume',
@@ -1351,7 +1358,7 @@ test.describe('the live view', () => {
     }
   });
 
-  test('a click, the wheel and keys on the live view reach the page at its CSS pixels, Escape staying the window’s', async () => {
+  test('a click, the wheel and keys on the live view reach the page at its CSS pixels once Interact is on, Escape turning it off', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1366,6 +1373,8 @@ test.describe('the live view', () => {
         await watch.click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
         const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
         await expect(live).toBeVisible();
         const buttons = () =>
@@ -1446,17 +1455,20 @@ test.describe('the live view', () => {
         ]);
         await expect(live).toBeFocused();
 
-        // Escape gives the keyboard back, on Watch live; Tab comes back to the view, past Pick on the image, and moves on
-        // from it.
+        // Escape turns Interact off, on Interact, the view watched still: Tab moves on past Pick on the image and the
+        // view, which takes nothing now.
         const sent = input.events.length;
         await runs.keyboard.press('Escape');
-        await expect(watch).toBeFocused();
+        await expect(interact).toBeFocused();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(watch).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('img.live')).toHaveAccessibleName('Live view of the test’s page');
         await runs.keyboard.press('Tab');
         await expect(card.getByRole('button', { name: 'Pick on the image' })).toBeFocused();
         await runs.keyboard.press('Tab');
-        await expect(live).toBeFocused();
-        await runs.keyboard.press('Tab');
-        await expect(live).not.toBeFocused();
+        await expect(card.locator('img.live')).not.toBeFocused();
+        await card.locator('img.live').click({ position: await at(card.locator('img.live'), 0.5, 0.5) });
+        await runs.keyboard.type('c');
         await runs.waitForTimeout(400);
         expect(input.events.length).toBe(sent);
       } finally {
@@ -1487,7 +1499,8 @@ test.describe('the live view', () => {
         await card.getByRole('button', { name: 'Watch live' }).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
-        const live = card.locator('img.live');
+        await card.getByRole('button', { name: 'Interact' }).click();
+        const live = card.locator('img.live[tabindex]');
         await expect(live).toBeVisible();
         const sent = () => input.events.filter((e) => e.type !== 'mouse' || e.action !== 'move');
         await live.dblclick({ position: await at(live, 0.25, 0.5) });
@@ -1661,6 +1674,18 @@ test.describe('the live view', () => {
         await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
         await expect(card.locator('.run-driver')).toHaveCount(0);
         await expect(other.locator('.run-driver')).toHaveCount(0);
+
+        // Interact takes the stop, from the editor driving it again, and turned off gives it back.
+        expect(await editor.svc.client.sendRequest('piwi/pageInput', typed)).toMatchObject({ ok: true });
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
+        await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
       } finally {
         input.stop();
         await endRun(run);
@@ -1754,6 +1779,10 @@ test.describe('the live view', () => {
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         await expect(card.locator('img.live')).toBeVisible();
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
+        const takes = 'Live view of the test’s page: keys and clicks go to the page';
+        await expect(card.locator('img.live')).toHaveAccessibleName(takes);
 
         // The test goes on: the view goes with its stop, and a frame of it shows nowhere.
         run.worker.send({ type: 'running', stop: 1 });
@@ -1770,6 +1799,9 @@ test.describe('the live view', () => {
         sendFrame(run.worker, 2, after);
         const live = card.locator('img.live');
         await expect(live).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
+        // Interact left on sends the input to the new stop's page too.
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toHaveAccessibleName(takes);
 
         // The window hides: it watches nothing until it shows again.
         const hidden = (value: boolean) =>
@@ -1962,7 +1994,7 @@ test.describe('watching a running test', () => {
     }
   });
 
-  test('Pause and watch brings the stop into view, whose frames take input with no view of its own, dimmed across a Step', async () => {
+  test('Pause and watch brings the stop into view, whose frames take Interact’s input with no view of their own, dimmed across a Step', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -2007,12 +2039,16 @@ test.describe('watching a running test', () => {
         await expect(card.getByRole('button', { name: 'Assert a region' })).toBeVisible();
         await expect(card.locator('.controls [aria-disabled]')).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', 1, after);
-        const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
+        const live = card.locator('img.live:not(.stale)');
         await expect(live).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
-        await expect(live).not.toHaveClass(/\bstale\b/);
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         await expect(card.locator('.live-badge')).toHaveText('Live');
 
-        // A click on it reaches the page at its CSS pixels, through the lane: no view of the stop's own is asked.
+        // With Interact, a click on it reaches the page at its CSS pixels, through the lane: no view of the stop's own
+        // is asked.
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
+        await expect(live).toHaveAccessibleName('Live view of the test’s page: keys and clicks go to the page');
         await live.click({ position: await at(live, 0.5, 0.25) });
         await expect
           .poll(() => input.events.filter((e) => e.type === 'mouse' && e.action !== 'move').map((e) => e.action))
@@ -2028,10 +2064,12 @@ test.describe('watching a running test', () => {
         expect(await answerNext(run.worker, 'pick', { ok: true, message: 'Pick an element.' })).toMatchObject({
           stop: 1,
         });
-        // Escape gives the keyboard back to Watch.
+        // Escape turns Interact off, on Interact.
         await live.click({ position: await at(live, 0.25, 0.75) });
         await runs.keyboard.press('Escape');
-        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toBeFocused();
+        await expect(interact).toBeFocused();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         expect(heardRequests(run.worker, 'view')).toEqual([]);
 
         // Watched again once the window shows: the frame before is the page as last seen, dimmed and taking no input,
@@ -2235,9 +2273,8 @@ test.describe('watching a running test', () => {
         await live.click();
         expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
         sendFrame(run.worker, 1, before);
-        await expect(
-          card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' }),
-        ).toBeVisible();
+        await expect(card.getByRole('img', { name: 'Live view of the test’s page', exact: true })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Interact' })).toHaveAttribute('aria-pressed', 'false');
       } finally {
         await endRun(run);
       }

@@ -8234,8 +8234,16 @@
     "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
   },
   "runs_liveTitle": {
-    "message": "Show the test’s page as it paints, in place of its image: your clicks and keys on it go to the page",
+    "message": "Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it",
     "description": "Runs window, the Watch live button’s tooltip."
+  },
+  "runs_interact": {
+    "message": "Interact",
+    "description": "Runs window, a toggle in the stopped page’s card: on, the person’s clicks, wheel and keys on the live view go to the test’s page, and they drive the stop."
+  },
+  "runs_interactTitle": {
+    "message": "Send your clicks, scrolling and keys to the test’s page, driving this stop: Esc gives it back",
+    "description": "Runs window, tooltip of the Interact toggle."
   },
   "runs_liveBadge": {
     "message": "Live",
@@ -8258,7 +8266,7 @@
     "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
   },
   "runs_liveHint": {
-    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",
+    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back; Shift+click picks a locator.",
     "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
   },
   "runs_watch": {
@@ -8266,7 +8274,7 @@
     "description": "Runs window, the toggle button on a worker’s row that shows its test’s page while it runs, through its stops and its next tests. A button: keep it short."
   },
   "runs_watchTitle": {
-    "message": "Show the test’s page as it runs, through its stops and its next tests: at a stop, your clicks and keys on it go to the page",
+    "message": "Show the test’s page as it runs, through its stops and its next tests: at a stop, Interact sends your clicks and keys to it",
     "description": "Runs window, the Watch button’s tooltip."
   },
   "runs_pauseWatch": {

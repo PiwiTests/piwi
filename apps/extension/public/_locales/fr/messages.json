@@ -6927,7 +6927,13 @@
     "message": "Voir en direct"
   },
   "runs_liveTitle": {
-    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : vos clics et vos touches y vont"
+    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : Interagir y envoie alors vos clics et vos touches"
+  },
+  "runs_interact": {
+    "message": "Interagir"
+  },
+  "runs_interactTitle": {
+    "message": "Envoyer vos clics, le défilement et vos touches à la page du test, en pilotant cet arrêt : Échap le rend"
   },
   "runs_liveBadge": {
     "message": "En direct"
@@ -6945,13 +6951,13 @@
     "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
   },
   "runs_liveHint": {
-    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."
+    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap désactive Interagir et rend l’arrêt ; Maj+clic choisit un locator."
   },
   "runs_watch": {
     "message": "Regarder"
   },
   "runs_watchTitle": {
-    "message": "Afficher la page du test pendant qu’il s’exécute, à travers ses arrêts et ses tests suivants : à un arrêt, vos clics et vos touches y vont"
+    "message": "Afficher la page du test pendant qu’il s’exécute, à travers ses arrêts et ses tests suivants : à un arrêt, Interagir y envoie vos clics et vos touches"
   },
   "runs_pauseWatch": {
     "message": "Pause et regarder"
