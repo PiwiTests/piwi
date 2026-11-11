@@ -598,6 +598,92 @@ describe('what each failure of the upload leaves', () => {
   });
 });
 
+describe('the binding as it stands when a sync is sent', () => {
+  /** A sync left queued: its first attempt found the connection's request queue busy and sent nothing. */
+  const queued = async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    vi.spyOn(limiterForConnection(zephyrId), 'wait').mockRejectedValueOnce(new RequestLimiterBusyError(1_000));
+    await runTestManagementSync(db, RUN_ID);
+    const row = await syncRow();
+    expect(row).toMatchObject({ status: 'pending', result: null });
+    return row;
+  };
+
+  test.each([
+    ['is turned off', { enabled: false }, "the project's results sync is turned off"],
+    ['is a dry run', { dryRun: true }, "the project's results sync is a dry run"],
+    ['names another project', { providerProjectKey: 'OPS' }, 'the project now sends results to OPS, not SHOP'],
+    ['is gone', { connectionId: null }, 'the project no longer sends results through this connection'],
+  ])('a binding that %s since the sync was queued skips it and says why', async (_case, change, reason) => {
+    const row = await queued();
+    await bind(change);
+    expect(await runActionNow(db, row.id)).toEqual({ status: 'skipped', reason });
+    expect(await syncRow()).toMatchObject({ status: 'skipped', error: reason });
+    expect(uploads()).toEqual([]);
+  });
+
+  test('a dry run queued before the binding went live is skipped, not recorded as a dry run', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind({ dryRun: true });
+    await runTestManagementSync(db, RUN_ID);
+    const row = await syncRow();
+    await db
+      .update(schema.integrationActions)
+      .set({ status: 'pending', result: null, finishedAt: null })
+      .where(eq(schema.integrationActions.id, row.id));
+    await bind();
+    expect(await runActionNow(db, row.id)).toEqual({
+      status: 'skipped',
+      reason: "the project's results sync is no longer a dry run",
+    });
+    expect(zephyr.requests).toEqual([]);
+  });
+
+  test('a row with an upload start fails as Outcome unknown, not skipped, when the binding changed', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    zephyr.upload = () => json({ message: 'down' }, 503);
+    await runTestManagementSync(db, RUN_ID);
+    const row = await syncRow();
+    // A sweep that reclaims the row puts it back in the queue with its upload start.
+    await db
+      .update(schema.integrationActions)
+      .set({ status: 'pending', finishedAt: null })
+      .where(eq(schema.integrationActions.id, row.id));
+    await bind({ enabled: false });
+    zephyr.requests.length = 0;
+    expect(await runActionNow(db, row.id)).toMatchObject({ status: 'failed', final: true });
+    const after = await syncRow();
+    expect(after.status).toBe('failed');
+    expect(after.error).toMatch(/^Outcome unknown/);
+    expect(after.result).toEqual({ uploadStartedAt: expect.any(Number) });
+    expect(zephyr.requests).toEqual([]);
+  });
+
+  test('a row that holds a test cycle fails naming it, not skipped, when the binding changed', async () => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    vi.spyOn(db, 'transaction').mockRejectedValueOnce(new Error('database is locked'));
+    await runTestManagementSync(db, RUN_ID);
+    const row = await syncRow();
+    expect(row).toMatchObject({ status: 'pending', result: { runKey: 'SHOP-R42' } });
+    await bind({ enabled: false });
+    zephyr.requests.length = 0;
+    expect(await runActionNow(db, row.id)).toMatchObject({ status: 'failed', final: true });
+    expect(await syncRow()).toMatchObject({
+      status: 'failed',
+      error:
+        "The test management tool holds test run SHOP-R42 for this run, but Piwi did not link it: the project's results sync is turned off",
+    });
+    expect(zephyr.requests).toEqual([]);
+  });
+});
+
 describe('Sync again', () => {
   const failUpload = async (status: number) => {
     await seedRun();
@@ -665,11 +751,20 @@ describe('Sync again', () => {
     expect((await refusal(syncAgain(at(RUN_ID)))).statusCode).toBe(409);
   });
 
-  test('a project that no longer sends through the connection is a 409', async () => {
+  test.each([
+    ['is turned off', { enabled: false }, "the project's results sync is turned off"],
+    ['is a dry run', { dryRun: true }, "the project's results sync is a dry run"],
+    ['names another project', { providerProjectKey: 'OPS' }, 'the project now sends results to OPS, not SHOP'],
+    ['is gone', { connectionId: null }, 'the project no longer sends results through this connection'],
+  ])('a binding that %s is a 409 saying so, and the sync stays failed', async (_case, change, reason) => {
     await failUpload(422);
-    await bind({ enabled: false });
-    expect((await refusal(syncAgain(at(RUN_ID)))).statusCode).toBe(409);
+    await bind(change);
+    expect(await refusal(syncAgain(at(RUN_ID)))).toEqual({
+      statusCode: 409,
+      message: `Results not sent again: ${reason}`,
+    });
     expect(zephyr.requests).toEqual([]);
+    expect((await syncRow()).status).toBe('failed');
   });
 
   test('a missing run is a 404', async () => {

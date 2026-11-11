@@ -30,6 +30,10 @@ A run split across shards is sent once, after its last shard reports, with the r
 background action: the run is not held up, and a send that fails because Zephyr is down is retried with a growing
 wait.
 
+The binding is read again when the results go out. If it was turned off, became a dry run or names another Zephyr
+project since the run finished, nothing is sent and the run's panel says why. If Zephyr already holds the test run by
+then, the send fails and names it, so you can find it in Zephyr.
+
 ## What is sent
 
 - **One result per test case key.** When several tests carry the same key, or one test runs in several browsers or
@@ -72,7 +76,8 @@ test run that run's upload may have made, by its name and start time:
 - none found uploads the results again.
 
 A send that failed before the upload, or after the test run was made, only repeats the step that failed. **Sync again**
-works on a failed send; a dry run has nothing to repeat.
+works on a failed send; a dry run has nothing to repeat. It is refused, and says why, while the binding is turned off,
+is a dry run, or names another connection or another Zephyr project.
 
 ## Linked back to the run
 

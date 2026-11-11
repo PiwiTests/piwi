@@ -132,6 +132,36 @@ export function syncOutcomeUnknownMessage(runName: string): string {
   return `Outcome unknown: check the test management tool for a test run named "${runName}", then use Sync again`;
 }
 
+/**
+ * Why a sync can no longer be sent through the project's binding as it stands now, or null when it can: the binding
+ * names another connection, is turned off, names another project in the tool, or no longer agrees on the dry run.
+ */
+export function syncBindingMismatch(
+  binding: Pick<ResolvedTestManagementBinding, 'connectionId' | 'enabled' | 'dryRun' | 'providerProjectKey'> | null,
+  sync: { connectionId: number; providerProjectKey: string; dryRun: boolean },
+): string | null {
+  if (!binding || binding.connectionId !== sync.connectionId) {
+    return 'the project no longer sends results through this connection';
+  }
+  if (!binding.enabled) return "the project's results sync is turned off";
+  if (binding.providerProjectKey !== sync.providerProjectKey) {
+    return `the project now sends results to ${binding.providerProjectKey ?? 'no project'}, not ${sync.providerProjectKey}`;
+  }
+  if (binding.dryRun && !sync.dryRun) return "the project's results sync is a dry run";
+  if (!binding.dryRun && sync.dryRun) return "the project's results sync is no longer a dry run";
+  return null;
+}
+
+/** The failure a sync records when the tool holds its test run but the binding changed before Piwi linked it. */
+export function syncRunNotLinkedMessage(runKey: string, reason: string): string {
+  return `The test management tool holds test run ${runKey} for this run, but Piwi did not link it: ${reason}`;
+}
+
+/** The refusal Sync again answers when the binding no longer takes the sync. */
+export function syncAgainRefusedMessage(reason: string): string {
+  return `Results not sent again: ${reason}`;
+}
+
 export interface BuildSyncInput {
   run: SyncRunFacts;
   /** Every attempt row of the run. */

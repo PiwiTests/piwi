@@ -5,13 +5,18 @@ import { failProviderCall, requireTestManagementClient } from '../../../utils/in
 import { INTERACTIVE_MAX_WAIT_MS } from '../../../utils/integrations/test-management/limiter';
 import { findFailedSync, requeueFailedSync } from '../../../utils/integrations/test-management/sync-again';
 import { ZEPHYR_INTERACTIVE_TIMEOUT_MS } from '../../../utils/integrations/test-management/zephyr-scale';
+import {
+  syncAgainRefusedMessage,
+  syncBindingMismatch,
+  type SyncActionPayload,
+} from '#shared/integrations/test-management-sync';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: "Send a run's results to the test management tool again",
     description:
-      "Queues the run's failed results sync again and makes one attempt at once. A sync that failed as *Outcome unknown* (the upload may have reached the tool) first looks in the tool for the test run it may have made: one found is linked to the run and not made again; none found uploads again. A sync that failed before sending, or after the test run was made, only repeats the step that failed. Answers `status` (`done`, `failed` or `skipped`) with the sync's `error` or `result` (`runKey`, `runUrl`, `sent`); `failed` with `retrying` stays queued for the outbox. 404 for a missing run, 409 when the run has no failed sync or its project's binding no longer names the sync's connection; 429 with `Retry-After` while the connection is rate limited; 502 when the tool fails or refuses the token (a refused token also marks the connection failed). Never returns the token. Requires `run:control` (Maintainer and above on the project).",
+      "Queues the run's failed results sync again and makes one attempt at once. A sync that failed as *Outcome unknown* (the upload may have reached the tool) first looks in the tool for the test run it may have made: one found is linked to the run and not made again; none found uploads again. A sync that failed before sending, or after the test run was made, only repeats the step that failed. Answers `status` (`done`, `failed` or `skipped`) with the sync's `error` or `result` (`runKey`, `runUrl`, `sent`); `failed` with `retrying` stays queued for the outbox. 404 for a missing run, 409 when the run has no failed sync, or when its project's binding no longer takes it: the binding names another connection or another project in the tool, is turned off or is a dry run (the message says which); 429 with `Retry-After` while the connection is rate limited; 502 when the tool fails or refuses the token (a refused token also marks the connection failed). Never returns the token. Requires `run:control` (Maintainer and above on the project).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'run:control',
   },
@@ -23,10 +28,13 @@ export default eventHandler(async (event) => {
 
   const action = await findFailedSync(db, id);
   if (!action) throw apiError({ statusCode: 409, message: 'This run has no failed results sync' });
-  const binding = await readTestManagementBinding(db, projectId);
-  if (!binding.enabled || binding.connectionId !== action.connectionId) {
-    throw apiError({ statusCode: 409, message: 'This project no longer sends results through that connection' });
-  }
+  const payload = action.payload as SyncActionPayload;
+  const refused = syncBindingMismatch(await readTestManagementBinding(db, projectId), {
+    connectionId: action.connectionId,
+    providerProjectKey: payload.providerProjectKey,
+    dryRun: payload.dryRun === true,
+  });
+  if (refused) throw apiError({ statusCode: 409, message: syncAgainRefusedMessage(refused) });
 
   const { client } = await requireTestManagementClient(event, db, action.connectionId, {
     timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,

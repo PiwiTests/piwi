@@ -49,9 +49,12 @@ import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import { applySyncResults, SyncUploadError } from './test-management/sync';
 import { RequestLimiterBusyError } from './test-management/limiter';
+import { readTestManagementBinding } from './test-management/binding';
 import {
   readSyncState,
+  syncBindingMismatch,
   syncOutcomeUnknownMessage,
+  syncRunNotLinkedMessage,
   uploadOutcomeUnknown,
   type SyncActionPayload,
 } from '#shared/integrations/test-management-sync';
@@ -780,8 +783,13 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
   const kind = integrationKindOf(action.kind);
   if (!kind) return skip(`unsupported action kind '${action.kind}'`);
 
-  // An action writes only through the connection its project's binding for its kind names.
-  if ((await boundConnectionId(db, action.projectId, kind)) !== action.connectionId) return skip(NOT_BOUND);
+  if (action.kind === 'sync-results') {
+    const refused = await checkSyncAtSend(db, action, attempts, now, skip);
+    if (refused) return refused;
+  } else if ((await boundConnectionId(db, action.projectId, kind)) !== action.connectionId) {
+    // An action writes only through the connection its project's binding for its kind names.
+    return skip(NOT_BOUND);
+  }
 
   if (action.kind === 'create-issue' && createOutcomeUnknown(action.result)) {
     const payload = action.payload as CreateIssueActionPayload;
@@ -789,15 +797,6 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     await db
       .update(integrationActions)
       .set({ status: 'failed', error, result: null, attempts, finishedAt: now })
-      .where(eq(integrationActions.id, action.id));
-    return { status: 'failed', error, final: true };
-  }
-
-  if (action.kind === 'sync-results' && uploadOutcomeUnknown(readSyncState(action.result))) {
-    const error = syncOutcomeUnknownMessage((action.payload as SyncActionPayload).run.name);
-    await db
-      .update(integrationActions)
-      .set({ status: 'failed', error, attempts, finishedAt: now })
       .where(eq(integrationActions.id, action.id));
     return { status: 'failed', error, final: true };
   }
@@ -837,6 +836,39 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     case 'wiki':
       return skip(`unsupported action kind '${action.kind}'`);
   }
+}
+
+/**
+ * What stops a sync before it is sent, or null when nothing does. A row that holds an upload start and no test run
+ * fails as Outcome unknown, whatever the binding says now. Otherwise the project's binding is read as it stands: one
+ * that no longer takes the sync skips it, unless the tool already holds the sync's test run, which then fails, naming
+ * the run, so it is not left unlinked in silence.
+ */
+async function checkSyncAtSend(
+  db: DbClient,
+  action: IntegrationAction,
+  attempts: number,
+  now: Date,
+  skip: (reason: string) => Promise<ActionOutcome>,
+): Promise<ActionOutcome | null> {
+  const payload = action.payload as SyncActionPayload;
+  const state = readSyncState(action.result);
+  const fail = async (error: string): Promise<ActionOutcome> => {
+    await db
+      .update(integrationActions)
+      .set({ status: 'failed', error, attempts, finishedAt: now })
+      .where(eq(integrationActions.id, action.id));
+    return { status: 'failed', error, final: true };
+  };
+  if (uploadOutcomeUnknown(state)) return fail(syncOutcomeUnknownMessage(payload.run.name));
+  const binding = action.projectId == null ? null : await readTestManagementBinding(db, action.projectId);
+  const reason = syncBindingMismatch(binding, {
+    connectionId: action.connectionId,
+    providerProjectKey: payload.providerProjectKey,
+    dryRun: payload.dryRun === true,
+  });
+  if (!reason) return null;
+  return state.runKey ? fail(syncRunNotLinkedMessage(state.runKey, reason)) : skip(reason);
 }
 
 /** Run a tracker action through its tracker client, recording a success or a skip. */
