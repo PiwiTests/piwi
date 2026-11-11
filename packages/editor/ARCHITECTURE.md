@@ -200,7 +200,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
-    `piwi/shareRun`, `piwi/agents`;
+    `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -210,14 +210,17 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`,
+  `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
-another tool asks (`piwi/stopRun`), as both clients do, and `agents` for the agents' MCP server ([Agents](#agents)).
-`piwi/stopRun` is the one request the service sends a client: VS Code ends the run's task, the JetBrains plugin its
-process, and the answer (`RunControlResult`) refuses a run the client did not start.
+another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
+agent (`piwi/startRun`), and `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
+requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
+(`RunControlResult`) refuses a run the client did not start; and `piwi/startRun`, whose answer says whether the client
+started the run.
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -500,7 +503,9 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
 
 - `fixed`: the tests failing before that it passed;
 - `stillFailing`: the tests it failed again (failing before in another run, or not new on the instance's word);
-- `newFailures`: the tests it failed that were not failing before.
+- `newFailures`: the tests it failed that were not failing before;
+- `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
+  (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
 
@@ -632,8 +637,9 @@ test running Playwright itself) takes no worker's place.
 
 The run's own process (the reporter in Playwright's runner) keeps a connection of its own from its `onBegin` to its
 `onEnd` (`run-begin`, `RunSessions.attachMain`): how many tests the run holds, then each that ended for good
-(`run-progress`) and how the run ended with its first failure (`run-end`), which the session keeps as
-`RunSession.progress` (`HubSession.progress`): the status bars count from it. Its page on the instance (`run-page`, its
+(`run-progress`, with how many of the skipped were ended at a stop, `endedAtStop`) and how the run ended with its
+first failure (`run-end`), which the session keeps as `RunSession.progress` (`HubSession.progress`): the status bars
+count from it. Its page on the instance (`run-page`, its
 number and address, once the reporter knows them) is kept as `RunSession.page` (`HubSession.page`), which every surface
 links as `#78 · Open`; the hub names each stop's line where it stands now in the editor (`lineNow`, through
 `RunLines`), and a run whose reporter connected is remembered (`heardFrom`) so a command that ends without reaching the
@@ -942,6 +948,19 @@ though nobody asked (the instance stopped answering, refused the key) ends with 
 once a run, as a notice, kept as `stopped` until a person shares it again, and a worker that connects later no longer
 shares. Nothing of the stream passes through the service, and no agent's tool shares a run.
 
+**The window's runs.** `piwi/shareRun { scope: 'window' }` shares every run the window starts from then on until the
+person stops or the window closes (`RunSessions.shareAll`, said in `piwi/shareWindowChanged`, which the clients show in
+the status bar), the named run too: a session opened meanwhile starts shared (`Session.byWindow`), says so once it is
+(`piwi/notice`), and its workers name the run on the instance the window shared before it (`share`'s `after`, fixed
+per run once its page is known, `Session.after`), which the instance links to it ("Continued in run #78"). Off, it stops
+every shared run of the window. A client sends it again after the service starts again.
+
+**Ask to watch.** A teammate's ask reaches the run's own process in an answer of its stream, which hands it to the
+service (`run-ask` on its connection, `RunSessions.attachMain`): the client asks the developer
+(`piwi/askToWatch { ref, id, by, run }`) with Share live (`piwi/shareRun`) and Not now (`piwi/answerAsk`), which the
+service writes back on that connection (`ask-answer`) for the run's process to tell the instance. A run whose process
+predates it, or no longer reaches the service, gets no answer.
+
 ### Code from a stop
 
 `src/stop-actions.ts` (`StopActions`) runs what a client and Piwi Picker start at a stop of a run the service built;
@@ -1058,7 +1077,9 @@ answered with its address and token), and closes as the client turns it off or t
   to copy the configuration again, and `piwi/agentsChanged` with the new address and token, which the clients keep
   as they keep `piwi/agents`'s answer; it is sent only when they differ from what the client holds. `piwi/agents`
   with `newToken` (the clients' Reset the token) gives the server a new token (`AgentServer.newToken`), the one
-  before refused from the next request on.
+  before refused from the next request on. The server also takes a token of its process alone (`localToken`), which
+  the client never keeps: the one the discovery file names for `piwi mcp`, so the kept token stays off the disk, and a
+  file a killed service left names a token nothing takes. A new token renews it too.
 - A request whose `Host` is not `127.0.0.1` or `localhost` at its port is a 403 (`isHubHost`: DNS rebinding), and so is
   one that carries an `Origin`: a browser sends one with every POST, MCP clients are native. Another path is a 404,
   another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token
@@ -1071,9 +1092,29 @@ answered with its address and token), and closes as the client turns it off or t
 As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
 registration of the server (VS Code's provider) or a configuration the developer copies.
 
-**The tools** (`src/run-agent.ts`, `RunAgent`): `run_list`, `run_follow`, `run_control`, `page_snapshot`, `page_act`,
-`page_locator` and `code_write`, each with a closed set of arguments read one by one (`Args`, an unknown one refused)
-and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`).
+**The tools** (`src/run-agent.ts`, `RunAgent`): `run_start` (for a client that runs one, below), `run_list`,
+`run_follow`, `run_control`, `page_snapshot`, `page_act`, `page_locator` and `code_write`, each with a closed set of
+arguments read one by one (`Args`, an unknown one refused) and a JSON schema that names them (`AGENT_TOOLS`,
+`runStartTool`, `additionalProperties: false`; the server lists `RunAgent.definitions()`).
+
+- **Starting a run.** `run_start { file, line?, headed?, hold?, agent? }` builds the run as `piwi/runArgs` builds a
+  person's (`runCommandFor`, from the spec and, for a line, the line of the test holding it as a location), holding
+  failures unless `hold` is false, and asks the client to run it (`piwi/startRun`, `RunCommand.label`:
+  `Started by <agent>`, the name without its control and direction characters, `agentLabel`); a file no folder of the
+  workspace holds, through a link too, or that is no spec of a config runs nothing. It is listed only for a client
+  that sent `InitializationOptions.startsRuns`. The run is followed from its start: `run_list` lists it as `starting`
+  and `run_follow` waits on it until its workers connect, and a command that ends before any does
+  (`piwi/commandEnded`, `RunAgent.commandEnded`) ends it with its exit code. Three runs agents started run at once at
+  most (`MAX_AGENT_RUNS`); once no agent follows one, the stops an agent asked for and the failures it holds go on,
+  unless a person drives them.
+- **The list.** `run_list` names, for each run, what started it (`launcher`: the host, a terminal or a test runner),
+  its page, progress, Hold failures, whether it is shared live and who has it open, and each worker's lane. A failed
+  test's error, which may quote the page, goes in the page-content block with the stops' errors.
+- **The router.** The discovery file names the server while it serves (`agents`, with `localToken`), and the
+  reporter's `piwi mcp` forwards the tools of every editor and of the desktop app to an agent as one set, each call to
+  the host of its run. `piwi/mcp` says which server is the desktop app's (`McpServerDefinition.desktop`): VS Code
+  lists it for its agent with `?runs=off` while it lists its own runs' server, which leaves that app's run tools of
+  the same names out, and a configuration copied keeps them.
 
 - **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
   start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of

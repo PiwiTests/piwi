@@ -6595,6 +6595,24 @@
       }
     }
   },
+  "runs_progressEndedAtStop_one": {
+    "message": "$count$ terminada en una parada",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressEndedAtStop_other": {
+    "message": "$count$ terminadas en una parada",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_endedPassed": {
     "message": "La ejecución se superó."
   },

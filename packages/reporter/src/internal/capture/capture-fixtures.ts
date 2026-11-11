@@ -138,7 +138,6 @@ import {
   withEndSignal,
   withInspector,
   withTestTimeoutHeld,
-  ENDED_REASON,
   type CodeIntent,
   type GoOn,
   type PauseAnswer,
@@ -187,6 +186,7 @@ import {
   type RunControl,
 } from './run-channel.js';
 import {
+  ENDED_AT_STOP_REASON,
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
   MAX_WAITING_TITLE,
@@ -2116,7 +2116,7 @@ function endTest(
   }
   sink.ended = true;
   skipAtFunctionEnd(sink);
-  sink.end.abort(new Error(ENDED_REASON));
+  sink.end.abort(new Error(ENDED_AT_STOP_REASON));
   if (reason === 'page-pause' || call?.endable) {
     const what = reason === 'page-pause' ? 'nothing after its page.pause() runs' : `${title} never runs`;
     console.log(`[piwi] Ended the test at ${line}: ${what}, and the test is skipped.`);
@@ -2145,13 +2145,13 @@ function endsNow(sink: CaptureSink): boolean {
 
 /**
  * The error that skips an attempt ended at a stop: the runner's own (`testInfo.skip()`, which records the `skip`
- * annotation with `ENDED_REASON`), taken once and thrown again by each locator call after.
+ * annotation with `ENDED_AT_STOP_REASON`), taken once and thrown again by each locator call after.
  */
 function skipOf(sink: CaptureSink): unknown {
   if (sink.skip === undefined) {
     try {
-      sink.testInfo?.skip(true, ENDED_REASON);
-      sink.skip = new Error(`Test is skipped: ${ENDED_REASON}`);
+      sink.testInfo?.skip(true, ENDED_AT_STOP_REASON);
+      sink.skip = new Error(`Test is skipped: ${ENDED_AT_STOP_REASON}`);
     } catch (error) {
       sink.skip = error;
     }
@@ -3836,7 +3836,7 @@ const runControl: RunControl = {
     // Ended in place of the stop the Pause waited for: the next test does not stop for it.
     if (sink.pause) sink.pause.pause = false;
     skipAtFunctionEnd(sink);
-    sink.end.abort(new Error(ENDED_REASON));
+    sink.end.abort(new Error(ENDED_AT_STOP_REASON));
     const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
     const said = endable
       ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`

@@ -183,8 +183,28 @@ the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page 
 to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
 reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
 worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
-be decided; and the tray as a compact list. The later phases are
-proposed. The bugs the analysis
+be decided; and the tray as a compact list. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
+routes an agent's calls to every host of the machine as one set of tools under one user-scope entry, with no run logic
+of its own (each editor's discovery file names its agents' server, `agents`, and the desktop app's `/mcp` is reached
+once its server proved its token): `run_list` asks every host and names each run's host, `run_start` goes to the
+editor whose workspace holds the spec, any other call to the host of its run (IO3, IO12). `run_start {file, line?,
+headed?, hold?}` builds the run as a person's and has the client run it where the developer sees it, labeled with the
+agent's name (`piwi/startRun`, `InitializationOptions.startsRuns`); `run_list` names each run's launcher, page,
+progress, Hold failures, sharing and presence, and each worker's lane (IO23 in part); VS Code lists the desktop app's
+MCP server with `?runs=off` while it serves its own runs, so its agent hears one set (IO13); the skills that verify a
+fix lead with `run_start`. Left of P8: `run_start` on the desktop app, whose runs the shell starts from its window.
+Then P9, share by intent and ask to watch (IO15, IO16, DB13, LV-10, F6). Both editors share "this run" or "this
+window's runs until I stop" (open question 5: it ends with the window): `piwi/shareRun { scope: 'window' }`, said in
+the status bar (`piwi/shareWindowChanged`) and as each run is shared, each run's workers naming on their stream the run
+shared before it (`share`'s `after`), which the instance links (`test_runs.continued_in_id`): the earlier run's page
+says **Continued in run #78** and follows it. A run whose test was ended at a stop is marked **Ended at a stop**, a mark
+with every status kept (open question 8), counted by the reporter (`endedAtStop`). **Ask to watch** (open question 6:
+any signed-in reader, both named, a project setting on by default, `projects.ask_to_watch`): the instance keeps an ask
+in memory and hands it to the run's reporter in an answer of the run's stream, which hands it to its hub (`run-ask`),
+whose tool asks the developer (`piwi/askToWatch`, the desktop app's toast) or, with no hub, prints it; **Not now** goes
+back the same way (`ask-answer`, `askAnswer`), and sharing answers it. `PIWI_SHARE_LIVE=1` shares a run from its start
+outside CI, and **Not shared live** shows once, in the run page's toolbar, with **Ask to watch**. Left of P9: Piwi
+Picker's Runs window offers no window scope. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -854,12 +874,15 @@ runs the performance check.
 3. Should piped runs attach unattended by default, or only with `PIWI_EDITOR=on`?
 4. Is the in-process instrumentation listener, Playwright's deepest internal, acceptable for the call log of pausable
    runs, or should those show the call and the element's state only?
-5. Should "this window's runs until I stop" expire after a time, or with a branch change?
+5. Should "this window's runs until I stop" expire after a time, or with a branch change? Answered: neither, it ends
+   with the window (built in P9).
 6. **Ask to watch**: who may ask (any reader, or members only), is each side named to the other, and can a project
-   turn it off?
+   turn it off? Answered: any signed-in reader, the asker named to the developer and the answer shown to the asker,
+   and a project setting, on by default (built in P9).
 7. The pending pull-request status: on by default where pull-request feedback is set up? A commit status or a check
    run? What is GitLab's equivalent?
 8. Should a run whose test was ended at a stop get a run status of its own rather than a mark (a wire change)?
+   Answered: a mark, every status kept (built in P9).
 9. JetBrains: keep Swing, fed with the service's words, or host the lane view in JCEF?
 10. Should a run with breakpoints stay headed by default, now that a headless stop can be watched?
 11. `run_start`: a spec and a line only, or any argument the service's checker accepts? Should an agent's first run in

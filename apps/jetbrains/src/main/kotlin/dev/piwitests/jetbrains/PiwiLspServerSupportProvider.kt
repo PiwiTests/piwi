@@ -20,6 +20,7 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
 import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
+import com.intellij.util.concurrency.AppExecutorUtil
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
@@ -162,9 +163,12 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "runControl" to true,
             "stopCode" to true,
             "stopsRuns" to true,
+            "startsRuns" to true,
             "agents" to service.agentsOptions(),
         )
         PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
+        // A service started again shares the project's runs as the person left them: the project has not closed.
+        if (project.getServiceIfCreated(PiwiRunSessions::class.java)?.windowShared == true) options["shareWindow"] = true
         return options
     }
 
@@ -259,6 +263,16 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRunSessions>().heard(session)
     }
 
+    @JsonNotification("piwi/shareWindowChanged")
+    fun shareWindowChanged(params: ShareWindowParams) {
+        project.service<PiwiRunSessions>().windowSharedChanged(params.on)
+    }
+
+    @JsonNotification("piwi/askToWatch")
+    fun askToWatch(ask: AskToWatchParams) {
+        project.service<PiwiRunSessions>().askedToWatch(ask)
+    }
+
     @JsonNotification("piwi/pageFrame")
     fun pageFrame(frame: PageFrame) {
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.frame(frame)
@@ -273,6 +287,26 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/stopCode")
     fun stopCode(code: StopCode) {
         project.service<PiwiRunSessions>().write(code)
+    }
+
+    /**
+     * Run the command the service built for an agent's `run_start` as a person's run starts, on a pooled thread, and
+     * say who started it in a balloon; refused in an untrusted project.
+     */
+    @JsonRequest("piwi/startRun")
+    fun startRun(params: StartRunParams): CompletableFuture<StartRunResult> {
+        val command = params.command
+        if (!project.service<PiwiProjectService>().trusted()) {
+            return CompletableFuture.completedFuture(StartRunResult(false, Glue.UNTRUSTED))
+        }
+        return CompletableFuture.supplyAsync({
+            if (!PiwiCommands.startRun(project, command, emptyList())) {
+                StartRunResult(false, "The IDE has no command to run.")
+            } else {
+                command.label?.let { PiwiCommands.notify(project, "$it: ${command.command.orEmpty()}") }
+                StartRunResult(true, "The IDE runs it.")
+            }
+        }, AppExecutorUtil.getAppExecutorService())
     }
 
     /**

@@ -36,7 +36,9 @@ Without it, the CLI does the same: `npx @piwitests/reporter bug <id>`, with the 
 4. **Fix the bug** in the application code. Keep the change to what the evidence and the expected result point at.
 
 5. **Prove the fix.** Remove the `test.fail()` line from the bug's spec and run it: it must pass. Run the tests that
-   visit the page too (`npx playwright test <their files>`), so the fix breaks nothing around it.
+   visit the page too (`npx playwright test <their files>`), so the fix breaks nothing around it. With Piwi's run tools
+   connected (`npx @piwitests/reporter mcp`), start each with `run_start` instead: a test that fails waits at its line
+   for you to read its page (`run_follow`, `page_snapshot`).
 
 6. **Report.** The cause, the fix, the spec file, and the two runs. Once the spec passes without `test.fail()` in a
    run on the project's default branch (not a `piwi bug` run), Piwi closes the report on its own; before that, such a

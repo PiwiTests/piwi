@@ -10,6 +10,7 @@ import {
   LIVE_FRAME_WIDTH,
   LIVE_SHARE_MISSING,
   LIVE_SHARE_UNKNOWN,
+  LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_ENV,
   MAX_LIVE_FRAME,
   liveRunPage,
@@ -27,7 +28,7 @@ import {
 } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
-import { PIWI_RUN_LOG_ENV } from '../config/env.js';
+import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
@@ -116,6 +117,8 @@ interface Link {
   refused: string | null;
   /** Whether the stream is wanted: from the start in a CI run, while a person shares the run outside one. */
   sharing: boolean;
+  /** The run on the instance this one continues (`LIVE_VIEW_AFTER_PARAM`), named on each stream it opens. */
+  after: number | null;
   /** Why the sharing stopped though nobody asked: the instance did not answer after the retries, or took no key. */
   lost: string | null;
   /** A CI run's: the file the global setup reads the worker's lines from for the run's log (`PIWI_RUN_LOG`). */
@@ -285,7 +288,9 @@ export function openLiveView(
     retries: 0,
     ended: false,
     refused: null,
-    sharing: ci,
+    // A run outside CI shares from its start when it was asked to (`PIWI_SHARE_LIVE`), as a CI run does.
+    sharing: ci || env[PIWI_SHARE_LIVE_ENV] === 'true',
+    after: null,
     ci,
     lost: null,
     runLog: ci ? env[PIWI_RUN_LOG_ENV] || null : null,
@@ -305,7 +310,7 @@ export function openLiveView(
     logRefused: false,
     masks: [],
   };
-  if (ci) connect(link);
+  if (link.sharing) connect(link);
   changed();
   return true;
 }
@@ -332,16 +337,17 @@ export function closeLiveView(): void {
  * the stream closes, so nothing more goes to the instance. Each one waits for the one before. Nothing happens for a
  * worker without a key, or whose key the instance refused for good.
  */
-export function shareLiveView(on: boolean): Promise<void> {
-  const turn = shareTurn.then(() => (on ? startSharing() : stopSharing()));
+export function shareLiveView(on: boolean, after: number | null = null): Promise<void> {
+  const turn = shareTurn.then(() => (on ? startSharing(after) : stopSharing()));
   shareTurn = turn.catch(() => undefined);
   return turn;
 }
 
-function startSharing(): void {
+function startSharing(after: number | null): void {
   const own = link;
   if (!own || own.ended || own.refused || own.sharing) return;
   own.sharing = true;
+  own.after = after;
   own.lost = null;
   own.answered = null;
   own.retries = 0;
@@ -434,6 +440,7 @@ function connect(own: Link): void {
   url.searchParams.set('worker', String(own.id.worker));
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
   if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
+  if (own.after !== null) url.searchParams.set(LIVE_VIEW_AFTER_PARAM, String(own.after));
   let openedAt: number | null = null;
   let dropped = false;
   /**

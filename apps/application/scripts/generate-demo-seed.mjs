@@ -4856,9 +4856,51 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     );
   const slowest = steps.reduce((a, b) => (ownMs(b) > ownMs(a) ? b : a));
 
+  // The run before it, from the same editor window, whose runs the developer shares live together: its test stood at
+  // the first breakpoint until they started it again, which cancelled it, so it stored no result. The paused run
+  // continues it (`continued_in_id`), and its page says so.
+  const earlierId = runId++;
   const id = runId++;
   const executionId = trcId++;
   const startTime = Math.floor(T / 1000);
+  const earlierStart = startTime - 4 * 60;
+  TEST_RUNS.push({
+    id: earlierId,
+    project_id: 1,
+    status: 'cancelled',
+    start_time: earlierStart,
+    duration: 9_000,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 0,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: null,
+    p90_test_duration: null,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.59.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    continued_in_id: id,
+    created_at: earlierStart,
+    updated_at: earlierStart + 9,
+  });
   TEST_RUNS.push({
     id,
     project_id: 1,
@@ -5033,6 +5075,154 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       failure: null,
     });
   }
+}
+
+// ── A test ended at a stop (post-processing, rng-free) ──────────────────────
+// A run the editor started on the same branch, one cart test stopped at its
+// breakpoint (`PIWI_PAUSE_AT`) before it removes the item, and ended there with
+// End the test: Playwright skips it with Piwi's reason, so the run passed and
+// the result is marked "Ended at a stop", never a plain pass. Dated before the
+// project's newest runs and on a branch, as the paused run above.
+{
+  const testCase = TEST_CASES.find((c) => c.project_id === 1 && c.title === 'should remove item from cart');
+  const template = TEST_RUNS_CASES.filter((row) => row.test_case_id === testCase.id && row.status === 'passed')
+    .filter((row) => row.started_at !== null)
+    .sort((a, b) => b.started_at - a.started_at)[0];
+  if (!template) throw new Error('No passing remove-from-cart execution to model the ended one on');
+  const caseDef = caseById.get(testCase.id);
+  const commit = SCM_REPOS[1].commits[0];
+  const line = (n) => `${caseDef.file}:${caseDef.declLine + n}`;
+
+  const T = BASE_START_MS - 75 * 60 * 1000;
+  const stop = { at: 1_100, duration: 3_800, title: "Click getByRole('button', { name: 'Remove' })", line: 2 };
+  const afterHooksAt = stop.at + stop.duration + 30;
+  const clockMs = afterHooksAt + 200;
+  // Playwright's duration leaves the stop out.
+  const duration = clockMs - stop.duration;
+  const id = runId++;
+  const startTime = Math.floor(T / 1000);
+  TEST_RUNS.push({
+    id,
+    project_id: 1,
+    status: 'passed',
+    start_time: startTime,
+    duration: clockMs + 1_200,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 1,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: duration,
+    p90_test_duration: duration,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.68.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${caseDef.file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    created_at: startTime,
+    updated_at: startTime + Math.ceil((clockMs + 1_200) / 1000),
+  });
+  TEST_RUNS_CASES.push({
+    ...template,
+    id: trcId++,
+    test_run_id: id,
+    status: 'skipped',
+    duration,
+    error: null,
+    failure_cluster_id: null,
+    retries: 0,
+    repeat_each_index: 0,
+    attempts: JSON.stringify([{ retry: 0, status: 'skipped', duration, startedAt: T }]),
+    is_new_regression: 0,
+    is_new_flaky: 0,
+    line: caseDef.declLine,
+    column: caseDef.declColumn,
+    // `ENDED_AT_STOP_REASON` of `@piwitests/core/run-channel`, as the reporter's skip records it.
+    test_annotations: [{ type: 'skip', description: 'Ended from Piwi' }],
+    steps: [
+      {
+        title: 'Navigate',
+        subtitle: '/cart',
+        category: 'navigation',
+        startTime: T + 400,
+        duration: 600,
+        location: `${line(1)}:16`,
+      },
+    ],
+    locator_pages_payload_id: null,
+    step_events: [
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startedAt: T,
+        duration: 360,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'Fixture "context"', category: 'fixture', duration: 120 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 100 },
+          { title: 'beforeEach hook', category: 'hook', duration: 140 },
+        ],
+      },
+      {
+        title: stop.title,
+        category: 'pause',
+        startedAt: T + stop.at,
+        duration: stop.duration,
+        status: 'breakpoint',
+        location: `${line(stop.line)}:5`,
+      },
+      {
+        title: 'After Hooks',
+        category: 'hook',
+        startedAt: T + afterHooksAt,
+        duration: 200,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'afterEach hook', category: 'hook', duration: 120 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 80 },
+        ],
+      },
+    ],
+    wasted_time_ms: 0,
+    slowest_step: 'Navigate',
+    slowest_step_duration: 600,
+    web_vitals: null,
+    page_state: null,
+    ai_usage: null,
+    console_logs: null,
+    dialogs: null,
+    aria_snapshot: null,
+    aria_snapshot_json: null,
+    aria_snapshot_payload_id: null,
+    evidence_sources: null,
+    code_reach_payload_id: null,
+    coverage_payload_id: null,
+    page_inventory_payload_id: null,
+    resources: null,
+    worker_index: 0,
+    shard_index: null,
+    started_at: T,
+    did_not_run_reason: null,
+    blocked_by: null,
+    created_at: T,
+  });
 }
 
 function collectAnchorSec() {

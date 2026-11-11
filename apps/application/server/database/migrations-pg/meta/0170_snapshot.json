@@ -1,5 +1,5 @@
 {
-  "id": "d89da9b7-91b2-435a-b71e-fd5d442e07ac",
+  "id": "1e6c9d9d-2660-4530-8d92-8ca4d86e20b0",
   "prevId": "dfa840ee-923c-4175-bb93-e5ae4fc253b0",
   "version": "7",
   "dialect": "postgresql",
@@ -2871,112 +2871,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.entity_link_dismissals": {
-      "name": "entity_link_dismissals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "failure_cluster_id": {
-          "name": "failure_cluster_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "removed_by": {
-          "name": "removed_by",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "removed_at": {
-          "name": "removed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_entity_link_dismissals_cluster_key": {
-          "name": "idx_entity_link_dismissals_cluster_key",
-          "columns": [
-            {
-              "expression": "failure_cluster_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_entity_link_dismissals_removed_by": {
-          "name": "idx_entity_link_dismissals_removed_by",
-          "columns": [
-            {
-              "expression": "removed_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "entity_link_dismissals_failure_cluster_id_failure_clusters_id_fk": {
-          "name": "entity_link_dismissals_failure_cluster_id_failure_clusters_id_fk",
-          "tableFrom": "entity_link_dismissals",
-          "tableTo": "failure_clusters",
-          "columnsFrom": ["failure_cluster_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "entity_link_dismissals_removed_by_users_id_fk": {
-          "name": "entity_link_dismissals_removed_by_users_id_fk",
-          "tableFrom": "entity_link_dismissals",
-          "tableTo": "users",
-          "columnsFrom": ["removed_by"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.entity_links": {
       "name": "entity_links",
       "schema": "",
@@ -3208,28 +3102,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_entity_links_cluster_declared_key": {
-          "name": "idx_entity_links_cluster_declared_key",
-          "columns": [
-            {
-              "expression": "failure_cluster_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "origin IN ('annotation', 'tag')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3911,12 +3783,6 @@
         "announced_at": {
           "name": "announced_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "declared_issues_more": {
-          "name": "declared_issues_more",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -9555,6 +9421,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ask_to_watch": {
+          "name": "ask_to_watch",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "status_filter": {
           "name": "status_filter",
           "type": "jsonb",
@@ -13492,6 +13365,12 @@
         "live_view_key_digests": {
           "name": "live_view_key_digests",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "continued_in_id": {
+          "name": "continued_in_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

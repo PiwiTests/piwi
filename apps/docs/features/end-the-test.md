@@ -10,7 +10,8 @@ lang: en-US
 
 At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the locator call it
 stopped before never runs (Playwright 1.62 or later), nor the rest of the test, and Playwright reports it as skipped,
-its `skip` annotation reading `Ended from Piwi`. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
+its `skip` annotation reading `Ended from Piwi`. Its result reads **Ended at a stop**, never a plain skip, on the run's
+page, the test's pages, Piwi Picker's Runs window, the desktop app's Local runs tray and both editors. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
 steps you were missing, and the rest of the test has nothing to show you.
 
 ## Where it is
@@ -54,11 +55,32 @@ Test** ends it:
 - **A retry** is an attempt of its own. Playwright does not retry a skipped test; a failure you let end runs the next
   attempt, which stops at your breakpoints as the first did.
 
+## How the result reads
+
+The test keeps Playwright's status, skipped: it counts among the skipped tests, and its run passes or fails on its
+other tests. What changes is the mark each tool puts on it:
+
+- **The dashboard**: the test's row on the run page, its execution's status chip and its line in the test's recent
+  executions read **Ended at a stop** instead of Skipped, and the run page's header marks the run beside its status
+  (**Ended at a stop**, or `3 ended at a stop` for more than one). Copy run summary names them among the skipped:
+  `4 skipped (1 ended at a stop)`.
+- **Piwi Picker's Runs window**: the run's progress line counts them, `9 of 9 tests · 1 ended at a stop`, in the
+  window's language; the desktop app's Local runs tray reads `Passed · 1 ended at a stop` once the run ended.
+- **The editors**: the status bar's run progress counts them (`1 ended at a stop`), and the notification of a run the
+  editor started names them beside the skipped, `3 passed, 0 failed, 1 skipped (1 ended at a stop)`.
+
+The count reaches the editors, Piwi Picker and the desktop app from a reporter newer than 0.68.0; with an older one
+they count the test as skipped. The dashboard reads the `skip` annotation, so it marks results already stored too.
+
 ## Limits
 
 - **Playwright's calls alone.** The test's own code between two calls, a loop or a helper, runs until its next call.
 - **One test.** It ends the stopped worker's test; the run's other tests run. To end the run, **Stop** it (one Piwi
   started, from the editor, the desktop app or the [Runs window](./runs-window)) or end it in its terminal.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

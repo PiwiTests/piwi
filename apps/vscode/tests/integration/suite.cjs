@@ -1565,9 +1565,10 @@ const tests = {
         throw new Error(`${served.url}: ${e.cause?.message ?? e.cause ?? e}`);
       })
     ).json();
+    // VS Code runs a command the service built for an agent: run_start comes first.
     assert.deepEqual(
       listed.result.tools.map((t) => t.name),
-      ['run_list', 'run_follow', 'run_control', 'page_snapshot', 'page_act', 'page_locator', 'code_write'],
+      ['run_start', 'run_list', 'run_follow', 'run_control', 'page_snapshot', 'page_act', 'page_locator', 'code_write'],
     );
     assert.equal((await ask('x'.repeat(43))).status, 401);
     await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration', 'vscode');

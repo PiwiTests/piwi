@@ -108,6 +108,7 @@ describe("the commands' glyphs", () => {
     'piwi.runToCursor': 'Run to the cursor: VS Code has no codicon for it',
     'piwi.pauseAndWatch': 'Pause and watch',
     'piwi.stopSharingRun': 'Share live, crossed out',
+    'piwi.stopSharingWindowLive': 'Share live, crossed out',
   };
 
   test('gives every command a codicon, but those that wait for a glyph Piwi draws', () => {

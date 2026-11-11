@@ -386,9 +386,30 @@ export interface RunCommand {
    * (`PIWI_PAUSE_AT`). Absent otherwise.
    */
   pauses?: boolean;
+  /**
+   * Who started the run when a person did not: `Started by Claude Code`, for an agent's run (`piwi/startRun`), which
+   * the client says as the run starts (VS Code in its task's name too). Absent for a person's run.
+   */
+  label?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
+
+/**
+ * `piwi/startRun` (request, server to client, for a client that sent `InitializationOptions.startsRuns`): run the
+ * command the service built for an agent's `run_start` where the developer sees it, as the client runs a person's,
+ * labeled `command.label`; the answer says whether it started.
+ */
+export interface StartRunParams {
+  command: RunCommand & { ref: string; label: string };
+}
+
+export interface StartRunResult {
+  ok: boolean;
+  message: string;
+}
+
+export const START_RUN_REQUEST = 'piwi/startRun';
 
 /** `piwi.runCommand`'s argument: a command line to run in a terminal. */
 export interface RunCommandArgs {
@@ -579,6 +600,11 @@ export interface InitializationOptions {
    */
   stopsRuns?: boolean;
   /**
+   * The client runs a command the service built for an agent (`piwi/startRun`). Without it, the agents' tools offer
+   * no `run_start`.
+   */
+  startsRuns?: boolean;
+  /**
    * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
    * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256
    * characters of base64url), else a new random one. The client keeps the port and the token, so an agent's
@@ -591,6 +617,11 @@ export interface InitializationOptions {
    * there. `piwi/setRunPairing` names it later, or again.
    */
   runPairing?: string;
+  /**
+   * The window's runs are shared live (`piwi/shareRun` with `scope: 'window'`): a service started again while the window
+   * is open shares them as the person left them.
+   */
+  shareWindow?: boolean;
 }
 
 /**
@@ -812,6 +843,11 @@ export interface RunEnded {
   failed: number;
   flaky: number;
   skipped: number;
+  /**
+   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: a client says it
+   * beside the skipped. Absent for none, and for a reporter that predates the count.
+   */
+  endedAtStop?: number;
   fixed: number;
   stillFailing: string[];
   newFailures: string[];
@@ -854,6 +890,11 @@ export interface McpServerDefinition {
    * connects (no `headers`); `none`, the connection has no key and the instance asks for none.
    */
   authorization: 'key' | 'sign-in' | 'none';
+  /**
+   * The desktop app's bundled server, whose run tools a client that lists its own runs' server to its agent leaves out
+   * by listing this one with `?runs=off`. Absent for another instance.
+   */
+  desktop?: true;
 }
 
 /** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */
@@ -1724,9 +1765,10 @@ export interface RunPage {
 /**
  * How far a run is (`run-begin`, `run-progress` and `run-end` of `@piwitests/core/run-channel`): how many tests it
  * holds (`total`, its repeats included), how many ended, each once by the outcome of its last attempt (`done`, and of
- * them `failed`, `flaky` and `skipped`; the others passed), whether it still runs or how it ended (`status`, `other`
- * for a status of a newer Playwright), and its first failure once it ended (the test's title and the first line of its
- * error; null for none).
+ * them `failed`, `flaky` and `skipped`; the others passed), how many of the skipped were ended at a stop (End the
+ * test: `endedAtStop`, absent from a reporter that predates the count), whether it still runs or how it ended
+ * (`status`, `other` for a status of a newer Playwright), and its first failure once it ended (the test's title and
+ * the first line of its error; null for none).
  */
 export interface RunProgress {
   total: number;
@@ -1734,6 +1776,7 @@ export interface RunProgress {
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
   status: 'running' | 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
   failure: { title: string; error: string | null } | null;
 }
@@ -1812,13 +1855,49 @@ export const RUN_CONTROL_REQUEST = 'piwi/runControl';
  * page while it runs, and sees when a test is paused; or stop sharing it (`on: false`), which ends the views there. A
  * worker that connects later follows the choice. Answered with `RunControlResult`: refused, with why, for a run whose
  * reporter predates it or that cannot be shared (no instance, the project's live view off). No agent asks it.
+ *
+ * `scope: 'window'` shares this window's runs until the person stops, or the window closes: the run of `ref`, when one
+ * is named, and each run that starts from then on, each one said as it is shared (`piwi/notice`) and continuing the one
+ * shared before it on the instance (`after`); `on: false` with it stops sharing every run of the window. The service
+ * says the window's scope in `piwi/shareWindowChanged`.
  */
 export interface ShareRunParams {
-  ref: string;
+  ref?: string;
   on: boolean;
+  scope?: 'run' | 'window';
 }
 
 export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+
+/** `piwi/shareWindowChanged` (notification, server to client): whether this window's runs are shared live. */
+export interface ShareWindowParams {
+  on: boolean;
+}
+
+export const SHARE_WINDOW_NOTIFICATION = 'piwi/shareWindowChanged';
+
+/**
+ * `piwi/askToWatch` (notification, server to client): a signed-in teammate asks to watch the run of `ref`, which is
+ * not shared live (**Ask to watch**): the client asks the developer, naming them (`by`) and the run (`run`, its number
+ * on the instance; null when unknown), with **Share live** (`piwi/shareRun`) and **Not now** (`piwi/answerAsk`).
+ */
+export interface AskToWatchParams {
+  ref: string;
+  id: string;
+  by: string;
+  run: number | null;
+}
+
+export const ASK_TO_WATCH_NOTIFICATION = 'piwi/askToWatch';
+
+/** `piwi/answerAsk`: the developer's **Not now** to an ask, which the teammate's page shows. Answers `RunControlResult`. */
+export interface AnswerAskParams {
+  ref: string;
+  id: string;
+  answer: 'not-now';
+}
+
+export const ANSWER_ASK_REQUEST = 'piwi/answerAsk';
 
 /**
  * `piwi/holdRun`: **Hold failures** for the run of `ref`, as a person asks: on, a failure no pause bar shows waits at

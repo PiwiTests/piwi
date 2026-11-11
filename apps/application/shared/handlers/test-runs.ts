@@ -322,6 +322,13 @@ export async function getTestRun(
     keptByName = keeper ? keeper.name || keeper.username : null;
   }
 
+  // The run that continued this one, while it is still stored.
+  let continuedInId: number | null = null;
+  if (testRun.continuedInId != null) {
+    const [next] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, testRun.continuedInId));
+    continuedInId = next?.id ?? null;
+  }
+
   let projectPublic;
   if (project) {
     const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectRest } = project;
@@ -363,6 +370,7 @@ export async function getTestRun(
 
   return {
     ...testRunPublic,
+    continuedInId,
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,

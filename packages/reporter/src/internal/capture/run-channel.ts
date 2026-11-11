@@ -1020,7 +1020,7 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
     case 'share':
       sharedHere = message.on;
       // A worker without a key, or one the instance refused, stays as it was: its `live` says why.
-      void shareLiveView(message.on).then(tellLive);
+      void shareLiveView(message.on, message.after ?? null).then(tellLive);
       return;
     case 'breakpoints':
       control?.breakpoints(message.places);

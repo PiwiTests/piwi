@@ -193,6 +193,13 @@ Each entry names folders under `server/api/`.
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key and stores its digest with the run
     (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
+    `[id]/live-view/ask` is **Ask to watch**: a signed-in reader asks the developer of a run nobody shares to share
+    it. The asks wait in memory (`server/utils/live-asks.ts`) until the answer of the run's next `events`,
+    `heartbeat` or `live-resources` request hands one over (`ask`); the reporter sends the developer's Not now back
+    (`askAnswer`), a worker that streams answers them as shared, and the person who asked hears each change on the
+    run's `[id]/stream` (`live-ask`), which also tells each viewer whether they may ask (`live-view`). A worker's
+    stream that names the run it continues (`after`) links that run to it (`test_runs.continued_in_id`,
+    `server/utils/run-continuation.ts`), whose page follows (`continued`, and `run-continued` on `/api/stream`).
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest

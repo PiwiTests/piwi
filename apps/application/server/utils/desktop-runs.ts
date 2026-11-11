@@ -149,6 +149,7 @@ const DECLINED: Partial<Record<RunIntent, string>> = {
 /** What the agents' tools say of this app's runs: watched in its window, their code made there to copy. */
 export const DESKTOP_AGENT_WORDS: AgentWords = {
   runs: 'the desktop app',
+  host: 'desktop app',
   start: "start one from the app's window",
   watch: "The developer sees each stop in the desktop app's window, said to be the agent's.",
   view: "the desktop app's view of the run",
@@ -325,6 +326,10 @@ export class DesktopRuns {
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
+      // A teammate asks to watch a run the app follows: each window asks the person.
+      askedToWatch: (ask) => {
+        for (const window of this.windows.values()) window.sink.send({ type: 'ask-to-watch', ...ask });
+      },
       // The run's folder as its linked folder spells it: a run the shell starts runs in the linked folder, one
       // started in a terminal there or below.
       rootOf: (cwd) => linkedSpelling(this.links(), cwd),
@@ -590,6 +595,13 @@ export class DesktopRuns {
           ? 'A failure no pause bar shows waits for an answer in this run while the window shows it.'
           : 'A failure of this run no pause bar shows goes on at once.',
       );
+    }
+    if (value.type === 'answer-ask') {
+      if (!id || typeof value.ref !== 'string' || !REF.test(value.ref) || typeof value.ask !== 'string') {
+        return answer(false, 'The command needs the ref of a run and the ask it answers.');
+      }
+      const said = this.sessions.answerAsk({ ref: value.ref, id: value.ask, answer: 'not-now' });
+      return answer(said.ok, said.message);
     }
     const parsed = parseHubCommand(JSON.stringify(value));
     if (!parsed) return answer(false, 'Not a command.');

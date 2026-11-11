@@ -251,6 +251,13 @@ export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
  */
 export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
 
+/**
+ * `PIWI_SHARE_LIVE=1` shares a run outside CI that no editor or app follows (no run channel) live from its start, the
+ * person's own choice for that run, set where they start it: never an option a config file sets for everyone. The
+ * reporter sets it to `true` for the workers, which open their live view stream at once, or removes it. Not an option.
+ */
+export const PIWI_SHARE_LIVE_ENV = 'PIWI_SHARE_LIVE';
+
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;

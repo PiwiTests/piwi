@@ -37,7 +37,11 @@ export interface RunEvent {
     /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
     | 'live-worker'
     /** Whether the project's live view is on, and the run holds a key (`LiveViewRunState`, `#shared/live-view`). */
-    | 'live-view';
+    | 'live-view'
+    /** A person's ask to watch the run changed (`LiveAskEvent`, `server/utils/live-asks.ts`): only they hear it. */
+    | 'live-ask'
+    /** A run shared after this one from the same editor window continues it: `{ runId }`, the run that does. */
+    | 'continued';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;
@@ -48,6 +52,8 @@ export interface GlobalRunEvent {
   /**
    * `rollup-updated` follows `run-finished` and `run-submitted` once the run's daily rollup is
    * written: analytics read the rollups, so they refresh on it, never on the run events before it.
+   * `run-continued` says a run shared after this one from the same editor window continues it (`continuedInId`), for
+   * a page of the run that ended to follow.
    */
   type:
     | 'run-started'
@@ -56,10 +62,13 @@ export interface GlobalRunEvent {
     | 'run-finished'
     | 'run-submitted'
     | 'run-cancelled'
-    | 'rollup-updated';
+    | 'rollup-updated'
+    | 'run-continued';
   runId: number;
   projectId: number;
   status?: string;
+  /** The run that continues `runId`, on `run-continued`. */
+  continuedInId?: number;
 }
 
 /**

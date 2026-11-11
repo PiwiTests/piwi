@@ -222,6 +222,9 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_EDITOR',
       // The CI job's variable that `piwi rerun` reads; the app names it in the CI re-run help and placeholders.
       'PIWI_RERUN_ARGS',
+      // Read by the reporter of a run started in a terminal, which it shares live from its start; the run page's
+      // help names it.
+      'PIWI_SHARE_LIVE',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

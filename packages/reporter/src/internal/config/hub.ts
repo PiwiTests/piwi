@@ -114,7 +114,7 @@ function privateFolder(dir: string): boolean {
  * Windows, naming a run channel in a folder this user owns and no other user can enter, which a socket of another
  * user's cannot be in. A named pipe tells no owner, and a file with no time passes as far as the time goes.
  */
-function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
+export function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
   const written = Date.parse(editor.startedAt);
   if (Number.isFinite(written) && !sinceBoot(written, now)) return false;
   if (!editor.runChannel || process.platform === 'win32') return true;
@@ -132,7 +132,7 @@ function ownSocket(file: string): boolean {
 }
 
 /** The folder's files as `readLiveEditors` reads them, never deleting one: none when it is not this user's alone. */
-function folderOnDisk(dir: string): DiscoveryFolder {
+export function folderOnDisk(dir: string): DiscoveryFolder {
   return {
     host: os.hostname(),
     names: () => {
@@ -163,7 +163,7 @@ function folderOnDisk(dir: string): DiscoveryFolder {
 }
 
 /** A folder's real path, its links followed, in the case the file system gives it; null for one that is gone. */
-function realFolder(folder: string): string | null {
+export function realFolder(folder: string): string | null {
   try {
     return fs.realpathSync.native(folder);
   } catch {

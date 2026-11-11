@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { fixmeSkipPredicate, isFixmeSkip } from '#shared/utils/skip-kind';
+import { fixmeSkipPredicate, isEndedAtStop, isFixmeSkip } from '#shared/utils/skip-kind';
 import { migrateToLatest } from './temp-db';
 
 describe('isFixmeSkip', () => {
@@ -14,6 +14,28 @@ describe('isFixmeSkip', () => {
     expect(isFixmeSkip({ status: 'skipped', testAnnotations: null })).toBe(false);
     expect(isFixmeSkip({ status: 'skipped' })).toBe(false);
     expect(isFixmeSkip({ status: 'failed', testAnnotations: [{ type: 'fixme' }] })).toBe(false);
+  });
+});
+
+describe('isEndedAtStop', () => {
+  test('is true only for a skipped case whose skip annotation gives the reason End the test skips with', () => {
+    const ended = { type: 'skip', description: 'Ended from Piwi' };
+    expect(isEndedAtStop({ status: 'skipped', testAnnotations: [ended] })).toBe(true);
+    expect(isEndedAtStop({ status: 'skipped', testAnnotations: [{ type: 'tag', description: '@cart' }, ended] })).toBe(
+      true,
+    );
+    expect(isEndedAtStop({ status: 'skipped', testAnnotations: [{ type: 'skip', description: 'flaky on CI' }] })).toBe(
+      false,
+    );
+    expect(isEndedAtStop({ status: 'skipped', testAnnotations: [{ type: 'skip' }] })).toBe(false);
+    expect(
+      isEndedAtStop({ status: 'skipped', testAnnotations: [{ type: 'fixme', description: 'Ended from Piwi' }] }),
+    ).toBe(false);
+    expect(isEndedAtStop({ status: 'skipped', testAnnotations: null })).toBe(false);
+    // A hook that failed after the skip: the failure stands.
+    expect(isEndedAtStop({ status: 'failed', testAnnotations: [ended] })).toBe(false);
+    // A test ended at a stop is no fixme.
+    expect(isFixmeSkip({ status: 'skipped', testAnnotations: [ended] })).toBe(false);
   });
 });
 

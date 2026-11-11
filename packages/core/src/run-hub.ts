@@ -22,6 +22,7 @@ import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import {
   MAX_RUN_FAILURE_TEXT,
   MAX_STOP_ERROR,
+  endedAtStopWithin,
   readRunPage,
   type KeptRequest,
   type RunCounts,
@@ -379,9 +380,10 @@ export interface HubSession {
 }
 
 /**
- * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`), whether it
- * still runs or how it ended (`status`), and its first failure, once it ended (the test's title and its error's first
- * line, null for none).
+ * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`, with how
+ * many of the skipped were ended at a stop from a service and a reporter that count them), whether it still runs or
+ * how it ended (`status`), and its first failure, once it ended (the test's title and its error's first line, null for
+ * none).
  */
 export interface HubProgress extends RunCounts {
   total: number;
@@ -1138,7 +1140,10 @@ function readSession(value: unknown): HubSession | null {
 
 const PROGRESS_STATUSES: readonly string[] = ['running', 'passed', 'failed', 'timedout', 'interrupted', 'other'];
 
-/** How far a run is, field by field: a status of a newer service reads as `other`; null when it is not one. */
+/**
+ * How far a run is, field by field: a status of a newer service reads as `other`, an `endedAtStop` it cannot read is
+ * left out; null when it is not one.
+ */
 function readProgress(value: unknown): HubProgress | null {
   if (!isObject(value)) return null;
   const { total, done, failed, flaky, skipped, status, failure } = value;
@@ -1163,6 +1168,7 @@ function readProgress(value: unknown): HubProgress | null {
     failed: failed as number,
     flaky: flaky as number,
     skipped: skipped as number,
+    ...endedAtStopWithin(value.endedAtStop, skipped as number),
     status: (PROGRESS_STATUSES.includes(status) ? status : 'other') as HubProgress['status'],
     failure: first,
   };

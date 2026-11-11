@@ -176,9 +176,11 @@ describe("an agent's tools for the runs of the editor window", () => {
         {
           run: ref,
           ended: false,
+          launcher: 'editor',
           workers: [
             {
               worker: 0,
+              lane: 1,
               state: 'running',
               test: {
                 title: 'cart › adds a mug',

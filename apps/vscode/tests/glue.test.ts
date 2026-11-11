@@ -42,6 +42,7 @@ import {
   recordInto,
   mcpAuthorizationNote,
   mcpConfiguration,
+  agentMcpUrl,
   RUNS_MCP_FORMATS,
   agentsTokenKey,
   runsMcpConfiguration,
@@ -496,6 +497,24 @@ describe('the runs’ MCP server', () => {
     expect(agentsTokenKey('file:///work/shop')).toBe('piwi.agentsToken file:///work/shop');
     expect(agentsTokenKey('file:///work/shop')).not.toBe(agentsTokenKey('file:///work/blog'));
     expect(agentsTokenKey(null)).toBe('piwi.agentsToken');
+  });
+});
+
+describe('agentMcpUrl', () => {
+  const desktop = {
+    label: 'Piwi (127.0.0.1:3000)',
+    url: 'http://127.0.0.1:3000/mcp',
+    headers: { Authorization: 'Bearer pd_desktop' },
+    authorization: 'key' as const,
+    desktop: true as const,
+  };
+  test('leaves the desktop app’s run tools out while the window lists its own runs’ server', () => {
+    expect(agentMcpUrl(desktop, true)).toBe('http://127.0.0.1:3000/mcp?runs=off');
+    expect(agentMcpUrl(desktop, false)).toBe('http://127.0.0.1:3000/mcp');
+  });
+  test('keeps another instance’s address whole', () => {
+    const { desktop: _desktop, ...instance } = { ...desktop, url: 'https://piwi.example.com/mcp?modules=core' };
+    expect(agentMcpUrl(instance, true)).toBe('https://piwi.example.com/mcp?modules=core');
   });
 });
 
@@ -1607,6 +1626,10 @@ describe('the verdict of a run started from the editor', () => {
   test('a run that touched no failure gives its counts', () => {
     const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
     expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
+    // The skipped that were ended at a stop are named beside them.
+    expect(runVerdict({ ...quiet, flaky: 0, passed: 3, skipped: 2, endedAtStop: 1 })?.text).toBe(
+      'Piwi: run #124 · 3 passed, 0 failed, 2 skipped (1 ended at a stop)',
+    );
   });
 
   test('the setting keeps it quiet: always, only when something fails, or never', () => {

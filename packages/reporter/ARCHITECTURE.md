@@ -164,10 +164,11 @@ What the package does to a user's run, process by process.
   and `withEndSignal` in `pause-at.ts`, beside a signal the test gave, through
   `AbortSignal.any`): End aborts it before the debugger lets the held call go, so
   Playwright gives that call up before it runs. The attempt then stops nowhere more, and
-  is skipped by the runner's own `testInfo.skip(true, ENDED_REASON)` as the call
-  rejects, at its next locator call, as a `page.pause()` it stopped at goes on, or as its
-  function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it
-  passed). A call the proxy does not delegate (a navigation, a key press, a page's own
+  is skipped by the runner's own `testInfo.skip(true, ENDED_AT_STOP_REASON)` (from
+  `@piwitests/core/run-channel`, the reason every surface reads to mark the result ended
+  at a stop) as the call rejects, at its next locator call, as a `page.pause()` it stopped
+  at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
+  feature-checked, only when it passed). A call the proxy does not delegate (a navigation, a key press, a page's own
   assertion), or any call on an older Playwright, runs first, which the editor hears
   (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
   teardown), End goes on as Resume does, the result kept; the bar offers it at neither.
@@ -576,15 +577,28 @@ What the package does to a user's run, process by process.
   shell starts with `PIWI_DESKTOP_KEY=1`, is sent only after `proveDesktopServer` (`@piwitests/core/desktop-proof`)
   returns `proven` for the address (the proof header decides, whatever the status of `/api/health`). Each request gets
   a proof of its own (requests that start together share one, never one that has arrived), and the request follows no
-  redirect. `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the commands;
-  any new request that carries the token goes through one of them.
+  redirect. `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the commands,
+  and `piwi mcp`'s `postToHost` for the desktop app's MCP server; any new request that carries the token goes through
+  one of them.
 - **A copy of the token stays held.** A key equal to the file's token is held to the proof while the file exists,
   whether or not its `pid` is alive (`readDesktopToken`): the app deletes the file only on a clean quit, so a copy of
   the token never goes unproven to whatever holds the port. The URL still comes from the pid-checked file, so an
   ordinary run makes no extra request.
 - **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
-  service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`), from a folder
-  this user alone can enter, and never deletes one.
+  service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`) and for `piwi mcp`,
+  from a folder this user alone can enter, and never deletes one.
+- **A teammate's ask to watch** comes in the answers of the run's stream (`ask`, `StreamManager.onAsk`, once per ask):
+  `RunHubLink.ask` hands it to the hub, and a run with no hub says it in its terminal. The developer's Not now comes
+  back from the hub (`ask-answer`, the one line of the hub's the link reads) and goes with the next request of the
+  stream (`askAnswer`, a heartbeat at once) until one is answered. `shareLive` (`PIWI_SHARE_LIVE`) has the workers open
+  their live view stream from the start outside CI, and a share message's `after` reaches each stream as its `after`
+  parameter. `tests/stream-manager.spec.ts`, `tests/live-view-worker.spec.ts`.
+- **`piwi mcp`** (`src/cli/mcp.ts`, `McpRouter`) is an agents' MCP server over stdio with no run logic: it forwards
+  the run tools of each editor whose file names its agents' server (`agents`) and of the desktop app, `run_list` to
+  all of them, `run_start` to the editor whose workspace holds the spec, any other call to the host of its run. An
+  editor is a host only while its run channel is a socket of this user's (`stillServing`, as for a terminal's run).
+  Each request to the desktop app's `/mcp` follows a proof of its own (`RouterHost.proves`), and the agent's
+  `notifications/cancelled` aborts the host's request; `tests/mcp-router.spec.ts`.
 
 ## Two processes, two paths
 
@@ -733,7 +747,7 @@ src/
   cli/         the `piwi` command line (package.json `bin`, its own tsup entry):
                index (the command switch), one file per command (init, skills, gate,
                quality-report for `report`, coverage, select for `select` and `run`,
-               probe, flake, ai, codegen, preflight, bug); detect, configure (what
+               probe, flake, ai, codegen, preflight, bug, mcp); detect, configure (what
                init inspects and edits), add-reporter (`run`'s --add-reporter),
                report (the step results init and skills print)
   internal/

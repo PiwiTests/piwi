@@ -40,6 +40,17 @@ describe('the run model’s words', () => {
     }
   });
 
+  it('count as the run model’s do in English, and in the plural form of the Runs window’s language', () => {
+    for (const count of [1, 2, 1200]) {
+      expect(runsSpeaker.count('runs_progressEndedAtStop', count)).toBe(
+        englishRunSpeaker.count('runs_progressEndedAtStop', count),
+      );
+    }
+    setBrowserLanguage('fr');
+    expect(runsSpeaker.count('runs_progressEndedAtStop', 2)).toBe('2 terminés à un arrêt');
+    expect(runsSpeaker.count('runs_progressEndedAtStop', 1)).toBe('1 terminé à un arrêt');
+  });
+
   it('are said in the Runs window’s language, an editor by its own name', () => {
     const desktop: HubPresence = { kind: 'desktop', name: 'the desktop app' };
     const code: HubPresence = { kind: 'editor', name: 'Visual Studio Code' };
