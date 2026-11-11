@@ -8,6 +8,7 @@
   "exports": {
     "./attention": "./src/attention.ts",
     "./controls": "./src/controls.ts",
+    "./outcome": "./src/outcome.ts",
     "./presence": "./src/presence.ts",
     "./status": "./src/status.ts",
     "./stop": "./src/stop.ts",
