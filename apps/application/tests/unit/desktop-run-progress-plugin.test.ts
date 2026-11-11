@@ -329,6 +329,21 @@ describe('the OS progress of a job of the Local runs tray', () => {
     }
   });
 
+  test('counts an editor’s test that waits on the bar, but offers to show only the app’s own', async () => {
+    const { shown, waits, emit } = await plugin();
+    emit({ type: 'snapshot', runs: [] });
+    const stopped = { state: 'stopped', stop: { reason: 'breakpoint' } };
+    emit({
+      type: 'editor-runs',
+      runs: [{ client: 'Visual Studio Code', session: { ended: false, workers: [stopped] } }],
+    });
+    expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you' });
+    // It opens in its editor: the tray menu offers nothing for it.
+    expect(waits.at(-1)).toBe(0);
+    emit({ type: 'editor-runs', runs: [] });
+    expect(shown.at(-1)).toEqual(NOTHING);
+  });
+
   test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {
     const { shown, emit } = await plugin();
     emit({ type: 'run-initializing', runId: 12, projectId: 1 });

@@ -144,17 +144,29 @@ describe('the handshake', () => {
     client.socket.close();
   });
 
-  test('refuses another Host, a page’s origin, a null origin, none, and another path, before any WebSocket opens', async () => {
+  test('refuses another Host, a page’s origin, a null origin and another path, before any WebSocket opens', async () => {
     expect(await open({ host: `evil.test:${hub.port}` })).toBe(403);
     expect(await open({ host: `127.0.0.1:${hub.port + 1}` })).toBe(403);
     expect(await open({ origin: `http://127.0.0.1:${hub.port}` })).toBe(403);
     expect(await open({ origin: 'https://piwitests.dev' })).toBe(403);
     expect(await open({ origin: 'null' })).toBe(403);
     expect(await open({ origin: 'file://' })).toBe(403);
-    expect(await open({ origin: '' })).toBe(403);
     expect(await open({ url: hub.url.replace('/piwi/hub', '/other') })).toBe(404);
     const plain = await fetch(`http://127.0.0.1:${hub.port}/piwi/hub`);
     expect(plain.status).toBe(426);
+  });
+
+  test('takes a process of this machine that sends no Origin, after its token', async () => {
+    // A browser always sends one: no Origin is a process of this machine, as the desktop app's server.
+    const local = (await open({ origin: '' })) as Client;
+    expect(typeof local).toBe('object');
+    local.send({ type: 'hello', token: hub.token });
+    expect(await waitFor(() => local.messages[0])).toMatchObject({ type: 'welcome', client: 'Test Editor' });
+    local.socket.close();
+    // Without the token, nothing: its first message closes it.
+    const stranger = (await open({ origin: '' })) as Client;
+    stranger.send({ type: 'hello', token: 'not-the-token-0123456789' });
+    expect((await stranger.closed).code).not.toBe(1000);
   });
 
   test('takes a loopback Host at a port the client forwards to it only once named, the origin and token still needed', async () => {
@@ -627,6 +639,25 @@ describe('a stop nobody else can answer, with the editor’s client unable to', 
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
     } finally {
       worker.socket.destroy();
+    }
+  });
+
+  test('goes on while only a process that observes the runs follows them, which hears the stop', async () => {
+    const observer = (await open({ origin: '' })) as Client;
+    observer.send({ type: 'hello', token: hub.token });
+    await waitFor(() => observer.messages[0]);
+    observer.send({ type: 'subscribe', id: 1, observe: true });
+    expect(await observer.answer(1)).toMatchObject({ ok: true });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      worker.stopAt(1, 30);
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(observer.messages.some((m) => m.type === 'session' && m.session.ref === ref)).toBe(true);
+    } finally {
+      worker.socket.destroy();
+      observer.socket.close();
     }
   });
 });

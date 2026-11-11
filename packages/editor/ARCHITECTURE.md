@@ -771,7 +771,9 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
   browser's machine (`piwi/hub` with `forwarded`, a remote window's; 8 at most, `forwardedPorts`), is refused with a
   403 before any WebSocket opens (`isHubHost`: a page reached under another name, DNS rebinding). So is one whose
   `Origin` is not a browser extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`,
-  `moz-extension://` and a UUID; never `http(s)`, `null`, `file` or none). `piwi/hub` answers the hub's address and
+  `moz-extension://` and a UUID; never `http(s)`, `null` or `file`). One with no `Origin` opens: a browser always sends
+  one, so it is a process of this machine (the desktop app's server, which observes the editors' runs), and its
+  `hello` needs the token as an extension's does. `piwi/hub` answers the hub's address and
   the forwarded ports it takes, once it takes them, so a client lists a forwarded address only after.
 - Past 16 open connections, or 8 open that did not say hello, a handshake gets a 503.
 - A handshake's headers must arrive within 5 s and fit in 8 KiB.
@@ -861,7 +863,8 @@ ping is dropped, as is one with 32 MB unread.
 **Closing.** A connection the hub closes (`closeWith`) is cut a second later (`CLOSE_GRACE_MS`) when the other side has
 not answered the close. A connection being closed holds none of the places counted above.
 
-A subscribed connection is a surface that answers stops; a run's Hold failures says whether its failures wait
+A subscribed connection is a surface that answers stops, but one that subscribed to observe (`observe`: the desktop
+app's server); a run's Hold failures says whether its failures wait
 ([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
 `follow` says a Runs window is open, `view` names one stop.
 

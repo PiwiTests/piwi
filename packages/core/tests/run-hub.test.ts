@@ -145,6 +145,13 @@ describe('the hub’s WebSocket', () => {
 
   test('reads each command field by field', () => {
     expect(parseHubCommand(json({ type: 'subscribe', id: 1 }))).toEqual({ type: 'subscribe', id: 1 });
+    // To observe alone: the desktop app's server reading an editor's runs. Anything else than true observes nothing.
+    expect(parseHubCommand(json({ type: 'subscribe', id: 1, observe: true }))).toEqual({
+      type: 'subscribe',
+      id: 1,
+      observe: true,
+    });
+    expect(parseHubCommand(json({ type: 'subscribe', id: 1, observe: 'yes' }))).toEqual({ type: 'subscribe', id: 1 });
     expect(parseHubCommand(json({ type: 'follow', id: 1, on: true }))).toEqual({ type: 'follow', id: 1, on: true });
     expect(parseHubCommand(json({ type: 'follow', id: 1, on: false }))).toEqual({ type: 'follow', id: 1, on: false });
     expect(parseHubCommand(json({ type: 'runControl', id: 2, ref: 'ed-1', action: 'pause' }))).toEqual({

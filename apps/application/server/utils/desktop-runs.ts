@@ -73,6 +73,7 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { desktopPicksToken } from './desktop-access';
+import { EditorRuns, type EditorRun } from './desktop-editor-runs';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -194,8 +195,10 @@ export interface DesktopRunsOptions {
   log?(message: string): void;
   keepaliveMs?: number;
   helloMs?: number;
-  /** The editors' discovery folder the hub names its peers from; `editorsDir()` by default. */
+  /** The editors' discovery folder the hub names its peers from, and whose runs it observes; `editorsDir()` by default. */
   editorsDir?: string;
+  /** Whether the server observes the editors' runs (`EditorRuns`); on by default. */
+  observeEditors?: boolean;
   peersMs?: number;
   lingerMs?: number;
   requestMs?: number;
@@ -295,6 +298,9 @@ export class DesktopRuns {
   private readonly startedAt = new Date().toISOString();
   private readonly liveCountListeners = new Set<(live: number) => void>();
   private liveCount = 0;
+  /** The editors' runs, observed for the app's own surfaces and steered by none of them (`EditorRuns`). */
+  private editors: EditorRuns | null = null;
+  private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
@@ -415,6 +421,16 @@ export class DesktopRuns {
     ]);
     runs.channel = channel;
     runs.hub = hub;
+    if (options.observeEditors !== false) {
+      runs.editors = new EditorRuns({
+        live: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        changed: () => {
+          const now = runs.editorRuns();
+          for (const listener of runs.editorRunsListeners) listener(now);
+        },
+      });
+      runs.editors.start();
+    }
     if (!channel) options.log?.('[desktop-runs] The run channel could not listen: runs start without a hub.');
     if (!hub) options.log?.('[desktop-runs] The hub could not listen: Piwi Picker and the window see no run.');
     return runs;
@@ -449,6 +465,17 @@ export class DesktopRuns {
   onLiveRunCount(listener: (live: number) => void): () => void {
     this.liveCountListeners.add(listener);
     return () => this.liveCountListeners.delete(listener);
+  }
+
+  /** The editors' live runs, as their hubs tell them (`EditorRuns`): none while the server does not observe them. */
+  editorRuns(): EditorRun[] {
+    return this.editors?.runs() ?? [];
+  }
+
+  /** Hears the editors' live runs each time they change; returns the unsubscribe. */
+  onEditorRuns(listener: (runs: EditorRun[]) => void): () => void {
+    this.editorRunsListeners.add(listener);
+    return () => this.editorRunsListeners.delete(listener);
   }
 
   /** The hub as `GET /api/desktop/live` names it, in the shape an editor's `GET …/live` gives (`LiveAnswer`). */
@@ -561,6 +588,8 @@ export class DesktopRuns {
 
   /** The server stops: the hub and the channel close, every worker's connection with them, and every window stream. */
   close(): void {
+    this.editors?.close();
+    this.editors = null;
     this.agent.dispose();
     this.hub?.close();
     this.hub = null;

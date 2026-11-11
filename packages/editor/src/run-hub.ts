@@ -10,7 +10,8 @@
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
  * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
- * is, a stop no pause bar shows waits for it. A failure no pause bar shows waits only in a run whose Hold failures is
+ * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
+ * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
  * on, which any connection turns over (`hold`); `follow`, a Runs window open, holds nothing. The code actions it starts at a stop (Assert, Assert a region,
  * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
  * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
@@ -171,6 +172,8 @@ interface Connection {
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
   subscribed: boolean;
+  /** It subscribed only to observe (`observe`): it answers no stop. */
+  observes: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
   viewer: Viewer;
@@ -291,9 +294,9 @@ export class RunHub {
     return hub;
   }
 
-  /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
+  /** Whether a connection hears the runs (`subscribe`), not only to observe them, and so can answer a stop. */
   answersStops(): boolean {
-    for (const connection of this.connections) if (connection.subscribed) return true;
+    for (const connection of this.connections) if (connection.subscribed && !connection.observes) return true;
     return false;
   }
 
@@ -453,6 +456,7 @@ export class RunHub {
       transport,
       ws,
       subscribed: false,
+      observes: false,
       pending: 0,
       viewer: {
         frame: (frame) => this.frame(connection, frame),
@@ -476,15 +480,17 @@ export class RunHub {
     this.options.sessions.unwatchAll(connection.viewer);
     for (const pacer of connection.frames.values()) pacer.close();
     connection.frames.clear();
-    if (connection.subscribed) this.options.surfacesChanged();
+    if (connection.subscribed && !connection.observes) this.options.surfacesChanged();
   }
 
   private upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on('error', () => socket.destroy());
     if (req.url !== HUB_PATH) return refuse(socket, 404, 'Not Found');
-    // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket.
+    // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket. A process of
+    // this machine sends none (the desktop app's server): its `hello` holds the token as an extension's does.
     const forwarded = this.options.forwarded?.() ?? [];
-    if (!isHubHost(req.headers.host, this.port, forwarded) || !isExtensionOrigin(req.headers.origin)) {
+    const origin = req.headers.origin;
+    if (!isHubHost(req.headers.host, this.port, forwarded) || (origin !== undefined && !isExtensionOrigin(origin))) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no
@@ -578,12 +584,13 @@ export class RunHub {
           const live = sessions.current();
           const first = !connection.subscribed;
           connection.subscribed = true;
+          if (first) connection.observes = command.observe === true;
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
           for (const session of live) {
             this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
           }
           if (connection.ws) this.tellPeers([connection]);
-          if (first) this.options.surfacesChanged();
+          if (first && !connection.observes) this.options.surfacesChanged();
           return;
         }
         case 'follow':

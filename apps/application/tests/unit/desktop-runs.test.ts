@@ -452,10 +452,14 @@ describe('the hub Piwi Picker reaches', () => {
     picker.socket.close();
   });
 
-  it('opens only for an extension that names it as this machine, and after hello with the desktop token', async () => {
+  it('opens only for an extension or a process that names it as this machine, after hello with the desktop token', async () => {
     const port = new URL(hubUrl()).port;
     expect(await connect({ origin: 'http://127.0.0.1:3000' })).toBe(403);
-    expect(await connect({ origin: null })).toBe(403);
+    // A browser always sends an Origin: none is a process of this machine, which needs the token as an extension does.
+    const local = (await connect({ origin: null })) as Picker;
+    expect(local).not.toBeTypeOf('number');
+    local.send({ type: 'hello', token: `pd_${'cd'.repeat(32)}` });
+    expect((await local.closed).code).toBe(4001);
     expect(await connect({ host: `evil.example:${port}` })).toBe(403);
     expect(await connect({ host: `localhost:${port}` })).not.toBeTypeOf('number');
 
