@@ -1,3 +1,4 @@
+import { closePendingStatus } from './scm/pending-status';
 import { attachRunPlan } from './pass-reuse';
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
@@ -125,6 +126,7 @@ export async function runFinalizeSideEffects(
         console.error('[notifications] emitIncidentNotification failed', e),
       );
     }
+    closePendingStatus(db, id).catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
     return rollup;
   }
   const notifies = isEligibleRun(current, 'notifications');
@@ -158,7 +160,10 @@ export async function runFinalizeSideEffects(
       .then(() => runTestManagementSync(db, id))
       .catch((e) => console.error('[integrations] runTestManagementSync failed', e));
   }
-  if (!notifies) return rollup;
+  if (!notifies) {
+    closePendingStatus(db, id).catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
+    return rollup;
+  }
   void filing.then(() =>
     emitRunNotifications(db, id, { announce }).catch((e) =>
       console.error('[notifications] emitRunNotifications failed', e),

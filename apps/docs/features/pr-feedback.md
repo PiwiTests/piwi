@@ -28,6 +28,10 @@ partial run from a developer's machine or the desktop app ([run origin](/referen
   the [uncovered changes](./uncovered-changes) section names. When the run has a
   diff to read, a second status that never fails joins it, `/change-coverage`
   ([what it counts](./uncovered-changes#on-the-pull-request)).
+- **A pending status while a CI run runs**, under the same context: how many tests ended and failed
+  (`Running: 120 of 400 tests, 2 failed`), linking the live run, the first as the run reports and then at most once a
+  minute. GitLab shows it as running, Bitbucket as in progress. The run's final status replaces it; a run cancelled,
+  interrupted or with no result to report ends it with an error status that says so.
 
 What the comment says, in this order:
 
