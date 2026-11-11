@@ -4,9 +4,8 @@
  * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), what a worker says and which controls it takes,
  * who else has a run open, watches a worker's page or drives its stop, where a stop stands, and what a code made at a
  * stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s; the stop's place and
- * error, a test's name and what a stop takes come from the Runs window's own pure half
- * (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live view's input
- * (`view-input.ts`).
+ * error, a test's name and what a stop takes come from the run model the tray shares with Piwi Picker's Runs window
+ * (`@piwitests/run-model/stop`), as its live view's input does (`@piwitests/run-model/view-input`).
  */
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import type {
@@ -19,11 +18,11 @@ import type {
   HubWorker,
 } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
+import { pagePoint, runFile, stopError, stopIntents, stopPlace, testName } from '@piwitests/run-model/stop';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
-import { pagePoint, runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 import { stopWords } from '~/utils/stop-words';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */

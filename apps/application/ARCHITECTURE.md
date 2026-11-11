@@ -272,7 +272,7 @@ Each entry names folders under `server/api/`.
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
   does, else through the shell (`desktop-run-hub.client.ts`, `desktopShellIdOf`);
   `DesktopRunSession`, `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live
-  view (with the Runs window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live,
+  view (with the input and the stop's model the tray shares with Piwi Picker's Runs window, `@piwitests/run-model`), `DesktopRunShare` a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
   `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run

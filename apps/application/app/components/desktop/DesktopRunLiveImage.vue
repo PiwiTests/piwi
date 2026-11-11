@@ -5,17 +5,12 @@
  * whole, the latest alone waiting meanwhile, and is kept nowhere else (`draw`). While the stop it shows takes the
  * window's input (`input`, while Interact is on), the pointer, the wheel and the keys on it go to the page: Tab leaves
  * the image unless a click took the keyboard, and Escape turns Interact off (`leave`). A Shift+click, or a click while
- * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the Runs window's
- * own logic (`view-input.ts`, `pagePoint`). `dimmed` shows an image that is no longer the page as it is now, and `mark`
- * says over it what it shows.
+ * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the run model the
+ * tray shares with Piwi Picker's Runs window (`@piwitests/run-model/view-input`, `pagePoint`). `dimmed` shows an image
+ * that is no longer the page as it is now, and `mark` says over it what it shows.
  */
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
-import {
-  ViewInputBatcher,
-  keyOnView,
-  pastedText,
-  type ViewModifier,
-} from '../../../../extension/src/shared/view-input';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import { desktopImagePoint, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
 

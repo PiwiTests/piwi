@@ -27,7 +27,7 @@ const { version } = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'u
 
 /**
  * What the build reads, relative to the repository root: this workspace, the
- * two workspaces it bundles from source, and the npm root that installs them.
+ * three workspaces it bundles from source, and the npm root that installs them.
  */
 const SOURCE_PATHS = [
   'package.json',
@@ -38,6 +38,7 @@ const SOURCE_PATHS = [
   'apps/extension',
   'packages/core',
   'packages/picker-dom',
+  'packages/run-model',
 ];
 
 async function writeZip(fileName, fill) {

@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../../extension/src/shared/view-input';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import type { PausedPageView } from './run-control';
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };

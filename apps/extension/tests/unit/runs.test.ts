@@ -3,26 +3,16 @@ import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-vie
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
-  heldUntilWatched,
-  laneFrameNow,
-  laneWatchOf,
   pageHintOf,
-  pagePoint,
   parseRunsRequest,
-  runFile,
   shareRefusalOf,
   keyTargetOf,
   readRunsBounds,
   runLevelControls,
-  shownLaneOf,
   stopKeyOf,
   workerKey,
   shortcutCommands,
   stateForViewer,
-  stopError,
-  stopIntents,
-  stopPlace,
-  testName,
   viewKey,
   type RunsState,
 } from '../../src/shared/runs.js';
@@ -240,41 +230,6 @@ describe('the keys of the stop controls', () => {
   });
 });
 
-describe('the worker a run’s tabs show', () => {
-  const stopped = (w: number, since: string) =>
-    worker({ worker: w, parallelIndex: w, state: 'stopped', stop: stop(since) });
-  const running = (w: number) => worker({ worker: w, parallelIndex: w });
-
-  it('keeps the worker shown while it stands at a stop or is watched, a new stop taking the tab once', () => {
-    const first = { before: null };
-    expect(shownLaneOf([running(0), running(1)], first)).toBe(0);
-    expect(shownLaneOf([running(0), stopped(1, 's1')], first)).toBe(1);
-    expect(shownLaneOf([], first)).toBeNull();
-    // The person's choice, a running worker, stays while no stop comes.
-    expect(shownLaneOf([running(0), running(1)], { before: 1 })).toBe(1);
-    // A stop takes the tab from a running worker as it comes.
-    expect(shownLaneOf([running(0), stopped(1, 's1')], { before: 0 })).toBe(1);
-    // Never from a stop being answered, nor from a page being watched.
-    expect(shownLaneOf([stopped(0, 's0'), stopped(1, 's1')], { before: 0 })).toBe(0);
-    const watched = (w: HubWorker) => w.worker === 0;
-    expect(shownLaneOf([running(0), stopped(1, 's1')], { before: 0, watched })).toBe(0);
-    // A stop that came while another one was shown has had its turn: a Step there, running a moment, keeps its tab.
-    const known = new Set(['s0']);
-    expect(shownLaneOf([stopped(0, 's0'), running(1)], { before: 1, known })).toBe(1);
-    // A running worker chosen while others stand at stops keeps the tab, until a new stop comes.
-    const three = [stopped(0, 's1'), stopped(1, 's2'), running(2)];
-    expect(shownLaneOf(three, { before: 2, known: new Set(['s1', 's2']) })).toBe(2);
-    const standing = new Set(['s1', 's2']);
-    expect(shownLaneOf([stopped(0, 's1'), stopped(1, 's3'), running(2)], { before: 2, known: standing })).toBe(1);
-    // Resumed or ended there, the next stopped worker takes the tab, or it stays where it was.
-    expect(shownLaneOf([stopped(0, 's0'), running(1)], { before: 1, known, advance: true })).toBe(0);
-    expect(shownLaneOf([running(0), running(1)], { before: 1, advance: true })).toBe(1);
-    // The worker Playwright starts in a lane's place keeps its tab; a lane gone falls back to the first.
-    expect(shownLaneOf([running(0), worker({ worker: 5, parallelIndex: 1 })], { before: 1 })).toBe(1);
-    expect(shownLaneOf([running(0), running(1)], { before: 7 })).toBe(0);
-  });
-});
-
 describe('a run’s own controls', () => {
   it('pauses all while a worker runs, and resumes all while tests are stopped, for a run of several workers', () => {
     const two = run('a', [worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
@@ -300,38 +255,6 @@ describe('a run’s own controls', () => {
       pauseAll: false,
       resumeAll: [],
     });
-  });
-});
-
-describe('where a test stands, as text', () => {
-  it('names a file relative to the run’s folder, with the 1-based line', () => {
-    expect(stopPlace({ uri: 'file:///home/me/shop/tests/pages/cart.page.ts', line: 12 }, '/home/me/shop')).toBe(
-      'tests/pages/cart.page.ts:13',
-    );
-    expect(runFile('file:///home/me/other/a%20b.ts', '/home/me/shop')).toBe('/home/me/other/a b.ts');
-    expect(runFile('file:///home/me/shop2/a.ts', '/home/me/shop')).toBe('/home/me/shop2/a.ts');
-  });
-
-  it('reads a Windows file, whatever the case of its drive', () => {
-    expect(runFile('file:///c%3A/Shop/tests/cart.spec.ts', 'C:\\Shop')).toBe('tests/cart.spec.ts');
-    expect(runFile('file:///C:/Shop/tests/cart.spec.ts', null)).toBe('C:/Shop/tests/cart.spec.ts');
-  });
-
-  it('leaves anything but a file URI as it is', () => {
-    expect(runFile('untitled:Untitled-1', '/home')).toBe('untitled:Untitled-1');
-  });
-
-  it('names a test by its describe blocks, then its title', () => {
-    expect(testName({ title: ['cart', 'coupons', 'applies WELCOME10'] })).toBe('cart › coupons › applies WELCOME10');
-  });
-
-  it('names the error a failure stopped at, as its stop says it, else as an older one titles it', () => {
-    const title = 'Failed: Error: expect(locator).toBeVisible() failed';
-    expect(stopError({ title, error: "Error: the cart's own message\nLocator: getByTestId('cart')" })).toBe(
-      "Error: the cart's own message\nLocator: getByTestId('cart')",
-    );
-    expect(stopError({ title })).toBe('expect(locator).toBeVisible() failed');
-    expect(stopError({ title: 'Failed: Test timeout of 5000ms exceeded.' })).toBe('Test timeout of 5000ms exceeded.');
   });
 });
 
@@ -514,23 +437,6 @@ describe('where a run says its tests’ pages show', () => {
 });
 
 describe('what a stop takes from the window', () => {
-  const at = { ...stop('s1'), intents: undefined };
-
-  it('is what the hub says it takes from this connection, when it says it', () => {
-    expect(stopIntents(worker({ intents: ['pick', 'mock', 'view'] }), { ...at, intents: ['view', 'pick-at'] })).toEqual(
-      ['view', 'pick-at'],
-    );
-    expect(stopIntents(worker({ intents: ['pick'] }), { ...at, intents: [] })).toEqual([]);
-  });
-
-  it('is, from an older service, what the reporter takes where the pause bar shows, and Mock a request anywhere', () => {
-    const takes = worker({
-      intents: ['pick', 'record', 'assert', 'assert-region', 'mock', 'view', 'input', 'pick-at'],
-    });
-    expect(stopIntents(takes, { ...at, bar: true })).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
-    expect(stopIntents(takes, { ...at, bar: false })).toEqual(['mock']);
-  });
-
   it('leaves a stop the window does not watch itself the input and, headless, the actions in the test’s window out', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
     const watched = [
@@ -584,27 +490,6 @@ describe('what a stop takes from the window', () => {
   });
 });
 
-describe('a point on an image of a stopped page', () => {
-  it('maps to CSS pixels of the viewport the image names, whatever size it is shown at', () => {
-    expect(pagePoint({ x: 194, y: 60.625 }, { width: 388, height: 242.5 }, { width: 1280, height: 800 })).toEqual({
-      x: 640,
-      y: 200,
-    });
-    expect(pagePoint({ x: 10, y: 10 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
-      x: 40,
-      y: 40,
-    });
-  });
-
-  it('stays within the viewport, and maps nothing from an image shown at no size', () => {
-    expect(pagePoint({ x: -5, y: 900 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
-      x: 0,
-      y: 199.99,
-    });
-    expect(pagePoint({ x: 1, y: 1 }, { width: 0, height: 50 }, { width: 400, height: 200 })).toBeNull();
-  });
-});
-
 describe('Watch, as the worker reads it', () => {
   const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
 
@@ -636,56 +521,6 @@ describe('Watch, as the worker reads it', () => {
 });
 
 describe('a lane watched while it runs', () => {
-  it('can be at a hub that shows lanes, for a reporter that lists watch; an older reporter is told to update', () => {
-    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view', 'watch'] }))).toBe('watch');
-    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view'] }))).toBe('outdated');
-    // A hub that predates it: a stop's own view alone, and nothing said.
-    expect(laneWatchOf({ lanes: false }, worker({ intents: ['view', 'watch'] }))).toBeNull();
-    expect(laneWatchOf(undefined, worker({ intents: ['watch'] }))).toBeNull();
-  });
-
-  it('shows where its worker stands now: the stop it stands at, else its running test, from that worker alone', () => {
-    const test = { id: 't1', title: ['pays'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: null };
-    const running = worker({ worker: 3, test });
-    const frame = (over: Partial<{ worker: number; test: string | null; since: string | null }> = {}) => ({
-      worker: 3,
-      test: 't1',
-      since: null,
-      ...over,
-    });
-    expect(laneFrameNow(frame(), running)).toBe(true);
-    // Taken at a stop the test went on from, or in the test before it.
-    expect(laneFrameNow(frame({ since: 's1' }), running)).toBe(false);
-    expect(laneFrameNow(frame({ test: 't0' }), running)).toBe(false);
-    // A newer service's state reads as running.
-    expect(laneFrameNow(frame(), { ...running, state: 'other' })).toBe(true);
-    // Between two tests, none does.
-    expect(laneFrameNow(frame(), { ...running, state: 'between', test: null })).toBe(false);
-    // At a stop, a frame of that stop alone.
-    const stopped = { ...running, state: 'stopped' as const, stop: stop('s2') };
-    expect(laneFrameNow(frame({ since: 's2' }), stopped)).toBe(true);
-    expect(laneFrameNow(frame({ since: 's1' }), stopped)).toBe(false);
-    expect(laneFrameNow(frame(), stopped)).toBe(false);
-    // The worker Playwright started in the lane in place of the one that sent it.
-    expect(laneFrameNow(frame(), { ...running, worker: 4 })).toBe(false);
-    expect(laneFrameNow(frame(), undefined)).toBe(false);
-  });
-
-  it('holds the actions in the test’s window at a headless stop the window does not watch, saying to watch first', () => {
-    const takes = worker({ intents: ['pick', 'record', 'assert', 'mock', 'view', 'input', 'pick-at', 'watch'] });
-    const unwatched = { ...stop('s1'), intents: ['mock' as const, 'view' as const, 'pick-at' as const] };
-    expect(heldUntilWatched(takes, unwatched, true)).toEqual(['pick', 'record', 'assert']);
-    // Watched, the stop takes them; a stop the bar shows takes them anyway.
-    expect(
-      heldUntilWatched(takes, { ...unwatched, intents: [...unwatched.intents, 'pick', 'record', 'assert'] }, true),
-    ).toEqual([]);
-    expect(heldUntilWatched(takes, { ...unwatched, bar: true }, true)).toEqual([]);
-    // Nothing to watch, a reporter that takes none of them, or a service that predates stop.intents: none held.
-    expect(heldUntilWatched(takes, unwatched, false)).toEqual([]);
-    expect(heldUntilWatched(worker({ intents: ['mock', 'view'] }), unwatched, true)).toEqual([]);
-    expect(heldUntilWatched(takes, stop('s1'), true)).toEqual([]);
-  });
-
   it('makes the window that watches it a viewer of the stops of its tests: the input and, headless, the actions in the test’s window', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
     const all = ['pick', 'record', 'mock', 'view', 'input', 'pick-at'] as const;

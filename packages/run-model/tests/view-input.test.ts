@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_VIEW_EVENTS, MAX_VIEW_EVENT_RATE, MAX_VIEW_TEXT, type ViewInput } from '@piwitests/core/run-view';
-import { ViewInputBatcher, keyOnView, pastedText, type KeyPress } from '../../src/shared/view-input.js';
+import { ViewInputBatcher, keyOnView, pastedText, type KeyPress } from '../src/view-input';
 
 /**
  * The live view's input: which key presses go to the stopped page and as what, and the pointer's events in batches,

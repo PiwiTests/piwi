@@ -12,6 +12,7 @@ COPY packages/core/package.json ./packages/core/
 COPY packages/picker-dom/package.json ./packages/picker-dom/
 COPY packages/editor/package.json ./packages/editor/
 COPY packages/run-ui/package.json ./packages/run-ui/
+COPY packages/run-model/package.json ./packages/run-model/
 COPY apps/application/package.json ./apps/application/
 COPY packages/reporter/package.json ./packages/reporter/
 COPY integrations/nitro/package.json ./integrations/nitro/
@@ -41,6 +42,10 @@ COPY apps/extension/src/shared/ ./apps/extension/src/shared/
 # The Nuxt layer the application extends (nuxt.config.ts): its components, composables and plugins, and the
 # syntax highlighter the server renders exports with. It ships TypeScript source, so it must be present at build time.
 COPY packages/run-ui/ ./packages/run-ui/
+
+# The run model the Local runs tray shares with Piwi Picker's Runs window (@piwitests/run-model), TypeScript source
+# Vite transpiles.
+COPY packages/run-model/ ./packages/run-model/
 
 # Copy application source
 COPY apps/application/ ./apps/application/

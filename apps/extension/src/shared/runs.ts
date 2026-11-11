@@ -8,7 +8,6 @@
  */
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import type {
-  HubAction,
   HubCodeAction,
   HubCodeIntent,
   HubWindowAction,
@@ -17,11 +16,10 @@ import type {
   HubIntent,
   HubKeptRequest,
   HubSession,
-  HubStop,
-  HubTest,
   HubWorker,
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
+import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
 export const RUNS_PORT = 'piwi-runs';
@@ -343,66 +341,6 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
   }
 }
 
-/** The actions in the test's window, which the pause bar shows, or a viewer drives through a headless stop's view. */
-export const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
-
-/**
- * What a stop takes from this window (`stop.intents`, as the hub tells each connection): its live view, the input on
- * it while the window watches it, Pick on the image, the actions in the test's window where the pause bar shows or
- * while the window watches the view, Mock a request, End the test but at a failure. From a service that predates it,
- * what the worker's reporter takes where the pause bar shows, and Mock a request at any stop: no live view.
- */
-export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubStop, 'bar' | 'intents'>): HubAction[] {
-  if (stop.intents) return stop.intents;
-  return worker.intents.filter(
-    (what) => what === 'mock' || (stop.bar && (IN_WINDOW as readonly string[]).includes(what)),
-  );
-}
-
-/**
- * The actions in the test's window a stop no pause bar shows takes from this window once it watches the stop (`view`,
- * or its worker's lane), while it does not: those the worker's reporter takes, shown held, saying to watch first. None
- * at a stop the bar shows, at one the window watches, at one that cannot be watched (`watchable`: the stop takes
- * `view`, or its lane can be watched), and from a service that predates `stop.intents`.
- */
-export function heldUntilWatched(
-  worker: Pick<HubWorker, 'intents'>,
-  stop: Pick<HubStop, 'bar' | 'intents'>,
-  watchable: boolean,
-): Array<(typeof IN_WINDOW)[number]> {
-  if (stop.bar || !stop.intents || !watchable) return [];
-  const taken = stop.intents;
-  return IN_WINDOW.filter((what) => worker.intents.includes(what) && !taken.includes(what));
-}
-
-/**
- * Whether a worker's lane can be watched while it runs (Watch): `watch` at a hub whose features list `lanes`, the
- * worker's reporter listing `watch`; `outdated` for a reporter that does not, at such a hub; null at a hub that
- * predates it, where a stop's own view (`view`) is all there is.
- */
-export function laneWatchOf(
-  hub: Pick<RunsHub, 'lanes'> | undefined,
-  worker: Pick<HubWorker, 'intents'>,
-): 'watch' | 'outdated' | null {
-  if (!hub?.lanes) return null;
-  return worker.intents.includes('watch') ? 'watch' : 'outdated';
-}
-
-/**
- * Whether a frame of a lane shows where its worker stands now: sent by that worker, of the stop it stands at, or, while
- * it runs, of its running test. Another one (taken before a Step, a Resume, a test that ended, or by the worker
- * Playwright replaced) shows dimmed until the next frame comes.
- */
-export function laneFrameNow(
-  frame: { worker: number; test: string | null; since: string | null },
-  worker: Pick<HubWorker, 'worker' | 'state' | 'test' | 'stop'> | undefined,
-): boolean {
-  if (!worker || frame.worker !== worker.worker) return false;
-  if (worker.state === 'stopped') return !!worker.stop && frame.since === worker.stop.since;
-  if (worker.state === 'between') return false;
-  return frame.since === null && !!worker.test && frame.test === worker.test.id;
-}
-
 /**
  * The state as one window reads it: the background worker's single connection to a hub watches every stop and lane a
  * window watches, so a stop the window does not watch itself (`watches`: its live view, or the lane of its worker,
@@ -438,22 +376,6 @@ export function stateForViewer(state: RunsState, watches: (view: RunsView, lane:
 /** Names a stop's live view, for the worker's maps of who watches it. */
 export function viewKey(view: RunsView): string {
   return `${view.hub}|${view.ref}|${view.worker}|${view.since}`;
-}
-
-/**
- * A point of an image of a stopped page, from where the pointer is on it to CSS pixels of the page's viewport: the
- * image is shown scaled to `shown` (its content box, the border left out), and names the viewport it shows
- * (`viewport`). Kept within the viewport, at a hundredth of a pixel; null for an image shown at no size.
- */
-export function pagePoint(
-  offset: { x: number; y: number },
-  shown: { width: number; height: number },
-  viewport: { width: number; height: number },
-): { x: number; y: number } | null {
-  if (!(shown.width > 0) || !(shown.height > 0) || !(viewport.width > 0) || !(viewport.height > 0)) return null;
-  const at = (value: number, size: number, page: number) =>
-    Math.round(Math.min(Math.max((value * page) / size, 0), page - 0.01) * 100) / 100;
-  return { x: at(offset.x, shown.width, viewport.width), y: at(offset.y, shown.height, viewport.height) };
 }
 
 /** The live runs of a state. */
@@ -551,32 +473,6 @@ export function runLevelControls(run: RunsRun): { pauseAll: boolean; resumeAll: 
   return { pauseAll, resumeAll: resumeAll.length > 1 ? resumeAll : [] };
 }
 
-/**
- * The worker a live run of several shows behind its tabs, by its lane (`parallelIndex`, kept by the worker Playwright
- * starts in its place): the one shown before (`before`, the person's choice included) while it stands at a stop or is
- * watched (`watched`); else, after the person resumed or ended the test shown (`advance`), the first stopped worker;
- * else the first stop that came since the tabs were last drawn (a stop not in `known`); else the one shown before;
- * else the first stopped worker, else the first. A stop so takes the tab once, as it comes, and never from a stop being
- * answered or a page being watched.
- */
-export function shownLaneOf(
-  workers: readonly HubWorker[],
-  shown: {
-    before: number | null;
-    watched?: (worker: HubWorker) => boolean;
-    known?: ReadonlySet<string>;
-    advance?: boolean;
-  },
-): number | null {
-  if (workers.length === 0) return null;
-  const { before, watched = () => false, known = new Set<string>(), advance = false } = shown;
-  const stopped = workers.filter((w) => w.state === 'stopped' && w.stop);
-  const current = workers.find((w) => w.parallelIndex === before);
-  if (current && (stopped.includes(current) || watched(current))) return current.parallelIndex;
-  const next = advance ? stopped[0] : stopped.find((w) => !known.has(w.stop!.since));
-  return (next ?? current ?? stopped[0] ?? workers[0]!).parallelIndex;
-}
-
 /** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */
 export const RUNS_BOUNDS_KEY = 'runsWindowBounds';
 
@@ -649,46 +545,6 @@ export function keyTargetOf(
   );
   const chosen = focused ? stopped.find((s) => workerKey(s.run.hub, s.run.session.ref, s) === focused) : undefined;
   return chosen ?? (stopped.length === 1 ? stopped[0]! : null);
-}
-
-/** A `file:` URI as a path with `/` separators: `/home/me/shop/tests/cart.spec.ts`, `C:/shop/tests/cart.spec.ts`. */
-function uriPath(uri: string): string | null {
-  try {
-    const url = new URL(uri);
-    if (url.protocol !== 'file:') return null;
-    const path = decodeURIComponent(url.pathname);
-    return /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
-  } catch {
-    return null;
-  }
-}
-
-/** A file of the run, relative to the run's folder when it is inside it, else as its whole path. */
-export function runFile(uri: string, root: string | null): string {
-  const path = uriPath(uri);
-  if (path === null) return uri;
-  const base = root?.replace(/\\/g, '/').replace(/\/+$/, '');
-  if (base && path.toLowerCase().startsWith(`${base.toLowerCase()}/`)) return path.slice(base.length + 1);
-  return path;
-}
-
-/** Where a stop stands, as text: `tests/pages/cart.page.ts:13`, with the 1-based line. */
-export function stopPlace(stop: Pick<HubStop, 'uri' | 'line'>, root: string | null): string {
-  return `${runFile(stop.uri, root)}:${stop.line + 1}`;
-}
-
-/**
- * The error a failure's stop names: its `error`, else, from a service or a reporter that predates it, read from its
- * title, which the reporter makes of `Failed: ` and the error's first line, which Playwright starts with the error's
- * name (`Error: expect(locator).toBeVisible() failed`).
- */
-export function stopError(stop: Pick<HubStop, 'error' | 'title'>): string {
-  return stop.error ?? stop.title.replace(/^Failed:\s*(?:Error:\s*)?/, '');
-}
-
-/** A test's name: its `describe` blocks' titles, then its own. */
-export function testName(test: Pick<HubTest, 'title'>): string {
-  return test.title.join(' › ');
 }
 
 /**
