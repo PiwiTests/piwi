@@ -45,6 +45,7 @@ const SEVERITY = 'customfield_10050';
 const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
 const TAGS = 'customfield_10070';
+const REVIEWER = 'customfield_10090';
 const FOUND_IN = 'customfield_10080';
 
 /**
@@ -97,6 +98,12 @@ const BUG_SCREEN = [
     name: 'Tags',
     required: false,
     schema: { type: 'array', items: 'string', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:labels' },
+  },
+  {
+    fieldId: REVIEWER,
+    name: 'Reviewer',
+    required: false,
+    schema: { type: 'user', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker' },
   },
 ];
 
@@ -226,12 +233,18 @@ function startMockJira(port: number): MockJira {
         {
           accountId: 'acct-2',
           displayName: 'Assignee',
+          emailAddress: 'pat.lee@example.com',
           avatarUrls: { '24x24': `http://127.0.0.1:${port}${USER_AVATAR_PATH}` },
         },
       ];
-      // Jira answers a lookup by account id with that one person, or no one.
+      // Jira answers a lookup by account id with that one person, or no one, and matches words to a name or an email.
       const accountId = url.searchParams.get('accountId');
-      return send(accountId ? people.filter((person) => person.accountId === accountId) : people);
+      const query = (url.searchParams.get('query') ?? '').toLowerCase();
+      return send(
+        accountId
+          ? people.filter((person) => person.accountId === accountId)
+          : people.filter((person) => `${person.displayName} ${person.emailAddress}`.toLowerCase().includes(query)),
+      );
     }
     if (`${path}${url.search}` === USER_AVATAR_PATH) {
       res.setHeader('Content-Type', 'image/svg+xml');
@@ -658,6 +671,29 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     } finally {
       mock.requireParent = false;
     }
+  });
+
+  test('a people field finds a person by the email Jira matched', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusters.refused}`);
+    await waitForHydration(page);
+    const open = page.locator('[data-shot="issue-line-create"]').first();
+    await expect(open).toBeVisible({ timeout: 30_000 });
+    await open.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('[data-shot="create-issue-fields"]')).toBeVisible({ timeout: 15_000 });
+
+    await dialog.getByText('Add a field').click();
+    await expect(page.getByPlaceholder('Search fields…')).toBeFocused();
+    await page.keyboard.type('Rev');
+    await page.getByRole('option', { name: 'Reviewer', exact: true }).click();
+    const reviewer = dialog.locator(`[data-shot="create-issue-added-fields"] [data-field-id="${REVIEWER}"]`);
+    await reviewer.getByText('Search a person').click();
+    await expect(page.getByPlaceholder('Search…')).toBeFocused();
+    // The name does not hold the words: the person is listed because Jira matched their email.
+    await page.keyboard.type('pat.lee@');
+    await page.getByRole('option', { name: 'Assignee' }).click();
+    await expect(reviewer).toContainText('Assignee');
+    await page.keyboard.press('Escape');
   });
 
   test('a field added for one issue type is not sent once the type changes', async ({ page }) => {
