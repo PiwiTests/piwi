@@ -8,6 +8,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 
 type OpenPageListener = (path: string) => void;
 
@@ -74,10 +75,10 @@ export const DESKTOP_HANDOFF_CSP = [
 
 /** The notice the browser tab shows once the page was forwarded (`shown`) or when no app window listens. */
 export function renderDesktopHandoffPage(shown: boolean): string {
-  const heading = shown ? 'Opened in Piwi Dashboard' : 'Open this page in Piwi Dashboard';
+  const heading = shown ? `Opened in ${DESKTOP_APP_NAME}` : `Open this page in ${DESKTOP_APP_NAME}`;
   const body = shown
     ? 'The page is now showing in the desktop app. You can close this tab.'
-    : 'This dashboard runs in the Piwi Dashboard desktop app, but its window is not ready yet. Open it from the tray icon, then open the link again.';
+    : `This dashboard runs in ${DESKTOP_APP_NAME}, but its window is not ready yet. Open it from the tray icon, then open the link again.`;
   const closeTab = shown ? `\n<script>${CLOSE_TAB_SCRIPT}</script>` : '';
   return `<!doctype html>
 <html lang="en">

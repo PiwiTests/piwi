@@ -70,6 +70,16 @@ export const HELP_TOPICS = {
     text: 'After each run, Piwi files an issue for each failure that meets a rule, counting only the runs the rule names.\n\n- **Occurrences, Runs** — how often it failed, and in how many distinct runs\n- **Days** — how long since the first occurrence counted\n- **Test tags** — only failures of tests carrying one of them\n\nA failure that is snoozed, looks flaky, is already tracked or that an open issue already carries the labels of is never filed, and the daily cap holds. Preview shows what the rules file before you save.',
     doc: 'features/issue-automation#automatic-creation',
   },
+  'integrations.test-management': {
+    title: 'Test management binding',
+    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. Piwi sends nothing to Zephyr Scale Cloud yet: the binding, the catalog of test cases and the mapping summary work today.\n\n- **Dry run** — on for a new binding; nothing is sent either way for now\n- **Where a test’s case key comes from** — its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
+    doc: 'operate/zephyr-scale#bind-a-project',
+  },
+  'integrations.test-management-run-name': {
+    title: 'Test run name',
+    text: 'The name a test run in Zephyr Scale Cloud gets for each Piwi run. It must contain `{runId}`, so each run has its own name.\n\n- `{branch}`, `{environment}` — where the run happened\n- `{runId}` — the Piwi run number\n- `{commit}`, `{date}`, `{ciBuild}` — the commit, the day and the CI build of the run',
+    doc: 'operate/zephyr-scale#the-test-run-name',
+  },
 
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
@@ -1426,7 +1436,7 @@ export const HELP_TOPICS = {
     text: 'Links to external systems (Jira, GitHub, etc.) attached to this item. The provider is detected automatically from the URL.',
   },
   'ide.open': {
-    title: 'Open in IDE',
+    title: 'Open in editor',
     text: [
       'Click a source path to open it in your local editor.',
       '',

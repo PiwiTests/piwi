@@ -1,5 +1,5 @@
 /**
- * "Open in IDE" — turns a repo-relative source path into a launch into the
+ * "Open in editor" — turns a repo-relative source path into a launch into the
  * user's local editor (the Piwi JetBrains plugin, VS Code family via
  * `vscode://` or, without a workspace root, the Piwi extension's
  * `vscode://piwitests.piwi/open` link, JetBrains via the `jetbrains://`
@@ -24,6 +24,7 @@
  * the failing line and asks before it runs the test.
  */
 import {
+  type IdeMethod,
   buildJetbrainsHttpUrl,
   buildJetbrainsNavigateUrl,
   buildPiwiPluginOpenUrl,
@@ -39,8 +40,6 @@ import {
   type PiwiPluginAnswer,
   type VscodeScheme,
 } from '~/utils/ide-links';
-
-export type IdeMethod = 'auto' | 'vscode' | 'jetbrains-url' | 'jetbrains-http';
 
 export interface IdePrefs {
   method: IdeMethod;
@@ -131,13 +130,6 @@ type PiwiPluginResult =
  * a click does not reach every port of the range. Kept for the page's lifetime.
  */
 let lastPiwiPluginPort: number | null = null;
-
-export const IDE_METHOD_LABELS: Record<IdeMethod, string> = {
-  auto: 'Auto (try all)',
-  vscode: 'VS Code',
-  'jetbrains-url': 'JetBrains (URL)',
-  'jetbrains-http': 'JetBrains (local server)',
-};
 
 /** Common JetBrains product tags for the `jetbrains://<product>/…` URL. */
 export const JETBRAINS_PRODUCTS = [
@@ -500,7 +492,7 @@ export function useOpenInIde() {
         if (res.reason) {
           // A real error (a missing file, a bad path) — a URL scheme won't help.
           toast.add({
-            title: 'Could not open in IDE',
+            title: 'Could not open in the editor',
             description: res.reason,
             color: 'error',
             icon: 'i-lucide-triangle-alert',
@@ -557,7 +549,7 @@ export function useOpenInIde() {
       return;
     }
     toast.add({
-      title: 'Set up "Open in IDE"',
+      title: 'Set up "Open in editor"',
       description:
         'Install the Piwi plugin in your JetBrains IDE and connect its project to this instance, use the Piwi extension in VS Code, or add your local workspace folder (for VS Code) or a JetBrains project name, to open files from here.',
       color: 'info',

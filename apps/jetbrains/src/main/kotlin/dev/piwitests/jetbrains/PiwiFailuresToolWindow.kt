@@ -185,6 +185,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             tree.emptyText.clear()
             if (service.status == null) {
                 tree.emptyText.appendText(if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST)
+                // A service that cannot start: the Node.js settings one click away, which start it again once closed.
+                if (service.trusted() && service.startProblem != null) {
+                    tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                        service.openNodeSettings()
+                    }
+                }
             } else {
                 val empty = Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
                 tree.emptyText.appendText(empty.text)
@@ -380,17 +386,17 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 PiwiCommands.rerunFailing(project, it.root)
             },
             ConfigAction("Compare With…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
-            ConfigAction("Open in Dashboard", AllIcons.General.Web, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
+            ConfigAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
             Separator.getInstance(),
             FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
                 Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
             Separator.getInstance(),
-            FailureAction("Open the Trace", null, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
-            FailureAction("Open the Screenshot", null, selected, { it.hasScreenshot == true }) {
+            FailureAction("Open the Trace", PiwiIcons.TRACE, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
+            FailureAction("Open the Screenshot", PiwiIcons.SCREENSHOT, selected, { it.hasScreenshot == true }) {
                 PiwiCommands.openScreenshot(project, evidence(it))
             },
-            FailureAction("Open in Dashboard", AllIcons.General.Web, selected, { it.url != null }) { f ->
+            FailureAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { f ->
                 f.url?.let { BrowserUtil.browse(it) }
             },
             Separator.getInstance(),
@@ -398,8 +404,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 PiwiCommands.copyAgentContext(project, evidence(it))
             },
             Separator.getInstance(),
-            FailureAction("Reproduce in the Desktop App", null, selected, desktop) { job(it, "reproduce") },
-            FailureAction("Find the Breaking Commit in the Desktop App", null, selected, desktop) { job(it, "bisect") },
+            FailureAction("Reproduce in the Desktop App", PiwiIcons.REPRODUCE, selected, desktop) { job(it, "reproduce") },
+            FailureAction("Find the Breaking Commit in the Desktop App", PiwiIcons.BISECT, selected, desktop) { job(it, "bisect") },
         )
     }
 
@@ -433,7 +439,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 "context" -> AllIcons.Nodes.Module
                 "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
                 "edited" -> AllIcons.General.Information
-                "failing", "failed" -> AllIcons.General.Error
+                "failing", "failed" -> PiwiIcons.FAILED
                 "file", "cluster", "owner" -> AllIcons.Nodes.Folder
                 "history" -> AllIcons.Vcs.History
                 else -> AllIcons.RunConfigurations.TestState.Run

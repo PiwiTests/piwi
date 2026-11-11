@@ -2785,6 +2785,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const hit = failureOf(d.data as FailureData);
       if (hit) found.set(hit.failure.executionId, hit);
     }
+    // These failures' diagnostics, on this line, say their headline beside the hover.
+    const diagnosedHere = new Set(found.keys());
     // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
     const context = file ? contextFor(file) : null;
     const pass = placer();
@@ -2823,9 +2825,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       parts.push(
         [
           `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
-          message && message !== failure.headline
-            ? `${failure.headline ?? ''}\n\n${fenced(message)}`
-            : (failure.headline ?? ''),
+          diagnosedHere.has(failure.executionId) ? '' : (failure.headline ?? ''),
+          message && message !== failure.headline ? fenced(message) : '',
           chain.length > 1 ? `Called from ${chain.join(' ← ')}` : '',
           ...issues.map(
             (l) =>
@@ -2940,13 +2941,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const failed = failingNow.get(found.id);
       const fixed = failed ? undefined : fixedNow.get(found.id);
       const at = failed ? pass.place(context, failed) : null;
+      const line = failureLine(at?.frames ?? [], file, call.line, call.endLine);
       const failure: TestFailure | undefined = failed && {
-        line: failureLine(at?.frames ?? [], file, call.line, call.endLine),
+        line,
         headline: failed.headline,
         message: failed.message ?? null,
         executionId: failed.executionId,
         url: context.client!.executionUrl(failed.executionId),
         state: at?.state === 'edited' ? 'edited' : 'failing',
+        // On any project the test failed on: each failure has a diagnostic of its own.
+        diagnosed:
+          credentials.failureSeverity !== 'off' &&
+          (context.failures?.failures ?? []).some((f) => {
+            if (f.testCaseId !== found.id) return false;
+            const site = f === failed ? at : pass.place(context, f);
+            return !!site && site.state !== 'gone' && samePath(site.file, file) && site.line - 1 === line;
+          }),
       };
       const status =
         context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
@@ -3044,10 +3054,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
-        const why = clip(failed.headline ?? 'Failed', 120);
+        // The failure's diagnostic says why it failed: the line above says so only where no diagnostic does.
+        const why = failure.diagnosed || !failed.headline ? null : clip(failed.headline, 120);
+        const mark = failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)}` : '✗ Failed here';
         reasons.push({
           line: failure.line,
-          title: failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)} · ${why}` : `✗ ${why}`,
+          title: why ? `${mark} · ${why}` : mark,
           command: {
             title: 'Open the failure in the dashboard',
             command: 'piwi.openInDashboard',

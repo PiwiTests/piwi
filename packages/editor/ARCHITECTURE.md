@@ -375,7 +375,12 @@ A failure whose line changed since its run:
 - is an information, `Edited since run #120: …`, with `data.edited`;
 - has **Run this test** (`piwi.runTests`) first among its quick fixes (every failure has it);
 - has `state: 'edited'` in `TestFailure` and in `piwi/failures`;
-- shows `✎ edited since run #120 · …` above the line.
+- shows `✎ edited since run #120` above the line.
+
+The line above a failing line says `✗ Failed here`, and the headline after it only where no diagnostic on that line
+gives it (`TestFailure.diagnosed`: the diagnostic of the test's failure on any project is on that line, and
+`failureSeverity` is not `off`). The hover leaves out the headline of a failure whose diagnostic is on the hovered line,
+and gives it for every other failure of the call chain. VS Code asks for the lenses again as it hands new credentials.
 
 A failure whose test left its spec publishes nothing: its `test(…)` call was in the spec the run saw, and is not in the
 spec as it stands.
@@ -432,7 +437,7 @@ as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server
 ### Failure lines and Flake Lab lines
 
 A failing test's line also carries `failure`: the line of the test that its error's stack goes through. The instance
-sends the stack's frames and the message in `branch-failures`. Above that line, the reason, **Run this test**
+sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run this test**
 (`piwi.runTests` with the test's id), **Screenshot** and **Trace** are ordinary summary lines. The hover on any line of
 that stack shows the message and the call chain.
 

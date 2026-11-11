@@ -140,8 +140,21 @@ object Glue {
      */
     fun playwrightConfigDirs(roots: List<Path>): List<Path> {
         val found = LinkedHashSet<Path>()
+        walkSearched(roots) { file ->
+            if (file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
+            false
+        }
+        return found.sorted()
+    }
+
+    /**
+     * Each regular file under `roots`, the roots included and down to [CONFIG_DEPTH] levels, skipping what the
+     * Playwright config search skips, until `visit` returns true.
+     */
+    private fun walkSearched(roots: List<Path>, visit: (Path) -> Boolean) {
         for (root in roots) {
             if (!Files.isDirectory(root)) continue
+            var done = false
             Files.walkFileTree(root, emptySet(), CONFIG_DEPTH + 1, object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
                     val name = dir.fileName?.toString() ?: return FileVisitResult.CONTINUE
@@ -150,14 +163,52 @@ object Glue {
                 }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (attrs.isRegularFile && file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
-                    return FileVisitResult.CONTINUE
+                    done = attrs.isRegularFile && visit(file)
+                    return if (done) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
                 }
 
                 override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
             })
+            if (done) return
         }
-        return found.sorted()
+    }
+
+    /** An MSBuild `PackageReference` element's `Include`, its other attributes quoted in either quote. */
+    private val PACKAGE_REFERENCE = Regex(
+        """<PackageReference\b(?:[^>"']|"[^"]*"|'[^']*')*?\bInclude\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** A Playwright for .NET package: `Microsoft.Playwright`, or one of its test framework packages (`.NUnit`, `.Xunit.v3`). */
+    private val DOTNET_PLAYWRIGHT_PACKAGE = Regex("""Microsoft\.Playwright(\.[A-Za-z0-9]+)*""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Whether the text of an MSBuild project or `Directory.Build.props` references Playwright for .NET, outside its
+     * comments; an `Include` may list several packages, split by `;`.
+     */
+    fun referencesDotnetPlaywright(project: String): Boolean =
+        PACKAGE_REFERENCE.findAll(project.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")).any { match ->
+            (match.groupValues[1].ifEmpty { match.groupValues[2] }).split(';')
+                .any { DOTNET_PLAYWRIGHT_PACKAGE.matches(it.trim()) }
+        }
+
+    /** Whether a file is an MSBuild project of .NET code, or the props every project of its folder imports. */
+    private fun isMsbuildProject(name: String): Boolean =
+        name.equals("Directory.Build.props", ignoreCase = true) ||
+            listOf(".csproj", ".fsproj", ".vbproj").any { name.endsWith(it, ignoreCase = true) }
+
+    /**
+     * Whether an MSBuild project under `roots` (`searchedFolders`) references Playwright for .NET, whose tests Piwi does
+     * not read. A file over a megabyte is not read.
+     */
+    fun holdsDotnetPlaywright(roots: List<Path>): Boolean {
+        var found = false
+        walkSearched(roots) { file ->
+            found = isMsbuildProject(file.fileName.toString()) &&
+                runCatching { Files.size(file) <= 1_000_000 && referencesDotnetPlaywright(Files.readString(file)) }.getOrDefault(false)
+            found
+        }
+        return found
     }
 
     /** The repository around `dir`: the nearest folder, `dir` included, that holds `.git`; null outside one. */
@@ -173,12 +224,20 @@ object Glue {
         val roots = outermost(folders.filter { Files.isDirectory(it) })
         val dirs = playwrightConfigDirs(roots)
         if (dirs.isNotEmpty()) return PlaywrightSearch(roots, dirs)
-        val homeFolder = home?.toAbsolutePath()?.normalize()
-        val repositories = outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+        val repositories = repositoriesAround(roots, home)
         if (repositories.isEmpty() || repositories == roots) return PlaywrightSearch(roots, dirs)
         val inRepositories = playwrightConfigDirs(repositories)
         return if (inRepositories.isEmpty()) PlaywrightSearch(roots, dirs) else PlaywrightSearch(repositories, inRepositories)
     }
+
+    /** The repositories around `roots`, but one in the home folder or at a drive's root, which hold other projects. */
+    private fun repositoriesAround(roots: List<Path>, home: Path?): List<Path> {
+        val homeFolder = home?.toAbsolutePath()?.normalize()
+        return outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+    }
+
+    /** Every folder `findPlaywright` searches for a project in `roots`: they and the repositories around them. */
+    fun searchedFolders(roots: List<Path>, home: Path?): List<Path> = outermost(roots + repositoriesAround(roots, home))
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
@@ -402,6 +461,11 @@ object Glue {
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
+    /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
+    const val NODE_SETTINGS_LINK = "Node.js Settings…"
+
+
+
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
     const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
 
@@ -412,6 +476,20 @@ object Glue {
     /** What the first-run notification says Piwi does. */
     const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
         "with your local runs laid over them, and records tests at the caret."
+
+    /**
+     * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
+     * Piwi reads Playwright Test suites in JavaScript and TypeScript.
+     */
+    const val DOTNET_PLAYWRIGHT_NOTE = "Piwi reads Playwright Test suites in JavaScript and TypeScript: the Playwright " +
+        "for .NET tests of this project get no failures, results or runs from Piwi in the IDE."
+
+    /** Why the settings page's Playwright runner option is off, in an IDE without the runner. */
+    const val NO_PLAYWRIGHT_RUNNER = "This IDE's JavaScript plugin has no Playwright runner, so the tests run in the " +
+        "Run tool window's console."
+
+    /** Where the docs say which suites Piwi reads: **Learn More** on `DOTNET_PLAYWRIGHT_NOTE`. */
+    const val DOTNET_PLAYWRIGHT_DOCS_URL = "https://piwitests.dev/features/jetbrains#install-and-start"
 
     /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
@@ -745,7 +823,7 @@ object Glue {
     }
 
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
-    private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
     fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
@@ -753,17 +831,6 @@ object Glue {
     /** A test's gutter tooltip: the summary the service writes, its latest result naming the run first, as HTML text. */
     fun testResultTooltip(title: String?): String =
         "<html>${escapeHtml(listOfNotNull("Piwi", title?.ifBlank { null }).joinToString(": "))}</html>"
-
-    /**
-     * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
-     * line changed since the run.
-     */
-    fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
-        val why = headline?.ifBlank { null } ?: "Failed"
-        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escapeHtml(it)}</pre>" } ?: ""
-        val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
-        return "<html><b>$title</b><br>${escapeHtml(why)}$details</html>"
-    }
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
@@ -858,6 +925,53 @@ object Glue {
         "dotenv" -> "the workspace .env"
         "desktop" -> "the Piwi desktop app"
         else -> "Settings → Tools → Piwi"
+    }
+
+    /**
+     * The instance the environment or a workspace `.env` names, which comes before the one the settings page saves: its
+     * address, its project while it is the one read, where it comes from (`sourceLabel`), the config it is named for when
+     * the project has several (`label`), and whether the desktop app is read before it.
+     */
+    data class Overriding(
+        val serverUrl: String,
+        val project: String?,
+        val source: String,
+        val label: String? = null,
+        val desktopFirst: Boolean = false,
+    )
+
+    /**
+     * What overrides the settings page's instance, `saved`, from the status: the first config whose environment or `.env`
+     * names another; null when none does, or before the service starts.
+     */
+    fun overriding(status: StatusResult?, saved: String): Overriding? {
+        val contexts = status?.contexts.orEmpty()
+        for (c in contexts) {
+            val source = c.instance?.source ?: c.source
+            if (source != "environment" && source != "dotenv") continue
+            val url = c.instance?.serverUrl ?: c.serverUrl ?: continue
+            if (normalizeServerUrl(url) == normalizeServerUrl(saved)) continue
+            return Overriding(
+                url,
+                c.projectName.takeIf { c.source == source && c.connected },
+                sourceLabel(source),
+                c.label.takeIf { contexts.size > 1 },
+                c.source == "desktop",
+            )
+        }
+        return null
+    }
+
+    /** What the settings page says above its instance's fields while `overriding` names another one. */
+    fun overriddenText(overriding: Overriding): String {
+        val of = overriding.label?.let { " for $it" } ?: ""
+        val project = overriding.project?.let { ", project $it" } ?: ""
+        return if (overriding.desktopFirst) {
+            "${overriding.source.replaceFirstChar { it.uppercase() }} names ${overriding.serverUrl}$of, which Piwi reads " +
+                "before the server URL below while the desktop app is not in use."
+        } else {
+            "Overridden by ${overriding.source}$of: Piwi reads ${overriding.serverUrl}$project, not the server URL below."
+        }
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */

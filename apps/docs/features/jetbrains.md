@@ -30,8 +30,17 @@ with the browser: [Editor connection](./editor-connection).
 
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 
+**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then the instance saved for the project,
+then the desktop app. When the environment or the workspace `.env` names another instance, the page says so above the
+fields, and an empty **Server URL** shows its address. While the service cannot start, the page and the **Piwi** tool
+window offer **Node.js Settings…**, and the service starts again once you close the settings.
+
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
+
+Piwi reads Playwright Test suites in JavaScript and TypeScript. A Rider solution whose Playwright tests are written in
+C# (a `.csproj` referencing `Microsoft.Playwright`) and that holds no Playwright config gets no tool window or status
+item: a notification says so, once per project.
 
 
 ## Where things are
@@ -72,6 +81,10 @@ The rest is native, and every action is under **Tools → Piwi**:
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
   says how many elements its locator matches on the stopped page, and a failure held there reads `Failed · …`.
+- **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
+  off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
+  tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate
+  and Rider; where it lacks one, the option is off and says why.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
@@ -83,7 +96,7 @@ The rest is native, and every action is under **Tools → Piwi**:
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the Runs' MCP Server Token** gives it a new token;
   **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
   Stopped Browser with Playwright Tools**, after a warning.
-- **[Open in IDE](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
+- **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
@@ -101,4 +114,4 @@ problems and Piwi confirmations (Copied., Connected to …), so muting one kind 
 
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.
 - [Editor connection](./editor-connection): the instance the plugin reads, and its key.
-- [Open in IDE](./ide-integration): open a path from the dashboard in the IDE.
+- [Open in editor](./ide-integration): open a path from the dashboard in the IDE.

@@ -104,6 +104,32 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
     }
 
+    /**
+     * Every action draws a platform icon, but a toggle (its menu row shows a check mark) and those waiting for a glyph
+     * Piwi draws; a stop's code actions draw the same in its popups (`PiwiIcons.stopAction`).
+     */
+    fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
+        val actions = ActionManager.getInstance()
+        val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
+        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
+        val awaiting = setOf(
+            "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
+            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright",
+        )
+        val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
+        val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
+        assertEquals(toggles + awaiting, bare)
+        for (id in toggles) assertTrue(id, actions.getAction(id) is com.intellij.openapi.actionSystem.ToggleAction)
+        val registered = mapOf(
+            Glue.StopAction.PICK to "Piwi.PickAtStop", Glue.StopAction.RECORD to "Piwi.RecordAtStop",
+            Glue.StopAction.ASSERT to "Piwi.AssertAtStop", Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
+            Glue.StopAction.MOCK to "Piwi.MockAtStop",
+        )
+        for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
+        assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+    }
+
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
     fun testTheEditorsPiwiSubmenuShowsNothingAtRestOnAFileOfNoTests() {
         myFixture.configureByText("notes.md", "# Notes")
@@ -608,6 +634,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** The color key of a coverage mark's gutter bar, which names its kind. */
+    private fun coverageKey(highlighter: com.intellij.openapi.editor.markup.RangeHighlighter): String? =
+        (highlighter.lineMarkerRenderer as? CoverageGutterMark)?.key?.externalName
+
     /** A file's coverage answer is drawn as marks in the gutter, one per span, hidden and shown again with the action. */
     fun testCoverageMarksAreDrawnAndHidden() {
         val base = File(project.basePath!!)
@@ -618,8 +648,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val marks = project.service<PiwiCoverageMarks>()
         val wasShown = marks.shown
         fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-            .filter { it.lineMarkerRenderer != null && it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
-            .map { Triple(it.textAttributesKey?.externalName, document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset)) }
+            .filter { it.lineMarkerRenderer != null && coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
+            .map { Triple(coverageKey(it), document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset)) }
             .sortedBy { it.second }
         try {
             marks.shown = true
@@ -646,10 +676,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
             )
             // Hovered in the gutter or the scroll bar, a mark says what it marks and what the marks mean.
             val run = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-                .first { it.textAttributesKey?.externalName == "PIWI_COVERAGE_RUN" }
+                .first { coverageKey(it) == "PIWI_COVERAGE_RUN" }
             val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
             assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
-            assertEquals(tooltip, run.errorStripeTooltip)
+            // Every mark carries its key, for a background the scheme sets; the lines run draw no mark in the scroll bar.
+            val scheme = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance().globalScheme
+            assertEquals("PIWI_COVERAGE_RUN", run.textAttributesKey?.externalName)
+            assertNull(run.getErrorStripeMarkColor(scheme))
+            val notRun = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+                .first { coverageKey(it) == "PIWI_COVERAGE_NOT_RUN" }
+            assertEquals("PIWI_COVERAGE_NOT_RUN", notRun.textAttributesKey?.externalName)
+            assertNotNull(notRun.getErrorStripeMarkColor(scheme))
             assertTrue(marks.known)
             marks.shown = false
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -659,8 +696,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(3, drawn().size)
             // A new answer: only the marks it changes are taken off or drawn, the others' highlighters kept.
             fun highlighters() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-                .filter { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
-                .associateBy { it.textAttributesKey?.externalName }
+                .filter { coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
+                .associateBy { coverageKey(it) }
             val first = highlighters()
             marks.arrived(result.copy(notRun = listOf(LineSpan(2, 3))))
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -708,7 +745,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val marks = project.service<PiwiCoverageMarks>()
         val wasShown = marks.shown
         fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-            .count { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+            .count { coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
         fun uri() = file.toNioPath().toUri().toString()
         val dispatch = { com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue() }
         val result = CoverageResult(uri = uri(), state = "exact", executed = listOf(LineSpan(0, 1, 1)), tests = 1)
@@ -1135,7 +1172,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900", "failing"), test.failure)
                 assertEquals(
                     listOf(
-                        Triple(4, "✗ not found", "piwi.openInDashboard"),
+                        Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
                         Triple(4, "Run this test", "piwi.runTests"),
                         Triple(4, "Screenshot", "piwi.openScreenshot"),
                         Triple(4, "Trace", "piwi.openTrace"),

@@ -781,7 +781,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/test-functions',
       },
       {
-        title: 'Open in IDE',
+        title: 'Open in editor',
         summary: 'Every source path in the dashboard jumps to that file and line in VS Code or JetBrains.',
         needs: [],
         where: 'any source path',

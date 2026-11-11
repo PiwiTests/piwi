@@ -1246,7 +1246,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (actions.isNotEmpty()) addSeparator()
         for (action in actions) {
             add(
-                object : DumbAwareAction(action.label) {
+                object : DumbAwareAction(action.label, null, PiwiIcons.stopAction(action)) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
                     override fun actionPerformed(e: AnActionEvent) = start(stop, action)
@@ -1945,7 +1945,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
 
 /** The arrow in the gutter at a stop: what is about to run, and on a click the controls, which act on that stop. */
 private class ExecutionPointGutter(private val sessions: PiwiRunSessions, private val stop: Glue.ShownStop) : GutterIconRenderer(), DumbAware {
-    override fun getIcon() = if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement
+    override fun getIcon() = if (Glue.isFailure(stop.stop)) PiwiIcons.FAILED else AllIcons.Debugger.NextStatement
 
     override fun getTooltipText(): String = Glue.htmlTooltip(
         listOfNotNull(

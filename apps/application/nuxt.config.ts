@@ -450,6 +450,9 @@ export default defineNuxtConfig({
       '*/10 * * * *': ['gate:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
+      // Read the test case catalog of each bound test management project that was not read in the last day
+      // (the task skips the ones that are fresh, so the hourly tick costs nothing most of the time)
+      '37 * * * *': ['integrations:test-management-catalog'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged
       // rows and canonical nodes unseen for thirty runs (independent of retention).
       '23 3 * * *': ['graph:sweep'],

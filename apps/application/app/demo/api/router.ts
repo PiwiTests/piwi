@@ -73,6 +73,15 @@ import { getDemoDb } from '../db.client';
 import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
 import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
 import {
+  demoTestManagementCases,
+  demoTestManagementKeyConfig,
+  demoTestManagementOptions,
+  demoTestManagementSettings,
+  demoTestManagementSummary,
+  refreshDemoTestManagementCatalog,
+  saveDemoTestManagement,
+} from './test-management';
+import {
   apiCreateRunRequest,
   apiGetRunRequest,
   apiListRunRequests,
@@ -1232,6 +1241,69 @@ const routes: RouteEntry[] = [
         .limit(1);
       if (!project) throw demoHttpError(404, 'Project not found');
       return lastCompleteRunTagOverlap(db, +m[1]!, resolveTagKeyPatterns(project.tagKeys));
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementSettings(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/test-management$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return saveDemoTestManagement(await getDemoDb(), +m[1]!, body);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/options$/,
+    permission: 'project:manage',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementOptions(Number(q?.get('connectionId')), q?.get('projectKey') || null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/summary$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementSummary(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/key-config$/,
+    permission: 'project:read',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementKeyConfig(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/cases$/,
+    permission: 'project:read',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementCases(await getDemoDb(), +m[1]!, q?.get('keys'));
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/catalog\/refresh$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return refreshDemoTestManagementCatalog(await getDemoDb(), +m[1]!);
     },
   },
   {

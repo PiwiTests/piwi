@@ -32,6 +32,14 @@ export interface TmStatus {
   isDefault: boolean;
 }
 
+/** A folder test runs are filed under. */
+export interface TmFolder {
+  id: string;
+  name: string;
+  /** The parent folder's ID, null for a folder at the project's root. */
+  parentId: string | null;
+}
+
 /** Where a paged read resumes. `null` starts at the first page. */
 export type PageCursor = string | null;
 
@@ -78,6 +86,8 @@ export interface TestManagementProvider {
   /** One page of a project's test cases per call: pass the previous page's `next` to read on. */
   listCases(projectKey: string, page: PageCursor): Promise<TmPage<TmCase>>;
   listStatuses(projectKey: string): Promise<TmStatus[]>;
+  /** The folders a test run can be filed under. */
+  listFolders(projectKey: string): Promise<TmFolder[]>;
   uploadRun?(input: UploadRunInput): Promise<TmRun>;
   findRun?(projectKey: string, marker: RunMarker): Promise<TmRun | null>;
   linkRun?(run: TmRun, link: { url: string; title: string }): Promise<void>;

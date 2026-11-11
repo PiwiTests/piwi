@@ -633,7 +633,7 @@ The pairing:
   `apps/application/shared/desktop-pairing.ts`). The app's window shows who asks, with a code the card shows too.
   After the developer's **Allow**, the poll carries the app's token, once. The card keeps it after `testDesktop`
   accepts it.
-- **Pair by hand** takes the token pasted from the app's **Connect Piwi Picker** instead.
+- **Pair by hand** takes the token pasted from the app's **Pair with Piwi Picker** instead.
 - Either way the settings page requests that one loopback origin inside the click. **Unpair** gives the grant back,
   unless the instance, the editor's pairing, a recording or a replay still holds it (`releaseGrant`, as the sites
   card reckons); **Disconnect** and the editor's **Unpair** do the same. In Firefox a pattern names no port, so every

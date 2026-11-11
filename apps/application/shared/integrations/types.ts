@@ -111,6 +111,14 @@ export interface TrackerSummary {
   baseUrl: string;
 }
 
+/** A test management connection a project can be bound to — what the binding form offers. */
+export interface TestManagementConnectionSummary {
+  id: number;
+  provider: IntegrationProviderName;
+  name: string;
+  status: 'unverified' | 'ok' | 'failed';
+}
+
 /** A tracker project option for the create modal's picker. */
 export interface TrackerProjectOption {
   id: string;

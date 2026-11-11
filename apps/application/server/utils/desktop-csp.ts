@@ -1,7 +1,7 @@
 import { JETBRAINS_PORTS } from '#shared/jetbrains-ports';
 
 /**
- * The origins Open in IDE reaches from the page: a JetBrains IDE's built-in
+ * The origins Open in editor reaches from the page: a JetBrains IDE's built-in
  * server on the loopback interface (the Piwi plugin's endpoint, IDE Remote
  * Control), on the ports the IDE takes and no other.
  */

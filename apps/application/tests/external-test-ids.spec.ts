@@ -62,6 +62,7 @@ test.describe.serial('External test IDs', () => {
     await page.goto(`/test-cases/${testCaseId}`);
     const heading = page.getByRole('heading', { level: 1 });
     await expect(heading.getByTestId('test-id-chip')).toHaveText('12526');
+    await expect(heading.getByTestId('test-id-chip')).toHaveClass(/\bmr-2\b/);
     await expect(heading).toHaveText(/^\s*12526\s*Log in\s*$/);
   });
 

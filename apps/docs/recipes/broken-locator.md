@@ -31,7 +31,7 @@ into the codebase.
 ## 2. Jump to the line and change it
 
 Every source path in the dashboard is clickable, including the failing call stack. Hover the path and
-use **open in IDE** to land on the exact line. That mapping is configured
+use **open in editor** to land on the exact line. That mapping is configured
 [per browser](/features/ide-integration) and stored locally — your checkout path is never sent to the server.
 
 No IDE integration set up? The path and line number are plain text on the page; the fastest route is

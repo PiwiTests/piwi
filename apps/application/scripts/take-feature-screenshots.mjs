@@ -2684,11 +2684,11 @@ const SCENES = [
   {
     name: 'open-in-ide-settings',
     description:
-      'The Open in IDE dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
+      'The Open in editor dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
     route: '/',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
-      const item = page.getByRole('menuitem', { name: 'Open in IDE…' });
+      const item = page.getByRole('menuitem', { name: 'Open in editor…' });
       await settle();
       for (let attempt = 0; attempt < 20 && !(await item.isVisible()); attempt++) {
         await page.locator('[data-shot="user-menu"]').click();
@@ -4053,6 +4053,73 @@ const SCENES = [
       await page.getByTestId('region-check').waitFor();
       await settle();
       await shoot(undefined, { of: '[data-shot="zephyr-scale-connection-form"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-binding-form',
+    mode: 'demo',
+    description:
+      'Project settings → Test management: the checkout project bound to a Zephyr Scale project with dry run on and the case key read from tags',
+    route: '/projects/1?tab=settings&section=test-management',
+    viewport: { width: 1280, height: 1400 },
+    colorScheme: 'light',
+    async run({ page, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const form = page.locator('[data-shot="project-test-management-binding"]');
+      await form.getByTestId('test-management-dry-run').waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="project-test-management-binding"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-mapping-summary',
+    mode: 'demo',
+    description:
+      'Project settings → Test management: how the last run’s tests map onto the case catalog (tests with a key, tests with none, a key the catalog does not hold) and the catalog with its Refresh button',
+    route: '/projects/1?tab=settings&section=test-management',
+    viewport: { width: 1280, height: 1400 },
+    colorScheme: 'light',
+    async run({ page, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const summary = page.locator('[data-shot="test-management-summary"]');
+      await summary.getByTestId('test-management-mapped').waitFor({ timeout: 90_000 });
+      await summary.getByTestId('test-management-unknown').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-management-summary"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-case-hover-card',
+    mode: 'demo',
+    description:
+      'A test case page: hovering a case key tag opens a card with the name and status of the Zephyr Scale case behind it',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'light',
+    async run({ page, goto, shoot, settle }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      const caseId = await page.evaluate(async () => {
+        const res = await fetch('/demo/api/projects/1/test-cases?tags=SHOP-T123&maxAgeDays=0');
+        const body = await res.json();
+        return body.items?.[0]?.id ?? null;
+      });
+      if (caseId === null) throw new Error('No demo test carries the tag SHOP-T123');
+      await goto(`/test-cases/${caseId}`);
+      const tag = page.getByText('@SHOP-T123', { exact: true }).first();
+      await tag.waitFor({ timeout: 90_000 });
+      await tag.hover();
+      const card = page.getByTestId('test-case-key-card');
+      await card.getByTestId('test-case-key-name').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-testid="test-case-key-card"]', pad: 24 });
     },
   },
   {

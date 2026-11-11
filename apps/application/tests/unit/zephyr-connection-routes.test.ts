@@ -71,6 +71,10 @@ const assignable = route(await import('../../server/api/integrations/connections
 const issuePicker = route(await import('../../server/api/integrations/connections/[id]/issue-picker.get'));
 const bind = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { getSetupStatus } = await import('../../shared/handlers/setup-status');
+const { limiterForConnection, resetLimitersForTests } =
+  await import('../../server/utils/integrations/test-management/limiter');
+const { pauseConnectionById } = await import('../../server/utils/integrations/actions');
+const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 
 const as = (
   id: number,
@@ -230,6 +234,73 @@ describe('testing a Zephyr connection', () => {
       .from(schema.integrationConnections)
       .where(eq(schema.integrationConnections.id, connection.id));
     expect(row!.status).toBe('ok');
+  });
+
+  test('answers ok false without a call while the provider has the connection paused', async () => {
+    const connection = await createZephyr();
+    await pauseConnectionById(db, connection.id, 30_000, new Date());
+    sent.length = 0;
+    expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('Paused') });
+    expect(sent).toEqual([]);
+    connectionPausedUntil(connection.id, new Date(Date.now() + 1e10));
+    expect(await test_(at(connection.id))).toMatchObject({ ok: true });
+  });
+
+  test('answers ok false when the connection has more requests queued than a Test waits for, and records nothing', async () => {
+    const connection = await createZephyr();
+    process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '1';
+    resetLimitersForTests();
+    try {
+      expect(await test_(at(connection.id))).toMatchObject({ ok: true });
+      sent.length = 0;
+      expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('waiting') });
+      expect(sent).toEqual([]);
+      expect((await list(event())).connections[0]).toMatchObject({ status: 'ok' });
+    } finally {
+      delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
+      resetLimitersForTests();
+    }
+  });
+
+  test('answers ok false at once when the queue outlasts the ten seconds the check has, and takes no turn', async () => {
+    const connection = await createZephyr();
+    // 12 s apart: one request ahead leaves the check 12 s away, inside the 15 s a queue may be but past its 10 s.
+    process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '5';
+    resetLimitersForTests();
+    try {
+      const limiter = limiterForConnection(connection.id);
+      void limiter.wait();
+      const started = Date.now();
+      expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('waiting') });
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(sent).toEqual([]);
+      expect((await list(event())).connections[0]).toMatchObject({ status: 'unverified' });
+      const probe = await limiter.wait({ maxWaitMs: 0 }).catch((err: { retryAfterMs: number }) => err);
+      expect((probe as { retryAfterMs: number }).retryAfterMs).toBeLessThan(13_000);
+    } finally {
+      delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
+      resetLimitersForTests();
+    }
+  });
+
+  test('still calls Jira for a Jira connection that is paused, which the pause of a test management one does not reach', async () => {
+    const jira = (
+      await create(
+        event({
+          provider: 'jira',
+          name: 'Jira',
+          baseUrl: 'https://example.atlassian.net',
+          credentials: { email: 'ci@example.com', apiToken: 'jira-token' },
+        }),
+      )
+    ).connection;
+    await pauseConnectionById(db, jira.id, 30_000, new Date());
+    sent.length = 0;
+    const result = await test_(at(jira.id));
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).not.toContain('Paused');
+    expect(sent.map((request) => request.where.split('/')[0])).toEqual(['example.atlassian.net']);
+    connectionPausedUntil(jira.id, new Date(Date.now() + 1e10));
   });
 
   test('answers 200 with the error for a refused token, as for Jira, and marks the connection failed', async () => {

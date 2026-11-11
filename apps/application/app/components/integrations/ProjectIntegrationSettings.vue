@@ -80,13 +80,17 @@ const connectionItems = computed(() => [
   ...connections.value.map((c) => ({ label: c.name, value: c.id })),
 ]);
 const trackerIcon = useTrackerIcon();
-const projectKeyItems = computed(() =>
-  jiraProjects.value.map((p) => ({
+const projectKeyItems = computed(() => [
+  ...jiraProjects.value.map((p) => ({
     label: `${p.key} — ${p.name}`,
     value: p.key,
     avatar: trackerIcon(form.connectionId, p.icon),
   })),
-);
+  // A key Jira does not list, typed or saved, stays visible once chosen.
+  ...(form.projectKey && !jiraProjects.value.some((p) => p.key === form.projectKey)
+    ? [{ label: form.projectKey, value: form.projectKey, avatar: undefined }]
+    : []),
+]);
 const issueTypeItems = computed(() =>
   issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(form.connectionId, t.icon) })),
 );
@@ -302,7 +306,10 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
               create-item
               placeholder="Project key"
               class="w-full"
-            />
+              @create="(key: string) => (form.projectKey = key.trim().toUpperCase())"
+            >
+              <template #create-item-label="{ item }">Use {{ item.trim().toUpperCase() }}</template>
+            </USelectMenu>
           </UFormField>
           <UFormField label="Issue type">
             <USelectMenu

@@ -84,6 +84,12 @@ export interface TestFailure {
    * `failing` otherwise.
    */
   state?: 'failing' | 'edited';
+  /**
+   * Whether the failure's diagnostic, which says why it failed, is on `line` of this file: the clients then say it
+   * nowhere else on that line. False on a line that calls the code the failure is in, and while no diagnostic shows
+   * (`failureSeverity` `off`).
+   */
+  diagnosed?: boolean;
 }
 
 /**

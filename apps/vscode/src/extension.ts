@@ -342,12 +342,13 @@ async function handCredentials(context: vscode.ExtensionContext, lc: LanguageCli
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, handed);
 }
 
-/** Hand the saved connection to the service when it differs from the one last handed. */
-async function handChangedCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+/** Hand the saved connection to the service when it differs from the one last handed: whether it did. */
+async function handChangedCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const next = await credentials(context);
-  if (JSON.stringify(next) === JSON.stringify(handed)) return;
+  if (JSON.stringify(next) === JSON.stringify(handed)) return false;
   handed = next;
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, next);
+  return true;
 }
 
 /** Hand the saved connection to the service and have it read everything again. */
@@ -412,7 +413,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (credentialsTimer) clearTimeout(credentialsTimer);
     credentialsTimer = setTimeout(() => {
       credentialsTimer = null;
-      void handChangedCredentials(context, lc).then(() => mcpServersChanged());
+      void handChangedCredentials(context, lc).then((handedNow) => {
+        mcpServersChanged();
+        // The lenses say a failure's reason where no diagnostic does, which `failureSeverity` decides.
+        if (handedNow) filesChanged();
+      });
     }, CREDENTIALS_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => credentialsTimer && clearTimeout(credentialsTimer) });

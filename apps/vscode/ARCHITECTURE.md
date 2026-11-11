@@ -57,6 +57,13 @@ beside it:
 [Build output](../../packages/editor/ARCHITECTURE.md#build-output) in the editor service's reference. The requests and
 notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#protocol), in the same reference.
 
+**Glyphs.** Every command in `package.json` has a codicon from the concept table of
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), checked by
+hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Refresh, Run to the cursor, Pause and
+watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
+context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
+`tests/menus.test.ts` holds both.
+
 ## Service, lenses and credentials
 
 `src/extension.ts` starts the service with `vscode-languageclient` and draws its answers.
@@ -202,8 +209,8 @@ Each visible file the service reads (C# files among them) is asked `piwi/coverag
 | Lines changed since the coverage run                                          | `piwi.coverageChangedBorder` | dashed |
 | In a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) | `piwi.uncoveredChangeBorder` | solid  |
 
-The first two colors default to the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
-`apps/application/tests/unit/coverage-mark-colors.test.ts`). Every mark but the lines run also shows in the overview
+The four colors default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, the first two the dashboard's, and
+the JetBrains plugin's color schemes hold the same (checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`). Every mark but the lines run also shows in the overview
 ruler.
 
 `piwi/coverageChanged` replaces a file's answer and draws it again, with the file's lenses. An edit asks for nothing:
@@ -529,7 +536,8 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
   a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
-- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**;
+- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**, its tooltip
+  linking it, **Piwi: Restart the editor service** and **Piwi: Connect**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Piwi: Connect**;

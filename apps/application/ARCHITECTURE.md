@@ -95,7 +95,7 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 | Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
 | Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
 | Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
-| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                                     |
+| Integrations         | `integration_connections`, `project_integrations`, `project_test_management`, `test_management_cases`, `test_management_catalog_reads`, `integration_actions`                                                |
 | Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                                          |
 | Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                                   |
 | Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                                           |
@@ -418,6 +418,7 @@ Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTask
 | Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
 | Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
 | Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
 | Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
 
 ### Code the server and the demo share

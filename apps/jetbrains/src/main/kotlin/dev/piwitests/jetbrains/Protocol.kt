@@ -31,7 +31,8 @@ data class SummaryLine(
 
 /**
  * The line of the test a failure went through (0-based), followed through the edits since the run, and why it failed.
- * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; may be null.
+ * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; may be null. `diagnosed` when
+ * the failure's diagnostic is on that line, which then says why it failed.
  */
 data class TestFailure(
     val line: Int = 0,
@@ -40,6 +41,7 @@ data class TestFailure(
     val executionId: Int = 0,
     val url: String? = null,
     val state: String? = null,
+    val diagnosed: Boolean = false,
 )
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)

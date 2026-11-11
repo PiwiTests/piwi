@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { COVERAGE_MARK_COLORS } from '@piwitests/core/coverage';
 
 /**
- * The coverage marks have one pair of colors in the dashboard and in the editors: the `COVERAGE_MARK_COLORS` of
- * `@piwitests/core/coverage`, restated by the dashboard's tokens, the VS Code extension's color defaults and the
- * JetBrains plugin's color schemes, none of which can import it.
+ * The coverage marks have one set of colors in the dashboard and in the editors: the `COVERAGE_MARK_COLORS` of
+ * `@piwitests/core/coverage`, restated by the dashboard's tokens (the lines run and not run), the VS Code extension's
+ * color defaults and the JetBrains plugin's color schemes (all four), none of which can import it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
@@ -43,6 +43,9 @@ describe('the coverage mark colors', () => {
       highContrast: dark.notRun,
       highContrastLight: light.notRun,
     });
+    // The changed lines' high contrast themes take a brighter and a darker shade of the same amber and orange.
+    expect(defaults('piwi.coverageChangedBorder')).toMatchObject({ dark: dark.changed, light: light.changed });
+    expect(defaults('piwi.uncoveredChangeBorder')).toMatchObject({ dark: dark.uncovered, light: light.uncovered });
   });
 
   test('are the JetBrains color schemes’ marks, Default light and Darcula dark', () => {
@@ -55,5 +58,9 @@ describe('the coverage mark colors', () => {
     expect(stripe('PiwiDefault', 'PIWI_COVERAGE_NOT_RUN')).toBe(light.notRun);
     expect(stripe('PiwiDarcula', 'PIWI_COVERAGE_RUN')).toBe(dark.run);
     expect(stripe('PiwiDarcula', 'PIWI_COVERAGE_NOT_RUN')).toBe(dark.notRun);
+    expect(stripe('PiwiDefault', 'PIWI_COVERAGE_CHANGED')).toBe(light.changed);
+    expect(stripe('PiwiDefault', 'PIWI_UNCOVERED_CHANGE')).toBe(light.uncovered);
+    expect(stripe('PiwiDarcula', 'PIWI_COVERAGE_CHANGED')).toBe(dark.changed);
+    expect(stripe('PiwiDarcula', 'PIWI_UNCOVERED_CHANGE')).toBe(dark.uncovered);
   });
 });
