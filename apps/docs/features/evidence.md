@@ -40,8 +40,8 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded (field values
   with passwords masked, scroll, dialogs, shadow DOM, focus, the mouse), with the action's target outlined. **Open in picker** finds a
-  locator on that DOM. Enlarged, a screenshot's details give its attached name in full, `| Expected:` on its own
-  line.
+  locator on that DOM. Enlarged, a screenshot's details give its attached name in full, with the expected result
+  on a line of its own.
 - **Source**: the test source as a call stack (the line that threw, with [Debug in my editor](./debug-in-editor), plus its callers), deepened
   [with a trace](#trace-powered-deep-views), then, with [coverage](./code-reach#on-the-execution-page), what the test
   ran.
