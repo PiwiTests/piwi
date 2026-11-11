@@ -73,7 +73,10 @@ The panel then says the outcome is unknown. It does not retry on its own. **Sync
 test run that run's upload may have made, by its name and start time:
 
 - one that is found is linked to the Piwi run and is not made again;
-- none found uploads the results again.
+- none found uploads the results again;
+- when Zephyr gives no answer Piwi can trust (more executions or test runs than it reads, or a test run it cannot
+  read), nothing is sent, the send stays failed and the message says why. Check the project in Zephyr before you try
+  again.
 
 A send that failed before the upload, or after the test run was made, only repeats the step that failed. **Sync again**
 works on a failed send; a dry run has nothing to repeat. It is refused, and says why, while the binding is turned off,

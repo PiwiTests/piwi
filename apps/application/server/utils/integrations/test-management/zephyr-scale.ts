@@ -7,6 +7,7 @@ import { strToU8, zipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '#shared/integrations/registry';
 import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import type {
+  FindRunOutcome,
   PageCursor,
   TestManagementCredentials,
   TestManagementProvider,
@@ -42,8 +43,11 @@ export interface ZephyrClientOptions {
 /** The largest results file Zephyr accepts. */
 export const ZEPHYR_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-/** The most cycles `findRun` reads the name of: one call each. */
-const FIND_RUN_MAX_CYCLES = 10;
+/** The most cycles `findRun` reads the name of, one call each; a test case run in more leaves it unsure. */
+export const FIND_RUN_MAX_CYCLES = 50;
+
+/** The most pages of executions `findRun` reads; a list longer than that leaves it unsure. */
+export const FIND_RUN_MAX_PAGES = 20;
 
 /** How long before an attempt began an execution may end and still be taken for the attempt's, for clock drift. */
 const FIND_RUN_SLACK_MS = 60_000;
@@ -164,6 +168,11 @@ async function toZephyrError(response: Response, token: string): Promise<ZephyrS
 function isLastPage(body: PagedBody<unknown>, startAt: number): boolean {
   if (body.values.length === 0 || body.isLast === true || body.next === null) return true;
   return typeof body.total === 'number' && startAt + body.values.length >= body.total;
+}
+
+/** A look for an earlier upload's test run that found no answer Piwi can trust. */
+function unsure(reason: string): FindRunOutcome {
+  return { outcome: 'unsure', reason };
 }
 
 /** A cursor as the `startAt` it names; a cursor this client did not issue reads as an error. */
@@ -456,43 +465,64 @@ export class ZephyrScaleClient implements TestManagementProvider {
   }
 
   /**
-   * The test cycle an earlier upload created, or null when none is found. Zephyr cannot list cycles by name, so this
-   * reads the last executions of one test case the run reports on since the attempt began, and the name of each
-   * cycle they belong to: the cycle whose name holds `Piwi #<runId>` (or is the name the run was given) is the one.
+   * The test cycle an earlier upload created. Zephyr cannot list cycles by name, so this reads every last execution of
+   * one test case the run reports on since the attempt began, and the name of each cycle they belong to: the cycle
+   * whose name holds `Piwi #<runId>` (or is the name the run was given) is the one. `not-found` only when every page
+   * and every cycle was read; a list too long, or a cycle that cannot be read, is `unsure`.
    */
-  async findRun(projectKey: string, marker: RunMarker): Promise<TmRun | null> {
+  async findRun(projectKey: string, marker: RunMarker): Promise<FindRunOutcome> {
     const since = new Date(Date.parse(marker.startedAt) - FIND_RUN_SLACK_MS);
     if (Number.isNaN(since.getTime())) throw new RangeError('Invalid run marker');
-    const executions = await this.getPage<{ testCycle?: { id?: unknown } | null }>(
-      '/testexecutions',
-      {
-        projectKey: checkedProjectKey(projectKey),
-        testCase: marker.testCaseKey,
-        actualEndDateAfter: `${since.toISOString().slice(0, 19)}Z`,
-        onlyLastExecutions: 'true',
-        maxResults: PAGE_SIZE,
-      },
-      ZEPHYR_INTERACTIVE_TIMEOUT_MS,
-    );
-    const ids = [
-      ...new Set(
-        executions.values
-          .map((execution) => execution.testCycle?.id)
-          .filter((id): id is number | string => typeof id === 'number' || typeof id === 'string'),
-      ),
-    ].slice(0, FIND_RUN_MAX_CYCLES);
-    const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\w)`);
-    for (const id of ids) {
-      const cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown }>(
-        `/testcycles/${encodeURIComponent(String(id))}`,
-        {},
+    const params = {
+      projectKey: checkedProjectKey(projectKey),
+      testCase: marker.testCaseKey,
+      actualEndDateAfter: `${since.toISOString().slice(0, 19)}Z`,
+      onlyLastExecutions: 'true',
+      maxResults: PAGE_SIZE,
+    };
+    const ids = new Set<string>();
+    let startAt = 0;
+    for (let page = 0; ; page++) {
+      if (page === FIND_RUN_MAX_PAGES) {
+        return unsure(
+          `${marker.testCaseKey} has more than ${FIND_RUN_MAX_PAGES} pages of executions since the run began`,
+        );
+      }
+      const body = await this.getPage<{ testCycle?: { id?: unknown } | null }>(
+        '/testexecutions',
+        { ...params, startAt },
         ZEPHYR_INTERACTIVE_TIMEOUT_MS,
       );
-      if (typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || typeof cycle.name !== 'string') continue;
-      if (cycle.name !== marker.name && !named.test(cycle.name)) continue;
-      return { key: cycle.key, id: String(cycle.id ?? id), url: '' };
+      for (const execution of body.values) {
+        const id = execution.testCycle?.id;
+        if (typeof id === 'number' || typeof id === 'string') ids.add(String(id));
+      }
+      if (isLastPage(body, startAt)) break;
+      startAt += body.values.length;
     }
-    return null;
+    if (ids.size > FIND_RUN_MAX_CYCLES) {
+      return unsure(`${marker.testCaseKey} ran in more than ${FIND_RUN_MAX_CYCLES} test cycles since the run began`);
+    }
+
+    const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\w)`);
+    for (const id of ids) {
+      let cycle: { id?: unknown; key?: unknown; name?: unknown } | null;
+      try {
+        cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown } | null>(
+          `/testcycles/${encodeURIComponent(id)}`,
+          {},
+          ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+        );
+      } catch (err) {
+        return unsure(`reading test cycle ${id} failed (${err instanceof Error ? err.message : String(err)})`);
+      }
+      if (!cycle || typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || typeof cycle.name !== 'string') {
+        return unsure(`Zephyr Scale answered test cycle ${id} with an unexpected shape`);
+      }
+      if (cycle.name !== marker.name && !named.test(cycle.name)) continue;
+      return { outcome: 'found', run: { key: cycle.key, id: String(cycle.id ?? id), url: '' } };
+    }
+    return { outcome: 'not-found' };
   }
 
   caseUrl(): null {

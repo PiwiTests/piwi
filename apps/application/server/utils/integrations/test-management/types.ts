@@ -85,6 +85,15 @@ export interface RunMarker {
   name: string;
 }
 
+/**
+ * What a look for an earlier upload's test run found: the run, none, or no answer Piwi can trust, with why. Only
+ * `not-found` lets the results be uploaded again.
+ */
+export type FindRunOutcome =
+  | { outcome: 'found'; run: TmRun }
+  | { outcome: 'not-found' }
+  | { outcome: 'unsure'; reason: string };
+
 export interface TestManagementProvider {
   readonly provider: TestManagementProviderName;
   whoAmI(): Promise<{ id: string; displayName: string }>;
@@ -95,7 +104,7 @@ export interface TestManagementProvider {
   /** The folders a test run can be filed under. */
   listFolders(projectKey: string): Promise<TmFolder[]>;
   uploadRun?(input: UploadRunInput): Promise<TmRun>;
-  findRun?(projectKey: string, marker: RunMarker): Promise<TmRun | null>;
+  findRun?(projectKey: string, marker: RunMarker): Promise<FindRunOutcome>;
   linkRun?(run: Pick<TmRun, 'key'>, link: { url: string; title: string }): Promise<void>;
   /** The web address of a test case, or null when the tool documents none. */
   caseUrl?(key: string): string | null;

@@ -157,6 +157,11 @@ export function syncRunNotLinkedMessage(runKey: string, reason: string): string 
   return `The test management tool holds test run ${runKey} for this run, but Piwi did not link it: ${reason}`;
 }
 
+/** Why Sync again sent nothing when the look for an earlier upload's test run had no answer Piwi can trust. */
+export function syncLookupUnsureMessage(reason: string): string {
+  return `Piwi couldn't tell whether Zephyr Scale already has this run's test cycle, so it didn't send it again: ${reason}. Check the project in Zephyr Scale.`;
+}
+
 /** The refusal Sync again answers when the binding no longer takes the sync. */
 export function syncAgainRefusedMessage(reason: string): string {
   return `Results not sent again: ${reason}`;

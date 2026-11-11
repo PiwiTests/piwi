@@ -743,6 +743,28 @@ describe('Sync again', () => {
     expect((await syncRow()).result).toEqual({ uploadStartedAt: expect.any(Number) });
   });
 
+  test('a look that cannot read a cycle sends nothing, is a 409 saying why, and leaves the sync as it was', async () => {
+    await failUpload(503);
+    const before = await syncRow();
+    zephyr.executions = () => json({ ...fixture('testexecutions-page'), values: [{ id: 1, testCycle: { id: 5555 } }] });
+    const answer = await refusal(syncAgain(at(RUN_ID)));
+    expect(answer.statusCode).toBe(409);
+    expect(answer.message).toMatch(
+      /^Piwi couldn't tell whether Zephyr Scale already has this run's test cycle, so it didn't send it again: reading test cycle 5555 failed \(.+\)\. Check the project in Zephyr Scale\.$/,
+    );
+    expect(uploads()).toEqual([]);
+    expect(await syncRow()).toEqual(before);
+  });
+
+  test('a look that fails leaves the sync as it was', async () => {
+    await failUpload(503);
+    const before = await syncRow();
+    zephyr.executions = () => json({ message: 'down' }, 500);
+    expect((await refusal(syncAgain(at(RUN_ID)))).statusCode).toBe(502);
+    expect(uploads()).toEqual([]);
+    expect(await syncRow()).toEqual(before);
+  });
+
   test('a run with no failed sync is a 409', async () => {
     await seedRun();
     await fillCatalog();

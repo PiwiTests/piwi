@@ -4,6 +4,8 @@ import { strFromU8, unzipSync, zipSync } from 'fflate';
 import { INTEGRATION_PROVIDERS } from '../../shared/integrations/registry';
 import { IntegrationHttpError } from '../../server/utils/integrations/http-error';
 import {
+  FIND_RUN_MAX_CYCLES,
+  FIND_RUN_MAX_PAGES,
   ZEPHYR_MAX_PAGES,
   ZEPHYR_MAX_UPLOAD_BYTES,
   ZEPHYR_TIMEOUT_STATUS,
@@ -539,9 +541,8 @@ describe('findRun', () => {
       .mockResolvedValueOnce(reply(fixture('testcycle-other')))
       .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
     expect(await client().findRun('SHOP', marker)).toEqual({
-      key: 'SHOP-R42',
-      id: '3001',
-      url: '',
+      outcome: 'found',
+      run: { key: 'SHOP-R42', id: '3001', url: '' },
     });
 
     const list = requested(0);
@@ -563,7 +564,7 @@ describe('findRun', () => {
         reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![0]] }),
       )
       .mockResolvedValueOnce(reply(fixture('testcycle-other')));
-    expect(await client().findRun('SHOP', marker)).toBeNull();
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
   });
 
   test('run 12 does not match a cycle named Piwi #12a', async () => {
@@ -572,7 +573,7 @@ describe('findRun', () => {
         reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
       )
       .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Piwi #12a main' }));
-    expect(await client().findRun('SHOP', marker)).toBeNull();
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
   });
 
   test('matches a cycle named exactly as the run was', async () => {
@@ -581,24 +582,95 @@ describe('findRun', () => {
         reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
       )
       .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Nightly' }));
-    expect(await client().findRun('SHOP', { ...marker, name: 'Nightly' })).toMatchObject({ key: 'SHOP-R42' });
+    expect(await client().findRun('SHOP', { ...marker, name: 'Nightly' })).toMatchObject({
+      outcome: 'found',
+      run: { key: 'SHOP-R42' },
+    });
   });
 
-  test('is null when no execution is found', async () => {
+  test('finds nothing when no execution is found', async () => {
     fetchMock.mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values: [] }));
-    expect(await client().findRun('SHOP', marker)).toBeNull();
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test('reads no more than ten cycles', async () => {
-    const values = Array.from({ length: 30 }, (_, i) => ({ id: i, testCycle: { id: 4000 + i } }));
+  test('reads every page of executions', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        reply({ startAt: 0, maxResults: 1, total: 2, isLast: false, values: [{ id: 1, testCycle: { id: 2999 } }] }),
+      )
+      .mockResolvedValueOnce(
+        reply({ startAt: 1, maxResults: 1, total: 2, isLast: true, values: [{ id: 2, testCycle: { id: 3001 } }] }),
+      )
+      .mockResolvedValueOnce(reply(fixture('testcycle-other')))
+      .mockResolvedValueOnce(reply(fixture('testcycle-piwi')));
+    expect(await client().findRun('SHOP', marker)).toMatchObject({ outcome: 'found', run: { key: 'SHOP-R42' } });
+    expect(requested(1).pathname).toBe('/v2/testexecutions');
+    expect(requested(1).searchParams.get('startAt')).toBe('1');
+    expect(requested(1).searchParams.get('actualEndDateAfter')).toBe('2026-11-10T12:29:45Z');
+  });
+
+  test(`is unsure when the executions run past ${FIND_RUN_MAX_PAGES} pages`, async () => {
+    let page = 0;
+    fetchMock.mockImplementation(async () =>
+      reply({ startAt: page, maxResults: 1, isLast: false, values: [{ id: page, testCycle: { id: 4000 + page++ } }] }),
+    );
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 has more than ${FIND_RUN_MAX_PAGES} pages of executions since the run began`,
+    });
+    // No cycle is read from a list that was not read to its end.
+    expect(fetchMock).toHaveBeenCalledTimes(FIND_RUN_MAX_PAGES);
+  });
+
+  test(`reads up to ${FIND_RUN_MAX_CYCLES} cycles before it finds nothing`, async () => {
+    const values = Array.from({ length: FIND_RUN_MAX_CYCLES * 2 }, (_, i) => ({
+      id: i,
+      testCycle: { id: 4000 + (i % FIND_RUN_MAX_CYCLES) },
+    }));
     fetchMock.mockImplementation(async (input: RequestInfo | URL) =>
       String(input).includes('/testexecutions')
         ? reply({ startAt: 0, maxResults: 1000, isLast: true, values })
         : reply({ id: 1, key: 'SHOP-R1', name: 'Unrelated' }),
     );
-    expect(await client().findRun('SHOP', marker)).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
+    expect(fetchMock).toHaveBeenCalledTimes(1 + FIND_RUN_MAX_CYCLES);
+  });
+
+  test(`is unsure, reading no cycle, when the executions name more than ${FIND_RUN_MAX_CYCLES} cycles`, async () => {
+    const values = Array.from({ length: FIND_RUN_MAX_CYCLES + 1 }, (_, i) => ({ id: i, testCycle: { id: 4000 + i } }));
+    fetchMock.mockResolvedValueOnce(reply({ startAt: 0, maxResults: 1000, isLast: true, values }));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: `SHOP-T1 ran in more than ${FIND_RUN_MAX_CYCLES} test cycles since the run began`,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('is unsure when a cycle cannot be read, without reading on', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    const found = await client().findRun('SHOP', marker);
+    expect(found).toMatchObject({ outcome: 'unsure' });
+    expect(found.outcome === 'unsure' && found.reason).toMatch(/^reading test cycle 2999 failed \(.*403/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('is unsure when a cycle has an unexpected shape, without reading on', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(fixture('testexecutions-page')))
+      .mockResolvedValueOnce(reply({ id: 2999, key: 'not a key', name: 'Piwi #12 main' }));
+    expect(await client().findRun('SHOP', marker)).toEqual({
+      outcome: 'unsure',
+      reason: 'Zephyr Scale answered test cycle 2999 with an unexpected shape',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('a list of executions that cannot be read is an error', async () => {
+    fetchMock.mockResolvedValueOnce(reply(fixture('error-forbidden'), { status: 403 }));
+    await expect(client().findRun('SHOP', marker)).rejects.toMatchObject({ status: 403 });
   });
 
   test('refuses a marker with no date', async () => {

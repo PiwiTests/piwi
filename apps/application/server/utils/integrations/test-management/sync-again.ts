@@ -27,16 +27,23 @@ export async function findFailedSync(db: DbClient, runId: number): Promise<Integ
   return row ?? null;
 }
 
+/** What asking to send a failed sync again came to. */
+export type RequeueOutcome =
+  | { status: 'queued'; action: IntegrationAction }
+  | { status: 'changed' }
+  | { status: 'unsure'; reason: string };
+
 /**
  * Queue a failed sync to be sent again. A row that holds an upload start and no test run is looked up in the tool
  * first: a test run found there is recorded on the row, so the next attempt only links it; none found clears the start,
- * so the next attempt uploads. Returns the queued row, or null when another request changed the row first.
+ * so the next attempt uploads. When the tool gives no answer Piwi can trust, the row is left as it was. `changed` when
+ * another request changed the row first.
  */
 export async function requeueFailedSync(
   db: DbClient,
   tm: TestManagementProvider,
   action: IntegrationAction,
-): Promise<IntegrationAction | null> {
+): Promise<RequeueOutcome> {
   const payload = action.payload as SyncActionPayload;
   const state = readSyncState(action.result);
   let result: Record<string, unknown> | null = state.runKey
@@ -55,7 +62,10 @@ export async function requeueFailedSync(
       testCaseKey: payload.results[0]!.key,
       name: payload.run.name,
     });
-    if (found) result = { uploadStartedAt: state.uploadStartedAt, runKey: found.key, runUrl: found.url };
+    if (found.outcome === 'unsure') return { status: 'unsure', reason: found.reason };
+    if (found.outcome === 'found') {
+      result = { uploadStartedAt: state.uploadStartedAt, runKey: found.run.key, runUrl: found.run.url };
+    }
   }
 
   const [queued] = await db
@@ -70,5 +80,5 @@ export async function requeueFailedSync(
     })
     .where(and(eq(integrationActions.id, action.id), eq(integrationActions.status, 'failed')))
     .returning();
-  return queued ?? null;
+  return queued ? { status: 'queued', action: queued } : { status: 'changed' };
 }
