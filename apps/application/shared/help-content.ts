@@ -72,7 +72,7 @@ export const HELP_TOPICS = {
   },
   'integrations.test-management': {
     title: 'Test management binding',
-    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. Piwi sends nothing to Zephyr Scale Cloud yet: the binding, the catalog of test cases and the mapping summary work today.\n\n- **Dry run** — on for a new binding; nothing is sent either way for now\n- **Where a test’s case key comes from** — its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
+    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. A finished CI run of the whole suite is sent as one test run, one result per test case key.\n\n- **Dry run** — on for a new binding; a run’s page shows what would be sent and nothing reaches Zephyr Scale\n- **Where a test’s case key comes from** — its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
     doc: 'operate/zephyr-scale#bind-a-project',
   },
   'integrations.test-management-run-name': {
@@ -724,7 +724,7 @@ export const HELP_TOPICS = {
   'run.testManagementSync': {
     title: 'Results sync',
     text: 'When the project sends results to a test management tool, the run’s results go there as one test run when the run finishes: one result per test case key, the worst outcome of its tests. A dry run shows what would be sent and sends nothing. When an upload may have reached the tool, Sync again looks for the test run before it sends.',
-    doc: 'operate/zephyr-scale',
+    doc: 'features/test-management',
   },
   'run.test-cases': {
     title: 'Tests',
@@ -1319,7 +1319,7 @@ export const HELP_TOPICS = {
   },
   'settings.integrations.zephyr-connection': {
     title: 'Zephyr Scale Cloud',
-    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. Piwi sends nothing to Zephyr Scale yet: the connection can be created, checked and tested.',
+    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. A project bound to the connection sends its finished runs’ results to Zephyr Scale.',
     doc: 'operate/zephyr-scale',
     envVars: ['PIWI_ZEPHYR_API_TOKEN', 'PIWI_ZEPHYR_REGION'],
   },

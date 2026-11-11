@@ -54,7 +54,7 @@ export const RUNS_ANCHORS = [
       'How the run’s results went to the test management tool: the test run made there, what was sent, the keys left out, and Sync again.',
     shownWhen: 'When the project is bound to a test management tool and the run ended and was eligible to send.',
     help: 'run.testManagementSync',
-    doc: 'operate/zephyr-scale',
+    doc: 'features/test-management',
     sample: { route: '/test-runs/2', expect: { run: { id: 2, project: 'e2e-checkout' } } },
   },
   {
