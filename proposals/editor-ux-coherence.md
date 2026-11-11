@@ -27,8 +27,8 @@ unreachable instance, no run, a desktop app to restart or no connection, and the
 for a connection, #1120; and [HM7](#hm7)'s '…' menu, Follow worded by its state, as two commands rather than one
 toggled, beside Connect, Open settings and Open the log, #1120), [Q16](#q16) in part (Piwi: Restart the editor service,
 and no toast for a failed request, #1120; [HM19](#hm19)'s status item saying 'Piwi: not running', with Restart and the
-log; Restart in the unreachable tooltip; JetBrains' restart link in its empty text remains, since the plugin's
-status does not yet say that a service which ran has stopped), [Q8](#q8) in part (Open
+log; Restart in the unreachable tooltip; JetBrains' tool window saying a service that ran stopped, with Restart the
+Editor Service and Open Log, [M19](#m19)), [Q8](#q8) in part (Open
 in Dashboard on the tool window's selection, [HM5](#hm5), #1120; the tool window's tab named Failures, its icon dotted
 red while tests fail, [HM13](#hm13); each node's hover the service's, [HM9](#hm9); one Group By drop-down and a gear
 menu holding Connect…, Pair, the MCP copies, Refresh and Settings…, [HM6](#hm6); a registered `Piwi.RefreshRun`, Refresh
@@ -49,8 +49,10 @@ JetBrains' scroll bar), [Q20](#q20) (Run This Spec and the spec's lens run every
 which is marked in red, #1122), [LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step, Finish and Write
 code…, #1122; the line's own lens hiding meanwhile, JetBrains' inlay and the nightly width check of [M14](#m14) remain),
 [LR2](#lr2)'s icons (no spinner at a held stop, the error's icon at a held failure, #1122; the line the service composes
-for both clients, [M13](#m13), remains), [ST23](#st23) in part (the JetBrains plugin logs a failed request to idea.log,
-and every action says the one not-running sentence; its Log tab and Piwi.OpenLog of [M19](#m19) remain), [Q24](#q24)
+for both clients, [M13](#m13), remains), [ST23](#st23) (the JetBrains plugin logs a failed request to idea.log,
+and every action says the one not-running sentence; [M19](#m19)'s Log tab behind `Piwi.OpenLog`, holding the service's
+starts, stops, stderr and failed requests, the service writing its errors to stderr for both clients, and
+`Piwi.RestartService`, both in D25 and offered by every balloon saying the service does not run or answer), [Q24](#q24)
 (one name per worker, #1213), with an unproven desktop app told apart from an unreachable one in both status items
 (#1213), [Q15](#q15) (the editor fixture answers each spec's own cases and the nightly suite holds the spec's count,
 [ST6](#st6); the JetBrains script writes no image whose status item lacks its failing icon and color, [HM20](#hm20);

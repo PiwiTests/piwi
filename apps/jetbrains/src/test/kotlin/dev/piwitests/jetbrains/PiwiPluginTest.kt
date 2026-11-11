@@ -63,7 +63,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures", "Piwi.RestartService", "Piwi.OpenLog")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
         // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
@@ -128,6 +128,58 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
         for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+    }
+
+    /**
+     * The Log tab shows the lines written before it opened, then each line as it is written, a failed request under its
+     * method once a minute; closed, it opens again with them all.
+     */
+    fun testTheLogTabShowsTheServicesLogAndTheRequestsThatFailed() {
+        val log = project.service<PiwiLog>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            log.write("The editor service stopped (exit code 1).")
+            val failing = java.lang.reflect.Proxy.newProxyInstance(
+                PiwiLanguageServer::class.java.classLoader,
+                arrayOf(PiwiLanguageServer::class.java),
+            ) { _, method, _ ->
+                if (method.name == "status") {
+                    CompletableFuture.failedFuture<StatusResult?>(
+                        org.eclipse.lsp4j.jsonrpc.ResponseErrorException(org.eclipse.lsp4j.jsonrpc.messages.ResponseError(-32603, "the index is gone", null)),
+                    )
+                } else {
+                    null
+                }
+            } as PiwiLanguageServer
+            val logged = PiwiLog.logged(project, failing)
+            assertNull(logged.status().orNull())
+            assertNull(logged.status().orNull())
+            assertEquals(1, log.lines().count { it.endsWith("piwi/status failed: the index is gone") })
+
+            log.show()
+            val tab = window.contentManager.selectedContent!!
+            assertEquals(Glue.LOG_TAB, tab.displayName)
+            assertTrue(tab.isCloseable)
+            val console = tab.component as com.intellij.execution.impl.ConsoleViewImpl
+            fun shown(): String {
+                console.flushDeferredText()
+                return console.editor!!.document.text
+            }
+            assertTrue(shown(), shown().contains("The editor service stopped (exit code 1)."))
+            log.write("Restarting the editor service.")
+            assertTrue(shown(), shown().contains("Restarting the editor service."))
+            window.contentManager.removeContent(tab, true)
+            assertNull(window.contentManager.findContent(Glue.LOG_TAB))
+            log.write("Starting the editor service.")
+            log.show()
+            val again = window.contentManager.findContent(Glue.LOG_TAB).component as com.intellij.execution.impl.ConsoleViewImpl
+            again.flushDeferredText()
+            val text = again.editor!!.document.text
+            assertTrue(text, text.contains("piwi/status failed") && text.contains("Restarting") && text.contains("Starting the editor service."))
+        } finally {
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
     }
 
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
@@ -1099,6 +1151,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             stub.coverageOf(git(dir, "hash-object", "src/BasketService.cs").trim())
             val commandLine = PiwiLspServerDescriptor(project).createCommandLine()
                 .withWorkDirectory(dir)
+            assertTrue(project.service<PiwiLog>().lines().any { "Starting the editor service with Node.js v" in it })
                 .withEnvironment(
                     mapOf(
                         "PIWI_DASHBOARD_URL" to stub.url,

@@ -44,6 +44,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`apps/application/tests/unit/editor-ids-register.test.ts`).
 - **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
   ([Run control](ARCHITECTURE.md#run-control))
+- **Every request of the plugin's own goes through `piwiServer()`, whose proxy writes its failure in the Log tab**
+  (`PiwiLog.logged`). Checked by `PiwiPluginTest` (`testTheLogTabShowsTheServicesLogAndTheRequestsThatFailed`).
+  ([The log](ARCHITECTURE.md#the-log))
 - **The plugin's own requests go through `Lsp4jAccess`, never `getLsp4jServer()`** (deprecated, then removed by
   2026.2). `Lsp4jAccess` takes the lsp4j proxy from a `sendRequestSync` that sends nothing; `Lsp4jAccessTest` checks
   it. ([LSP integration](ARCHITECTURE.md#lsp-integration))
@@ -202,6 +205,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
+- `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
@@ -224,6 +228,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),
   [Connect](ARCHITECTURE.md#connect), [Settings and secrets](ARCHITECTURE.md#settings-and-secrets),
   [MCP server configuration](ARCHITECTURE.md#mcp-server-configuration).
+- [The log](ARCHITECTURE.md#the-log): what the Log tab holds and where each line comes from.
 - [Platform compatibility](ARCHITECTURE.md#platform-compatibility), [Threading](ARCHITECTURE.md#threading),
   [Dynamic plugin loading](ARCHITECTURE.md#dynamic-plugin-loading): the detail behind the platform rules.
 - [Change notes](ARCHITECTURE.md#change-notes), [Screenshots](ARCHITECTURE.md#screenshots),

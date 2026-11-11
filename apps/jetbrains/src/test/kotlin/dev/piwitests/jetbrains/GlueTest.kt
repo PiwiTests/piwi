@@ -3118,4 +3118,50 @@ class GlueTest {
         val args = Gson().fromJson("""{"uri":"file:///w/a.cs","testIds":[1,2],"coverage":"server"}""", RunTestsArgs::class.java)
         assertEquals("server", args.coverage)
     }
+
+    @Test
+    fun theLogWritesEachLineUnderItsTimeAndKeepsTheLatestOnes() {
+        val at = java.time.LocalTime.of(9, 5, 7, 42_000_000)
+        assertEquals(listOf("09:05:07.042 The editor service stopped (exit code 1)."), Glue.logLines(at, "The editor service stopped (exit code 1).\n"))
+        assertEquals(
+            listOf("09:05:07.042 Piwi: boom", "                 at main (server.js:1:1)"),
+            Glue.logLines(at, "Piwi: boom\n    at main (server.js:1:1)\n\n"),
+        )
+        assertEquals(emptyList<String>(), Glue.logLines(at, "\n"))
+        val buffer = Glue.LogBuffer(max = 3)
+        buffer.add(listOf("a", "b"))
+        buffer.add(listOf("c", "d"))
+        assertEquals(listOf("b", "c", "d"), buffer.lines())
+    }
+
+    @Test
+    fun aFailedRequestOfOneMethodIsWrittenOnceAMinute() {
+        val buffer = Glue.LogBuffer()
+        assertTrue(buffer.writesFailure("piwi/fileSummary", 1_000))
+        assertFalse(buffer.writesFailure("piwi/fileSummary", 1_000 + Glue.LOG_REPEAT_MILLIS - 1))
+        assertTrue(buffer.writesFailure("piwi/status", 2_000))
+        assertTrue(buffer.writesFailure("piwi/fileSummary", 1_000 + Glue.LOG_REPEAT_MILLIS))
+    }
+
+    @Test
+    fun theToolWindowOffersToRestartAServiceThatStoppedAndShowsTheLogOfOneThatCouldNotStart() {
+        assertEquals(Glue.EmptyText(Glue.WAITING_FOR_TRUST), Glue.serviceDownText(trusted = false, startProblem = "no node", stopped = true))
+        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG)), Glue.serviceDownText(true, "no node", stopped = true))
+        assertEquals(
+            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE, Glue.EmptyLink.OPEN_LOG)),
+            Glue.serviceDownText(true, null, stopped = true),
+        )
+        assertEquals(Glue.EmptyText(Glue.NOT_STARTED), Glue.serviceDownText(true, null, stopped = false))
+        assertEquals("Piwi.RestartService", Glue.EmptyLink.RESTART_SERVICE.actionId)
+        assertEquals("Piwi.OpenLog", Glue.EmptyLink.OPEN_LOG.actionId)
+    }
+
+    @Test
+    fun aMessageThatTheServiceDoesNotRunOrAnswerOffersItsFixes() {
+        assertTrue(Glue.offersServiceFixes(Glue.SERVICE_NOT_RUNNING))
+        assertTrue(Glue.offersServiceFixes(Glue.SERVICE_NO_ANSWER))
+        assertFalse(Glue.offersServiceFixes("The run did not take it."))
+        assertTrue(Glue.SERVICE_NOT_RUNNING.endsWith("Tools → Piwi → ${Glue.EmptyLink.RESTART_SERVICE.label}."))
+        assertTrue(Glue.SERVICE_NO_ANSWER.contains("Tools → Piwi → ${Glue.EmptyLink.OPEN_LOG.label}"))
+    }
 }

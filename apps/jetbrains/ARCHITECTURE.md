@@ -979,8 +979,26 @@ Nothing blocks the event thread, and nothing in a read action waits on the servi
 A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` with its cause, as a warning at most
 once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
 logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
-`Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Refresh), and
-`Glue.SERVICE_NO_ANSWER` when the running service did not answer.
+`Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Restart the Editor Service), and
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer; `PiwiCommands.notify` adds **Restart the Editor
+Service** and **Open Log** to a balloon that says either (`Glue.offersServiceFixes`).
+
+## The log
+
+`PiwiLog`, one per project, keeps the editor service's log for the Piwi tool window's **Log** tab, as VS Code's output
+channel does, its last `Glue.LOG_LINES` lines (`Glue.LogBuffer`):
+
+- each start, with the Node.js interpreter, from `createCommandLine`, and why a start failed (`startFailed`);
+- the service's stderr, from a listener `startServerProcess` adds before the platform reads the process: the service
+  writes its errors there (`logError` in `main.ts`), and Node.js a crash's stack;
+- each end and its exit code (`watchServer`), after which the tool window says the service stopped, with **Restart the
+  Editor Service** and **Open Log** (`Glue.serviceDownText`), until a process starts again;
+- each failed request under its method, once a minute per method: `piwiServer()` hands out a proxy of the service
+  (`PiwiLog.logged`) that watches every request's future, whoever waits for it.
+
+`Lsp4jClient.logMessage` is final, and wrapping its `LspServerNotificationsHandler` would call an override-only API, so
+`window/logMessage` stays the platform's. **Open Log** (`Piwi.OpenLog`) opens the tab, a read-only console, closable;
+**Restart the Editor Service** (`Piwi.RestartService`) writes its line, then `restartServer`.
 
 ## Dynamic plugin loading
 

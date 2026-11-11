@@ -1017,13 +1017,79 @@ object Glue {
 
     /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
     const val SERVICE_NOT_RUNNING =
-        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Refresh."
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Restart the Editor Service."
 
     /** What an action says when the running service did not answer it: the request failed, or took too long. */
-    const val SERVICE_NO_ANSWER = "The Piwi editor service did not answer: idea.log says why."
+    const val SERVICE_NO_ANSWER =
+        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows a failure."
+
+    /** What the tool window says once the editor service that ran stopped, and nothing started it again. */
+    const val SERVICE_STOPPED = "The Piwi editor service stopped."
+
+    /** What a message that the service does not run or did not answer offers: Restart the Editor Service and Open Log. */
+    val SERVICE_FIXES = listOf(EmptyLink.RESTART_SERVICE, EmptyLink.OPEN_LOG)
+
+    /** Whether a message says the service does not run or did not answer: its balloon offers [SERVICE_FIXES]. */
+    fun offersServiceFixes(message: String): Boolean = SERVICE_NOT_RUNNING in message || SERVICE_NO_ANSWER in message
+
+    /** The tool window's text while no service answers: why, and the links that start it or show its log. */
+    fun serviceDownText(trusted: Boolean, startProblem: String?, stopped: Boolean): EmptyText = when {
+        !trusted -> EmptyText(WAITING_FOR_TRUST)
+        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG))
+        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES)
+        else -> EmptyText(NOT_STARTED)
+    }
+
+    /** The Piwi tool window's tab that holds the editor service's log, which **Open Log** opens. */
+    const val LOG_TAB = "Log"
+
+    /** How many lines the log keeps: the oldest go first. */
+    const val LOG_LINES = 5_000
+
+    /** How long a failed request of one method stays out of the log once one was written there. */
+    const val LOG_REPEAT_MILLIS = 60_000L
+
+    private val LOG_TIME = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+
+    /**
+     * The log's lines for `text` written at `at`: its first line after the time, the others indented under it, the blank
+     * lines at its end left out.
+     */
+    fun logLines(at: java.time.LocalTime, text: String): List<String> {
+        val lines = text.lines().dropLastWhile { it.isBlank() }.ifEmpty { return emptyList() }
+        val time = at.format(LOG_TIME)
+        val indent = " ".repeat(time.length + 1)
+        return lines.mapIndexed { i, line -> if (i == 0) "$time $line" else "$indent$line" }
+    }
+
+    /**
+     * The log's lines, the oldest dropped past `max`, and when a failed request of each method was last written, so the
+     * daemon's repeated failures write one line a minute. Not thread-safe: `PiwiLog` holds its lock around it.
+     */
+    class LogBuffer(private val max: Int = LOG_LINES) {
+        private val lines = ArrayDeque<String>()
+        private val failures = HashMap<String, Long>()
+
+        fun add(added: List<String>) {
+            lines.addAll(added)
+            while (lines.size > max) lines.removeFirst()
+        }
+
+        fun lines(): List<String> = lines.toList()
+
+        /** Whether a failure of `method` at `now` is written: none of that method was within [LOG_REPEAT_MILLIS]. */
+        fun writesFailure(method: String, now: Long): Boolean {
+            val last = failures[method]
+            if (last != null && now - last < LOG_REPEAT_MILLIS) return false
+            failures[method] = now
+            return true
+        }
+    }
 
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
+        RESTART_SERVICE("Restart the Editor Service", "Piwi.RestartService"),
+        OPEN_LOG("Open Log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
         RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),

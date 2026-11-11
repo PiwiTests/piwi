@@ -92,6 +92,36 @@ class RefreshAction : AnAction(), DumbAware {
 }
 
 /**
+ * Restart the Editor Service: the service stopped and started again, or started for the open files when it does not run
+ * (`PiwiProjectService.restartServer`). In a trusted project that holds a Playwright config.
+ */
+class RestartServiceAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service != null && service.trusted() && service.hasPlaywrightConfig()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.restartService()
+    }
+}
+
+/** Open Log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
+class OpenLogAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.project?.service<PiwiProjectService>()?.hasPlaywrightConfig() == true
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiLog>()?.show()
+    }
+}
+
+/**
  * Piwi: Refresh the Latest Run — the latest run and its failures read again, not the indexes **Refresh** fetches
  * (`PiwiProjectService.refreshRun`). Enabled while connected.
  */

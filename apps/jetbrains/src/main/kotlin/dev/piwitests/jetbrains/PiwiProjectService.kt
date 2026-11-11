@@ -159,6 +159,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var startProblem: String? = null
         private set
 
+    /** Whether the editor service ran and stopped, and none started since: the tool window offers to start it again. */
+    @Volatile var serviceStopped = false
+        private set
+
+    /** The editor service's latest process: one that ends after another started says nothing of the running one. */
+    @Volatile private var latestProcess: ProcessHandler? = null
+
     /** Whether the project's wait for trust was said already. */
     private val trustAsked = AtomicBoolean()
 
@@ -346,6 +353,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .notify(project)
     }
 
+    /** Restart the Editor Service, from its action, a balloon or the tool window: said in the log, then [restartServer]. */
+    fun restartService() {
+        project.service<PiwiLog>().write("Restarting the editor service.")
+        ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
+    }
+
     /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
     fun restartServer(runningOnly: Boolean = false) {
         val manager = LspServerManager.getInstance(project)
@@ -366,10 +379,19 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     fun watchServer(process: ProcessHandler) {
         val startedAt = System.currentTimeMillis()
+        latestProcess = process
+        serviceStopped = false
+        changed()
         process.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
-                    if (gone.value(null) || startProblem != null) return
+                    if (gone.value(null)) return
+                    project.service<PiwiLog>().write("The editor service stopped (exit code ${event.exitCode}).")
+                    // Until a service starts again, the tool window says it stopped and offers to start it.
+                    if (latestProcess === process) serviceStopped = true
+                    refreshStatus()
+                    changed()
+                    if (startProblem != null) return
                     if (!Glue.restartsService(startedAt, System.currentTimeMillis(), serverRestarts)) return
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
                 }
@@ -399,6 +421,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (problem == before) return
         changed()
         if (problem == null) return
+        project.service<PiwiLog>().write("The editor service did not start: $problem")
         PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)

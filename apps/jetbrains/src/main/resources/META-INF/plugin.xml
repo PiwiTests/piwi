@@ -120,6 +120,12 @@
             <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the Latest Run"
                     icon="AllIcons.Actions.Refresh"
                     description="Read the latest run and its failures again, not the indexes Refresh fetches"/>
+            <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
+                    text="Restart the Editor Service" icon="AllIcons.Actions.Restart"
+                    description="Stop the Piwi editor service and start it again, or start it when it does not run"/>
+            <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open Log"
+                    icon="AllIcons.Toolwindows.ToolWindowMessages"
+                    description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
             </action>

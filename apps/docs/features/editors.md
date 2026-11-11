@@ -103,7 +103,7 @@ your API keys. The desktop app keeps its own token. For the runs the editor star
 
 ## Commands
 
-VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Open the log** or **Get started**.
+VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Get started**.
 
 | Command | What it does |
 |---|---|
@@ -124,7 +124,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
 | Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor, Finish the test without stopping again, End the test here, Stop the run, Show the paused page, Write code at the stop… | [Pause and step from the editor](./editor-run-control), [Code from a pause](./editor-stop-code) |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
-| Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
+| Piwi: Restart the editor service, Open the log | Start the editor service again; show its log of starts, stops, errors and failed requests, where VS Code's `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
 Three commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use
