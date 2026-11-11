@@ -1,6 +1,6 @@
 ---
 title: Runs started outside Piwi
-description: "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does."
+description: "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, follows the editor window whose workspace holds it, else the desktop app that links its folder: it stops at the editor's breakpoints and takes the same controls as a run Piwi started."
 lang: en-US
 ---
 
@@ -19,12 +19,16 @@ process is the terminal's or the IDE's. It says so as it starts:
 [Piwi Dashboard] Following this run in Visual Studio Code (pid 41230), whose breakpoints stop it: PIWI_EDITOR=off runs it alone.
 ```
 
+With no editor window on its folder, a run in a folder [the desktop app](./desktop) links follows the app (a reporter
+newer than 0.68.0): its Local runs tray lists it, pauses it and watches its workers, as it does
+[the runs it starts](./desktop-runs), and Piwi Picker's Runs window holds its failures as you ask.
+
 It runs as its config says, headless by default, so the editor shows a stop as
 [a headless run's](./editor-run-control#a-headless-run): an image of its page, which the editor's paused page and Piwi
 Picker's Runs window can watch live. To see the browser, add `--headed` to the command, or to the Playwright options
 of the run configuration.
 
-## Which editor
+## Which editor, or the desktop app
 
 Each editor window's Piwi service writes a file in `~/.piwi/editors` (`PIWI_EDITORS_DIR` names another folder) with
 its workspace folders and where its runs connect. The run follows the window one of whose folders holds its Playwright
@@ -33,11 +37,15 @@ last. A window of another machine, another user's, or one whose process ended is
 written before the machine last started, any file of a folder another user can open, or (but on Windows) a window
 whose runs would connect through a folder another user can open.
 
+No window holding it, the run follows the desktop app whose linked folder holds it: the app names where its runs
+connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) once its server is up, by the same rules.
+
 ## When it follows one
 
-- **Only a run whose output goes to a terminal, or that a test runner started**: one that names its reporter's file
-  in `PW_TEST_REPORTER`, as a JetBrains IDE's Playwright runner does. Any other, whose output goes to a file or a pipe,
-  runs alone unless it sets `PIWI_EDITOR=on`, and says so once when an editor's workspace holds it
+- **A run whose output goes to a terminal, or that a test runner started** (one that names its reporter's file in
+  `PW_TEST_REPORTER`, as a JetBrains IDE's Playwright runner does), is attended: it stops at the breakpoints.
+- **A run whose output goes to a file or a pipe**, as an agent's, follows unattended: it is listed and **Pause** stops
+  it, but no breakpoint does and no failure waits. `PIWI_EDITOR=on` attends it. It says so as it starts
   ([the terminal's lines](./watch-a-run#the-terminal-s-lines)).
 - **Never** under CI, with Playwright's own debugger (`--debug`, `PWDEBUG=1`) or UI mode, when the run names its own
   `PIWI_RUN_CHANNEL`, or when the desktop app or another launcher started it.
@@ -50,6 +58,7 @@ whose runs would connect through a folder another user can open.
   any, it runs as it would, and **Pause** stops it.
 - **The controls**: Pause, Resume, Step, Run to cursor, Finish and [End the test](./end-the-test), and the code a stop
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
+- **Record here and Assert** in the test's window, through the editor's recorder, as for a run Piwi starts.
 - **Failures.** A failure goes on, as without Piwi, until you turn the run's
   [**Hold failures**](/guide/concepts#hold-failures) on, in the editor or the Runs window: nobody may be there to answer
   it otherwise.
@@ -60,16 +69,18 @@ the editor starts.
 
 ## Limits
 
-- **No Pick, Record or Assert in the test's window.** They need the pairing a run Piwi starts carries: start the test
-  from the editor to use them. Pick on the image (Playwright 1.60 or later) names the locator, for you to copy,
-  without writing it.
+- **No Pick a locator in the test's window under an editor.** It needs the pairing a run Piwi starts carries: start the
+  test from the editor to use it. Pick on the image (Playwright 1.60 or later) names the locator, for you to copy,
+  without writing it. Under the desktop app, a pick comes to its window to copy, and Record here and Assert, which need
+  an editor, are not offered.
 - **No Stop.** End the run in its terminal, or with the IDE's own **Stop**.
 - **Debug stops twice.** Under a JetBrains IDE's **Debug**, a breakpoint stops the test in the debugger, then at Piwi's
   stop, whose controls take no key while the debug session runs. `PIWI_EDITOR=off` in the run configuration's
   environment leaves the breakpoints to the debugger.
 - **Piwi's reporter in the config.** The run looks for an editor as the reporter starts (`wrapConfig` adds it): with
   the capture fixtures alone, it runs alone.
-- **Your machine.** A run in a dev container or over SSH follows an editor whose service runs there too.
+- **Your machine.** A run in a dev container or over SSH follows an editor whose service runs there too; the desktop
+  app's folders are this machine's alone.
 
 ## Related
 
@@ -77,3 +88,4 @@ the editor starts.
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run takes.
 - [Runs from the editor](./editor-runs): the runs Piwi starts.
 - [Runs window](./runs-window): the same runs, in Piwi Picker.
+- [Desktop app runs](./desktop-runs): the Local runs tray, which follows a run in a linked folder.

@@ -148,7 +148,7 @@ export function resolveRunOrigin(env: Env, warn?: (message: string) => void): Ru
 
 /**
  * The run's own name (`piwiRunRef`): the one it was given (`PIWI_RUN_REF`, by its launcher or, for a terminal run,
- * `followEditor`; for a run an editor started, its `PIWI_ORIGIN_REF`) when it is a valid ref, else, outside CI, one
+ * `followHub`; for a run an editor started, its `PIWI_ORIGIN_REF`) when it is a valid ref, else, outside CI, one
  * of its own (`own`). A CI run no launcher started has none: its number names it.
  */
 export function resolveRunRef(env: Env, own: () => string = ownRunRef): string | undefined {

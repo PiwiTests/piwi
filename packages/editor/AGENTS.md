@@ -145,17 +145,20 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   a document edited since the run started back to it, and the service refuses or leaves out a file outside the run's
   folder, as `PIWI_PAUSE_AT` does. ([ARCHITECTURE.md](ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **A stop no pause bar shows goes on unless a surface answers stops.** The surfaces are a client that sent
-  `InitializationOptions.runControl` and a subscribed hub connection (`answersStops` in `src/server.ts`). Checked by
+  `InitializationOptions.runControl` and a hub connection subscribed for more than observing (`answersStops` in
+  `src/server.ts`). Checked by
   `tests/run-sessions.test.ts` ("… a client that does not answer stops") and `tests/run-hub.test.ts` ("a stop nobody
   else can answer …"). ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
 - **One connection per worker of a run.** A run connection naming the index of a worker connected now is closed, so
   another process the run's environment reached takes no worker's place. Checked by `tests/run-sessions.test.ts`
   ("refuses a second process …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
-- **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension that names it as this
-  machine.** A `Host` other than `127.0.0.1` or `localhost` at its port or at one the client forwards (`piwi/hub`,
-  `isHubHost`), or an `Origin` that is not an extension's (`isExtensionOrigin`), gets a 403 first, and commands are read
-  only after `hello` with the hub's token (`sameToken`) within `HUB_HELLO_MS`. Checked by `tests/run-hub.test.ts` ("the
-  handshake", "takes a loopback Host at a port the client forwards …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension, or a process of this
+  machine (no `Origin`: the desktop app's server), that names it as this machine.** A `Host` other than `127.0.0.1` or
+  `localhost` at its port or at one the client forwards (`piwi/hub`, `isHubHost`), or an `Origin` that is not an
+  extension's (`isExtensionOrigin`), gets a 403 first, and commands are read only after `hello` with the hub's token
+  (`sameToken`) within `HUB_HELLO_MS`. A connection that subscribes to observe (`observe`) answers no stop. Checked by
+  `tests/run-hub.test.ts` ("the handshake", "takes a loopback Host at a port the client forwards …", "takes a process
+  of this machine that sends no Origin …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates
   code, reads a file or reaches an instance.** Checked by `tests/run-hub.test.ts` ("the commands").
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))

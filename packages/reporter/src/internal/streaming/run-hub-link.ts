@@ -11,7 +11,7 @@ import {
   type RunCounts,
   type RunMainToHub,
 } from '@piwitests/core/run-channel';
-import { runChannelRef, startedByTestRunner } from '../config/editors.js';
+import { runChannelRef, startedByTestRunner } from '../config/hub.js';
 
 /**
  * The run's own connection to the hub its workers reach (`PIWI_RUN_CHANNEL`, the editor's or the desktop app's;

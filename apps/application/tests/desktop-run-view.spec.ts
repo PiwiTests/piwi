@@ -342,7 +342,10 @@ test.describe('Desktop run live view', () => {
     });
     await expect(still).toBeVisible();
     expect(commands.filter((c) => c.type === 'pausedPage')).toHaveLength(1);
+    // The stop's place opens in the editor (its chooser beside it), then the controls.
     await expect(worker.getByRole('button')).toHaveText([
+      'tests/checkout.spec.ts:5',
+      '',
       'Resume',
       'Step',
       'Finish',
@@ -573,7 +576,10 @@ test.describe('Desktop run live view', () => {
     expect(commands.filter((c) => c.type === 'show')).toEqual([expect.objectContaining({ ref: REF, on: true })]);
 
     // End the test, which the stop takes: its reporter ends the test there, skipped.
+    // The stop's place opens in the editor (its chooser beside it), then the controls.
     await expect(worker.getByRole('button')).toHaveText([
+      'tests/checkout.spec.ts:5',
+      '',
       'Resume',
       'Step',
       'Finish',
@@ -902,7 +908,10 @@ test.describe('Desktop run live view', () => {
     await expect(lane.getByText('Taking an image of the page…')).toBeVisible();
     await frame('s1');
     await expect(live).toBeVisible();
+    // The stop's place opens in the editor (its chooser beside it), then the controls.
     await expect(worker.getByRole('button')).toHaveText([
+      'tests/checkout.spec.ts:5',
+      '',
       'Resume',
       'Step',
       'Finish',

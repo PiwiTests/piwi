@@ -415,8 +415,12 @@ export interface HubHello {
 
 /** A command, after `hello`: `id` (1 to 2147483647) names its answer. */
 export type HubCommand =
-  /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
-  | { type: 'subscribe'; id: number }
+  /**
+   * Hear every run of the editor: one `session` for each live now, after the answer, then each change. With `observe`,
+   * as the desktop app's server reads an editor's runs for its own surfaces, it answers no stop: a stop no pause bar
+   * shows does not wait for it.
+   */
+  | { type: 'subscribe'; id: number; observe?: true }
   /**
    * Whether a person watches the runs through this connection now (`on`): a Runs window is open, which each run names
    * in its `presence` (a hub with the `presence` feature). It holds no failure: a hub with the `hold` feature holds
@@ -795,7 +799,8 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   const { id } = value;
   const invalid = (message: string): ParsedHubCommand => ({ type: 'invalid', id, message });
   if (typeof value.type !== 'string' || !value.type) return invalid('A command needs a type.');
-  if (value.type === 'subscribe') return { type: 'subscribe', id };
+  if (value.type === 'subscribe')
+    return value.observe === true ? { type: 'subscribe', id, observe: true } : { type: 'subscribe', id };
   if (value.type === 'follow') {
     return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
   }

@@ -250,4 +250,10 @@ export const SETUP_EXEMPTIONS = [
     reason:
       'The run output page has no dashboard layout and opens only in a window of the desktop app, for a run of its Local runs tray.',
   },
+  {
+    rule: 'page',
+    key: '/desktop/run-worker',
+    reason:
+      'The worker page has no dashboard layout and opens only in a window of the desktop app, for a worker of its Local runs tray.',
+  },
 ];

@@ -41,17 +41,10 @@ import {
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
-import {
-  desktopHeldSessions,
-  desktopRunHoldRefusal,
-  desktopRunHolds,
-  desktopRunOf,
-  desktopStopSaid,
-  desktopWorkerKey,
-} from '~/utils/desktop-run-view';
+import { desktopRunOf, desktopStopSaid, desktopWorkerKey } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, shownWorker, activeCount, holds, trayMounts } = store;
+const { runs, trayOpen, shownWorker, activeCount, trayMounts } = store;
 const toast = useToast();
 
 const available = ref(false);
@@ -180,23 +173,6 @@ function separateClosed(run: LocalRun, opened: boolean) {
       color: 'error',
     });
   }
-}
-
-/** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
-function holdRefusal(run: LocalRun): string | null {
-  return desktopRunHoldRefusal(run, liveSessions.value);
-}
-
-function holdsFailures(run: LocalRun): boolean {
-  return desktopRunHolds(run, holds.value[run.key], liveSessions.value);
-}
-
-/** The person turns the run's Hold failures over: its live steps at once, the steps to come as they start. */
-function setHold(run: LocalRun, on: boolean) {
-  for (const session of desktopHeldSessions(run, liveSessions.value)) {
-    void hub.command({ type: 'hold', ref: session.ref, on });
-  }
-  holds.value = { ...holds.value, [run.key]: on };
 }
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
@@ -344,24 +320,13 @@ function runDetail(run: LocalRun): string {
             />
           </div>
           <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="runDetail(run)">{{ runDetail(run) }}</p>
-          <div
+          <DesktopRunHoldSwitch
             v-if="run.status === 'running'"
-            class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"
+            :run="run"
+            :described-id="`desktop-run-hold-${run.key}`"
+            class="mt-1.5"
             data-shot="desktop-run-hold"
-          >
-            <USwitch
-              :model-value="holdsFailures(run)"
-              :disabled="!!holdRefusal(run)"
-              label="Hold failures"
-              size="sm"
-              :aria-describedby="`desktop-run-hold-${run.key}`"
-              :ui="{ label: 'text-xs font-medium' }"
-              @update:model-value="(on: boolean) => setHold(run, on)"
-            />
-            <p :id="`desktop-run-hold-${run.key}`" class="min-w-0 text-xs text-muted">
-              {{ holdRefusal(run) ?? 'A failing test waits at its line for you to look at it and resume.' }}
-            </p>
-          </div>
+          />
           <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
             <UButton
               size="xs"

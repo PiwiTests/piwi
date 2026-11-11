@@ -5983,6 +5983,101 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-home',
+    description:
+      'Run page in the desktop app while a run it started goes on: On your machine, the run’s Stop, Hold failures, its worker with its controls and the output, as the Local runs tray shows them, scrolling inside the card so the tabs keep their room at 1280×800, and at 390 px',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['desktop-run-home.png', 'desktop-run-home-narrow.png'],
+    async run({ page, base, goto, settle, shoot }) {
+      await playDesktopRunHub(page, () => ({}));
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const { finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      try {
+        const home = page.locator('[data-shot="desktop-run-home"]');
+        await home.waitFor({ timeout: 60_000 });
+        await home.locator('[data-shot="desktop-run-worker"]').waitFor();
+        await page
+          .getByRole('button', { name: 'Close local runs' })
+          .click({ timeout: 1000 })
+          .catch(() => {});
+        await settle();
+        await shoot('');
+        await page.setViewportSize({ width: 390, height: 1100 });
+        await settle();
+        await shoot('narrow', { of: '[data-shot="desktop-run-home"]', pad: 0 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
+    name: 'desktop-worker-window',
+    description:
+      'A worker of a run the desktop app started, in a window of its own kept above the others (Open in a window): its test, where it stands, its controls and its page',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/desktop/run-worker?ref=desktop-41&lane=0',
+    viewport: { width: 520, height: 680 },
+    async run({ page, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/desktop/run-worker?ref=desktop-41&lane=0');
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const worker = {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        pausing: false,
+        intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        test: {
+          id: 't1',
+          title: ['checkout', 'pays with a saved card'],
+          uri,
+          line: 11,
+          project: 'chromium',
+          retry: 0,
+          cannotPause: null,
+        },
+        stop: {
+          reason: 'page-pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        },
+      };
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        workers: [worker],
+        ended: false,
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      await page
+        .locator('[data-shot="desktop-run-worker"]')
+        .getByRole('img', { name: /stopped before/ })
+        .waitFor();
+      await settle();
+      await shoot('');
+    },
+  },
+  {
     name: 'run-live-desktop-pause',
     description:
       'Run page in the desktop app while a run it started goes on: a running test’s Pause and watch, also at 390 px, then the test paused before its next call, its page live in the Local runs tray, and its row once the tray is closed',

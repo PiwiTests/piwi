@@ -36,6 +36,8 @@ import {
   RUN_CHANNEL_FOLDER_PREFIX,
   clearStaleRunChannels,
   insideFolder,
+  linkHolding,
+  linkedSpelling,
 } from '../../server/utils/desktop-runs';
 import {
   desktopPicksToken,
@@ -452,10 +454,14 @@ describe('the hub Piwi Picker reaches', () => {
     picker.socket.close();
   });
 
-  it('opens only for an extension that names it as this machine, and after hello with the desktop token', async () => {
+  it('opens only for an extension or a process that names it as this machine, after hello with the desktop token', async () => {
     const port = new URL(hubUrl()).port;
     expect(await connect({ origin: 'http://127.0.0.1:3000' })).toBe(403);
-    expect(await connect({ origin: null })).toBe(403);
+    // A browser always sends an Origin: none is a process of this machine, which needs the token as an extension does.
+    const local = (await connect({ origin: null })) as Picker;
+    expect(local).not.toBeTypeOf('number');
+    local.send({ type: 'hello', token: `pd_${'cd'.repeat(32)}` });
+    expect((await local.closed).code).toBe(4001);
     expect(await connect({ host: `evil.example:${port}` })).toBe(403);
     expect(await connect({ host: `localhost:${port}` })).not.toBeTypeOf('number');
 
@@ -1064,6 +1070,28 @@ describe('the code from a stop of a desktop run', () => {
       fs.symlinkSync(outside, link);
       expect(insideFolder(folder, link)).toBe(false);
       fs.rmSync(link);
+    }
+  });
+
+  it('names a run by its own folder as the linked folder holding it spells it', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-linked-'));
+    onTestFinished(() => fs.rmSync(base, { recursive: true, force: true }));
+    const shop = path.join(base, 'shop');
+    const e2e = path.join(shop, 'e2e');
+    fs.mkdirSync(e2e, { recursive: true });
+    const links = [
+      { id: 1, path: shop },
+      { id: 2, path: path.join(base, 'other') },
+    ];
+    expect(linkHolding(links, e2e)).toBe(shop);
+    expect(linkedSpelling(links, e2e)).toBe(e2e);
+    expect(linkedSpelling(links, shop)).toBe(shop);
+    expect(linkedSpelling(links, base)).toBeNull();
+    // A folder linked through a link of its own: the run's folder in the link's spelling.
+    if (process.platform !== 'win32') {
+      const spelled = path.join(base, 'shop-link');
+      fs.symlinkSync(shop, spelled);
+      expect(linkedSpelling([{ id: 3, path: spelled }], e2e)).toBe(path.join(spelled, 'e2e'));
     }
   });
 });

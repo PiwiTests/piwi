@@ -14,14 +14,16 @@ import {
   type RunMainToHub,
   type RunToHub,
 } from '@piwitests/core/run-channel';
-import { terminalRunSkip } from '../src/internal/config/editors.js';
+import { terminalRunAttended, terminalRunSkip } from '../src/internal/config/hub.js';
 
 /**
  * A run started in a terminal, through the built package: no `PIWI_RUN_CHANNEL`, a fake editor service listed in a
  * folder of discovery files (`PIWI_EDITORS_DIR`) whose workspace holds the run. The run follows it, is steered and
  * ends there; so does one an editor's test runner starts (`PW_TEST_REPORTER` naming its reporter file), which says so.
- * It follows none when told not to, under CI, with no terminal nor test runner, or when the only files are another
- * machine's or another user's.
+ * One piped to another program attaches unattended. With no editor, the desktop app whose discovery file
+ * (`PIWI_DESKTOP_CONFIG`) links the run's folder is its hub, its picks going to the app; an editor holding the folder
+ * comes first. It attaches to none when told not to, under CI, or when the only files are another machine's or another
+ * user's.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -53,6 +55,7 @@ const mainsOf = (opened: Connection[]) => opened.filter((c) => c.main[0]?.type =
 
 let folder = '';
 let editors = '';
+let desktopFile = '';
 let hub: net.Server;
 const connections: Connection[] = [];
 const lines: Record<string, number> = {};
@@ -90,10 +93,37 @@ function listEditors(files: Record<string, EditorDiscovery>): void {
   }
 }
 
+/** The picks address the fake desktop app names, as its server's `GET /api/desktop/run-channel` does. */
+const PICKS = { url: 'http://127.0.0.1:4318/api/desktop/runs/picks', token: 'desktop-picks-token-0123456789' };
+
+/** Write the desktop app's discovery file, as the app's shell does once its server proved itself; none for null. */
+function listDesktop(patch: Record<string, unknown> | null): void {
+  fs.rmSync(desktopFile, { force: true });
+  if (!patch) return;
+  const body = {
+    url: 'http://127.0.0.1:4318',
+    token: 'pd_desktop-token',
+    pid: process.pid,
+    projects: [{ id: '3', path: project }],
+    runChannel: { path: path.join(folder, 'channel.sock'), token: TOKEN },
+    send: PICKS,
+    hub: { url: 'ws://127.0.0.1:4318/api/desktop/hub', token: 'desktop-hub-token-0123456789' },
+    hubSince: Date.now(),
+    ...patch,
+  };
+  fs.writeFileSync(desktopFile, JSON.stringify(body), { mode: 0o600 });
+}
+
 /** Run the suite with `env` over a plain environment; resolves with its output and the connections it opened. */
 async function run(env: NodeJS.ProcessEnv): Promise<{ output: string; opened: Connection[] }> {
   const before = connections.length;
-  const base: NodeJS.ProcessEnv = { ...process.env, PIWI_EDITORS_DIR: editors };
+  // The desktop app's file is this spec's, and the run reports to no server: a fake app's address goes nowhere.
+  const base: NodeJS.ProcessEnv = {
+    ...process.env,
+    PIWI_EDITORS_DIR: editors,
+    PIWI_DESKTOP_CONFIG: desktopFile,
+    PIWI_DESKTOP_APP: 'off',
+  };
   for (const name of [
     'CI',
     'GITHUB_ACTIONS',
@@ -127,6 +157,7 @@ beforeAll(async () => {
   folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-terminal-run-'));
   editors = path.join(folder, 'editors');
   fs.mkdirSync(editors, { mode: 0o700 });
+  desktopFile = path.join(folder, 'desktop.json');
   hub = net.createServer((socket) => {
     const connection: Connection = { socket, heard: [], main: [] };
     connections.push(connection);
@@ -202,6 +233,7 @@ afterAll(async () => {
 describe('a run started in a terminal', () => {
   it('follows the editor whose workspace holds it: steered from its breakpoints, and ended there', async () => {
     listEditors({ [`${process.pid}.json`]: discovery() });
+    listDesktop(null);
     const { output, opened } = await run({ PIWI_EDITOR: 'on' });
     expect(output).toContain(
       `Following this run in Test Editor (pid ${process.pid}), whose breakpoints stop it: PIWI_EDITOR=off runs it alone.`,
@@ -220,11 +252,11 @@ describe('a run started in a terminal', () => {
     expect(mains[0]!.main[0]).toMatchObject({ token: TOKEN, ref: attach?.type === 'run-attach' ? attach.ref : '' });
     expect(mains[0]!.main[0]).not.toHaveProperty('runner');
     expect(opened).toHaveLength(2);
-    // It carries no record channel nor pairing: Pick a locator, Record here and Assert are not offered.
-    expect(attach?.type === 'run-attach' ? attach.takes : []).not.toEqual(
-      expect.arrayContaining(['pick', 'record', 'assert']),
-    );
-    expect(attach?.type === 'run-attach' ? attach.takes : []).toContain('end');
+    // The editor's channel is its record channel too: Record here and Assert are offered, Pick a locator, which needs
+    // the editor's pairing, is not.
+    const takes = attach?.type === 'run-attach' ? attach.takes : [];
+    expect(takes).toEqual(expect.arrayContaining(['record', 'assert', 'end']));
+    expect(takes).not.toContain('pick');
     const stops = worker!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
     expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
     const ends = worker!.heard.filter((m) => m.type === 'test-end').map((m) => m.type === 'test-end' && m.status);
@@ -251,20 +283,91 @@ describe('a run started in a terminal', () => {
     expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
   }, 60_000);
 
-  it('follows none with PIWI_EDITOR=off, under CI, or with no terminal nor test runner unless PIWI_EDITOR=on', async () => {
+  it('follows none with PIWI_EDITOR=off or under CI', async () => {
     listEditors({ [`${process.pid}.json`]: discovery() });
-    for (const env of [{ PIWI_EDITOR: 'off' }, { PIWI_EDITOR: 'on', CI: 'true' }, {}]) {
+    listDesktop({});
+    for (const env of [{ PIWI_EDITOR: 'off' }, { PIWI_EDITOR: 'on', CI: 'true' }]) {
       const { output, opened } = await run(env);
       expect(opened, JSON.stringify(env)).toEqual([]);
       expect(output, JSON.stringify(env)).not.toContain('Following this run');
-      // A run piped to another program says why it runs alone; one that runs alone on purpose says nothing.
-      const piped = `Not following this run in Test Editor (pid ${process.pid}): its output goes to no terminal. PIWI_EDITOR=on follows it.`;
-      if (Object.keys(env).length === 0) expect(output).toContain(piped);
-      else expect(output, JSON.stringify(env)).not.toContain('Not following this run');
     }
   }, 120_000);
 
+  it('attaches a run piped to another program unattended: no breakpoint stops it, and it says so', async () => {
+    // An editor service that does not know a run nobody attends would stop it at its breakpoints: it runs alone.
+    listEditors({ [`${process.pid}.json`]: discovery() });
+    listDesktop(null);
+    const alone = await run({});
+    expect(alone.output).not.toContain('Following this run');
+    expect(alone.opened).toEqual([]);
+
+    listEditors({ [`${process.pid}.json`]: discovery({ unattended: true }) });
+    const { output, opened } = await run({});
+    expect(output).toContain(
+      `Following this run in Test Editor (pid ${process.pid}), unattended: its output goes to no terminal, so no ` +
+        'failure waits and only a Pause stops it. PIWI_EDITOR=on attends it, PIWI_EDITOR=off runs it alone.',
+    );
+    const [worker, ...others] = workersOf(opened);
+    expect(others).toEqual([]);
+    expect(worker!.heard[0]).toMatchObject({
+      type: 'run-attach',
+      ref: expect.stringMatching(/^terminal-\d+-\d+-unattended$/),
+    });
+    expect(mainsOf(opened)).toHaveLength(1);
+  }, 60_000);
+
+  it('follows the desktop app whose linked folder holds it, with no editor, its picks going to the app', async () => {
+    listEditors({});
+    listDesktop({});
+    const { output, opened } = await run({ PIWI_EDITOR: 'on' });
+    expect(output).toContain(
+      `Following this run in the desktop app (pid ${process.pid}), whose window pauses and watches it: ` +
+        'PIWI_EDITOR=off runs it alone.',
+    );
+    const [worker, ...others] = workersOf(opened);
+    expect(others).toEqual([]);
+    const [attach] = worker!.heard;
+    expect(attach).toMatchObject({
+      type: 'run-attach',
+      token: TOKEN,
+      ref: expect.stringMatching(/^terminal-\d+-\d+$/),
+    });
+    // The app takes the picks, and holds no recorder: Pick a locator, but neither Record here nor Assert.
+    const takes = attach?.type === 'run-attach' ? attach.takes : [];
+    expect(takes).toContain('pick');
+    expect(takes).not.toEqual(expect.arrayContaining(['record']));
+    expect(takes).not.toContain('assert');
+    expect(mainsOf(opened)).toHaveLength(1);
+  }, 60_000);
+
+  it('follows the editor before the desktop app, and no app that is gone, links another folder or names no channel', async () => {
+    listEditors({ [`${process.pid}.json`]: discovery() });
+    listDesktop({});
+    expect((await run({ PIWI_EDITOR: 'on' })).output).toContain(
+      `Following this run in Test Editor (pid ${process.pid})`,
+    );
+    listEditors({});
+    // Its process is gone, it links another folder, it names no run channel (an app that predates it), or it named
+    // its hub before this machine started, or at no time.
+    const gone = await new Promise<number>((resolve) => {
+      const child = execFile(process.execPath, ['-e', '0'], () => resolve(child.pid!));
+    });
+    for (const patch of [
+      { pid: gone },
+      { projects: [{ id: '3', path: path.join(folder, 'elsewhere') }] },
+      { runChannel: undefined },
+      { hubSince: Date.now() - os.uptime() * 1000 - 3_600_000 },
+      { hubSince: undefined },
+    ]) {
+      listDesktop(patch);
+      const { output, opened } = await run({ PIWI_EDITOR: 'on' });
+      expect(opened, JSON.stringify(patch)).toEqual([]);
+      expect(output, JSON.stringify(patch)).not.toContain('Following this run');
+    }
+  }, 240_000);
+
   it('follows none whose file is another machine’s, another user’s, or holds another workspace', async () => {
+    listDesktop(null);
     const files: Record<string, EditorDiscovery> = {
       [`${process.pid}.json`]: discovery({ host: 'build-agent' }),
       [`${process.ppid}.json`]: discovery({ pid: process.ppid, roots: [path.join(folder, 'elsewhere')] }),
@@ -279,6 +382,7 @@ describe('a run started in a terminal', () => {
   }, 60_000);
 
   it('follows none whose file was written before this machine started, or whose channel other users reach', async () => {
+    listDesktop(null);
     // Its process went with the restart: another process may have its id since.
     const booted = Date.now() - os.uptime() * 1000;
     listEditors({ [`${process.pid}.json`]: discovery({ startedAt: new Date(booted - 3_600_000).toISOString() }) });
@@ -325,24 +429,31 @@ describe('a run started in a terminal', () => {
       );
     }
     expect(gate({}, ['node', 'cli.js', 'merge-reports', 'blob-report'])).toBe('it merges reports, running no test');
-    expect(terminalRunSkip({ env: {}, argv: [], terminal: false })).toBe('its output goes to no terminal');
+    // A run piped to another program looks for one too, to attach to unattended.
+    expect(terminalRunSkip({ env: {}, argv: [], terminal: false })).toBeNull();
   });
 
-  it('looks for an editor from a test runner that adds its reporter file, as a terminal’s run does', () => {
+  it('attends a run from a terminal or a test runner that adds its reporter file, else as PIWI_EDITOR=on says', () => {
+    const attended = (env: NodeJS.ProcessEnv, terminal = false) =>
+      terminalRunAttended({ env, argv: ['node', 'cli.js', 'test'], terminal });
+    expect(attended({}, true)).toBe(true);
+    expect(attended({ PW_TEST_REPORTER: '/ide/plugins/javascript/playwright-reporter.js' })).toBe(true);
+    expect(attended({ PW_TEST_REPORTER: 'C:\\ide\\plugins\\playwright-reporter.js' })).toBe(true);
+    // One of Playwright's own reporters, named: no test runner of an editor.
+    expect(attended({ PW_TEST_REPORTER: 'dot' })).toBe(false);
+    expect(attended({ PW_TEST_REPORTER: ' ' })).toBe(false);
+    expect(attended({})).toBe(false);
+    // The other spellings of on, as other switches take them.
+    for (const on of ['on', 'true', '1', 'yes']) expect(attended({ PIWI_EDITOR: on }), on).toBe(true);
+    // The rest of the gate holds for a test runner's run too.
     const gate = (env: NodeJS.ProcessEnv) =>
       terminalRunSkip({ env, argv: ['node', 'cli.js', 'test'], terminal: false });
-    expect(gate({ PW_TEST_REPORTER: '/ide/plugins/javascript/playwright-reporter.js' })).toBeNull();
-    expect(gate({ PW_TEST_REPORTER: 'C:\\ide\\plugins\\playwright-reporter.js' })).toBeNull();
-    // One of Playwright's own reporters, named: no test runner of an editor.
-    expect(gate({ PW_TEST_REPORTER: 'dot' })).toBe('its output goes to no terminal');
-    expect(gate({ PW_TEST_REPORTER: ' ' })).toBe('its output goes to no terminal');
-    // The rest of the gate holds for it too.
     const runner = { PW_TEST_REPORTER: '/ide/playwright-reporter.js' };
+    expect(gate(runner)).toBeNull();
     expect(gate({ ...runner, PIWI_EDITOR: 'off' })).toBe('PIWI_EDITOR=off');
-    // The other spellings of off and on, as other switches take them.
+    // The other spellings of off.
     expect(gate({ ...runner, PIWI_EDITOR: 'false' })).toBe('PIWI_EDITOR=false');
     expect(gate({ ...runner, PIWI_EDITOR: '0' })).toBe('PIWI_EDITOR=0');
-    expect(terminalRunSkip({ env: { PIWI_EDITOR: 'true' }, argv: [], terminal: false })).toBeNull();
     expect(gate({ ...runner, CI: 'true' })).toBe('running under CI');
     expect(gate({ ...runner, PIWI_ORIGIN: 'desktop' })).toBe('a launcher started the run');
   });

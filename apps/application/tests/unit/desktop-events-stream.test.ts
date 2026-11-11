@@ -16,6 +16,8 @@ const state = vi.hoisted(() => ({
   db: null as unknown,
   live: 0,
   listeners: new Set<(live: number) => void>(),
+  editorRuns: [] as unknown[],
+  editorListeners: new Set<(runs: unknown[]) => void>(),
   scope: 'all' as 'all' | Set<number>,
 }));
 
@@ -33,6 +35,11 @@ vi.mock('../../server/utils/desktop-runs', () => ({
       onLiveRunCount: (listener: (live: number) => void) => {
         state.listeners.add(listener);
         return () => state.listeners.delete(listener);
+      },
+      editorRuns: () => state.editorRuns,
+      onEditorRuns: (listener: (runs: unknown[]) => void) => {
+        state.editorListeners.add(listener);
+        return () => state.editorListeners.delete(listener);
       },
     }),
 }));
@@ -150,7 +157,7 @@ describe('the desktop event stream', () => {
     runEventBus.publishGlobal({ type: 'run-finished', runId: 7, projectId: 1, status: 'passed' });
     await vi.waitFor(() => expect(stream.messages.some((m) => m.type === 'run-finished')).toBe(true));
     stream.end();
-    const order = stream.messages.filter((m) => m.type !== 'hub-runs').map((m) => m.type);
+    const order = stream.messages.filter((m) => m.type !== 'hub-runs' && m.type !== 'editor-runs').map((m) => m.type);
     expect(order).toEqual(['snapshot', 'run-finished']);
     expect((await snapshotOf(stream.messages)).runs.map((run) => run.id)).toContain(7);
   });
@@ -214,6 +221,19 @@ describe('the desktop event stream', () => {
     await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'hub-runs', live: 0 }));
     stream.end();
     expect(state.listeners.size).toBe(0);
+    expect(state.editorListeners.size).toBe(0);
+  });
+
+  test('says the editors’ live runs as it opens, then each time they change, until it ends', async () => {
+    const run = { client: 'Visual Studio Code', session: { ref: 'ed-1' } };
+    state.editorRuns = [run];
+    const stream = await openStream();
+    await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'editor-runs', runs: [run] }));
+    for (const listener of state.editorListeners) listener([]);
+    await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'editor-runs', runs: [] }));
+    stream.end();
+    expect(state.editorListeners.size).toBe(0);
+    state.editorRuns = [];
   });
 });
 

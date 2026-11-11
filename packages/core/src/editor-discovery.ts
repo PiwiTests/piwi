@@ -50,6 +50,11 @@ export interface EditorDiscovery {
   runChannel: ChannelAddress | null;
   /** The recorder's bundle a test loads to record into the editor, absolute; null when the service ships none. */
   recorderBundle: string | null;
+  /**
+   * The service knows a run nobody attends (a ref ending in `UNATTENDED_REF_SUFFIX`): it gives it no breakpoint and
+   * holds none of its failures. Absent from a service that does not, which a run nobody attends never follows.
+   */
+  unattended?: boolean;
 }
 
 /** The operations `readLiveEditors` takes from its caller. */
@@ -138,6 +143,7 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     hub: readHub(value.hub),
     runChannel: readChannel(value.runChannel),
     recorderBundle: text(value.recorderBundle, 4096),
+    ...(value.unattended === true ? { unattended: true } : {}),
   };
 }
 

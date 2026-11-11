@@ -637,8 +637,9 @@ export class RunSessions {
       page: null,
     };
     this.sessions.set(ref, session);
-    // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
-    if (terminal && !this.breakpoints.has(ref)) this.keepBreakpoints(ref, this.editorBreakpoints);
+    // A terminal's run a person attends starts with the editor's breakpoints, as lines of its code: the files as they
+    // stand now.
+    if (terminal && this.holds(ref) && !this.breakpoints.has(ref)) this.keepBreakpoints(ref, this.editorBreakpoints);
     this.options.sessionStarted?.(ref, this.endedCommands.delete(ref));
     return session;
   }

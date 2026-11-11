@@ -56,7 +56,7 @@ fn option_value<'a>(args: &'a [String], index: usize, name: &str) -> Option<&'a 
 /// Whether `value` reads as a run channel's address as the bundled server
 /// names it, `<socket path>#<token>`: a path and a token of 16 to 256 letters,
 /// digits, `_` and `-`, on one line.
-fn is_run_channel(value: &str) -> bool {
+pub(crate) fn is_run_channel(value: &str) -> bool {
     let Some((path, token)) = value.rsplit_once('#') else {
         return false;
     };
@@ -73,7 +73,7 @@ fn is_run_channel(value: &str) -> bool {
 /// (`http://127.0.0.1:<port>/<path>#<token>`): this machine's loopback, a port,
 /// a path of letters, digits, `/`, `_` and `-`, and a token of 16 to 256
 /// letters, digits, `_` and `-`.
-fn is_picks_address(value: &str) -> bool {
+pub(crate) fn is_picks_address(value: &str) -> bool {
     let Some((url, token)) = value.rsplit_once('#') else {
         return false;
     };
