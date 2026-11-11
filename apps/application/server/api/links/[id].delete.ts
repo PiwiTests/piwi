@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
 
   try {
-    return await deleteLink(db, id, user.id);
+    return await deleteLink(db, id, user.id || null);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete link';
     const statusCode = message === 'Link not found' ? 404 : 400;
