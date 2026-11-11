@@ -1697,7 +1697,8 @@ test.describe('the live view', () => {
         await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
         await expect(card.locator('.run-driver')).toHaveCount(0);
         await expect(other.locator('.run-driver')).toHaveCount(0);
-        // Give back turns Interact off, as it gives the stop back.
+        // Give back turns Interact off, as it gives the stop back; Interact and Give back wait meanwhile.
+        await expect(interact).not.toHaveAttribute('aria-disabled');
         await interact.click();
         await view.click({ position: { x: 30, y: 30 } });
         await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
@@ -1705,6 +1706,7 @@ test.describe('the live view', () => {
         await expect(interact).toHaveAttribute('aria-pressed', 'false');
         await expect(card.locator('.run-driver')).toHaveCount(0);
         // Watch live turned off with Interact on gives the stop back, as such, before the view ends.
+        await expect(interact).not.toHaveAttribute('aria-disabled');
         await interact.click();
         await view.click({ position: { x: 40, y: 40 } });
         await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');

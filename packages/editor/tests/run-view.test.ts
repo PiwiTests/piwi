@@ -574,8 +574,8 @@ describe('who is present on a run, and who drives its stop', () => {
       message: 'You did not drive this stop.',
     });
 
-    // Giving it back, or no longer watching it, lets the agent act again: as the viewer that drives it, or as another
-    // of the same tool's viewers (an editor's paused page for its lane's panel).
+    // Giving it back, or no longer watching it, lets the agent act again: as the viewer that drives it, or with it among
+    // the `others` named (an editor names its lane's panel beside its paused page).
     expect(h.sessions.driveStop({ ref: 'ed-1', since }, picker, false, [desktop])).toEqual({
       ok: true,
       message: 'You gave this stop back: an agent may act on it.',

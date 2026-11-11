@@ -37,6 +37,8 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
+  /** The stop is being given back as Interact goes off, or was: the worker's buttons wait meanwhile. */
+  releasing: [on: boolean];
 }>();
 
 const hub = useDesktopRunHub();
@@ -172,7 +174,7 @@ const interactButton = ref<{ $el: HTMLElement } | null>(null);
 let leaving = false;
 
 async function toggle(): Promise<void> {
-  if (leaving) return;
+  if (leaving || props.busy) return;
   const on = !watched.value;
   // Watch off watches the worker no more, at its stops either, and sends nothing to its page: the stop is given back
   // before the watch ends, which would give it back unsaid.
@@ -198,12 +200,17 @@ async function interactOff(): Promise<void> {
   const since = stop.value?.since ?? null;
   const drained = liveImage.value?.release() ?? Promise.resolve();
   interact.value = false;
-  await drained;
-  const now = stop.value;
-  if (!since || interact.value || now?.since !== since) return;
-  if (!now.driver?.self && (now.driver || playedAt.value !== since)) return;
-  playedAt.value = null;
-  await props.giveBack(since);
+  emit('releasing', true);
+  try {
+    await drained;
+    const now = stop.value;
+    if (!since || interact.value || now?.since !== since) return;
+    if (!now.driver?.self && (now.driver || playedAt.value !== since)) return;
+    playedAt.value = null;
+    await props.giveBack(since);
+  } finally {
+    emit('releasing', false);
+  }
 }
 
 defineExpose({ interactOff });
@@ -246,6 +253,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         variant="outline"
         icon="i-lucide-eye"
         :aria-pressed="watched"
+        :aria-disabled="busy || undefined"
         :class="watched ? PRESSED_TOGGLE_CLASS : ''"
         :title="
           watched
@@ -267,7 +275,8 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="interact"
         :class="interact ? PRESSED_TOGGLE_CLASS : ''"
         title="Send your clicks, scrolling and keys to the test's page, driving this stop: Escape gives it back"
-        @click="interact ? interactOff() : (interact = true)"
+        :aria-disabled="busy || undefined"
+        @click="!busy && (interact ? interactOff() : (interact = true))"
       >
         Interact
       </UButton>

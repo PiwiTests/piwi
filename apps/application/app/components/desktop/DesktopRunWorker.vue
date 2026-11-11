@@ -138,7 +138,7 @@ const watchLive = computed({
 /**
  * Interact, kept by the window for the worker's lane while the worker is watched: on, the clicks, the wheel and the
  * keys on its view go to the page, and the first of them drives the stop. Turned off on the page, the stop is given
- * back once its input went (`released`).
+ * back once its input went (`giveBackAt`), the worker's buttons waiting meanwhile (`busy`).
  */
 const interact = computed({
   get: () => hub.interacts(props.session.ref, props.worker.parallelIndex),
@@ -405,6 +405,7 @@ onBeforeUnmount(() => {
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @releasing="busy = $event"
     />
     <DesktopRunStopPage
       v-else-if="stop"
@@ -420,6 +421,7 @@ onBeforeUnmount(() => {
       v-model:interact="interact"
       @said="heardPage"
       @picking="busy = $event"
+      @releasing="busy = $event"
     />
     <p v-else-if="worker.state !== 'between'" class="text-xs text-muted" data-testid="desktop-watch-needs-update">
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}

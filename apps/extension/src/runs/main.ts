@@ -566,6 +566,11 @@ const watchLive = new Map<string, { hub: string; run: string }>();
 const interacting = new Map<string, { hub: string; run: string }>();
 /** The stop each slot's input last reached (`slotKey` to its `since`): the person drove it with that input. */
 const inputAt = new Map<string, string>();
+/**
+ * The workers whose stop is being given back as Interact goes off (`workerKey`): their page's tools and Give back are
+ * held until it is, so a second press neither ends the watch nor gives the stop back ahead of the input.
+ */
+const releasing = new Set<string>();
 /** The workers whose Pick on the image waits for a click on the image. */
 const picking = new Set<string>();
 /** The view (worker and stop) the hint on its input shows under: the first one this window gave input to. */
@@ -611,6 +616,7 @@ function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubSto
  */
 function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   const key = workerKey(run.hub, run.session.ref, { worker });
+  if (releasing.has(key)) return;
   const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex ?? worker;
   const slot = slotKey(run.hub, run.session.ref, lane);
   // The run of a hub not connected now is shown as last heard: its Watch live waits for the hub.
@@ -647,6 +653,7 @@ function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean
   }
   interacting.delete(slot);
   const key = workerKey(run.hub, run.session.ref, worker);
+  releasing.add(key);
   const surface = [views.get(key), lanes.get(slot)].find((view) => view?.input);
   const drained = surface?.input?.finish() ?? Promise.resolve();
   if (surface) {
@@ -667,7 +674,10 @@ function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean
     await giveBack(run, worker.worker, stop.since);
   });
   render();
-  return done;
+  return done.finally(() => {
+    releasing.delete(key);
+    render();
+  });
 }
 
 /** Gives a stop back, past any command on its way: a refusal is shown under the test, the answer read out. */
@@ -853,6 +863,7 @@ function toggleLane(run: RunsRun, worker: HubWorker): void {
   // The run of a hub not connected now is shown as last heard: its Watch waits for the hub.
   if (!hubAnswers(run.hub)) return;
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
+  if (releasing.has(workerKey(run.hub, run.session.ref, worker))) return;
   const lane = lanes.get(slot);
   if (isWatched(lane)) {
     // The stop is given back, once its input went, before the watch ends, which would give it back unsaid.
@@ -2770,7 +2781,7 @@ function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker,
     let drive: HTMLElement | null = null;
     if (stop && hub?.presence && !away && ((driver && (driver.who !== 'self' || othersOpen)) || agentFollows)) {
       drive = part(`${key}|drive`, { since: stop.since, driver }, () => renderDriver(run, worker, stop, driver));
-      markBusy(drive.querySelectorAll('button'), held);
+      markBusy(drive.querySelectorAll('button'), held || releasing.has(key));
     }
     const head = { watchers, drive };
     let page: HTMLElement | null = null;
@@ -3127,7 +3138,7 @@ function pickAtButton(key: string, picking: boolean): HTMLButtonElement {
 function markTools(row: HTMLElement, key: string, away: boolean): void {
   const pickAt = `[data-focus="${CSS.escape(`${key}|pick-at`)}"]`;
   for (const button of row.querySelectorAll('button')) {
-    markBusy([button], away || (button.matches(pickAt) && busy.has(key)));
+    markBusy([button], away || releasing.has(key) || (button.matches(pickAt) && busy.has(key)));
   }
 }
 
