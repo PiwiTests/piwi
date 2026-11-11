@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, shallowRef } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import type { UsualDuration } from '#shared/handlers/stuck-tests';
+import { usualDurationKey } from '#shared/stuck-tests';
 import type { SeriesPoint } from '#shared/types';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT, TIMELINE_PAUSE_COLORS } from '~/utils/timeline';
+import {
+  livePlotEnd,
+  liveRunNow,
+  lockColorHex,
+  TIMELINE_HOOK_COLORS,
+  TIMELINE_LAYOUT,
+  TIMELINE_PAUSE_COLORS,
+} from '~/utils/timeline';
 import {
   ALL_RESOURCE_TRACKS,
   RESOURCE_TRACK_KINDS,
@@ -56,6 +65,41 @@ const expandedExecutions = ref(new Set<number>());
 const stepsByExecution = ref(new Map<number, PerformanceStep[]>());
 const stepsLoading = new Set<number>();
 
+// Each test's usual duration in the run's project, by `usualDurationKey`: the ghost behind its running attempt. Read
+// once while the run is live.
+const usualDurations = shallowRef<Map<string, number> | null>(null);
+async function loadUsualDurations(): Promise<void> {
+  if (!props.live || !props.runId || usualDurations.value) return;
+  try {
+    const res = await $fetch<{ tests: UsualDuration[] }>(`/api/test-runs/${props.runId}/usual-durations`);
+    usualDurations.value = new Map(res.tests.map((test) => [usualDurationKey(test), test.usualMs]));
+  } catch {
+    // The running bars go without their ghost.
+  }
+}
+onMounted(loadUsualDurations);
+watch(
+  () => props.runId,
+  () => (usualDurations.value = null),
+);
+watch(() => [props.runId, props.live], loadUsualDurations);
+
+// The run's clock while it is live, read every second once mounted: the browser's, unless the results put the run's
+// ahead of it (`liveRunNow`).
+const browserNow = ref<number | null>(null);
+let clock: ReturnType<typeof setInterval> | null = null;
+function runClock(live: boolean | undefined): void {
+  if (clock) clearInterval(clock);
+  clock = null;
+  browserNow.value = live ? Date.now() : null;
+  if (live) clock = setInterval(() => (browserNow.value = Date.now()), 1000);
+}
+onMounted(() => runClock(props.live));
+watch(() => props.live, runClock);
+onBeforeUnmount(() => runClock(false));
+const heard = shallowRef<{ at: number; seenAt: number } | null>(null);
+const runNow = computed(() => (browserNow.value === null ? null : liveRunNow(browserNow.value, heard.value)));
+
 // Getter-based input so useTimelineModel keeps tracking the component props and
 // the expansion refs reactively (a spread would snapshot them).
 const modelInput = {
@@ -77,9 +121,35 @@ const modelInput = {
   get live() {
     return props.live;
   },
+  get now() {
+    return props.live ? runNow.value : null;
+  },
+  get usualDurations() {
+    return usualDurations.value;
+  },
 };
 
-const { timelineData, workerRows, laneCount, maxTime, origin, runLocks } = useTimelineModel(modelInput);
+const { timelineData, workerRows, laneCount, maxTime, origin, knownUntil, runLocks } = useTimelineModel(modelInput);
+
+// The latest moment the results tell, and when this page heard it: the run's clock goes on from there.
+watch(
+  knownUntil,
+  (at) => {
+    if (at !== null && (heard.value === null || at > heard.value.at)) heard.value = { at, seenAt: Date.now() };
+  },
+  { immediate: true },
+);
+
+// Where a live run's plot ends: some way past now on its clock, moved on once now reaches it.
+const liveEnd = ref(0);
+watch([runNow, origin], ([now, zero]) => {
+  if (now === null || zero === null) {
+    liveEnd.value = 0;
+    return;
+  }
+  const elapsed = now - zero;
+  if (elapsed > liveEnd.value) liveEnd.value = livePlotEnd(elapsed);
+});
 
 // The resources each reporter measured over time, and what each execution
 // cost: while the run is live, what its reporters posted so far; once it
@@ -170,12 +240,14 @@ function leftOpenFor(band: ResourceBand): SeriesPoint[] | null {
 }
 
 /**
- * Where the plot ends: the last test's end, and while the run is live, the
- * last resource point read, so what the running tests use shows too.
+ * Where the plot ends: the last test's end, and while the run is live, past
+ * now on its clock and the last resource point read, so the running tests and
+ * what they use show too.
  */
 const plotEnd = computed(() => {
   let end = maxTime.value;
   if (!props.live) return end;
+  end = Math.max(end, liveEnd.value);
   for (const band of resourceBands.value) {
     for (const track of Object.values(band.tracks)) end = Math.max(end, track?.points.at(-1)?.[0] ?? 0);
     for (const tree of band.sampled) {
@@ -419,6 +491,19 @@ const visibleItems = computed(() =>
 /** A test with no hook section drawn: one shared array, so its bar keeps equal props. */
 const NO_HOOKS: TimelineItem[] = [];
 
+/** The width of a running attempt's usual duration, its ghost; none for every other bar. */
+function ghostWidth(item: TimelineItem): number | undefined {
+  return item.status === 'running' && item.usualMs != null ? item.usualMs * pxPerMs.value : undefined;
+}
+
+/** While a sharded run is live, the shards that have a test on the timeline. */
+const shardsStarted = computed(() =>
+  props.live && sharded.value
+    ? [...new Set(workerRows.value.flatMap((row) => (row.shardIndex == null ? [] : [row.shardIndex])))]
+    : null,
+);
+const stuckCount = computed(() => testItems.value.filter((d) => d.stuck).length);
+
 /** Whether an item is a test's hook section or one of its stops, which the test's own bar draws. */
 function isTestHook(item: TimelineItem): boolean {
   return (item.kind === 'hook' || item.kind === 'fixture' || item.kind === 'pause') && item.testCaseId != null;
@@ -604,6 +689,8 @@ function selectSpanTest(tail: SpanTail): void {
       :left-open-count="spanCounts.leaked"
       :lingering-count="spanCounts.lingering"
       :show-leaks="showLeaks"
+      :shards-started="shardsStarted"
+      :stuck-count="stuckCount"
       @toggle-hooks="showHooks = $event"
       @toggle-waits="showWaits = $event"
       @toggle-locks="showLocks = $event"
@@ -743,6 +830,7 @@ function selectSpanTest(tail: SpanTail): void {
           :expandable="barExpandable(item)"
           :hooks="hooksFor(item)"
           :hook-geometry="hookGeometry"
+          :ghost-width="ghostWidth(item)"
           @select="emit('selectTestCase', $event)"
           @toggle-expand="toggleExpand($event)"
           @inspect-hook="inspectHook"
@@ -763,6 +851,7 @@ function selectSpanTest(tail: SpanTail): void {
           :hooks="hooksFor"
           :hook-geometry="hookGeometry"
           :attempts="attemptsFor"
+          :ghost-width="ghostWidth"
         />
 
         <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />

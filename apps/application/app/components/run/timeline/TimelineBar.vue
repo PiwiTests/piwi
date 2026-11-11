@@ -2,9 +2,11 @@
 import { computed } from 'vue';
 import { isGapKind, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import {
+  TIMELINE_GHOST_STYLE,
   TIMELINE_LAYOUT,
   TIMELINE_PAUSE_COLORS,
   TIMELINE_WAIT_COLORS,
+  timelineRunningFill,
   timelineStatusFill,
   timelineRetriedAttemptStyle,
   timelineHookColors,
@@ -25,6 +27,8 @@ const props = defineProps<{
   hooks?: TimelineItem[];
   /** Where a hook section sits, on the same scale as `x` and `width`. */
   hookGeometry?: (item: TimelineItem) => { x: number; width: number };
+  /** The width of the test's usual duration, on the same scale — running test bars with one only. */
+  ghostWidth?: number;
 }>();
 
 const emit = defineEmits<{
@@ -149,8 +153,21 @@ const testLabel = computed<string | null>(() => {
   return covered ? null : text;
 });
 
-/** Label text on a solid bar is white; on a retried attempt's pale wash it is the page's text color. */
-const testLabelClass = computed(() => (props.item.retried ? 'fill-gray-800 dark:fill-gray-100' : 'fill-white'));
+/**
+ * Label text on a solid bar is white; on a retried attempt's pale wash it is the page's text color, and on a stuck
+ * attempt's amber the palette's dark label.
+ */
+const testLabelClass = computed(() => {
+  if (props.item.retried) return 'fill-gray-800 dark:fill-gray-100';
+  if (props.item.stuck) return STATUS_PALETTE.running.stuck!.labelFill;
+  return 'fill-white';
+});
+
+/** Where a running attempt's usual end falls inside its bar, once it ran past it; null before. */
+const usualEndX = computed(() => {
+  const ghost = props.ghostWidth;
+  return ghost != null && ghost < props.width - 2 ? props.x + ghost : null;
+});
 
 /** Every bar with an owning test case clicks through to it (suite setup has none). */
 const clickable = computed(() => props.item.testCaseId != null);
@@ -319,26 +336,63 @@ function onTestClick(): void {
       </text>
     </template>
     <template v-else-if="item.status === 'running'">
-      <circle
-        :cx="x + 6"
-        :cy="y + barHeight / 2"
-        r="3"
-        :style="{ fill: STATUS_PALETTE.running.color }"
-        filter="url(#glow)"
+      <!-- The ghost: how long the test usually takes, behind the attempt's bar. -->
+      <rect
+        v-if="ghostWidth"
+        :x="x"
+        :y="y + 0.5"
+        :width="ghostWidth"
+        :height="barHeight - 1"
+        :rx="3"
+        :ry="3"
+        :style="TIMELINE_GHOST_STYLE"
+        class="pointer-events-none"
+        data-timeline-ghost
+      />
+      <!-- The attempt so far, amber once the Stuck? rule marks it. -->
+      <rect
+        :x="x"
+        :y="y"
+        :width="width"
+        :height="barHeight"
+        :rx="3"
+        :ry="3"
+        :style="timelineRunningFill(item.stuck)"
         class="cursor-pointer opacity-90"
+        data-timeline-test
+        data-timeline-running
+        :data-stuck="item.stuck ? '' : undefined"
+        :data-title="item.attemptKeys ? item.title : undefined"
+        :data-attempt="item.attemptKeys ? (item.retries ?? 0) + 1 : undefined"
         @click="onClick"
       />
-      <circle
-        :cx="x + 6"
-        :cy="y + barHeight / 2"
-        r="5"
-        fill="none"
-        :style="{ stroke: STATUS_PALETTE.running.color }"
+      <!-- Where the test usually ends, over a bar that ran past it: a notch at each edge, clear of the label. -->
+      <path
+        v-if="usualEndX !== null"
+        :d="`M ${usualEndX} ${y} v 6 M ${usualEndX} ${y + barHeight} v -6`"
+        stroke="white"
         stroke-width="1.5"
-        stroke-opacity="0.4"
+        stroke-opacity="0.9"
+        class="pointer-events-none"
+        data-timeline-usual-end
+      />
+      <text
+        v-if="testLabel"
+        :x="testLabelX"
+        :y="y + barHeight / 2 + 4"
+        class="text-[10px] font-medium pointer-events-none"
+        :class="testLabelClass"
+      >
+        {{ testLabel }}
+      </text>
+      <!-- The leading edge, glowing while the attempt runs. -->
+      <circle
+        :cx="x + width"
+        :cy="y + barHeight / 2"
+        r="3"
+        :style="timelineRunningFill(item.stuck)"
         filter="url(#glow)"
-        class="cursor-pointer opacity-90"
-        @click="onClick"
+        class="pointer-events-none"
       />
     </template>
     <template v-else>

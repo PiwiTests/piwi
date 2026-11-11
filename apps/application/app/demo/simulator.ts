@@ -1280,7 +1280,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     icon: 'i-lucide-hourglass',
     group: 'causes',
     result: {
-      text: 'The PayPal test ran past its usual time, so its row read Stuck? until the payment timed out.',
+      text: 'The PayPal test ran past its usual time, so its row read Stuck? and its Timeline bar turned amber until the payment timed out.',
     },
     speed: 15,
     workers: 3,

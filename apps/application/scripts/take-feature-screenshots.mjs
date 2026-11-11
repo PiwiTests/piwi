@@ -781,6 +781,115 @@ async function streamLiveListsResults(request, base, count) {
 }
 
 /**
+ * A sharded run still going, 3 min 20 s in, with two of its three shards started: shard 1 on three workers, shard 2
+ * on two. Each worker finished a few tests and runs one more, whose test passed in two earlier runs, so the Timeline
+ * draws its usual time behind it. The one on shard 1's worker 2 has run over 3 minutes, far past its passes (the
+ * server's stuck check marks it within 15 s), and on shard 1's worker 3 a test that failed runs its second attempt,
+ * past its usual time but not stuck. Nothing finishes it, so the run page draws it live, while the caller keeps it
+ * from going quiet with each shard's stream token (`tokens`): two minutes without a word interrupt it.
+ */
+async function reportLiveShardedRun(request, base) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const projectName = 'checkout-lanes';
+  const browser = { projectName: 'chromium', browserName: 'chromium' };
+  const now = Date.now();
+  // Each test: its shard and lane, its title and line, how long it usually passes in, and this run's attempts as
+  // [start, duration] from the run's start (a null duration still runs), the earlier ones failed.
+  const TESTS = [
+    { shard: 1, lane: 0, title: 'adds an item to the cart', line: 8, usual: 14_000, attempts: [[2_000, 13_500]] },
+    { shard: 1, lane: 0, title: 'applies a discount code', line: 22, usual: 18_000, attempts: [[16_000, 17_000]] },
+    { shard: 1, lane: 0, title: 'checks out as a guest', line: 36, usual: 130_000, attempts: [[34_000, 126_000]] },
+    { shard: 1, lane: 0, title: 'shows the order summary', line: 50, usual: 60_000, attempts: [[163_000, null]] },
+    { shard: 1, lane: 1, title: 'saves the shipping address', line: 64, usual: 9_000, attempts: [[2_400, 8_200]] },
+    { shard: 1, lane: 1, title: 'pays with PayPal', line: 78, usual: 8_000, attempts: [[12_000, null]] },
+    { shard: 1, lane: 2, title: 'removes an item', line: 92, usual: 25_000, attempts: [[2_800, 24_000]] },
+    { shard: 1, lane: 2, title: 'updates the quantities', line: 106, usual: 120_000, attempts: [[28_000, 118_000]] },
+    {
+      shard: 1,
+      lane: 2,
+      title: 'pays by card',
+      line: 120,
+      usual: 16_000,
+      attempts: [
+        [148_000, 15_000],
+        [165_000, null],
+      ],
+    },
+    { shard: 2, lane: 0, title: 'lists past orders', line: 134, usual: 45_000, attempts: [[9_000, 41_000]] },
+    { shard: 2, lane: 0, title: 'filters orders by date', line: 148, usual: 100_000, attempts: [[51_000, 95_000]] },
+    { shard: 2, lane: 0, title: 'cancels an order', line: 162, usual: 70_000, attempts: [[148_000, null]] },
+    { shard: 2, lane: 1, title: 'downloads an invoice', line: 176, usual: 40_000, attempts: [[9_500, 37_000]] },
+    { shard: 2, lane: 1, title: 'emails the receipt', line: 190, usual: 66_000, attempts: [[48_000, 64_000]] },
+    { shard: 2, lane: 1, title: 'reorders a past order', line: 204, usual: 90_000, attempts: [[114_000, null]] },
+  ];
+  const location = (t) => `tests/checkout.spec.ts:${t.line}:3`;
+  // Two earlier runs where every test passed: its usual time, and a little less.
+  for (const [i, factor] of [0.92, 1].entries()) {
+    await post('/api/test-runs/submit', {
+      data: {
+        projectName,
+        status: 'passed',
+        startTime: new Date(now - (i + 1) * 86_400_000).toISOString(),
+        duration: 240_000,
+        totalTests: TESTS.length,
+        passedTests: TESTS.length,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: TESTS.map((t) => ({
+          title: t.title,
+          status: 'passed',
+          duration: Math.round(t.usual * factor),
+          location: location(t),
+          browser,
+        })),
+      },
+    });
+  }
+
+  const startTime = now - 200_000;
+  const instanceId = `lanes-scene-${now}`;
+  let runId = null;
+  const tokens = [];
+  for (const shard of [1, 2]) {
+    const ofShard = TESTS.filter((t) => t.shard === shard);
+    const started = await (
+      await post('/api/test-runs/start', {
+        data: {
+          projectName,
+          startTime: new Date(startTime).toISOString(),
+          totalTests: ofShard.length + 2,
+          instanceId,
+          shardIndex: shard,
+          shardTotal: 3,
+        },
+      })
+    ).json();
+    runId = started.runId;
+    tokens.push(started.streamToken);
+    const testCases = ofShard.flatMap((t) =>
+      t.attempts.map(([at, duration], retries) => ({
+        type: duration === null ? 'begin' : 'complete',
+        title: t.title,
+        location: location(t),
+        retries,
+        ...(duration === null
+          ? {}
+          : retries < t.attempts.length - 1
+            ? { status: 'failed', duration, error: 'Error: expect(locator).toBeVisible() failed' }
+            : { status: 'passed', duration }),
+        workerIndex: t.lane + (retries > 0 ? 3 : 0),
+        parallelIndex: t.lane,
+        shardIndex: shard,
+        startedAt: startTime + at,
+        browser,
+      })),
+    );
+    await post(`/api/test-runs/${runId}/events`, { data: { streamToken: started.streamToken, testCases } });
+  }
+  return { runId, tokens };
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -4887,6 +4996,60 @@ const SCENES = [
       'run-timeline-resources-live-narrow.png',
       'run-timeline-resources-live-tests.png',
       'run-timeline-resources-live-tests-narrow.png',
+    ],
+  },
+  {
+    name: 'run-timeline-lanes',
+    description:
+      'A sharded run still going, two of its three shards started: its Timeline as lanes by shard, each running test a bar to now over the pale bar of its usual time, the stuck one amber, then its Tests tab searched for is:stuck, at 1280 px and at phone width',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.live = await reportLiveShardedRun(request, base);
+    },
+    async run({ page, base, goto, shoot, settle }) {
+      const { runId, tokens } = this.live;
+      // Each shard's heartbeat, so the run stays live through the captures.
+      const beat = () =>
+        Promise.all(
+          tokens.map((streamToken) =>
+            page.request.post(`${base}/api/test-runs/${runId}/heartbeat`, { data: { streamToken } }).catch(() => {}),
+          ),
+        );
+      await beat();
+      const heartbeat = setInterval(beat, 20_000);
+      try {
+        await goto(`/test-runs/${runId}?tab=workers`);
+        // The server checks its live runs for stuck tests every 15 seconds.
+        await page.locator('[data-timeline-running][data-stuck]').first().waitFor({ timeout: 60_000 });
+        await page.locator('[data-timeline-ghost]').first().waitFor({ timeout: 30_000 });
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 900 });
+        await settle();
+        await shoot('narrow');
+        for (const [width, label] of [
+          [1280, 'tests'],
+          [390, 'tests-narrow'],
+        ]) {
+          await page.setViewportSize({ width, height: 900 });
+          await goto(`/test-runs/${runId}?tab=test-cases&search=is%3Astuck`);
+          await page.locator('[data-testid="stuck-time"]:visible').first().waitFor({ timeout: 60_000 });
+          await settle();
+          await shoot(label, { of: '[data-shot="failure-clusters"]' });
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+    },
+    outputs: [
+      'run-timeline-lanes.png',
+      'run-timeline-lanes-narrow.png',
+      'run-timeline-lanes-tests.png',
+      'run-timeline-lanes-tests-narrow.png',
     ],
   },
   {

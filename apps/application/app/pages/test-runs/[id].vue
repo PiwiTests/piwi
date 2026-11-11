@@ -573,10 +573,12 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
       } & StuckAttempt;
       const key = liveCaseKey(d);
-      const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
-      if (row) {
-        row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
-        liveTestCases.value = [...liveTestCases.value];
+      const idx = liveTestCases.value.findIndex((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
+      if (idx >= 0) {
+        // A new row object, so what the list's search reads of it (`is:stuck`) is read again.
+        const copy = [...liveTestCases.value];
+        copy[idx] = { ...copy[idx]!, stuck: { elapsedMs: d.elapsedMs, usualMs: d.usualMs } };
+        liveTestCases.value = copy;
         showLive();
       }
     } else if (parsed.type === 'test-stopped' || parsed.type === 'test-resumed') {

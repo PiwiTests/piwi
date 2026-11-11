@@ -204,13 +204,17 @@ in memory and hands it to the run's reporter in an answer of the run's stream, w
 whose tool asks the developer (`piwi/askToWatch`, the desktop app's toast) or, with no hub, prints it; **Not now** goes
 back the same way (`ask-answer`, `askAnswer`), and sharing answers it. `PIWI_SHARE_LIVE=1` shares a run from its start
 outside CI, and **Not shared live** shows once, in the run page's toolbar, with **Ask to watch**. Left of P9: Piwi
-Picker's Runs window offers no window scope. Then P10's first half, the run at a glance (RT7, DB14, DB15, LV-12):
-`/api/stream` carries `run-progress`, at most one per run every 2 s and sent before the run's next lifecycle event, and
-Home, a project's runs list and the Projects page move a running run's row on from it, in the demo too; a CI run on
-GitHub Actions prints a `::notice` with its page as it starts; a run outside CI makes its page an OSC 8 link in its
-terminal and shows its progress as OSC 9;4 in the terminals that read it (`PIWI_TERMINAL_PROGRESS`); and a CI run posts
-a pending commit status under the project's status context at most once a minute (open question 7: the same status and
-switch as the final one), replaced by its final status or closed by an error status. The later phases are proposed. The bugs the analysis
+Picker's Runs window offers no window scope. Then P10's first half, the run at a glance (RT7, DB14, DB15, DB16,
+DB20, DB22, LV-12): `/api/stream` carries `run-progress`, at most one per run every 2 s and sent before the run's next
+lifecycle event, and Home, a project's runs list and the Projects page move a running run's row on from it, in the demo
+too; the live Timeline reads as lanes, grouped by shard, its header saying which shards have started, each running
+attempt a bar to now over the pale bar of its test's usual time (the passes the Stuck? rule reads, one query a run),
+amber once marked **Stuck?**, and the test search takes `is:stuck`, `worker:` and `shard:`; a CI run on GitHub Actions
+prints a `::notice` with its page as it starts; a run outside CI makes its page an OSC 8 link in its terminal and shows
+its progress as OSC 9;4 in the terminals that read it (`PIWI_TERMINAL_PROGRESS`); and a CI run posts a pending commit
+status under the project's status context at most once a minute (open question 7: the same status and switch as the
+final one), replaced by its final status or closed by an error status. The rest of P10 and the later phases are
+proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
