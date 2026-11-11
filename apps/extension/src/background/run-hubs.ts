@@ -84,6 +84,11 @@ export interface RunHubsDeps {
    * there is none; `unpaired` when it is left out.
    */
   desktopHubs?(): Promise<DesktopHubs>;
+  /**
+   * Whether a Runs window has the focus now: a run that fails while none has stays `unseen` until one takes it
+   * (`seen`). Left out, every run counts as seen.
+   */
+  looking?(): boolean;
   now?(): number;
   timings?: HubTimings;
 }
@@ -168,7 +173,7 @@ export class RunHubs {
   /** The addresses of the desktop app's hubs among them. */
   private desktopUrls = new Set<string>();
   private readonly connections = new Map<string, HubConnection>();
-  private ended: Array<{ hub: string; desktop: boolean; session: HubSession; at: number }> = [];
+  private ended: Array<{ hub: string; desktop: boolean; session: HubSession; at: number; unseen: boolean }> = [];
   private finding: Promise<void> | null = null;
   private findAgain = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -222,6 +227,13 @@ export class RunHubs {
     return () => void this.observers.delete(changed);
   }
 
+  /** A Runs window took the focus: the runs that failed while none had it are seen. */
+  seen(): void {
+    if (!this.ended.some((run) => run.unseen)) return;
+    this.ended = this.ended.map((run) => ({ ...run, unseen: false }));
+    this.changed();
+  }
+
   /** Tells each open connection whether a person follows the runs, a Runs window open. */
   private follow(on: boolean): void {
     for (const connection of this.connections.values()) {
@@ -260,7 +272,7 @@ export class RunHubs {
     // A run of a ref that runs again shows as the live one alone.
     const ended = this.ended
       .filter(({ hub, session }) => !live.some((run) => run.hub === hub && run.session.ref === session.ref))
-      .map(({ hub, session }) => ({ hub, session }));
+      .map(({ hub, session, unseen }) => (unseen ? { hub, session, unseen } : { hub, session }));
     return {
       discovery: this.discovery,
       desktop: this.desktop,
@@ -733,11 +745,16 @@ export class RunHubs {
     this.connections.set(hub.url, connection);
   }
 
-  /** An ended run keeps the workers it had last, so the window still names its tests. */
+  /**
+   * An ended run keeps the workers it had last, so the window still names its tests; one that failed or timed out
+   * while no Runs window had the focus is `unseen`.
+   */
   private keepEnded(hub: string, session: HubSession, before: HubSession | undefined): void {
     const workers = session.workers.length > 0 ? session.workers : (before?.workers ?? []);
+    const status = session.progress?.status;
+    const unseen = (status === 'failed' || status === 'timedout') && !(this.deps.looking?.() ?? true);
     this.ended = [
-      { hub, desktop: this.desktopUrls.has(hub), session: { ...session, workers }, at: this.now() },
+      { hub, desktop: this.desktopUrls.has(hub), session: { ...session, workers }, at: this.now(), unseen },
       ...this.ended.filter((run) => !(run.hub === hub && run.session.ref === session.ref)),
     ].slice(0, ENDED_KEPT);
   }

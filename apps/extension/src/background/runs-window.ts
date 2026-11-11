@@ -55,10 +55,37 @@ export const runHubs = new RunHubs({
     const answer = await fetchDesktopHubs(desktop);
     return 'hubs' in answer ? { discovery: 'found', hubs: answer.hubs } : { discovery: answer.failure, hubs: [] };
   },
+  looking: () => lookedAt(),
 });
 
 /** The browser windows of the Runs windows connected now, by their port. */
 const runsWindows = new Map<chrome.runtime.Port, number | null>();
+
+/** The browser window that has the focus, as the browser last said; none while another program has it. */
+let focusedWindow: number = chrome.windows.WINDOW_ID_NONE;
+
+/** Whether a Runs window has the focus now. */
+function lookedAt(): boolean {
+  return focusedWindow !== chrome.windows.WINDOW_ID_NONE && [...runsWindows.values()].includes(focusedWindow);
+}
+
+/** A Runs window that takes the focus, or opens with it, sees the runs that failed while none had it. */
+function followFocus(): void {
+  void chrome.windows
+    .getLastFocused()
+    .then((window) => {
+      if (window.focused && window.id !== undefined && focusedWindow === chrome.windows.WINDOW_ID_NONE) {
+        focusedWindow = window.id;
+      }
+    })
+    .catch(() => {
+      // No window open yet: the next focus change says.
+    });
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    focusedWindow = windowId;
+    if (lookedAt()) runHubs.seen();
+  });
+}
 
 /** Whether a port comes from the extension's own Runs page: never a content script, nor another extension. */
 export function fromRunsPage(sender: chrome.runtime.MessageSender | undefined): boolean {
@@ -91,8 +118,10 @@ function serveRunsPort(port: chrome.runtime.Port): void {
   port.onMessage.addListener((raw: unknown) => {
     const request = parseRunsRequest(raw);
     if (!request) return;
-    if (request.type === 'window') runsWindows.set(port, request.windowId);
-    else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
+    if (request.type === 'window') {
+      runsWindows.set(port, request.windowId);
+      if (lookedAt()) runHubs.seen();
+    } else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
     else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
@@ -181,7 +210,7 @@ export async function runsSummary(): Promise<{
 
 /**
  * What the toolbar's badge says of the runs: how many tests wait for the person (amber), else how many failed (red),
- * else nothing.
+ * those of a run that failed while no Runs window had the focus included until one takes it, else nothing.
  */
 export function runsBadge(): { text: string; color: string } | null {
   const attention = attentionOf(runHubs.state());
@@ -196,6 +225,7 @@ const RUNS_FAILED_COLOR = '#b91c1c';
 
 /** Starts finding the hubs, and follows the pairings and their grants. */
 export function startRunHubs(): void {
+  followFocus();
   void runHubs.find();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (EDITOR_PAIRING_KEY in changes || DESKTOP_PAIRED_AT_KEY in changes)) void runHubs.find();

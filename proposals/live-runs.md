@@ -151,8 +151,14 @@ driving the stop, and turned off with watching, **Give back** or by `Esc` on the
 the input sent before has reached the page (the hub's `drive`, the editors' `piwi/driveStop`). Then `Esc` reaching the
 page while an action runs there (RW20): the worker says when a pick or a check runs in the test's window
 (the run channel's `acting`), the stop carries it (`RunStop.acting`, `HubStop.acting`), and every view sends `Esc` to
-the page meanwhile, else gives the stop back. The rest of P6 is proposed: attention and the ambient state, and the
-editors' unattended runs. The later phases are
+the page meanwhile, else gives the stop back. Then attention and the ambient state, in part: what the runs ask of the
+person is one state (`runAttention`, `runsAttention`: a test waiting at a stop, failing, running), which Piwi Picker's
+toolbar badge, Runs tile and Runs window title say (amber for the tests waiting, red for those failed, a run that
+failed while no Runs window had the focus counted until one takes it), as do the desktop app's taskbar or Dock, title
+and tray dot (amber, `1 test waits for you`); only a run the tray lists flashes its end (DK8), and the Windows
+thumbnail's Stop stops the tray's run started last. The editors' status bars say the same of their own runs. Remaining
+of attention: the tray menu's **Show the stopped test**, and a teammate asking to watch. The rest of P6 is proposed:
+the editors' unattended runs. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

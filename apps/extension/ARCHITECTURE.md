@@ -775,7 +775,9 @@ hub answers) shows in three places: the toolbar's badge (`runsBadge`: the tests 
 tests that failed, red), which a recording's or a replay's badge and the run shortcut's sign take over for their time;
 the popup's Runs tile (`runsSummary`, `data-state` `attention` or `failed`); and the Runs window's title
 (`runs_titleWaiting`, `runs_titleFailed`). The worker hears the runs as an observer (`RunHubs.observe`), which follows
-none of them, and draws the badge again only when what it says changes.
+none of them, and draws the badge again only when what it says changes. A run that ends failed or timed out while no
+Runs window has the browser's focus (`looking`, from `chrome.windows.onFocusChanged` and the window each Runs page
+names) stays `unseen`, its failed tests counted among the failed, until a Runs window takes the focus (`seen`).
 
 ### Finding the hubs
 
