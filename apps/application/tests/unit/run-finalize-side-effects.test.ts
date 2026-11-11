@@ -117,6 +117,14 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of outbound) expect(fn).not.toHaveBeenCalled();
   });
 
+  test('a run the notifications leave out files no issue by the rules', async () => {
+    runTrackerAutomation.mockClear();
+    refusedUses.add('notifications');
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    await vi.waitFor(() => expect(runTestManagementSync).toHaveBeenCalledWith(db, 42));
+    expect(runTrackerAutomation).not.toHaveBeenCalled();
+  });
+
   test('a run the test management use leaves out sends no results, and the rest goes out', async () => {
     refusedUses.add('test-management');
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
