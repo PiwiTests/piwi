@@ -1041,6 +1041,7 @@ const EXPECT_KEYS = new Set([
   'diagnosis',
   'fixLanded',
   'issue',
+  'declaredMore',
   'lab',
   'resources',
   'incident',
@@ -1179,16 +1180,26 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
   }
   if (want.issue) {
     expect(want.cluster, `${label}: issue needs a cluster`).toBeTruthy();
-    // The newest tracker link wins, as clusterKnownIssues reads it.
+    // As clusterKnownIssues reads it: the newest tracker link, else the oldest link from the tests still open, else
+    // the oldest link from the tests.
     const [row] = q(`
       select key, provider, status_text from entity_links
       where failure_cluster_id = ${want.cluster!.id} and key is not null
         and (provider = 'jira' or connection_id is not null)
-      order by id desc limit 1
+      order by origin in ('annotation', 'tag'),
+        case when origin in ('annotation', 'tag') then 0 else -id end,
+        coalesce(json_extract(metadata, '$.statusCategory'), '') = 'done',
+        id
+      limit 1
     `);
     expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
     expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
     expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
+  }
+  if (want.declaredMore !== undefined) {
+    expect(want.cluster, `${label}: declaredMore needs a cluster`).toBeTruthy();
+    const [row] = q(`select declared_issues_more from failure_clusters where id = ${want.cluster!.id}`);
+    expect(row?.declared_issues_more, `${label}: the keys named and not linked`).toBe(want.declaredMore);
   }
   if (want.suspects) {
     expect(want.cluster, `${label}: suspects needs a cluster`).toBeTruthy();

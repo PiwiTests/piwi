@@ -128,6 +128,7 @@ import type {
 } from '#shared/types';
 import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
+import { linkDemoDeclaredIssues } from './integrations';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
@@ -1128,8 +1129,8 @@ export async function apiLiveResourcesTestRun(
 let recordingFindings: Promise<unknown> = Promise.resolve();
 
 /**
- * What a finished run records beside its own row: its incident flag, its markers, its resource findings and its
- * rollup. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
+ * What a finished run records beside its own row: its incident flag, its markers, its resource findings, its
+ * rollup and the links its failing tests name. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
  * demo has no reports poll to read it again.
  */
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
@@ -1139,6 +1140,7 @@ async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
   await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
+  await linkDemoDeclaredIssues(db, id).catch(() => {});
 }
 
 export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {

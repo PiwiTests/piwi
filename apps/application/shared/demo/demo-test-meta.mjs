@@ -41,8 +41,42 @@ export function demoTestMeta(filePath, index) {
   // everything is critical teaches nothing about filtering.
   if (match.owner === '@checkout-team') meta.priority = index === 0 ? 'critical' : 'high';
   else if (index === 0) meta.priority = 'medium';
+  const issues = DEMO_DECLARED_ISSUES.get(`${filePath}#${index}`);
+  if (issues) meta.issues = [...issues];
   return meta;
 }
+
+/**
+ * The issues a demo test names with `piwi:issue`, keyed by spec and case index: the Apple Pay checkout names two
+ * issues of the bound DEMO project the demo's Jira knows ({@link DEMO_JIRA_ISSUES}) and one it does not, so its
+ * cluster shows the links from the tests and the *and 1 more* line.
+ */
+const DEMO_DECLARED_ISSUES = new Map([
+  ['tests/checkout/checkout.spec.ts#2', ['DEMO-57', 'https://demo.atlassian.net/browse/DEMO-61', 'DEMO-64']],
+]);
+
+/**
+ * The issues the demo's Jira answers a lookup of the keys the tests name with, as the bulk lookup returns them. The
+ * seed links them as the link step would, and a simulated run that fails into the cluster looks them up here.
+ */
+export const DEMO_JIRA_ISSUES = [
+  {
+    key: 'DEMO-57',
+    id: '10057',
+    title: 'Apple Pay sheet drops the contact email on the checkout page',
+    status: 'In Progress',
+    statusColor: 'warning',
+    statusCategory: 'indeterminate',
+  },
+  {
+    key: 'DEMO-61',
+    id: '10061',
+    title: 'Checkout contact form: move the email field into its own group',
+    status: 'Done',
+    statusColor: 'success',
+    statusCategory: 'done',
+  },
+];
 
 /** The checkout specs' numbers in the demo's test management tool, for their external IDs. */
 const DEMO_EXTERNAL_ID_FILES = new Map([
