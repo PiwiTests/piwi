@@ -139,7 +139,14 @@ async function newCluster(): Promise<number> {
 
 /** A finished run whose executions failed into the given clusters, each naming `issues`. */
 async function failRun(
-  executions: Array<{ cluster: number; issues: string[]; status?: string; testCaseId?: number }>,
+  executions: Array<{
+    cluster: number;
+    issues: string[];
+    status?: string;
+    testCaseId?: number;
+    /** Which attempt the row is: a retry, a `--repeat-each` repetition, and whether a later attempt replaced it. */
+    attempt?: { retries?: number; repeatEachIndex?: number; finalAttempt?: boolean };
+  }>,
 ): Promise<{ runId: number; testCaseIds: number[] }> {
   const runId = nextRun++;
   await db
@@ -162,6 +169,7 @@ async function failRun(
       error: 'Error: broken',
       failureClusterId: execution.cluster,
       testMeta: { issues: execution.issues } as never,
+      ...execution.attempt,
     });
   }
   return { runId, testCaseIds };
@@ -389,6 +397,51 @@ describe('the link step', () => {
 
     expect(result.failed).toBe('deadline');
     expect(await links(cluster)).toEqual([]);
+  });
+
+  test('a test whose retry passed names nothing; one whose last attempt failed does', async () => {
+    const flaky = await newCluster();
+    const broken = await newCluster();
+    defineIssue('PROJ-15');
+    defineIssue('PROJ-16');
+    const { runId } = await failRun([
+      { cluster: flaky, issues: ['PROJ-15'], attempt: { retries: 0, finalAttempt: false } },
+      { cluster: flaky, issues: ['PROJ-15'], status: 'passed', testCaseId: nextTest - 1, attempt: { retries: 1 } },
+      { cluster: broken, issues: ['PROJ-16'], attempt: { retries: 0, finalAttempt: false } },
+      { cluster: broken, issues: ['PROJ-16'], testCaseId: nextTest, attempt: { retries: 1 } },
+    ]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(lookups).toEqual([['PROJ-16']]);
+    expect(await links(flaky)).toEqual([]);
+    expect((await links(broken)).map((l) => l.key)).toEqual(['PROJ-16']);
+  });
+
+  test('a test counts once per key, however many of its repetitions fail', async () => {
+    const clusters = await Promise.all(Array.from({ length: 6 }, () => newCluster()));
+    const executions: Parameters<typeof failRun>[0] = clusters.flatMap((cluster, c) =>
+      Array.from({ length: 10 }, (_, i) => ({ cluster, issues: [`PROJ-${c * 10 + i + 1}`] })),
+    );
+    // Two tests name PROJ-60; one test names PROJ-59 in three repetitions, which still counts once.
+    executions.push({ cluster: clusters[5]!, issues: ['PROJ-60'] });
+    const { runId, testCaseIds } = await failRun(executions);
+    for (const repeatEachIndex of [1, 2]) {
+      await db.insert(schema.testRunsCases).values({
+        testRunId: runId,
+        testCaseId: testCaseIds[58]!,
+        status: 'failed',
+        error: 'Error: broken',
+        failureClusterId: clusters[5]!,
+        testMeta: { issues: ['PROJ-59'] } as never,
+        repeatEachIndex,
+      });
+    }
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(lookups[0]![0]).toBe('PROJ-60');
+    expect(lookups[0]![1]).not.toBe('PROJ-59');
   });
 
   test('a binding without a project key links nothing', async () => {

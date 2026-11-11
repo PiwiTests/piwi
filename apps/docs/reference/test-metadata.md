@@ -260,14 +260,15 @@ test(
 It stays apart from `piwi:link` and from Playwright's own `{ type: 'issue' }`, which suites use for any related page.
 When a [run that writes to the ticket](/features/issue-automation#the-runs-that-write) finishes, on a project
 [bound](/features/issue-tracking#the-project-binding) to a Jira connection and a Jira project, Piwi links each failure
-cluster to the issues its failing tests name ([Issue tracking](/features/issue-tracking#links-the-tests-declare)):
+cluster to the issues its failing tests name ([Issue tracking](/features/issue-tracking#links-the-tests-declare)). A
+test counts by its last attempt, so one whose retry passed names nothing:
 
 - **Only issues of the bound Jira project.** A key needs the shape `SHOP-412` with the binding's project as its
   prefix, a URL must point at the connection's site, and Jira must return the issue under that key and project, so an
   issue moved to another project is dropped. Anything else is dropped, not stored as a plain link. A binding without a
   Jira project links nothing.
-- **One lookup per run**, of at most 50 keys, the most named first, within 10 seconds. With Jira down or slow, nothing
-  is linked, and the next failing run that names the issue tries again.
+- **One lookup per run**, of at most 50 keys, the ones the most tests name first, within 10 seconds. With Jira down or
+  slow, nothing is linked, and the next failing run that names the issue tries again.
 - **At most 10 per cluster**, the first linked staying; links pinned by hand or filed by Piwi do not count. The other
   keys of the bound project its tests named in that run, neither linked nor removed, show as *and N more named by its
   tests* at the end of its links. A cluster already linking a key, by any route, gets no second link to it.

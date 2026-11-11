@@ -12,6 +12,7 @@
  */
 import { and, eq, gt, inArray, isNotNull, notInArray } from 'drizzle-orm';
 import { sanitizeTestMetadata } from '@piwitests/core/test-meta';
+import { finalAttemptSql } from './test-case-aggregates';
 import { entityLinkDismissals, entityLinks, failureClusters, testRunsCases } from '../../server/database/schema';
 import type { IssueTracker, TrackerIssue } from '../../server/utils/integrations/types';
 import type { DrizzleDB } from './db';
@@ -48,8 +49,8 @@ export function declaredIssueKey(value: string, projectKey: string, tracker: Pic
 }
 
 interface ClusterState {
-  /** The keys the cluster's failing executions name, with how many executions name each and the first test. */
-  named: Map<string, { count: number; testCaseId: number }>;
+  /** The keys the cluster's failing tests name, with the tests that name each, the first one first. */
+  named: Map<string, Set<number>>;
   /** Keys the cluster links by any origin, or has dismissed. */
   taken: Set<string>;
   /** Jira issue ids the cluster has dismissed. */
@@ -70,8 +71,8 @@ export interface DeclaredIssuesLookup {
 }
 
 /**
- * Links the run's failing executions' named issues to their clusters: one bulk lookup for at most
- * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing executions name first, leaving out a key a cluster
+ * Links the run's failing tests' named issues to their clusters: one bulk lookup for at most
+ * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first, leaving out a key a cluster
  * already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
  * the keys it names and does not link.
  *
@@ -137,7 +138,7 @@ export async function linkNamedIssues(
           statusColor: issue.statusColor,
           metadata: {
             ...(issue.statusCategory ? { statusCategory: issue.statusCategory } : {}),
-            source: { testCaseId: state.named.get(key)?.testCaseId ?? null },
+            source: { testCaseId: state.named.get(key)?.values().next().value ?? null },
           } as never,
           unfurledAt: now,
           connectionId,
@@ -161,7 +162,10 @@ export async function linkNamedIssues(
   return result;
 }
 
-/** The clusters of the run's failing executions that name an issue of the bound project, with what each holds. */
+/**
+ * The clusters of the run's failing tests that name an issue of the bound project, with what each holds. A test
+ * counts by the final attempt of each of its results, so a test whose retry passed names nothing.
+ */
 async function readClusterStates(
   db: DrizzleDB,
   runId: number,
@@ -179,6 +183,7 @@ async function readClusterStates(
       and(
         eq(testRunsCases.testRunId, runId),
         isNotNull(testRunsCases.failureClusterId),
+        finalAttemptSql(),
         notInArray(testRunsCases.status, ['passed', 'skipped', 'didnotrun']),
       ),
     );
@@ -195,9 +200,9 @@ async function readClusterStates(
         state = { named: new Map(), taken: new Set(), dismissedIds: new Set(), declared: 0, candidates: [] };
         clusters.set(row.clusterId, state);
       }
-      const named = state.named.get(key);
-      if (named) named.count++;
-      else state.named.set(key, { count: 1, testCaseId: row.testCaseId });
+      const tests = state.named.get(key);
+      if (tests) tests.add(row.testCaseId);
+      else state.named.set(key, new Set([row.testCaseId]));
     }
   }
   if (clusters.size === 0) return { clusters, failing: [...failing] };
@@ -230,24 +235,28 @@ async function readClusterStates(
   for (const state of clusters.values()) {
     state.candidates = [...state.named]
       .filter(([key]) => !state.taken.has(key))
-      .sort(([a, x], [b, y]) => y.count - x.count || a.localeCompare(b))
+      .sort(([a, x], [b, y]) => y.size - x.size || a.localeCompare(b))
       .map(([key]) => key);
   }
   return { clusters, failing: [...failing] };
 }
 
 /**
- * The keys to look up: those of the clusters below the cap, the ones the most failing executions name first, at most
+ * The keys to look up: those of the clusters below the cap, the ones the most failing tests name first, at most
  * {@link MAX_DECLARED_KEYS_PER_RUN}.
  */
 function pickLookupKeys(clusters: Map<number, ClusterState>): string[] {
-  const counts = new Map<string, number>();
+  const tests = new Map<string, Set<number>>();
   for (const state of clusters.values()) {
     if (state.declared >= MAX_DECLARED_LINKS_PER_CLUSTER) continue;
-    for (const key of state.candidates) counts.set(key, (counts.get(key) ?? 0) + (state.named.get(key)?.count ?? 0));
+    for (const key of state.candidates) {
+      const naming = tests.get(key) ?? new Set<number>();
+      for (const id of state.named.get(key) ?? []) naming.add(id);
+      tests.set(key, naming);
+    }
   }
-  return [...counts]
-    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+  return [...tests]
+    .sort(([a, x], [b, y]) => y.size - x.size || a.localeCompare(b))
     .slice(0, MAX_DECLARED_KEYS_PER_RUN)
     .map(([key]) => key);
 }
