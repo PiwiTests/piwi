@@ -586,6 +586,12 @@ What the package does to a user's run, process by process.
 - **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
   service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`) and for `piwi mcp`,
   from a folder this user alone can enter, and never deletes one.
+- **A teammate's ask to watch** comes in the answers of the run's stream (`ask`, `StreamManager.onAsk`, once per ask):
+  `RunHubLink.ask` hands it to the hub, and a run with no hub says it in its terminal. The developer's Not now comes
+  back from the hub (`ask-answer`, the one line of the hub's the link reads) and goes with the next request of the
+  stream (`askAnswer`, a heartbeat at once) until one is answered. `shareLive` (`PIWI_SHARE_LIVE`) has the workers open
+  their live view stream from the start outside CI, and a share message's `after` reaches each stream as its `after`
+  parameter. `tests/stream-manager.spec.ts`, `tests/live-view-worker.spec.ts`.
 - **`piwi mcp`** (`src/cli/mcp.ts`, `McpRouter`) is an agents' MCP server over stdio with no run logic: it forwards
   the run tools of each editor whose file names its agents' server (`agents`) and of the desktop app, `run_list` to
   all of them, `run_start` to the editor whose workspace holds the spec, any other call to the host of its run. An

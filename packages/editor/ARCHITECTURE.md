@@ -200,7 +200,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
-    `piwi/shareRun`, `piwi/agents`;
+    `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -210,7 +210,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`,
+  `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -943,6 +944,19 @@ streams or opens its stream, why it cannot be when no worker can, the views of e
 though nobody asked (the instance stopped answering, refused the key) ends with the run's last streaming worker: said
 once a run, as a notice, kept as `stopped` until a person shares it again, and a worker that connects later no longer
 shares. Nothing of the stream passes through the service, and no agent's tool shares a run.
+
+**The window's runs.** `piwi/shareRun { scope: 'window' }` shares every run the window starts from then on until the
+person stops or the window closes (`RunSessions.shareAll`, said in `piwi/shareWindowChanged`, which the clients show in
+the status bar), the named run too: a session opened meanwhile starts shared (`Session.byWindow`), says so once it is
+(`piwi/notice`), and its workers name the run on the instance the window shared before it (`share`'s `after`, fixed
+per run once its page is known, `Session.after`), which the instance links to it ("Continued in run #78"). Off, it stops
+every shared run of the window. A client sends it again after the service starts again.
+
+**Ask to watch.** A teammate's ask reaches the run's own process in an answer of its stream, which hands it to the
+service (`run-ask` on its connection, `RunSessions.attachMain`): the client asks the developer
+(`piwi/askToWatch { ref, id, by, run }`) with Share live (`piwi/shareRun`) and Not now (`piwi/answerAsk`), which the
+service writes back on that connection (`ask-answer`) for the run's process to tell the instance. A run whose process
+predates it, or no longer reaches the service, gets no answer.
 
 ### Code from a stop
 
