@@ -43,10 +43,10 @@ export interface ZephyrClientOptions {
 /** The largest results file Zephyr accepts. */
 export const ZEPHYR_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-/** The most cycles `findRun` reads the name of, one call each; a test case run in more leaves it unsure. */
+/** The most cycles a pass of `findRun` reads the name of, one call each; a test case run in more leaves it unsure. */
 export const FIND_RUN_MAX_CYCLES = 50;
 
-/** The most pages of executions `findRun` reads; a list longer than that leaves it unsure. */
+/** The most pages of executions a pass of `findRun` reads; a list longer than that leaves it unsure. */
 export const FIND_RUN_MAX_PAGES = 20;
 
 /** How long before an attempt began an execution may end and still be taken for the attempt's, for clock drift. */
@@ -466,27 +466,46 @@ export class ZephyrScaleClient implements TestManagementProvider {
 
   /**
    * The test cycle an earlier upload created. Zephyr cannot list cycles by name, so this reads every last execution of
-   * one test case the run reports on since the attempt began, and the name of each cycle they belong to: the cycle
-   * whose name holds `Piwi #<runId>` (or is the name the run was given) is the one. `not-found` only when every page
-   * and every cycle was read; a list too long, or a cycle that cannot be read, is `unsure`.
+   * one test case the run reports on, and the name of each cycle they belong to: the cycle whose name holds
+   * `Piwi #<runId>` (or is the name the run was given) is the one. The first pass reads only executions that ended since
+   * the attempt began. Whether an upload gives its executions an end date is unchecked, so when that pass reads
+   * everything and finds nothing, a second pass reads them all, whatever their end date: the answer never depends on it.
+   * `not-found` only when that pass read every page and every cycle; a list too long, or a cycle that cannot be read,
+   * is `unsure`.
    */
   async findRun(projectKey: string, marker: RunMarker): Promise<FindRunOutcome> {
     const since = new Date(Date.parse(marker.startedAt) - FIND_RUN_SLACK_MS);
     if (Number.isNaN(since.getTime())) throw new RangeError('Invalid run marker');
+    const key = checkedProjectKey(projectKey);
+    const checked = new Set<string>();
+    const recent = await this.searchRun(key, marker, `${since.toISOString().slice(0, 19)}Z`, checked);
+    if (recent.outcome !== 'not-found') return recent;
+    return this.searchRun(key, marker, null, checked);
+  }
+
+  /**
+   * One pass of `findRun`: the executions that ended after `endedAfter`, or all of them when it is null. A cycle in
+   * `checked` was read already and is not the one; each cycle this pass reads is added to it.
+   */
+  private async searchRun(
+    projectKey: string,
+    marker: RunMarker,
+    endedAfter: string | null,
+    checked: Set<string>,
+  ): Promise<FindRunOutcome> {
     const params = {
-      projectKey: checkedProjectKey(projectKey),
+      projectKey,
       testCase: marker.testCaseKey,
-      actualEndDateAfter: `${since.toISOString().slice(0, 19)}Z`,
+      ...(endedAfter ? { actualEndDateAfter: endedAfter } : {}),
       onlyLastExecutions: 'true',
       maxResults: PAGE_SIZE,
     };
+    const scope = endedAfter ? ' since the run began' : '';
     const ids = new Set<string>();
     let startAt = 0;
     for (let page = 0; ; page++) {
       if (page === FIND_RUN_MAX_PAGES) {
-        return unsure(
-          `${marker.testCaseKey} has more than ${FIND_RUN_MAX_PAGES} pages of executions since the run began`,
-        );
+        return unsure(`${marker.testCaseKey} has more than ${FIND_RUN_MAX_PAGES} pages of executions${scope}`);
       }
       const body = await this.getPage<{ testCycle?: { id?: unknown } | null }>(
         '/testexecutions',
@@ -501,11 +520,12 @@ export class ZephyrScaleClient implements TestManagementProvider {
       startAt += body.values.length;
     }
     if (ids.size > FIND_RUN_MAX_CYCLES) {
-      return unsure(`${marker.testCaseKey} ran in more than ${FIND_RUN_MAX_CYCLES} test cycles since the run began`);
+      return unsure(`${marker.testCaseKey} ran in more than ${FIND_RUN_MAX_CYCLES} test cycles${scope}`);
     }
 
     const named = new RegExp(`(?<![\\w#])Piwi #${marker.runId}(?!\\w)`);
     for (const id of ids) {
+      if (checked.has(id)) continue;
       let cycle: { id?: unknown; key?: unknown; name?: unknown } | null;
       try {
         cycle = await this.get<{ id?: unknown; key?: unknown; name?: unknown } | null>(
@@ -519,6 +539,7 @@ export class ZephyrScaleClient implements TestManagementProvider {
       if (!cycle || typeof cycle.key !== 'string' || !CYCLE_KEY.test(cycle.key) || typeof cycle.name !== 'string') {
         return unsure(`Zephyr Scale answered test cycle ${id} with an unexpected shape`);
       }
+      checked.add(id);
       if (cycle.name !== marker.name && !named.test(cycle.name)) continue;
       return { outcome: 'found', run: { key: cycle.key, id: String(cycle.id ?? id), url: '' } };
     }

@@ -75,10 +75,12 @@ that an upload started before it begins, and the test run's key as soon as Zephy
 
 A large upload can take longer than the request is allowed to wait, so Piwi may not know whether Zephyr received it.
 The panel then says the outcome is unknown. It does not retry on its own. **Sync again** first looks in Zephyr for the
-test run that run's upload may have made, by its name and start time:
+test run that run's upload may have made, by its name. It reads the test runs that hold the latest results of one of
+the run's test cases: those that ended since the upload began, then, when none of them is the one, all of them.
+Whether Zephyr gives uploaded results an end date is unchecked, so the search does not depend on it:
 
 - one that is found is linked to the Piwi run and is not made again;
-- none found uploads the results again;
+- none found, after every test run was read, uploads the results again;
 - when Zephyr gives no answer Piwi can trust (more executions or test runs than it reads, or a test run it cannot
   read), nothing is sent, the send stays failed and the message says why. Check the project in Zephyr before you try
   again.

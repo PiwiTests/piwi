@@ -51,7 +51,7 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
 const zephyr = {
   upload: (): Response | Promise<Response> => json(fixture('automation-upload-response')),
   link: (): Response | Promise<Response> => json({ id: 1 }, 201),
-  executions: (): Response => json(fixture('testexecutions-page')),
+  executions: (_url: URL): Response => json(fixture('testexecutions-page')),
   requests: [] as { method: string; path: string }[],
 };
 const reset = () => {
@@ -68,7 +68,7 @@ vi.stubGlobal(
     zephyr.requests.push({ method, path: url.pathname });
     if (method === 'POST' && url.pathname.endsWith('/automations/executions/custom')) return zephyr.upload();
     if (method === 'POST' && url.pathname.endsWith('/links/weblinks')) return zephyr.link();
-    if (url.pathname.endsWith('/testexecutions')) return zephyr.executions();
+    if (url.pathname.endsWith('/testexecutions')) return zephyr.executions(url);
     if (url.pathname.endsWith('/testcycles/3001')) return json(fixture('testcycle-piwi'));
     if (url.pathname.endsWith('/testcycles/2999')) return json(fixture('testcycle-other'));
     return json({ message: 'unexpected' }, 404);
@@ -717,6 +717,40 @@ describe('Sync again', () => {
     zephyr.executions = () => json({ ...fixture('testexecutions-page'), values: [], total: 0 });
     expect(await syncAgain(at(RUN_ID))).toMatchObject({ status: 'done', result: { runKey: 'SHOP-R42' } });
     expect(uploads()).toHaveLength(1);
+  });
+
+  test('a cycle whose executions carry no end date is found without the end date filter, and linked', async () => {
+    await failUpload(503);
+    zephyr.executions = (url) =>
+      url.searchParams.has('actualEndDateAfter')
+        ? json({ ...fixture('testexecutions-page'), values: [], total: 0 })
+        : json(fixture('testexecutions-page'));
+    expect(await syncAgain(at(RUN_ID))).toMatchObject({ status: 'done', result: { runKey: 'SHOP-R42' } });
+    expect(calls('/testexecutions')).toHaveLength(2);
+    expect(uploads()).toEqual([]);
+    expect(await testRunLinks()).toMatchObject([{ key: 'SHOP-R42' }]);
+  });
+
+  test('executions too many to read without the end date filter send nothing, and are a 409', async () => {
+    await failUpload(503);
+    const before = await syncRow();
+    let page = 0;
+    zephyr.executions = (url) =>
+      url.searchParams.has('actualEndDateAfter')
+        ? json({ ...fixture('testexecutions-page'), values: [], total: 0 })
+        : json({
+            startAt: page,
+            maxResults: 1,
+            isLast: false,
+            values: [{ id: page, testCycle: { id: 4000 + page++ } }],
+          });
+    const answer = await refusal(syncAgain(at(RUN_ID)));
+    expect(answer.statusCode).toBe(409);
+    expect(answer.message).toMatch(
+      /^Piwi couldn't tell whether Zephyr Scale already has this run's test cycle, so it didn't send it again: \S+ has more than \d+ pages of executions\. Check the project in Zephyr Scale\.$/,
+    );
+    expect(uploads()).toEqual([]);
+    expect(await syncRow()).toEqual(before);
   });
 
   test('a cycle that belongs to another run is not taken for this one', async () => {
