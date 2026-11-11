@@ -691,6 +691,95 @@ async function reportLiveRunWithResources(request, base) {
   return runId;
 }
 
+/** The project of `live-run-lists`: two finished runs, then one still going. */
+const LIVE_LISTS_PROJECT = 'storefront-live';
+/** The tests the running run of `live-run-lists` plans. */
+const LIVE_LISTS_TOTAL = 40;
+
+/**
+ * `count` results of the running run of `live-run-lists`, from its `from`-th test on: every fourth one fails.
+ */
+function liveListsResults(from, count) {
+  return Array.from({ length: count }, (_, i) => {
+    const n = from + i;
+    const failed = n % 4 === 3;
+    return {
+      type: 'complete',
+      title: `storefront step ${n + 1}`,
+      location: `tests/storefront.spec.ts:${n * 8 + 3}:5`,
+      status: failed ? 'failed' : 'passed',
+      duration: 1200 + (n % 5) * 300,
+      error: failed ? "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('alert')" : null,
+      retries: 0,
+      workerIndex: n % 3,
+      browser: { projectName: 'chromium', browserName: 'chromium' },
+    };
+  });
+}
+
+/** The running run of `live-run-lists`, reported once per session: its id and stream token. */
+let liveListsRun;
+
+/**
+ * Two finished runs of `storefront-live`, then a third still going with 40 tests planned and its first 8 results in,
+ * 2 of them failed. Nothing finishes it, so Home and the project's runs list show it running. The project an earlier
+ * session reported is deleted first, so the list holds these three runs alone.
+ */
+function reportLiveListsRun(request, base) {
+  liveListsRun ??= (async () => {
+    const post = (path, options) => postRetrying(request, base, path, options);
+    const { items } = await (await request.get(`${base}/api/projects`)).json();
+    const earlier = items.find((project) => project.name === LIVE_LISTS_PROJECT);
+    if (earlier) await request.delete(`${base}/api/projects/${earlier.id}`);
+    for (const [hoursAgo, failed] of [
+      [26, 0],
+      [3, 2],
+    ]) {
+      const startTime = new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+      const results = liveListsResults(0, LIVE_LISTS_TOTAL).map(({ type: _type, ...result }, i) => ({
+        ...result,
+        status: i < failed ? 'failed' : 'passed',
+        error: i < failed ? "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('alert')" : null,
+      }));
+      await post('/api/test-runs/submit', {
+        data: {
+          projectName: LIVE_LISTS_PROJECT,
+          status: failed ? 'failed' : 'passed',
+          startTime,
+          duration: 94_000,
+          totalTests: LIVE_LISTS_TOTAL,
+          passedTests: LIVE_LISTS_TOTAL - failed,
+          failedTests: failed,
+          skippedTests: 0,
+          testCases: results,
+        },
+      });
+    }
+    const { runId, streamToken } = await (
+      await post('/api/test-runs/start', {
+        data: {
+          projectName: LIVE_LISTS_PROJECT,
+          startTime: new Date(Date.now() - 40_000).toISOString(),
+          totalTests: LIVE_LISTS_TOTAL,
+        },
+      })
+    ).json();
+    await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases: liveListsResults(0, 8) } });
+    return { runId, streamToken, reported: 8 };
+  })();
+  return liveListsRun;
+}
+
+/** Report the next `count` results of the running run of `live-run-lists`, as its reporter streams them. */
+async function streamLiveListsResults(request, base, count) {
+  const run = await liveListsRun;
+  const testCases = liveListsResults(run.reported, count);
+  run.reported += count;
+  await postRetrying(request, base, `/api/test-runs/${run.runId}/events`, {
+    data: { streamToken: run.streamToken, testCases },
+  });
+}
+
 /**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
@@ -4703,6 +4792,51 @@ const SCENES = [
       await shoot('narrow');
     },
     outputs: ['run-timeline-resources-hover.png'],
+  },
+  {
+    name: 'live-run-lists',
+    description:
+      "A run still going, as Home's Recent activity and the project's runs list show it: the count bar and '16 of 40 · 4 failed', the row moving on in place as results come in, at 1280 px and at phone width",
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    pad: 8,
+    outputs: [
+      'live-run-lists-home.png',
+      'live-run-lists-home-narrow.png',
+      'live-run-lists-project.png',
+      'live-run-lists-project-narrow.png',
+    ],
+    async prepare({ request, base }) {
+      await reportLiveListsRun(request, base);
+    },
+    async run({ page, base, goto, shoot, settle }) {
+      /** Wait until the page's running row says `text`, with no reload: the tally came over the stream. */
+      const says = (of, text) =>
+        page.locator(`${of} [data-live-progress]`).filter({ hasText: text }).first().waitFor({ timeout: 30_000 });
+      for (const [route, of, label] of [
+        ['/', '[data-shot="recent-activity"]', 'home'],
+        [null, '[data-shot="runs-table"]', 'project'],
+      ]) {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        if (route) await goto(route);
+        else {
+          const projects = await (await page.request.get(`${base}/api/projects`)).json();
+          const project = projects.items.find((p) => p.name === LIVE_LISTS_PROJECT);
+          await goto(`/projects/${project.id}`);
+        }
+        const run = await liveListsRun;
+        await says(of, `${run.reported} of ${LIVE_LISTS_TOTAL}`);
+        // Four more results come in while the page is open: the row moves on by itself.
+        await streamLiveListsResults(page.request, base, 4);
+        await says(of, `${run.reported} of ${LIVE_LISTS_TOTAL}`);
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot(label, { of });
+        await page.setViewportSize({ width: 390, height: 900 });
+        await settle();
+        await shoot(`${label}-narrow`, { of });
+      }
+    },
   },
   {
     name: 'run-timeline-resources-live',

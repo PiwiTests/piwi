@@ -638,7 +638,8 @@ rule):
   `EnvManagedAlert`.
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
-    `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+    `RunLiveProgress` (a running run's row in a runs list: its count bar and "120 of 400 · 2 failed"), `TagBadge` /
+    `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
   - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
     picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
@@ -663,8 +664,9 @@ rule):
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
   `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
-- **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
-  the browser tab's favicon and title).
+- **Run streaming**: `useRunStream`, `useNotificationStream`, `useLiveRunProgress` (a runs list's running rows moved
+  on by the `run-progress` tallies of `/api/stream`, throttled per run on the server, with no read of the list), and
+  `useTabRunIndicator` (a watched run's progress on the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
 - **Timeline**: `useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline` (an execution's failure timeline
   under one key, for its Timeline and Network tabs).
