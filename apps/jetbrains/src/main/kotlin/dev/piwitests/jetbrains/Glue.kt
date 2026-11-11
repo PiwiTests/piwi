@@ -2099,9 +2099,14 @@ object Glue {
         page?.let { runCatching { java.net.URI(it).authority }.getOrNull() }?.takeIf { it.isNotEmpty() }
 
     /** What Share live sends, and who sees it, asked before the project shares a run for the first time. */
-    fun shareLiveWarning(page: String?): String {
+    fun shareLiveWarning(page: String?, window: Boolean = false): String {
         val instance = liveInstance(page) ?: "the Piwi instance it reports to"
-        return "While this run is shared on $instance, anyone with its page open there sees each stop of its tests: " +
+        val what = if (window) {
+            "Each run of this project from now on is shared until you stop or close the project. While a run"
+        } else {
+            "While this run"
+        }
+        return "$what is shared on $instance, anyone with its page open there sees each stop of its tests: " +
             "the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
             "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can " +
             "open the run there can watch, and on an instance with authentication off, anyone who can reach it. " +
@@ -2487,7 +2492,14 @@ object Glue {
         if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
     /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
-    fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
+    fun liveStatus(controls: RunControls, windowShared: Boolean = false): String? = when {
+        windowShared -> "Piwi: this project's runs ${liveCount(controls.liveViewers ?: 0)}"
+        else -> controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
+    }
+
+    /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
+    fun askToWatchText(by: String, run: Int?): String = "$by asks to watch ${run?.let { "run #$it" } ?: "this run"} live."
+
 
     private fun liveCount(viewers: Int): String = if (viewers > 0) "shared live · ${views(viewers)}" else "shared live"
 

@@ -739,6 +739,15 @@ class GlueTest {
         assertEquals("Piwi: shared live · 3 views", Glue.liveStatus(two))
         assertEquals("Piwi: shared live · 1 view", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to shared.copy(live = RunLive(true, null, page, 1))))))
         assertEquals(null, Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready))))
+        // While the project's runs are shared, the status bar says so, with or without a shared run.
+        assertEquals("Piwi: this project's runs shared live", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready)), windowShared = true))
+        assertEquals("Piwi: this project's runs shared live · 2 views", Glue.liveStatus(controls, windowShared = true))
+        assertTrue(
+            Glue.shareLiveWarning(page, window = true)
+                .startsWith("Each run of this project from now on is shared until you stop or close the project. While a run is shared on piwi.example.com, "),
+        )
+        assertEquals("Dana asks to watch run #77 live.", Glue.askToWatchText("Dana", 77))
+        assertEquals("Dana asks to watch this run live.", Glue.askToWatchText("Dana", null))
         assertEquals(shared.live, Glue.sharedLive(mapOf("ed-1" to shared, "ed-2" to refused)))
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))

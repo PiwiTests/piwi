@@ -115,7 +115,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val awaiting = setOf(
             "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
             "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
-            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.ShareWindowLive", "Piwi.StopSharingWindowLive",
         )
         val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
         val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()

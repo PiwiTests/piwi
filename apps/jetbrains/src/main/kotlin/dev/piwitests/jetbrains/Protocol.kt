@@ -902,9 +902,19 @@ data class RunLive(
 
 /**
  * `piwi/shareRun`: Share live, the person's own choice after the plugin's warning: share the run of `ref` on the team
- * instance (`on`), or stop sharing it. Answered with what was done or why not.
+ * instance (`on`), or stop sharing it. Answered with what was done or why not. `scope` `window` shares this project's
+ * runs until the person stops or the project closes, the run of `ref` too when one is named; off, it stops them all.
  */
-data class ShareRunParams(val ref: String, val on: Boolean)
+data class ShareRunParams(val ref: String?, val on: Boolean, val scope: String? = null)
+
+/** `piwi/shareWindowChanged`: whether this project's runs are shared live. */
+data class ShareWindowParams(val on: Boolean = false)
+
+/** `piwi/askToWatch`: a signed-in teammate asks to watch the run of `ref`, which is not shared live. */
+data class AskToWatchParams(val ref: String? = null, val id: String? = null, val by: String? = null, val run: Int? = null)
+
+/** `piwi/answerAsk`: the developer's Not now to an ask, which the teammate's page shows. */
+data class AnswerAskParams(val ref: String, val id: String, val answer: String = "not-now")
 
 /**
  * `piwi/holdRun`: Hold failures for the run of `ref`, as the person asks: on, a failure no pause bar shows waits at its
@@ -1231,6 +1241,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/shareRun")
     fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/answerAsk")
+    fun answerAsk(params: AnswerAskParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/holdRun")
     fun holdRun(params: HoldRunParams): CompletableFuture<RunControlResult?>

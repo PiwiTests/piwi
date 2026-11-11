@@ -64,6 +64,7 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageDialogBuilder
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
@@ -260,6 +261,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
 
+        override fun answerAsk(params: AnswerAskParams) = server()?.answerAsk(params)?.orNull()
+
         override fun holdRun(params: HoldRunParams) = server()?.holdRun(params)?.orNull()
 
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
@@ -304,6 +307,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /** Share live said what it sends in this project since it opened: it asks no more. */
     @Volatile internal var liveWarned = false
+
+    /** This project's runs are shared live, as the service says (`piwi/shareWindowChanged`). */
+    @Volatile internal var windowShared = false
 
     /** How Mock a Request has the response to mock chosen among those a stop lists: a popup, which the tests replace. */
     internal var chooseRequest: (List<StopRequest>, (StopRequest) -> Unit) -> Unit = { requests, chosen ->
@@ -1219,12 +1225,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun shareLiveRun(ref: String, on: Boolean) {
         val live = sessions[ref]?.live
         if (on && live?.refused == null && !liveWarned) {
-            val yes = MessageDialogBuilder.yesNo("Share the Run Live?", Glue.shareLiveWarning(live?.page))
-                .yesText("Share Live")
-                .noText("Cancel")
-                .ask(project)
-            if (!yes) return
+            // The first share of the project chooses its scope too: this run, or the project's runs until stopped.
+            val picked = MessageDialogBuilder.yesNoCancel("Share the Run Live?", Glue.shareLiveWarning(live?.page))
+                .yesText("Share This Run")
+                .noText("Share This Project's Runs")
+                .cancelText("Cancel")
+                .show(project)
+            if (picked == Messages.CANCEL) return
             liveWarned = true
+            if (picked == Messages.NO) return shareWindow(true, ref)
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.shareRun(ShareRunParams(ref, on))
@@ -1241,6 +1250,47 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     .notify(project)
             }
         }
+    }
+
+    /**
+     * Share this project's runs live until the person stops or the project closes (`on`), the run of `ref` too when one
+     * is named, or stop sharing them all: the first share of the project says what goes out and waits for a yes. On the
+     * event thread.
+     */
+    fun shareWindow(on: Boolean, ref: String? = null) {
+        if (on && !liveWarned) {
+            val yes = MessageDialogBuilder.yesNo("Share This Project's Runs Live?", Glue.shareLiveWarning(ref?.let { sessions[it]?.live?.page }, window = true))
+                .yesText("Share This Project's Runs")
+                .noText("Cancel")
+                .ask(project)
+            if (!yes) return
+            liveWarned = true
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.shareRun(ShareRunParams(ref, on, "window"))
+            PiwiCommands.notify(project, answer?.message ?: "The editor service did not answer.")
+        }
+    }
+
+    /** The service says whether this project's runs are shared live: the status bar says so. */
+    fun windowSharedChanged(on: Boolean) {
+        windowShared = on
+        changed()
+    }
+
+    /** A teammate asks to watch a run of this project: Share Live shares it, Not Now tells them. */
+    fun askedToWatch(ask: AskToWatchParams) {
+        val ref = ask.ref ?: return
+        val id = ask.id ?: return
+        PiwiNotifier.create(PiwiNotice.REQUEST, Glue.askToWatchText(ask.by.orEmpty(), ask.run))
+            .addAction(NotificationAction.createSimpleExpiring("Share Live") { shareLive(true, ref) })
+            .addAction(NotificationAction.createSimpleExpiring("Not Now") {
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    val answer = remote.answerAsk(AnswerAskParams(ref, id))
+                    if (answer != null && !answer.ok) PiwiCommands.notify(project, answer.message.orEmpty())
+                }
+            })
+            .notify(project)
     }
 
     /**
@@ -1666,6 +1716,8 @@ internal interface RunRemote {
     fun control(params: RunControlParams): RunControlResult?
 
     fun shareRun(params: ShareRunParams): RunControlResult?
+
+    fun answerAsk(params: AnswerAskParams): RunControlResult?
 
     fun holdRun(params: HoldRunParams): RunControlResult?
 
@@ -2538,6 +2590,36 @@ class StopSharingRunAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.shareLive(false)
+    }
+}
+
+/**
+ * **Share This Project's Runs Live**: each run of the project from now on is shared live until the person stops or
+ * the project closes, asked with a warning the first time.
+ */
+class ShareWindowLiveAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val sessions = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)
+        e.presentation.isEnabledAndVisible = e.project != null && sessions?.windowShared != true
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiRunSessions>()?.shareWindow(true)
+    }
+}
+
+/** **Stop Sharing This Project's Runs Live**: every shared run of the project stops being shared. */
+class StopSharingWindowLiveAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.windowShared == true
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiRunSessions>()?.shareWindow(false)
     }
 }
 

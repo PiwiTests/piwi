@@ -116,7 +116,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     fun update() {
         val recording = recording()
         val stopped = runs()?.let { Glue.runControlStatus(it.controls(), it.stops()) }
-        val shared = runs()?.let { Glue.liveStatus(it.controls()) }
+        val shared = runs()?.let { Glue.liveStatus(it.controls(), it.windowShared) }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         val progress = runs()?.let { Glue.runProgressText(it.sessions) }
         // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
