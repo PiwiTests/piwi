@@ -1797,6 +1797,30 @@ function screenshotLightboxScene(width, suffix) {
   };
 }
 
+/**
+ * A screenshot the test attached under a long step name, enlarged from the Screen
+ * tab of the passing cart total execution: the details give the name in full,
+ * with its expected result on a line of its own.
+ */
+function namedScreenshotScene(width, suffix) {
+  return {
+    name: `screenshot-lightbox-named${suffix}`,
+    description: `An enlarged attached screenshot whose details give its full step name and expected result, at ${width} px`,
+    tags: ['desktop'],
+    route: '/test-run-cases/238?evidence=screen',
+    viewport: { width, height: width < 640 ? 844 : 900 },
+    async run({ page, settle, shoot }) {
+      const enlarge = page.getByRole('button', { name: /^Enlarge Step 2: Add one wireless mouse/ }).first();
+      await enlarge.waitFor({ timeout: 60_000 });
+      await settle();
+      await enlarge.click();
+      await page.getByRole('dialog').waitFor();
+      await settle();
+      await shoot();
+    },
+  };
+}
+
 function markersPanelScene(width, suffix) {
   return {
     name: `markers-panel${suffix}`,
@@ -7697,6 +7721,8 @@ const SCENES = [
   quarantineDismissScene(390, '-mobile'),
   screenshotLightboxScene(1280, ''),
   screenshotLightboxScene(390, '-mobile'),
+  namedScreenshotScene(1280, ''),
+  namedScreenshotScene(390, '-mobile'),
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',
