@@ -6078,6 +6078,102 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-editor-run-note',
+    description:
+      'Run page in the desktop app while a run that follows an editor and reports to the app waits at a stop: In Visual Studio Code, the worker, its test and its place, which opens in the IDE (desktop shell)',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, base, goto, settle, shoot }) {
+      const post = async (path, data) => {
+        const res = await page.request.post(`${base}${path}`, { data });
+        if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
+        return res.json();
+      };
+      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+      const started = await post('/api/test-runs/start', {
+        projectName: source.project.name,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'terminal', ref: 'terminal-4242-1700000000000' } },
+      });
+      const finish = () =>
+        page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
+          data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+        });
+      try {
+        await post(`/api/test-runs/${started.runId}/events`, {
+          streamToken: started.streamToken,
+          testCases: [
+            {
+              type: 'begin',
+              title: 'pays with a saved card',
+              location: 'tests/checkout.spec.ts:11:3',
+              workerIndex: 0,
+              startedAt: Date.now(),
+              browser: { projectName: 'chromium' },
+            },
+          ],
+        });
+        // The server observes the editor's run: its stream says where its test waits.
+        const root = '/home/dev/code/acme-checkout';
+        const uri = `file://${root}/tests/checkout.spec.ts`;
+        const run = {
+          client: 'Visual Studio Code',
+          session: {
+            ref: 'terminal-4242-1700000000000',
+            root,
+            label: 'acme-checkout',
+            command: null,
+            project: 'checkout-web',
+            terminal: true,
+            ended: false,
+            page: { id: started.runId, url: `${base}/test-runs/${started.runId}` },
+            workers: [
+              {
+                worker: 0,
+                parallelIndex: 0,
+                state: 'stopped',
+                pausing: false,
+                intents: [],
+                test: {
+                  id: 't1',
+                  title: ['checkout', 'pays with a saved card'],
+                  uri,
+                  line: 10,
+                  project: 'chromium',
+                  retry: 0,
+                },
+                stop: {
+                  reason: 'breakpoint',
+                  title: "Click getByRole('button', { name: 'Pay now' })",
+                  uri,
+                  line: 17,
+                  character: 4,
+                  locator: "getByRole('button', { name: 'Pay now' })",
+                  bar: false,
+                  since: '1',
+                },
+              },
+            ],
+          },
+        };
+        await page.route('**/api/desktop/events', (route) =>
+          route.fulfill({
+            contentType: 'text/event-stream',
+            body: `data: ${JSON.stringify({ type: 'snapshot', runs: [] })}\n\ndata: ${JSON.stringify({ type: 'editor-runs', runs: [run] })}\n\n`,
+          }),
+        );
+        await goto(`/test-runs/${started.runId}`);
+        await page.locator('[data-shot="desktop-editor-run-note"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot('', { of: '[data-shot="desktop-editor-run-note"]', pad: 8 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
     name: 'run-live-desktop-pause',
     description:
       'Run page in the desktop app while a run it started goes on: a running test’s Pause and watch, also at 390 px, then the test paused before its next call, its page live in the Local runs tray, and its row once the tray is closed',

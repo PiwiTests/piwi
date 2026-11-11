@@ -1,6 +1,7 @@
 /**
  * Desktop build: the runs of the editors of this machine, read for the app's own surfaces (the taskbar or Dock, the
- * window's title and the tray dot say a test of an editor's run waits at a stop), steered by none of them. The server
+ * window's title and the tray dot say a test of an editor's run waits at a stop, and the run's page says where),
+ * steered by none of them. The server
  * lists the editors' discovery files (`readLiveHubs`), connects to each live hub as a process of this machine, with no
  * `Origin`, its `hello` holding the hub's token from the file, and subscribes to observe (`subscribe` with `observe`):
  * a stop no pause bar shows never waits for it. A hub that refuses (an editor service that predates it), or closes or
@@ -9,6 +10,7 @@
  */
 import { WebSocket } from 'ws';
 import { parseHubMessage, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
+import type { DesktopEditorRun } from '#shared/desktop-runs';
 
 /** How often the editors' discovery files are read again. */
 export const EDITOR_RUNS_READ_MS = 5_000;
@@ -17,10 +19,7 @@ export const EDITOR_RUNS_READ_MS = 5_000;
 const EDITOR_HUB_WELCOME_MS = 10_000;
 
 /** A live run of an editor: the editor as it names itself, and the run as its hub tells it. */
-export interface EditorRun {
-  client: string | null;
-  session: HubSession;
-}
+export type EditorRun = DesktopEditorRun;
 
 interface Followed {
   socket: WebSocket;

@@ -152,18 +152,20 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
 
     /**
      * The connection, that the plugin shows where the runs it started stop, answers those stops, writes the code made
-     * there and stops a run as another tool asks, and whether the service serves those runs to the agents of this
-     * machine, at which port and token.
+     * there and stops a run as another tool asks, whether the service serves those runs to the agents of this
+     * machine, at which port and token, and where a run started in a terminal that follows the IDE posts its picks.
      */
     override fun createInitializationOptions(): Any {
         val service = project.service<PiwiProjectService>()
-        return mapOf(
+        val options = mutableMapOf<String, Any>(
             "credentials" to service.credentials(),
             "runControl" to true,
             "stopCode" to true,
             "stopsRuns" to true,
             "agents" to service.agentsOptions(),
         )
+        PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
+        return options
     }
 
     override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> = PiwiLanguageServer::class.java

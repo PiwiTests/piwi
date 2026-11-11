@@ -207,7 +207,7 @@ the custom messages of `src/protocol.ts`:
   - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`,
     `piwi/newTestFile`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
-  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
+  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`.
@@ -1203,7 +1203,11 @@ could), `startServer` hands `publish` what the file says:
 - the hub's address and token;
 - the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/hub.ts`
   follows the service one of whose `roots` holds the run, `editorForRun`);
-- the recorder bundle's path.
+- the recorder bundle's path;
+- `unattended`: the service knows a run nobody attends, which a piped run then follows;
+- `send`: where a run's picks go, the client's Send to editor pairing as it names it
+  (`InitializationOptions.runPairing`, `piwi/setRunPairing`), so a terminal's run posts **Pick a locator** to the
+  editor. The file is written again, in place, as the client names another.
 
 It hands `publish` null as it stops (`shutdown`, `exit`, the function `startServer` returns).
 

@@ -58,7 +58,10 @@ connect in `~/.piwi/desktop.json` (`PIWI_DESKTOP_CONFIG` names another file) onc
   any, it runs as it would, and **Pause** stops it.
 - **The controls**: Pause, Resume, Step, Run to cursor, Finish and [End the test](./end-the-test), and the code a stop
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
-- **Record here and Assert** in the test's window, through the editor's recorder, as for a run Piwi starts.
+- **Record here and Assert** in the test's window, through the editor's recorder, and **Pick a locator**, which goes
+  to the editor (its Send to editor pairing), as for a run Piwi starts.
+- **Its stops on the desktop app's page of the run**, for a run that reports to [the app](./desktop): which tests wait
+  for the editor (**In Visual Studio Code**), each place opening in the IDE.
 - **Failures.** A failure goes on, as without Piwi, until you turn the run's
   [**Hold failures**](/guide/concepts#hold-failures) on, in the editor or the Runs window: nobody may be there to answer
   it otherwise.
@@ -69,10 +72,9 @@ the editor starts.
 
 ## Limits
 
-- **No Pick a locator in the test's window under an editor.** It needs the pairing a run Piwi starts carries: start the
-  test from the editor to use it. Pick on the image (Playwright 1.60 or later) names the locator, for you to copy,
-  without writing it. Under the desktop app, a pick comes to its window to copy, and Record here and Assert, which need
-  an editor, are not offered.
+- **Under the desktop app, a pick comes to its window to copy**, and Record here and Assert, which need an editor, are
+  not offered. An editor extension older than this one names no pairing for the run: start the test from the editor
+  to pick there.
 - **No Stop.** End the run in its terminal, or with the IDE's own **Stop**.
 - **Debug stops twice.** Under a JetBrains IDE's **Debug**, a breakpoint stops the test in the debugger, then at Piwi's
   stop, whose controls take no key while the debug session runs. `PIWI_EDITOR=off` in the run configuration's

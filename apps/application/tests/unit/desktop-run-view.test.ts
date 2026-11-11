@@ -25,6 +25,7 @@ import {
   desktopSaidAround,
   desktopSay,
   desktopSessionsOfRun,
+  desktopEditorRunOf,
   desktopShareOffered,
   desktopShareWarning,
   desktopShownRefs,
@@ -33,7 +34,7 @@ import {
   desktopStopSaid,
   isDesktopRunImage,
 } from '../../app/utils/desktop-run-view';
-import { isUnattendedDesktopRun } from '#shared/desktop-runs';
+import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 
 /**
@@ -999,5 +1000,32 @@ describe('Share live in the window', () => {
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.off })).toBe(true);
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.local })).toBe(false);
     expect(desktopShareOffered(null)).toBe(false);
+  });
+});
+
+describe('an editor’s run on the run page', () => {
+  const ORIGIN = 'http://127.0.0.1:3000';
+  const session = (page: { id: number; url: string } | undefined, ended = false) => ({ page, ended });
+
+  test('is the page’s run when its page is that run on this app’s own server', () => {
+    expect(desktopEditorRunOf(session({ id: 77, url: `${ORIGIN}/test-runs/77` }), 77, ORIGIN)).toBe(true);
+    // The same server under another name of the loopback interface; not another port.
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3000/test-runs/77' }), 77, ORIGIN)).toBe(true);
+    expect(desktopEditorRunOf(session({ id: 77, url: 'http://localhost:3001/test-runs/77' }), 77, ORIGIN)).toBe(false);
+    // A run of the same number on the team instance, another run, an ended one, or one with no page yet.
+    expect(desktopEditorRunOf(session({ id: 77, url: 'https://piwi.example.com/test-runs/77' }), 77, ORIGIN)).toBe(
+      false,
+    );
+    expect(desktopEditorRunOf(session({ id: 78, url: `${ORIGIN}/test-runs/78` }), 77, ORIGIN)).toBe(false);
+    expect(desktopEditorRunOf(session({ id: 77, url: `${ORIGIN}/test-runs/77` }, true), 77, ORIGIN)).toBe(false);
+    expect(desktopEditorRunOf(session(undefined), 77, ORIGIN)).toBe(false);
+  });
+
+  test('reads from the server’s message only what reads as a run', () => {
+    const run = { client: 'WebStorm', session: { ref: 'ed-1', workers: [] } };
+    expect(desktopEditorRuns([run, { client: 3, session: { ref: 'x', workers: [] } }, { client: null }, null])).toEqual(
+      [run],
+    );
+    expect(desktopEditorRuns('runs')).toEqual([]);
   });
 });

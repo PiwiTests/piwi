@@ -214,8 +214,9 @@ function desktopForRun(hub: DesktopHub | null, dirs: readonly string[]): Desktop
 /**
  * Attach the run to its hub (`dirs`: its Playwright config's folder, then its working directory), when the gate lets
  * it look for one: the editor whose workspace holds it, else the desktop app whose linked folder does. The hub's run
- * channel, the run's own ref, an editor's record channel and where the hub takes the run's picks go into `gate.env`,
- * which the workers inherit. Null when the run runs alone. Never throws.
+ * channel, the run's own ref, an editor's record channel and where the hub takes the run's picks (the app's, or the
+ * pairing the editor's file names) go into `gate.env`, which the workers inherit. Null when the run runs alone. Never
+ * throws.
  */
 export function followHub(
   dirs: readonly string[],
@@ -236,6 +237,7 @@ export function followHub(
       gate.env[RUN_CHANNEL_ENV] = channel;
       gate.env[RUN_REF_ENV] = ref;
       gate.env[RECORD_CHANNEL_ENV] ??= channel;
+      if (editor.send) gate.env[PIWI_LOCAL_DEBUG_ENV.editorSend] ??= formatPairing(editor.send);
       const name = editor.client ?? 'the editor';
       return { kind: 'editor', pid: editor.pid, name, client: editor.client ?? 'editor', ref, attended };
     }

@@ -34,8 +34,9 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
 
 startServer(connection, {
   logError,
+  // Written again in place as it changes: a reader never finds the file missing meanwhile.
   publish: (discovery) => {
-    unpublish();
-    if (discovery) published = writeDiscovery(editorsDir(), discovery);
+    if (!discovery) return unpublish();
+    published = writeDiscovery(editorsDir(), discovery) ?? published;
   },
 });

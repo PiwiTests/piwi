@@ -3,13 +3,16 @@
  * on Windows; `PIWI_EDITORS_DIR` names another folder) once it listens, readable by its user only, and removes it as
  * it stops. A file names the service's process and machine, its version and its client, the workspace's folders, the
  * hub's WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
- * (`@piwitests/core/run-channel`) and the recorder's bundle. A reader lists the folder (`readLiveEditors`): it takes
- * only a file this user owns that reads as a service's file of this machine naming the process its name names, and
+ * (`@piwitests/core/run-channel`), the recorder's bundle and where a run's picks go (`@piwitests/core/editor-send`).
+ * A reader lists the folder (`readLiveEditors`): it takes only a file this user owns that reads as a service's file of
+ * this machine naming the process its name names, and
  * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
  * user's file, and skips, never deleting, any other file and another machine's (a home folder several machines share).
  * A test run started in a terminal attaches to the service whose workspace holds it (`editorForRun`). Readers ignore
  * fields they do not know. Pure: the reader takes the folder's operations from its caller.
  */
+
+import { formatPairing, parsePairing, type EditorPairing } from './editor-send';
 
 /** The environment variable naming another folder than `~/.piwi/editors`. */
 export const EDITORS_DIR_ENV = 'PIWI_EDITORS_DIR';
@@ -55,6 +58,11 @@ export interface EditorDiscovery {
    * holds none of its failures. Absent from a service that does not, which a run nobody attends never follows.
    */
   unattended?: boolean;
+  /**
+   * Where a run's picks go (**Pick a locator**, as `PIWI_EDITOR_SEND` names it): the client's Send to editor endpoint,
+   * on this machine's loopback interface. Absent while the client named none.
+   */
+  send?: EditorPairing;
 }
 
 /** The operations `readLiveEditors` takes from its caller. */
@@ -116,6 +124,13 @@ function readChannel(value: unknown): ChannelAddress | null {
   return path && typeof value.token === 'string' && TOKEN.test(value.token) ? { path, token: value.token } : null;
 }
 
+/** The pairing a file names, as `PIWI_EDITOR_SEND` takes it (a loopback address): none for anything else. */
+function readSend(value: unknown): { send?: EditorPairing } {
+  if (!isObject(value) || typeof value.url !== 'string' || typeof value.token !== 'string') return {};
+  const send = parsePairing(formatPairing({ url: value.url, token: value.token }));
+  return send ? { send } : {};
+}
+
 /** A file's content, checked field by field; null when it is not one. A field it cannot read is null or empty. */
 export function parseEditorDiscovery(content: string): EditorDiscovery | null {
   let value: unknown;
@@ -144,6 +159,7 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     runChannel: readChannel(value.runChannel),
     recorderBundle: text(value.recorderBundle, 4096),
     ...(value.unattended === true ? { unattended: true } : {}),
+    ...readSend(value.send),
   };
 }
 

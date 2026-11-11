@@ -121,6 +121,42 @@ describe('the hub’s address', () => {
     expect(svc.published[0]!.runChannel!.token).not.toBe(hub.token);
   });
 
+  test('names where a run’s picks go, as the client names it as it starts and later', async () => {
+    const pairing = (port: number) => ({
+      url: `http://127.0.0.1:${port}/piwi/send`,
+      token: 'pairing-token-0123456789',
+    });
+    const other = await service(
+      dir,
+      false,
+      {},
+      { runPairing: `http://127.0.0.1:41001/piwi/send#${pairing(41001).token}` },
+    );
+    try {
+      expect(await waitFor(() => other.published[0] ?? undefined)).toMatchObject({ send: pairing(41001) });
+      await other.client.sendNotification('piwi/setRunPairing', {
+        address: `http://127.0.0.1:41002/piwi/send#${pairing(41002).token}`,
+      });
+      expect(await waitFor(() => other.published[1] ?? undefined)).toMatchObject({ send: pairing(41002) });
+      // An address off this machine's loopback interface is none.
+      await other.client.sendNotification('piwi/setRunPairing', { address: 'http://evil.test:80/piwi/send#x' });
+      const last = await waitFor(() => other.published[2] ?? undefined);
+      expect(last).not.toHaveProperty('send');
+      expect(last.runChannel).toEqual(other.published[0]!.runChannel);
+      // Once the service stopped, a pairing it hears writes no file again.
+      await other.client.sendRequest('shutdown');
+      const stopped = other.published.length;
+      expect(other.published[stopped - 1]).toBeNull();
+      await other.client.sendNotification('piwi/setRunPairing', {
+        address: `http://127.0.0.1:41004/piwi/send#${pairing(41004).token}`,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(other.published).toHaveLength(stopped);
+    } finally {
+      other.stop();
+    }
+  });
+
   test('goes as the service stops', async () => {
     const other = await service(dir, false);
     await waitFor(() => other.published[0] ?? undefined);

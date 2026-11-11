@@ -67,6 +67,8 @@ async function plugin() {
       return () => {};
     },
   }));
+  const editorRuns = ref<unknown[]>([]);
+  vi.stubGlobal('useDesktopEditorRuns', () => editorRuns);
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
     return () => {};
@@ -91,6 +93,7 @@ async function plugin() {
     trayMounts,
     runs,
     hub,
+    editorRuns,
     /** The shell emits `name` to the window; resolves once the window answered it. */
     hear: async (name: string, payload?: unknown) => {
       await listeners.get(name)?.({ payload });
@@ -330,18 +333,18 @@ describe('the OS progress of a job of the Local runs tray', () => {
   });
 
   test('counts an editor’s test that waits on the bar, but offers to show only the app’s own', async () => {
-    const { shown, waits, emit } = await plugin();
+    const { shown, waits, emit, editorRuns } = await plugin();
     emit({ type: 'snapshot', runs: [] });
     const stopped = { state: 'stopped', stop: { reason: 'breakpoint' } };
-    emit({
-      type: 'editor-runs',
-      runs: [{ client: 'Visual Studio Code', session: { ended: false, workers: [stopped] } }],
-    });
+    const run = { client: 'Visual Studio Code', session: { ref: 'ed-1', ended: false, workers: [stopped] } };
+    emit({ type: 'editor-runs', runs: [run, { client: 'Broken', session: null }] });
     expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you' });
-    // It opens in its editor: the tray menu offers nothing for it.
+    // It opens in its editor: the tray menu offers nothing for it. The run page reads the runs kept.
     expect(waits.at(-1)).toBe(0);
+    expect(editorRuns.value).toEqual([run]);
     emit({ type: 'editor-runs', runs: [] });
     expect(shown.at(-1)).toEqual(NOTHING);
+    expect(editorRuns.value).toEqual([]);
   });
 
   test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {
