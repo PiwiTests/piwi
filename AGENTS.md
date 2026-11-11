@@ -217,6 +217,8 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
   range and the area guides, never your reasoning or what you expect them to find, and ask for an adversarial
   reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
   ones, and open the pull request after.
+- **Screenshots go in the pull request**: one that changes what people see embeds in its description the screenshots
+  already captured for it (the docs images it updates, the scenes it ran), not only the chat.
 - **Report what you find**: bugs, inconsistencies and tech debt discovered along the way go in your final report and
   in a GitHub issue on `PiwiTests/piwi`, after searching open and closed issues: comment on a match instead of opening
   a duplicate. A security finding never goes in an issue or a comment: describe it to the user and let them decide.
