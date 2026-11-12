@@ -66,13 +66,14 @@ import {
   type LaneSubscription,
 } from './lane-feed.js';
 import {
+  LaneFilmstrip,
   followTraceText,
   layersTest,
   layersTitleOf,
   subscribePageEvents,
   takeLaneText,
-  traceThumbs,
-  type TraceThumb,
+  type KeptThumb,
+  type WatchedLane,
 } from './lane-layers.js';
 import { followCallLog } from './live-call-log.js';
 import { jpegSize, maskedImage } from './live-mask.js';
@@ -110,8 +111,9 @@ import { internalCall } from './quiet-capture.js';
  * the layers the editor asks of it (`layers`, `lane-layers.ts`, each as `lane-layer`): the call the test is in as
  * Playwright's in-process instrumentation logs it (`calls`, `LIVE_CALL_LOGS_PER_SECOND` at most), the page's events
  * (`events`), its text (`text`: as the trace writes it, and taken as asked, the request `text`), and the test's
- * filmstrip from its trace (`filmstrip`, `LANE_THUMBS_PER_SECOND` at most), the call log and the filmstrip again as
- * asked again; none of them outlives the lane view. A test never waits on it but
+ * filmstrip (`filmstrip`, `LANE_THUMBS_PER_SECOND` at most): the lane view's own masked frames, one a call, taken only
+ * while the lane view is on and kept in memory for the test (`LaneFilmstrip`), all of it sent again as asked again, as
+ * the call log is; none of them outlives the lane view. A test never waits on it but
  * while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
  * answer then goes on at once.
  */
@@ -254,8 +256,10 @@ const layerRuns: {
   events: (() => void) | null;
   calls: { stop(): void; pacer: LatestPacer<LiveCallLog>; latest: LiveCallLog | null } | null;
   text: (() => void) | null;
-  strip: { stop(): void; sent: Set<string>; queue: Array<TraceThumb & { test: string }> } | null;
+  strip: { stop(): void; queue: Array<KeptThumb & { test: string }> } | null;
 } = { events: null, calls: null, text: null, strip: null };
+/** The lane's test filmstrip, taken from the lane view's own masked frames while it is on, once a lane view was. */
+let filmstrip: LaneFilmstrip | null = null;
 /** A view on its way, for the stop it is of. */
 let viewStarting: { stop: number; started: Promise<IntentAnswer> } | null = null;
 /** The editor's requests to start and stop a view, one after the other, in the order they came. */
@@ -496,6 +500,8 @@ export function closeRunChannel(): void {
   socket?.end();
   socket = null;
   control = null;
+  filmstrip?.close();
+  filmstrip = null;
 }
 
 /** Whether the worker's run connection is open. */
@@ -505,7 +511,11 @@ export function runChannelOpen(): boolean {
 
 /** Send the editor a message, when the run connection is open. A test's end lets go of the browser it shared. */
 export function tellHub(message: RunToHub): void {
-  if (message.type === 'test-begin') testRunning = true;
+  if (message.type === 'test-begin') {
+    testRunning = true;
+    // The filmstrip of the test before goes nowhere any more.
+    filmstrip?.forget();
+  }
   if (message.type === 'test-end') {
     testRunning = false;
     void unbind();
@@ -719,6 +729,8 @@ function startLaneView(): IntentAnswer {
     },
     refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
   });
+  // The test's filmstrip is taken while the lane view is on, whether a viewer asks for it now or later.
+  laneFilmstrip();
   applyLayers(layersAsked);
   return { ok: true, message: 'The live view is on.' };
 }
@@ -766,10 +778,7 @@ function applyLayers(again: ReadonlySet<LaneLayer>): void {
   }
   if (!on('filmstrip')) stopLaneStrip();
   else if (!layerRuns.strip) startLaneStrip();
-  else if (again.has('filmstrip')) {
-    layerRuns.strip.sent.clear();
-    layerRuns.strip.queue = [];
-  }
+  else if (again.has('filmstrip')) queueLaneStrip(layerRuns.strip);
 }
 
 /** Send the page's text now: the trace's latest, else an ARIA snapshot taken now. */
@@ -826,58 +835,56 @@ function stopLaneCalls(): void {
   layerRuns.calls = null;
 }
 
-/** How often the trace is read for the filmstrip's new images. */
-const STRIP_READ_MS = 1000;
+/**
+ * The lane view while it is on, for its test's filmstrip: the test it shows, and its latest frame, masked as each one
+ * it sends is.
+ */
+function watchedLane(): WatchedLane | null {
+  const shown = laneView;
+  const { test } = laneAt();
+  if (!shown || !test || !runChannelOpen()) return null;
+  return { test, latest: () => shown.latest() };
+}
+
+/** The lane's filmstrip, taken from now on while the lane view is on: one taken goes as `filmstrip` asks for it. */
+function laneFilmstrip(): LaneFilmstrip {
+  filmstrip ??= new LaneFilmstrip(watchedLane, (kept, test) => {
+    const strip = layerRuns.strip;
+    if (!strip) return;
+    strip.queue.push({ ...kept, test });
+    strip.queue.splice(0, Math.max(0, strip.queue.length - MAX_FILMSTRIP));
+  });
+  return filmstrip;
+}
+
+/** Send the lane's test filmstrip so far again: a viewer that came later asked for it. */
+function queueLaneStrip(strip: NonNullable<(typeof layerRuns)['strip']>): void {
+  const { test } = laneAt();
+  strip.queue = test
+    ? laneFilmstrip()
+        .of(test)
+        .map((kept) => ({ ...kept, test }))
+    : [];
+}
 
 /**
- * Send the lane's test filmstrip from its trace: each image as its call ended, `LANE_THUMBS_PER_SECOND` at most, the
- * test's whole strip again as it is asked again (`MAX_FILMSTRIP` images at most), none of a test that ended.
+ * Send the lane's test filmstrip, from the lane view's own masked frames: the images kept of the test so far, then
+ * each as its call ended, `LANE_THUMBS_PER_SECOND` at most, none of a test once another one began.
  */
 function startLaneStrip(): void {
-  let reading = false;
-  let test: string | null = null;
-  const strip = {
-    stop: () => undefined as void,
-    sent: new Set<string>(),
-    queue: [] as Array<TraceThumb & { test: string }>,
-  };
-  const read = setInterval(() => {
-    const now = layersTest()?.id ?? null;
-    if (now !== test) {
-      test = now;
-      strip.sent.clear();
-      strip.queue = [];
-    }
-    if (reading || !now) return;
-    reading = true;
-    void traceThumbs(strip.sent)
-      .then((thumbs) => {
-        if (layerRuns.strip !== strip || layersTest()?.id !== now) return;
-        for (const thumb of thumbs) {
-          strip.sent.add(thumb.thumb.call);
-          strip.queue.push({ ...thumb, test: now });
-        }
-        strip.queue.splice(0, Math.max(0, strip.queue.length - MAX_FILMSTRIP));
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        reading = false;
-      });
-  }, STRIP_READ_MS);
+  const strip = { stop: () => undefined as void, queue: [] as Array<KeptThumb & { test: string }> };
+  layerRuns.strip = strip;
+  queueLaneStrip(strip);
   const send = setInterval(() => {
     if (framesBackedUp()) return;
     const next = strip.queue.shift();
-    if (next && next.test === layersTest()?.id) {
+    const now = laneAt().test;
+    if (next && (now === null || next.test === now)) {
       tellLayer({ layer: 'filmstrip', thumb: next.thumb, data: next.data.toString('base64') }, next.test);
     }
   }, 1000 / LANE_THUMBS_PER_SECOND);
-  read.unref?.();
   send.unref?.();
-  strip.stop = () => {
-    clearInterval(read);
-    clearInterval(send);
-  };
-  layerRuns.strip = strip;
+  strip.stop = () => clearInterval(send);
 }
 
 function stopLaneStrip(): void {

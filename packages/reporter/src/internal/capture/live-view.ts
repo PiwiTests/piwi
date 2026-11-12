@@ -33,27 +33,28 @@ import {
 } from '@piwitests/core/live-view';
 import {
   LANE_TEXTS_PER_SECOND,
-  LANE_THUMB_HEIGHT,
-  LANE_THUMB_WIDTH,
   LANE_THUMBS_PER_SECOND,
-  MAX_FILMSTRIP,
-  MAX_FILMSTRIP_BYTES,
-  MAX_LANE_THUMB,
   type LaneLayer,
   type LaneText,
-  type LaneThumb,
 } from '@piwitests/core/live-layers';
-import { RateWindow, LatestPacer } from '@piwitests/core/run-view';
+import { LatestPacer } from '@piwitests/core/run-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
-import { followCallLog, onCallEnded } from './live-call-log.js';
+import { followCallLog } from './live-call-log.js';
 import { subscribeLane, type LaneSubscription } from './lane-feed.js';
-import { followTraceText, layersTitleOf, subscribePageEvents, takeLaneText } from './lane-layers.js';
-import { thumbnailOf } from './live-mask.js';
+import {
+  LaneFilmstrip,
+  followTraceText,
+  layersTitleOf,
+  subscribePageEvents,
+  takeLaneText,
+  type KeptThumb,
+  type WatchedLane,
+} from './lane-layers.js';
 import type { PageFrame } from './page-view.js';
 
 /**
@@ -96,9 +97,9 @@ import type { PageFrame } from './page-view.js';
  * events (`page-event`, `MAX_PAGE_EVENTS_PER_SECOND` at most), its text (`text`: as the trace writes it, and taken as the
  * instance asks, `text` on the stream, `LANE_TEXTS_PER_SECOND` at most, masked with the project's masks too), and the
  * test's filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, the view's own masked image
- * shortly after each call of the test ended, scaled down (`thumbnailOf`), `THUMB_TAKES_PER_SECOND` at most, kept in
- * memory for the test alone (`MAX_FILMSTRIP` images and `MAX_FILMSTRIP_BYTES` at most), all of them posted again to a
- * viewer that asks later (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most. None is stored.
+ * shortly after each call of the test ended, scaled down, kept in memory for the test alone (`LaneFilmstrip`), all of
+ * them posted again to a viewer that asks later (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most.
+ * None is stored.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -123,12 +124,6 @@ const SHOT_MS = 1000;
 const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
-/** How long after a call of the test ended its image is taken for the filmstrip: what it changed has painted by then. */
-const THUMB_AFTER_MS = 300;
-/** The most images of the filmstrip taken a second: scaling one down takes a few milliseconds of the worker's thread. */
-const THUMB_TAKES_PER_SECOND = 2;
-/** The JPEG quality of an image of the filmstrip. */
-const THUMB_QUALITY = 60;
 /** The most page events posted at once. */
 const MAX_EVENT_POSTS = 8;
 /** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
@@ -203,19 +198,6 @@ interface Link {
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
 }
 
-/** The test's filmstrip as the view took it while someone watched: its images, oldest first, and their bytes. */
-interface Strip {
-  test: string;
-  thumbs: Array<{ thumb: LaneThumb; data: Buffer }>;
-  bytes: number;
-  /** How many images the strip took, which numbers the next. */
-  taken: number;
-  takes: RateWindow;
-  /** The images waiting to be posted, in order, and whether one is in flight. */
-  queue: Array<{ thumb: LaneThumb; data: Buffer }>;
-  posting: boolean;
-}
-
 /** What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts. */
 const layerRuns: {
   events: (() => void) | null;
@@ -223,11 +205,12 @@ const layerRuns: {
   texts: LatestPacer<LaneText | { refused: string }> | null;
   thumbs: ReturnType<typeof setInterval> | null;
 } = { events: null, text: null, texts: null, thumbs: null };
-let strip: Strip | null = null;
+/** The test's filmstrip, taken from the view's own masked images while someone watches. */
+let filmstrip: LaneFilmstrip | null = null;
+/** The filmstrip's images waiting to be posted, in order, each with its test, and whether one is in flight. */
+const thumbPosts: { queue: Array<KeptThumb & { test: string }>; posting: boolean } = { queue: [], posting: false };
 /** The page events posted now. */
 let eventPosts = 0;
-/** What stops hearing the calls of the worker's Playwright end, for the filmstrip. */
-let unhearCalls: (() => void) | null = null;
 
 /** Whether the full views ask for `layer` now, while the view runs. */
 function layerAsked(own: Link, layer: LaneLayer): boolean {
@@ -403,8 +386,10 @@ export function openLiveView(
     asked: null,
   };
   if (link.sharing) connect(link);
-  unhearCalls?.();
-  unhearCalls = onCallEnded(takeThumbSoon);
+  filmstrip?.close();
+  filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
+    if (link && layerAsked(link, 'filmstrip')) thumbPosts.queue.push({ ...kept, test });
+  });
   changed();
   return true;
 }
@@ -415,9 +400,9 @@ export function closeLiveView(): void {
   link = null;
   running = null;
   missing = null;
-  strip = null;
-  unhearCalls?.();
-  unhearCalls = null;
+  filmstrip?.close();
+  filmstrip = null;
+  thumbPosts.queue = [];
   showKey();
   void stopView();
   if (!own) return;
@@ -473,7 +458,8 @@ async function stopSharing(): Promise<void> {
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
   running = { title, page: null, call, mayPause, began: Date.now() };
-  strip = null;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -796,7 +782,7 @@ function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
   } else if (layerRuns.thumbs) {
     clearInterval(layerRuns.thumbs);
     layerRuns.thumbs = null;
-    if (strip) strip.queue = [];
+    thumbPosts.queue = [];
   }
 }
 
@@ -810,7 +796,7 @@ function stopLayers(): void {
   layerRuns.text = null;
   layerRuns.texts = null;
   layerRuns.thumbs = null;
-  if (strip) strip.queue = [];
+  thumbPosts.queue = [];
 }
 
 /**
@@ -843,69 +829,31 @@ function offerText(own: Link, text: LaneText | { refused: string }): void {
   layerRuns.texts.offer(text);
 }
 
-/**
- * A call of the worker's Playwright ended (`id`, the runner's): while someone watches the running test's page, its
- * image is taken for the filmstrip `THUMB_AFTER_MS` later, from the view's latest masked frame.
- */
-function takeThumbSoon(id: string | null): void {
+/** The running test's view while someone watches it, for its filmstrip: its title, and the view's latest frame. */
+function watchedLane(): WatchedLane | null {
   const own = link;
-  const title = id ? layersTitleOf(id) : null;
-  if (!own || !id || !title || !view || !running || !active(own) || own.viewers === 0) return;
-  const test = running.title;
-  const timer = setTimeout(() => takeThumb(own, id, title, test), THUMB_AFTER_MS);
-  timer.unref?.();
-}
-
-/** Take the image of the call `id` for the filmstrip of the test `test`, from the view's latest frame, and keep it. */
-function takeThumb(own: Link, id: string, title: string, test: string): void {
-  const frame = view?.frames.latest();
-  if (own !== link || !frame || running?.title !== test || !active(own)) return;
-  if (!strip || strip.test !== test) {
-    strip = {
-      test,
-      thumbs: [],
-      bytes: 0,
-      taken: 0,
-      takes: new RateWindow(THUMB_TAKES_PER_SECOND),
-      queue: [],
-      posting: false,
-    };
-  }
-  const kept = strip;
-  if (kept.thumbs.some((one) => one.thumb.call === id) || !kept.takes.take(1)) return;
-  const small = thumbnailOf(frame.data, {
-    width: LANE_THUMB_WIDTH,
-    height: LANE_THUMB_HEIGHT,
-    quality: THUMB_QUALITY,
-    maxBytes: MAX_LANE_THUMB,
-  });
-  if (!small) return;
-  const at = Number.isFinite(frame.at) ? Math.round(frame.at) : Date.now();
-  const thumb: LaneThumb = { call: id, title, index: ++kept.taken, width: small.width, height: small.height, at };
-  kept.thumbs.push({ thumb, data: small.data });
-  kept.bytes += small.data.length;
-  while (kept.thumbs.length > MAX_FILMSTRIP || kept.bytes > MAX_FILMSTRIP_BYTES)
-    kept.bytes -= kept.thumbs.shift()!.data.length;
-  if (layerAsked(own, 'filmstrip')) kept.queue.push({ thumb, data: small.data });
+  const shown = view;
+  if (!own || !shown || !running || !active(own) || own.viewers === 0) return null;
+  return { test: running.title, latest: () => shown.frames.latest() };
 }
 
 /** Post the test's whole filmstrip so far, to a viewer that asked it later. */
 function queueStrip(own: Link): void {
-  if (!strip || strip.test !== running?.title || !layerAsked(own, 'filmstrip')) return;
-  strip.queue = [...strip.thumbs];
+  if (!filmstrip || !running || !layerAsked(own, 'filmstrip')) return;
+  const test = running.title;
+  thumbPosts.queue = filmstrip.of(test).map((kept) => ({ ...kept, test }));
 }
 
 /** Post the filmstrip's waiting images, `LANE_THUMBS_PER_SECOND` at most, one in flight. */
 function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
   const timer = setInterval(() => {
-    const kept = strip;
-    if (!kept || kept.posting || !kept.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
-    const next = kept.queue.shift()!;
-    kept.posting = true;
-    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, kept.test), next.data), LIVE_FRAME_TYPE)
+    if (thumbPosts.posting || !thumbPosts.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
+    const next = thumbPosts.queue.shift()!;
+    thumbPosts.posting = true;
+    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, next.test), next.data), LIVE_FRAME_TYPE)
       .catch(() => undefined)
       .finally(() => {
-        kept.posting = false;
+        thumbPosts.posting = false;
       });
   }, 1000 / LANE_THUMBS_PER_SECOND);
   timer.unref?.();

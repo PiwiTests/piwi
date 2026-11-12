@@ -19,10 +19,10 @@
  *   project's trace writes one (`aria/<callId>-after.json`, rendered by `ariaTreeText`), else taken when a viewer asks
  *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), each field that holds a secret written as `<hidden>`
  *   (`maskAriaSnapshot` of `@piwitests/core/mask`), `MAX_LANE_TEXT` characters at most.
- * - `filmstrip`: one image for each call of the test that ended (`LaneThumb`), for a viewer who comes late: on the
- *   developer's machine the trace's own screencast image of it, nothing captured beside it; for the team the view's own
- *   masked images, taken only while someone watches, kept in the worker's memory (`MAX_FILMSTRIP` images and
- *   `MAX_FILMSTRIP_BYTES` at most). `MAX_LANE_THUMB` bytes each, `LANE_THUMBS_PER_SECOND` a second at most.
+ * - `filmstrip`: one image for each call of the test that ended (`LaneThumb`), for a viewer who comes late, on both
+ *   wires from the view's own images, masked as its frames are, taken only while someone watches, kept in the worker's
+ *   memory (`MAX_FILMSTRIP` images and `MAX_FILMSTRIP_BYTES` at most). `MAX_LANE_THUMB` bytes each,
+ *   `LANE_THUMBS_PER_SECOND` a second at most.
  */
 import { hideSecretsInText, hideSecretsInUrl, hideTypedText, maskAriaSnapshot } from './mask';
 

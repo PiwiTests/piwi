@@ -17,8 +17,8 @@ import { playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_h
  * It hears the call a click waits in from Playwright's in-process instrumentation in a run Piwi may pause, the page's
  * console error, uncaught error, failed request, a request pending long and the backend's logged error, the test's API
  * call, the page's text from the trace with its password and card number hidden, and the test's filmstrip from the
- * trace, sent again as asked again. A second project whose trace is off has its text taken as asked. Nothing goes
- * once the lane view is off.
+ * lane view's own images, sent again as asked again. A second project whose trace is off has its text taken as asked,
+ * and its filmstrip all the same. Nothing goes once the lane view is off.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -321,7 +321,7 @@ describe('the layers of a worker’s lane view', () => {
     expect(texts[0]!.text).not.toContain(SECRET);
   });
 
-  it('sends the test’s filmstrip from its trace, one image a call, and all of it again as asked again', () => {
+  it('sends the test’s filmstrip from the lane view, one image a call, and all of it again as asked again', () => {
     const thumbs = layers('filmstrip', ids.checkout).map(({ at, message }) => ({
       at,
       ...(message as Extract<Layer, { layer: 'filmstrip' }>),
@@ -334,7 +334,14 @@ describe('the layers of a worker’s lane view', () => {
     expect(first.every(({ data }) => Buffer.from(data, 'base64')[0] === 0xff)).toBe(true);
     const again = thumbs.filter(({ at }) => at >= askedAgainAt).map(({ thumb }) => thumb.call);
     expect(again).toEqual(expect.arrayContaining(first.map(({ thumb }) => thumb.call)));
-    expect(layers('filmstrip', ids.plain)).toEqual([]);
+    // A project whose trace records nothing has its filmstrip from the lane view as well.
+    const plain = layers('filmstrip', ids.plain).map(
+      ({ message }) => (message as Extract<Layer, { layer: 'filmstrip' }>).thumb,
+    );
+    expect(
+      plain.some((thumb) => thumb.title.includes("'Password'")),
+      JSON.stringify(plain),
+    ).toBe(true);
   });
 
   it('never sends a secret the test typed, and nothing once the lane view is off', () => {

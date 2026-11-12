@@ -4,7 +4,10 @@ import { StringDecoder } from 'node:string_decoder';
 import type { Page } from '@playwright/test';
 import {
   LANE_TEXT_DEPTH,
+  LANE_THUMB_HEIGHT,
+  LANE_THUMB_WIDTH,
   MAX_FILMSTRIP,
+  MAX_FILMSTRIP_BYTES,
   MAX_LANE_TEXT,
   MAX_LANE_THUMB,
   MAX_PAGE_EVENTS_PER_SECOND,
@@ -16,7 +19,9 @@ import {
 import { ariaMaskProblem, hideSecretsInText, hideTypedText, maskAriaSnapshot } from '@piwitests/core/mask';
 import { RateWindow } from '@piwitests/core/run-view';
 import { fieldSecrets } from './agent-page.js';
-import { jpegSize } from './live-mask.js';
+import { onCallEnded } from './live-call-log.js';
+import { thumbnailOf } from './live-mask.js';
+import type { PageFrame } from './page-view.js';
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -29,38 +34,38 @@ import { internalCall } from './quiet-capture.js';
  *   counted and said as `dropped`.
  * - **The test's growing trace**: where the runner traces the attempt, its files are read as they grow (`traceOf`):
  *   `<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`, from where the
- *   last read stopped, only the lines of calls, screencast images and ARIA snapshots parsed; the images and the ARIA
- *   files the lines name, under that folder alone. Nothing is written, nor any option of the trace changed.
+ *   last read stopped, only the lines of its ARIA snapshots parsed; the ARIA files the lines name, under that folder
+ *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read.
  * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the attempt when the project's
  *   trace writes them, else taken through an internal call (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep),
  *   masked by `maskAriaSnapshot` with the values the page's secret fields hold now and the masks the wire names, its
  *   credentials hidden. A mask the text cannot find (`ariaMaskProblem`) sends no text, saying why.
- * - **The trace's filmstrip** (`traceThumbs`): one image for each call of the attempt that ended, the runner's own
- *   (its title the runner's step), from the trace's screencast: the latest image of the page by `SETTLE_MS` after the
- *   call ended, once the trace went past that time or stopped growing. Nothing is captured for it.
+ * - **The filmstrip** (`LaneFilmstrip`): one image for each call of the test that ended, the runner's own (its title
+ *   the runner's step), from the wire's own lane view, masked as each of its frames is (`live-mask.ts`): its latest
+ *   frame `THUMB_AFTER_MS` after the call ended, scaled down, taken only while someone watches the lane and kept in the
+ *   worker's memory for that test alone, for a viewer that comes later.
  */
 
-/** How long after a call ended its page is shown in the filmstrip: what the call changed has painted by then. */
-const SETTLE_MS = 300;
 /** The most bytes of a trace read at once: the rest waits for the next read. */
 const MAX_READ = 8 * 1024 * 1024;
 /** The longest line of a trace kept whole across two reads: a longer one (a DOM snapshot's) is passed over. */
 const MAX_LINE = 64 * 1024;
 /** The longest ARIA file of a trace read, in bytes. */
 const MAX_ARIA_FILE = 4 * 1024 * 1024;
-/** The most calls and screencast images of an attempt remembered: the latest. */
-const MAX_TRACE_CALLS = 2000;
-const MAX_TRACE_FRAMES = 500;
 /** The most trace files of an attempt read: its own, and those of the contexts it opened. */
 const MAX_TRACE_FILES = 8;
 /** How long taking the page's text may take. */
 const TEXT_MS = 5000;
 
-/** The test the layers are of: its id, when it began, the runner's title of a call, and where its trace grows. */
+/**
+ * The test the layers are of: its id, when it began, the runner's title of a call, whether a call is one a fixture made
+ * as it set the test up or tore it down (`Launch browser`, `Create page`), and where its trace grows.
+ */
 export interface LayersTest {
   id: string;
   began: number;
   titleOf(callId: string): string | null;
+  fixtureCall(callId: string): boolean;
   /** The folder the runner writes the attempt's trace in, and the name its files start with; null when unknown. */
   trace: { dir: string; base: string } | null;
 }
@@ -186,37 +191,21 @@ class TraceTail {
   }
 }
 
-/** A call of the attempt as its trace tells it. */
-interface TraceCall {
-  id: string;
-  /** When it ended, on the trace's clock; null while it runs. */
-  end: number | null;
-  /** The screencast image that shows it, once chosen (`resolve`); null when none does. */
-  frame: { file: string; wall: number | null } | null;
-  resolved: boolean;
-}
-
 /** What the attempt's trace told so far. */
 interface AttemptTrace {
   dir: string;
   base: string;
   tails: Map<string, TraceTail>;
-  calls: Map<string, TraceCall>;
-  frames: Array<{ file: string; at: number; wall: number | null }>;
   /** The latest ARIA snapshot it wrote, and its call. */
   aria: { call: string; file: string } | null;
-  /** The latest time it named, on its clock. */
-  latest: number;
-  /** It did not grow at its last read: the calls that ended are shown as they are. */
-  still: boolean;
   /** Reads one after the other. */
   reading: Promise<void>;
 }
 
 let attempt: AttemptTrace | null = null;
 
-/** The trace types read: every other line (a DOM snapshot, a network entry) is passed over unparsed. */
-const READ_TYPES = ['{"type":"before"', '{"type":"after"', '{"type":"screencast-frame"', '{"type":"aria-snapshot"'];
+/** The trace's lines read: every other one (a call, a screencast image, a DOM snapshot) is passed over unparsed. */
+const ARIA_LINE = '{"type":"aria-snapshot"';
 
 /** A file the trace names, under its folder alone; null for any other path. */
 function underTrace(dir: string, file: unknown): string | null {
@@ -225,55 +214,17 @@ function underTrace(dir: string, file: unknown): string | null {
   return full.startsWith(path.resolve(dir) + path.sep) ? full : null;
 }
 
-/** Take one line of the trace into what it told. */
+/** Take one line of the trace into what it told: its ARIA snapshot alone. */
 function takeLine(trace: AttemptTrace, line: string): void {
-  if (!READ_TYPES.some((start) => line.startsWith(start))) return;
+  if (!line.startsWith(ARIA_LINE)) return;
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(line) as Record<string, unknown>;
   } catch {
     return;
   }
-  const time = [event.timestamp, event.startTime, event.endTime].find(
-    (value): value is number => typeof value === 'number' && Number.isFinite(value),
-  );
-  if (time !== undefined) trace.latest = Math.max(trace.latest, time);
-  const id = typeof event.callId === 'string' ? event.callId : null;
-  switch (event.type) {
-    case 'before':
-      if (id && !trace.calls.has(id)) {
-        trace.calls.set(id, { id, end: null, frame: null, resolved: false });
-        if (trace.calls.size > MAX_TRACE_CALLS) trace.calls.delete(trace.calls.keys().next().value!);
-      }
-      return;
-    case 'after': {
-      const call = id ? trace.calls.get(id) : undefined;
-      if (call && typeof event.endTime === 'number') call.end = event.endTime;
-      return;
-    }
-    case 'screencast-frame':
-      if (typeof event.file === 'string' && time !== undefined) {
-        const wall = typeof event.frameSwapWallTime === 'number' ? Math.round(event.frameSwapWallTime) : null;
-        trace.frames.push({ file: event.file, at: time, wall });
-        if (trace.frames.length > MAX_TRACE_FRAMES) trace.frames.shift();
-      }
-      return;
-    case 'aria-snapshot':
-      if (id && typeof event.file === 'string') trace.aria = { call: id, file: event.file };
-      return;
-  }
-}
-
-/** Choose the image of each call that ended, once its page settled in the trace or the trace stopped growing. */
-function resolveCalls(trace: AttemptTrace): void {
-  for (const call of trace.calls.values()) {
-    if (call.resolved || call.end === null) continue;
-    const settled = call.end + SETTLE_MS;
-    if (trace.latest < settled && !trace.still) continue;
-    let shown: AttemptTrace['frames'][number] | null = null;
-    for (const frame of trace.frames) if (frame.at <= settled && (!shown || frame.at >= shown.at)) shown = frame;
-    call.frame = shown ? { file: shown.file, wall: shown.wall } : null;
-    call.resolved = true;
+  if (event.type === 'aria-snapshot' && typeof event.callId === 'string' && typeof event.file === 'string') {
+    trace.aria = { call: event.callId, file: event.file };
   }
 }
 
@@ -302,11 +253,7 @@ async function traceOf(): Promise<AttemptTrace | null> {
       dir: test.trace.dir,
       base: test.trace.base,
       tails: new Map(),
-      calls: new Map(),
-      frames: [],
       aria: null,
-      latest: -Infinity,
-      still: false,
       reading: Promise.resolve(),
     };
   }
@@ -315,14 +262,9 @@ async function traceOf(): Promise<AttemptTrace | null> {
     for (const file of await attemptFiles(trace.dir, trace.base)) {
       if (!trace.tails.has(file)) trace.tails.set(file, new TraceTail(file));
     }
-    let grew = false;
     for (const tail of trace.tails.values()) {
-      const lines = await tail.read();
-      if (lines.length) grew = true;
-      for (const line of lines) takeLine(trace, line);
+      for (const line of await tail.read()) takeLine(trace, line);
     }
-    trace.still = !grew;
-    resolveCalls(trace);
   });
   trace.reading = read.catch(() => undefined);
   await trace.reading;
@@ -434,42 +376,133 @@ export function followTraceText(
   };
 }
 
-/** An image of the trace's filmstrip, and its JPEG. */
-export interface TraceThumb {
+/** How long after a call of the test ended its image is taken for the filmstrip: what it changed has painted by then. */
+const THUMB_AFTER_MS = 300;
+/** How long after an image of a filmstrip was scaled down the next one is: each takes a few milliseconds of the thread. */
+const THUMB_SPACING_MS = 500;
+/** The most frames held for the filmstrip while they wait to be scaled down: past them, the oldest is dropped. */
+const MAX_WAITING_FRAMES = 6;
+/** The JPEG quality of an image of the filmstrip. */
+const THUMB_QUALITY = 60;
+
+/** An image of a test's filmstrip, and its JPEG. */
+export interface KeptThumb {
   thumb: LaneThumb;
   data: Buffer;
 }
 
+/** A lane view while someone watches it: the test it shows, and its latest frame of where the lane stands, masked. */
+export interface WatchedLane {
+  test: string;
+  latest(): PageFrame | null;
+}
+
 /**
- * The running test's filmstrip as its trace shows it so far: one image for each of its calls that ended and the runner
- * names, the latest `MAX_FILMSTRIP`, each `MAX_LANE_THUMB` bytes at most (a longer one is left out), but those of the
- * calls `skip` names. Read from the trace's own files; none for a test whose trace records no screencast. Never throws.
+ * A test's filmstrip as a wire's lane view takes it (the run channel's, the live view's): while someone watches the
+ * lane (`watched`), the view's latest frame `THUMB_AFTER_MS` after each call of its test ended that the runner names,
+ * masked as every frame of the view is, one image a call, none for a call a fixture made as it set the test up or tore
+ * it down (`fixtureCall`). Each frame is scaled down within `LANE_THUMB_WIDTH` by
+ * `LANE_THUMB_HEIGHT` (`thumbnailOf`), `THUMB_SPACING_MS` after the one before at least, the ones that wait held in
+ * memory (`MAX_WAITING_FRAMES` at most, the oldest dropped). Kept in the worker's memory for that test alone, the latest
+ * `MAX_FILMSTRIP` images and `MAX_FILMSTRIP_BYTES` at most, for a viewer that comes later (`of`); never stored, nor taken
+ * from anything but the view's frames. Each image kept is told to `kept`.
  */
-export async function traceThumbs(skip: ReadonlySet<string> = new Set()): Promise<TraceThumb[]> {
-  const trace = await traceOf();
-  if (!trace) return [];
-  const shown: Array<{ call: TraceCall; title: string }> = [];
-  for (const call of trace.calls.values()) {
-    if (!call.resolved || !call.frame) continue;
-    const title = layersTitleOf(call.id);
-    if (title) shown.push({ call, title });
+export class LaneFilmstrip {
+  private test: string | null = null;
+  private thumbs: KeptThumb[] = [];
+  private bytes = 0;
+  /** How many images the test's strip took, which numbers the next. */
+  private taken = 0;
+  /** The frames of the test's calls that wait to be scaled down, oldest first, and the timer that takes the next. */
+  private waiting: Array<{ id: string; title: string; frame: PageFrame }> = [];
+  private draining: ReturnType<typeof setTimeout> | null = null;
+  private unhear: (() => void) | null;
+
+  constructor(
+    private readonly watched: () => WatchedLane | null,
+    private readonly kept: (thumb: KeptThumb, test: string) => void,
+  ) {
+    this.unhear = onCallEnded((id) => this.callEnded(id));
   }
-  const thumbs: TraceThumb[] = [];
-  for (const [i, { call, title }] of shown.entries()) {
-    if (i < shown.length - MAX_FILMSTRIP || skip.has(call.id)) continue;
-    const file = underTrace(trace.dir, call.frame!.file);
-    if (!file) continue;
-    try {
-      const { size } = await fs.stat(file);
-      if (size > MAX_LANE_THUMB) continue;
-      const data = await fs.readFile(file);
-      const fits = jpegSize(data);
-      if (!fits) continue;
-      const at = call.frame!.wall ?? Date.now();
-      thumbs.push({ thumb: { call: call.id, title, index: i + 1, ...fits, at }, data });
-    } catch {
-      // An image the trace has not written yet, or removed: the call shows none.
+
+  /** The images kept of the test `test`, oldest first; none of another test. */
+  of(test: string | null): KeptThumb[] {
+    return test !== null && test === this.test ? [...this.thumbs] : [];
+  }
+
+  /** Another test begins: the images of the one before go, and the frames that wait. */
+  forget(): void {
+    this.test = null;
+    this.thumbs = [];
+    this.bytes = 0;
+    this.taken = 0;
+    this.waiting = [];
+    if (this.draining) clearTimeout(this.draining);
+    this.draining = null;
+  }
+
+  /** No image is taken any more, and those kept go. */
+  close(): void {
+    this.unhear?.();
+    this.unhear = null;
+    this.forget();
+  }
+
+  private callEnded(id: string | null): void {
+    const title = id ? layersTitleOf(id) : null;
+    const lane = this.watched();
+    if (!id || !title || !lane || current?.fixtureCall(id)) return;
+    const { test } = lane;
+    const timer = setTimeout(() => this.hold(id, title, test), THUMB_AFTER_MS);
+    timer.unref?.();
+  }
+
+  /** Hold the view's latest frame for the call `id` of the test `test`, to be scaled down as the pace allows. */
+  private hold(id: string, title: string, test: string): void {
+    const lane = this.unhear ? this.watched() : null;
+    const frame = lane?.test === test ? lane.latest() : null;
+    if (!frame) return;
+    if (this.test !== test) {
+      this.forget();
+      this.test = test;
     }
+    if (this.thumbs.some((one) => one.thumb.call === id) || this.waiting.some((one) => one.id === id)) return;
+    this.waiting.push({ id, title, frame });
+    if (this.waiting.length > MAX_WAITING_FRAMES) this.waiting.shift();
+    this.drain();
   }
-  return thumbs;
+
+  /** Scale down the oldest frame that waits and keep its image, the next one `THUMB_SPACING_MS` later. */
+  private drain(): void {
+    if (this.draining || !this.waiting.length) return;
+    this.keep(this.waiting.shift()!);
+    this.draining = setTimeout(() => {
+      this.draining = null;
+      this.drain();
+    }, THUMB_SPACING_MS);
+    this.draining.unref?.();
+  }
+
+  private keep({ id, title, frame }: { id: string; title: string; frame: PageFrame }): void {
+    const test = this.test;
+    if (test === null) return;
+    const small = thumbnailOf(frame.data, {
+      width: LANE_THUMB_WIDTH,
+      height: LANE_THUMB_HEIGHT,
+      quality: THUMB_QUALITY,
+      maxBytes: MAX_LANE_THUMB,
+    });
+    if (!small) return;
+    const at = Number.isFinite(frame.at) ? Math.round(frame.at) : Date.now();
+    const one: KeptThumb = {
+      thumb: { call: id, title, index: ++this.taken, width: small.width, height: small.height, at },
+      data: small.data,
+    };
+    this.thumbs.push(one);
+    this.bytes += small.data.length;
+    while (this.thumbs.length > MAX_FILMSTRIP || this.bytes > MAX_FILMSTRIP_BYTES) {
+      this.bytes -= this.thumbs.shift()!.data.length;
+    }
+    this.kept(one, test);
+  }
 }

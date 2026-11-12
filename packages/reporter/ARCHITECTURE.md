@@ -289,18 +289,24 @@ What the package does to a user's run, process by process.
   where the runner traces the attempt with ARIA snapshots, the latest it wrote, rendered
   by core's `ariaTreeText`, followed once a second as it grows (`followTraceText`), else an
   ARIA snapshot in AI mode, 8 levels deep, through an internal call, only as asked (the
-  request `text`, or the layer asked); and the test's filmstrip from its trace
-  (`traceThumbs`): one screencast image for each call the runner names that ended, the
-  latest one by 300 ms after it, read from the trace's own files, eight a second at
-  most, all of it again as `layers` asks again. The text is masked by core's
+  request `text`, or the layer asked); and the test's filmstrip (`LaneFilmstrip`), from
+  the lane view's own frames, masked as each one it sends is: while the lane view is on,
+  300 ms after each call of the test the runner names ended, outside the fixtures' setup
+  and teardown (`fixtureCall`), the view's latest frame (`LaneSubscription.latest`), held
+  until it is scaled down within 320 by 200 at quality 60 with `jpeg-js` (`thumbnailOf`;
+  without it, a frame of 128 KB at most as it is), one every 500 ms at most, six frames
+  waiting at most; kept for the test alone (40 images and 1 MB at most, the oldest let go,
+  all of them as the next test begins), sent eight a second at most, all of it again as
+  `layers` asks again, those of a test no longer sent once the next one began. The
+  trace's screencast images are never read: they show the page unmasked. The text is masked by core's
   `maskAriaSnapshot` with the values the page's secret fields hold now
   (`fieldSecrets`, through an internal call) and the sink's masks, its credentials hidden;
   a mask it cannot find by name (`ariaMaskProblem`) sends no text, saying why. The trace
-  is read from where the last read stopped (`TraceTail`), its DOM snapshots passed over
-  unparsed, the files it names only under its folder
+  is read from where the last read stopped (`TraceTail`), every line but its ARIA
+  snapshots passed over unparsed, the files it names only under its folder
   (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>]…`). The
   instance's live view takes the same layers as its full views ask them (`view`'s
-  `layers`), and makes its filmstrip from its own frames instead (`live-view.ts`).
+  `layers`), its filmstrip from its own frames by the same `LaneFilmstrip` (`live-view.ts`).
 - At a headed stop, that view paints the pause bar over in each frame, for every sink, as
   the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views
   as it draws the bar and once it is down (`pauseBarShows`). The mask hands the view each
@@ -543,12 +549,10 @@ What the package does to a user's run, process by process.
   flight at most, the others going nowhere), its text
   (`text`, as the trace writes it, and taken as the instance asks, `text`, or as the layer is
   asked anew, one a second at most, masked with the project's masks too), and its test's
-  filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, 300 ms
-  after each call of the test the runner names ended, the view's latest masked frame
-  (`LaneSubscription.latest`) scaled down within 320 by 200 at quality 60 with `jpeg-js`
-  (`thumbnailOf`; without it, a frame of 128 KB at most as it is), two a second at most,
-  kept for the test alone (40 images and 1 MB at most, the oldest let go), posted eight a
-  second at most, one in flight, all of it again on `resend` and as the layer is asked anew.
+  filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, the
+  view's own masked frames as the run channel's lane view takes them (`LaneFilmstrip`,
+  above), forgotten as the next test begins, posted eight a second at most, one in
+  flight, all of it again on `resend` and as the layer is asked anew.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
@@ -865,7 +869,7 @@ src/
                 its browser bound for Playwright's tools), run-events (the test's
                 calls and page events, for an agent following the run and a lane
                 view's events), lane-layers (a lane view's layers: page events,
-                the page's text, the trace's filmstrip), live-call-log (the call
+                the page's text, the filmstrip of the view's own frames), live-call-log (the call
                 a test is in, from the call stream or the in-process listener),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built

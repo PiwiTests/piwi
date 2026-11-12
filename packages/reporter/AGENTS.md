@@ -50,9 +50,9 @@ responsibilities.
      listener `live-call-log.ts` adds to each context's in-process server instrumentation as it opens
      (`context._connection.toImpl(context).instrumentation`, feature-checked, absent for a connected browser), which
      only reads each call and goes as the context closes (`listenCalls`); and
-     while a viewer asks for the page's text or the filmstrip, the reads of the runner's growing trace of the test
-     (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`), and of the page's ARIA snapshot
-     through `internalCall` when asked where the trace writes none;
+     while a viewer asks for the page's text, the reads of the ARIA snapshots in the runner's growing trace of the test
+     (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`; never its screencast images), and of
+     the page's ARIA snapshot through `internalCall` when asked where the trace writes none;
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
@@ -91,8 +91,10 @@ responsibilities.
      `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
      view of the lane's page (`lane-feed.ts`, the instance's live view a third), with `layers` in `features` the lane
      view's layers as asked (`layers`, `lane-layers.ts`: the call's log from the in-process listener above, the page's
-     events, its text and the test's filmstrip from its growing trace, none past the lane view,
-     `tests/run-channel-layers.spec.ts`), plays trusted input only while that
+     events, its text from its growing trace, and the test's filmstrip from the lane view's own masked frames, one a
+     call outside the fixtures, taken only while the lane view is on and kept in the worker's memory for the test
+     (`LaneFilmstrip`, as the instance's is), none past the lane view, `tests/run-channel-layers.spec.ts`,
+     `tests/run-channel-filmstrip.spec.ts`), plays trusted input only while that
      stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, no press on the pause
      bar's band nor a key press the bar was not held inert for, a release always played and activating nothing on the
      bar, `tests/page-view-bar.spec.ts`, `tests/run-channel-lane.spec.ts`), runs the bar's actions in a headless page through

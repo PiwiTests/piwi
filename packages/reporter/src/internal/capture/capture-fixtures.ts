@@ -2436,18 +2436,31 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
 
 /** The title the runner gives the call whose step id is `id` (`stepLabel`), among the test's steps; null for none. */
 function stepTitleOf(testInfo: TestInfo, id: string): string | null {
-  let found: string | null = null;
-  const visit = (steps: unknown): void => {
-    if (!Array.isArray(steps) || found !== null) return;
+  const found = runnerStepOf(testInfo, id);
+  return found && typeof found.step.title === 'string' ? stepLabel(found.step) : null;
+}
+
+/** Whether the runner's step `id` of the test is inside a fixture's setup or teardown: a call the test did not make. */
+function fixtureStep(testInfo: TestInfo, id: string): boolean {
+  return runnerStepOf(testInfo, id)?.fixture ?? false;
+}
+
+/** The runner's step `id` of the test (a Playwright internal, feature-checked), and whether a fixture's step holds it. */
+function runnerStepOf(testInfo: TestInfo, id: string): { step: RunnerStep; fixture: boolean } | null {
+  let found: { step: RunnerStep; fixture: boolean } | null = null;
+  const visit = (steps: unknown, fixture: boolean): void => {
+    if (!Array.isArray(steps)) return;
     for (const step of steps as Array<RunnerStep & { stepId?: unknown }>) {
-      if (step.stepId === id && typeof step.title === 'string') {
-        found = stepLabel(step);
+      if (found) return;
+      const inFixture = fixture || step.category === 'fixture';
+      if (step.stepId === id) {
+        found = { step, fixture: inFixture };
         return;
       }
-      visit(step.steps);
+      visit(step.steps, inFixture);
     }
   };
-  visit((testInfo as unknown as { _steps?: unknown })._steps);
+  visit((testInfo as unknown as { _steps?: unknown })._steps, false);
   return found;
 }
 
@@ -4128,6 +4141,7 @@ export const piwiFixtures: Fixtures<
         id: testInfo.testId,
         began: Date.now(),
         titleOf: (id) => stepTitleOf(testInfo, id),
+        fixtureCall: (id) => fixtureStep(testInfo, id),
         trace: attemptTrace(testInfo),
       });
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
