@@ -343,19 +343,24 @@ Releases up to 0.68 were installed as **Piwi Dashboard** (`productName`). The
 installed product is **Piwi Desktop**, and every installer upgrades an install
 of the former name, by hand or through its update channel, keeping the app's
 data: the `identifier` (`io.piwitests.dashboard`) is unchanged, and with it the
-app data folder, `settings.json`, the keychain service and the installer's
-`PIWI_APP_DATA`.
+app data folder, `settings.json` and the installer's `PIWI_APP_DATA`. The
+keychain service (`DESKTOP_KEYCHAIN_SERVICE`) is a name of its own.
 
 - **`.msi`**: `bundle.windows.wix.upgradeCode` pins the code the bundler derived
   from the former name (UUIDv5 of `Piwi Dashboard.exe.app.x64`), so the new
   `.msi` major-upgrades the old one: `Program Files\Piwi Dashboard` is removed
   and the app installs in `Program Files\Piwi Desktop`.
 - **`.exe`**: the install folder and the uninstall key follow the product name,
-  so `NSIS_HOOK_PREINSTALL` (`installer-hooks.nsh`) runs the former install's
-  uninstaller silently and in place, which keeps the app data, then makes again
-  the Start menu and desktop shortcuts it had (the updater's `/UPDATE` run makes
-  none) and writes back its start-on-login entry. A former install in a folder
-  of the user's choice is replaced by one in `%LOCALAPPDATA%\Piwi Desktop`.
+  so once the new files are in, `NSIS_HOOK_POSTINSTALL` (`installer-hooks.nsh`)
+  removes the former per-user install: the files its installer wrote, its
+  uninstall key, its own registry values and its shortcuts, which the updater's
+  `/UPDATE` run makes again under the new name. Its uninstaller is not run, since
+  it would delete the file associations the new install wrote. App data and the
+  start-on-login entry are left for the app. A failed install leaves the former
+  one in place, and one in a folder of the user's choice is replaced by one in
+  `%LOCALAPPDATA%\Piwi Desktop`. The `.exe` does not find a per-machine `.msi`
+  of the former name, as Tauri's installer finds only one of its own name: a
+  user who switches channels by hand uninstalls it from Windows' app list.
 - **`.deb` / `.rpm`**: the package is `piwi-desktop`, which `Conflicts` with and
   `Replaces` `piwi-dashboard` (`.rpm`: `Obsoletes`), so `dpkg -i`, `apt` and the
   updater's `dpkg` remove the old package and take over its files
@@ -371,3 +376,8 @@ app data folder, `settings.json`, the keychain service and the installer's
   At startup an installed build moves an entry left under Piwi Dashboard (a
   Windows `Run` value, a macOS LaunchAgent, a Linux `~/.config/autostart` file)
   to its own name, pointing at the running executable (`src-tauri/src/login_item.rs`).
+  It turns the new entry on only once the old one is gone, and removes an old
+  entry that is off (a `Run` value disabled in Task Manager) without turning
+  anything on. On macOS an entry is on while its LaunchAgent exists, so one the
+  user switched off in System Settings › Login Items comes back on under the new
+  name.

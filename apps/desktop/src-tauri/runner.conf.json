@@ -20,7 +20,10 @@
   },
   "bundle": {
     "fileAssociations": null,
-    "linux": null,
+    "linux": {
+      "deb": { "conflicts": null, "replaces": null },
+      "rpm": { "conflicts": null, "obsoletes": null }
+    },
     "windows": {
       "wix": {
         "upgradeCode": null

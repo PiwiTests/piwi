@@ -488,8 +488,8 @@ struct TrayStatusInner {
 }
 
 /// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
-/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
-/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`), and the installed product's
+/// (`productName` in `tauri.conf.json`), which the Start menu, the Dock and the app list show.
 pub(crate) const APP_NAME: &str = "Piwi Desktop";
 const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
@@ -1322,7 +1322,7 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
-/// The bundled Node's name (`externalBin`): `node` for the desktop app, `piwi-runner-node` for Piwi Runner
+/// The bundled Node's name (`externalBin`): `piwi-desktop-node` for the desktop app, `piwi-runner-node` for Piwi Runner
 /// (`runner.conf.json`). The Linux packages install it in `/usr/bin` under this name, so each app's has its own.
 pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "piwi-desktop-node" };
 

@@ -45,19 +45,25 @@ impl LoginEntry for AutoLaunch {
     }
 }
 
-/// Moves an entry that is on under the former name to the current one: the current entry is turned on first, so a
-/// failure leaves the former one in place to try again at the next start. Returns whether an entry moved.
+/// Moves an entry that is on under the former name to the current one. The current entry is turned on only once the
+/// former one is gone, so a former entry that cannot be removed (a Windows `Run` value under HKLM, a file the user
+/// cannot delete) never turns the current one back on after the user turned it off. A former entry that is off (a
+/// Windows value disabled in Task Manager) is removed and turns nothing on. Returns whether an entry moved.
 pub(crate) fn move_entry(
     former: &impl LoginEntry,
     current: &impl LoginEntry,
 ) -> Result<bool, String> {
     if !former.is_on()? {
+        former.turn_off()?;
         return Ok(false);
+    }
+    former.turn_off()?;
+    if former.is_on()? {
+        return Err("the former entry could not be removed".into());
     }
     if !current.is_on()? {
         current.turn_on()?;
     }
-    former.turn_off()?;
     Ok(true)
 }
 
@@ -103,6 +109,8 @@ mod tests {
     struct Entry {
         on: Cell<bool>,
         fails: bool,
+        stays: bool,
+        removed: Cell<bool>,
     }
 
     impl LoginEntry for Entry {
@@ -117,7 +125,10 @@ mod tests {
             Ok(())
         }
         fn turn_off(&self) -> Result<(), String> {
-            self.on.set(false);
+            self.removed.set(true);
+            if !self.stays {
+                self.on.set(false);
+            }
             Ok(())
         }
     }
@@ -125,7 +136,7 @@ mod tests {
     fn entry(on: bool) -> Entry {
         Entry {
             on: Cell::new(on),
-            fails: false,
+            ..Entry::default()
         }
     }
 
@@ -155,14 +166,32 @@ mod tests {
     }
 
     #[test]
-    fn a_current_entry_that_cannot_be_written_keeps_the_former_one() {
+    fn a_former_entry_that_stays_never_turns_the_current_one_on() {
+        let former = Entry {
+            stays: true,
+            ..entry(true)
+        };
+        let current = entry(false);
+        assert!(move_entry(&former, &current).is_err());
+        assert!(!current.on.get());
+    }
+
+    #[test]
+    fn a_former_entry_that_is_off_is_removed_and_turns_nothing_on() {
+        let (former, current) = (entry(false), entry(false));
+        assert_eq!(move_entry(&former, &current), Ok(false));
+        assert!(former.removed.get());
+        assert!(!current.on.get());
+    }
+
+    #[test]
+    fn a_current_entry_that_cannot_be_written_is_an_error() {
         let former = entry(true);
         let current = Entry {
             fails: true,
             ..entry(false)
         };
         assert!(move_entry(&former, &current).is_err());
-        assert!(former.on.get());
     }
 
     /// The Windows installers, the Linux packages and this module name the same former product.

@@ -235,26 +235,25 @@ FunctionEnd
 ; The app's earlier releases were installed as Piwi Dashboard: per user, in
 ; their own folder (%LOCALAPPDATA%\Piwi Dashboard by default) and under their
 ; own uninstall key, which this installer, named after the current product,
-; would leave beside the new install. So the install, by hand or by the
-; updater, first removes that one with its own uninstaller, run silently and in
-; place. That keeps the app's data: it lives under the `identifier`, which both
-; names share, and only the uninstaller's "delete app data" box, never ticked
-; in a silent run, removes it. It does remove the former shortcuts and the
-; start-on-login entry: the entry is written back for the app to move under the
-; current name at its next start (`login_item.rs`), and the shortcuts the
-; former install had are made again under the current name, which the updater's
-; own run would not make. A former install in another folder than the default
-; is replaced by one in the default folder of the current name.
+; would leave beside the new install. So once the new files are in, the
+; install, by hand or by the updater, removes that one: its files, its
+; uninstall key, its own values in its registry key and its shortcuts. A failed
+; install therefore leaves it in place.
+;
+; Its uninstaller is not run: it would delete the file associations the new
+; install has just written and the start-on-login entry. That entry stays for
+; the app to move under the current name at its next start (`login_item.rs`).
+; The app's data lives under the `identifier`, which both names share, and is
+; left alone. The shortcuts the former install had are made again under the
+; current name when the updater runs the install, which makes none.
 
 !define PIWI_FORMER_NAME "Piwi Dashboard"
 !define PIWI_FORMER_UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PIWI_FORMER_NAME}"
 !define PIWI_FORMER_DIRKEY "Software\${MANUFACTURER}\${PIWI_FORMER_NAME}"
-!define PIWI_RUNKEY "Software\Microsoft\Windows\CurrentVersion\Run"
 
 ; Tauri's app check and shortcut macros write $0 to $5 and $R0 to $R3, so what
 ; the removal keeps across them is in variables of its own.
 Var PiwiFormerDir ; the folder the former install went in
-Var PiwiFormerRun ; its start-on-login command, or empty
 Var PiwiFormerStartMenu
 Var PiwiFormerDesktop
 
@@ -264,48 +263,49 @@ Var PiwiFormerDesktop
   ReadRegStr $0 HKCU "${PIWI_FORMER_UNINSTKEY}" "UninstallString"
   ${If} $PiwiFormerDir != ""
   ${AndIf} $0 != ""
-  ${AndIf} $PiwiFormerDir != $INSTDIR
-  ${AndIf} ${FileExists} "$PiwiFormerDir\uninstall.exe"
     DetailPrint "Removing ${PIWI_FORMER_NAME} from $PiwiFormerDir, keeping its data."
+    ${If} $PiwiFormerDir != $INSTDIR
+      !insertmacro CheckIfAppIsRunning "$PiwiFormerDir\${MAINBINARYNAME}.exe" "${PIWI_FORMER_NAME}"
+      !insertmacro PIWI_STOP_SIDECAR "$PiwiFormerDir" "node"
+      ; Only the files its installer wrote, so a folder of the user's choice
+      ; keeps everything else.
+      Delete "$PiwiFormerDir\${MAINBINARYNAME}.exe"
+      Delete "$PiwiFormerDir\node.exe"
+      Delete "$PiwiFormerDir\uninstall.exe"
+      RMDir /r "$PiwiFormerDir\resources\app-server"
+      RMDir "$PiwiFormerDir\resources"
+      RMDir "$PiwiFormerDir"
+    ${EndIf}
     ${If} ${FileExists} "$SMPROGRAMS\${PIWI_FORMER_NAME}.lnk"
       StrCpy $PiwiFormerStartMenu 1
+      Delete "$SMPROGRAMS\${PIWI_FORMER_NAME}.lnk"
     ${EndIf}
     ${If} ${FileExists} "$DESKTOP\${PIWI_FORMER_NAME}.lnk"
       StrCpy $PiwiFormerDesktop 1
+      Delete "$DESKTOP\${PIWI_FORMER_NAME}.lnk"
     ${EndIf}
-    ReadRegStr $PiwiFormerRun HKCU "${PIWI_RUNKEY}" "${PIWI_FORMER_NAME}"
-    !insertmacro CheckIfAppIsRunning "$PiwiFormerDir\${MAINBINARYNAME}.exe" "${PIWI_FORMER_NAME}"
-    !insertmacro PIWI_STOP_SIDECAR "$PiwiFormerDir" "node"
-    ClearErrors
-    ExecWait '"$PiwiFormerDir\uninstall.exe" /S _?=$PiwiFormerDir' $0
-    ${If} ${Errors}
-    ${OrIf} $0 <> 0
-      DetailPrint "${PIWI_FORMER_NAME} could not be removed: it stays installed in $PiwiFormerDir."
-    ${Else}
-      ; Run in place, the uninstaller cannot delete itself or its folder.
-      Delete "$PiwiFormerDir\uninstall.exe"
-      RMDir "$PiwiFormerDir"
-      DeleteRegKey HKCU "${PIWI_FORMER_DIRKEY}"
-      DeleteRegKey /ifempty HKCU "Software\${MANUFACTURER}"
-    ${EndIf}
-    ${If} $PiwiFormerRun != ""
-      ReadRegStr $0 HKCU "${PIWI_RUNKEY}" "${PIWI_FORMER_NAME}"
-      ${IfThen} $0 == "" ${|} WriteRegStr HKCU "${PIWI_RUNKEY}" "${PIWI_FORMER_NAME}" $PiwiFormerRun ${|}
-    ${EndIf}
+    DeleteRegKey HKCU "${PIWI_FORMER_UNINSTKEY}"
+    ; The key may also hold the values of a per-machine install of the former
+    ; name (the .msi), which stay.
+    DeleteRegValue HKCU "${PIWI_FORMER_DIRKEY}" ""
+    DeleteRegValue HKCU "${PIWI_FORMER_DIRKEY}" "Installer Language"
+    DeleteRegKey /ifempty HKCU "${PIWI_FORMER_DIRKEY}"
   ${EndIf}
   Pop $0
 !macroend
 
 !macro PIWI_RESTORE_FORMER_SHORTCUTS
-  ${If} $PiwiFormerStartMenu == 1
-  ${AndIfNot} ${FileExists} "$SMPROGRAMS\${PRODUCTNAME}.lnk"
-    CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\${PRODUCTNAME}.lnk"
-  ${EndIf}
-  ${If} $PiwiFormerDesktop == 1
-  ${AndIfNot} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
-    CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+  ${If} $UpdateMode = 1
+    ${If} $PiwiFormerStartMenu == 1
+    ${AndIfNot} ${FileExists} "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+      CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+    ${EndIf}
+    ${If} $PiwiFormerDesktop == 1
+    ${AndIfNot} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
+      CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+    ${EndIf}
   ${EndIf}
 !macroend
 
@@ -315,11 +315,11 @@ Var PiwiFormerDesktop
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   !insertmacro PIWI_STOP_SIDECAR "$INSTDIR" "piwi-desktop-node"
-  !insertmacro PIWI_REMOVE_FORMER_INSTALL
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro PIWI_SAVE_PORT
+  !insertmacro PIWI_REMOVE_FORMER_INSTALL
   !insertmacro PIWI_RESTORE_FORMER_SHORTCUTS
 !macroend
 

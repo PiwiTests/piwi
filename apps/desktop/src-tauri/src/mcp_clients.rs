@@ -62,10 +62,10 @@ const PIWI_ENTRY_KEY: &str = "piwi-desktop";
 /// an entry only this app would have written (see `is_local_piwi_entry`).
 const LEGACY_ENTRY_KEY: &str = "piwi";
 
-/// The name of this app's executable, without an extension: what the command of an entry of ours ends in.
 /// The product names an AppImage file name of this app starts with, lowercase, without spaces, dashes or underscores:
 /// the product's, and for the desktop app also Piwi Dashboard, the product name its earlier releases installed under.
 const APP_PRODUCTS: &[&str] = if cfg!(feature = "runner") { &["piwirunner"] } else { &["piwidesktop", "piwidashboard"] };
+/// The name of this app's executable, without an extension: what the command of an entry of ours ends in.
 const APP_BINARY: &str = if cfg!(feature = "runner") { "piwi-runner" } else { "piwi-desktop" };
 
 /// Why no entry is written while the app runs from a place that does not last.

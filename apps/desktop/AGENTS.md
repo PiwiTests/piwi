@@ -146,8 +146,7 @@ shell and are feature-equivalent.
   keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
 - **The app is Piwi Desktop everywhere**: `productName`, `APP_NAME` in `lib.rs` and `DESKTOP_APP_NAME` in
   `shared/piwi-ecosystem.ts` (`apps/application/tests/unit/desktop-app-name.test.ts`). The `identifier` stays
-  `io.piwitests.dashboard`: the app data folder, the settings, the keychain service and the installer's `PIWI_APP_DATA`
-  derive from it.
+  `io.piwitests.dashboard`: the app data folder, the settings and the installer's `PIWI_APP_DATA` derive from it.
 - **Every installer upgrades an install of the former product name, Piwi Dashboard** ([how](README.md#from-piwi-dashboard-to-piwi-desktop)):
   the pinned `wix.upgradeCode`, the `.exe`'s `PIWI_REMOVE_FORMER_INSTALL` hook, the packages' `piwi-dashboard`
   relations, and the start-on-login move (`login_item.rs`, whose test holds the three to `FORMER_PRODUCT_NAME`). Never

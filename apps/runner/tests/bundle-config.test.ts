@@ -43,7 +43,13 @@ describe("Piwi Runner's merged bundle config", () => {
     expect(desktop.bundle.windows.wix.upgradeCode).toBeTruthy();
     expect(runner.bundle.windows.wix).not.toHaveProperty('upgradeCode');
     expect(desktop.bundle.linux.deb.replaces).toEqual(['piwi-dashboard']);
-    expect(runner.bundle).not.toHaveProperty('linux');
+    for (const [format, keys] of [
+      ['deb', ['conflicts', 'replaces']],
+      ['rpm', ['conflicts', 'obsoletes']],
+    ] as const) {
+      expect(desktop.bundle.linux[format]).toMatchObject(Object.fromEntries(keys.map((k) => [k, ['piwi-dashboard']])));
+      for (const key of keys) expect(runner.bundle.linux?.[format] ?? {}).not.toHaveProperty(key);
+    }
   });
 
   test('answers piwi-runner links alone, and the desktop app keeps piwi', () => {

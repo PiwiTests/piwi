@@ -27,8 +27,8 @@ permissions:
   contents: read
 
 # The release's file names: "Piwi-Desktop_<version>_<arch>[-setup].<ext>", the name the app goes by, beside Piwi
-# Runner's "Piwi-Runner_…". Only the uploaded assets take it: the installed product keeps tauri.conf.json's productName,
-# which the MSI's upgrade code, the install folders and the macOS app bundle are derived from. latest.json follows it.
+# Runner's "Piwi-Runner_…". Only the uploaded assets take it: the install folders and the macOS app bundle follow
+# tauri.conf.json's productName, and the MSI's upgrade code is pinned there (wix.upgradeCode). latest.json follows it.
 env:
   ASSET_NAME_PATTERN: 'Piwi-Desktop_[version]_[arch][setup][ext]'
 
