@@ -20,7 +20,7 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 
 const { createConnection } = await import('../../server/utils/integrations/connections');
 const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
-const { linkDeclaredIssues, MAX_DECLARED_KEYS_PER_RUN } =
+const { linkDeclaredIssues, MAX_DECLARED_KEYS_PER_RUN, unreturnedKeys } =
   await import('../../server/utils/integrations/declared-issues');
 const { syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { getClusterTrackerLink, getClusterKnownIssue } = await import('../../server/utils/integrations/known-issue');
@@ -248,6 +248,7 @@ beforeEach(async () => {
   lookups = [];
   jiraDown = false;
   lookupHangs = false;
+  unreturnedKeys.deleteWhere(() => true);
   await bind();
 });
 
@@ -360,6 +361,59 @@ describe('the link step', () => {
     expect(lookups).toHaveLength(1);
     expect(lookups[0]).toHaveLength(MAX_DECLARED_KEYS_PER_RUN);
     expect(lookups[0]![0]).toBe('PROJ-60');
+  });
+
+  test('keys Jira never returns are asked after the others, so a real key past the budget is reached', async () => {
+    const cluster = await newCluster();
+    const unknown = Array.from({ length: MAX_DECLARED_KEYS_PER_RUN }, (_, i) => `PROJ-${i + 1}`);
+    defineIssue('PROJ-999');
+    const named = [...unknown, 'PROJ-999'];
+    // A test names 10 issues at most.
+    const executions = () =>
+      Array.from({ length: Math.ceil(named.length / 10) }, (_, i) => ({
+        cluster,
+        issues: named.slice(i * 10, i * 10 + 10),
+      }));
+
+    const first = await failRun(executions());
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(lookups[0]).not.toContain('PROJ-999');
+    expect(await links(cluster)).toEqual([]);
+
+    const second = await failRun(executions());
+    await linkDeclaredIssues(dbc, second.runId);
+    expect(lookups[1]![0]).toBe('PROJ-999');
+    expect(lookups[1]).toHaveLength(MAX_DECLARED_KEYS_PER_RUN);
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-999']);
+  });
+
+  test('a remembered key is still asked when there is room, and forgotten once Jira returns it', async () => {
+    const cluster = await newCluster();
+    const first = await failRun([{ cluster, issues: ['PROJ-30'] }]);
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(lookups).toEqual([['PROJ-30']]);
+
+    defineIssue('PROJ-30');
+    const second = await failRun([{ cluster, issues: ['PROJ-30'] }]);
+    await linkDeclaredIssues(dbc, second.runId);
+    expect(lookups).toEqual([['PROJ-30'], ['PROJ-30']]);
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-30']);
+    expect(unreturnedKeys.size).toBe(0);
+  });
+
+  test('a failed lookup remembers nothing, and another project or connection is remembered apart', async () => {
+    const cluster = await newCluster();
+    jiraDown = true;
+    const first = await failRun([{ cluster, issues: ['PROJ-31'] }]);
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(unreturnedKeys.size).toBe(0);
+
+    jiraDown = false;
+    const second = await failRun([{ cluster, issues: ['PROJ-31'] }]);
+    await linkDeclaredIssues(dbc, second.runId);
+    expect(unreturnedKeys.get(`${connectionId}:PROJ:PROJ-31`)).toBe(true);
+    expect(unreturnedKeys.get(`${connectionId + 1}:PROJ:PROJ-31`)).toBeUndefined();
+    expect(unreturnedKeys.get(`${connectionId}:OTHER:PROJ-31`)).toBeUndefined();
   });
 
   test('a passing or skipped execution names nothing', async () => {

@@ -8,6 +8,7 @@
  */
 import type { DbClient } from '../../database';
 import { linkNamedIssues, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
+import { TtlCache } from '../ttl-cache';
 import { readProjectIntegration } from './binding';
 import { createTracker } from './connections';
 import { loadTrackerRun, runDrivesWrites } from './tracker-run';
@@ -21,6 +22,12 @@ export {
 
 /** How long the whole step may take, from its start, before it is aborted, writing nothing more. */
 export const DECLARED_LINKS_TIMEOUT_MS = 10_000;
+
+/**
+ * The keys Jira did not return, by connection, project and key, for a day: a later lookup asks about them after the
+ * keys it has not yet found missing. A key a lookup returns is forgotten.
+ */
+export const unreturnedKeys = new TtlCache<true>(24 * 60 * 60 * 1000, 5000);
 
 /**
  * The link step: run at finalize for a run the `tracker` use and the binding's run scope admit, on a project bound to
@@ -47,6 +54,7 @@ export async function linkDeclaredIssues(
     projectKey,
     connectionId: binding.connectionId,
     tracker: tracker as typeof tracker & Required<Pick<typeof tracker, 'getIssues'>>,
+    unreturned: unreturnedKeys,
     deadline,
   });
 }

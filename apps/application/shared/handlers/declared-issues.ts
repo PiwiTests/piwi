@@ -59,19 +59,28 @@ interface ClusterState {
   candidates: string[];
 }
 
+/** The keys a lookup did not return, remembered for a while; a `TtlCache<true>` fits. */
+export interface UnreturnedKeys {
+  get(key: string): true | undefined;
+  set(key: string, value: true): void;
+  delete(key: string): void;
+}
+
 /** The connection the step reads through: the bound one on the server, a canned one in the demo. */
 export interface DeclaredIssuesLookup {
   projectKey: string;
   connectionId: number | null;
   tracker: Pick<IssueTracker, 'parseIssueUrl'> & Required<Pick<IssueTracker, 'getIssues'>>;
+  /** The keys earlier lookups of this connection and project did not return; the demo passes none. */
+  unreturned?: UnreturnedKeys;
   /** Aborts the step; once it fires nothing more is written. */
   deadline: AbortSignal;
 }
 
 /**
  * Links the run's failing tests' named issues to their clusters: one bulk lookup for at most
- * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first, leaving out a key a cluster
- * already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
+ * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first and the keys earlier lookups did
+ * not return last, leaving out a key a cluster already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
  * the keys it names and does not link, and to 0 for a failing cluster that names none this run.
  *
  * The writes come after the lookup, each only while the deadline has not fired: once it fires the lookup is aborted
@@ -80,7 +89,7 @@ export interface DeclaredIssuesLookup {
 export async function linkNamedIssues(
   db: DrizzleDB,
   runId: number,
-  { projectKey, connectionId, tracker, deadline }: DeclaredIssuesLookup,
+  { projectKey, connectionId, tracker, unreturned, deadline }: DeclaredIssuesLookup,
 ): Promise<DeclaredLinksResult> {
   const result: DeclaredLinksResult = { looked: [], linked: [] };
   if (deadline.aborted) return { ...result, failed: 'deadline' };
@@ -88,7 +97,8 @@ export async function linkNamedIssues(
   const unnamed = failing.filter((id) => !clusters.has(id));
   if (clusters.size === 0 && unnamed.length === 0) return { ...result, skipped: 'nothing-named' };
 
-  const keys = pickLookupKeys(clusters);
+  const memory = (key: string) => `${connectionId ?? ''}:${projectKey}:${key}`;
+  const keys = pickLookupKeys(clusters, (key) => unreturned?.get(memory(key)) === true);
   result.looked = keys;
   let found: TrackerIssue[] = [];
   if (keys.length > 0) {
@@ -101,6 +111,13 @@ export async function linkNamedIssues(
     }
   }
   if (deadline.aborted) return { ...result, failed: 'deadline' };
+  if (unreturned) {
+    const returned = new Set(found.map((issue) => issue.key));
+    for (const key of keys) {
+      if (returned.has(key)) unreturned.delete(memory(key));
+      else unreturned.set(memory(key), true);
+    }
+  }
 
   // An issue counts only under the key the test named and in the bound project.
   const asked = new Set(keys);
@@ -245,10 +262,10 @@ async function readClusterStates(
 }
 
 /**
- * The keys to look up: those of the clusters below the cap, the ones the most failing tests name first, at most
- * {@link MAX_DECLARED_KEYS_PER_RUN}.
+ * The keys to look up: those of the clusters below the cap, the keys `wasUnreturned` last and then the ones the most
+ * failing tests name first, at most {@link MAX_DECLARED_KEYS_PER_RUN}.
  */
-function pickLookupKeys(clusters: Map<number, ClusterState>): string[] {
+function pickLookupKeys(clusters: Map<number, ClusterState>, wasUnreturned: (key: string) => boolean): string[] {
   const tests = new Map<string, Set<number>>();
   for (const state of clusters.values()) {
     if (state.declared >= MAX_DECLARED_LINKS_PER_CLUSTER) continue;
@@ -259,7 +276,8 @@ function pickLookupKeys(clusters: Map<number, ClusterState>): string[] {
     }
   }
   return [...tests]
-    .sort(([a, x], [b, y]) => y.size - x.size || a.localeCompare(b))
+    .map(([key, naming]) => ({ key, count: naming.size, unreturned: wasUnreturned(key) }))
+    .sort((a, b) => Number(a.unreturned) - Number(b.unreturned) || b.count - a.count || a.key.localeCompare(b.key))
     .slice(0, MAX_DECLARED_KEYS_PER_RUN)
-    .map(([key]) => key);
+    .map((entry) => entry.key);
 }
