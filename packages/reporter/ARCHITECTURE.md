@@ -575,9 +575,18 @@ What the package does to a user's run, process by process.
   runner's growing files with `lane-layers.ts`' `TraceTail` (`attemptFiles`: each `.trace`
   and its `.network`), from their start as Inspect opens; where it does not, it starts a live
   trace of its own (`context.tracing.start({ name: 'piwi-inspect-…', snapshots: true, live:
-  true })` through `internalCall`, in the tracing's `_tracesDir`), stops it unsaved as Inspect
-  closes and deletes its `.trace`, `.network` and `.stacks`. `instrumentContext` hands the test
-  `context.tracing` behind a proxy (`guardTracing`) whose `start` stops Piwi's trace first.
+  true })` through `internalCall`, in the tracing's `_tracesDir`), listing the folder's
+  `resources/` first. As Inspect closes, it stops the trace unsaved, deletes its `.trace`,
+  `.network` and `.stacks`, and each file of `resources/` that appeared since and that no
+  other `.trace` or `.network` file of the folder names (none when one cannot be read), taking
+  each out of the context's server tracing's `_allResources` (through
+  `context._connection.toImpl`, feature-checked) so a later trace of the context writes it
+  again; where that set cannot be reached, it deletes them as the context closes. Playwright's
+  snapshot script, which the trace added to the context, stays in its later documents.
+  `instrumentContext` hands the test `context.tracing` behind a proxy (`guardTracing`) whose
+  `start`, `startChunk`, `stop` and `stopChunk` wait for Piwi's trace (registered before its
+  start goes) to start, stop it, and go once it stopped; from the test's `start` to its
+  `stop`, Piwi starts none, and an Inspect whose trace the test took says why to its viewers.
 - `TraceTail.read()` returns a file's new lines in order, each line longer than its bound a
   gap in its place (`TraceGap`, its head), so Inspect numbers each snapshot of the watched page
   in its frame as Playwright does. It keeps each frame's chain since its full snapshot for the

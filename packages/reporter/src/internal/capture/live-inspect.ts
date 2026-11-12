@@ -46,9 +46,11 @@ import { callMethod, internalCall } from './quiet-capture.js';
  *   `lane-layers.ts` reads (`attemptFiles`), each `.trace` beside its `.network`, read with its `TraceTail` from their
  *   start as Inspect opens, then as they grow. Nothing is written, nor any option of the runner's trace changed. When
  *   it does not, a live trace of Piwi's own (`context.tracing.start({ snapshots: true, live: true })` through an internal
- *   call, feature-checked) from as Inspect opens, stopped unsaved as it closes, its files deleted; a test that starts
- *   tracing itself meanwhile gets it, Piwi's stopped first (`guardTracing`). A runner's trace that takes no snapshots,
- *   or a page Piwi cannot trace, sends why in place of a snapshot.
+ *   call, feature-checked) from as Inspect opens, stopped unsaved as it closes, its files deleted, and each file of the
+ *   folder's `resources/` it wrote that no other trace there names (`removeOwnTrace`). A test that starts tracing
+ *   itself meanwhile gets it (`guardTracing`): its call waits for Piwi's trace to start, stops it, and goes once it
+ *   stopped; the viewers hear why no more comes. A runner's trace that takes no DOM snapshots, or a page Piwi cannot
+ *   trace, sends why in place of a snapshot.
  * - **What goes.** Once the reads caught up with the trace, the watched page's snapshots since its last navigation (the
  *   main frame's last full one onward, of every frame), `MAX_SNAPSHOT_BACKLOG` bytes at most (past them, the oldest of
  *   those after a frame's full one left out, never a full one), then each new one, in the trace's order, each numbered
@@ -91,15 +93,19 @@ const MAX_BUDGET_WAIT_MS = 1000;
 const MAX_RESOURCE_LIST = 32 * 1024;
 /** How deep stylesheets are followed through their imports for the resources they name. */
 const CSS_DEPTH = 3;
+/** The bytes of a trace file read at once, as one is searched for the resources it names. */
+const SEARCH_CHUNK = 1024 * 1024;
 
 /** Why no snapshot goes, as a viewer reads it. */
 export const INSPECT_MASKED =
   'This project masks elements: Inspect sends no page of it, since a snapshot cannot hide what its masks name.';
 export const INSPECT_UNREAD_MASKS =
   'Inspect sends no page: the project masks elements this reporter cannot read. Update the Piwi reporter.';
+export const INSPECT_TRACES_ITSELF =
+  'This test traces itself, and a context has one trace: Inspect has no page of it while the test’s own trace runs. Open Inspect again once it stopped.';
 const NO_SNAPSHOTS =
   "Inspect has no page to show: this project's trace takes no DOM snapshots (its trace option's snapshots, or their dom, is off).";
-const NO_TRACE = 'Inspect cannot trace this page: the test traces it itself, or its browser keeps no trace folder.';
+const NO_TRACE = 'Inspect cannot trace this page: its browser keeps no trace folder, or its trace did not start.';
 /** Why a page's snapshots stop until its next navigation, as a viewer reads it. */
 const UNREAD_SECRETS = 'The page is not sent: its secret fields could not be read, so Inspect could not hide them.';
 const UNREAD_SNAPSHOT =
@@ -133,24 +139,33 @@ export class LiveByteBudget {
   }
 }
 
-/** Piwi's own live trace of a context, while Inspect has it open. */
+/** Piwi's own live trace of a context, from the call that starts it until its stop settles. */
 interface OwnTrace {
-  context: BrowserContext;
-  tracing: Tracing;
   dir: string;
   name: string;
-  /** Stops it unsaved and deletes its files; once. */
-  stop: () => Promise<void>;
+  /** Whether it started, once its start settled. */
+  started: Promise<boolean>;
+  /** Whether the test's own trace took its place. */
+  taken: boolean;
+  /** Told once as the test's own trace takes its place. */
+  onTaken: (() => void) | null;
+  /** Stop it unsaved and delete what it wrote, once its start settled; `byTest` as the test's own trace takes over. */
+  stop: (byTest?: boolean) => Promise<void>;
 }
 
 type Tracing = BrowserContext['tracing'] & { _tracesDir?: unknown };
 
 /** Each context's tracing as Playwright made it, for the guard `guardTracing` handed the test in its place. */
 const REAL_TRACINGS = new WeakMap<object, Tracing>();
-/** Piwi's own live trace of each context that runs one. */
+/** Piwi's own live trace of each context that runs one, from the call that starts it until its stop settles. */
 const OWN_TRACES = new WeakMap<BrowserContext, OwnTrace>();
+/** The contexts whose tracing the test started and has not stopped: Piwi starts no trace of its own there. */
+const TEST_TRACES = new WeakSet<BrowserContext>();
 /** How many own traces were started: each one's name is new. */
 let ownTraces = 0;
+
+/** The test's calls on its context's tracing that wait for Piwi's own trace to stop first. */
+const TRACING_CALLS: ReadonlySet<string | symbol> = new Set(['start', 'startChunk', 'stop', 'stopChunk']);
 
 /** The context's tracing as Playwright made it, behind the guard the test is handed. */
 function tracingOf(context: BrowserContext): Tracing | null {
@@ -160,8 +175,10 @@ function tracingOf(context: BrowserContext): Tracing | null {
 }
 
 /**
- * Hand the test `context.tracing` behind a guard: its `start` first stops Piwi's own trace of the context, unsaved,
- * so the test's own goes through. Every other call goes to the tracing as it is.
+ * Hand the test `context.tracing` behind a guard: its `start`, `startChunk`, `stop` and `stopChunk` first stop Piwi's
+ * own trace of the context, unsaved, whether it starts, runs or stops now, and go once it stopped, so the test's own
+ * goes through; from the test's `start` to its `stop`, Piwi starts no trace of the context. Every other call goes to
+ * the tracing as it is.
  */
 export function guardTracing(context: BrowserContext): void {
   const own = (context as unknown as { tracing?: unknown }).tracing;
@@ -170,10 +187,23 @@ export function guardTracing(context: BrowserContext): void {
     get(target, prop) {
       const value = Reflect.get(target, prop) as unknown;
       if (typeof value !== 'function') return value;
-      if (prop !== 'start') return (...args: unknown[]) => callMethod(target, prop, args);
+      if (!TRACING_CALLS.has(prop)) return (...args: unknown[]) => callMethod(target, prop, args);
       return (...args: unknown[]) => {
+        if (prop === 'start') TEST_TRACES.add(context);
         const piwi = OWN_TRACES.get(context);
-        return piwi ? piwi.stop().then(() => callMethod(target, prop, args)) : callMethod(target, prop, args);
+        const call = (): unknown => callMethod(target, prop, args);
+        const result = piwi ? piwi.stop(true).then(call) : call();
+        if (prop !== 'start' && prop !== 'stop') return result;
+        return Promise.resolve(result).then(
+          (value: unknown) => {
+            if (prop === 'stop') TEST_TRACES.delete(context);
+            return value;
+          },
+          (error: unknown) => {
+            TEST_TRACES.delete(context);
+            throw error;
+          },
+        );
       };
     },
   });
@@ -185,16 +215,134 @@ export function guardTracing(context: BrowserContext): void {
   }
 }
 
+/** The files of a trace folder's `resources/`; none when it cannot be read. */
+async function resourceFiles(dir: string): Promise<Set<string>> {
+  try {
+    return new Set(await fs.readdir(path.join(dir, 'resources')));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Those of `names` that `file` holds, added to `found`; false when it cannot be read. */
+async function namesIn(file: string, names: ReadonlySet<string>, found: Set<string>): Promise<boolean> {
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(file, 'r');
+  } catch {
+    return false;
+  }
+  try {
+    const overlap = Math.max(...[...names].map((name) => name.length));
+    let tail = Buffer.alloc(0);
+    for (let at = 0; ;) {
+      const chunk = Buffer.alloc(SEARCH_CHUNK);
+      const { bytesRead } = await handle.read(chunk, 0, SEARCH_CHUNK, at);
+      if (bytesRead === 0) return true;
+      at += bytesRead;
+      const text = Buffer.concat([tail, chunk.subarray(0, bytesRead)]);
+      for (const name of names) if (!found.has(name) && text.includes(name)) found.add(name);
+      if (found.size === names.size) return true;
+      tail = text.subarray(Math.max(0, text.length - overlap));
+    }
+  } catch {
+    return false;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/**
+ * The resources the server's tracing of the context wrote, by `resources/<name>` (Playwright internal, in-process
+ * alone, feature-checked): one taken out of it is written again by a later trace of the context that names it.
+ */
+function writtenResources(context: BrowserContext): Set<string> | null {
+  const connection = (context as unknown as { _connection?: { toImpl?: unknown } })._connection;
+  if (typeof connection?.toImpl !== 'function') return null;
+  try {
+    const impl = (connection.toImpl as (object: unknown) => unknown)(context) as { tracing?: unknown } | null;
+    const written = (impl?.tracing as { _allResources?: unknown } | undefined)?._allResources;
+    return written instanceof Set ? (written as Set<string>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete what Piwi's own trace `name` wrote in `dir`: its `.trace`, `.network` and `.stacks`, and each file of
+ * `resources/` that is not one of `before` (there as it started) and that no other `.trace` or `.network` file of the
+ * folder names, none when one of them cannot be read. The context's tracing is told to write each again, so a later
+ * trace of it that names one holds it; where it cannot be told, they go as the context closes (at once when it closed).
+ */
+async function removeOwnTrace(context: BrowserContext, dir: string, name: string, before: Set<string>): Promise<void> {
+  for (const ext of ['.trace', '.network', '.stacks']) {
+    await fs.rm(path.join(dir, `${name}${ext}`), { force: true }).catch(() => undefined);
+  }
+  const remove = async (): Promise<void> => {
+    const added = new Set([...(await resourceFiles(dir))].filter((file) => !before.has(file) && isResourceSha1(file)));
+    if (!added.size) return;
+    const named = new Set<string>();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!/\.(?:trace|network)$/.test(entry) || entry.startsWith(`${name}.`)) continue;
+      if (!(await namesIn(path.join(dir, entry), added, named))) return;
+    }
+    const written = writtenResources(context);
+    for (const file of added) {
+      if (named.has(file)) continue;
+      await fs.rm(path.join(dir, 'resources', file), { force: true }).catch(() => undefined);
+      written?.delete(`resources/${file}`);
+    }
+  };
+  const closed = (context as unknown as { _closingStatus?: unknown })._closingStatus === 'closed';
+  if (closed || writtenResources(context)) await remove();
+  else context.once('close', () => void remove().catch(() => undefined));
+}
+
 /**
  * Start Piwi's own live trace of `context`, through an internal call: in the browser's trace folder, named for it
- * alone, DOM snapshots alone. `busy` when the context traces already (the runner, or the test itself); null when its
- * tracing has no trace folder, or did not start.
+ * alone, DOM snapshots alone, once a trace of Piwi's that stops there stopped. `busy` when the context traces already
+ * (the runner), `test` while the test's own trace runs; null when its tracing has no trace folder, or did not start.
  */
-async function startOwnTrace(context: BrowserContext): Promise<OwnTrace | 'busy' | null> {
+async function startOwnTrace(context: BrowserContext): Promise<OwnTrace | 'busy' | 'test' | null> {
+  await OWN_TRACES.get(context)?.stop();
+  if (TEST_TRACES.has(context)) return 'test';
+  if (OWN_TRACES.has(context)) return 'busy';
   const tracing = tracingOf(context);
   const dir = tracing?._tracesDir;
   if (!tracing || typeof tracing.start !== 'function' || typeof dir !== 'string' || !dir) return null;
   const name = `piwi-inspect-${process.pid}-${++ownTraces}`;
+  let settle: (started: boolean) => void = () => undefined;
+  const started = new Promise<boolean>((resolve) => (settle = resolve));
+  let before = new Set<string>();
+  let stopping: Promise<void> | null = null;
+  const own: OwnTrace = {
+    dir,
+    name,
+    started,
+    taken: false,
+    onTaken: null,
+    stop: (byTest = false) => {
+      if (byTest && !stopping) {
+        own.taken = true;
+        own.onTaken?.();
+      }
+      return (stopping ??= (async () => {
+        if (await started) {
+          await internalCall(context, () => tracing.stop()).catch(() => undefined);
+          await removeOwnTrace(context, dir, name, before).catch(() => undefined);
+        }
+        if (OWN_TRACES.get(context) === own) OWN_TRACES.delete(context);
+      })());
+    },
+  };
+  // From here, a test's own call on the tracing waits for this trace to settle and stop.
+  OWN_TRACES.set(context, own);
   const start = (live: boolean) =>
     internalCall(context, () =>
       tracing.start({ name, snapshots: true, screenshots: false, ...(live ? { live: true } : {}) } as Parameters<
@@ -202,31 +350,21 @@ async function startOwnTrace(context: BrowserContext): Promise<OwnTrace | 'busy'
       >[0]),
     );
   try {
+    before = await resourceFiles(dir);
+    if (stopping) throw new Error('stopped');
     await start(true).catch((error: unknown) => {
       // A Playwright that does not take `live` still writes the trace as it goes.
       if (/live/i.test(String(error)) && !/already/i.test(String(error))) return start(false);
       throw error;
     });
+    settle(true);
+    return own;
   } catch (error) {
+    settle(false);
+    await own.stop();
+    if (own.taken || TEST_TRACES.has(context)) return 'test';
     return /already/i.test(String(error)) ? 'busy' : null;
   }
-  let stopping: Promise<void> | null = null;
-  const own: OwnTrace = {
-    context,
-    tracing,
-    dir,
-    name,
-    stop: () =>
-      (stopping ??= (async () => {
-        if (OWN_TRACES.get(context) === own) OWN_TRACES.delete(context);
-        await internalCall(context, () => tracing.stop()).catch(() => undefined);
-        for (const ext of ['.trace', '.network', '.stacks']) {
-          await fs.rm(path.join(dir, `${name}${ext}`), { force: true }).catch(() => undefined);
-        }
-      })()),
-  };
-  OWN_TRACES.set(context, own);
-  return own;
 }
 
 /** A resource the trace recorded: its file under `resources/` and its content type, if Inspect may send it. */
@@ -316,8 +454,11 @@ export class LiveInspect {
     if (masks === null) return void this.refuse(INSPECT_UNREAD_MASKS);
     if (masks.length) return void this.refuse(INSPECT_MASKED);
     const source = await this.findSource().catch(() => null);
-    if (this.closed) return void (typeof source === 'object' ? source?.own?.stop() : undefined);
+    const own = typeof source === 'object' ? (source?.own ?? null) : null;
+    if (this.closed) return void own?.stop();
     if (typeof source === 'string' || !source) return void this.refuse(source ?? NO_TRACE);
+    if (own?.taken) return void this.refuse(INSPECT_TRACES_ITSELF);
+    if (own) own.onTaken = () => this.taken();
     this.source = source;
     this.schedule(0);
   }
@@ -341,6 +482,12 @@ export class LiveInspect {
     this.chainSizes.clear();
   }
 
+  /** The test's own trace took the context's tracing from Piwi's: the viewers hear why nothing more comes. */
+  private taken(): void {
+    this.refuse(INSPECT_TRACES_ITSELF);
+    this.halt();
+  }
+
   private refuse(why: string): void {
     if (this.closed) return;
     void this.link.post(encodeLiveMessage(liveSnapshotRefusalHeader(this.link.id, why, this.link.test())));
@@ -361,11 +508,11 @@ export class LiveInspect {
       return runnerSource(runner.dir, runner.base);
     }
     const own = await startOwnTrace(this.page.context());
-    if (own && own !== 'busy') {
+    if (own && typeof own === 'object') {
       return { dir: own.dir, files: async () => [path.join(own.dir, `${own.name}.trace`)], own };
     }
-    if (own === 'busy' && traced === null && runner) return runnerSource(runner.dir, runner.base);
-    return null;
+    if (own !== null && traced === null && runner) return runnerSource(runner.dir, runner.base);
+    return own === 'test' ? INSPECT_TRACES_ITSELF : null;
   }
 
   private schedule(wait: number): void {

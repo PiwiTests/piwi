@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import { createRequire } from 'node:module';
@@ -12,6 +13,7 @@ import {
   type LiveWorkerPost,
   type LiveWorkerSnapshot,
 } from '@piwitests/core/live-view';
+import { INSPECT_TRACES_ITSELF } from '../src/internal/capture/live-inspect.js';
 import { jsonRes, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
@@ -20,7 +22,8 @@ import { jsonRes, startServer, type FakeServer, withoutCi } from './_helpers.js'
  * page's snapshots since its last navigation, then each new call's, each stylesheet, font and image they name once and
  * never a script nor an SVG, never a secret the test typed or the page showed; nothing once Inspect closes, and why
  * none goes while the project masks elements. A project the runner does not trace: Piwi's own live trace while
- * Inspect is open, stopped and deleted as it closes, and the test's own `tracing.start` going through meanwhile.
+ * Inspect is open, stopped and deleted as it closes, the response bodies it wrote with it, and the test's own
+ * `tracing.start` going through meanwhile, whether Piwi's trace starts, runs or stops, its archive whole.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -32,6 +35,9 @@ const SECRET = 'S3cr3t!Pw-9x';
 const CARD = '4111111111111111';
 const CSRF = 'q8Zt3kPLm2xR';
 const LINK_TOKEN = 'rT5vB2nQ9wLk';
+const TOKEN_BODY = '{"accessToken":"tok-S3CRET-123"}';
+/** The file Playwright writes the token's response body to under a trace folder's `resources/`. */
+const TOKEN_FILE = `${createHash('sha1').update(TOKEN_BODY).digest('hex')}.json`;
 const requireHere = createRequire(import.meta.url);
 
 const SHOP = `<!doctype html><html><head><meta charset="utf-8"><title>shop</title>
@@ -68,6 +74,7 @@ const ASSETS: Record<string, { type: string; body: string | Buffer }> = {
   '/icon.svg': { type: 'image/svg+xml', body: SVG },
   '/font.woff2': { type: 'font/woff2', body: Buffer.from('wOF2 not really a font') },
   '/fake.png': { type: 'image/png', body: SVG },
+  '/token.json': { type: 'application/json', body: TOKEN_BODY },
 };
 
 const TRACED = (base: string) => `const { test } = require('../fixture.cjs');
@@ -99,30 +106,79 @@ test('traced', async ({ page }) => {
 `;
 
 const OWN = (base: string) => `const fs = require('node:fs');
+const path = require('node:path');
 const { test, expect } = require('../fixture.cjs');
 const own = (context) => fs.readdirSync(context.tracing._tracesDir).filter((name) => name.startsWith('piwi-inspect-'));
+const resources = (context) => {
+  try {
+    return fs.readdirSync(path.join(context.tracing._tracesDir, 'resources')).sort();
+  } catch {
+    return [];
+  }
+};
+const token = () => fetch('/token.json', { cache: 'no-store' }).then((response) => response.text());
 const tell = (what, value) => fetch('${base}/m/own/' + what + '?value=' + encodeURIComponent(JSON.stringify(value)));
 test('own', async ({ page, context }, testInfo) => {
   await page.goto('${base}/shop');
   await fetch('${base}/m/own/watch');
+  await tell('resources-before', resources(context));
   await fetch('${base}/m/own/inspect');
   await page.waitForTimeout(1200);
+  await page.evaluate(token);
   await page.locator('#pw').fill('${SECRET}');
   await page.locator('#go').click();
   await page.waitForTimeout(1500);
   await tell('while-open', own(context));
+  await tell('resources-open', resources(context));
   await fetch('${base}/m/own/uninspect');
   await page.waitForTimeout(800);
   await tell('after-close', own(context));
+  await tell('resources-after', resources(context));
   await fetch('${base}/m/own/inspect');
   await page.waitForTimeout(1200);
   await tell('reopened', own(context));
   await context.tracing.start({ snapshots: true });
+  await page.evaluate(token);
   await page.locator('#go').click();
   const archive = testInfo.outputPath('mine.zip');
   await context.tracing.stop({ path: archive });
-  await tell('mine', { saved: fs.existsSync(archive), own: own(context) });
+  const saved = fs.existsSync(archive);
+  await tell('mine', { saved, own: own(context), token: saved && fs.readFileSync(archive).includes('${TOKEN_FILE}') });
   await fetch('${base}/m/own/unwatch');
+});
+`;
+
+/** The test's own trace started and stopped as Piwi's own trace starts and as it stops, each step a few ms apart. */
+const RACE = (base: string) => `const { test } = require('../fixture.cjs');
+test('race', async ({ page, context }) => {
+  await page.goto('${base}/shop');
+  await fetch('${base}/m/race/watch');
+  const errors = [];
+  const own = async (side, i) => {
+    try {
+      await context.tracing.start({ snapshots: true });
+      await context.tracing.stop();
+    } catch (error) {
+      errors.push(side + ' ' + i + ': ' + String(error.message).split('\\n')[0]);
+    }
+  };
+  for (let i = 0; i < 5; i++) {
+    await fetch('${base}/m/race/inspect');
+    await page.waitForTimeout(900);
+    await fetch('${base}/m/race/uninspect');
+    await new Promise((resolve) => setTimeout(resolve, i * 4));
+    await own('as it stops', i);
+  }
+  for (let i = 0; i < 5; i++) {
+    await fetch('${base}/m/race/inspect');
+    await new Promise((resolve) => setTimeout(resolve, i * 4));
+    await own('as it starts', i);
+    await page.waitForTimeout(600);
+    await fetch('${base}/m/race/uninspect');
+    await page.waitForTimeout(600);
+  }
+  await fetch('${base}/m/race/report?value=' + encodeURIComponent(JSON.stringify(errors)));
+  await fetch('${base}/m/race/unwatch');
 });
 `;
 
@@ -174,10 +230,10 @@ beforeAll(async () => {
     const route = url.pathname;
     const asset = ASSETS[route];
     if (asset) {
-      res.writeHead(200, { 'content-type': asset.type });
+      res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
       return res.end(asset.body);
     }
-    const at = /^\/m\/(traced|own)\/([a-z-]+)$/.exec(route);
+    const at = /^\/m\/(traced|own|race)\/([a-z-]+)$/.exec(route);
     if (at) {
       const [, test, name] = at as unknown as [string, string, string];
       testNow = test;
@@ -231,6 +287,7 @@ beforeAll(async () => {
   });
   write('tests/traced.spec.cjs', TRACED(server.url));
   write('tests/own.spec.cjs', OWN(server.url));
+  write('tests/race.spec.cjs', RACE(server.url));
   write(
     'fixture.cjs',
     `const { test: base, expect } = require('@playwright/test');
@@ -253,6 +310,7 @@ module.exports = wrapConfig(defineConfig({
   projects: [
     { name: 'traced', testMatch: 'traced.spec.cjs', use: { trace: 'on' } },
     { name: 'own', testMatch: 'own.spec.cjs', use: { trace: 'off' }, dependencies: ['traced'] },
+    { name: 'race', testMatch: 'race.spec.cjs', use: { trace: 'off' }, dependencies: ['own'] },
   ],
 }), { serverUrl: ${JSON.stringify(server.url)}, projectName: 'live-view-inspect-spec', streamingBatchDelay: 50 });
 `,
@@ -267,7 +325,7 @@ module.exports = wrapConfig(defineConfig({
     execFile(
       process.execPath,
       [requireHere.resolve('@playwright/test/cli'), 'test'],
-      { cwd: project, env, timeout: 150_000 },
+      { cwd: project, env, timeout: 200_000 },
       (error, stdout, stderr) => {
         run = { exitCode: error ? ((error as { code?: number }).code ?? 1) : 0, output: `${stdout}\n${stderr}` };
         resolve();
@@ -275,7 +333,7 @@ module.exports = wrapConfig(defineConfig({
     );
   });
   for (const res of streams) res.end();
-}, 180_000);
+}, 240_000);
 
 afterAll(async () => {
   await server?.close();
@@ -381,12 +439,23 @@ describe('Inspect on the team’s live view, of a project the runner does not tr
     expect(told.get('own:while-open')).toEqual(expect.arrayContaining([expect.stringMatching(/\.trace$/)]));
   });
 
-  it('stops it unsaved and deletes it as Inspect closes', () => {
+  it('stops it unsaved and deletes it as Inspect closes, with the response bodies it wrote', () => {
     expect(told.get('own:after-close')).toEqual([]);
+    expect(told.get('own:resources-open')).toContain(TOKEN_FILE);
+    expect(told.get('own:resources-after')).toEqual(told.get('own:resources-before'));
   });
 
-  it('gives way to the test’s own tracing, whose archive is saved', () => {
+  it('gives way to the test’s own tracing, whose archive is saved whole, and says why no more comes', () => {
+    current = 'own';
     expect(told.get('own:reopened')).toEqual(expect.arrayContaining([expect.stringMatching(/\.trace$/)]));
-    expect(told.get('own:mine')).toEqual({ saved: true, own: [] });
+    expect(told.get('own:mine')).toEqual({ saved: true, own: [], token: true });
+    const refusals = of('own', 'snapshot').filter(
+      ({ at, message }) => 'refused' in message && at >= moment('reopened'),
+    );
+    expect(refusals.map(({ message }) => (message as { refused: string }).refused)).toContain(INSPECT_TRACES_ITSELF);
+  });
+
+  it('lets the test’s own tracing start whether Piwi’s starts, runs or stops', () => {
+    expect(told.get('race:report')).toEqual([]);
   });
 });
