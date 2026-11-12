@@ -22,6 +22,7 @@ import {
   type AutoCreateRuleForm,
 } from '~/utils/tracker-binding-form';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
+import { normalizeTitlePrefix, TITLE_PREFIX_MAX_LENGTH } from '#shared/integrations/title-prefix';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
 import { requiredFieldsToAsk, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
@@ -44,6 +45,7 @@ const form = reactive({
   issueType: '',
   defaultAssignee: '',
   locale: '' as '' | 'en' | 'fr',
+  titlePrefix: '',
   labels: '',
   fieldDefaults: {} as FieldValues,
   include: { ...DEFAULT_PROJECT_INTEGRATION.include },
@@ -75,6 +77,10 @@ const localeItems = [
   { label: 'Inherit from connection', value: '' },
   ...SUPPORTED_LOCALES.map((l) => ({ label: l, value: l })),
 ];
+/** The prefix the bound connection sets for projects that set none. */
+const inheritedTitlePrefix = computed(
+  () => connections.value.find((c) => c.id === form.connectionId)?.titlePrefix ?? null,
+);
 const connectionItems = computed(() => [
   { label: 'None — unbound', value: 0 },
   ...connections.value.map((c) => ({ label: c.name, value: c.id })),
@@ -154,6 +160,7 @@ function fromBinding(b: ResolvedProjectIntegration) {
   form.defaultAssignee = b.defaultAssignee ?? '';
   form.fieldDefaults = { ...(b.fieldDefaults ?? {}) };
   form.locale = b.locale ?? '';
+  form.titlePrefix = b.titlePrefix ?? '';
   form.labels = (b.labels ?? []).join(', ');
   form.include = { ...b.include };
   form.policies = {
@@ -185,6 +192,7 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
     defaultAssignee: form.defaultAssignee || null,
     fieldDefaults: form.fieldDefaults,
     locale: form.locale || null,
+    titlePrefix: normalizeTitlePrefix(form.titlePrefix),
     labels: list(form.labels),
     include: { ...form.include },
     policies: {
@@ -292,6 +300,17 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
           </UFormField>
           <UFormField label="Ticket language">
             <USelectMenu v-model="form.locale" :items="localeItems" value-key="value" class="w-full" />
+          </UFormField>
+          <UFormField
+            label="Title prefix"
+            description="Put before every issue title Piwi files; empty uses the connection's."
+          >
+            <UInput
+              v-model="form.titlePrefix"
+              :maxlength="TITLE_PREFIX_MAX_LENGTH"
+              :placeholder="inheritedTitlePrefix ?? 'None'"
+              class="w-full"
+            />
           </UFormField>
           <UFormField label="Jira project" :help="noProjectsHelp">
             <template v-if="projectLink" #hint>
