@@ -174,8 +174,9 @@ export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'fro
 /**
  * The answer to `trace`: the absolute path of the running attempt's own trace file as the runner writes it while the
  * test runs (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`), or
- * why there is none (no test runs, or the runner does not trace this attempt). For the hub alone: it checks the file and
- * opens it, and never names it to anyone.
+ * why there is none (no test runs, the runner does not trace this attempt, or it wrote none of it yet). For the hub
+ * alone, which never names it to anyone: it checks that file and its folder, then opens Playwright's trace viewer on
+ * the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its files share.
  */
 export type TraceAnswer = { ok: true; message: string; file: string } | { ok: false; message: string };
 

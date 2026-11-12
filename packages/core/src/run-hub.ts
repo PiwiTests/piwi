@@ -17,8 +17,10 @@
  * asks; `openTrace` opens a lane's running test's trace so far in Playwright's trace viewer, on the hub's machine,
  * from the file the lane's worker names to the hub alone. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a
  * frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on
- * both sides. Nothing a command asks evaluates code or reaches an instance, and no command names a file: `openTrace`
- * starts the project's own Playwright on the one file its worker named, once the hub checked it.
+ * both sides. Nothing a command asks evaluates code or reaches an instance, and no command names a file: for
+ * `openTrace` the hub checks the file the lane's worker named and the folder it is in, then starts the project's own
+ * Playwright's trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the
+ * subfolders its files share.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import {
@@ -533,9 +535,10 @@ export type HubCommand =
   /**
    * Open the running test's trace so far of the lane `lane` (Playwright's `parallelIndex`) of the run in Playwright's
    * trace viewer, on the hub's machine (**Open the trace so far**), at a hub whose features list `trace`: the hub asks
-   * the lane's worker where the trace grows, checks the file and starts the viewer from the project's own Playwright.
-   * The answer says what came of it in a sentence, never the file. Refused for a worker whose `traces` is absent, with
-   * no test running, or for an attempt the runner does not trace.
+   * the lane's worker where the trace grows, checks that file and its folder, and starts the project's own Playwright's
+   * trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its
+   * files share. The answer says what came of it in a sentence, never a file. Refused for a worker whose `traces` is
+   * absent, with no test running, or for an attempt the runner does not trace or that wrote no trace yet.
    */
   | { type: 'openTrace'; id: number; ref: string; lane: number };
 
