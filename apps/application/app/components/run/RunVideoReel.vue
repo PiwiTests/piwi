@@ -14,6 +14,8 @@ const { current, ticked, failed, playing } = player;
 
 /** A test with no video takes this much of the bar, whatever its duration. */
 const STUB_WIDTH = '12px';
+/** No block of the bar is narrower than this; a reel of more tests than fit scrolls the bar sideways. */
+const MIN_BLOCK_WIDTH = '3px';
 
 function resultStatus(entry: ReelEntry): string {
   const { status, passedAfterFailure } = entry.execution;
@@ -24,6 +26,20 @@ function palette(entry: ReelEntry) {
 }
 const playingEntry = computed(() => (current.value == null ? null : props.reel.entries[current.value]!));
 const tickedCount = computed(() => ticked.value.filter(Boolean).length);
+
+const bar = ref<HTMLElement | null>(null);
+const blocks = ref<HTMLElement[]>([]);
+/** Keeps the playing block in view in a bar that scrolls, by moving the bar alone: the page does not scroll. */
+watch(current, async (index) => {
+  await nextTick();
+  const el = bar.value;
+  const block = index == null ? null : blocks.value.find((b) => b.dataset.index === String(index));
+  if (!el || !block || el.scrollWidth <= el.clientWidth) return;
+  const barBox = el.getBoundingClientRect();
+  const box = block.getBoundingClientRect();
+  if (box.left < barBox.left) el.scrollLeft += box.left - barBox.left;
+  else if (box.right > barBox.right) el.scrollLeft += box.right - barBox.right;
+});
 
 function seekFromBar(index: number, event: MouseEvent) {
   const entry = props.reel.entries[index]!;
@@ -82,10 +98,12 @@ function blockLabel(entry: ReelEntry): string {
         </div>
       </div>
 
-      <div class="flex h-6 items-stretch gap-px" role="group" aria-label="Tests in this reel">
+      <div ref="bar" class="flex h-6 items-stretch gap-px overflow-x-auto" role="group" aria-label="Tests in this reel">
         <button
           v-for="(entry, i) in reel.entries"
           :key="entry.execution.executionId"
+          ref="blocks"
+          :data-index="i"
           type="button"
           class="relative overflow-hidden rounded-sm transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1"
           :class="[
@@ -99,8 +117,8 @@ function blockLabel(entry: ReelEntry): string {
           ]"
           :style="
             entry.execution.video
-              ? { flex: `${Math.max(player.lengthOf(i), 1)} 1 0`, minWidth: '6px' }
-              : { flex: `0 0 ${STUB_WIDTH}` }
+              ? { flex: `${Math.max(player.lengthOf(i), 1)} 1 0`, minWidth: MIN_BLOCK_WIDTH }
+              : { flex: `0 1 ${STUB_WIDTH}`, minWidth: MIN_BLOCK_WIDTH }
           "
           :aria-label="blockLabel(entry)"
           :aria-current="current === i ? 'true' : undefined"
@@ -137,7 +155,9 @@ function blockLabel(entry: ReelEntry): string {
               :name="ticked[i] ? getStatusIcon(resultStatus(entry)) : 'i-lucide-circle'"
               class="mt-0.5 size-4 shrink-0"
               :class="ticked[i] ? palette(entry).text : 'text-muted opacity-50'"
+              aria-hidden="true"
             />
+            <span class="sr-only">{{ ticked[i] ? `Played, ${resultStatus(entry)}: ` : 'Not played yet: ' }}</span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm text-highlighted">{{ entry.execution.title }}</span>
               <span class="block text-xs text-muted">
