@@ -218,10 +218,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   follows the run's choice, and stopping is never refused. Checked by `tests/run-sessions.test.ts` ("shares a run live
   as a person asks …", "stops sharing a run while no worker of it is connected …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#share-live))
-- **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
-  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines`, `startTraceViewer` and the agents'
-  `RunAgent`, which import nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change
-  to their options runs its tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
+- **The run control runs without the language server too.** `src/run-host.ts` imports nothing of the LSP;
+  `ShellRuns` (`src/shell-runs.ts`) wires it for the desktop app's server and Piwi Runner's host, whose routes call
+  `src/shell-runs-routes.ts`, never a copy. Checked by `tests/run-host.test.ts`, `tests/shell-runs-routes.test.ts` and
+  the app's `desktop-runs*.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
   imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks

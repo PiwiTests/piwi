@@ -775,7 +775,12 @@ export async function getTestRunCase(
     filePath: testCase?.filePath ?? null,
     suitePath: splitSuitePath(testCase?.suitePath),
     line: trc.line ?? null,
+    column: trc.column ?? null,
     location: trc.line && trc.column ? `${testCase?.filePath}:${trc.line}:${trc.column}` : testCase?.filePath,
+    // The Playwright project and the `--repeat-each` repetition the attempt belongs to: with the test case, what tells
+    // its result from the same test's other results in the run.
+    browserName: trc.browserName ?? null,
+    repeatEachIndex: trc.repeatEachIndex,
     status: trc.status,
     duration: trc.duration,
     error: trc.error,

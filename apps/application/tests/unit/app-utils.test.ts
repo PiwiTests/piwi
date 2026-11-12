@@ -24,12 +24,12 @@ import {
   scmFileStatusMeta,
   parsePatchLines,
   patchLineClass,
-  renderAnsi,
   reportIcon,
   browserIconName,
   getBrowserIcon,
   runPassRate,
 } from '../../app/utils/index';
+import { renderAnsi } from '@piwitests/run-ui/ansi';
 
 describe('formatBytes', () => {
   test('handles zero / empty as "0 B"', () => {

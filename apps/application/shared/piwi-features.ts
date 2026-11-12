@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Run video',
+        summary:
+          'Play the videos of a finished run one test after another, grouped by worker or file, with a checklist.',
+        needs: [],
+        where: 'Test run → Video',
+        doc: 'features/run-video',
+      },
+      {
         title: 'Watch a run',
         summary:
           'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
@@ -714,10 +722,18 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Run on my machine',
         summary:
-          'Ask the desktop app on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
-        needs: ['desktop', 'admin'],
+          'Ask the desktop app or Piwi Runner on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
+        needs: ['admin'],
         where: 'Settings → Capabilities; Settings → Account → Connected apps',
         doc: 'features/run-on-my-machine',
+      },
+      {
+        title: 'Piwi Runner',
+        summary:
+          'A small app that takes Run on my machine requests without the dashboard: it asks before every run, runs it in your folder and stays in the tray.',
+        needs: ['admin'],
+        where: 'Piwi Runner',
+        doc: 'features/piwi-runner',
       },
       {
         title: 'Browser extension',

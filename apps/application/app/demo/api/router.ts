@@ -251,6 +251,7 @@ import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions'
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
 import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import { getRunReusedResults } from '#shared/handlers/reused-results';
+import { getRunVideos } from '#shared/handlers/run-videos';
 import { runUsualDurations } from '#shared/handlers/stuck-tests';
 import {
   computeScenarioGaps,
@@ -1663,6 +1664,14 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return getRunReusedResults(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/videos$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return getRunVideos(await getDemoDb(), +m[1]!);
     },
   },
   {
@@ -3766,7 +3775,7 @@ const routes: RouteEntry[] = [
     permission: 'link:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoLinkScope(ctx, +m[1]!);
-      return deleteLink(await getDemoDb(), +m[1]!);
+      return deleteLink(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
 
@@ -3878,6 +3887,7 @@ const routes: RouteEntry[] = [
         fields: b.fields,
         comment: b.comment ?? null,
         filedBy: await demoFiledByName(db, ctx),
+        filedById: ctx?.actingUserId ?? null,
         submissionId: b.submissionId ?? null,
       });
       if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');

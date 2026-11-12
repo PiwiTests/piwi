@@ -12,6 +12,7 @@ import {
   readTagsTruncated,
   tagsTruncatedCount,
   isPiwiAnnotation,
+  MAX_TEST_ISSUES,
   MAX_EXTERNAL_ID_CHARS,
   MAX_EXTERNAL_ID_DUPLICATES,
   mergeExternalIdDuplicates,
@@ -351,6 +352,38 @@ describe('parseTestMetadata', () => {
     expect(parseTestMetadata([{ type: 'piwi:bug', description: id }])).toBeNull();
   });
 
+  test('reads every piwi:issue, as a URL or a bare key, in order and without duplicates', () => {
+    expect(
+      parseTestMetadata([
+        { type: 'piwi:issue', description: 'https://acme.atlassian.net/browse/SHOP-412' },
+        { type: 'piwi:issue', description: ' shop-7 ' },
+        { type: 'piwi:issue', description: 'SHOP-7' },
+      ]),
+    ).toEqual({ issues: ['https://acme.atlassian.net/browse/SHOP-412', 'SHOP-7'] });
+  });
+
+  test.each(['javascript:alert(1)', 'ftp://host/SHOP-1', 'file:///SHOP-1', 'SHOP 1', 'SHOP-', '-1', 'not an issue'])(
+    'ignores the issue %s',
+    (issue) => {
+      expect(parseTestMetadata([{ type: 'piwi:issue', description: issue }])).toBeNull();
+    },
+  );
+
+  test('keeps the first MAX_TEST_ISSUES issues', () => {
+    const annotations = Array.from({ length: MAX_TEST_ISSUES + 3 }, (_, i) => ({
+      type: 'piwi:issue',
+      description: `SHOP-${i + 1}`,
+    }));
+    const issues = parseTestMetadata(annotations)?.issues ?? [];
+    expect(issues).toHaveLength(MAX_TEST_ISSUES);
+    expect(issues[0]).toBe('SHOP-1');
+  });
+
+  test('drops an issue URL longer than 500 characters instead of cutting it', () => {
+    const long = `https://acme.atlassian.net/browse/SHOP-1?${'x'.repeat(500)}`;
+    expect(parseTestMetadata([{ type: 'piwi:issue', description: long }])).toBeNull();
+  });
+
   test('survives malformed annotation entries', () => {
     expect(parseTestMetadata([null, 42, {}, { type: 7 }, { type: 'piwi:owner' }])).toBeNull();
   });
@@ -371,6 +404,24 @@ describe('sanitizeTestMetadata', () => {
 
   test('ignores non-string values', () => {
     expect(sanitizeTestMetadata({ owner: 42, feature: 'Cart' })).toEqual({ feature: 'Cart' });
+  });
+
+  test('holds a wire issues list to the piwi:issue rules', () => {
+    expect(
+      sanitizeTestMetadata({ issues: ['shop-1', 'javascript:x', 42, 'https://acme.atlassian.net/browse/SHOP-2'] }),
+    ).toEqual({ issues: ['SHOP-1', 'https://acme.atlassian.net/browse/SHOP-2'] });
+    expect(sanitizeTestMetadata({ issues: 'SHOP-1' })).toBeNull();
+    expect(sanitizeTestMetadata({ issue: 'SHOP-1' })).toBeNull();
+    expect(sanitizeTestMetadata({ Issue: 'SHOP-1', 'issue ': 'SHOP-2', ' ISSUE\t': 'SHOP-3' })).toBeNull();
+    expect(sanitizeTestMetadata({ issues: ['SHOP-4'], Issue: 'SHOP-1' })).toEqual({ issues: ['SHOP-4'] });
+    const many = Array.from({ length: MAX_TEST_ISSUES + 5 }, (_, i) => `SHOP-${i + 1}`);
+    expect(sanitizeTestMetadata({ issues: many })?.issues).toHaveLength(MAX_TEST_ISSUES);
+  });
+
+  test('reads a bounded number of wire issue entries, however long the list', () => {
+    const junk = Array.from({ length: 100_000 }, () => 'not an issue');
+    expect(sanitizeTestMetadata({ issues: [...junk, 'SHOP-1'] })).toBeNull();
+    expect(sanitizeTestMetadata({ issues: ['SHOP-1', ...junk] })).toEqual({ issues: ['SHOP-1'] });
   });
 });
 

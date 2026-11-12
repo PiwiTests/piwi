@@ -9,10 +9,8 @@
 // the normal server build.
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
+import { serveRunEvents } from '@piwitests/editor/shell-runs-http';
 import { desktopRuns } from '../../../utils/desktop-runs';
-
-/** Every how many milliseconds an open stream gets a comment, so a gone window is noticed. */
-const HEARTBEAT_MS = 15_000;
 
 defineRouteMeta({
   openAPI: {
@@ -27,62 +25,5 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  const runs = await desktopRuns();
-  if (!runs) throw apiError({ statusCode: 503, message: 'The desktop runs’ hub is not listening' });
-
-  const { req, res } = event.node;
-  let gone = false;
-  let heartbeat: ReturnType<typeof setInterval> | null = null;
-  let window: { close(): void } | null = null;
-  const start = () => {
-    if (res.headersSent) return;
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    heartbeat = setInterval(() => {
-      if (!gone) res.write(': heartbeat\n\n');
-    }, HEARTBEAT_MS);
-    heartbeat.unref?.();
-  };
-  const leave = () => {
-    if (gone) return;
-    gone = true;
-    if (heartbeat) clearInterval(heartbeat);
-    window?.close();
-  };
-  req.on('close', leave);
-  res.on('close', leave);
-  res.on('error', leave);
-
-  const opened = await runs.openWindow({
-    send: (payload) => {
-      if (gone) return;
-      start();
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    },
-    buffered: () => res.writableLength,
-    close: () => {
-      if (gone) return;
-      // What a window left unread would never be read: its stream is cut; one that read everything is ended.
-      if (res.writableLength > 0) res.destroy();
-      else res.end();
-      leave();
-    },
-  });
-  if (!opened) {
-    if (!res.headersSent) {
-      throw apiError({
-        statusCode: 503,
-        message: 'The desktop runs’ hub is not listening, or holds 16 window streams',
-      });
-    }
-    res.end();
-    return;
-  }
-  start();
-  if (gone) opened.close();
-  else window = opened;
+  await serveRunEvents(event.node.req, event.node.res, await desktopRuns());
 });

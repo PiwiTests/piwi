@@ -17,11 +17,13 @@ import { NOTE_INTERVALS, type NoteInterval } from '#shared/integrations/automati
 import {
   autoCreateRuleFromForm,
   autoCreateRuleToForm,
+  pruneDeclaredIssueTypes,
   runScopeFromForm,
   runScopeToForm,
   type AutoCreateRuleForm,
 } from '~/utils/tracker-binding-form';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
+import { normalizeTitlePrefix, TITLE_PREFIX_MAX_LENGTH } from '#shared/integrations/title-prefix';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
 import { requiredFieldsToAsk, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
@@ -42,8 +44,10 @@ const form = reactive({
   connectionId: 0,
   projectKey: '',
   issueType: '',
+  declaredIssueTypes: [] as string[],
   defaultAssignee: '',
   locale: '' as '' | 'en' | 'fr',
+  titlePrefix: '',
   labels: '',
   fieldDefaults: {} as FieldValues,
   include: { ...DEFAULT_PROJECT_INTEGRATION.include },
@@ -75,6 +79,10 @@ const localeItems = [
   { label: 'Inherit from connection', value: '' },
   ...SUPPORTED_LOCALES.map((l) => ({ label: l, value: l })),
 ];
+/** The prefix the bound connection sets for projects that set none. */
+const inheritedTitlePrefix = computed(
+  () => connections.value.find((c) => c.id === form.connectionId)?.titlePrefix ?? null,
+);
 const connectionItems = computed(() => [
   { label: 'None — unbound', value: 0 },
   ...connections.value.map((c) => ({ label: c.name, value: c.id })),
@@ -94,17 +102,20 @@ const projectKeyItems = computed(() => [
 const issueTypeItems = computed(() =>
   issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(form.connectionId, t.icon) })),
 );
+const tagIssueTypePlaceholder = computed(() =>
+  form.issueType ? 'The issue type above' : 'None: nothing is linked from tags',
+);
 const projectAvatar = computed(() => projectKeyItems.value.find((p) => p.value === form.projectKey)?.avatar);
 const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === form.issueType)?.avatar);
 
 /** The connection the project list was last loaded for, so an empty list is not shown while loading. */
 const projectsLoadedFor = ref(0);
 
-async function loadPickers() {
+async function loadPickers(): Promise<TrackerIssueTypeOption[] | null> {
   if (!form.connectionId) {
     jiraProjects.value = [];
     issueTypes.value = [];
-    return;
+    return null;
   }
   const connectionId = form.connectionId;
   try {
@@ -116,7 +127,7 @@ async function loadPickers() {
     jiraProjects.value = [];
   }
   projectsLoadedFor.value = connectionId;
-  await loadIssueTypes();
+  return loadIssueTypes();
 }
 
 const selectedConnection = computed(() => connections.value.find((c) => c.id === form.connectionId) ?? null);
@@ -132,28 +143,38 @@ const noProjectsHelp = computed(() =>
     : undefined,
 );
 
-async function loadIssueTypes() {
+/** Loads the chosen project's issue types; `null` when the project has none to load or the request failed. */
+async function loadIssueTypes(): Promise<TrackerIssueTypeOption[] | null> {
   if (!form.connectionId || !form.projectKey) {
     issueTypes.value = [];
-    return;
+    return null;
   }
   try {
     const { issueTypes: t } = await $fetch<{ issueTypes: TrackerIssueTypeOption[] }>(
       `/api/integrations/connections/${form.connectionId}/projects/${encodeURIComponent(form.projectKey)}/issue-types`,
     );
     issueTypes.value = t;
+    return t;
   } catch {
     issueTypes.value = [];
+    return null;
   }
+}
+
+/** The types chosen for test tags are the previous project's: keep those the new project lists, or none if its list fails. */
+function dropStaleDeclaredIssueTypes(listed: TrackerIssueTypeOption[] | null) {
+  form.declaredIssueTypes = pruneDeclaredIssueTypes(form.declaredIssueTypes, listed);
 }
 
 function fromBinding(b: ResolvedProjectIntegration) {
   form.connectionId = b.connectionId ?? 0;
   form.projectKey = b.projectKey ?? '';
   form.issueType = b.issueType ?? '';
+  form.declaredIssueTypes = [...(b.declaredIssueTypes ?? [])];
   form.defaultAssignee = b.defaultAssignee ?? '';
   form.fieldDefaults = { ...(b.fieldDefaults ?? {}) };
   form.locale = b.locale ?? '';
+  form.titlePrefix = b.titlePrefix ?? '';
   form.labels = (b.labels ?? []).join(', ');
   form.include = { ...b.include };
   form.policies = {
@@ -182,9 +203,12 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
     connectionId: form.connectionId || null,
     projectKey: form.projectKey || null,
     issueType: form.issueType || null,
+    // An empty choice is the default: the issue type above.
+    declaredIssueTypes: form.declaredIssueTypes.length > 0 ? [...form.declaredIssueTypes] : null,
     defaultAssignee: form.defaultAssignee || null,
     fieldDefaults: form.fieldDefaults,
     locale: form.locale || null,
+    titlePrefix: normalizeTitlePrefix(form.titlePrefix),
     labels: list(form.labels),
     include: { ...form.include },
     policies: {
@@ -250,8 +274,22 @@ async function save() {
   }
 }
 
-watch(() => form.connectionId, loadPickers);
-watch(() => form.projectKey, loadIssueTypes);
+// Choosing another connection or Jira project replaces the issue types the form can list, so the types chosen for test
+// tags are checked against the new list. The first load of a saved binding keeps what it stored.
+watch(
+  () => form.connectionId,
+  async (_, previous) => {
+    const listed = await loadPickers();
+    if (previous) dropStaleDeclaredIssueTypes(listed);
+  },
+);
+watch(
+  () => form.projectKey,
+  async (_, previous) => {
+    const listed = await loadIssueTypes();
+    if (previous) dropStaleDeclaredIssueTypes(listed);
+  },
+);
 onMounted(load);
 
 // ── Jira fields: what the chosen issue type's create screen requires ──────────
@@ -286,12 +324,23 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
       </div>
       <div v-else class="space-y-6">
         <!-- Destination -->
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-2" data-shot="issue-tracker-destination">
           <UFormField label="Connection">
             <USelectMenu v-model="form.connectionId" :items="connectionItems" value-key="value" class="w-full" />
           </UFormField>
           <UFormField label="Ticket language">
             <USelectMenu v-model="form.locale" :items="localeItems" value-key="value" class="w-full" />
+          </UFormField>
+          <UFormField
+            label="Title prefix"
+            description="Put before every issue title Piwi files; empty uses the connection's."
+          >
+            <UInput
+              v-model="form.titlePrefix"
+              :maxlength="TITLE_PREFIX_MAX_LENGTH"
+              :placeholder="inheritedTitlePrefix ?? 'None'"
+              class="w-full"
+            />
           </UFormField>
           <UFormField label="Jira project" :help="noProjectsHelp">
             <template v-if="projectLink" #hint>
@@ -319,6 +368,24 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
               value-key="value"
               placeholder="Issue type"
               class="w-full"
+            />
+          </UFormField>
+          <UFormField
+            label="Issue types linked from test tags"
+            :help="
+              form.issueType || form.declaredIssueTypes.length > 0
+                ? 'A key in a test tag is linked only when its issue is of one of these types. Set the tag pattern under Keys in test tags. A piwi:issue annotation is linked whatever its type.'
+                : 'Nothing is linked from test tags until you choose an issue type here or above. Set the tag pattern under Keys in test tags.'
+            "
+          >
+            <USelectMenu
+              v-model="form.declaredIssueTypes"
+              :items="issueTypeItems"
+              value-key="value"
+              multiple
+              :placeholder="tagIssueTypePlaceholder"
+              class="w-full"
+              data-testid="binding-declared-issue-types"
             />
           </UFormField>
           <UFormField label="Default assignee">

@@ -8,7 +8,7 @@ import {
   passRateTextClass,
   passRateTone,
 } from '../../app/utils/pass-rate';
-import { STATUS_PALETTE } from '../../app/utils/status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
 describe('passRateTone', () => {
   test('splits the scale at 90% and 50%', () => {

@@ -29,6 +29,7 @@ import { hashToken } from '../token-hash';
 import { JiraClient } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
+import { resolveTitlePrefix } from '#shared/integrations/title-prefix';
 import type { IssueTracker, TrackerCredentials } from './types';
 import {
   ZEPHYR_INTERACTIVE_TIMEOUT_MS,
@@ -426,7 +427,13 @@ export async function listTrackerConnections(db: DbClient): Promise<TrackerSumma
   const rows = await db.select().from(integrationConnections);
   return rows
     .filter((r) => isProviderOfKind(r.provider, 'tracker') && hasStoredCredentials(r))
-    .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name, baseUrl: r.baseUrl }));
+    .map((r) => ({
+      id: r.id,
+      provider: r.provider as IntegrationProviderName,
+      name: r.name,
+      baseUrl: r.baseUrl,
+      titlePrefix: resolveTitlePrefix(null, r.config),
+    }));
 }
 
 /**

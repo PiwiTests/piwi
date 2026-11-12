@@ -62,9 +62,10 @@ const PIWI_ENTRY_KEY: &str = "piwi-desktop";
 /// an entry only this app would have written (see `is_local_piwi_entry`).
 const LEGACY_ENTRY_KEY: &str = "piwi";
 
+/// The product names an AppImage file name of this app starts with, lowercase, without spaces, dashes or underscores:
+/// the product's, and for the desktop app also Piwi Dashboard, the product name its earlier releases installed under.
+const APP_PRODUCTS: &[&str] = if cfg!(feature = "runner") { &["piwirunner"] } else { &["piwidesktop", "piwidashboard"] };
 /// The name of this app's executable, without an extension: what the command of an entry of ours ends in.
-/// The product name as it starts an AppImage file name, lowercase, without spaces, dashes or underscores.
-const APP_PRODUCT: &str = if cfg!(feature = "runner") { "piwirunner" } else { "piwidashboard" };
 const APP_BINARY: &str = if cfg!(feature = "runner") { "piwi-runner" } else { "piwi-desktop" };
 
 /// Why no entry is written while the app runs from a place that does not last.
@@ -380,7 +381,7 @@ fn names_this_app_as(command: &str, appimage: Option<&OsStr>) -> bool {
         return true;
     }
     let compact: String = file.chars().filter(|c| !matches!(c, ' ' | '_' | '-')).collect();
-    file.ends_with(".appimage") && compact.starts_with(APP_PRODUCT)
+    file.ends_with(".appimage") && APP_PRODUCTS.iter().any(|product| compact.starts_with(product))
 }
 
 /// Whether an entry runs this app's executable in bridge mode.
@@ -1518,14 +1519,14 @@ mod tests {
     fn an_app_that_runs_from_a_place_that_does_not_last_has_a_reason_to_say_so() {
         let temp = Path::new("/var/folders/ab/xyz/T");
         let problem = |command: &str, dev: bool| location_problem(command, dev, temp);
-        let installed = "/Applications/Piwi Dashboard.app/Contents/MacOS/piwi-desktop";
+        let installed = "/Applications/Piwi Desktop.app/Contents/MacOS/piwi-desktop";
         assert_eq!(problem(installed, false), None);
         assert_eq!(problem("/usr/bin/piwi-desktop", false), None);
         assert_eq!(problem("C:\\Program Files\\Piwi\\piwi-desktop.exe", false), None);
         assert_eq!(problem("piwi-desktop", false), None);
         for command in [
-            "/private/var/folders/ab/xyz/AppTranslocation/0F5C0E2A-1B2C-4D3E-8F90-123456789ABC/d/Piwi Dashboard.app/Contents/MacOS/piwi-desktop",
-            "/Volumes/Piwi Dashboard/Piwi Dashboard.app/Contents/MacOS/piwi-desktop",
+            "/private/var/folders/ab/xyz/AppTranslocation/0F5C0E2A-1B2C-4D3E-8F90-123456789ABC/d/Piwi Desktop.app/Contents/MacOS/piwi-desktop",
+            "/Volumes/Piwi Desktop/Piwi Desktop.app/Contents/MacOS/piwi-desktop",
             "/var/folders/ab/xyz/T/.mount_PiwiDaX1/usr/bin/piwi-desktop",
         ] {
             assert_eq!(problem(command, false), Some("Move Piwi to Applications so assistants can find it"), "{command}");
@@ -1649,14 +1650,17 @@ mod tests {
     #[test]
     fn an_appimage_command_names_this_app() {
         let image = OsStr::new("/home/ada/Apps/My Piwi.AppImage");
-        let product = if cfg!(feature = "runner") { "Piwi_Runner" } else { "Piwi_Dashboard" };
+        let product = if cfg!(feature = "runner") { "Piwi_Runner" } else { "Piwi_Desktop" };
         assert!(names_this_app_as("/old/Apps/My Piwi.AppImage", Some(image)));
+        assert!(names_this_app_as(&format!("/old/{}_0.70.0_amd64.AppImage", product.replace('_', "-")), None));
+        let former = names_this_app_as("/old/Piwi_Dashboard_0.68.0_amd64.AppImage", None);
+        assert_eq!(former, !cfg!(feature = "runner"), "an AppImage of the desktop app's former name");
         assert!(names_this_app_as(&format!("/old/{product}_0.70.0_amd64.AppImage"), None));
         assert!(names_this_app_as(&format!("/old/{}.appimage", product.replace('_', " ")), None));
         assert!(!names_this_app_as("/old/Apps/My Piwi.AppImage", None));
         assert!(!names_this_app_as("/old/Other_App_1.0_amd64.AppImage", Some(image)));
         assert!(!names_this_app_as(&format!("/old/{product}.zip"), Some(image)));
-        let other = if cfg!(feature = "runner") { "Piwi_Dashboard" } else { "Piwi_Runner" };
+        let other = if cfg!(feature = "runner") { "Piwi_Desktop" } else { "Piwi_Runner" };
         assert!(!names_this_app_as(&format!("/old/{other}.AppImage"), None));
         assert!(!names_this_app_as("", Some(OsStr::new(""))));
 

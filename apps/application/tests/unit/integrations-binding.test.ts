@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   DEFAULT_PROJECT_INTEGRATION,
   resolveProjectIntegration,
+  resolveTagSource,
   pickOwnerRoute,
   normalizeOwner,
   type OwnerRoute,
@@ -129,6 +130,16 @@ describe('resolveProjectIntegration', () => {
     expect(resolveProjectIntegration({ connectionId: 1.5 }).connectionId).toBeNull();
   });
 
+  test('the issue types of the tag source stay null until a list names one, and normalize', () => {
+    expect(resolveProjectIntegration({}).declaredIssueTypes).toBeNull();
+    expect(resolveProjectIntegration({ declaredIssueTypes: 'Bug' as never }).declaredIssueTypes).toBeNull();
+    expect(resolveProjectIntegration({ declaredIssueTypes: [] }).declaredIssueTypes).toBeNull();
+    expect(resolveProjectIntegration({ declaredIssueTypes: [' ', '', 7 as never] }).declaredIssueTypes).toBeNull();
+    expect(
+      resolveProjectIntegration({ declaredIssueTypes: [' Bug ', '10004', 'Bug', '', 7 as never] }).declaredIssueTypes,
+    ).toEqual(['Bug', '10004']);
+  });
+
   test('labels are trimmed, de-duped and empties dropped', () => {
     expect(resolveProjectIntegration({ labels: [' a ', 'a', '', 'b'] as string[] }).labels).toEqual(['a', 'b']);
   });
@@ -201,6 +212,30 @@ describe('resolveProjectIntegration', () => {
     expect(r.policies.transitionOnFix).toBe(true);
     expect(r.policies.fixTransitionId).toBe('31');
     expect(r.policies.reopenTransitionId).toBe('41');
+  });
+});
+
+describe('resolveTagSource', () => {
+  const pattern = { issue: '^[A-Z]+-[0-9]+$', testCase: null };
+
+  test('links the binding’s issue type unless the list names others', () => {
+    expect(resolveTagSource(pattern, { issueType: '10004', declaredIssueTypes: null })).toEqual({
+      pattern: pattern.issue,
+      issueTypes: ['10004'],
+    });
+    expect(resolveTagSource(pattern, { issueType: '10004', declaredIssueTypes: ['Story'] }).issueTypes).toEqual([
+      'Story',
+    ]);
+    expect(resolveTagSource(pattern, { issueType: 'Bug', declaredIssueTypes: [] }).issueTypes).toEqual(['Bug']);
+  });
+
+  test('has no pattern for a missing or refused one and no issue type without a type to link', () => {
+    expect(resolveTagSource(null, { issueType: '10004', declaredIssueTypes: null }).pattern).toBeNull();
+    expect(
+      resolveTagSource({ issue: 'no anchors', testCase: null }, { issueType: 'Bug', declaredIssueTypes: null }).pattern,
+    ).toBeNull();
+    expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: null }).issueTypes).toEqual([]);
+    expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: [] }).issueTypes).toEqual([]);
   });
 });
 

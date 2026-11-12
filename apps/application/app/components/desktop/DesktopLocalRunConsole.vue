@@ -6,7 +6,7 @@
  * its own) instead of its fixed one.
  */
 import type { LocalRunLine } from '~/composables/useDesktopLocalRuns';
-import { renderAnsi } from '~/utils';
+import { renderAnsi } from '@piwitests/run-ui/ansi';
 
 const props = defineProps<{ lines: LocalRunLine[]; fill?: boolean }>();
 

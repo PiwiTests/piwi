@@ -237,9 +237,12 @@ The desktop build's server is the hub of the Playwright runs its shell starts (`
 runs (`@piwitests/editor/run-host`), plus these:
 
 - **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
-  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`; this server only wires their callbacks.
-  What the desktop needs that they lack is an option of theirs (`declines`, `host`, `token`, `words`, `RunHub.join`),
-  added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
+  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by the editor's `ShellRuns`, which
+  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs, the agents' tools and
+  Inspect, through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`, `sendToWindow`),
+  and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call `@piwitests/editor/shell-runs-routes`.
+  What the desktop needs that they lack is an option or a hook of theirs that names no app feature (`declines`,
+  `host`, `token`, `words`, `RunHub.join`), added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
   (a real run through the built reporter) drive the wiring.
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
   `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
@@ -268,7 +271,8 @@ runs (`@piwitests/editor/run-host`), plus these:
   a link (each folder's real path checked again as each file opens, which opens without waiting on a pipe), into
   `RunInspect` with the reporter's secret removal (what every frame's secret fields held, learned from each snapshot as
   it is read, before any is let go) and resource allow list, served by `snapshotFrameDocument`; nothing is kept past
-  the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`).
+  the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`). Its event and command are the app's
+  (`shared/desktop-runs.ts`); Piwi Runner's host has no Inspect.
 - **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
   editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
   it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)
@@ -276,5 +280,5 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
-  copy (`pick`), and a pick on the image answers that it goes there (`DesktopRunSessions`). The guard takes that token
+  copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).

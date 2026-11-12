@@ -374,7 +374,8 @@ export interface OpenFailureCluster {
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Who the cluster is assigned to (name or email); overrides the derived owner. */
   assignee: string | null;
-  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** The cluster's known issue, else its newest link the tests did not declare, shown as a chip. */
+  issueLink: { url: string; provider: string; key: string | null; status?: string | null } | null;
   /** A one-line cause hint for the row — muted secondary text. */
   topClue: { text: string; strength: 'strong' | 'medium' | 'weak' } | null;
   /** Fix-verification state; `'regressed'` drives the "fix didn't hold" queue and badge. */
@@ -383,7 +384,7 @@ export interface OpenFailureCluster {
   regressionOnDefault: boolean;
   /** The last-seen run was on the project's default branch — a needs-ticket candidate must be. */
   onDefaultBranch: boolean;
-  /** The cluster already carries a tracker issue — excluded from needs-ticket. */
+  /** The cluster's known issue still tracks it (not Done, or being reopened) — excluded from needs-ticket. */
   hasKnownIssue: boolean;
   /** Days a cluster may sit untracked on the default branch before needs-ticket lists it. */
   needsTicketAfterDays: number;
@@ -597,6 +598,8 @@ export interface TestRunDetails {
   planId?: number | null;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** How many of the run's final attempts have a video (the Video tab's count; 0 disables the tab). */
+  videoCount?: number;
   /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
   machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
@@ -1253,7 +1256,9 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
   links: EntityLinkInfo[];
-  /** The cluster's known issue: its newest tracker link. Every surface names this one. */
+  /** How many more issue keys its tests named in their last failing run than were linked. */
+  declaredIssuesMore?: number | null;
+  /** The cluster's known issue: its tracker link, else a link its tests name. Every surface names this one. */
   knownIssue: KnownIssueRef | null;
   /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
   issueFilingQueued: boolean;
@@ -1298,8 +1303,8 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   diagnosis: DiagnosisCompact | null;
-  /** The pinned known-issue link (newest), shown as a chip. */
-  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** The cluster's known issue, else its newest link the tests did not declare, shown as a chip. */
+  issueLink: { url: string; provider: string; key: string | null; status?: string | null } | null;
   /** Inbox triage — assignee and snooze state. A snoozed open cluster is not failing now. */
   assignee: string | null;
   snoozedUntil: string | Date | null;
@@ -2077,8 +2082,10 @@ export interface EntityLinkInfo {
   /** The connection that can read/write this record, when Piwi owns it. */
   connectionId?: number | null;
   externalId?: string | null;
-  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  /** Who put the link there: `pinned` by a person, `created` by Piwi, `annotation` from the test's `piwi:issue`, `tag` from a test's tag, etc. */
   origin?: string | null;
+  /** What the link was read with; a link from the tests names the test and, for a tag, the tag (with its `@`). */
+  metadata?: { source?: { testCaseId?: number | null; tag?: string | null } | null } | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;

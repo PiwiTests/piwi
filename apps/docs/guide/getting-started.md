@@ -42,6 +42,11 @@ why the snippet creates `.data` with the right owner; see
 [Permission issues with volumes](/operate/deployment#permission-issues-with-volumes) if the container cannot write to
 it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
+The desktop app installs from the latest release. [Piwi Runner](/features/piwi-runner), below it, is not a dashboard:
+it runs the tests a team instance asks for, on a machine without the desktop app, which takes the same requests.
+
+<DownloadApps />
+
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
 token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 

@@ -3069,6 +3069,7 @@ dependencies = [
 name = "piwi-desktop"
 version = "0.68.0"
 dependencies = [
+ "auto-launch",
  "dunce",
  "hmac",
  "keepawake",

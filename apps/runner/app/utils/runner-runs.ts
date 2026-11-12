@@ -16,6 +16,11 @@ export interface RunnerRun {
   shellId: number | null;
   status: RunnerRunStatus;
   stopRequested: boolean;
+  /**
+   * **Hold failures**: a failure no pause bar shows waits in the window for an answer while the run shows there, as a
+   * `page.pause()` does. Off until the person turns it on.
+   */
+  holdFailures: boolean;
   exitCode: number | null;
   /** The last `RUNNER_MAX_LINES` lines of output. */
   lines: string[];
@@ -46,6 +51,28 @@ export const RUNNER_MAX_LINES = 2000;
 export const RUNNER_MAX_FINISHED = 15;
 /** Events kept while their run's id is unknown. */
 const MAX_WAITING_EVENTS = 500;
+
+/**
+ * Whether the hub's run `ref` is the shell's run `shellId`: the shell names each run it starts `desktop-<id>` on the
+ * host's run channel (`PIWI_RUN_REF`), ending in `-unattended` for a run nobody attends.
+ */
+export function isRunnerRunRef(ref: string, shellId: number | null): boolean {
+  if (shellId === null) return false;
+  return ref === `desktop-${shellId}` || ref === `desktop-${shellId}-unattended`;
+}
+
+/** The shell's id of the run the hub's `ref` names; null for a ref the shell did not make. */
+export function runnerShellIdOf(ref: string): number | null {
+  const match = /^desktop-(\d+)(?:-unattended)?$/.exec(ref);
+  return match ? Number(match[1]) : null;
+}
+
+/** The refs the window says `show` for: the running runs whose Hold failures is on. */
+export function runnerShownRefs(runs: readonly RunnerRun[]): string[] {
+  return runs
+    .filter((run) => run.status === 'running' && run.holdFailures && run.shellId !== null)
+    .map((run) => `desktop-${run.shellId}`);
+}
 
 /** The status a run ends in: the person's stop wins, then the exit code. */
 export function finishedStatus(run: Pick<RunnerRun, 'stopRequested'>, code: number | null): RunnerRunStatus {
@@ -114,6 +141,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
       shellId: null,
       status: 'running',
       stopRequested: false,
+      holdFailures: false,
       exitCode: null,
       lines: [],
     });

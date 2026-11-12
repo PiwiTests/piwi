@@ -427,7 +427,7 @@ function createIssue(cluster: OpenFailureCluster): void {
 const bulkCreating = ref(false);
 async function bulkCreateIssues(): Promise<void> {
   if (!bulkCanFileIssues.value || bulkCreating.value) return;
-  const targets = selectedClusters.value.filter((c) => !c.issueLink);
+  const targets = selectedClusters.value.filter((c) => !c.hasKnownIssue);
   if (targets.length === 0) return;
   bulkCreating.value = true;
   let created = 0;
@@ -585,7 +585,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'c': {
       const c = sel();
-      if (c && canFileIssue(c) && hasTracker.value && !c.issueLink) {
+      if (c && canFileIssue(c) && hasTracker.value && !c.hasKnownIssue) {
         e.preventDefault();
         createIssue(c);
       }
@@ -962,9 +962,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-clock" :title="`Snooze (s)`" />
           </UDropdownMenu>
 
-          <!-- Create issue (only while the cluster has no known issue) -->
+          <!-- Create issue (only while no known issue tracks the cluster) -->
           <UButton
-            v-if="canFileIssue(cluster) && hasTracker && !cluster.issueLink"
+            v-if="canFileIssue(cluster) && hasTracker && !cluster.hasKnownIssue"
             size="xs"
             color="neutral"
             variant="ghost"

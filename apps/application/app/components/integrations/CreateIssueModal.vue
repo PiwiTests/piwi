@@ -21,7 +21,7 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
-import { commentNodes, MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment } from '#shared/integrations/run-issue';
+import { MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment, openingCommentNodes } from '#shared/integrations/run-issue';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { isOutcomeUnknownError } from '#shared/integrations/action-keys';
 
@@ -85,7 +85,7 @@ const submissionId = ref('');
 const commentMarkdown = computed(() => {
   const text = normalizeIssueComment(comment.value);
   if (!text || !draft.value) return '';
-  return renderMarkdown({ nodes: commentNodes(locale.value, { text, author: draft.value.filedBy ?? null }) });
+  return renderMarkdown({ nodes: openingCommentNodes(locale.value, { text, author: null }) });
 });
 /** What the Comment field says it does: on a cluster already tracked, it may go to the issue Piwi filed. */
 const commentDescription = computed(() => {
@@ -695,7 +695,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </p>
           </UFormField>
 
-          <div>
+          <div data-shot="issue-preview">
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
             <MarkdownPreview :text="previewMarkdown" max-height="16rem" />
           </div>

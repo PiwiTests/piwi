@@ -59,6 +59,17 @@ describe('a finished run’s analysis', () => {
     await vi.waitFor(() => expect(computeScenarioGaps).toHaveBeenCalledWith(db, 1, expect.anything()));
   });
 
+  test('verifies the fixed clusters once the run’s declared issues are linked', async () => {
+    let linked!: () => void;
+    const linking = new Promise<void>((resolve) => (linked = resolve));
+    const analysis = analyzeFinishedRunInBackground(db as never, 1, linking);
+    expect(await analysis.coverage).toEqual(coverage);
+    expect(verifyClusterFixes).not.toHaveBeenCalled();
+    linked();
+    expect(await analysis.fixed).toEqual([fix]);
+    expect(verifyClusterFixes).toHaveBeenCalledWith(db, 1);
+  });
+
   test('a step that fails is logged, and the other parts still answer', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

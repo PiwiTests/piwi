@@ -7,6 +7,7 @@
 import { doc, type DocNode, type Inline, type IssueDocument } from './document';
 import { DEFAULT_LOCALE, formatNumber, t, type IssueLocale, type MessageKey } from './messages';
 import type { BuiltIssue } from './build-issue';
+import { prefixedTitle } from './title-prefix';
 
 /** The longest comment a person may write on an issue. */
 export const MAX_ISSUE_COMMENT_LENGTH = 5000;
@@ -51,10 +52,31 @@ export function commentNodes(locale: IssueLocale, comment: IssueComment | null |
   ];
 }
 
-/** A document with the comment block first. */
-export function withComment(document: IssueDocument, locale: IssueLocale, comment: IssueComment | null | undefined) {
-  const nodes = commentNodes(locale, comment);
-  return nodes.length ? { nodes: [...nodes, ...document.nodes] } : document;
+/** What every issue a person files from Piwi takes besides its facts. */
+export interface IssueFilingOpts {
+  /** The language the ticket is written in. */
+  locale?: IssueLocale;
+  /** What the person wrote when filing: the body opens with it. */
+  comment?: IssueComment | null;
+  /** Who files it from Piwi, when known. */
+  filedBy?: string | null;
+  /** The project's title prefix, put in front of the proposed title. */
+  titlePrefix?: string | null;
+}
+
+/**
+ * The comment block an issue body opens with. It carries no name: the line
+ * closing the body ({@link filedByLine}) is the one place the issue names the
+ * person who filed it. A comment added to an issue already filed does name its
+ * author ({@link commentNodes}), as nothing else in that issue does.
+ */
+export function openingCommentNodes(locale: IssueLocale, comment: IssueComment | null | undefined): DocNode[] {
+  return commentNodes(locale, comment ? { text: comment.text, author: null } : null);
+}
+
+/** The line closing an issue a person filed: who filed it from Piwi, when known. */
+export function filedByLine(locale: IssueLocale, filedBy: string | null | undefined): string {
+  return filedBy ? t(locale, 'text.filedBy', { name: filedBy }) : t(locale, 'text.filedFromPiwi');
 }
 
 /** A test's result as the issue names it. */
@@ -154,13 +176,10 @@ export function runIssueLabels(runId: number): string[] {
 }
 
 /** The body of a run's issue, or of one execution's when `executionUrl` is set. */
-export function buildRunIssueDocument(
-  facts: RunIssueFacts,
-  opts: { locale?: IssueLocale; comment?: IssueComment | null } = {},
-): IssueDocument {
+export function buildRunIssueDocument(facts: RunIssueFacts, opts: IssueFilingOpts = {}): IssueDocument {
   const locale = opts.locale ?? DEFAULT_LOCALE;
   const b = doc();
-  for (const node of commentNodes(locale, opts.comment)) b.push(node);
+  for (const node of openingCommentNodes(locale, opts.comment)) b.push(node);
 
   b.heading(2, t(locale, 'section.theRun'));
   const n = (value: number) => formatNumber(locale, value);
@@ -230,19 +249,16 @@ export function buildRunIssueDocument(
   }
 
   b.rule();
-  b.paragraph(facts.filedBy ? t(locale, 'text.filedBy', { name: facts.filedBy }) : t(locale, 'text.filedFromPiwi'));
+  b.paragraph(filedByLine(locale, opts.filedBy ?? facts.filedBy));
   b.paragraph(code(`Piwi-Run: ${facts.runId}`));
   return b.build();
 }
 
 /** The built issue of a run: its proposed title, body and labels. */
-export function buildRunIssue(
-  facts: RunIssueFacts,
-  opts: { locale?: IssueLocale; comment?: IssueComment | null; title?: string } = {},
-): BuiltIssue {
+export function buildRunIssue(facts: RunIssueFacts, opts: IssueFilingOpts & { title?: string } = {}): BuiltIssue {
   const locale = opts.locale ?? DEFAULT_LOCALE;
   return {
-    title: opts.title ?? runIssueTitle(locale, facts),
+    title: prefixedTitle(opts.titlePrefix, opts.title ?? runIssueTitle(locale, facts)),
     document: buildRunIssueDocument(facts, opts),
     labels: runIssueLabels(facts.runId),
   };

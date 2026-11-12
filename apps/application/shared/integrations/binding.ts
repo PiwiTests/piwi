@@ -15,6 +15,7 @@
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
+import { normalizeTitlePrefix } from './title-prefix';
 import { normalizeFieldValues, TRANSITION_SKIPPED_FIELDS, type FieldValues } from './fields';
 import {
   ANY_RUN_SCOPE,
@@ -27,6 +28,7 @@ import {
   type TrackerRunScope,
 } from './automation';
 import type { OwnerRoute } from './owner-routes';
+import { resolveTagKeyPatterns } from './tag-keys';
 
 export { normalizeOwner, pickOwnerRoute, type OwnerRoute } from './owner-routes';
 export { type AutoCreatePolicy } from './automation';
@@ -90,6 +92,11 @@ export interface ResolvedProjectIntegration {
   projectKey: string | null;
   /** The tracker issue type id. */
   issueType: string | null;
+  /**
+   * The issue types the declared-issue link step links from a key in a test's tags: type ids or names. Null
+   * means the binding's own issue type. A key a test names with `piwi:issue` is linked whatever its type.
+   */
+  declaredIssueTypes: string[] | null;
   /** Labels added to every issue filed under this binding. */
   labels: string[];
   /** The account id issues are assigned to by default. */
@@ -102,6 +109,8 @@ export interface ResolvedProjectIntegration {
   fieldDefaults: FieldValues;
   /** The ticket language, or null to inherit the connection's default. */
   locale: IssueLocale | null;
+  /** The prefix put before every ticket title, or null to inherit the connection's default. */
+  titlePrefix: string | null;
   /** What a ticket body carries. */
   include: IssueIncludeOptions;
   /** The write-back policies. */
@@ -144,10 +153,12 @@ export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
   connectionId: null,
   projectKey: null,
   issueType: null,
+  declaredIssueTypes: null,
   labels: [],
   defaultAssignee: null,
   fieldDefaults: {},
   locale: null,
+  titlePrefix: null,
   include: DEFAULT_INCLUDE,
   policies: DEFAULT_POLICIES,
   ownerRoutes: [],
@@ -169,6 +180,16 @@ function normalizeLabels(value: unknown): string[] {
     .filter(Boolean)
     .map((v) => v.slice(0, 100));
   return [...new Set(cleaned)].slice(0, 50);
+}
+
+/** The issue types of the tag source: trimmed and deduplicated; null when the input is not a list or names none. */
+function normalizeIssueTypes(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim().slice(0, 100))
+    .filter(Boolean);
+  return cleaned.length > 0 ? [...new Set(cleaned)].slice(0, 50) : null;
 }
 
 function trimOrNull(value: unknown, max = 200): string | null {
@@ -238,13 +259,33 @@ export function resolveProjectIntegration(
     connectionId,
     projectKey: trimOrNull(input?.projectKey, 100),
     issueType: trimOrNull(input?.issueType, 100),
+    declaredIssueTypes: normalizeIssueTypes(input?.declaredIssueTypes),
     labels: normalizeLabels(input?.labels),
     defaultAssignee: trimOrNull(input?.defaultAssignee),
     fieldDefaults: normalizeFieldValues(input?.fieldDefaults),
     locale: toIssueLocale(input?.locale),
+    titlePrefix: normalizeTitlePrefix(input?.titlePrefix),
     include: resolveInclude(input?.include),
     policies: resolvePolicies(input?.policies),
     ownerRoutes,
     autoCreate: resolveAutoCreate(input?.autoCreate),
   };
+}
+
+/**
+ * What the declared-issue link step reads from a test's tags: the project's issue key pattern (`tagKeys`) and the
+ * issue types it links, which are the binding's `declaredIssueTypes`, else its issue type. With no pattern or no
+ * issue type to link, the tag source links nothing.
+ */
+export function resolveTagSource(
+  tagKeys: unknown,
+  binding: Pick<ResolvedProjectIntegration, 'issueType' | 'declaredIssueTypes'>,
+): { pattern: string | null; issueTypes: string[] } {
+  const pattern = resolveTagKeyPatterns(tagKeys).issue;
+  const issueTypes = binding.declaredIssueTypes?.length
+    ? binding.declaredIssueTypes
+    : binding.issueType
+      ? [binding.issueType]
+      : [];
+  return { pattern, issueTypes };
 }

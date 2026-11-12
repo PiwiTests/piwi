@@ -317,6 +317,9 @@ export const failureClusters = pgTable(
     // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
     // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
     announcedAt: timestamp('announced_at', { mode: 'date' }),
+    // How many other keys of the bound Jira project the cluster's failing executions named in the last run that
+    // linked the issues its tests name, past the 10 links from the tests a cluster keeps. Null until then.
+    declaredIssuesMore: integer('declared_issues_more'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1221,7 +1224,7 @@ export const entityLinks = pgTable(
     // The connection that can read/write this record, and the tracker's stable id.
     connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
     externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
-    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'tag' | 'reporter'
 
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1235,6 +1238,31 @@ export const entityLinks = pgTable(
     clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
     connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
+    // One link from the tests per cluster and key, so two runs finishing at once cannot both insert it.
+    declaredKeyIdx: uniqueIndex('idx_entity_links_cluster_declared_key')
+      .on(t.failureClusterId, t.key)
+      .where(sql`origin IN ('annotation', 'tag')`),
+  }),
+);
+
+// An issue a person unlinked from a failure cluster, so the link step does not add it back from the issues its
+// tests name. `external_id` keeps the tracker's issue id of a link from the tests or a created one (null for a
+// pinned one), so the dismissal holds after the issue moves to another key.
+export const entityLinkDismissals = pgTable(
+  'entity_link_dismissals',
+  {
+    id: serial('id').primaryKey(),
+    failureClusterId: integer('failure_cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    externalId: text('external_id'),
+    removedBy: integer('removed_by').references(() => users.id, { onDelete: 'set null' }),
+    removedAt: timestamp('removed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    clusterKeyIdx: uniqueIndex('idx_entity_link_dismissals_cluster_key').on(t.failureClusterId, t.key),
+    removedByIdx: index('idx_entity_link_dismissals_removed_by').on(t.removedBy),
   }),
 );
 
@@ -1490,9 +1518,11 @@ export const projectIntegrations = pgTable(
       .references(() => integrationConnections.id, { onDelete: 'cascade' }),
     projectKey: text('project_key'), // Jira project key (tracker binding)
     issueType: text('issue_type'),
+    declaredIssueTypes: jsonb('declared_issue_types'), // string[] | null — the issue types the tag source links; the binding's issue type when null
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    titlePrefix: text('title_prefix'), // put before every ticket title Piwi files for this project; null inherits the connection's
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]

@@ -89,7 +89,7 @@ import { listTags } from '#shared/handlers/tags';
 import { createLinkSchema, deleteLinksTo, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
-import { createIssue } from '../integrations/create';
+import { createIssue, filedByName } from '../integrations/create';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -2111,7 +2111,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const siteUrl = process.env.PIWI_SITE_URL ?? null;
     const locale = toIssueLocale(params.locale);
 
-    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
+    const filedBy = ctx.user ? filedByName(ctx.user) : null;
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl, filedBy });
     if (!draft) throw new Error('No Jira connection is configured');
     // One issue per cluster: an execution with no failure cluster is filed from the dashboard.
     if (entityType === 'test_runs_case' && draft.clusterId == null) {
@@ -2155,6 +2156,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       entityId,
       connectionId: draft.connectionId,
       title: typeof params.title === 'string' ? params.title : draft.title,
+      // An agent never saw the project's prefix: it goes on the title it gives.
+      prefixTitle: typeof params.title === 'string',
       projectKey: draft.projectKey,
       issueType: draft.issueType,
       labels: draft.labels,
@@ -2164,6 +2167,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       fields,
       // The auth-disabled administrator is user 0, which no row references.
       requestedBy: ctx.user?.id || null,
+      filedBy,
       siteUrl,
     });
     if (!outcome) return null;
@@ -3089,7 +3093,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
-    const removed = await deleteLinksTo(db, entityType, entityId, url);
+    const removed = await deleteLinksTo(db, entityType, entityId, url, ctx.user?.id || null);
     if (removed === 0) throw new Error(`${entityType} ${entityId} has no link to ${url}`);
     return { entityType, entityId, url, removed };
   },

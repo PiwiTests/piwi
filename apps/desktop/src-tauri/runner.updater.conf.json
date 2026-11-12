@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1OUE0NzMyMkM2RjMxMApSV1FRODhZaWM2UlpDQ3ZjcVdnUll4WUhhR0R2S2o1QjFXaWR5ZDUvT0F3UUQvY3BKbExpWEVwSgo=",
+      "endpoints": ["https://github.com/PiwiTests/piwi/releases/latest/download/latest-runner.json"]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 /**
  * A small in-memory cache whose entries expire after a fixed time to live,
- * bounded in size: when full, an expired entry is dropped first, else the
- * oldest one.
+ * bounded in size: when full, a new key drops an expired entry first, else the
+ * entry set longest ago. Setting a key again makes it the newest.
  */
 export class TtlCache<V> {
   private readonly store = new Map<string, { value: V; expiry: number }>();
@@ -42,6 +42,7 @@ export class TtlCache<V> {
   }
 
   set(key: string, value: V): void {
+    this.store.delete(key);
     if (this.store.size >= this.maxSize) {
       const now = Date.now();
       for (const [k, v] of this.store) {

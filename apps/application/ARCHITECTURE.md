@@ -305,11 +305,16 @@ Each entry names folders under `server/api/`.
   (`server/utils/desktop-inspect.ts`, `RunInspect` in the app's words) while a view of it shows and the window is not
   hidden: the window hears each page's call on its stream (`inspect`), lists them each time it opens it
   (`runs/inspect/calls`), keeps them in the order the pages were taken on the attempt the stream follows
-  (`hearDesktopInspect`, `hearDesktopCalls`), and reads each page rendered (`runs/inspect/page`).
+  (`useDesktopLaneInspects`: `hearDesktopInspect`, `hearDesktopCalls`), and reads each page rendered
+  (`runs/inspect/page`). The layer's lane view opens and closes it, and shows the view the app gives it
+  (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
-  `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run
+  `BroadcastChannel`, `app/utils/run-output-channel.ts`). The live view (`useDesktopRunHub`, the `DesktopRun*`
+  components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
+  window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
+  layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run
   page, a running row of a run the shell started offers Pause and watch (`TestRowDesktopWorker`), its worker found
   among the live runs that report the run (`useDesktopRunSessions`, `desktopSessionsOfRun`, `desktopRowWorker`).
   Agents reach the same runs through `/mcp` (the run tools, below).
@@ -637,8 +642,8 @@ rule):
   - `CoverageSourceView`: a source file with the lines a coverage ran and the executable lines it did not, the
     functions that ran linked above it, and an optional per-line annotation column; without the source, the line
     numbers alone.
-  - `LocatorCode`: a locator expression, syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`.
-  - `ErrorText`: error text with its ANSI colors rendered, as a one-line `line` preview for lists and cells, or the
+  - `LocatorCode` (from the layer): a locator expression, syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`.
+  - `ErrorText` (from the layer): error text with its ANSI colors rendered, as a one-line `line` preview for lists and cells, or the
     full `block`.
   - `DeferredTooltip`: a `UTooltip` built when the pointer first enters, for a tooltip repeated on every row of a
     list.
@@ -735,8 +740,9 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
   dashboard layout, and answers with the API's 404 or 403.
 - `route-query.ts`: `replaceQuery`. Query changes made in the same tick (a tab switch and the list the tab mounts) add
   up, instead of the last one dropping the others.
-- `status-palette.ts`: `STATUS_PALETTE` / `statusPalette`, the test outcome colors every bar, chart, history cell,
-  timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`.
+- `STATUS_PALETTE` / `statusPalette` (`@piwitests/run-ui/status-palette`, the layer's): the test outcome colors every
+  bar, chart, history cell, timeline bar and filter chip uses, backed by the `--color-status-*` tokens of the layer's
+  `run-ui.css`, which `assets/css/main.css` imports.
 - `pass-rate.ts`: the one set of thresholds and the one color scale for every colored pass rate, heatmap cells
   included.
 - `duration-tone.ts`: the one tone for a timeline duration that stands out in its test. The rule is in

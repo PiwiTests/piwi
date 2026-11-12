@@ -676,11 +676,18 @@ describe('media wiring', () => {
     }
   });
 
+  // The run page's Video tab plays the final attempts of the newest run of project 1, so a few short tests there carry
+  // a video of their own, in no cluster. Those rows are that tab's demo reel and are left out; every other trace and
+  // video is checked.
   test('trace/video/screenshot attachments are wired to the most recent failing execution of their case', () => {
     const attachments = q(`
       select f.id, f.type, f.test_runs_case_id, trc.test_case_id, trc.failure_cluster_id
       from files f join test_runs_cases trc on trc.id = f.test_runs_case_id
-      where f.path like 'demo/traces/%' or f.path like 'demo/videos/%'
+      where (f.path like 'demo/traces/%' or f.path like 'demo/videos/%')
+        and not (
+          f.path like 'demo/videos/%' and trc.failure_cluster_id is null
+          and trc.test_run_id = (select id from test_runs where project_id = 1 order by start_time desc, id desc limit 1)
+        )
     `);
     expect(attachments.length).toBeGreaterThan(0);
     for (const a of attachments) {
@@ -1041,6 +1048,7 @@ const EXPECT_KEYS = new Set([
   'diagnosis',
   'fixLanded',
   'issue',
+  'declaredMore',
   'lab',
   'resources',
   'incident',
@@ -1179,16 +1187,26 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
   }
   if (want.issue) {
     expect(want.cluster, `${label}: issue needs a cluster`).toBeTruthy();
-    // The newest tracker link wins, as clusterKnownIssues reads it.
+    // As clusterKnownIssues reads it: the newest tracker link, else the oldest link from the tests still open, else
+    // the oldest link from the tests.
     const [row] = q(`
       select key, provider, status_text from entity_links
       where failure_cluster_id = ${want.cluster!.id} and key is not null
         and (provider = 'jira' or connection_id is not null)
-      order by id desc limit 1
+      order by origin in ('annotation', 'tag'),
+        case when origin in ('annotation', 'tag') then 0 else -id end,
+        coalesce(json_extract(metadata, '$.statusCategory'), '') = 'done',
+        id
+      limit 1
     `);
     expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
     expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
     expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
+  }
+  if (want.declaredMore !== undefined) {
+    expect(want.cluster, `${label}: declaredMore needs a cluster`).toBeTruthy();
+    const [row] = q(`select declared_issues_more from failure_clusters where id = ${want.cluster!.id}`);
+    expect(row?.declared_issues_more, `${label}: the keys named and not linked`).toBe(want.declaredMore);
   }
   if (want.suspects) {
     expect(want.cluster, `${label}: suspects needs a cluster`).toBeTruthy();
@@ -1518,7 +1536,11 @@ describe('keys in test tags', () => {
 
     const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
     const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
-    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
+    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag)).sort()).toEqual([
+      'DEMO-52',
+      'DEMO-53',
+      'SHOP-1234',
+    ]);
     // SHOP-T124 is a key the test management catalog does not hold: the mapping summary's unknown-key state.
     expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123', 'SHOP-T124']);
     expect(

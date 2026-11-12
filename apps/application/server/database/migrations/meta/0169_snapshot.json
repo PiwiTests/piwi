@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f9c068a5-5413-408e-bfb8-ed8dc3a1a823",
+  "id": "40ee26f2-1a05-494a-a55e-1bd8f8846320",
   "prevId": "7da43e69-90b1-4e31-beda-06df3048e8ed",
   "tables": {
     "account_tokens": {
@@ -2388,6 +2388,88 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "entity_link_dismissals": {
+      "name": "entity_link_dismissals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "failure_cluster_id": {
+          "name": "failure_cluster_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_entity_link_dismissals_cluster_key": {
+          "name": "idx_entity_link_dismissals_cluster_key",
+          "columns": ["failure_cluster_id", "key"],
+          "isUnique": true
+        },
+        "idx_entity_link_dismissals_removed_by": {
+          "name": "idx_entity_link_dismissals_removed_by",
+          "columns": ["removed_by"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "entity_link_dismissals_failure_cluster_id_failure_clusters_id_fk": {
+          "name": "entity_link_dismissals_failure_cluster_id_failure_clusters_id_fk",
+          "tableFrom": "entity_link_dismissals",
+          "tableTo": "failure_clusters",
+          "columnsFrom": ["failure_cluster_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "entity_link_dismissals_removed_by_users_id_fk": {
+          "name": "entity_link_dismissals_removed_by_users_id_fk",
+          "tableFrom": "entity_link_dismissals",
+          "tableTo": "users",
+          "columnsFrom": ["removed_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "entity_links": {
       "name": "entity_links",
       "columns": {
@@ -2569,6 +2651,12 @@
           "name": "idx_entity_links_connection",
           "columns": ["connection_id"],
           "isUnique": false
+        },
+        "idx_entity_links_cluster_declared_key": {
+          "name": "idx_entity_links_cluster_declared_key",
+          "columns": ["failure_cluster_id", "key"],
+          "isUnique": true,
+          "where": "origin IN ('annotation', 'tag')"
         }
       },
       "foreignKeys": {
@@ -3169,6 +3257,13 @@
         },
         "announced_at": {
           "name": "announced_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "declared_issues_more": {
+          "name": "declared_issues_more",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -11025,13 +11120,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "reporter_id": {
-          "name": "reporter_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "keep_source": {
           "name": "keep_source",
           "type": "text",
@@ -11109,11 +11197,6 @@
           "columns": ["requester_id"],
           "isUnique": false
         },
-        "idx_test_runs_reporter": {
-          "name": "idx_test_runs_reporter",
-          "columns": ["reporter_id"],
-          "isUnique": false
-        },
         "idx_test_runs_project_commit": {
           "name": "idx_test_runs_project_commit",
           "columns": ["project_id", "commit_sha"],
@@ -11144,15 +11227,6 @@
           "tableFrom": "test_runs",
           "tableTo": "users",
           "columnsFrom": ["requester_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "test_runs_reporter_id_users_id_fk": {
-          "name": "test_runs_reporter_id_users_id_fk",
-          "tableFrom": "test_runs",
-          "tableTo": "users",
-          "columnsFrom": ["reporter_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
