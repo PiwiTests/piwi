@@ -1,5 +1,5 @@
 {
-  "id": "84e98e56-49b4-4820-9b53-70097dd15507",
+  "id": "508adb32-67ed-447c-9f7f-e757eaa95110",
   "prevId": "67e73485-1a94-4882-a64f-1d8b8d55d563",
   "version": "7",
   "dialect": "postgresql",
@@ -8829,12 +8829,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "declared_issue_types": {
-          "name": "declared_issue_types",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "labels": {
           "name": "labels",
           "type": "jsonb",
@@ -8849,6 +8843,12 @@
         },
         "locale": {
           "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title_prefix": {
+          "name": "title_prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": false

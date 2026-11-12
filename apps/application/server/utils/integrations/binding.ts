@@ -15,12 +15,18 @@ import type { DbClient } from '../../database';
 import type { ProjectIntegration } from '../../database/schema';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
+import { resolveTitlePrefix } from '#shared/integrations/title-prefix';
 
 /** The language of the project's tickets: the binding's, else the connection's default, else English. */
 export function bindingLocale(binding: ResolvedProjectIntegration, connectionConfig: unknown): IssueLocale {
   if (binding.locale) return binding.locale;
   const config = (connectionConfig ?? null) as { locale?: string } | null;
   return toIssueLocale(config?.locale) ?? DEFAULT_LOCALE;
+}
+
+/** The prefix of the project's ticket titles: the binding's, else the connection's default, else none. */
+export function bindingTitlePrefix(binding: ResolvedProjectIntegration, connectionConfig: unknown): string | null {
+  return resolveTitlePrefix(binding.titlePrefix, connectionConfig);
 }
 
 /** Map a stored binding row onto the flat resolved shape. */
@@ -34,6 +40,7 @@ export function bindingRowToResolved(row: ProjectIntegration | null): ResolvedPr
     defaultAssignee: row?.defaultAssignee ?? null,
     fieldDefaults: (row?.fieldDefaults as ResolvedProjectIntegration['fieldDefaults']) ?? {},
     locale: (row?.locale as ResolvedProjectIntegration['locale']) ?? null,
+    titlePrefix: row?.titlePrefix ?? null,
     include: (row?.include as ResolvedProjectIntegration['include']) ?? undefined,
     policies: (row?.policies as ResolvedProjectIntegration['policies']) ?? undefined,
     ownerRoutes: (row?.ownerRoutes as ResolvedProjectIntegration['ownerRoutes']) ?? [],
@@ -76,6 +83,7 @@ export async function writeProjectIntegration(
         defaultAssignee: resolved.defaultAssignee,
         fieldDefaults: resolved.fieldDefaults as never,
         locale: resolved.locale,
+        titlePrefix: resolved.titlePrefix,
         include: resolved.include as never,
         policies: resolved.policies as never,
         ownerRoutes: resolved.ownerRoutes as never,

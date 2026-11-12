@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "16814ffb-2c36-47aa-8b8b-e7dbcbe605c7",
+  "id": "71392229-dd8c-433c-bd84-80add5410961",
   "prevId": "40ee26f2-1a05-494a-a55e-1bd8f8846320",
   "tables": {
     "account_tokens": {
@@ -7109,13 +7109,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "declared_issue_types": {
-          "name": "declared_issue_types",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "labels": {
           "name": "labels",
           "type": "text",
@@ -7132,6 +7125,13 @@
         },
         "locale": {
           "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title_prefix": {
+          "name": "title_prefix",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

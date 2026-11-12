@@ -21,12 +21,12 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 
 ## What it does, exactly
 
-- **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
-  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's
-  **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
-  ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
+- **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and the
+  inbox bulk bar's *Create issues*), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's **Issue**
+  line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a ticket,
+  then name it, its summary on hover.
 - **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
-  live status; any other stays a plain link, read through no connection.
+  live status; any other stays a plain link.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
@@ -62,10 +62,9 @@ everywhere:
 
 ## Links the tests declare
 
-A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) annotation or
-[issue-key tag](/reference/test-metadata#keys-in-test-tags) links its cluster to up to 10 Jira issues; a link removed
-stays removed. It counts as tracked, yet Piwi never writes to it and its status never resolves or reopens the cluster
-on its own.
+A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) or
+[issue-key tag](/reference/test-metadata#keys-in-test-tags) links its cluster to issues of the bound project. It counts
+as tracked, yet Piwi never writes to it and its status never resolves or reopens the cluster itself.
 
 ## Keep the ticket honest
 
@@ -85,10 +84,10 @@ default**, each a durable deduped outbox action, write back as the cluster evolv
 
 Both status policies act on a **move** of the ticket, so a person's reopen or resolve stands.
 
-Every comment is written in the [ticket's language](#language), for the [runs that
-write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
-description updates. An optional [inbound webhook](/operate/integrations#registering-the-inbound-webhook) shows a
-close or reopen at once. The failure inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
+Every comment is written in the [ticket's language](#language); [Issue automation](./issue-automation) adds diagnosis
+comments, description updates and [the runs that write](./issue-automation#the-runs-that-write). An optional
+[inbound webhook](/operate/integrations#registering-the-inbound-webhook) shows a close or reopen at once. The failure
+inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
 
 ## The project binding
 
@@ -105,6 +104,15 @@ policies skip them.
   <figcaption>A project's Issue tracker settings.</figcaption>
 </figure>
 
+## Title prefix and who filed it
+
+A **title prefix** such as `[Piwi]` starts every summary Piwi files. Set it on the project binding or as the
+connection's default; the binding's wins. It is up to 40 characters and counts toward Jira's 255, so a long title is
+cut, never the prefix. A title you type is filed as typed; one an agent gives through MCP gets the prefix. A summary
+edited in Jira never gets it back.
+
+A ticket ends with *Filed by Priya Shah from Piwi*, naming the person once, as the cluster's **Issue** line does.
+
 ## Required Jira fields
 
 Piwi reads the issue type's create screen and asks for every required field it does not fill, such as a
@@ -117,14 +125,12 @@ Piwi reads the issue type's create screen and asks for every required field it d
 - The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
   what it takes; an agent passes them in `fields`.
 
-Transitions are checked the same way: for *transition on fix* and the reopen transition, the binding suggests the
-transitions an issue offers and asks for their required fields, such as a *Resolution*; a move that would leave one
-empty fails at once, naming it. A requirement no screen shows, such as a workflow validator, comes back as Jira's
-refusal naming the field, which the modal then asks for.
+Transitions are checked the same way, as [Issue automation](./issue-automation#required-fields-of-a-transition)
+explains.
 
 <figure>
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal's Required by Jira block: Severity Major, from the project settings, Team empty, Found in on Jira's default, and the footer saying Jira still needs Team">
-  <figcaption>The Required by Jira block: each field Jira requires, and where its value comes from.</figcaption>
+  <figcaption>The Required by Jira block, with where each value comes from.</figcaption>
 </figure>
 
 ## Requirements
@@ -146,13 +152,13 @@ binding names a Jira project and issue type.
 
 ## Language
 
-A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default, else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
-`locale`. **English and French ship.**
+A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default,
+else **English**. The create modal has a *Language* select; the `create_issue` MCP tool takes a `locale`.
+**English and French ship.**
 
 Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data
 (test titles, errors, locators, paths, commands, the patch) is **never** translated. The model's
-prose follows the separate [AI response-language setting](/features/ai-diagnosis#response-language), so a French ticket's
-*Most likely* section reads in French too.
+prose follows the separate [AI response-language setting](/features/ai-diagnosis#response-language).
 
 ## Limits
 

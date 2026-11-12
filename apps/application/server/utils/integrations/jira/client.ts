@@ -18,6 +18,7 @@ import type {
 import { MAX_BULK_ISSUE_KEYS, statusColorForCategory, toStatusCategory } from '../types';
 import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
+import { cutLine, TICKET_TITLE_MAX_LENGTH } from '#shared/integrations/title-prefix';
 import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
 import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
@@ -27,13 +28,9 @@ import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
 
-/** Jira refuses a summary longer than this, or one with a line break. */
-const SUMMARY_MAX_LENGTH = 255;
-
-/** A title as Jira takes a summary: one line, at most {@link SUMMARY_MAX_LENGTH} characters. */
+/** A title as Jira takes a summary: one line, at most {@link TICKET_TITLE_MAX_LENGTH} characters. */
 export function jiraSummary(title: string): string {
-  const line = title.replace(/\s+/g, ' ').trim();
-  return line.length <= SUMMARY_MAX_LENGTH ? line : `${line.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+  return cutLine(title.replace(/\s+/g, ' ').trim(), TICKET_TITLE_MAX_LENGTH);
 }
 
 /** Create metadata is paged; a screen past this many fields is read no further. */

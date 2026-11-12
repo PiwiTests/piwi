@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  filedBySentence,
   filingFailureSentence,
   filingSkippedSentence,
   issueKeyTitle,
@@ -106,5 +107,21 @@ describe('issueKeyTitle', () => {
       'CHK-7: Users table shows 50 rows instead of 25. Opens in Jira.',
     );
     expect(issueKeyTitle('OPS-3', null, null)).toBe('OPS-3. Opens in the tracker.');
+  });
+});
+
+describe('filedBySentence', () => {
+  test('names the person who filed the issue, with how long ago', () => {
+    expect(filedBySentence({ filedBy: 'Priya Shah' }, '2 days ago')).toBe('Filed by Priya Shah, 2 days ago.');
+    expect(filedBySentence({ filedBy: 'Priya Shah' })).toBe('Filed by Priya Shah.');
+  });
+
+  test('says automatically for a rule, and names nobody', () => {
+    expect(filedBySentence({ filedBy: null, automatic: true }, 'today')).toBe('Filed automatically, today.');
+  });
+
+  test('says nothing for an issue that was linked rather than filed', () => {
+    expect(filedBySentence({ filedBy: null, automatic: false }, 'today')).toBeNull();
+    expect(filedBySentence({})).toBeNull();
   });
 });

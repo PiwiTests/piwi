@@ -3872,6 +3872,7 @@ const routes: RouteEntry[] = [
         fields: b.fields,
         comment: b.comment ?? null,
         filedBy: await demoFiledByName(db, ctx),
+        filedById: ctx?.actingUserId ?? null,
         submissionId: b.submissionId ?? null,
       });
       if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');

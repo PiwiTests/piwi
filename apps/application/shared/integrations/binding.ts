@@ -15,6 +15,7 @@
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
+import { normalizeTitlePrefix } from './title-prefix';
 import { normalizeFieldValues, TRANSITION_SKIPPED_FIELDS, type FieldValues } from './fields';
 import {
   ANY_RUN_SCOPE,
@@ -108,6 +109,8 @@ export interface ResolvedProjectIntegration {
   fieldDefaults: FieldValues;
   /** The ticket language, or null to inherit the connection's default. */
   locale: IssueLocale | null;
+  /** The prefix put before every ticket title, or null to inherit the connection's default. */
+  titlePrefix: string | null;
   /** What a ticket body carries. */
   include: IssueIncludeOptions;
   /** The write-back policies. */
@@ -155,6 +158,7 @@ export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
   defaultAssignee: null,
   fieldDefaults: {},
   locale: null,
+  titlePrefix: null,
   include: DEFAULT_INCLUDE,
   policies: DEFAULT_POLICIES,
   ownerRoutes: [],
@@ -260,6 +264,7 @@ export function resolveProjectIntegration(
     defaultAssignee: trimOrNull(input?.defaultAssignee),
     fieldDefaults: normalizeFieldValues(input?.fieldDefaults),
     locale: toIssueLocale(input?.locale),
+    titlePrefix: normalizeTitlePrefix(input?.titlePrefix),
     include: resolveInclude(input?.include),
     policies: resolvePolicies(input?.policies),
     ownerRoutes,

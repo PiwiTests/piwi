@@ -117,6 +117,8 @@ export interface CreateIssueActionPayload {
   shareUrl?: string | null;
   /** What the person filing it wrote, kept on the link so a description update puts it back first. */
   comment?: IssueComment | null;
+  /** Who filed it from Piwi, kept on the link so a description update closes with the same line. */
+  filedBy?: string | null;
   /** The opening of the create dialog that sent it, so sending that submission again adds no comment. */
   submissionId?: string | null;
 }
@@ -145,8 +147,10 @@ export interface FiledIssueMeta {
   shareUrl?: string | null;
   /** The id of that share link, whose token a description update reads back from the issue. */
   shareLinkId?: number | null;
-  /** What the person filing it wrote, with their name. */
+  /** What the person filing it wrote. */
   comment?: IssueComment | null;
+  /** The display name of the person who filed it from Piwi. */
+  filedBy?: string | null;
 }
 
 /** A comment action's snapshot — the rendered body, keyed to an issue. */
@@ -548,6 +552,7 @@ async function applyCreateIssue(
     ...(payload.shareUrl ? { shareUrl: payload.shareUrl } : {}),
     ...(share ? { shareLinkId: share.id } : {}),
     ...(payload.comment ? { comment: payload.comment } : {}),
+    ...(payload.filedBy ? { filedBy: payload.filedBy } : {}),
   };
 
   await db.transaction(async (tx) => {
