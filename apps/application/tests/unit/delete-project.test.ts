@@ -17,6 +17,7 @@ process.env.PIWI_STORAGE_PATH = storageDir;
 const { resetStorage } = await import('../../server/storage');
 resetStorage();
 const { deleteProject } = await import('../../server/utils/delete-project');
+const { runEventBus } = await import('../../server/utils/run-events');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -54,5 +55,18 @@ describe('deleteProject', () => {
     expect(existsSync(join(storageDir, 'bug-reports/10'))).toBe(false);
     expect(existsSync(join(storageDir, 'bug-reports/11/shot-1.png'))).toBe(true);
     expect(await db.select().from(schema.bugReports)).toMatchObject([{ id: 11 }]);
+  });
+
+  test('lets go of the lanes the event bus keeps of its runs that run', async () => {
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'running', startTime: new Date() });
+    const begin = { title: 'pays', location: 'a.spec.ts:3:1', workerIndex: 0, parallelIndex: 0, retries: 0 };
+    runEventBus.publish(7, { type: 'test-begin', data: begin });
+    runEventBus.recordRunningCase(7, 'pays', begin);
+    expect(runEventBus.getLanes(7)).toHaveLength(1);
+
+    await deleteProject(1);
+
+    expect(runEventBus.getLanes(7)).toEqual([]);
+    expect(runEventBus.getRunningCases(7)).toEqual([]);
   });
 });
