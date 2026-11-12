@@ -64,6 +64,20 @@ page that does not change sends no new image.
 Watching pauses while the view is out of sight (another tab in front of an editor's panel or tab, a minimized Runs
 window) and starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
 
+## Beside the image
+
+Under the image, the editor's view shows what the pixels cannot, a CI run's lane included:
+
+- **Why it waits**: the call the test is in, how long it has run, how many elements its locator matches and whether
+  the first is enabled, and the last lines of Playwright's log.
+- **Events**: console and uncaught errors, failed requests, requests pending long (`POST /api/checkout pending 17 s`)
+  and the errors the backend logged, newest first.
+- **Text**: the page as roles and names, its secret fields hidden. Find searches it.
+- **Filmstrip**: one image per call the test finished; click one to see it larger.
+
+The text and the filmstrip are read only while their section is open. The view says when an older reporter sends none
+of them.
+
 ## Interact
 
 At a stop, **Interact**, beside **Watch live** or **Watch** in each view once the view is on, sends your clicks, the

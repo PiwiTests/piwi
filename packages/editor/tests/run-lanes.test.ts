@@ -462,6 +462,77 @@ describe('a lane the editor client watches', () => {
     expect(await client.input({ ref: 'ed-1', worker: 0, since, events: [] })).toMatchObject({ ok: false });
   });
 
+  test('sends the layers it asked for alone, asks for the page’s text as asked, and none once it stops', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const told: LaneViewLayer[] = [];
+    const elsewhere: LaneViewLayer[] = [];
+    const client = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async (layer) => void told.push(layer),
+    );
+    const other = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async (layer) => void elsewhere.push(layer),
+    );
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    const texts = () => w.heard().filter((m) => m.type === 'request' && m.what === 'text');
+    await watch(w, client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'calls'] }));
+    await watch(w, other.watch({ ref: 'ed-1', lane: 0, on: true }));
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+    w.read(pageError);
+    w.read(pageText);
+    expect(told).toEqual([
+      {
+        ref: 'ed-1',
+        lane: 0,
+        worker: 0,
+        test: 't0',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      },
+    ]);
+    expect(elsewhere).toEqual([]);
+
+    // The text before the client shows it is refused; its layers then change in place, the lane view kept on.
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events'], text: true })).toEqual({
+      ok: false,
+      message: 'Show the page’s text first.',
+    });
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events', 'text'] })).toMatchObject({
+      ok: true,
+    });
+    expect(last(layersHeard())).toEqual(['calls', 'events', 'text']);
+    expect(w.asked(false)).toHaveLength(0);
+    expect(texts()).toHaveLength(0);
+    // Asked again, the text alone is taken: the worker hears no layers, so sends no call log nor filmstrip again.
+    const before = layersHeard().length;
+    const asked = client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events', 'text'], text: true });
+    const request = await waitFor(() => texts()[0]);
+    expect(layersHeard()).toHaveLength(before);
+    w.read({ type: 'answer', request: request.request, what: 'text', value: { ok: true, message: 'On its way.' } });
+    expect(await asked).toEqual({ ok: true, message: 'On its way.' });
+    w.read(pageText);
+    expect(told.map((layer) => layer.layer)).toEqual(['events', 'text']);
+    expect(elsewhere).toEqual([]);
+
+    // Nothing reaches a client that stopped watching, though the lane's other viewer keeps it on.
+    client.dispose();
+    w.read(pageError);
+    w.read(pageText);
+    expect(told).toHaveLength(2);
+    expect(last(layersHeard())).toEqual([]);
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['text'], text: true })).toMatchObject({
+      ok: true,
+    });
+    expect(texts()).toHaveLength(1);
+  });
+
   test('watches one lane at a time, and ends with the run', async () => {
     const { sessions, join } = harness();
     const first = join(0, 0);
@@ -546,6 +617,65 @@ describe('a lane the editor client watches, through the language server', () => 
         ok: false,
         message: 'This client does not show running tests.',
       });
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+});
+
+describe('a lane’s layers the editor client asks for, through the language server', () => {
+  let dir = '';
+  let svc: Service;
+
+  beforeAll(async () => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-lane-layers-lsp-')));
+    writeRunWorkspace(dir);
+    svc = await service(dir, true);
+  });
+
+  afterAll(() => {
+    svc?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('tells the client each layer it asked for as `piwi/laneLayer`, and none it did not', async () => {
+    const layers: LaneViewLayer[] = [];
+    svc.client.onNotification('piwi/laneLayer', (layer: LaneViewLayer) => void layers.push(layer));
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane', 'layers'],
+    });
+    try {
+      worker.begin();
+      expect(await waitFor(() => svc.latest(ref)?.workers[0])).toMatchObject({ watchable: true, layers: true });
+      const watching = svc.client.sendRequest('piwi/laneView', { ref, lane: 0, on: true, layers: ['events'] });
+      const asked = await worker.next('request');
+      worker.send({ type: 'answer', request: asked.request, what: 'view-lane', value: { ok: true, message: 'On.' } });
+      expect(await watching).toMatchObject({ ok: true });
+      expect(await worker.next('layers')).toEqual({ type: 'layers', layers: ['events'] });
+      worker.send({ ...pageText, test: 'id-adds a mug' });
+      worker.send({ ...pageError, test: 'id-adds a mug' });
+      expect(await waitFor(() => last(layers))).toEqual({
+        ref,
+        lane: 0,
+        worker: 0,
+        test: 'id-adds a mug',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      });
+      expect(layers).toHaveLength(1);
     } finally {
       worker.socket.destroy();
     }

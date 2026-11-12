@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
-import type { PausedPageView } from './run-control';
+import type { LaneLayersMessage, PausedPageView } from './run-control';
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -202,6 +202,116 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
   } else {
     picture.removeAttribute('src');
     picture.hidden = true;
+  }
+});
+/**
+ * The worker panel's sections under the image, when the document has them: every text of the run is set as text,
+ * never as markup, and an image of the filmstrip only from base64 of a JPEG.
+ */
+const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null;
+const textSection = byId<HTMLDetailsElement>('text-section');
+const stripSection = byId<HTMLDetailsElement>('strip-section');
+const strip = byId<HTMLDivElement>('strip');
+/** The strip's JPEGs, by call, as the extension posted them. */
+const images = new Map<string, string>();
+/** The image of the strip shown larger, by call. */
+let enlarged: string | null = null;
+const JPEG_BASE64 = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
+const sections = () => post({ type: 'layers', text: !!textSection?.open, filmstrip: !!stripSection?.open });
+textSection?.addEventListener('toggle', sections);
+stripSection?.addEventListener('toggle', sections);
+byId<HTMLButtonElement>('text-again')?.addEventListener('click', () => post({ type: 'text' }));
+
+/** Show the image of the strip `call` larger, with its call's title; null hides it. */
+function enlarge(call: string | null, title = '') {
+  const figure = byId<HTMLElement>('thumb');
+  const image = byId<HTMLImageElement>('thumb-image');
+  const data = call ? images.get(call) : undefined;
+  enlarged = data ? call : null;
+  for (const button of strip?.querySelectorAll('button') ?? []) {
+    button.setAttribute('aria-pressed', String(button.dataset.call === enlarged));
+  }
+  if (!figure || !image) return;
+  figure.hidden = !data;
+  if (!data) return image.removeAttribute('src');
+  image.src = `data:image/jpeg;base64,${data}`;
+  image.alt = title;
+  byId('thumb-title')!.textContent = title;
+}
+
+function drawLayers(message: LaneLayersMessage) {
+  if (message.waits !== undefined) {
+    const waits = byId('waits');
+    if (waits) {
+      waits.hidden = !message.waits;
+      waits.classList.toggle('failed', !!message.waits?.failed);
+      byId('waits-head')!.textContent = message.waits?.head ?? '';
+      const target = byId('waits-target')!;
+      target.textContent = message.waits?.target ?? '';
+      target.hidden = !message.waits?.target;
+      byId('waits-lines')!.textContent = message.waits?.lines.join('\n') ?? '';
+    }
+  }
+  if (message.events) {
+    const list = byId<HTMLOListElement>('events');
+    if (list) {
+      list.replaceChildren(
+        ...message.events.map((event) => {
+          const item = document.createElement('li');
+          item.className = event.level;
+          item.textContent = event.text;
+          if (event.url) item.title = event.url;
+          return item;
+        }),
+      );
+      byId('events-empty')!.hidden = message.events.length > 0;
+      byId('events-count')!.textContent = message.events.length ? `(${message.events.length})` : '';
+    }
+  }
+  if (message.text) {
+    const text = byId('text');
+    if (text) text.textContent = message.text.text ?? '';
+    const note = byId('text-note');
+    if (note) note.textContent = message.text.note;
+  }
+  if (message.strip && strip) {
+    for (const [call, data] of Object.entries(message.images ?? {})) {
+      if (JPEG_BASE64.test(data)) images.set(call, data);
+    }
+    const calls = new Set(message.strip.map((image) => image.call));
+    for (const call of images.keys()) if (!calls.has(call)) images.delete(call);
+    strip.replaceChildren(
+      ...message.strip.flatMap((thumb) => {
+        const data = images.get(thumb.call);
+        if (!data) return [];
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.call = thumb.call;
+        button.title = thumb.title;
+        button.setAttribute('aria-label', `${thumb.index}. ${thumb.title}`);
+        button.setAttribute('aria-pressed', String(thumb.call === enlarged));
+        const image = document.createElement('img');
+        image.src = `data:image/jpeg;base64,${data}`;
+        image.alt = '';
+        button.append(image);
+        button.addEventListener('click', () => enlarge(enlarged === thumb.call ? null : thumb.call, thumb.title));
+        return [button];
+      }),
+    );
+    byId('strip-empty')!.hidden = message.strip.length > 0;
+    if (enlarged && !images.has(enlarged)) enlarge(null);
+  }
+}
+
+window.addEventListener('message', (event: MessageEvent<LaneLayersMessage>) => {
+  if (event.data?.type === 'layers' && event.data.shown === shown) drawLayers(event.data);
+});
+window.addEventListener('message', (event: MessageEvent<{ type: string; view: PausedPageView }>) => {
+  if (event.data?.type !== 'state' || event.data.view.live?.shown !== shown) return;
+  const note = byId('layers-note');
+  if (note) {
+    note.textContent = event.data.view.layers?.note ?? '';
+    note.hidden = !event.data.view.layers?.note;
   }
 });
 // The extension ends the watch itself when the panel hides or closes, and keeps Watch live for when it shows again.

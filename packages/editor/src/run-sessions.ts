@@ -41,7 +41,6 @@ import {
   type HubToRun,
   isPageOfInstance,
   type IntentAnswer,
-  type LaneLayerData,
   type LocatorAnswer,
   type MockAnswer,
   type PickAtAnswer,
@@ -86,6 +85,7 @@ import type {
   ShareRunParams,
   AskToWatchParams,
   AnswerAskParams,
+  LaneViewLayer,
 } from './protocol.js';
 import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
@@ -166,10 +166,10 @@ export type LaneViewFrame = { ref: string; lane: number; worker: number; since: 
 );
 
 /**
- * A layer of a lane a viewer watches and asked for (`LaneParams.layers`, `@piwitests/core/live-layers`): of the worker
- * `worker` and the test `test` (Playwright's id; null for the text of a page no test shows), as the worker sent it.
+ * A layer of a lane a viewer watches and asked for (`LaneParams.layers`, `@piwitests/core/live-layers`), as the worker
+ * sent it: the shape of `piwi/laneLayer`.
  */
-export type LaneViewLayer = { ref: string; lane: number; worker: number; test: string | null } & LaneLayerData;
+export type { LaneViewLayer };
 
 /**
  * Who watches the live view of a stop: each frame of it goes to `frame`, while it watches; the frames of a lane it
@@ -518,6 +518,7 @@ interface Session {
 type Asked =
   | 'image'
   | 'view-lane'
+  | 'text'
   | 'front'
   | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end' | 'share'>
   | AgentQuery;
@@ -526,6 +527,7 @@ type Asked =
 function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
   switch (what) {
     case 'image':
+    case 'text':
       return { type: 'request', request, what };
     case 'view-lane':
       return { type: 'request', request, what, on: extra.on ?? false };
@@ -1565,6 +1567,28 @@ export class RunSessions {
     }
   }
 
+  /**
+   * Ask the worker of a lane `viewer` watches with its page's text (`layers` lists `text`) for that text now: it comes
+   * as a `lane-layer` to the lane's viewers that asked for the text. Answered as the worker answers, or with why not.
+   */
+  async laneText(params: Omit<LaneParams, 'on' | 'layers'>, viewer: Viewer): Promise<RunControlResult> {
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const lane = params?.lane;
+    if (!session || session.ended || !Number.isInteger(lane) || !session.lanes.get(lane)?.has(viewer)) {
+      return { ok: false, message: 'Watch the worker first.' };
+    }
+    if (!session.laneLayers.get(lane)?.get(viewer)?.has('text')) {
+      return { ok: false, message: 'Show the page’s text first.' };
+    }
+    const worker = [...session.workers.values()].find((w) => w.parallelIndex === lane && w.lane?.on);
+    if (!worker) return { ok: false, message: `Worker ${lane + 1} shows no page now.` };
+    if (!worker.features.has('layers')) {
+      return { ok: false, message: 'Update the reporter to read the page’s text: this one sends its images alone.' };
+    }
+    const answer = (await this.ask(worker, 'text')) as IntentAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.' };
+  }
+
   /** Whether `viewer` watches the lane `lane` of the run `ref`, which ends with the run. */
   watchesLane(viewer: Viewer, ref: string, lane: number): boolean {
     const session = this.sessions.get(ref);
@@ -2379,6 +2403,7 @@ export class RunSessions {
           waiting: worker.waiting,
           takes: [...worker.takes],
           watchable: worker.features.has('view-lane'),
+          layers: worker.features.has('view-lane') && worker.features.has('layers'),
           showsWindow: worker.features.has('front'),
           ...watchersField(this.watchersOf(session, worker, null)),
         })),

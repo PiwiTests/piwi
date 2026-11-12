@@ -5,6 +5,8 @@
  * goes through these requests, and each client draws them natively: CodeLens
  * in VS Code, Code Vision in the JetBrains IDEs.
  */
+import type { LaneLayer } from '@piwitests/core/live-layers';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
@@ -915,6 +917,13 @@ export interface CiWatchParams {
   shard: number | null;
   lane: number;
   on: boolean;
+  /**
+   * The layers the client shows beside the images (`calls`, `events`, `text`, `filmstrip`), none when left out: the
+   * instance's watch takes them (`piwi/ciLayer`), and a watch of the same lane asked again with others changes them.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
 }
 
 /**
@@ -928,8 +937,24 @@ export type CiFrame = { root: string; runId: number; shard: number | null; lane:
   | { ended: string }
 );
 
+/**
+ * `piwi/ciLayer` (notification, server to client): a layer of the CI lane the client watches, one it asked for alone
+ * (`CiWatchParams.layers`), of the test `test` (its title as the instance names it), as the instance relays it and
+ * `@piwitests/core/live-layers` reads it: the call its test is in (`calls`), something its page or its requests said
+ * (`events`), the page's text or why none goes (`text`), an image of the test's filmstrip, its JPEG in base64
+ * (`filmstrip`). Never stored, none after the watch ends.
+ */
+export type CiLayer = {
+  root: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  test: string | null;
+} & LaneLayerData;
+
 export const CI_WATCH_REQUEST = 'piwi/ciWatch';
 export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
+export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
@@ -1784,6 +1809,11 @@ export interface RunWorker {
   /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
   watchable: boolean;
   /**
+   * Its reporter sends the layers of its slot's view beside the frames (`LaneViewParams.layers`): the call log, the
+   * page's events, its text and the test's filmstrip.
+   */
+  layers: boolean;
+  /**
    * Its reporter brings the test's window to the front at a stop its pause bar shows: `piwi/stopAction` `front`
    * (**Show the browser**).
    */
@@ -2159,6 +2189,13 @@ export interface LaneViewParams {
   ref: string;
   lane: number;
   on: boolean;
+  /**
+   * The layers the client shows beside the frames (`calls`, `events`, `text`, `filmstrip`), none when left out: each
+   * goes as `piwi/laneLayer`. A watch of the lane it watches, asked again with other layers, changes them in place.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
 }
 
 /**
@@ -2171,8 +2208,19 @@ export type LaneFrame = { ref: string; lane: number; worker: number; test: strin
   | { refused: string }
 );
 
+/**
+ * `piwi/laneLayer` (notification, server to client): a layer of the lane the editor watches, one it asked for alone
+ * (`LaneViewParams.layers`), of the worker `worker` and its test `test` (Playwright's id; null for the text of a page no
+ * test shows), as `@piwitests/core/live-layers` bounds and masks it: the call its test is in (`calls`), something its
+ * page or its requests said (`events`), the page's text or why none goes (`text`), an image of the test's filmstrip,
+ * its JPEG in base64 (`filmstrip`). Never stored, none after the watch ends. The worker sends the call log and the
+ * filmstrip again as the layers change: a client keeps one image of the filmstrip per call.
+ */
+export type LaneViewLayer = { ref: string; lane: number; worker: number; test: string | null } & LaneLayerData;
+
 export const LANE_VIEW_REQUEST = 'piwi/laneView';
 export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
+export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

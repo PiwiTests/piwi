@@ -3404,4 +3404,187 @@ object Glue {
         }
         listOf(head, open) + tests
     }
+
+    /** The most events the Worker tab lists, the newest first. */
+    const val MAX_LANE_EVENTS = 50
+
+    /** The call log's last lines the Worker tab shows under its image. */
+    const val WAITS_LINES = 3
+
+    /** The most images a test's filmstrip keeps (`MAX_FILMSTRIP` of `@piwitests/core/live-layers`). */
+    const val MAX_FILMSTRIP = 40
+
+    /** The longest page's text a layer carries, in characters (`MAX_LANE_TEXT` of `@piwitests/core/live-layers`). */
+    const val MAX_LANE_TEXT = 96 * 1024
+
+    /**
+     * The layers the Worker tab asks for (`piwi/laneView`'s and `piwi/ciWatch`'s `layers`): the call log and the page's
+     * events always, the page's text and the filmstrip while their tab is selected.
+     */
+    fun laneLayersAsked(text: Boolean, filmstrip: Boolean): List<String> =
+        listOfNotNull("calls", "events", "text".takeIf { text }, "filmstrip".takeIf { filmstrip })
+
+    /** A time as the Worker tab says it: `120 ms`, `4.2 s`, `17 s`. */
+    fun laneDuration(ms: Long): String = when {
+        ms < 1000 -> "${maxOf(0L, ms)} ms"
+        ms < 10_000 -> String.format(java.util.Locale.ROOT, "%.1f s", ms / 1000.0)
+        else -> "${Math.round(ms / 1000.0)} s"
+    }
+
+    private val WEB_ADDRESS = Regex("^https?://[^/?#]+([^#]*)", RegexOption.IGNORE_CASE)
+
+    /** An address as an event line shows it: its path and query on a web address, else as it came. */
+    fun eventAddress(url: String): String = WEB_ADDRESS.find(url)?.groupValues?.get(1)?.ifEmpty { "/" } ?: url
+
+    /**
+     * Why the call the lane's test is in waits: the call and how it stands (`head`), what its locator matches while it
+     * waits on one (`target`), the call log's last lines then the error it ended with (`lines`).
+     */
+    data class WaitsView(val head: String, val target: String?, val lines: List<String>, val failed: Boolean)
+
+    private fun targetWords(target: LiveCallTarget?): String? {
+        if (target == null) return null
+        if (target.count == 0) return "No element matches yet"
+        val state = when (target.enabled) { false -> "disabled"; true -> "enabled"; null -> null }
+        if (target.count == 1) return "1 element matches" + (state?.let { ", $it" } ?: "")
+        return "${target.count} elements match" + (state?.let { ", the first $it" } ?: "")
+    }
+
+    fun waitsView(log: LiveCallLog): WaitsView {
+        val time = laneDuration(log.ms)
+        val how = when (log.status) { "running" -> "waiting $time"; "passed" -> "done in $time"; else -> "failed after $time" }
+        val lines = log.lines.orEmpty().takeLast(WAITS_LINES)
+        return WaitsView(
+            "${log.call?.title.orEmpty()} · $how",
+            if (log.status == "running") targetWords(log.target) else null,
+            if (log.error != null) lines + log.error else lines,
+            log.status == "failed",
+        )
+    }
+
+    /** A line of the Worker tab's events: `key` the same request's lines share, `level` `error`, `warning` or `info`. */
+    data class EventLine(val key: String, val text: String, val level: String, val url: String?, val at: Long)
+
+    /** What a page event says, as the Worker tab lists it; `n` keys a line no other replaces. */
+    fun eventLine(event: PageEvent, at: Long, worker: Int, n: Int): EventLine {
+        fun line(text: String, level: String, url: String? = null, key: String = "$n") = EventLine(key, text, level, url, at)
+        val url = event.url.orEmpty()
+        val what = "${event.method.orEmpty()} ${eventAddress(url)}"
+        return when (event.kind) {
+            "console" -> line("Console error: ${event.text.orEmpty()}", "error")
+            "page-error" -> line("Uncaught error: ${event.text.orEmpty()}", "error")
+            "request-failed" ->
+                line("$what " + (event.status?.let { "answered $it" } ?: "failed: ${event.failure ?: "no answer"}"), "error", url)
+            "request-pending" -> {
+                val time = laneDuration(event.ms ?: 0)
+                val done = event.done == true
+                line(if (done) "$what answered after $time" else "$what pending $time", if (done) "info" else "warning", url, "pending $worker:${event.id}")
+            }
+            "backend" -> {
+                val level = if (event.level == "warning") "warning" else "error"
+                line("Backend $level on $what${event.status?.let { " ($it)" } ?: ""}: ${event.text.orEmpty()}", level, url)
+            }
+            "api" -> {
+                val status = event.status
+                if (event.failure != null || status == null) line("API $what failed: ${event.failure ?: "no answer"}", "error", url)
+                else line("API $what answered $status in ${laneDuration(event.ms ?: 0)}", if (status >= 400) "error" else "info", url)
+            }
+            "dropped" -> line("${event.count ?: 0} more events were not sent: too many at once.", "warning")
+            else -> line(event.text.orEmpty(), "info")
+        }
+    }
+
+    /** An image of the lane's filmstrip: the call it ended, its title and its place in the strip, its JPEG in base64. */
+    data class StripImage(val call: String, val title: String, val index: Int, val data: String)
+
+    /** The page's text as the Worker tab shows it (`text`, `cut`, `source`), or why none came (`refused`). */
+    data class LaneTextShown(val text: String?, val cut: Boolean, val source: String, val refused: String?)
+
+    /**
+     * The layers the Worker tab shows of its lane, as they came: of the test `test` (its id, or its title on a CI lane),
+     * the newest events first, how many were heard, the page's text, the filmstrip in the order of the test's calls.
+     */
+    data class LaneLayersShown(
+        val test: String?,
+        val waits: WaitsView?,
+        val events: List<EventLine>,
+        val heard: Int,
+        val text: LaneTextShown?,
+        val strip: List<StripImage>,
+    )
+
+    val NO_LANE_LAYERS = LaneLayersShown(null, null, emptyList(), 0, null, emptyList())
+
+    private val THUMB_DATA = Regex("^/9j/[A-Za-z0-9+/]*={0,2}$")
+
+    /**
+     * The layers shown with `layer` heard, and the parts it changed (`waits`, `events`, `text`, `strip`; none for an
+     * image of a call the strip holds, as the worker sends the filmstrip again when the layers change). A layer of
+     * another test starts the call log and the filmstrip anew; a request's pending time replaces its line, first again.
+     */
+    fun withLaneLayer(shown: LaneLayersShown, layer: LaneLayerFields, worker: Int = 0): Pair<LaneLayersShown, Set<String>> {
+        val changed = linkedSetOf<String>()
+        var next = shown
+        val test = layer.test
+        if (test != null && test != shown.test) {
+            if (shown.waits != null) changed += "waits"
+            if (shown.strip.isNotEmpty()) changed += "strip"
+            next = next.copy(test = test, waits = null, strip = emptyList())
+        }
+        when (layer.layer) {
+            "calls" -> layer.log?.let {
+                next = next.copy(waits = waitsView(it))
+                changed += "waits"
+            }
+            "events" -> layer.event?.let {
+                val line = eventLine(it, layer.at ?: 0, worker, next.heard + 1)
+                next = next.copy(
+                    events = (listOf(line) + next.events.filter { e -> e.key != line.key }).take(MAX_LANE_EVENTS),
+                    heard = next.heard + 1,
+                )
+                changed += "events"
+            }
+            "text" -> {
+                val text = layer.text
+                val refused = layer.refused
+                if (refused != null) next = next.copy(text = LaneTextShown(null, false, "", refused))
+                else if (text != null) next = next.copy(text = LaneTextShown(text.text, text.cut, text.source, null))
+                if (refused != null || text != null) changed += "text"
+            }
+            "filmstrip" -> {
+                val thumb = layer.thumb
+                val data = layer.data
+                if (thumb != null && data != null && THUMB_DATA.matches(data) && next.strip.none { it.call == thumb.call }) {
+                    val image = StripImage(thumb.call, thumb.title, thumb.index, data)
+                    next = next.copy(strip = (next.strip + image).sortedBy { it.index }.takeLast(MAX_FILMSTRIP))
+                    changed += "strip"
+                }
+            }
+        }
+        return next to changed
+    }
+
+    /** What the page's text tab says above the text: where it came from and whether it was cut, or why none came. */
+    fun laneTextNote(text: LaneTextShown?): String = when {
+        text == null -> "Nothing yet."
+        text.refused != null -> text.refused
+        else -> (if (text.source == "trace") "From the test’s trace." else "Read from the page.") +
+            (if (text.cut) " Cut at ${MAX_LANE_TEXT / 1024} K characters." else "")
+    }
+
+    /** The note over a lane whose reporter sends no layers; null when it sends them or the tab cannot tell. */
+    fun laneLayersNote(worker: RunWorker?): String? =
+        if (worker != null && !worker.layers) {
+            "This worker’s reporter sends its images alone: update @piwitests/reporter to see why it waits, the page’s events, its text and the filmstrip."
+        } else null
+
+    /**
+     * Where `query` is next found in `text` from `from`, ignoring case, wrapping to the start; -1 for none or an empty
+     * query. The Text tab's search.
+     */
+    fun findIn(text: String, query: String, from: Int): Int {
+        if (query.isEmpty()) return -1
+        val at = text.indexOf(query, from.coerceIn(0, text.length), ignoreCase = true)
+        return if (at >= 0) at else text.indexOf(query, 0, ignoreCase = true)
+    }
 }

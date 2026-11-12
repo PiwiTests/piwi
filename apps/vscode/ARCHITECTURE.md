@@ -565,10 +565,20 @@ until one says `ended`, or the service stops (`withCiSession`).
 - **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
   `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
   follows, drawing again only when the caption or the watch changed: `ciLaneRedraws`) and drawn by `pausedPageHtml`
-  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready` and Watch dropped in the
-  extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused shows under the
-  caption, Watch then off. Another CI lane takes the watch's place on the service's side without an `on: false`; a
-  local slot ends it, and so does a `piwi/ciWatch` the service never answered.
+  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch and the layers' sections
+  dropped in the extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused
+  shows under the caption, Watch then off. Another CI lane takes the watch's place on the service's side without an
+  `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
+- **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's
+  (`piwi/ciLayer`) alike: **Why it waits** (the call log's last lines, what the locator matches: `waitsView`), then
+  **Events** (`eventLine`, the newest first, `MAX_LANE_EVENTS` at most, a pending request's line replaced in place),
+  **Text** (the masked ARIA text, which the webview's Find searches: `enableFindWidget`) and **Filmstrip** (one image
+  per call, a click showing it larger with its call's title). The watch asks for the call log and the events, and for
+  the text and the filmstrip while their `<details>` is open (`laneLayersAsked`), changing them on the open watch once
+  it was accepted; **Take the text again** sends `text: true`. The extension keeps them for the slot it shows
+  (`withLaneLayer`, which keeps one image per call as the worker sends the strip again) and posts its script the parts
+  that changed, each JPEG once per document (`laneLayersMessage`); the script sets every run text with `textContent`.
+  A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`).
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
   runs on one line share one mark.

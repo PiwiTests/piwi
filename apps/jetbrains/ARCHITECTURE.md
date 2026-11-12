@@ -670,6 +670,14 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   offers **Watch on the Dashboard** in a notification. Another CI lane takes the watch's place on the service's side
   without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
   within 20 s end it.
+- **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
+  `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
+  (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
+  `Glue.findIn` for the Text tab's search). The watch asks for the call log and the events, and for the text or the
+  filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
+  (`relayer`); **Take the Text Again** sends `text: true`. A filmstrip image is decoded and scaled off the event
+  thread. Every text from the run goes into a `JBTextArea`, an `html.disable` label or a `ColoredListCellRenderer`,
+  never HTML; a tooltip holds a web address or starts with the image's number.
 - **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no
   gutter icon, highlight or link (`CiMarkInlay`, `Glue.ciMarksIn`), in each open editor of its file, drawn again as
   the sessions change and as an editor opens. The editors open are read, never a file from disk. The tests of several

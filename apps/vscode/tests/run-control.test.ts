@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
+import type { PageEvent } from '@piwitests/core/live-layers';
+import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
   CiSession,
   LocatorAtCaretResult,
@@ -16,6 +18,17 @@ import {
   ciLaneRedraws,
   ciLaneTakes,
   ciLaneTitle,
+  eventLine,
+  LANE_LAYER_PARTS,
+  laneDuration,
+  laneLayersAsked,
+  laneLayersMessage,
+  laneLayersNote,
+  laneTextNote,
+  MAX_LANE_EVENTS,
+  NO_LANE_LAYERS,
+  waitsView,
+  withLaneLayer,
   ciNodes,
   ciPositionFiles,
   ciPositionsIn,
@@ -142,6 +155,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   waiting: null,
   takes: [],
   watchable: false,
+  layers: false,
   showsWindow: false,
   ...extra,
 });
@@ -2168,6 +2182,8 @@ describe('the CI runs of the branch', () => {
   test('take nothing a CI lane’s panel sends but Watch: no Interact, pick, input or release reaches its page', () => {
     expect(ciLaneTakes({ type: 'ready' })).toBe(true);
     expect(ciLaneTakes({ type: 'view', on: true })).toBe(true);
+    expect(ciLaneTakes({ type: 'layers', text: true, filmstrip: false })).toBe(true);
+    expect(ciLaneTakes({ type: 'text' })).toBe(true);
     for (const type of ['interact', 'pick', 'input', 'release', undefined]) expect(ciLaneTakes({ type })).toBe(false);
   });
 
@@ -2204,5 +2220,210 @@ describe('the CI runs of the branch', () => {
     expect(html).toContain('read-only');
     expect(html).toContain('alt="The page of the CI worker\'s test"');
     expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('the worker panel’s layers', () => {
+  const at = 1_800_000_000_000;
+  const log = (extra: Partial<LiveCallLog> = {}): LiveCallLog => ({
+    id: 'c3',
+    call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 9 },
+    status: 'running',
+    lines: [
+      'waiting for getByRole(…)',
+      '  locator resolved to <button disabled>',
+      '  element is not enabled',
+      'retrying',
+    ],
+    point: null,
+    target: { count: 1, box: null, enabled: false },
+    viewport: null,
+    ms: 4200,
+    error: null,
+    ...extra,
+  });
+  const thumb = (call: string, index: number) => ({
+    layer: 'filmstrip' as const,
+    test: 't1',
+    thumb: { call, title: `Call ${index}`, index, width: 320, height: 200, at },
+    data: `/9j/${call}==`,
+  });
+
+  test('ask for the call log and the events always, the text and the filmstrip while their section is open', () => {
+    expect(laneLayersAsked({ text: false, filmstrip: false })).toEqual(['calls', 'events']);
+    expect(laneLayersAsked({ text: true, filmstrip: true })).toEqual(['calls', 'events', 'text', 'filmstrip']);
+    expect(laneLayersAsked({ text: false, filmstrip: true })).toEqual(['calls', 'events', 'filmstrip']);
+  });
+
+  test('say why the call waits: how long, what its locator matches, the log’s last lines and its error', () => {
+    expect(waitsView(log())).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · waiting 4.2 s",
+      target: '1 element matches, disabled',
+      lines: ['  locator resolved to <button disabled>', '  element is not enabled', 'retrying'],
+      failed: false,
+    });
+    expect(waitsView(log({ target: { count: 0, box: null, enabled: null }, ms: 17_400 })).target).toBe(
+      'No element matches yet',
+    );
+    expect(waitsView(log({ target: { count: 3, box: null, enabled: true } })).target).toBe(
+      '3 elements match, the first enabled',
+    );
+    const failed = waitsView(log({ status: 'failed', ms: 30_000, error: 'Timeout 30000ms exceeded.', lines: ['a'] }));
+    expect(failed).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · failed after 30 s",
+      target: null,
+      lines: ['a', 'Timeout 30000ms exceeded.'],
+      failed: true,
+    });
+    expect(waitsView(log({ status: 'passed', ms: 120 })).head).toMatch(/done in 120 ms$/);
+    expect(laneDuration(999)).toBe('999 ms');
+  });
+
+  test('list each event in a line of its own, a request’s pending time by its address’s path', () => {
+    const pending = eventLine(
+      {
+        kind: 'request-pending',
+        id: 4,
+        method: 'POST',
+        url: 'https://shop.test/api/checkout?x=1',
+        ms: 17_000,
+        done: false,
+      },
+      at,
+      2,
+      1,
+    );
+    expect(pending).toEqual({
+      key: 'pending 2:4',
+      text: 'POST /api/checkout?x=1 pending 17 s',
+      level: 'warning',
+      url: 'https://shop.test/api/checkout?x=1',
+      at,
+    });
+    const line = (event: PageEvent) => eventLine(event, at, 0, 1);
+    expect(line({ kind: 'console', text: 'Oops' })).toMatchObject({ text: 'Console error: Oops', level: 'error' });
+    expect(line({ kind: 'page-error', text: 'x is undefined' }).text).toBe('Uncaught error: x is undefined');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: 'https://shop.test/cart', status: 503, failure: null }).text,
+    ).toBe('GET /cart answered 503');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: '/x', status: null, failure: 'net::ERR_ABORTED' }).text,
+    ).toBe('GET /x failed: net::ERR_ABORTED');
+    expect(
+      line({
+        kind: 'backend',
+        method: 'POST',
+        url: 'https://shop.test/pay',
+        status: 500,
+        level: 'error',
+        text: 'Card',
+      }),
+    ).toMatchObject({ text: 'Backend error on POST /pay (500): Card', level: 'error' });
+    expect(
+      line({ kind: 'api', method: 'POST', url: 'https://api.test/orders', status: 201, ms: 85, failure: null }),
+    ).toMatchObject({ text: 'API POST /orders answered 201 in 85 ms', level: 'info' });
+    expect(line({ kind: 'dropped', count: 12 }).text).toBe('12 more events were not sent: too many at once.');
+  });
+
+  test('keep the newest events first, capped, one line per pending request, its last time in place', () => {
+    let shown = NO_LANE_LAYERS;
+    const event = (e: PageEvent) => {
+      const next = withLaneLayer(shown, { layer: 'events', event: e, at, test: 't1', worker: 0 });
+      shown = next.shown;
+      return next.changed;
+    };
+    const request = {
+      kind: 'request-pending',
+      id: 1,
+      method: 'POST',
+      url: '/api/checkout',
+      ms: 5000,
+      done: false,
+    } as const;
+    expect(event(request)).toEqual(['events']);
+    event({ kind: 'console', text: 'Oops' });
+    event({ ...request, ms: 10_000 });
+    expect(shown.events.map((e) => e.text)).toEqual(['POST /api/checkout pending 10 s', 'Console error: Oops']);
+    event({ ...request, ms: 12_300, done: true });
+    expect(shown.events[0]).toMatchObject({ text: 'POST /api/checkout answered after 12 s', level: 'info' });
+    expect(shown.events).toHaveLength(2);
+    for (let i = 0; i < MAX_LANE_EVENTS + 5; i++) event({ kind: 'console', text: `n${i}` });
+    expect(shown.events).toHaveLength(MAX_LANE_EVENTS);
+    expect(shown.events[0]!.text).toBe(`Console error: n${MAX_LANE_EVENTS + 4}`);
+  });
+
+  test('keep one image of the filmstrip per call, in the test’s order, and start anew with another test', () => {
+    let shown = NO_LANE_LAYERS;
+    const hear = (layer: Parameters<typeof withLaneLayer>[1]) => {
+      const next = withLaneLayer(shown, layer);
+      shown = next.shown;
+      return next.changed;
+    };
+    expect(hear(thumb('c2', 2))).toEqual(['strip']);
+    expect(hear(thumb('c1', 1))).toEqual(['strip']);
+    // The strip sent again, as a viewer asks for it again, changes nothing.
+    expect(hear(thumb('c2', 2))).toEqual([]);
+    expect(hear({ ...thumb('c9', 9), data: 'iVBORw0KGgo=' })).toEqual([]);
+    expect(shown.strip.map((image) => image.call)).toEqual(['c1', 'c2']);
+    hear({ layer: 'calls', log: log(), test: 't1' });
+    hear({
+      layer: 'text',
+      text: { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at },
+      test: null,
+    });
+    expect(shown.waits).not.toBeNull();
+    // Another test's call log clears the strip and the call log before it; the text stays.
+    expect(hear({ layer: 'calls', log: log({ id: 'd1' }), test: 't2' }).sort()).toEqual(['strip', 'waits']);
+    expect(shown.strip).toEqual([]);
+    expect(shown.text).toMatchObject({ text: '- heading "Shop"' });
+    expect(hear({ layer: 'text', refused: 'The page is closed.', test: 't2' })).toEqual(['text']);
+    expect(laneTextNote(shown.text)).toBe('The page is closed.');
+    expect(laneTextNote({ text: 'x', cut: true, source: 'trace', at })).toBe(
+      'From the test’s trace. Cut at 96 K characters.',
+    );
+  });
+
+  test('post the parts that changed, each image of the strip once, and every part to a view drawn anew', () => {
+    let shown = NO_LANE_LAYERS;
+    shown = withLaneLayer(shown, thumb('c1', 1)).shown;
+    shown = withLaneLayer(shown, thumb('c2', 2)).shown;
+    const posted = new Set(['c1']);
+    expect(laneLayersMessage(4, shown, ['strip'], posted)).toEqual({
+      type: 'layers',
+      shown: 4,
+      strip: [
+        { call: 'c1', title: 'Call 1', index: 1 },
+        { call: 'c2', title: 'Call 2', index: 2 },
+      ],
+      images: { c2: '/9j/c2==' },
+    });
+    expect(laneLayersMessage(4, shown, LANE_LAYER_PARTS, new Set(), 'Worker 2 shows no page now.')).toMatchObject({
+      waits: null,
+      events: [],
+      text: { text: null, note: 'Worker 2 shows no page now.' },
+      images: { c1: '/9j/c1==', c2: '/9j/c2==' },
+    });
+    expect(laneLayersNote({ layers: false })).toMatch(/^This worker’s reporter sends its images alone/);
+    expect(laneLayersNote({ layers: true })).toBeNull();
+    expect(laneLayersNote(null)).toBeNull();
+  });
+
+  test('draw the sections under a worker’s image, empty, with Text and Filmstrip open as the person left them', () => {
+    const view = {
+      image: null,
+      caption: 'Worker 2',
+      lane: true,
+      live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+      layers: { text: true, filmstrip: false, note: 'Update <b>' },
+    };
+    const html = pausedPageHtml(view, 'n', 'https://webview/paused-page.js');
+    expect(html).toContain('<details id="text-section" class="layer" open>');
+    expect(html).toContain('<details id="strip-section" class="layer">');
+    expect(html).toContain('Update &#60;b&#62;');
+    expect(html).not.toContain('<b>');
+    // The paused page of one stop has none.
+    expect(pausedPageHtml({ ...view, lane: false }, 'n', 'https://webview/paused-page.js')).not.toContain(
+      'id="layers"',
+    );
   });
 });

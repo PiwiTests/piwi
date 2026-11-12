@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { LIVE_HEARTBEAT, LIVE_STREAM_TYPE, encodeLiveMessage } from '@piwitests/core/live-view';
 import { CI_WATCH_SIZE, CiWatch, type CiWatchTarget } from '../src/ci-watch';
 import { PiwiClient } from '../src/piwi-client';
-import type { CiFrame, CiSession } from '../src/protocol';
+import type { CiFrame, CiLayer, CiSession } from '../src/protocol';
 
 const ROOT = '/work/shop';
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
@@ -126,6 +126,7 @@ describe('watching a CI run’s lane on the instance', () => {
       return last && 'ended' in last ? last.ended : undefined;
     };
     const asked: Array<[string | undefined, number, number | null, number]> = [];
+    const layers: CiLayer[] = [];
     watch = new CiWatch({
       target: (root, runId, shard, lane): CiWatchTarget | null => {
         asked.push([root, runId, shard, lane]);
@@ -135,10 +136,13 @@ describe('watching a CI run’s lane on the instance', () => {
       send: async (frame) => {
         frames.push(frame);
       },
+      sendLayer: async (layer) => {
+        layers.push(layer);
+      },
       idleMs: options.idleMs,
       openMs: options.openMs,
     });
-    return { frames, ended, asked, stub: stub!, watch: watch! };
+    return { frames, layers, ended, asked, stub: stub!, watch: watch! };
   }
 
   const lane2 = { root: ROOT, runId: 78, shard: null, lane: 2 };
@@ -216,6 +220,61 @@ describe('watching a CI run’s lane on the instance', () => {
     expect(await watch.watch({ ...lane2, on: true })).toEqual({ ok: false, message: 'No such watch of this run.' });
     await waitFor(() => open.closed);
     expect(frames.some((f) => 'ended' in f)).toBe(false);
+  });
+
+  test('passes on the layers the client asked for alone, changes them in place, and asks for the text', async () => {
+    const { layers, stub, watch } = await start();
+    const at = 1_800_000_000_000;
+    await watch.watch({ ...lane2, on: true, layers: ['filmstrip', 'calls', 'events'] });
+    const open = stub.opened[0]!;
+    // The call log comes with the full view: the instance hears of the others.
+    expect(open.url.searchParams.get('layers')).toBe('events,filmstrip');
+    const of = { shard: null, worker: 4, slot: 1, test: 'checkout › pays' };
+    const call = { title: 'Click', file: null, line: null };
+    await open.write({ type: 'call-log', ...of, log: { id: 'c1', call, status: 'running', lines: [], point: null } });
+    await open.write({ type: 'page-event', ...of, event: { kind: 'console', text: 'Oops' }, at });
+    await open.write({
+      type: 'page-event',
+      ...of,
+      slot: 0,
+      worker: 3,
+      event: { kind: 'console', text: 'Not this lane' },
+      at,
+    });
+    const thumb = { call: 'c1', title: 'Click', index: 1, width: 320, height: 200, at };
+    await open.write({ type: 'thumb', ...of, thumb }, JPEG);
+    const text = { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at };
+    await open.write({ type: 'text', ...of, text });
+    const where = { ...lane2, test: 'checkout › pays' };
+    expect(layers).toEqual([
+      { ...where, layer: 'calls', log: expect.objectContaining({ id: 'c1', status: 'running' }) },
+      { ...where, layer: 'events', event: { kind: 'console', text: 'Oops' }, at },
+      { ...where, layer: 'filmstrip', thumb, data: base64(JPEG) },
+    ]);
+
+    // The layers change on the watch open, and the text is asked for once it is shown.
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events'], text: true })).toEqual({
+      ok: false,
+      message: 'Show the page’s text first.',
+    });
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'] })).toMatchObject({ ok: true });
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'], text: true })).toEqual({
+      ok: true,
+      message: 'The page’s text is on its way.',
+    });
+    expect(stub.posts.map((post) => post.body)).toEqual([
+      { watch: WATCH_ID, layers: ['events', 'text'] },
+      { watch: WATCH_ID, text: true },
+    ]);
+    await open.write({ type: 'text', ...of, text });
+    await open.write({ type: 'thumb', ...of, thumb }, JPEG);
+    expect(layers.slice(3)).toEqual([{ ...where, layer: 'text', text }]);
+
+    // A change the instance refuses leaves the watch as it was.
+    stub.state.changeStatus = 429;
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events'] })).toMatchObject({ ok: false });
+    expect(open.closed).toBe(false);
+    expect(stub.opened).toHaveLength(1);
   });
 
   test('gives one watch at a time: another run’s takes its place, and stopping says nothing', async () => {

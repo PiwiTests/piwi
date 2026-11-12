@@ -215,8 +215,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/stopCode`, `piwi/pageFrame`,
-  `piwi/laneFrame`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
+  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -556,10 +556,10 @@ its running tests is at as a CI position, never as a stop. No request acts on it
 
 ### Watching a CI lane
 
-`piwi/ciWatch { root?, runId, shard, lane, on }` (`src/ci-watch.ts`, one `CiWatch` per service) shows the lane of a
-running test of a CI session in the client's worker panel, read-only, through the instance's watch of the run, opened
-with the editor's key (`PiwiClient.liveWatch`, `project:read`; the key counts as its owner in the instance's bound of
-watches per person).
+`piwi/ciWatch { root?, runId, shard, lane, on, layers?, text? }` (`src/ci-watch.ts`, one `CiWatch` per service) shows
+the lane of a running test of a CI session in the client's worker panel, read-only, through the instance's watch of the
+run, opened with the editor's key (`PiwiClient.liveWatch`, `project:read`; the key counts as its owner in the
+instance's bound of watches per person).
 
 - **Opens** on the lane's worker in full: `worker` (the lane's running test's Playwright worker index, else its latest
   test's: `CiSessions.watchTarget`), `slot` (`lane - 1`), `shard`, and `CI_WATCH_SIZE` (960 by 600 device pixels), so
@@ -575,8 +575,13 @@ watches per person).
   change ends the watch.
 - **Reads** the stream with core's `createLiveMessageReader` and `readLiveViewerMessage`: each `frame` of the lane goes
   to the client as `piwi/ciFrame` (the JPEG in base64, the test's title, the call's title), one at a time, the newest
-  alone waiting (`FrameSender`); a `refused` as `refused`; the call log and a test's outcome go nowhere. A frame is
-  masked by the worker before it leaves the CI machine, and the service keeps none.
+  alone waiting (`FrameSender`); a `refused` as `refused`; a test's outcome goes nowhere. A frame is masked by the
+  worker before it leaves the CI machine, and the service keeps none.
+- **Layers.** The layers the client asks (`layers`: `calls`, `events`, `text`, `filmstrip`) are the watch's `layers`
+  (its query, then the POST's; the call log is the full view's own `call-log`), each `call-log`, `page-event`, `text`
+  and `thumb` of the lane going to the client as `piwi/ciLayer` as it comes, those it asked for alone. The same lane
+  asked again with other layers changes them on the open watch, and `text: true` has the POST ask the worker for its
+  page's text; a refusal of either leaves the watch as it was.
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
   instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
   follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
@@ -786,6 +791,11 @@ sharing `RunSessions.watchLane` with the hub: one lane at a time, its frames sen
 waiting, none once `laneFrameGoes` says it no longer goes, and its watch ended with the run (`watchesLane`). At a stop
 of the lane's running test, `piwi/pageInput` naming that stop goes to the lane's viewer when the page view does not
 watch it; leaving lets go of what its input held there. `RunWorker.watchable` says which workers it takes.
+Its `layers` (`calls`, `events`, `text`, `filmstrip`) are the viewer's layers of the lane (`LaneParams.layers`), each
+`lane-layer` of them going to the client as `piwi/laneLayer` as it comes, none of a lane it stopped watching
+(`ClientLaneView.layer`). The lane it watches, asked again with other layers, changes them in place, the lane view
+kept on; `text: true` asks the lane's worker for its page's text now (`RunSessions.laneText`, the run channel's `text`
+request), refused unless the viewer shows the text. `RunWorker.layers` says which workers send them.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
@@ -1014,7 +1024,9 @@ Playwright starts in the lane does, and none as the lane's last viewer leaves (`
 as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`), and on the
 hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left more than
 `MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A `watch` asked again has the worker send its call log and filmstrip
-again and take the page's text anew. The hub keeps none of them. The editor client's own lane view takes no layer.
+again and take the page's text anew. The hub keeps none of them. The editor client's lane view takes the layers its
+`piwi/laneView` names, and tells them as `piwi/laneLayer`
+([Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)).
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.
