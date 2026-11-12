@@ -12,6 +12,9 @@ export const VIDEO_ANCHOR_OFFSET_MS = 55;
 /** How far a mapped time may sit from the frame that shows it: the spread between the runs that measured the anchor. */
 export const VIDEO_TIMING_TOLERANCE_MS = 60;
 
+/** The executions with a video, and the executions with none, that the run's video list holds at most each. */
+export const MAX_LISTED_EXECUTIONS = 2000;
+
 /** The title of the step Playwright runs to create the page a video records. */
 const CREATE_PAGE_STEP = 'Create page';
 
@@ -117,7 +120,10 @@ export interface ReelEntry {
   execution: ReelExecution;
   /** The worker it ran on (`Worker 2`), null when the result names none. */
   laneLabel: string | null;
-  /** The video plays up to here, in ms: where the test ends in it. 0 for a test with no video. */
+  /**
+   * The video plays up to here, in ms: where the test ends in it. 0 for a test with no video, and for one whose span
+   * in its video is unknown (no start time, or a span that maps to nothing): `entryEndMs` plays the whole video then.
+   */
   lengthMs: number;
   /** Where the entry starts on the reel, in ms of playing time. */
   reelStartMs: number;
@@ -162,6 +168,17 @@ function entryFor(execution: ReelExecution): Omit<ReelEntry, 'reelStartMs'> {
       })
     : null;
   return { execution, laneLabel, lengthMs: map ? testSpanInVideo(map).endMs : 0 };
+}
+
+/**
+ * Where an entry's video stops playing, in ms of video: the end of its test, held to the video's length once that is
+ * known (`videoLengthMs`). A video whose test span is unknown plays whole, so it is 0 until the length is known.
+ */
+export function entryEndMs(entry: Pick<ReelEntry, 'execution' | 'lengthMs'>, videoLengthMs?: number | null): number {
+  if (!entry.execution.video) return 0;
+  const length = videoLengthMs != null && videoLengthMs >= 0 ? videoLengthMs : Infinity;
+  if (entry.lengthMs > 0) return Math.min(entry.lengthMs, length);
+  return Number.isFinite(length) ? length : 0;
 }
 
 /** Puts the entries on one reel, each starting where the one before ends. */
@@ -247,7 +264,10 @@ export function tickedEntries(reel: Reel, cursor: ReelCursor | null): boolean[] 
     if (cursor == null) ticked.push(false);
     else if (i < cursor.index) ticked.push(true);
     else if (entry.execution.video == null) ticked.push(i === 0 || ticked[i - 1]!);
-    else ticked.push(i === cursor.index && cursor.videoMs >= (cursor.endMs ?? entry.lengthMs));
+    else {
+      const end = cursor.endMs ?? entry.lengthMs;
+      ticked.push(i === cursor.index && end > 0 && cursor.videoMs >= end);
+    }
   });
   return ticked;
 }

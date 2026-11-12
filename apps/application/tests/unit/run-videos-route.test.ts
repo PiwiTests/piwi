@@ -43,6 +43,8 @@ const route = (await import('../../server/api/test-runs/[id]/videos.get')).defau
   truncated: boolean;
 }>;
 
+const { MAX_LISTED_EXECUTIONS: MAX_LISTED } = await import('../../shared/video-reel');
+
 const ask = (runId: string) => route({ context: {}, params: { id: runId } });
 
 const onProject = (projectId: number): RouteCaller => ({
@@ -152,6 +154,95 @@ describe('GET /api/test-runs/:id/videos', () => {
     expect(answer.executions[0]).toMatchObject({ video: null, createPageEndMs: null });
     expect(answer.videoCount).toBe(1);
     expect(answer.truncated).toBe(false);
+  });
+
+  test('lists the videos of a run whose tests with no video fill the cap and sort ahead of them', async () => {
+    // `a.spec.ts` sorts before `checkout.spec.ts`: more than the cap of tests with no video come first.
+    const count = MAX_LISTED + 5;
+    const cases = Array.from({ length: count }, (_, i) => ({
+      id: 1000 + i,
+      projectId: 1,
+      filePath: 'tests/a.spec.ts',
+      title: `filler ${i}`,
+    }));
+    const noVideo = cases.map((c, i) => ({
+      id: c.id,
+      testRunId: 1,
+      testCaseId: c.id,
+      status: 'passed',
+      line: i + 1,
+      startedAt: T0,
+    }));
+    for (let i = 0; i < count; i += 200) {
+      await db.insert(schema.testCases).values(cases.slice(i, i + 200));
+      await db.insert(schema.testRunsCases).values(noVideo.slice(i, i + 200));
+    }
+    await db
+      .insert(schema.testCases)
+      .values({ id: 4, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'refunds' });
+    await db.insert(schema.testRunsCases).values([
+      { id: 11, testRunId: 1, testCaseId: 1, status: 'failed', line: 3, startedAt: T0, duration: 500 },
+      { id: 12, testRunId: 1, testCaseId: 4, status: 'failed', line: 9, startedAt: T0, duration: 500 },
+    ]);
+    await db.insert(schema.files).values(
+      [11, 12].map((executionId) => ({
+        id: executionId,
+        testRunId: 1,
+        testRunsCaseId: executionId,
+        type: 'attachment',
+        subtype: 'video',
+        label: 'video/webm',
+        path: `p/${executionId}.webm`,
+      })),
+    );
+
+    const answer = await ask('1');
+    expect(answer.videoCount).toBe(2);
+    expect(answer.executions.filter((e) => e.video).map((e) => e.executionId)).toEqual([11, 12]);
+    expect(answer.executions).toHaveLength(MAX_LISTED + 2);
+    expect(answer.truncated).toBe(true);
+  });
+
+  test('prefers the video Playwright recorded over a video file a test attached', async () => {
+    await db.insert(schema.testRunsCases).values([
+      { id: 30, testRunId: 1, testCaseId: 1, status: 'passed', startedAt: T0, duration: 500 },
+      { id: 31, testRunId: 1, testCaseId: 2, status: 'passed', startedAt: T0, duration: 500 },
+    ]);
+    await db.insert(schema.files).values([
+      // Attached first (lower id), by the test itself.
+      {
+        id: 41,
+        testRunId: 1,
+        testRunsCaseId: 30,
+        type: 'attachment',
+        subtype: null,
+        label: 'video/mp4',
+        path: 'own.mp4',
+      },
+      {
+        id: 42,
+        testRunId: 1,
+        testRunsCaseId: 30,
+        type: 'attachment',
+        subtype: 'video',
+        label: 'video/webm',
+        path: 'pw.webm',
+      },
+      // A test that attached a video and has no recording of its own still shows it.
+      {
+        id: 43,
+        testRunId: 1,
+        testRunsCaseId: 31,
+        type: 'attachment',
+        subtype: null,
+        label: 'video/mp4',
+        path: 'only.mp4',
+      },
+    ]);
+
+    const byId = new Map((await ask('1')).executions.map((e) => [e.executionId, e.video?.path]));
+    expect(byId.get(30)).toBe('pw.webm');
+    expect(byId.get(31)).toBe('only.mp4');
   });
 
   test('is empty for a run with no videos', async () => {

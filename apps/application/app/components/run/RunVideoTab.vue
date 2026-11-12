@@ -4,7 +4,7 @@
  * worker or by file. Fetched when the tab opens, from `GET /api/test-runs/:id/videos`.
  */
 import type { RunVideos } from '#shared/handlers/run-videos';
-import { buildReel, type ReelGroup } from '#shared/video-reel';
+import { MAX_LISTED_EXECUTIONS as LISTED_LIMIT, buildReel, type ReelGroup } from '#shared/video-reel';
 
 const props = defineProps<{ runId: number }>();
 
@@ -83,6 +83,10 @@ watch(group, () => (chosenKey.value = null));
         />
         <p v-if="group === 'file'" class="text-xs text-muted">Tests ran in parallel; played here in file order</p>
       </div>
+      <p v-if="data?.truncated" class="text-xs text-muted">
+        This run has more tests than the tab lists: the first {{ LISTED_LIMIT.toLocaleString() }} with a video and the
+        first {{ LISTED_LIMIT.toLocaleString() }} without are shown.
+      </p>
       <RunVideoReel :key="`${group}:${reel.key}`" :reel="reel" :group="group" />
     </div>
   </div>

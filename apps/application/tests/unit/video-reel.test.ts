@@ -3,6 +3,7 @@ import {
   VIDEO_TIMING_TOLERANCE_MS,
   buildReel,
   createPageEndMs,
+  entryEndMs,
   testSpanInVideo,
   tickedEntries,
   videoTimingMap,
@@ -203,6 +204,45 @@ describe('buildReel', () => {
   it('uses the mapped end of a test, not its duration, for the playing time', () => {
     const [reel] = buildReel([execution({ executionId: 1, durationMs: 2000, createPageEndMs: T0 + 400 })], 'worker');
     expect(reel!.entries[0]!.lengthMs).toBe(1655);
+  });
+});
+
+describe('a video whose test span is unknown', () => {
+  it('has no playing time of its own when the test has no start time', () => {
+    const [reel] = buildReel([execution({ executionId: 1, startedAt: null })], 'worker');
+    expect(reel!.entries[0]!.lengthMs).toBe(0);
+  });
+
+  it('has none when the span maps to nothing: a test that ended before the video began', () => {
+    const [reel] = buildReel(
+      [execution({ executionId: 1, startedAt: T0, durationMs: 100, createPageEndMs: T0 + 5000 })],
+      'worker',
+    );
+    expect(reel!.entries[0]!.lengthMs).toBe(0);
+  });
+
+  it('plays the whole video once its length is known, and nothing before', () => {
+    const [reel] = buildReel([execution({ executionId: 1, startedAt: null })], 'worker');
+    const entry = reel!.entries[0]!;
+    expect(entryEndMs(entry)).toBe(0);
+    expect(entryEndMs(entry, 4200)).toBe(4200);
+  });
+
+  it('is never ticked before its length is known', () => {
+    const [reel] = buildReel([execution({ executionId: 1, startedAt: null })], 'worker');
+    expect(tickedEntries(reel!, { index: 0, videoMs: 0 })).toEqual([false]);
+    expect(tickedEntries(reel!, { index: 0, videoMs: 4200, endMs: 4200 })).toEqual([true]);
+  });
+
+  it('still ends a test with a known span at its end, held to a shorter video', () => {
+    const [reel] = buildReel([execution({ executionId: 1, durationMs: 1000 })], 'worker');
+    expect(entryEndMs(reel!.entries[0]!, 5000)).toBe(1000);
+    expect(entryEndMs(reel!.entries[0]!, 600)).toBe(600);
+  });
+
+  it('has no end for a test with no video', () => {
+    const [reel] = buildReel([execution({ executionId: 1, video: null })], 'worker');
+    expect(entryEndMs(reel!.entries[0]!, 5000)).toBe(0);
   });
 });
 
