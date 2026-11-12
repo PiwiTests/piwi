@@ -158,7 +158,13 @@ export const RUN_WORDS_EN = {
   runs_filmstripNone: 'Each call’s page shows here once the call ends.',
   runs_filmstripAlt: 'The page after $call$',
   runs_filmstripClose: 'Close',
-  // How a run came out, beyond its status: one key per plural form, said through `RunSpeaker.count`.
+  // How far a run is, and how it came out beyond its status: one key per plural form, said through `RunSpeaker.count`.
+  runs_progress_one: '$done$ of $count$ test',
+  runs_progress_other: '$done$ of $count$ tests',
+  runs_progressFailed_one: '$count$ failed',
+  runs_progressFailed_other: '$count$ failed',
+  runs_progressFlaky_one: '$count$ flaky',
+  runs_progressFlaky_other: '$count$ flaky',
   runs_progressEndedAtStop_one: '$count$ ended at a stop',
   runs_progressEndedAtStop_other: '$count$ ended at a stop',
   // The CI runs of a project in progress, listed read-only.
@@ -197,8 +203,11 @@ export interface RunMessage {
 /** How a surface says the run model's words: a message by its key, a message that counts, and names listed in a sentence. */
 export interface RunSpeaker {
   say(key: RunWordKey, args?: RunWordArgs): string;
-  /** The message of `key` in the plural form the surface's language gives `count`, its `$count$` the number formatted. */
-  count(key: RunCountKey, count: number): string;
+  /**
+   * The message of `key` in the plural form the surface's language gives `count`, its `$count$` the number formatted
+   * and its other placeholders the values of `args`.
+   */
+  count(key: RunCountKey, count: number, args?: RunWordArgs): string;
   /** `A`, `A and B`, `A, B, and C`, as the surface's language lists names. */
   list(items: readonly string[]): string;
 }
@@ -216,9 +225,9 @@ export const englishRunSpeaker: RunSpeaker = {
       (_whole, name: string) => values.get(name.toLowerCase()) ?? '',
     );
   },
-  count(key, count) {
+  count(key, count, args = {}) {
     const form = englishPlural.select(count) === 'one' ? 'one' : 'other';
-    return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { count: englishNumber.format(count) });
+    return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { ...args, count: englishNumber.format(count) });
   },
   list: (items) => englishList.format(items),
 };

@@ -46,6 +46,9 @@ describe('the run model’s words', () => {
         englishRunSpeaker.count('runs_progressEndedAtStop', count),
       );
     }
+    expect(runsSpeaker.count('runs_progress', 9, { done: '3' })).toBe(
+      englishRunSpeaker.count('runs_progress', 9, { done: '3' }),
+    );
     setBrowserLanguage('fr');
     expect(runsSpeaker.count('runs_progressEndedAtStop', 2)).toBe('2 terminés à un arrêt');
     expect(runsSpeaker.count('runs_progressEndedAtStop', 1)).toBe('1 terminé à un arrêt');

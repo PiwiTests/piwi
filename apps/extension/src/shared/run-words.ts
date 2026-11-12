@@ -11,10 +11,10 @@ const catalogKey = (key: RunWordKey): MessageKey => key;
 const pluralKey = (key: RunCountKey): PluralKey => key;
 
 const message = t as (key: MessageKey, args?: RunWordArgs) => string;
-const counted = tn as (key: PluralKey, count: number) => string;
+const counted = tn as (key: PluralKey, count: number, args?: RunWordArgs) => string;
 
 export const runsSpeaker: RunSpeaker = {
   say: (key, args) => message(catalogKey(key), args),
-  count: (key, count) => counted(pluralKey(key), count),
+  count: (key, count, args) => counted(pluralKey(key), count, args),
   list: formatList,
 };
