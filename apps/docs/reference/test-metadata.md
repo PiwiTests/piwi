@@ -268,9 +268,10 @@ test counts by its last attempt, so one whose retry passed names nothing:
   prefix, a URL must point at the connection's site, and Jira must return the issue under that key and project, so an
   issue moved to another project is dropped. Anything else is dropped, not stored as a plain link. A binding without a
   Jira project links nothing.
-- **One lookup per run**, of at most 50 keys, the ones the most tests name first and the ones Jira never returned before
-  last, within 10 seconds for the whole step. With Jira down or slow, nothing is linked, and the next failing run that
-  names the issue tries again.
+- **One lookup per run**, of at most 50 keys, the ones the most tests name first and the ones Jira did not return
+  before last, within 10 seconds for the whole step. That memory lasts a day and is kept per server process, so a
+  restart clears it. With Jira down or slow, nothing is linked, and the next failing run that names the issue tries
+  again.
 - **At most 10 per cluster**, the first linked staying; links pinned by hand or filed by Piwi do not count. The other
   keys of the bound project its tests named in that run, neither linked nor removed, show as *and N more named by its
   tests* at the end of its links. A cluster already linking a key, by any route, gets no second link to it.
