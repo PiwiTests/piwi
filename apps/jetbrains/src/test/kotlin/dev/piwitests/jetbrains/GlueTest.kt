@@ -3587,6 +3587,16 @@ class GlueTest {
     }
 
     @Test
+    fun aTraceAnswerNamesItsWorkerOnceTheWorkerTabShowsAnotherSlot() {
+        val said = "Playwright's trace viewer opened on the trace so far."
+        assertEquals(said, Glue.traceAnswerText("r1" to 0, "r1" to 0, said))
+        assertEquals("Worker 1: $said", Glue.traceAnswerText("r1" to 0, "r1" to 1, said))
+        assertEquals("Worker 3: $said", Glue.traceAnswerText("r1" to 2, "r2" to 2, said))
+        // The tab closed, or shows a CI run's lane.
+        assertEquals("Worker 2: $said", Glue.traceAnswerText("r1" to 1, null, said))
+    }
+
+    @Test
     fun aCiLaneSaysWhyItMayShowNoneOfItsLayersUntilTheFirstComes() {
         assertTrue(Glue.ciLaneLayersNote(Glue.NO_LANE_LAYERS)!!.endsWith("older than the IDE’s sends the images alone."))
         fun ci(fields: String) = Gson().fromJson(

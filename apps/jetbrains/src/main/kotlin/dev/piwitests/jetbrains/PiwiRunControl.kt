@@ -249,8 +249,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var workerTab: Content? = null
     private var laneTarget: Pair<String, Int>? = null
     @Volatile private var watchingLane: LaneViewParams? = null
-    /** Open the Trace So Far waits for the service's answer: its button is off meanwhile. On the event thread. */
-    private var traceAsking = false
+    /**
+     * The slots (a run's ref and a lane) whose Open the Trace So Far waits for the service's answer: that slot's button
+     * is off meanwhile, another's takes a press. On the event thread.
+     */
+    private val traceAsking = mutableSetOf<Pair<String, Int>>()
     private val pendingLaneFrame = AtomicReference<LaneFrame?>(null)
     private val drawingLaneFrame = AtomicBoolean(false)
     /** The CI run's lane the Worker tab shows in place of a slot (on the event thread), and its watch. */
@@ -675,7 +678,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val lane = Glue.laneShown(sessions[target.first], target.second, stops)
             worker.caption(lane.caption)
             worker.layers?.note(Glue.laneLayersNote(lane.worker))
-            worker.traceable(Glue.canOpenTrace(lane.worker), traceAsking)
+            worker.traceable(Glue.canOpenTrace(lane.worker), target in traceAsking)
             // The service ends the view with the run, and Watch is off for the next.
             if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
                 watchingLane = null
@@ -1009,7 +1012,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val shown = Glue.laneShown(sessions[ref], lane, stops()).worker
             layersFor(panel).note(Glue.laneLayersNote(shown))
             panel.openTrace = { openTrace() }
-            panel.traceable(Glue.canOpenTrace(shown), traceAsking)
+            panel.traceable(Glue.canOpenTrace(shown), (ref to lane) in traceAsking)
             panel.configureLive(true, false, false) { on -> watchLane(on) }
             panel.visibilityChanged = { visible ->
                 if (!visible) {
@@ -1222,33 +1225,34 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * **Open the Trace So Far** for the Worker tab's slot (`piwi/openTrace`): the service starts Playwright's trace
-     * viewer on this machine. One ask at a time, the button off until the service answers; its sentence is said in a
-     * balloon, a warning when it is not `ok`. On the event thread.
+     * viewer on the machine the run runs on. One ask per slot at a time, that slot's button off until the service
+     * answers it; its sentence is said in a balloon, a warning when it is not `ok`, naming the worker it is for when the
+     * tab shows another slot by then (`Glue.traceAnswerText`). On the event thread.
      */
     fun openTrace() {
-        val (ref, lane) = laneTarget ?: return
-        if (traceAsking) return
-        traceAsking = true
+        val slot = laneTarget ?: return
+        if (!traceAsking.add(slot)) return
         drawTrace()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val answer = runCatching { remote.openTrace(OpenTraceParams(ref, lane)) }.getOrNull()
+            val answer = runCatching { remote.openTrace(OpenTraceParams(slot.first, slot.second)) }.getOrNull()
             ApplicationManager.getApplication().invokeLater({
-                traceAsking = false
+                traceAsking.remove(slot)
                 drawTrace()
-                when {
-                    answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
-                    answer.ok -> PiwiCommands.notify(project, answer.message.orEmpty())
-                    else -> PiwiCommands.notify(project, answer.message.orEmpty(), NotificationType.WARNING)
-                }
+                val message = if (answer == null) "The editor service did not answer." else answer.message.orEmpty()
+                val said = Glue.traceAnswerText(slot, laneTarget, message)
+                PiwiCommands.notify(project, said, if (answer?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING)
             }, gone)
         }
     }
 
-    /** Open the Trace So Far as the Worker tab's slot stands: shown while its worker can open its test's trace. */
+    /**
+     * Open the Trace So Far as the Worker tab's slot stands: shown while its worker can open its test's trace, off while
+     * that slot's own ask waits.
+     */
     private fun drawTrace() {
         val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
-        val (ref, lane) = laneTarget ?: return panel.traceable(false, false)
-        panel.traceable(Glue.canOpenTrace(Glue.laneShown(sessions[ref], lane, stops()).worker), traceAsking)
+        val slot = laneTarget ?: return panel.traceable(false, false)
+        panel.traceable(Glue.canOpenTrace(Glue.laneShown(sessions[slot.first], slot.second, stops()).worker), slot in traceAsking)
     }
 
     /** Pause the worker `worker` of the run `ref` and watch its slot `lane` in the Worker tab. On the event thread. */
