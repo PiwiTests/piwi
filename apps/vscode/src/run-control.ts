@@ -2027,6 +2027,26 @@ export function ciLaneCaption(sessions: CiSessions, lane: CiLane): string {
   return `${name} · Running ${ciTestName(test)}${at} · read-only`;
 }
 
+/**
+ * Whether the worker panel takes a message of its script while it shows a CI run's lane, read-only: its `ready` and
+ * Watch (`view`) alone, never Interact, a pick, input or a release.
+ */
+export function ciLaneTakes(message: Readonly<Record<string, unknown>>): boolean {
+  return message.type === 'ready' || message.type === 'view';
+}
+
+/**
+ * Whether the worker panel draws a CI lane again as the CI sessions change: only when its caption or whether it watches
+ * changed, so a push of another run, or of nothing the panel says, posts nothing to it.
+ */
+export function ciLaneRedraws(
+  view: Pick<PausedPageView, 'caption' | 'live'> | null,
+  caption: string,
+  watching: boolean,
+): boolean {
+  return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
+}
+
 /** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 export interface CiNode {
   key: string;

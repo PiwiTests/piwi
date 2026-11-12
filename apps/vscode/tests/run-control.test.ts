@@ -13,6 +13,8 @@ import type {
 import {
   ciLaneArg,
   ciLaneCaption,
+  ciLaneRedraws,
+  ciLaneTakes,
   ciLaneTitle,
   ciNodes,
   ciPositionFiles,
@@ -2161,6 +2163,27 @@ describe('the CI runs of the branch', () => {
     );
     expect(ciLaneCaption(kept, { ...lane, lane: 1 })).toBe('CI run #78 · worker 1 · between tests · read-only');
     expect(ciLaneCaption(new Map(), lane)).toBe('CI run #78 · worker 2 · the run ended.');
+  });
+
+  test('take nothing a CI lane’s panel sends but Watch: no Interact, pick, input or release reaches its page', () => {
+    expect(ciLaneTakes({ type: 'ready' })).toBe(true);
+    expect(ciLaneTakes({ type: 'view', on: true })).toBe(true);
+    for (const type of ['interact', 'pick', 'input', 'release', undefined]) expect(ciLaneTakes({ type })).toBe(false);
+  });
+
+  test('draw a CI lane’s panel again only when what it says of the lane, or its watch, changed', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    const caption = ciLaneCaption(kept, lane);
+    const view = { caption, live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false } };
+    // Another run's push, or one of this run that changes nothing the panel says.
+    expect(ciLaneRedraws(view, ciLaneCaption(withCiSession(kept, ci(79)), lane), true)).toBe(false);
+    const counted = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect(ciLaneRedraws(view, ciLaneCaption(counted, lane), true)).toBe(false);
+    // The run ends, the watch goes off, or nothing was drawn yet.
+    expect(ciLaneRedraws(view, ciLaneCaption(new Map(), lane), false)).toBe(true);
+    expect(ciLaneRedraws(view, caption, false)).toBe(true);
+    expect(ciLaneRedraws(null, caption, true)).toBe(true);
   });
 
   test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {

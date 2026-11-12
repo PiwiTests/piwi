@@ -564,9 +564,11 @@ until one says `ended`, or the service stops (`withCiSession`).
   the editor cannot show. No node pauses, steers, shares or holds.
 - **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
   `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
-  follows) and drawn by `pausedPageHtml` with `ci`: **Watch** alone, Interact hidden, no pick, and every input refused
-  in the extension too. Why the watch ended (`ended`) or was refused shows under the caption, Watch then off. Another
-  CI lane takes the watch's place on the service's side without an `on: false`; a local slot ends it.
+  follows, drawing again only when the caption or the watch changed: `ciLaneRedraws`) and drawn by `pausedPageHtml`
+  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready` and Watch dropped in the
+  extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused shows under the
+  caption, Watch then off. Another CI lane takes the watch's place on the service's side without an `on: false`; a
+  local slot ends it, and so does a `piwi/ciWatch` the service never answered.
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
   runs on one line share one mark.

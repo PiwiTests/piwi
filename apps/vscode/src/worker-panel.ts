@@ -39,6 +39,8 @@ import {
   actsOnPage,
   ciKey,
   ciLaneCaption,
+  ciLaneRedraws,
+  ciLaneTakes,
   ciLaneTitle,
   frameIsCurrent,
   giveBackParams,
@@ -192,6 +194,8 @@ export function createWorkerPanel(
     if (ciWatching !== params) return answer ?? { ok: false, message: NO_ANSWER };
     if (!answer?.ok) {
       ciWatching = null;
+      // A request the service never answered may have opened the watch: it is let go.
+      if (!answer) void lc.sendRequest(CI_WATCH_REQUEST, { ...params, on: false }).catch(() => undefined);
       note = answer?.message ?? NO_ANSWER;
       draw();
     }
@@ -268,15 +272,15 @@ export function createWorkerPanel(
   const message = async (raw: unknown) => {
     const m = raw as Record<string, unknown> | null;
     if (!m || m.shown !== shown || !view) return;
+    // A CI run's lane is read-only: nothing goes to its page.
+    if (ciTarget && !ciLaneTakes(m)) {
+      if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
+      return;
+    }
     if (m.type === 'ready') return void panel?.webview.postMessage({ type: 'state', view });
     if (m.type === 'view' && typeof m.on === 'boolean') {
       wantOn = m.on;
       return void watch(m.on);
-    }
-    // A CI run's lane is read-only: nothing goes to its page.
-    if (ciTarget) {
-      if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
-      return;
     }
     if (m.type === 'interact' && typeof m.on === 'boolean') {
       // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
@@ -437,7 +441,7 @@ export function createWorkerPanel(
       if (!ciTarget) return;
       // The service ends the watch with the run's session, and Watch shows off.
       if (!now.has(ciKey(ciTarget))) ciWatching = null;
-      draw();
+      if (ciLaneRedraws(view, ciLaneCaption(now, ciTarget), !!ciWatching)) draw();
     },
     view: () => (panel ? view : null),
     message,
