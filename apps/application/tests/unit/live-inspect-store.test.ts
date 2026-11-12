@@ -390,6 +390,22 @@ describe('Inspect’s store of a run', () => {
     expect(budget.used).toBe(second.size().snapshots);
   });
 
+  test('keeps nothing once its run’s view ended, a page rendered as it ends included', async () => {
+    const budget = new InspectBudget(4 * MB);
+    const store = new RunInspect(budget);
+    expect(store.addSnapshot('w', snapshot('call@1', 'after', ['HTML', {}, ['BODY', {}, 'Cart']]))).toBe('kept');
+    const rendering = store.render('w', 'call@1', 'after');
+    store.clear();
+    expect('html' in (await rendering)).toBe(true);
+    expect(budget.used).toBe(0);
+    expect(store.addSnapshot('w', snapshot('call@2', 'after', ['HTML', {}, ['BODY', {}, 'Paid']]))).toBe('ignored');
+    expect(
+      store.addResource({ sha1: `${'c'.repeat(40)}.png`, contentType: 'image/png', data: new Uint8Array(8) }),
+    ).toBe('ignored');
+    expect(budget.used).toBe(0);
+    expect(store.size()).toMatchObject({ snapshots: 0, resources: 0, pages: 0 });
+  });
+
   test('adds a snapshot in a constant time, however many it holds', () => {
     const store = new RunInspect();
     const add = (from: number, count: number) => {

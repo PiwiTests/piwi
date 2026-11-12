@@ -375,7 +375,7 @@ export class DesktopTraceReader {
     let more = false;
     try {
       if (!(await this.read())) this.caughtUp = true;
-      if (this.caughtUp) more = await this.keepWaiting();
+      if (this.caughtUp && !this.closed) more = await this.keepWaiting();
     } catch {
       // A trace that cannot be read now is read again next turn.
     } finally {
@@ -656,9 +656,11 @@ export class DesktopTraceReader {
     const data = Buffer.from(JSON.stringify(shown));
     if (data.length > MAX_SNAPSHOT_BYTES) return this.stopChain(fields.frame, TOO_LARGE, 'until-full');
     const named: LiveSnapshotResource[] = [];
-    for (const resource of await this.resourcesOf(snapshot, fields.page)) {
+    const resources = await this.resourcesOf(snapshot, fields.page);
+    for (const resource of resources) {
       if (this.closed) return;
       if (!(await this.keepResource(resource))) continue;
+      if (this.closed) return;
       const url = hideResourceUrl(resource.url, secrets);
       if (url) named.push({ url, sha1: resource.sha1 });
     }
@@ -697,6 +699,8 @@ export class DesktopTraceReader {
     if (this.options.store.resource(resource.sha1)) return true;
     if (this.unkept.has(resource.sha1)) return false;
     const bytes = await this.resourceBytes(resource.sha1);
+    // A reader closed as it read keeps nothing: its store let everything go.
+    if (this.closed) return false;
     if (!bytes || !isInspectResourceBytes(resource.contentType, bytes)) {
       this.unkept.add(resource.sha1);
       return false;
@@ -755,6 +759,7 @@ export class DesktopTraceReader {
           const named = (await this.cssNamesOf(recorded.sha1))
             .map((ref) => resolveResourceUrl(ref, url))
             .filter((one): one is string => one !== null);
+          if (this.closed) return;
           await add(named, depth + 1);
         }
       }
@@ -768,6 +773,7 @@ export class DesktopTraceReader {
     let names = this.cssNames.get(sha1);
     if (!names) {
       const bytes = await this.resourceBytes(sha1);
+      if (this.closed) return [];
       names = bytes && isInspectResourceBytes('text/css', bytes) ? cssReferences(bytes.toString('utf8')) : [];
       this.cssNames.set(sha1, names);
     }

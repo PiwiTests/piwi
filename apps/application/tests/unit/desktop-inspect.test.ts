@@ -25,7 +25,7 @@ import {
   readDesktopInspectMoment,
   type DesktopInspectSessions,
 } from '../../server/utils/desktop-inspect';
-import { RunInspect } from '../../server/utils/live-inspect';
+import { InspectBudget, RunInspect } from '../../server/utils/live-inspect';
 
 const requireHere = createRequire(import.meta.url);
 type Chromium = typeof import('@playwright/test').chromium;
@@ -330,6 +330,51 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
 });
 
 describe('a reader that closes while it reads', () => {
+  it('gives back to the shared budget whatever a read in flight brings', async () => {
+    const traces = path.join(root, 'budget', 'traces');
+    fs.mkdirSync(path.join(traces, 'resources'), { recursive: true });
+    const sha1 = `${'d'.repeat(40)}.png`;
+    const image = path.join(traces, 'resources', sha1);
+    fs.writeFileSync(image, Buffer.concat([PNG, Buffer.alloc(64 * 1024)]));
+    fs.writeFileSync(
+      path.join(traces, 't1.network'),
+      `${JSON.stringify({
+        type: 'resource-snapshot',
+        snapshot: {
+          pageref: 'page@1',
+          request: { url: 'https://shop.test/logo.png' },
+          response: { content: { _sha1: sha1, mimeType: 'image/png' } },
+        },
+      })}\n`,
+    );
+    fs.writeFileSync(
+      path.join(traces, 't1.trace'),
+      `${snapshotLine('c@1', 'after', ['HTML', {}, ['BODY', {}, ['IMG', { src: '/logo.png' }]]])}\n`,
+    );
+    const budget = new InspectBudget(256 * 1024 * 1024);
+    const store = new RunInspect(budget, DESKTOP_INSPECT_WORDS);
+    const reader = new DesktopTraceReader({
+      trace: { traces, base: 't1' },
+      store,
+      key: '0',
+      worker: 0,
+      test: null,
+      kept: () => undefined,
+      refused: () => undefined,
+      readMs: 10_000,
+    });
+    const held = holdOpen(image);
+    const turn = reader.turn();
+    await held.at;
+    // The lane stops reading as the image is read: the reader closes, then its store lets everything go.
+    reader.close();
+    store.clear();
+    held.release();
+    await turn;
+    expect(budget.used).toBe(0);
+    expect(store.size().counts).toEqual({ snapshots: 0, resources: 0 });
+  });
+
   it('tells nothing of what the read in flight finds', async () => {
     const traces = path.join(root, 'closing', 'traces');
     fs.mkdirSync(traces, { recursive: true });

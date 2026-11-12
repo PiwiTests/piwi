@@ -21,8 +21,8 @@ import type { TraceFrameSnapshot, TraceResource } from './trace-events';
  * `MAX_WORKER_SNAPSHOT_COUNT` snapshots, the run's by `MAX_RUN_SNAPSHOTS` and `MAX_RUN_SNAPSHOT_COUNT`, the oldest going
  * first; the resources by `MAX_RUN_RESOURCES` bytes and `MAX_RUN_RESOURCE_COUNT`, the least recently used first; and
  * every run's store together by the instance's `InspectBudget`, past which a new one is refused (`full`). Nothing is
- * written anywhere: the run's live view drops it with the run, a worker's snapshots go as its test ends, and every
- * snapshot and resource as the project starts masking elements. A snapshot of a frame other than a page's main one is
+ * written anywhere: the run's live view drops it with the run (`clear`, after which it keeps nothing), a worker's
+ * snapshots go as its test ends, and every snapshot and resource as the project starts masking elements. A snapshot of a frame other than a page's main one is
  * not kept: the snapshot view renders a page's main frame alone. Every lookup and change takes a constant time, but
  * what goes, each once.
  *
@@ -172,8 +172,8 @@ export type LiveSnapshotRefusal = { status: 404 | 410; message: string };
 
 /**
  * What `addSnapshot` and `addResource` did: kept it (`kept`), held it already (`held`), passed it over (`ignored`: a
- * frame other than a page's main one, or one past a worker's bound alone), or refused it, the instance's Inspect full
- * (`full`).
+ * frame other than a page's main one, one past a worker's bound alone, or any once the run's view ended), or refused
+ * it, the instance's Inspect full (`full`).
  */
 export type InspectAdded = 'kept' | 'held' | 'ignored' | 'full';
 
@@ -318,6 +318,8 @@ export class RunInspect {
   /** The pages kept rendered, by worker, call and moment, the least recently read first. */
   private readonly pages = new Map<string, CachedPage>();
   private pageBytes = 0;
+  /** Whether its run's view ended (`clear`): it keeps nothing more. */
+  private ended = false;
 
   constructor(
     private readonly budget: InspectBudget = new InspectBudget(),
@@ -329,7 +331,7 @@ export class RunInspect {
    * not hold, of a page's main frame, which its watches then hear of.
    */
   addSnapshot(worker: string, snapshot: LiveSnapshot & { data: Uint8Array; test: string | null }): InspectAdded {
-    if (!snapshot.main) return 'ignored';
+    if (this.ended || !snapshot.main) return 'ignored';
     const store = this.workers.get(worker) ?? new WorkerSnapshots();
     this.workers.set(worker, store);
     const moment = momentKey(snapshot.call, snapshot.phase);
@@ -366,6 +368,7 @@ export class RunInspect {
 
   /** Keep a resource, within the bounds; one the store holds already is used again. */
   addResource(resource: LiveResource & { data: Uint8Array }): InspectAdded {
+    if (this.ended) return 'ignored';
     const known = this.resources.get(resource.sha1);
     if (known) {
       this.touch(resource.sha1, known);
@@ -478,8 +481,12 @@ export class RunInspect {
     this.dropPages(null);
   }
 
-  /** The run's view ended: everything goes, its bytes given back to the instance's budget. */
+  /**
+   * The run's view ended: everything goes, its bytes given back to the instance's budget, and nothing more is kept, a
+   * page that renders as it ends included.
+   */
   clear(): void {
+    this.ended = true;
     for (const held of [...this.order.values()]) this.remove(held, 'bounds');
     this.dropResources();
     this.dropPages(null);
@@ -553,7 +560,7 @@ export class RunInspect {
 
   /** Keep a page rendered, within the run's bounds and the instance's budget; the least recently read go first. */
   private keepPage(key: string, cached: CachedPage): void {
-    if (cached.bytes > 2 * MAX_CACHED_CHARS || !this.budget.fits(cached.bytes)) return;
+    if (this.ended || cached.bytes > 2 * MAX_CACHED_CHARS || !this.budget.fits(cached.bytes)) return;
     const before = this.pages.get(key);
     if (before) {
       this.pages.delete(key);
