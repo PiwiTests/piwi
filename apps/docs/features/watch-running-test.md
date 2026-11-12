@@ -78,18 +78,17 @@ none of them.
 
 ## Open the trace so far
 
-**Open the trace so far** opens Playwright's trace viewer on the running test's trace up to now: beside **Watch** in
-the VS Code panel (or **Piwi: Open the trace so far**) and the JetBrains **Worker** tab, in a watched page's head in
-the Runs window and the desktop app's tray, while the worker runs a test, stopped or not, with a reporter newer than
-0.68.0.
+**Open the trace so far** opens Playwright's trace viewer on the running test's trace up to now, on the machine the
+run runs on ([what it shows](/guide/concepts#trace-so-far)): beside **Watch** in the VS Code panel (or **Piwi: Open the
+trace so far**), as **Open the Trace So Far** in the JetBrains **Worker** tab, and in a watched page's head in the Runs
+window and the desktop app's tray, while the worker runs a test, stopped or not, with a reporter newer than 0.68.0.
 
-The editor service or the desktop app starts the viewer from your project's own Playwright, on the machine the run
-runs on; the trace's path never leaves it, and the view hears a sentence alone, saying why when the viewer does not
-start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it opened: close it, then choose the
-button again, for what came since.
+It shows only where it can open: the machine the run runs on has a display (on Linux, `DISPLAY` or `WAYLAND_DISPLAY`
+set), the editor or the desktop app knows the run's folder, and a Runs window reaches the hub without a forwarded port.
 
 The attempt must be traced: `trace: 'on'` or `'retain-on-failure'` (`wrapConfig`'s default when your config sets
-none) traces every attempt, `'on-first-retry'` and `'on-all-retries'` a retry alone.
+none) traces every attempt, `'on-first-retry'` and `'on-all-retries'` a retry alone. Its trace starts with its first
+browser context.
 
 ## Interact
 

@@ -290,6 +290,15 @@ being shared ([Live view of a run](/features/live-view)). **Watch all** shows ev
 tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped
 ([Watch all workers](/features/watch-all)).
 
+### Trace so far
+
+**A running test's trace up to now, opened in Playwright's trace viewer** (**Open the trace so far**, [Watch a running
+test](/features/watch-running-test#open-the-trace-so-far)). The editor service or the desktop app's server, on the
+machine the run runs on, asks the test's worker where its trace grows, checks that file, and starts the viewer there
+from your project's own Playwright. The trace's path never leaves that service: each tool hears a sentence alone,
+saying why when the viewer does not start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it
+opened: close it, then choose the button again, for what came since.
+
 ### Verification
 
 **A test run several times without retries and without the breakpoints, to see how often it passes** (**Verify ×3**
