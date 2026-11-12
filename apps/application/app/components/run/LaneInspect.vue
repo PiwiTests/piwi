@@ -185,13 +185,14 @@ const pickOff = computed(() => {
 });
 function pick(): void {
   const shownPage = page.value;
-  if (!shownPage || pickOff.value) return;
+  const watchId = props.watchId;
+  if (!shownPage || !watchId || pickOff.value) return;
   pinned.value =
     calls.value.find((call) => call.call === shownPage.moment.call && sameWorker(call, shownPage.moment))?.key ?? null;
   follow.value = false;
   phase.value = shownPage.moment.phase;
   pickerPage.value = {
-    src: inspectPageUrl(baseURL, props.runId, props.watchId, shownPage.moment, 'picker'),
+    src: inspectPageUrl(baseURL, props.runId, watchId, shownPage.moment, 'picker'),
     viewport: shownPage.viewport,
     title: shownPage.moment.title,
   };
