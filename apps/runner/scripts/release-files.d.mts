@@ -3,4 +3,5 @@ export function releaseFiles(build: {
   files: string[];
   target: string;
   pattern: string;
+  signed?: boolean;
 }): { from: string; name: string }[];

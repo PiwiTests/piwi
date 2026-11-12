@@ -38,7 +38,7 @@ describe("Piwi Runner's release files", () => {
       'Piwi-Runner_aarch64.app.tar.gz',
       'Piwi-Runner_aarch64.app.tar.gz.sig',
     ]);
-    // Without the signing key the bundler makes no update file, and the dmg is enough.
+    // A build without the app bundle has no update file, and the dmg is enough.
     expect(releaseFiles({ files: [files[0]!], target: 'aarch64-apple-darwin', pattern })).toEqual([
       { from: files[0], name: 'Piwi-Runner_aarch64.dmg' },
     ]);
@@ -88,6 +88,18 @@ describe("Piwi Runner's release files", () => {
     expect(() => releaseFiles({ files: [], target: 'riscv64gc-unknown-linux-gnu', pattern })).toThrow(
       'no Piwi Runner packages known',
     );
+  });
+
+  test('requires every signature of a signed build', () => {
+    const files = [
+      'msi/Piwi Runner_0.69.0_x64_en-US.msi',
+      'msi/Piwi Runner_0.69.0_x64_en-US.msi.sig',
+      'nsis/Piwi Runner_0.69.0_x64-setup.exe',
+    ];
+    expect(() => releaseFiles({ files, target: 'x86_64-pc-windows-msvc', pattern, signed: true })).toThrow(
+      'the build made no nsis/Piwi Runner_0.69.0_x64-setup.exe.sig for x86_64-pc-windows-msvc',
+    );
+    expect(releaseFiles({ files, target: 'x86_64-pc-windows-msvc', pattern })).toHaveLength(3);
   });
 
   test('fills the workflow pattern, and refuses one it cannot fill', () => {

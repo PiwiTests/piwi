@@ -129,6 +129,8 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         with:
           projectPath: apps/desktop
+          # Retries the build, whose bundler downloads WiX, NSIS and linuxdeploy.
+          retryAttempts: 3
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/runner.updater.conf.json' || '' }}
 
       # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
@@ -171,13 +173,14 @@ jobs:
           exit 1
 
       # The installers and their signatures under the names the release carries (apps/runner/scripts/release-files.mjs),
-      # on every build, so a pull request's dry run checks them too.
+      # on every build, so a pull request's dry run checks them too. A signed build must have every signature.
       - name: Stage the release files
         shell: bash
         env:
           BUNDLE: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle
           OUT: ${{ runner.temp }}/release-files
-        run: node apps/runner/scripts/release-files.mjs --bundle "$BUNDLE" --target ${{ matrix.target }} --out "$OUT"
+          SIGNED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--signed' || '' }}
+        run: node apps/runner/scripts/release-files.mjs --bundle "$BUNDLE" --target ${{ matrix.target }} --out "$OUT" $SIGNED
 
       # gh prints GitHub's answer to each attempt that fails, and --clobber replaces a file an earlier attempt or run
       # left, so a retry, or a re-run of the job, uploads the whole set again.
@@ -190,12 +193,16 @@ jobs:
           TAG: ${{ github.ref_name }}
           OUT: ${{ runner.temp }}/release-files
         run: |
+          if ! gh release view "$TAG" --repo "$REPO" --json tagName > /dev/null; then
+            echo "::error::No GitHub release for $TAG: release-please creates it with the tag"
+            exit 1
+          fi
           for attempt in 1 2 3 4 5; do
             if gh release upload "$TAG" "$OUT"/* --repo "$REPO" --clobber; then
               exit 0
             fi
             echo "::warning::Upload attempt $attempt of 5 to $TAG failed"
-            sleep $((attempt * 20))
+            if [[ $attempt -lt 5 ]]; then sleep $((attempt * 20)); fi
           done
           echo "::error::The Piwi Runner files did not reach the $TAG release: GitHub's answers are above"
           exit 1
