@@ -56,7 +56,10 @@ types/        Front-end API response types (`api.ts`)
   (environments, branches, the branch policy, full runs only), the scope's query keys (the analytics ones, so an
   analytics drill-down address is a scope too) and the in-browser matcher (`runInProjectScope`).
   `shared/handlers/project-run-scope.ts` turns a scope into the SQL conditions (`projectRunScopeConditions`) that every
-  project tab's handler adds.
+  project tab's handler adds. A runs list (the project page's, Home's recent activity) also shows the viewer's own runs
+  the partial-run and branch filters leave out: `shared/own-runs.ts` decides which runs are a person's (from
+  `test_runs.reporter_id` and `requester_id`), the list answers `mine`, and `app/utils/own-run-mark.ts` lists and
+  marks them ("Yours · partial run").
 - **`@piwitests/core`** (`packages/core/`) is a private package with **zero dependencies**, safe to run in the browser,
   a service worker or the server. It holds the pure logic the app shares with the reporter, Piwi Picker (the browser
   extension) and the editor service: locators (generation and scoring, ARIA role resolution, element-fingerprint
@@ -183,7 +186,10 @@ Each entry names folders under `server/api/`.
     or trace).
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
-    `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
+    `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`. The same bus keeps
+    each lane of a live run (`shared/live-lanes.ts`, through `@piwitests/core/live-lane`'s reducer) from the events
+    published for it and publishes it as a `lane` event as it changes, which `[id]/stream` replays in its catch-up and
+    the demo's bus mirrors: the run page reads its lanes' states, tests and stops from them, never working them out.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
     its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`, a frame as a live message or, from an
@@ -197,7 +203,7 @@ Each entry names folders under `server/api/`.
     `LaneInspect` shows it in the lane panel, from the source `teamInspectSource` names) and `[id]/live-view/workers` (its workers and how many watches are open,
     which `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
     (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
-    attention** moves the lane panel by `app/utils/live-attention.ts`. All of it is relayed in memory by
+    attention** moves the lane panel by `app/utils/live-attention.ts`, from the rows and the `lane` events. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key and stores its digest with the run
     (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.

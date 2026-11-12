@@ -13,6 +13,8 @@ defineProps<{
   selectedRunIds: number[];
   /** A run's overflow menu, as the table's row menu lists it. */
   menuItems: (run: TestRunSummary) => DropdownMenuItem[];
+  /** Why an own run the filters leave out is listed ("Yours · partial run"), as the table's run cell says it. */
+  ownMark?: (run: TestRunSummary) => string | null;
 }>();
 
 const emit = defineEmits<{ toggle: [runId: number] }>();
@@ -40,6 +42,9 @@ const emit = defineEmits<{ toggle: [runId: number] }>();
               :aria-label="`Run #${run.id} is kept forever`"
             />
             <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
+            <span v-if="ownMark?.(run)" class="text-xs text-muted" data-testid="own-run-mark">{{
+              ownMark?.(run)
+            }}</span>
           </div>
           <RunLiveProgress v-if="isLiveRun(run)" :run="run" />
           <TestStatusBar

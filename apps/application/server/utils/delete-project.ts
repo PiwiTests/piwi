@@ -1,10 +1,11 @@
-import { count, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
 import { bugReports, testRuns } from '../database/schema';
 import { getStorage } from '../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
 import { deleteProjectData, type ProjectDeletionProgress } from '#shared/handlers/projects';
 import { apiError } from './api-error';
+import { runEventBus } from './run-events';
 import { testCaseCache } from './test-case-cache';
 
 /** Deletions running in this server process, by project id. */
@@ -36,8 +37,8 @@ export async function deleteProject(projectId: number): Promise<void> {
 
   try {
     const db = await getDatabase();
-    const [runCount] = await db.select({ n: count() }).from(testRuns).where(eq(testRuns.projectId, projectId));
-    progress.totalRuns = Number(runCount?.n ?? 0);
+    const runs = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, projectId));
+    progress.totalRuns = runs.length;
 
     // Delete all project files in one shot — covers reports, blobs, trace-resources
     const storage = getStorage();
@@ -49,6 +50,8 @@ export async function deleteProject(projectId: number): Promise<void> {
     await deleteProjectData(db, projectId, (next) => Object.assign(progress, next));
 
     testCaseCache.invalidate(projectId);
+    // Its runs that ran leave nothing in the event bus: their lanes, their running cases, their steps.
+    for (const run of runs) runEventBus.cleanup(run.id);
   } finally {
     deletionsInProgress.delete(projectId);
   }

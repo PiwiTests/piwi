@@ -11,6 +11,7 @@ import {
 import { parsePausedMs, parseTestStop } from '@piwitests/core/wire';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { parseLocation } from '#shared/parse-location';
+import type { ClusterLabel } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload } from '#shared/types';
 import { workerLane } from '#shared/worker-lane';
 import { resolveRepeatEachIndex } from './inserted-run-cases';
@@ -112,17 +113,23 @@ function searchFields(tc: StreamEventPayload, maxLocks: number) {
   };
 }
 
-/** The stored row of a completed attempt: its ids, its attempt history and its verdict. */
+/**
+ * The stored row of a completed attempt: its ids, its attempt history, its verdict, and the failure cluster it joined
+ * with that cluster's label.
+ */
 interface PersistedAttempt {
   id: number;
   testCaseId: number;
   attempts: unknown;
   passedAfterFailure: boolean | null;
+  failureClusterId?: number | null;
+  failureCluster?: ClusterLabel | null;
 }
 
 /**
  * The `test-completed` run event of a streamed `complete`: the attempt as stored (`input`, and its row once
- * `persisted`, whose ids let the run page link it), its error hidden as stored, and what the run page's search reads.
+ * `persisted`, whose ids let the run page link it), its error hidden as stored, the failure cluster it joined, and what
+ * the run page's search reads.
  */
 export function testCompletedData(
   tc: StreamEventPayload,
@@ -137,6 +144,8 @@ export function testCompletedData(
     filePath: input.filePath,
     suitePath: tc.suitePath ?? null,
     status: tc.status,
+    // Playwright's `expectedStatus`: a `test.fail()` attempt that failed is a pass, as the run's counts read it.
+    expectedStatus: tc.expectedStatus ?? null,
     duration: tc.duration,
     location: tc.location,
     error: hiddenErrorText(tc.error),
@@ -156,6 +165,10 @@ export function testCompletedData(
     testCaseId: persisted?.testCaseId ?? null,
     // Its verdict as stored: it passed after an earlier attempt failed or timed out.
     passedAfterFailure: persisted?.passedAfterFailure ?? null,
+    // The cluster the failure joined and its label, so the run page files the row under it before it reads the
+    // run's clusters again. A run that forms no clusters (a lab run, a private run) names none.
+    failureClusterId: persisted?.failureClusterId ?? null,
+    failureCluster: persisted?.failureClusterId != null ? (persisted.failureCluster ?? null) : null,
     // Its annotations as stored, from which the row reads a `test.fixme()` skip or a test ended at a stop.
     testAnnotations: Array.isArray(input.testAnnotations) ? input.testAnnotations : null,
     ...searchFields(tc, maxLocks),

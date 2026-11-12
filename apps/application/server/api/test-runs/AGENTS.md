@@ -90,6 +90,10 @@ How the server merges shards:
   (`withRequestOrigin`), set `requester_id` and ignore `keep`. `sanitizeMetadata` drops a `request` origin the reporter
   sends, every later write of the reporter's metadata goes through `carryRequestOrigin`, and `runOrigin` reads `request`
   before any lab stamp (`tests/unit/request-tokens.test.ts`).
+- **Every route that creates a run stores its reporter**: `reporter_id` from `runReporterId(event, signedIn)`
+  (`server/utils/run-viewer.ts`), null with sign-in off and for a request token. It decides only a list's `mine`
+  (`#shared/own-runs`) and never leaves the server: a handler that spreads a run row drops it, as `getTestRun` does
+  (`tests/unit/own-runs.test.ts`).
 - **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
   `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
   with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload

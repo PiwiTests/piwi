@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
+import { RunLanes, type Lane } from '#shared/live-lanes';
 import type { WireLiveResources } from '#shared/types';
 import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from './map-step-events';
 import type { StreamEventPayload } from '#shared/types';
@@ -41,7 +42,12 @@ export interface RunEvent {
     /** A person's ask to watch the run changed (`LiveAskEvent`, `server/utils/live-asks.ts`): only they hear it. */
     | 'live-ask'
     /** A run shared after this one from the same editor window continues it: `{ runId }`, the run that does. */
-    | 'continued';
+    | 'continued'
+    /**
+     * A lane of the run as it stands (`Lane` of `@piwitests/core/live-lane`), after an event of the run changed it
+     * (`#shared/live-lanes`): its state, its worker, its test and attempt, its stop, and its counts.
+     */
+    | 'lane';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;
@@ -130,6 +136,8 @@ class RunEventBus {
   private liveSteps = new Map<number, Map<string, KeptLiveStep>>();
   /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
   private lastGlobalEventAt = new Map<number, number>();
+  /** Each live run's lanes, reduced from the events published for it, which publish a `lane` event as they change. */
+  private lanes = new RunLanes();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -151,7 +159,13 @@ class RunEventBus {
     };
 
     this.emitter.emit(`run:${runId}`, fullEvent);
+    for (const lane of this.lanes.hear(runId, event)) this.publish(runId, { type: 'lane', data: { ...lane } });
     return fullEvent;
+  }
+
+  /** The lanes of a live run as they stand, for the stream's catch-up. */
+  getLanes(runId: number): Lane[] {
+    return this.lanes.lanesOf(runId);
   }
 
   /**
@@ -315,6 +329,7 @@ class RunEventBus {
     this.liveSteps.delete(runId);
     this.liveResources.delete(runId);
     this.liveResourcesDeclined.delete(runId);
+    this.lanes.forget(runId);
   }
 
   /**

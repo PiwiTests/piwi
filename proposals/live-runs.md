@@ -250,14 +250,16 @@ until the viewer pins one, with the snapshot picker, from the snapshots the work
 of its own) and sends only while a viewer has it open, its secret fields removed (`@piwitests/core/live-inspect`),
 which the instance keeps in memory for the run and serves rendered without a script. Built from P11's last piece: the
 desktop app's Local runs tray shows **Inspect** on a watched lane, read on this machine from the test's own trace (the
-file the hub checked, `RunSessions.laneTrace`), with the store, renderer and secret removal of the team's. Left of the
-plan, beside the remainders named above (P5's, P6's E10, P7's IO6 and compact tray, P8's `run_start` on the desktop
-app, P9's window scope in the Runs window), all planned and none deferred: DB5 (`test-completed` carries no failure
-cluster, so a streamed failure lands under Ungrouped failures until the page is read again), D5's
-`@piwitests/core/live-lane`, the editors' running-line mark and Page output, the Testing view counting from the hub's
-events, F2 (a person's own runs always listed), F10 (the Live item's menu), **Watch** on the Runs window's CI runs, P4's
-CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here until they are built or
-recorded as deferred. The bugs the analysis
+file the hub checked, `RunSessions.laneTrace`), with the store, renderer and secret removal of the team's. P12, the
+remainders, began with three: a streamed failure joins its cluster's group at once (`test-completed` carries the
+cluster, DB5); a person's own runs are always listed, past the partial-run and branch filters, marked "Yours"
+(`test_runs.reporter_id`, F2); and the lane model lives in `@piwitests/core/live-lane` (D5), which the hub's
+`RunSessions` and the instance's run event bus reduce with, the run page reading its lanes from the `lane` run event.
+Left of the plan, beside the remainders named above (P5's, P6's E10, P7's IO6 and compact tray, P8's `run_start` on
+the desktop app, P9's window scope in the Runs window), all planned and none deferred: the editors' running-line mark
+and Page output, the Testing view counting from the hub's events, F10 (the Live item's menu), **Watch** on the Runs
+window's CI runs, P4's CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here
+until they are built or recorded as deferred. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

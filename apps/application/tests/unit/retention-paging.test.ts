@@ -6,6 +6,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import type { StreamEventPayload } from '#shared/types';
 import { migrateToLatest } from './temp-db';
 
 /** A purge reads the executions of one slice of runs at a time, never every doomed execution at once. */
@@ -20,6 +21,7 @@ vi.mock('../../server/storage', () => ({
 delete process.env.PIWI_DATABASE_URL;
 
 const { deleteRunsByIds } = await import('../../server/utils/retention');
+const { runEventBus } = await import('../../server/utils/run-events');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -66,5 +68,23 @@ describe('deleteRunsByIds', () => {
     expect(executionReads.length).toBeGreaterThan(0);
     expect(Math.max(...executionReads.map((q) => q.params.length))).toBe(2);
     expect(await db.select().from(schema.testRunsCases)).toEqual([]);
+  });
+
+  test('lets go of what the event bus keeps of a run deleted while it runs', async () => {
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'running', startTime: new Date() });
+    const begin = { title: 'pays', location: 'a.spec.ts:3:1', workerIndex: 0, parallelIndex: 0, retries: 0 };
+    runEventBus.publish(7, { type: 'test-begin', data: begin });
+    runEventBus.recordRunningCase(7, 'pays', begin);
+    const click = { ...begin, type: 'step-begin', title: 'click', parentTitle: 'pays', stepCategory: 'pw:api' };
+    runEventBus.noteLiveSteps(7, [click as StreamEventPayload], null);
+    expect(runEventBus.getLanes(7)).toHaveLength(1);
+    expect(runEventBus.getRunningCases(7)).toHaveLength(1);
+    expect(runEventBus.getLiveSteps(7)).toHaveLength(1);
+
+    await deleteRunsByIds(db as unknown as DbClient, [7]);
+
+    expect(runEventBus.getLanes(7)).toEqual([]);
+    expect(runEventBus.getRunningCases(7)).toEqual([]);
+    expect(runEventBus.getLiveSteps(7)).toEqual([]);
   });
 });

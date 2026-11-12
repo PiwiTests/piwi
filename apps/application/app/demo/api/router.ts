@@ -90,7 +90,7 @@ import {
   apiStopRunRequest,
   demoReadRunRequestBody,
 } from './run-requests';
-import { publishDemoNotificationEvent } from '../run-events';
+import { demoLanesOf, publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
   getExecutionCoverage,
@@ -213,6 +213,7 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
   listProjectMarkers,
@@ -994,7 +995,11 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawLimit = Number(q?.get('limit'));
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
+      const project = await getProject(await getDemoDb(), +m[1]!, {
+        runLimit,
+        scope: parseProjectRunScope(q),
+        viewer: SOLE_USER,
+      });
       if (!project) return project;
       const {
         scmToken: _scm,
@@ -1417,8 +1422,8 @@ const routes: RouteEntry[] = [
     handler: async (_, __, ___, ctx) => {
       const db = await getDemoDb();
       return {
-        items: await getRecentTestRuns(db, ctx?.scope),
-        runsLast24h: await countRunsLast24h(db, ctx?.scope),
+        items: await getRecentTestRuns(db, ctx?.scope, SOLE_USER),
+        runsLast24h: await countRunsLast24h(db, ctx?.scope, SOLE_USER),
       };
     },
   },
@@ -2219,7 +2224,7 @@ const routes: RouteEntry[] = [
 
   // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
   // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution,
-  // each test still running and the step each worker is in.
+  // each test still running, the step each worker is in and each lane as it stands.
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
@@ -2239,6 +2244,7 @@ const routes: RouteEntry[] = [
           ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
           ...demoRunningCases(id).map((data) => event('test-begin', data)),
           ...demoLiveSteps(id).map((step) => event(step.type, step.data)),
+          ...demoLanesOf(id).map((lane) => event('lane', { ...lane })),
         ],
       };
     },
@@ -2748,7 +2754,7 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const limit = Number(q?.get('limit')) || undefined;
-      return listKeptRuns(await getDemoDb(), +m[1]!, { limit });
+      return listKeptRuns(await getDemoDb(), +m[1]!, { limit, viewer: SOLE_USER });
     },
   },
 

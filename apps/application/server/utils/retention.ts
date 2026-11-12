@@ -36,6 +36,7 @@ import {
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
+import { runEventBus } from './run-events';
 import { unreferencedFileVersions, unreferencedFragments } from './coverage';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
@@ -122,6 +123,8 @@ export async function deleteRunsByIds(
     await recomputeClusterOccurrences(db, clusterId);
   }
   for (const projectId of new Set(runs.map((run) => run.projectId))) dropProjectTestFilters(projectId);
+  // A run deleted while it runs leaves nothing in the event bus: its lanes, its running cases, its steps.
+  for (const run of runs) runEventBus.cleanup(run.id);
 
   return { deletedRuns: runs.length, deletedCases };
 }

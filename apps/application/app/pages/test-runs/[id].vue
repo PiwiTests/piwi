@@ -47,6 +47,7 @@ import {
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
 import type { TestStop } from '@piwitests/core/wire';
+import { heldLanes, type Lane } from '#shared/live-lanes';
 
 const route = useRoute();
 const router = useRouter();
@@ -199,6 +200,10 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 // The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
 // one offers Watch, and says Paused while its test is stopped.
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
+// The run's lanes as they stand, by `laneKey`, from the stream's `lane` events (`heldLanes`): the instance reduces them
+// from the run's events, so the page reads each lane's state, test and stop ready. Each catch-up, and the run's end,
+// starts them afresh.
+const liveLanes = ref<Record<string, Lane>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
 // The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
@@ -417,26 +422,33 @@ watch(watchAll, (on) => !isDemoMode && live.watchAll(on));
 // A worker that left the run's live view leaves its tile.
 watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
 /**
- * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, each running lane's
- * stand-in.
+ * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, a stand-in of each lane
+ * that runs a test.
  */
 const watchAllWorkers = computed<LiveWorkerState[]>(() => {
   if (!isDemoMode) return Object.values(liveWorkers.value);
-  const lanes = new Map<string, LiveWorkerState>();
-  for (const row of dedupedDisplayCases.value) {
-    if (row.status !== 'running' || typeof row.parallelIndex !== 'number') continue;
-    const worker = { shard: row.shardIndex ?? null, worker: row.workerIndex ?? row.parallelIndex };
-    lanes.set(liveWorkerKey(worker), { ...worker, slot: row.parallelIndex, connected: true, paused: null });
-  }
-  return [...lanes.values()];
+  return Object.values(liveLanes.value).flatMap((lane) =>
+    lane.test && lane.state !== 'done'
+      ? [
+          {
+            shard: lane.id.shard,
+            worker: lane.worker ?? lane.id.lane,
+            slot: lane.id.lane,
+            connected: true,
+            paused: null,
+          },
+        ]
+      : [],
+  );
 });
+const lanesNow = computed(() => Object.values(liveLanes.value));
 /** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
 const offersWatchAll = computed(
   () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
 );
 const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
-/** What each lane needs attention for now: its rows' failures, Stuck? marks and stops, and its worker's stop. */
-const attentionNow = computed(() => attentionSignals(displayTestCases.value, Object.values(liveWorkers.value)));
+/** What each lane needs attention for now: its rows' failures and Stuck? marks, and its stop. */
+const attentionNow = computed(() => attentionSignals(displayTestCases.value, lanesNow.value));
 /** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
 const followAttention = ref(false);
 /** Why the lane panel moved where it is, while it shows that lane. */
@@ -535,6 +547,7 @@ function flushPendingEvents() {
   pendingEvents = [];
   for (const parsed of events) {
     const data = parsed.data as Record<string, unknown>;
+    liveLanes.value = heldLanes(liveLanes.value, parsed);
     // 'init' and 'run-progress' carry the server's running counters; the header
     // and bar are derived from the de-duplicated case list instead (see
     // displayProgress), so only their planned suite size is kept.
@@ -704,11 +717,21 @@ function flushPendingEvents() {
         locks?: string[] | null;
         testMeta?: TestCaseResult['testMeta'];
         testAnnotations?: TestCaseResult['testAnnotations'];
+        failureClusterId?: number | null;
+        failureCluster?: { name: string; status: string } | null;
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
+      // A failure filed under a cluster the page has not read yet: its group shows the event's name and triage status
+      // until the read of the run's clusters answers with its known issue.
+      if (d.failureClusterId != null && !clusterMeta.value[d.failureClusterId]) {
+        if (d.failureCluster) {
+          clusterMeta.value = { ...clusterMeta.value, [d.failureClusterId]: { ...d.failureCluster, issue: null } };
+        }
+        readNewClusterMeta();
+      }
       const key = liveCaseKey(d);
       /** The attempt as the event tells it, for a row the list has not shown yet. */
       const completedRow = (): TestCaseResult => ({
@@ -737,6 +760,7 @@ function flushPendingEvents() {
         locks: d.locks ?? null,
         testMeta: d.testMeta ?? null,
         testAnnotations: d.testAnnotations ?? null,
+        failureClusterId: d.failureClusterId ?? null,
       });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
@@ -793,6 +817,8 @@ function flushPendingEvents() {
             testMeta: d.testMeta ?? existing.testMeta,
             // The attempt's annotations: a skip ended at a stop reads so on its row and in the header's count.
             testAnnotations: d.testAnnotations !== undefined ? d.testAnnotations : existing.testAnnotations,
+            // The cluster the attempt's failure joined, so the row is filed under it at once.
+            failureClusterId: d.failureClusterId !== undefined ? d.failureClusterId : existing.failureClusterId,
           };
           liveTestCases.value = copy;
           showLive();
@@ -892,6 +918,7 @@ function onRunEnded(): void {
   liveRunEnded.value = true;
   liveSteps.value = {};
   liveWorkers.value = {};
+  liveLanes.value = {};
   liveViewKeyed.value = false;
   liveViewState.value = null;
   disconnectStream();
@@ -949,6 +976,8 @@ function connectToDemoStream() {
     .catch(() => ({ events: [] }))
     .then((catchUp) => {
       if (demoUnsubscribe !== unsubscribe) return;
+      // The demo's catch-up sends no `init`: the lanes it sends are all the page holds.
+      liveLanes.value = {};
       for (const event of [...(catchUp.events ?? []), ...(heldEvents ?? [])]) enqueueEvent(event);
       heldEvents = null;
     });
@@ -1254,16 +1283,34 @@ async function fetchClusterMeta() {
   if (!import.meta.client) return;
   try {
     const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
-    clusterMeta.value = Object.fromEntries(
-      r.items.map((g) => [
-        g.clusterId,
-        { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
-      ]),
-    );
+    // Over what the live events named, so a cluster a failure joined after the read began keeps its label.
+    clusterMeta.value = {
+      ...clusterMeta.value,
+      ...Object.fromEntries(
+        r.items.map((g) => [
+          g.clusterId,
+          { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
+        ]),
+      ),
+    };
   } catch {
     // chips fall back to plain cluster ids, headers to no triage badge
   }
 }
+
+// Clusters a live failure names first are read once, together: one read for the clusters that appear within a second.
+const NEW_CLUSTER_READ_MS = 1000;
+let newClusterTimer: ReturnType<typeof setTimeout> | null = null;
+function readNewClusterMeta() {
+  if (!import.meta.client || newClusterTimer) return;
+  newClusterTimer = setTimeout(() => {
+    newClusterTimer = null;
+    void fetchClusterMeta();
+  }, NEW_CLUSTER_READ_MS);
+}
+onUnmounted(() => {
+  if (newClusterTimer) clearTimeout(newClusterTimer);
+});
 
 watch(
   showFailureTabs,
@@ -1600,6 +1647,7 @@ const moreMenuItems = computed(() => {
               :tiles="live.images.value"
               :steps="liveSteps"
               :running="runningRows"
+              :lanes="lanesNow"
               :signals="attentionNow"
               :focused="watchOpen ? watching : null"
               :state="live.state.value"

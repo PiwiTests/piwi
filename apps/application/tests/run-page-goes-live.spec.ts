@@ -356,3 +356,147 @@ test('a retry reads as one while it runs, the list stays put, and its tags are s
     await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 2 } });
   }
 });
+
+test('a streamed failure joins its cluster’s group at once, a new cluster’s group appearing', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: {
+      projectName: PROJECT.RUN_GOES_LIVE,
+      startTime: new Date().toISOString(),
+      instanceId: 'run-goes-live-cluster',
+      totalTests: 3,
+    },
+  });
+  expect(started.ok()).toBeTruthy();
+  const { runId, streamToken } = (await started.json()) as { runId: number; streamToken: string };
+  const fail = async (title: string, error: string) => {
+    const sent = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [
+          { type: 'begin', title, location: `tests/${title}.spec.ts:3:1`, workerIndex: 0, startedAt: Date.now() },
+          {
+            type: 'complete',
+            title,
+            location: `tests/${title}.spec.ts:3:1`,
+            status: 'failed',
+            duration: 40,
+            error,
+            workerIndex: 0,
+            startedAt: Date.now(),
+          },
+        ],
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  const timeout =
+    'TimeoutError: locator.click: Timeout 5000ms exceeded waiting for getByRole("button", { name: "Pay" })';
+  const strict = 'Error: strict mode violation: getByText("Total") resolved to 2 elements';
+  try {
+    // The run is red as the page opens, so its list is grouped by cluster for the page view.
+    await fail('pays by card', timeout);
+    const stream = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(`/${runId}/stream`));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await stream;
+    const groups = page.getByRole('link', { name: /Open cluster/ });
+    await expect(groups).toHaveCount(1);
+
+    // A failure of the same cause joins its group; one of a cause the page has not read opens a group of its own.
+    await fail('pays by wallet', timeout);
+    await fail('shows the total', strict);
+    await expect(groups).toHaveCount(2);
+    await expect(page.getByText('Ungrouped failures')).toHaveCount(0);
+    const read = await request.get(`/api/test-runs/${runId}/failure-groups`);
+    const { items } = (await read.json()) as {
+      items: Array<{ clusterId: number; title: string | null; caseCount: number }>;
+    };
+    expect(items.map((group) => group.caseCount).sort()).toEqual([1, 2]);
+    for (const group of items) {
+      await expect(groups.and(page.locator(`[href="/failure-clusters/${group.clusterId}"]`))).toBeVisible();
+      await expect(page.getByText(group.title || `Cluster #${group.clusterId}`, { exact: true }).first()).toBeVisible();
+    }
+    await expect(page.locator(':is(a, span)[title="shows the total"]:visible')).toHaveCount(1);
+  } finally {
+    await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 3 } });
+  }
+});
+
+test('a cluster a streamed failure joins first shows its known issue without a reload', async ({ page, request }) => {
+  test.setTimeout(60_000);
+  const refund =
+    'TimeoutError: locator.click: Timeout 5000ms exceeded waiting for getByRole("button", { name: "Refund" })';
+  const tax = 'Error: strict mode violation: getByText("Tax") resolved to 3 elements';
+  const startRun = async (instanceId: string) => {
+    const started = await request.post('/api/test-runs/start', {
+      data: { projectName: PROJECT.RUN_GOES_LIVE, startTime: new Date().toISOString(), instanceId, totalTests: 2 },
+    });
+    expect(started.ok()).toBeTruthy();
+    return (await started.json()) as { runId: number; streamToken: string };
+  };
+  const fail = async (run: { runId: number; streamToken: string }, title: string, error: string) => {
+    const location = `tests/${title}.spec.ts:3:1`;
+    const sent = await request.post(`/api/test-runs/${run.runId}/events`, {
+      data: {
+        streamToken: run.streamToken,
+        testCases: [
+          { type: 'begin', title, location, workerIndex: 0, startedAt: Date.now() },
+          {
+            type: 'complete',
+            title,
+            location,
+            status: 'failed',
+            duration: 40,
+            error,
+            workerIndex: 0,
+            startedAt: Date.now(),
+          },
+        ],
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  const finish = (run: { runId: number; streamToken: string }) =>
+    request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'failed', totalTests: 2 },
+    });
+
+  // An earlier run's failure forms a cluster, which a tracker issue tracks.
+  const earlier = await startRun('run-goes-live-issue-1');
+  await fail(earlier, 'refunds the order', refund);
+  await finish(earlier);
+  const groups = (await (await request.get(`/api/test-runs/${earlier.runId}/failure-groups`)).json()) as {
+    items: Array<{ clusterId: number }>;
+  };
+  const linked = await request.post('/api/links', {
+    data: {
+      entityType: 'failure_cluster',
+      entityId: groups.items[0]!.clusterId,
+      url: 'https://example.atlassian.net/browse/LIVE-42',
+    },
+  });
+  expect(linked.ok()).toBeTruthy();
+
+  const run = await startRun('run-goes-live-issue-2');
+  try {
+    // The page opens on a red run, so it has read the cluster metadata once before the tracked cluster appears.
+    await fail(run, 'adds the tax', tax);
+    const stream = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith(`/${run.runId}/stream`),
+    );
+    await page.goto(`/test-runs/${run.runId}`);
+    await waitForHydration(page);
+    await stream;
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(1);
+
+    await fail(run, 'refunds the order', refund);
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2);
+    await expect(page.getByTestId('issue-key-chip').filter({ hasText: 'LIVE-42' }).first()).toBeVisible();
+  } finally {
+    await finish(run);
+  }
+});

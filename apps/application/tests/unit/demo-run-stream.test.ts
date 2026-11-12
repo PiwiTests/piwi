@@ -80,6 +80,25 @@ describe('the demo run stream catch-up', () => {
     expect(events[2]!.data).toMatchObject({ executionId: 12, retries: 1, passedAfterFailure: true });
   });
 
+  test('replays each lane of a live run as it stands, last, as the demo’s bus reduced it', async () => {
+    const { publishDemoRunEvent } = await import('~~/app/demo/run-events');
+    const data = { title: 'checks out', location: 'tests/cart.spec.ts:20:3', workerIndex: 2, parallelIndex: 1 };
+    publishDemoRunEvent(1, { type: 'test-begin', data });
+    try {
+      const { events } = await catchUp(1);
+      expect(events.at(-1)).toEqual(
+        expect.objectContaining({
+          type: 'lane',
+          data: expect.objectContaining({ id: { run: 1, shard: null, lane: 1 }, state: 'running', worker: 2 }),
+        }),
+      );
+    } finally {
+      // The run's end lets go of its lanes.
+      publishDemoRunEvent(1, { type: 'run-finished', data: { status: 'passed' } });
+    }
+    expect((await catchUp(1)).events.filter((e) => e.type === 'lane')).toEqual([]);
+  });
+
   test('answers an ended run’s run-finished alone', async () => {
     expect((await catchUp(2)).events).toEqual([
       expect.objectContaining({

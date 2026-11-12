@@ -5,6 +5,8 @@ import { overviewInEnvironments, runsInFilters } from '~/utils/home-overview';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import type { RecentRunCount } from '#shared/handlers/test-runs';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
+import type { ProjectRunScope } from '#shared/project-run-scope';
+import { listsRun, ownRunMark } from '~/utils/own-run-mark';
 
 // `lazy` so client-side navigation to Home is instant — the page renders a
 // skeleton immediately instead of blocking on the fetch (which felt like a hang).
@@ -126,12 +128,28 @@ function matchesEnv(env: string | null | undefined): boolean {
   return !!env && filters.value.environments.includes(env);
 }
 
-const filteredRecentRuns = computed(() => {
-  let runs = recentTestRuns.value ?? [];
-  if (filters.value.fullRunsOnly) runs = runs.filter((r) => r.isFullRun);
-  if (filters.value.environments.length > 0) runs = runs.filter((r) => matchesEnv(r.environment));
-  return runs;
-});
+/** The filters as a run scope: environments and full runs only, on every branch. */
+const activityScope = computed<ProjectRunScope>(() => ({
+  environments: filters.value.environments,
+  branches: [],
+  allBranches: true,
+  fullRunsOnly: filters.value.fullRunsOnly,
+}));
+
+/** A recent run as the own-run rule reads it: the list answers its run kind as 0 or 1. */
+function listedRun(run: TestRunForChart) {
+  return { environment: run.environment, isFullRun: !!run.isFullRun, mine: run.mine };
+}
+
+// The viewer's own runs are listed whatever "Full runs only" says.
+const filteredRecentRuns = computed(() =>
+  (recentTestRuns.value ?? []).filter((r) => listsRun(listedRun(r), activityScope.value, '')),
+);
+
+/** Why an own run the filters leave out is listed ("Yours · partial run"), else null. */
+function ownMark(run: TestRunForChart): string | null {
+  return ownRunMark(listedRun(run), activityScope.value, '');
+}
 
 // The environment filter reaches the bars and every figure read from them: failing now, the pass rate, the tendency.
 const filteredOverview = computed(() => overviewInEnvironments(overview.value ?? [], filters.value.environments));
@@ -154,7 +172,8 @@ const overviewStats = computed(() => {
   }
   const avgPassRate = passRatePercent({ passed, failed });
 
-  // Every run of the last 24 hours within the filters, not only the ones the activity list holds.
+  // Every run of the last 24 hours the activity list would show (within the filters, the viewer's own runs whatever
+  // the run kind), not only the ones it holds.
   const runs24h = runsInFilters(recentAnswer.value?.runsLast24h ?? [], filters.value);
 
   return { totalProjects, failingNow, flakyNow, avgPassRate, runs24h };
@@ -216,11 +235,11 @@ function expandActivity(): void {
 // Runs that exist (within the environment filter) but are hidden by "Full runs
 // only" — without this, a project's very first (partial) run reads as if
 // nothing arrived: 0 runs today, no recent activity, "No full runs" everywhere.
+// The viewer's own runs are listed all the same, and not counted.
 const hiddenPartialRunsCount = computed(() => {
   if (!filters.value.fullRunsOnly) return 0;
   const runs = recentTestRuns.value ?? [];
-  const envScoped = runs.filter((r) => matchesEnv(r.environment));
-  return envScoped.filter((r) => !r.isFullRun).length;
+  return runs.filter((r) => matchesEnv(r.environment) && !r.isFullRun && !r.mine).length;
 });
 
 function showPartialRuns(): void {
@@ -425,7 +444,10 @@ useViewScroll(() => dashboardPanelBody('home'));
                 <div class="flex-1 min-w-0 space-y-1">
                   <div>
                     <div class="font-medium truncate">{{ run.projectLabel || run.projectName }}</div>
-                    <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
+                    <div class="text-xs text-gray-400">
+                      Run #{{ run.id }} · {{ formatRelativeTime(run.startTime)
+                      }}<span v-if="ownMark(run)" data-testid="own-run-mark"> · {{ ownMark(run) }}</span>
+                    </div>
                   </div>
                   <RunLiveProgress v-if="isLiveRun(run)" :run="run" />
                 </div>

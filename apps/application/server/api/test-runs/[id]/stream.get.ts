@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes, and `live-ask` (the viewer’s own ask to watch the run, as it changes) and `continued` (`runId`, the run shared after this one from the same editor window, which continues it). The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values; with sign-in on, whether this viewer may ask the developer of a run outside CI to share it, `canAsk`, and their latest ask, `ask`: its `id`, `by`, the developer’s `answer`, null, `not-now` or `shared`, and `waitMs` before they may ask again), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`) and the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run).',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes, and `live-ask` (the viewer’s own ask to watch the run, as it changes) and `continued` (`runId`, the run shared after this one from the same editor window, which continues it). The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values; with sign-in on, whether this viewer may ask the developer of a run outside CI to share it, `canAsk`, and their latest ask, `ask`: its `id`, `by`, the developer’s `answer`, null, `not-now` or `shared`, and `waitMs` before they may ask again), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`), the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run), and each lane of the run as it stands (`lane`: its `id`, `run`, `shard` and `lane`, Playwright’s `parallelIndex`; its `state`, `between`, `running`, `pausing`, `stopped` or `done`; its `worker`, its `test` with its `id`, `title` and `retry`, its `stop` with its `id`, `reason`, `title` and `since`, the call a Pause waits in, `waiting`, and the attempts it ended, `done`, and failed, `failed`), which a `lane` event sends again each time an event of the run changes it.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -132,6 +132,11 @@ export default eventHandler(async (event) => {
         for (const step of runEventBus.getLiveSteps(id)) {
           const stepEvent = { type: step.type, data: step.data, seq: 0, timestamp: Date.now() };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stepEvent)}\n\n`));
+        }
+        // Then each lane as it stands, after the tests and stops it is reduced from.
+        for (const lane of runEventBus.getLanes(id)) {
+          const laneEvent = { type: 'lane', data: lane, seq: 0, timestamp: Date.now() };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(laneEvent)}\n\n`));
         }
       } catch {
         // Ignore errors during catch-up

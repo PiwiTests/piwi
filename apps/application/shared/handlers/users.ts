@@ -91,6 +91,8 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
   // A requested run is seen by its requester alone: with the requester gone, nobody sees it (`requester_id` null).
   await db.update(testRuns).set({ requesterId: null }).where(eq(testRuns.requesterId, id));
+  // A reported run outlives its reporter, listed as nobody's own (`reporter_id` has no ON DELETE action on SQLite).
+  await db.update(testRuns).set({ reporterId: null }).where(eq(testRuns.reporterId, id));
   // `scenario_gaps.triaged_by` was added by ALTER TABLE, which cannot carry the
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.

@@ -5974,6 +5974,30 @@ const SCENES = [
     },
   },
   {
+    name: 'own-runs-list',
+    description:
+      'Project runs table with "Include partial runs" off: your own partial run from an editor listed, marked why',
+    route: '/projects/1',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot }) {
+      await page.locator('[data-shot="runs-table"] [data-testid="own-run-mark"]:visible').first().waitFor();
+      await shoot(undefined, { of: '[data-shot="runs-table"]', pad: 8 });
+    },
+  },
+  {
+    name: 'own-runs-list-mobile',
+    description: 'Project runs cards at phone width: your own partial run listed with its mark',
+    route: '/projects/1',
+    viewport: { width: 390, height: 844 },
+    async run({ page, shoot, settle }) {
+      const mark = page.locator('[data-shot="runs-table"] [data-testid="own-run-mark"]:visible').first();
+      await mark.waitFor();
+      await mark.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'kept-runs-storage',
     description: 'Settings › Storage cleanup card: how many runs are kept and what their files hold',
     route: '/settings/storage',

@@ -1,4 +1,5 @@
-import { liveWorkerName, type LiveLane, type LiveWorkerState } from '#shared/live-view';
+import type { Lane } from '#shared/live-lanes';
+import { liveWorkerName, type LiveLane } from '#shared/live-view';
 import type { TestCaseResult } from '~~/types/api';
 import { stopWords } from './stop-words';
 import { liveCaseKey } from './test-attempts';
@@ -6,8 +7,8 @@ import { liveCaseKey } from './test-attempts';
 /**
  * **Follow what needs attention**: the lane view of the run page moves on its own to a lane whose test failed, got
  * stuck (the server's **Stuck?** mark) or stopped, and says why it moved. What needs attention comes from what the page
- * already knows of each lane (`attentionSignals`): its rows, their **Stuck?** marks and their stops, and the stops of
- * the workers in the run's live view. `AttentionFollower` turns them into moves: a signal seen for the first time is
+ * already knows of each lane (`attentionSignals`): its rows and their **Stuck?** marks, and the lanes of the run as its
+ * stream sends them ready (`lane` events, `#shared/live-lanes`), stopped or not. `AttentionFollower` turns them into moves: a signal seen for the first time is
  * news, and the newest news of another lane in the live view is where the view goes, no sooner than `DWELL_MS` after
  * it last moved or the person chose a lane, and not while the lane it shows needs attention itself (a stop or a
  * **Stuck?** mark that lasts, a failure for `HOLD_MS`). A failure is news for `FRESH_MS` from when it was first seen,
@@ -57,32 +58,30 @@ function attemptKey(row: TestCaseResult, lane: LiveLane): string {
 
 /**
  * What each lane needs attention for now, from the page's rows (every attempt, the earlier ones a retry followed
- * included) and the workers in its live view: an attempt that failed, a running one marked **Stuck?** or stopped, a
- * worker stopped at a call.
+ * included) and the run's lanes as its stream sends them: an attempt that failed, a running one marked **Stuck?**, a
+ * lane stopped at a call.
  */
-export function attentionSignals(
-  rows: readonly TestCaseResult[],
-  workers: readonly LiveWorkerState[],
-): AttentionSignal[] {
+export function attentionSignals(rows: readonly TestCaseResult[], lanes: readonly Lane[]): AttentionSignal[] {
   const signals: AttentionSignal[] = [];
   for (const row of rows) {
     const lane = rowLane(row);
     if (!lane) continue;
     const key = attemptKey(row, lane);
     if (FAILED.has(row.status)) signals.push({ key: `failed:${key}`, lane, reason: 'failed', test: row.title });
-    if (row.status !== 'running') continue;
-    if (row.stuck) signals.push({ key: `stuck:${key}`, lane, reason: 'stuck', test: row.title });
-    if (row.liveStop) {
-      const stop = stopWords(row.liveStop.reason);
-      signals.push({ key: `stopped:${key}:${row.liveStop.since}`, lane, reason: 'stopped', test: row.title, stop });
+    if (row.status === 'running' && row.stuck) {
+      signals.push({ key: `stuck:${key}`, lane, reason: 'stuck', test: row.title });
     }
   }
-  for (const worker of workers) {
-    if (!worker.paused || worker.slot === undefined) continue;
-    const lane = { shard: worker.shard, slot: worker.slot };
-    const test = worker.paused.test ?? worker.paused.call.title;
-    const key = `paused:${worker.shard ?? ''}#${worker.slot}|${worker.worker}|${test}|${worker.paused.call.title}`;
-    signals.push({ key, lane, reason: 'stopped', test, stop: stopWords(worker.paused.reason) });
+  for (const { id, state, worker, test, stop } of lanes) {
+    if (state !== 'stopped' || !stop) continue;
+    const at = `${id.shard ?? ''}#${id.lane}|${worker ?? ''}|${test?.id ?? ''}|${test?.retry ?? 0}`;
+    signals.push({
+      key: `stopped:${at}:${stop.id}`,
+      lane: { shard: id.shard, slot: id.lane },
+      reason: 'stopped',
+      test: test?.title ?? stop.title,
+      stop: stopWords(stop.reason),
+    });
   }
   return signals;
 }

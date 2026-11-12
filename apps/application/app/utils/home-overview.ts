@@ -36,14 +36,17 @@ export function overviewInEnvironments(projects: ProjectOverview[], environments
     .filter((project) => project.recentRuns.length > 0);
 }
 
-/** How many of the counted runs home's filters keep: the picked environments (every one when none), full runs only when it says so. */
+/**
+ * How many of the counted runs home's recent activity lists: the picked environments (every one when none), full runs
+ * only when it says so, the viewer's own runs whatever the run kind.
+ */
 export function runsInFilters(
   counts: readonly RecentRunCount[],
   filters: { environments: string[]; fullRunsOnly: boolean },
 ): number {
   let runs = 0;
   for (const c of counts) {
-    if (filters.fullRunsOnly && !c.isFullRun) continue;
+    if (filters.fullRunsOnly && !c.isFullRun && !c.mine) continue;
     if (filters.environments.length > 0 && !(c.environment && filters.environments.includes(c.environment))) continue;
     runs += c.runs;
   }

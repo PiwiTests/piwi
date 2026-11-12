@@ -48,7 +48,8 @@ first result, or with **New project**.
 stands: the latest run that [ran to its end](/guide/concepts#test-run) and the [pass rate](/guide/concepts#pass-rate) of the last 20 such runs, then the open clusters, flaky tests
 and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
 header and every tab that reads run history; with no branch picked it reads the
-[default branch](./branches#the-default-branch), and a note counts the runs it hides. The **More** menu holds Edit,
+[default branch](./branches#the-default-branch), and a note counts the runs it hides,
+[your own](/guide/getting-started#_3-run-your-tests) aside, which the runs table lists all the same. The **More** menu holds Edit,
 [Test functions](./test-functions), [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The
 tabs:
 
@@ -56,8 +57,7 @@ tabs:
   25 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
   number, page by page, and [delete them](/operate/storage#storage-management).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
-  [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status
-  filter, and groupable by file, or by file and describe block.
+  [test search](/reference/test-search) and a status filter, and groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
 - **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the

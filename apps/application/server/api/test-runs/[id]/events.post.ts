@@ -14,6 +14,7 @@ import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
+import { clusterLabels } from '#shared/handlers/failure-cluster-ops';
 import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -168,15 +169,21 @@ export default eventHandler(async (event) => {
 
   const updatedRun = updatedRuns[0];
 
-  // Publish test-completed events to SSE subscribers. The persisted execution
-  // id rides along so the live run page can deep-link each row to its real
-  // case page instead of a fabricated id (see persistRunCases' inputIndex).
+  // Publish test-completed events to SSE subscribers. The persisted execution id and the failure cluster the attempt
+  // joined ride along, so the live run page deep-links each row to its real case page instead of a fabricated id (see
+  // persistRunCases' inputIndex) and files a failure under its cluster.
   const persistedByInputIndex = new Map(
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
 
+  const labels = await clusterLabels(
+    db,
+    insertedRunCases.map((r) => r.failureClusterId),
+  );
+
   for (const [index, tc] of (completeEvents as StreamEventPayload[]).entries()) {
-    const persisted = persistedByInputIndex.get(index);
+    const stored = persistedByInputIndex.get(index);
+    const persisted = stored && { ...stored, failureCluster: labels.get(stored.failureClusterId!) ?? null };
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
     if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
