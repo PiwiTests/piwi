@@ -26,19 +26,18 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
   ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
 - **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
-  live status; any other stays a plain link, read through no connection.
+  live status; any other stays a plain link.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer
   for JQL.
-- **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or another of its
-  executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
+- **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or another execution
+  names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
   Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
   link, a matching label, or a *fixed-before* match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
-  cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
-  write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
+  cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each write. A create Jira refuses outright (a missing or invalid field) fails at once, with
   Jira's reason atop the modal and on the Issue or Cluster line; creating again replaces it.
 - **Comment** places your words first in the issue, or adds them to the cluster's issue already filed. Runs and
   tests: [Issues about a run or a test](./run-issues).
@@ -62,9 +61,10 @@ everywhere:
 
 ## Links the tests declare
 
-A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) links its cluster to up to 10 issues
-of the bound Jira project; a link removed stays removed. It counts as tracked, yet Piwi never writes to it and its
-status never resolves or reopens the cluster on its own.
+A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) annotation, or a tag the project's
+[issue key pattern](/reference/test-metadata#keys-in-test-tags) matches, links its cluster to up to 10 issues of the
+bound Jira project; a link removed stays removed. It counts as tracked, yet Piwi never writes to it and its status never
+resolves or reopens the cluster on its own.
 
 ## Keep the ticket honest
 

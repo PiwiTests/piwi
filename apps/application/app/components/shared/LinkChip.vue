@@ -29,7 +29,12 @@ const href = computed(() => safeHttpUrl(props.link.url));
 const providerIcon = computed(() => getProviderIcon(props.link.provider as any));
 const name = computed(() => props.link.key || displayLabel.value);
 // Where a link the tests declared came from; Piwi does not write to it until a person pins it.
-const source = computed(() => (props.link.origin === 'annotation' ? "From the test's annotation" : null));
+const source = computed(() => {
+  if (props.link.origin === 'annotation') return "From the test's annotation";
+  if (props.link.origin !== 'tag') return null;
+  const tag = props.link.metadata?.source?.tag;
+  return tag ? `From the tag \`${tag}\`` : 'From the tag';
+});
 </script>
 
 <template>

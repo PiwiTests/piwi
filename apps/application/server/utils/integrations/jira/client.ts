@@ -113,7 +113,7 @@ interface JiraIssueResponse {
     status?: JiraStatus;
     assignee?: JiraUser | null;
     project?: { key?: string } | null;
-    issuetype?: { name?: string } | null;
+    issuetype?: { id?: string; name?: string } | null;
   };
 }
 
@@ -299,6 +299,7 @@ export class JiraClient implements IssueTracker {
         : null,
       projectKey: data.fields?.project?.key ?? null,
       issueType: data.fields?.issuetype?.name ?? null,
+      issueTypeId: data.fields?.issuetype?.id ?? null,
     };
   }
 

@@ -2072,8 +2072,10 @@ export interface EntityLinkInfo {
   /** The connection that can read/write this record, when Piwi owns it. */
   connectionId?: number | null;
   externalId?: string | null;
-  /** Who put the link there: `pinned` by a person, `created` by Piwi, `annotation` from the test's `piwi:issue`, etc. */
+  /** Who put the link there: `pinned` by a person, `created` by Piwi, `annotation` from the test's `piwi:issue`, `tag` from a test's tag, etc. */
   origin?: string | null;
+  /** What the link was read with; a link from the tests names the test and, for a tag, the tag (with its `@`). */
+  metadata?: { source?: { testCaseId?: number | null; tag?: string | null } | null } | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;

@@ -42,6 +42,7 @@ const form = reactive({
   connectionId: 0,
   projectKey: '',
   issueType: '',
+  declaredIssueTypes: [] as string[],
   defaultAssignee: '',
   locale: '' as '' | 'en' | 'fr',
   labels: '',
@@ -93,6 +94,9 @@ const projectKeyItems = computed(() => [
 ]);
 const issueTypeItems = computed(() =>
   issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(form.connectionId, t.icon) })),
+);
+const tagIssueTypePlaceholder = computed(() =>
+  form.issueType ? 'The issue type above' : 'None: nothing is linked from tags',
 );
 const projectAvatar = computed(() => projectKeyItems.value.find((p) => p.value === form.projectKey)?.avatar);
 const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === form.issueType)?.avatar);
@@ -151,6 +155,7 @@ function fromBinding(b: ResolvedProjectIntegration) {
   form.connectionId = b.connectionId ?? 0;
   form.projectKey = b.projectKey ?? '';
   form.issueType = b.issueType ?? '';
+  form.declaredIssueTypes = [...(b.declaredIssueTypes ?? [])];
   form.defaultAssignee = b.defaultAssignee ?? '';
   form.fieldDefaults = { ...(b.fieldDefaults ?? {}) };
   form.locale = b.locale ?? '';
@@ -182,6 +187,8 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
     connectionId: form.connectionId || null,
     projectKey: form.projectKey || null,
     issueType: form.issueType || null,
+    // An empty choice is the default: the issue type above.
+    declaredIssueTypes: form.declaredIssueTypes.length > 0 ? [...form.declaredIssueTypes] : null,
     defaultAssignee: form.defaultAssignee || null,
     fieldDefaults: form.fieldDefaults,
     locale: form.locale || null,
@@ -319,6 +326,24 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
               value-key="value"
               placeholder="Issue type"
               class="w-full"
+            />
+          </UFormField>
+          <UFormField
+            label="Issue types linked from test tags"
+            :help="
+              form.issueType || form.declaredIssueTypes.length > 0
+                ? 'A key in a test tag is linked only when its issue is of one of these types. Set the tag pattern under Keys in test tags. A piwi:issue annotation is linked whatever its type.'
+                : 'Nothing is linked from test tags until you choose an issue type here or above. Set the tag pattern under Keys in test tags.'
+            "
+          >
+            <USelectMenu
+              v-model="form.declaredIssueTypes"
+              :items="issueTypeItems"
+              value-key="value"
+              multiple
+              :placeholder="tagIssueTypePlaceholder"
+              class="w-full"
+              data-testid="binding-declared-issue-types"
             />
           </UFormField>
           <UFormField label="Default assignee">

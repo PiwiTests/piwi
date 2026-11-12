@@ -43,6 +43,8 @@ interface StubIssue {
   key: string;
   project: string;
   category: 'new' | 'indeterminate' | 'done';
+  /** The issue type as Jira returns it; a Bug of id 10004 when left out. */
+  type?: { id: string; name: string };
 }
 
 /** The issues the stub Jira knows, by the key a lookup asks for: a moved issue answers under its new key. */
@@ -66,7 +68,7 @@ function issueBody(issue: StubIssue) {
       summary: `Issue ${issue.key}`,
       status: { name: STATUS_NAME[issue.category], statusCategory: { key: issue.category } },
       project: { key: issue.project },
-      issuetype: { name: 'Bug' },
+      issuetype: issue.type ?? { id: '10004', name: 'Bug' },
     },
   };
 }
@@ -121,12 +123,19 @@ let nextRun = 1;
 let nextTest = 1;
 
 async function bind(
-  over: { projectKey?: string | null; resolveOnClose?: boolean; policies?: Record<string, unknown> } = {},
+  over: {
+    projectKey?: string | null;
+    resolveOnClose?: boolean;
+    policies?: Record<string, unknown>;
+    issueType?: string | null;
+    declaredIssueTypes?: string[] | null;
+  } = {},
 ) {
   await writeProjectIntegration(dbc, 1, {
     connectionId,
     projectKey: over.projectKey === undefined ? 'PROJ' : over.projectKey,
-    issueType: 'Bug',
+    issueType: over.issueType === undefined ? 'Bug' : over.issueType,
+    declaredIssueTypes: over.declaredIssueTypes ?? null,
     policies: { resolveOnClose: over.resolveOnClose ?? false, reopenOnTicketReopen: false, ...over.policies },
   } as never);
 }
@@ -151,6 +160,8 @@ async function failRun(
   executions: Array<{
     cluster: number;
     issues: string[];
+    /** The tags the execution declared, stored without their `@`. */
+    tags?: string[];
     status?: string;
     testCaseId?: number;
     /** Which attempt the row is: a retry, a `--repeat-each` repetition, and whether a later attempt replaced it. */
@@ -178,6 +189,7 @@ async function failRun(
       error: 'Error: broken',
       failureClusterId: execution.cluster,
       testMeta: { issues: execution.issues } as never,
+      tags: (execution.tags ?? []) as never,
       ...execution.attempt,
     });
   }
@@ -249,8 +261,17 @@ beforeEach(async () => {
   jiraDown = false;
   lookupHangs = false;
   unreturnedKeys.deleteWhere(() => true);
+  await setIssueTagPattern(null);
   await bind();
 });
+
+/** The project's pattern for the issue key in a test's tag; null turns the tag source off. */
+async function setIssueTagPattern(issue: string | null) {
+  await db
+    .update(schema.projects)
+    .set({ tagKeys: issue ? { issue, testCase: null } : null } as never)
+    .where(eq(schema.projects.id, 1));
+}
 
 /** A Jira issue of the bound project as the lookup returns it. */
 function stubTrackerIssue(key: string) {
@@ -1027,5 +1048,182 @@ describe('merge and split', () => {
     const { runId } = await failRun([{ cluster: split!.clusterId!, issues: ['PROJ-61'], testCaseId: testCaseIds[1] }]);
     await linkDeclaredIssues(dbc, runId);
     expect(await links(split!.clusterId!)).toEqual([]);
+  });
+});
+
+describe('the tag source', () => {
+  const ISSUE_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$';
+
+  test('links the issue a tag names, from the tag, and shows where it came from', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-5', { category: 'indeterminate' });
+    const { runId, testCaseIds } = await failRun([{ cluster, issues: [], tags: ['smoke', 'PROJ-5'] }]);
+
+    const result = await linkDeclaredIssues(dbc, runId);
+
+    expect(result.linked).toEqual([{ clusterId: cluster, key: 'PROJ-5' }]);
+    const [link] = await links(cluster);
+    expect(link).toMatchObject({ key: 'PROJ-5', origin: 'tag', createdBy: null, statusText: 'In Progress' });
+    expect(link!.metadata).toMatchObject({ source: { testCaseId: testCaseIds[0], tag: '@PROJ-5' } });
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 0 });
+  });
+
+  test('reads no tag while the project has no issue pattern', async () => {
+    const cluster = await newCluster();
+    defineIssue('PROJ-5');
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-5'] }]);
+
+    const result = await linkDeclaredIssues(dbc, runId);
+
+    expect(result.skipped).toBe('nothing-named');
+    expect(lookups).toEqual([]);
+    expect(await links(cluster)).toEqual([]);
+  });
+
+  test('takes only a tag the pattern matches, in the key shape, in the bound project', async () => {
+    await setIssueTagPattern('^[A-Za-z0-9-]+$');
+    const cluster = await newCluster();
+    defineIssue('PROJ-6');
+    const { runId } = await failRun([
+      { cluster, issues: [], tags: ['smoke', 'OTHER-7', 'PROJ-06', 'proj-8', 'PROJ-6', 'bad tag'] },
+    ]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(lookups).toEqual([['PROJ-6']]);
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-6']);
+  });
+
+  test('links an issue of the binding’s issue type by default, and counts one of another type as not found', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    defineIssue('PROJ-2', { type: { id: '10001', name: 'Story' } });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1', 'PROJ-2'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-1']);
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 1 });
+  });
+
+  test('takes the types of the list instead of the binding’s, by name or by id', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    defineIssue('PROJ-2', { type: { id: '10001', name: 'Story' } });
+    defineIssue('PROJ-3', { type: { id: '10002', name: 'Task' } });
+    await bind({ declaredIssueTypes: ['story', '10004'] });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1', 'PROJ-2', 'PROJ-3'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect((await links(cluster)).map((l) => l.key).sort()).toEqual(['PROJ-1', 'PROJ-2']);
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 1 });
+  });
+
+  test('an id in the list is compared with the type id only, a name with the type name only', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    // A type named like another type's id must not match it.
+    defineIssue('PROJ-1', { type: { id: '10001', name: '10004' } });
+    await bind({ declaredIssueTypes: ['10004'] });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(await links(cluster)).toEqual([]);
+  });
+
+  test('links nothing, and looks nothing up, with no issue type on the binding and no list', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    await bind({ issueType: null });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+
+    const result = await linkDeclaredIssues(dbc, runId);
+
+    expect(result.skipped).toBe('nothing-named');
+    expect(lookups).toEqual([]);
+    expect(await links(cluster)).toEqual([]);
+    expect((await clusterRow(cluster)).declaredIssuesMore ?? 0).toBe(0);
+  });
+
+  test('links from the list alone when the binding has no issue type', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    await bind({ issueType: null, declaredIssueTypes: ['Bug'] });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-1']);
+  });
+
+  test('an annotation is linked whatever the type, and wins over a tag naming the same key', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1', { type: { id: '10001', name: 'Story' } });
+    defineIssue('PROJ-2');
+    const { runId, testCaseIds } = await failRun([
+      { cluster, issues: ['PROJ-1'], tags: ['PROJ-2'] },
+      { cluster, issues: ['PROJ-2'], tags: ['PROJ-1'] },
+    ]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    const byKey = new Map((await links(cluster)).map((l) => [l.key, l]));
+    expect([...byKey.keys()].sort()).toEqual(['PROJ-1', 'PROJ-2']);
+    expect(byKey.get('PROJ-1')).toMatchObject({ origin: 'annotation' });
+    expect(byKey.get('PROJ-1')!.metadata).toMatchObject({ source: { testCaseId: testCaseIds[0] } });
+    expect(byKey.get('PROJ-1')!.metadata).not.toHaveProperty('source.tag');
+    expect(byKey.get('PROJ-2')).toMatchObject({ origin: 'annotation' });
+    expect(byKey.get('PROJ-2')!.metadata).toMatchObject({ source: { testCaseId: testCaseIds[1] } });
+  });
+
+  test('a tag and an annotation naming the same key on one test make one link', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-1'], tags: ['PROJ-1'] }]);
+
+    const result = await linkDeclaredIssues(dbc, runId);
+
+    expect(result.linked).toEqual([{ clusterId: cluster, key: 'PROJ-1' }]);
+    expect(lookups).toEqual([['PROJ-1']]);
+    expect(await links(cluster)).toHaveLength(1);
+  });
+
+  test('a tag from a test whose retry passed names nothing', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    const { runId } = await failRun([
+      { cluster, issues: [], tags: ['PROJ-1'], attempt: { retries: 0, finalAttempt: false } },
+    ]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(await links(cluster)).toEqual([]);
+  });
+
+  test('respects a dismissal and the cap shared with the annotation links', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const keys = Array.from({ length: 12 }, (_, i) => `PROJ-${i + 1}`);
+    for (const key of keys) defineIssue(key);
+    await db
+      .insert(schema.entityLinkDismissals)
+      .values({ failureClusterId: cluster, key: 'PROJ-1', externalId: '20001' });
+    const { runId } = await failRun([{ cluster, issues: [], tags: keys }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    const linked = (await links(cluster)).map((l) => l.key);
+    expect(linked).toHaveLength(10);
+    expect(linked).not.toContain('PROJ-1');
   });
 });

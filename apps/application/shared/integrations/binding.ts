@@ -27,6 +27,7 @@ import {
   type TrackerRunScope,
 } from './automation';
 import type { OwnerRoute } from './owner-routes';
+import { resolveTagKeyPatterns } from './tag-keys';
 
 export { normalizeOwner, pickOwnerRoute, type OwnerRoute } from './owner-routes';
 export { type AutoCreatePolicy } from './automation';
@@ -90,6 +91,11 @@ export interface ResolvedProjectIntegration {
   projectKey: string | null;
   /** The tracker issue type id. */
   issueType: string | null;
+  /**
+   * The issue types the declared-issue link step links from a key in a test's tags: type ids or names. Null
+   * means the binding's own issue type. A key a test names with `piwi:issue` is linked whatever its type.
+   */
+  declaredIssueTypes: string[] | null;
   /** Labels added to every issue filed under this binding. */
   labels: string[];
   /** The account id issues are assigned to by default. */
@@ -144,6 +150,7 @@ export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
   connectionId: null,
   projectKey: null,
   issueType: null,
+  declaredIssueTypes: null,
   labels: [],
   defaultAssignee: null,
   fieldDefaults: {},
@@ -168,6 +175,16 @@ function normalizeLabels(value: unknown): string[] {
     .map((v) => v.trim())
     .filter(Boolean)
     .map((v) => v.slice(0, 100));
+  return [...new Set(cleaned)].slice(0, 50);
+}
+
+/** The issue types of the tag source: trimmed and deduplicated; null when the input is not a list. */
+function normalizeIssueTypes(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim().slice(0, 100))
+    .filter(Boolean);
   return [...new Set(cleaned)].slice(0, 50);
 }
 
@@ -238,6 +255,7 @@ export function resolveProjectIntegration(
     connectionId,
     projectKey: trimOrNull(input?.projectKey, 100),
     issueType: trimOrNull(input?.issueType, 100),
+    declaredIssueTypes: normalizeIssueTypes(input?.declaredIssueTypes),
     labels: normalizeLabels(input?.labels),
     defaultAssignee: trimOrNull(input?.defaultAssignee),
     fieldDefaults: normalizeFieldValues(input?.fieldDefaults),
@@ -247,4 +265,18 @@ export function resolveProjectIntegration(
     ownerRoutes,
     autoCreate: resolveAutoCreate(input?.autoCreate),
   };
+}
+
+/**
+ * What the declared-issue link step reads from a test's tags: the project's issue key pattern (`tagKeys`) and the
+ * issue types it links, which are the binding's `declaredIssueTypes`, else its issue type. `why` says what is missing
+ * when the tag source links nothing: it has no pattern, or there is no issue type to link.
+ */
+export function resolveTagSource(
+  tagKeys: unknown,
+  binding: Pick<ResolvedProjectIntegration, 'issueType' | 'declaredIssueTypes'>,
+): { pattern: string | null; issueTypes: string[]; why: 'no-pattern' | 'no-issue-type' | null } {
+  const pattern = resolveTagKeyPatterns(tagKeys).issue;
+  const issueTypes = binding.declaredIssueTypes ?? (binding.issueType ? [binding.issueType] : []);
+  return { pattern, issueTypes, why: !pattern ? 'no-pattern' : issueTypes.length === 0 ? 'no-issue-type' : null };
 }

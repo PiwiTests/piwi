@@ -3,10 +3,16 @@
  * tracked in with a `piwi:issue` annotation; once the run finishes, each cluster the test failed into is linked to
  * that issue, read through the project's Jira binding (the lookup and the rules: `#shared/handlers/declared-issues`).
  *
+ * A test may also name the issue in a tag the project's issue key pattern matches (`tagSource`), linked when the issue
+ * is of an accepted type.
+ *
  * The links written here are read-only by `origin`: no policy writes to them and their status never moves the
  * cluster (`getClusterTrackerLink`, `syncOneLink`). A person who wants the write-backs pins the issue by hand.
  */
+import { eq } from 'drizzle-orm';
 import type { DbClient } from '../../database';
+import { projects } from '../../database/schema';
+import { resolveTagSource } from '#shared/integrations/binding';
 import { linkNamedIssues, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
 import { TtlCache } from '../ttl-cache';
 import { readProjectIntegration } from './binding';
@@ -50,10 +56,12 @@ export async function linkDeclaredIssues(
   const tracker = await createTracker(db, binding.connectionId);
   if (!tracker || tracker.provider !== 'jira' || !tracker.getIssues) return { ...result, skipped: 'no-lookup' };
 
+  const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, run.projectId));
   return linkNamedIssues(db, runId, {
     projectKey,
     connectionId: binding.connectionId,
     tracker: tracker as typeof tracker & Required<Pick<typeof tracker, 'getIssues'>>,
+    tagSource: resolveTagSource(project?.tagKeys, binding),
     unreturned: unreturnedKeys,
     deadline,
   });
