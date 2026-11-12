@@ -7005,7 +7005,7 @@
     "message": "Trace bis jetzt öffnen"
   },
   "runs_openTraceTitle": {
-    "message": "Den Trace dieses Tests bis jetzt im Trace Viewer von Playwright öffnen, auf diesem Rechner"
+    "message": "Den Trace dieses Tests bis jetzt im Trace Viewer von Playwright öffnen, auf dem Rechner, auf dem der Lauf läuft"
   },
   "runs_runControls": {
     "message": "Steuerung des Laufs"

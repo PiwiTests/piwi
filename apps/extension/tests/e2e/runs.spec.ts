@@ -2634,7 +2634,7 @@ test.describe('watching a running test', () => {
       await expect(trace).toBeVisible();
       await expect(trace).toHaveAttribute(
         'title',
-        'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+        'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
       );
       await trace.click();
       await expect(card.getByText(said)).toBeVisible();

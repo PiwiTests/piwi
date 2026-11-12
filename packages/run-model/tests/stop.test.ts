@@ -132,7 +132,7 @@ describe('the trace so far of a lane’s running test', () => {
   it('has its button’s words, and its title says where the viewer opens', () => {
     expect(englishRunSpeaker.say('runs_openTrace')).toBe('Open the trace so far');
     expect(englishRunSpeaker.say('runs_openTraceTitle')).toBe(
-      'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+      'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
     );
   });
 });

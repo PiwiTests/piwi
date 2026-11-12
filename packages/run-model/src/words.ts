@@ -50,7 +50,7 @@ export const RUN_WORDS_EN = {
   runs_front: 'Show the browser',
   runs_frontTitle: 'Bring the test’s browser window to the front',
   runs_openTrace: 'Open the trace so far',
-  runs_openTraceTitle: 'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+  runs_openTraceTitle: 'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
   runs_pick: 'Pick',
   runs_pickTitle: 'Pick a locator in the test’s window: it replaces the one on this line',
   runs_record: 'Record',

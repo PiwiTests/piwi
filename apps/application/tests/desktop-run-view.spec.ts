@@ -987,7 +987,7 @@ test.describe('Desktop run live view', () => {
   }, testInfo) => {
     await installBridge(page);
     const opened = 'Playwright’s trace viewer opened on the trace so far.';
-    const untraced = 'This test’s attempt is not traced: its project’s `trace` option records none of it.';
+    const untraced = 'This test’s attempt is not traced: its project’s trace option records none of it.';
     let answer = { ok: true, message: opened };
     const commands = await playHub(page, (command) => (command.type === 'openTrace' ? answer : {}));
     await page.goto(`/test-runs/${runId}`);
@@ -1010,7 +1010,7 @@ test.describe('Desktop run live view', () => {
     await expect(trace).toBeVisible();
     await expect(trace).toHaveAttribute(
       'title',
-      'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+      'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
     );
     await trace.click();
     await expect

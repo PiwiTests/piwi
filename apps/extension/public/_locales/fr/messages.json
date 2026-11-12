@@ -7005,7 +7005,7 @@
     "message": "Ouvrir la trace jusqu’ici"
   },
   "runs_openTraceTitle": {
-    "message": "Ouvrir la trace de ce test jusqu’ici dans le visualiseur de traces de Playwright, sur cette machine"
+    "message": "Ouvrir la trace de ce test jusqu’ici dans le visualiseur de traces de Playwright, sur la machine où l’exécution a lieu"
   },
   "runs_runControls": {
     "message": "Commandes de l’exécution"

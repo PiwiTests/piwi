@@ -8297,10 +8297,10 @@
   },
   "runs_openTrace": {
     "message": "Open the trace so far",
-    "description": "Runs window and the desktop app’s Local runs tray, button in a watched lane’s view while its test runs: opens Playwright’s trace viewer on the test’s trace as it grows, on the machine the run runs on. A button: keep it short."
+    "description": "Runs window and the desktop app’s Local runs tray, button in a watched lane’s view while its test runs: opens Playwright’s trace viewer on the test’s trace as it stood when the viewer opened, on the machine the run runs on. A button: keep it short."
   },
   "runs_openTraceTitle": {
-    "message": "Open this test’s trace up to now in Playwright’s trace viewer, on this machine",
+    "message": "Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on",
     "description": "Runs window, the Open the trace so far button’s tooltip."
   },
   "runs_runControls": {

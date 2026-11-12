@@ -7005,7 +7005,7 @@
     "message": "Abrir o trace até agora"
   },
   "runs_openTraceTitle": {
-    "message": "Abrir o trace deste teste até agora no visualizador de traces do Playwright, nesta máquina"
+    "message": "Abrir o trace deste teste até agora no visualizador de traces do Playwright, na máquina onde a execução roda"
   },
   "runs_runControls": {
     "message": "Controles da execução"

@@ -13,8 +13,9 @@
  * watched live: the window watches the stop through the lane. Turned off, Watch live and Interact go off for the worker
  * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`). **Open the trace so
  * far**, in the card's head while the lane is watched and its worker runs a test whose reporter answers the ask
- * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it grows, on this machine
- * (`openTrace`): its sentence shows under the test as the worker's other answers do (`said`).
+ * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer
+ * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
+ * do (`said`).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -245,7 +246,10 @@ const traceable = computed(() => watched.value && canOpenTrace(props.worker));
 /** Its ask waits for the hub's answer: the button waits with it. */
 const tracing = ref(false);
 
-/** The hub opens Playwright's trace viewer on the lane's running test, on this machine; the window names no file. */
+/**
+ * The hub opens Playwright's trace viewer on the lane's running test, on the machine the run runs on; the window names
+ * no file.
+ */
 async function openTrace(): Promise<void> {
   if (tracing.value || !traceable.value) return;
   tracing.value = true;
