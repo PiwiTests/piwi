@@ -17,7 +17,8 @@
  * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
  * do (`said`). **Inspect**, beside it, shows the page of that test at each of its calls under the image
  * (`DesktopRunLaneInspect`), which the app's server reads from the test's own trace while it shows (`setInspect`),
- * following the lane's next tests, until it is turned off or the lane is no longer watched.
+ * following the lane's next tests, until it is turned off or the lane is no longer watched; why the server refused to
+ * open it shows under the test, whoever asked (`inspectRefusalOf`).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -265,16 +266,21 @@ async function openTrace(): Promise<void> {
 /** Inspect is open on the lane: the server reads its running test's pages from its own trace. */
 const inspecting = computed(() => !!hub.inspectOf(runRef.value, lane.value));
 
-/**
- * Opens Inspect on the lane, or closes it; a refusal shows under the test as the worker's other answers do. It closes
- * with the lane's watch too (`useDesktopRunHub`).
- */
+/** Opens Inspect on the lane, or closes it. It closes with the lane's watch too (`useDesktopRunHub`). */
 async function toggleInspect(): Promise<void> {
   const on = !inspecting.value;
   if (on && !traceable.value) return;
-  const answer = await hub.setInspect(runRef.value, lane.value, on);
-  if (!answer.ok) emit('said', answer, {});
+  await hub.setInspect(runRef.value, lane.value, on);
 }
+
+// Why the server refused to open Inspect, asked by a click, a view that showed or a stream that opened again: it shows
+// under the test as the worker's other answers do.
+watch(
+  () => hub.inspectRefusalOf(runRef.value, lane.value),
+  (refusal) => {
+    if (refusal) emit('said', { ok: false, message: refusal.message }, {});
+  },
+);
 
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
