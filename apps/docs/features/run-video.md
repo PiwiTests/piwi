@@ -11,7 +11,9 @@ lang: en-US
 A finished run has a **Video** tab, labelled with the number of tests that have a video (**Video (12)**). It plays the
 videos Playwright recorded for the run, one test after another, beside a checklist of the tests. A test is ticked as its
 video passes the end of the test, so you can follow a worker's run as it happened. The bar under the video has one block
-for each test, colored by its result. Click a test or the bar to jump there.
+for each test, colored by its result. Click a test or the bar to jump there: while the video is paused it shows that
+frame and stays paused, and while it plays it keeps playing from there. The video, the bar and the marks under it fit
+the screen without scrolling the page; only the list of tests scrolls.
 
 ## Group by Worker or File
 
@@ -40,6 +42,35 @@ opened test is marked **This test** in every mode. Closing the window stops the 
 Only final attempts that ran are in the file and worker reels. On an earlier attempt or a skipped test, This test plays
 its own video and the other two modes are off, with the reason shown under the switch. A run lists at most 2,000 tests
 with a video, so a test past that limit also keeps only This test.
+
+## Actions under the video
+
+Under the bar, a lane of marks shows what the playing test did and when: one mark for each click, double click, fill,
+type, key press, check, uncheck, select, hover and navigation, placed on the video where it happened. It shows on the
+Video tab and in the Evidence video review.
+
+- Point at a mark, or move to it with the keyboard, to read the action and its locator, for example
+  `Click getByRole('button', { name: 'Save' })`. Choose a mark to go there; it plays on only if the video was playing.
+- An action that failed has a red mark.
+- Marks less than 28 px apart merge into one mark with a count, so every mark keeps its own hit area. Its tooltip lists them.
+- An action outside the video is shown at the nearest edge of the lane, with a note in its tooltip.
+- A test with more than 500 actions shows the first 500, and the lane says how many there are.
+
+The marks come from what the project already stores. A test with a [trace](./evidence) uses the trace's actions, and any
+other test uses its step list, so there is nothing to switch on. A test with neither shows "No recorded actions for this
+test". A test that recorded actions but not when it started shows "This test did not record when it started, so its
+actions cannot be placed in the video", since there is nothing to place them by. A failed load is one muted line; the
+video plays either way.
+
+Piwi does not show what a test typed. The server masks each action before it sends it, and a locator is shown as the test
+wrote it:
+
+| Action | Shown |
+|---|---|
+| Fill, type | The locator and "typed N chars", never the text. "typed text", with no count, for a password, card or code field, or when no field is named |
+| Press | A named key or a shortcut, such as `Enter` or `Control+A`; a single character, alone or behind Shift or Alt, shows as "a key" |
+| Navigate | The origin and path, without the query string, fragment or credentials; a path segment shaped like a token is hidden |
+| Check, uncheck, select | The locator only, never the chosen option |
 
 ## When there are no videos
 

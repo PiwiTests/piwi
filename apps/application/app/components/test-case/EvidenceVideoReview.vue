@@ -97,7 +97,7 @@ const group = computed(() => (mode.value === 'file' && !limit.value ? 'file' : '
         'sm:w-[calc(100vw-4rem)] sm:max-w-6xl max-sm:inset-0 max-sm:translate-0 max-sm:w-screen max-sm:max-w-none max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none max-sm:ring-0',
       header: 'flex-wrap gap-x-4 gap-y-2 py-3 pe-14 sm:pe-16',
       wrapper: 'min-w-0 flex-1 basis-40',
-      body: 'overflow-y-auto',
+      body: 'flex min-h-0 flex-col overflow-y-auto',
     }"
   >
     <template #actions>
@@ -109,7 +109,7 @@ const group = computed(() => (mode.value === 'file' && !limit.value ? 'file' : '
       </div>
     </template>
     <template #body>
-      <div data-shot="video-review">
+      <div class="flex min-h-0 flex-1 flex-col" data-shot="video-review">
         <ErrorState v-if="error" :text="error" padded>
           <template #action>
             <UButton size="sm" color="neutral" variant="outline" @click="load">Retry</UButton>
@@ -118,7 +118,7 @@ const group = computed(() => (mode.value === 'file' && !limit.value ? 'file' : '
 
         <LoadingState v-else-if="loading || !data" padded />
 
-        <div v-else-if="focused" class="space-y-3">
+        <div v-else-if="focused" class="flex min-h-0 flex-1 flex-col gap-3">
           <p v-if="mode === 'file' && !limit" class="text-xs text-muted">
             Tests ran in parallel; played here in file order
           </p>

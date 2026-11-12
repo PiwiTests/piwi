@@ -251,6 +251,7 @@ import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
 import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import { getRunReusedResults } from '#shared/handlers/reused-results';
 import { getRunVideos } from '#shared/handlers/run-videos';
+import { getVideoActions } from '#shared/handlers/video-actions';
 import { runUsualDurations } from '#shared/handlers/stuck-tests';
 import {
   computeScenarioGaps,
@@ -2633,6 +2634,14 @@ const routes: RouteEntry[] = [
     handler: async (m, _body, query, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiGetDemoDomSnapshot(+m[1]!, query);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/video-actions$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getVideoActions(await getDemoDb(), +m[1]!);
     },
   },
   {
