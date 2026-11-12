@@ -72,6 +72,8 @@ export interface LaneSubscription {
   ready(): Promise<PageView | null>;
   /** Send the sink the latest frame it took again, or why none goes: a still page paints no other. */
   resend(): void;
+  /** The latest frame of where the lane stands now, masked, which this sink took or would take; null for none. */
+  latest(): PageFrame | null;
   /** Forget the latest frame of every sink, and take an image of the page now: the masks changed. */
   refresh(): void;
   /**
@@ -113,6 +115,9 @@ interface Source {
 let test: LaneTest | null = null;
 let stop: { id: number; page: Page | null } | null = null;
 const subscribers = new Set<Subscriber>();
+/** Who hears the page shown change (`onLanePage`), and the page they heard last. */
+const pageListeners = new Set<() => void>();
+let pageTold: Page | null | undefined;
 let source: Source | null = null;
 /** The close of each page's views still settling: a view of that page opens once it settled. */
 const closingOf = new WeakMap<Page, Promise<void>>();
@@ -121,6 +126,7 @@ const closingOf = new WeakMap<Page, Promise<void>>();
 export function laneTestBegan(id: string): void {
   test = { id, fixture: null, seen: [] };
   void sync();
+  tellPage();
 }
 
 /** The running test's `page` fixture: the page it shows. */
@@ -128,6 +134,7 @@ export function lanePage(page: Page): void {
   if (!test || test.fixture === page) return;
   test.fixture = page;
   void sync();
+  tellPage();
 }
 
 /** A page the browser opened: the running test shows it while it shows no other. */
@@ -135,12 +142,14 @@ export function laneSawPage(page: Page): void {
   if (!test || test.seen.includes(page)) return;
   test.seen.push(page);
   if (!source) void sync();
+  tellPage();
 }
 
 /** The running test ended: its view closes, `CLOSE_MS` at most. */
 export async function laneTestEnded(): Promise<void> {
   test = null;
   stop = null;
+  tellPage();
   await within(sync(), CLOSE_MS);
 }
 
@@ -149,6 +158,7 @@ export function laneStopped(id: number, page: Page | null): void {
   stop = { id, page };
   void sync();
   restamp();
+  tellPage();
 }
 
 /** The stop `id` ended: the running test's page shows again. */
@@ -157,6 +167,34 @@ export function laneWentOn(id: number): void {
   stop = null;
   void sync();
   restamp();
+  tellPage();
+}
+
+/** The page the lane shows now (`lanePageShown`), for a layer of it; null between two tests or with none open. */
+export function lanePageNow(): Page | null {
+  return lanePageShown();
+}
+
+/** Hear each change of the page the lane shows, a page closing included; returns what stops hearing them. */
+export function onLanePage(listener: () => void): () => void {
+  pageListeners.add(listener);
+  // What was told while nobody listened is not known: the next change is told.
+  pageTold = undefined;
+  return () => pageListeners.delete(listener);
+}
+
+/** Tell the listeners the page shown changed, when it did since they last heard; nothing is read while none listens. */
+function tellPage(): void {
+  if (!pageListeners.size) return;
+  let page: Page | null;
+  try {
+    page = lanePageShown();
+  } catch {
+    return;
+  }
+  if (page === pageTold) return;
+  pageTold = page;
+  for (const listener of pageListeners) listener();
 }
 
 /**
@@ -234,6 +272,10 @@ export function subscribeLane(sink: LaneSink): LaneSubscription {
       if (!subscribers.has(own) || !kept || !current(kept)) return;
       if ('refused' in kept) sink.refuse(kept.refused, kept.at);
       else sink.send(kept);
+    },
+    latest: () => {
+      const kept = source?.latest ?? own.last ?? null;
+      return subscribers.has(own) && kept && !('refused' in kept) && current(kept) ? kept : null;
     },
     refresh: () => {
       // No frame masked before goes: the ones waiting are dropped with the latest kept.
@@ -335,6 +377,7 @@ function open(page: Page, options: Asked, key: string): Source {
     latest: null,
     onClose: () => {
       if (source === shown) void sync();
+      tellPage();
     },
   };
   // The page's screencast is free once the views of the page closing now let it go.

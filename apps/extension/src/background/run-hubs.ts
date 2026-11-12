@@ -31,9 +31,13 @@
  * `lanes`: the connection watches a lane while any window does, the hub following it through its tests, its stops and
  * the workers Playwright starts in it, and stops as the last window stops, closes or the run ends. Its frames go to the
  * windows that watch the lane alone, paced and kept as a stop's are; at a stop its frames show, a window that watches
- * the lane is a viewer of that stop, its input going on. Nothing here runs in a content script or an extension page.
+ * the lane is a viewer of that stop, its input going on. At a hub whose features list `layers`, each window names the
+ * layers of the lane it takes (`watch`'s `layers`): the hub hears those every window watching the lane asks together,
+ * again as one asks anew or leaves, and each layer the hub sends goes to the windows that asked for it alone, kept
+ * nowhere. Nothing here runs in a content script or an extension page.
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
+import { LANE_LAYERS, type LaneLayer } from '@piwitests/core/live-layers';
 import {
   liveUrlOf,
   parseLiveAnswer,
@@ -42,6 +46,7 @@ import {
   type HubFrameRefusal,
   type HubLaneFrameMessage,
   type HubLaneFrameRefusal,
+  type HubLaneLayerMessage,
   type HubSession,
   type HubWorker,
   type LiveHub,
@@ -61,6 +66,7 @@ import {
   type RunsFrame,
   type RunsLane,
   type RunsLaneFrame,
+  type RunsLaneLayer,
   type RunsRequest,
   type RunsRun,
   type RunsState,
@@ -147,6 +153,8 @@ export interface RunsViewer {
   laneFrame(frame: RunsLaneFrame): void;
   /** A lane it watched is no longer watched without its asking: the hub's connection was lost. */
   laneEnded(lane: RunsLane): void;
+  /** A layer of a lane it watches and asked for. */
+  laneLayer?(layer: RunsLaneLayer): void;
 }
 
 /**
@@ -161,12 +169,13 @@ interface Watch {
 
 /**
  * A lane some window watches: each window that does, with the pace of its frames, and the latest frame, in memory
- * alone, which a window that comes later gets at once.
+ * alone, which a window that comes later gets at once; and the layers each window takes of it.
  */
 interface LaneWatch {
   lane: RunsLane;
   viewers: Map<RunsViewer, LatestPacer<RunsLaneFrame>>;
   latest: RunsLaneFrame | null;
+  layers: Map<RunsViewer, ReadonlySet<LaneLayer>>;
 }
 
 export class RunHubs {
@@ -290,6 +299,7 @@ export class RunHubs {
           client: connection?.welcome?.client ?? hub.client,
           desktop: this.desktopUrls.has(hub.url),
           lanes: !!this.features.get(hub.url)?.includes('lanes'),
+          layers: !!this.features.get(hub.url)?.includes('layers'),
           presence: !!this.features.get(hub.url)?.includes('presence'),
           holds: !!this.features.get(hub.url)?.includes('hold'),
           stops: !!this.features.get(hub.url)?.includes('stop'),
@@ -499,8 +509,9 @@ export class RunHubs {
   }
 
   /**
-   * A window starts or stops watching a lane. The hub hears `watch` as each window starts, and as the last one stops;
-   * the frames that come before the hub's answer go to the window already, and a refusal takes it off.
+   * A window starts or stops watching a lane, or asks its layers anew. The hub hears `watch` as each window starts or
+   * asks anew, and as the last one stops; the frames that come before the hub's answer go to the window already, and a
+   * refusal takes off a window that was not watching the lane before.
    */
   private async watchLane(
     connection: HubConnection,
@@ -513,18 +524,21 @@ export class RunHubs {
     if (!on) return (await this.leaveLane(key, viewer)) ?? { ok: true, message: '' };
     let watch = this.lanes.get(key);
     if (!watch) {
-      watch = { lane: { hub, ref, lane }, viewers: new Map(), latest: null };
+      watch = { lane: { hub, ref, lane }, viewers: new Map(), latest: null, layers: new Map() };
       this.lanes.set(key, watch);
     }
-    if (!watch.viewers.has(viewer)) {
+    const came = !watch.viewers.has(viewer);
+    if (came) {
       const pacer = new LatestPacer<RunsLaneFrame>({ intervalMs: FRAME_MS, send: (frame) => viewer.laneFrame(frame) });
       watch.viewers.set(viewer, pacer);
       if (watch.latest) pacer.offer(watch.latest);
     }
-    const answer = await connection.command({ type: 'watch', ref, lane, on: true });
-    if (!answer.ok && this.lanes.get(key) === watch && watch.viewers.has(viewer)) {
+    watch.layers.set(viewer, new Set(request.layers ?? []));
+    const answer = await connection.command({ type: 'watch', ref, lane, on: true, ...this.layersOf(hub, watch) });
+    if (!answer.ok && came && this.lanes.get(key) === watch && watch.viewers.has(viewer)) {
       watch.viewers.get(viewer)!.close();
       watch.viewers.delete(viewer);
+      watch.layers.delete(viewer);
       if (watch.viewers.size === 0) {
         this.lanes.delete(key);
         // A hub that did not answer in time may watch the lane still, for a window that no longer does.
@@ -544,15 +558,45 @@ export class RunHubs {
   private leaveLane(key: string, viewer: RunsViewer): Promise<RunsAnswer> | null {
     const watch = this.lanes.get(key);
     if (!watch?.viewers.has(viewer)) return null;
+    const before = this.layersOf(watch.lane.hub, watch).layers;
     watch.viewers.get(viewer)!.close();
     watch.viewers.delete(viewer);
+    watch.layers.delete(viewer);
     this.changed();
-    if (watch.viewers.size > 0) return null;
-    this.lanes.delete(key);
     const { hub, ref, lane } = watch.lane;
     const connection = this.connections.get(hub);
-    if (connection?.state !== 'open' || !connection.sessions.has(ref)) return null;
+    const open = connection?.state === 'open' && connection.sessions.has(ref);
+    if (watch.viewers.size > 0) {
+      // The windows left ask fewer layers: the hub hears what they ask together.
+      const after = this.layersOf(hub, watch);
+      if (open && before && after.layers && after.layers.length < before.length) {
+        void connection.command({ type: 'watch', ref, lane, on: true, ...after });
+      }
+      return null;
+    }
+    this.lanes.delete(key);
+    if (!open) return null;
     return connection.command({ type: 'watch', ref, lane, on: false });
+  }
+
+  /**
+   * The layers the windows that watch a lane ask together, in `LANE_LAYERS`' order, as `watch` names them at a hub
+   * whose features list `layers`; nothing for another hub.
+   */
+  private layersOf(hub: string, watch: LaneWatch): { layers?: LaneLayer[] } {
+    if (!this.features.get(hub)?.includes('layers')) return {};
+    const asked = new Set<LaneLayer>();
+    for (const layers of watch.layers.values()) for (const layer of layers) asked.add(layer);
+    return { layers: LANE_LAYERS.filter((layer) => asked.has(layer)) };
+  }
+
+  /** A layer of a lane some window watches goes to the windows that asked for it alone; none is kept. */
+  private laneLayer(hub: string, { type: _type, ...layer }: HubLaneLayerMessage): void {
+    const watch = this.lanes.get(slotKey(hub, layer.ref, layer.lane));
+    if (!watch) return;
+    for (const [viewer, layers] of watch.layers) {
+      if (layers.has(layer.layer) && watch.viewers.has(viewer)) viewer.laneLayer?.({ hub, ...layer });
+    }
   }
 
   /** A window closed: it watches nothing any more. */
@@ -742,6 +786,7 @@ export class RunHubs {
         },
         frame: (frame) => this.frame(hub.url, connection, frame),
         laneFrame: (frame) => this.laneFrame(hub.url, frame),
+        laneLayer: (layer) => this.laneLayer(hub.url, layer),
         peers: (peers) => this.heardPeers(peers),
         lost: (why) => this.lost(hub, connection, why),
       },

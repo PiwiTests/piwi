@@ -174,6 +174,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/watch-all',
       },
       {
+        title: 'Page events, text and filmstrip',
+        summary:
+          'Under a worker’s live view: its page’s console errors, failed and slow requests with what the backend logged of them, its text as roles and names to search, and a filmstrip of its calls, masked in the worker and never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch → Page events, Page text',
+        doc: 'features/live-view-layers',
+      },
+      {
         title: 'Share a run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',

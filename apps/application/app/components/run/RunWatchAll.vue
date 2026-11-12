@@ -104,7 +104,9 @@ const views = computed<TileView[]>(() =>
 /** What the watch says while it shows no image, in place of the grid's images. */
 const stateText = computed(() => {
   const state = props.state;
-  if (props.demo) return 'The demo runs no browser: each tile names the step its worker is on.';
+  if (props.demo) {
+    return 'The demo runs no browser: each tile names the step its worker is on, with no image, page events, text or filmstrip.';
+  }
   if (state.kind === 'connecting' && state.again) return 'Opening the watch again…';
   if (state.kind !== 'closed') return null;
   if (state.reason) return LIVE_VIEW_END_TEXT[state.reason];

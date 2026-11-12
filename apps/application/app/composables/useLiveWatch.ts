@@ -1,5 +1,6 @@
 import { liveWorkerKey, type LiveCall, type LiveViewerMessage, type LiveWorkerId } from '@piwitests/core/live-view';
-import { LiveWatch, sameWorker, type LiveWatchState } from '~/utils/live-watch';
+import type { LaneLayer } from '@piwitests/core/live-layers';
+import { LiveWatch, heldLayers, sameWorker, type LiveWatchState } from '~/utils/live-watch';
 
 /** A worker's latest image on the run page, as its tile shows it, or why none shows. */
 export interface LiveTile {
@@ -29,7 +30,8 @@ export type LiveFocusEvent =
 
 /**
  * The run page's one watch of its live run (`LiveWatch`): every running worker's tile while **Watch all** is on, and
- * the full view of the worker the lane panel shows (`show`), at the size it shows it (`resize`), on one connection.
+ * the full view of the worker the lane panel shows (`show`), at the size it shows it (`resize`), with the layers it
+ * shows beside the image (`showLayers`) and its page's text as the panel asks for it (`askText`), on one connection.
  * The tiles keep each worker's latest image alone, with when it came, in this page's memory, while Watch all is on,
  * until the worker leaves (`keep`), Watch all goes off, or the watch closes or goes idle. In a tab hidden for
  * `LIVE_HIDDEN_CLOSE_MS`, the tiles are no longer asked for; they are asked again as the tab shows.
@@ -39,6 +41,8 @@ export function useLiveWatch(runId: () => number) {
   const tiles = ref(false);
   const focus = shallowRef<LiveWorkerId | null>(null);
   const size = shallowRef<{ width: number; height: number } | null>(null);
+  /** The layers the lane panel shows beside the full view's image, asked while it shows a worker in full. */
+  const layers = shallowRef<LaneLayer[]>([]);
   const state = shallowRef<LiveWatchState>({ kind: 'idle' });
   const images = shallowRef<Record<string, LiveTile>>({});
   /** The tab has been hidden `LIVE_HIDDEN_CLOSE_MS`: the tiles are not asked for until it shows. */
@@ -120,8 +124,13 @@ export function useLiveWatch(runId: () => number) {
       })
     : null;
 
-  const asked = () => ({ focus: focus.value, tiles: tilesAsked(), size: size.value });
-  watch([focus, size, tiles, hiddenLong], () => live?.want(asked()));
+  const asked = () => ({
+    focus: focus.value,
+    tiles: tilesAsked(),
+    size: size.value,
+    layers: focus.value ? layers.value : [],
+  });
+  watch([focus, size, tiles, hiddenLong, layers], () => live?.want(asked()));
   // Tiles no longer asked: none of them stays.
   watch(tilesAsked, (on) => {
     if (!on) keep([]);
@@ -190,6 +199,22 @@ export function useLiveWatch(runId: () => number) {
     if (size.value?.width !== next.width || size.value?.height !== next.height) size.value = next;
   }
 
+  /** The lane panel shows `next` beside the full view's image: the watch asks for them. */
+  function showLayers(next: readonly LaneLayer[]): void {
+    const held = heldLayers(next);
+    if (held.join() !== layers.value.join()) layers.value = held;
+  }
+
+  /**
+   * Ask the worker shown in full for its page's text now, for a panel that shows the text: with what the panel shows
+   * now, which the watch may not have heard yet.
+   */
+  function askText(): void {
+    if (!live || !focus.value || !layers.value.includes('text')) return;
+    live.want(asked());
+    live.askText();
+  }
+
   /**
    * The latest image of a worker, by `liveWorkerKey`, while Watch all is on, for a full view that opens on it: when it
    * came (`receivedAt`) tells an old one, which the view does not show.
@@ -204,7 +229,7 @@ export function useLiveWatch(runId: () => number) {
     keep([]);
   });
 
-  return { tiles, focus, state, images, show, resize, keep, latest, resume, watchAll };
+  return { tiles, focus, state, images, show, resize, showLayers, askText, keep, latest, resume, watchAll };
 }
 
 export type LiveWatchHandle = ReturnType<typeof useLiveWatch>;

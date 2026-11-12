@@ -51,7 +51,8 @@ sends the larger. Each worker sends images only while a page shows it, in full o
 
 A run takes 16 such pages at a time, whatever each shows, and its workers send 4 MB of images a second at most together.
 Each page gets 1 MB of images a second at most, the latest of each worker waiting for the next second, and a page that
-reads nothing for 5 seconds is cut off, then connects again. A tile carries no call log, and an image of 48 KB at most:
+reads nothing for 5 seconds is cut off, then connects again. A tile carries no call log, nor the
+[events, text or filmstrip](./live-view-layers) of the full view, and an image of 48 KB at most:
 a worker someone else watches in full at a large size says so in its tile. In a tab hidden for 10 minutes, the page
 stops asking for tiles, and asks again as you come back. An older reporter sends its images at 640 by 400 pixels, four a
 second, whatever the view asks; the dashboard passes one a second of them to a tile.
@@ -59,7 +60,7 @@ second, whatever the view asks; the dashboard passes one a second of them to a t
 ## In the demo
 
 The live demo runs no browser: **Watch all** on a simulated run shows each running worker's step where its image
-would be, and its stops and **Stuck?** marks.
+would be, and its stops and **Stuck?** marks. A tile opens no full view there, so no page events, text or filmstrip.
 
 ## Related
 

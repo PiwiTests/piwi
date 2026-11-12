@@ -29,7 +29,9 @@ import {
   type WorkerToInstance,
   type LiveTestOutcome,
   type InstanceToWorker,
+  liveThumbHeader,
 } from '@piwitests/core/live-view';
+import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
@@ -38,6 +40,16 @@ import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
 import { subscribeLane, type LaneSubscription } from './lane-feed.js';
+import {
+  LaneFilmstrip,
+  LaneTexts,
+  followTraceText,
+  layersTitleOf,
+  subscribePageEvents,
+  takeLaneText,
+  type KeptThumb,
+  type WatchedLane,
+} from './lane-layers.js';
 import type { PageFrame } from './page-view.js';
 
 /**
@@ -73,6 +85,17 @@ import type { PageFrame } from './page-view.js';
  * or the setting turned on again, takes the key back. A key refused (403), or a run no longer live (410), gives it up
  * at once, for the worker's life. The key is out of the worker's environment from the connection's opening to its
  * close (`hideKey`).
+ *
+ * In a run something may pause (`mayPause`), or outside CI, the call log comes from Playwright's in-process
+ * instrumentation (`live-call-log.ts`'s `listener`), which moves no stop, in place of the call stream. Beside the
+ * images, a full view may ask for layers (`view`'s `layers`, `lane-layers.ts`), each posted while asked alone: the page's
+ * events (`page-event`, `MAX_PAGE_EVENTS_PER_SECOND` at most), its text (`text`: as the trace writes it, and taken as the
+ * instance asks, `text` on the stream, one take at a time, `LANE_TEXTS_PER_SECOND` at most, `LaneTexts`, masked with
+ * the project's masks too), and the test's filmstrip (`thumb`, a live message whose data is the JPEG): while anyone
+ * watches, the view's own masked image shortly after each call of the test ended, scaled down, kept in memory for the
+ * test alone (`LaneFilmstrip`) until the project's masks change, all of them posted again to a viewer that asks later
+ * (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most, `MAX_FILMSTRIP` waiting at most. None is
+ * stored.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -97,6 +120,8 @@ const SHOT_MS = 1000;
 const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
+/** The most page events posted at once. */
+const MAX_EVENT_POSTS = 8;
 /** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
 const GIVE_UP = new Set([403, 410]);
 /**
@@ -169,6 +194,29 @@ interface Link {
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
 }
 
+/** What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts. */
+const layerRuns: {
+  events: (() => void) | null;
+  text: (() => void) | null;
+  texts: LaneTexts | null;
+  thumbs: ReturnType<typeof setInterval> | null;
+} = { events: null, text: null, texts: null, thumbs: null };
+/** The view and its test now, counted: a text taken for another one goes nowhere. */
+let textGeneration = 0;
+/** The test's filmstrip, taken from the view's own masked images while someone watches. */
+let filmstrip: LaneFilmstrip | null = null;
+/** The filmstrip's images waiting to be posted, in order, each with its test, and whether one is in flight. */
+const thumbPosts: { queue: Array<KeptThumb & { test: string }>; posting: boolean } = { queue: [], posting: false };
+/** The page events posted now. */
+let eventPosts = 0;
+
+/** Whether the full views ask for `layer` now, while the view runs. */
+function layerAsked(own: Link, layer: LaneLayer): boolean {
+  return (
+    !!view && own === link && active(own) && own.viewers > 0 && shownInFull(own) && !!own.asked?.layers.includes(layer)
+  );
+}
+
 /** Whether a viewer shows the worker in full: only then do its call log and its test's end go. */
 function shownInFull(own: Link): boolean {
   return own.asked?.full ?? true;
@@ -237,6 +285,11 @@ function showKey(): void {
 /** Whether the worker holds the run's live view key, shared or not. */
 export function liveViewOpen(): boolean {
   return link !== null;
+}
+
+/** Whether the worker holds a key of a run outside CI: one a person may pause, whose call log the listener follows. */
+export function liveViewMayPause(): boolean {
+  return link !== null && !link.ci;
 }
 
 /** Whether the worker's stream is wanted now and may open: it holds a key the instance takes, and the run is shared. */
@@ -331,6 +384,12 @@ export function openLiveView(
     asked: null,
   };
   if (link.sharing) connect(link);
+  filmstrip?.close();
+  filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
+    if (!link || !layerAsked(link, 'filmstrip')) return;
+    thumbPosts.queue.push({ ...kept, test });
+    thumbPosts.queue.splice(0, Math.max(0, thumbPosts.queue.length - MAX_FILMSTRIP));
+  });
   changed();
   return true;
 }
@@ -341,6 +400,9 @@ export function closeLiveView(): void {
   link = null;
   running = null;
   missing = null;
+  filmstrip?.close();
+  filmstrip = null;
+  thumbPosts.queue = [];
   showKey();
   void stopView();
   if (!own) return;
@@ -396,6 +458,9 @@ async function stopSharing(): Promise<void> {
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
   running = { title, page: null, call, mayPause, began: Date.now() };
+  textGeneration++;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -533,6 +598,7 @@ function connect(own: Link): void {
         if (message?.type === 'masks') setMasks(own, message.locators);
         else if (message?.type === 'view') setAsked(own, message);
         else if (message?.type === 'resend') resendView(own);
+        else if (message?.type === 'text') sendText(own);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -655,16 +721,21 @@ function resendView(own: Link): void {
   if (!view) return startView();
   view.frames.resend();
   if (own.log && shownInFull(own)) postLog(own, own.log);
+  if (layerAsked(own, 'filmstrip')) queueStrip(own);
 }
 
 /**
- * The project masks `locators` from now on: the image kept for a later viewer was masked without them, so the view
- * takes one again.
+ * The project masks `locators` from now on: the images kept for a later viewer, the filmstrip's included, and a text
+ * being taken were masked without them, so they go, and the view takes one again.
  */
 function setMasks(own: Link, locators: string[] | null): void {
   if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
   own.masks = locators;
-  if (own === link) view?.frames.refresh();
+  if (own !== link) return;
+  textGeneration++;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
+  view?.frames.refresh();
 }
 
 /**
@@ -673,10 +744,125 @@ function setMasks(own: Link, locators: string[] | null): void {
  */
 function setAsked(own: Link, asked: Link['asked']): void {
   if (JSON.stringify(asked) === JSON.stringify(own.asked)) return;
+  const before = new Set(own.asked?.layers ?? []);
   own.asked = asked;
   if (own !== link) return;
   view?.frames.asked();
   followCalls(own);
+  applyLayers(own, before);
+}
+
+/**
+ * Run the layers the full views ask while the view runs, and stop the others; a layer asked anew (not in `before`)
+ * posts the page's text at once, or the test's filmstrip so far.
+ */
+function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
+  if (layerAsked(own, 'events') && !layerRuns.events) {
+    layerRuns.events = subscribePageEvents((event, at) => {
+      // An instance that answers slowly is not sent more than a few at once: the others go nowhere.
+      if (!layerAsked(own, 'events') || eventPosts >= MAX_EVENT_POSTS) return;
+      eventPosts++;
+      void post(own, { type: 'page-event', ...own.id, event, at, test: running?.title ?? null }).finally(() => {
+        eventPosts--;
+      });
+    });
+  } else if (!layerAsked(own, 'events') && layerRuns.events) {
+    layerRuns.events();
+    layerRuns.events = null;
+  }
+  if (layerAsked(own, 'text')) {
+    if (!layerRuns.texts) {
+      const texts: LaneTexts = new LaneTexts((snapshot) => postText(own, texts, snapshot));
+      layerRuns.texts = texts;
+    }
+    const texts = layerRuns.texts;
+    layerRuns.text ??= followTraceText(
+      () => view?.page ?? null,
+      () => texts.ask(false),
+    );
+    if (!before.has('text')) texts.ask(true);
+  } else if (layerRuns.text || layerRuns.texts) {
+    layerRuns.text?.();
+    layerRuns.texts?.close();
+    layerRuns.text = null;
+    layerRuns.texts = null;
+  }
+  if (layerAsked(own, 'filmstrip')) {
+    layerRuns.thumbs ??= startThumbPosts(own);
+    if (!before.has('filmstrip')) queueStrip(own);
+  } else if (layerRuns.thumbs) {
+    clearInterval(layerRuns.thumbs);
+    layerRuns.thumbs = null;
+    thumbPosts.queue = [];
+  }
+}
+
+/** Stop every layer: the view stopped. */
+function stopLayers(): void {
+  textGeneration++;
+  layerRuns.events?.();
+  layerRuns.text?.();
+  layerRuns.texts?.close();
+  if (layerRuns.thumbs) clearInterval(layerRuns.thumbs);
+  layerRuns.events = null;
+  layerRuns.text = null;
+  layerRuns.texts = null;
+  layerRuns.thumbs = null;
+  thumbPosts.queue = [];
+}
+
+/** The instance asks for the page's text now, while a full view asks for it: an ARIA snapshot where the trace has none. */
+function sendText(own: Link): void {
+  if (layerAsked(own, 'text')) layerRuns.texts?.ask(true);
+}
+
+/**
+ * Take the page's text and post it: the trace's latest, else, with `snapshot` (the instance asked, or the layer was
+ * asked anew), an ARIA snapshot of the page now; nothing once the view, its test or its takes (`texts`) changed.
+ */
+async function postText(own: Link, texts: LaneTexts, snapshot: boolean): Promise<void> {
+  const generation = textGeneration;
+  const test = running?.title ?? null;
+  const text = await takeLaneText(view?.page ?? null, own.masks, snapshot);
+  if (!text || generation !== textGeneration || layerRuns.texts !== texts) return;
+  if (link !== own || !view || !active(own) || !layerAsked(own, 'text')) return;
+  await post(
+    own,
+    'refused' in text
+      ? { type: 'text', ...own.id, refused: text.refused, test }
+      : { type: 'text', ...own.id, text, test },
+  );
+}
+
+/** The running test's view while someone watches it, for its filmstrip: its title, and the view's latest frame. */
+function watchedLane(): WatchedLane | null {
+  const own = link;
+  const shown = view;
+  if (!own || !shown || !running || !active(own) || own.viewers === 0) return null;
+  return { test: running.title, latest: () => shown.frames.latest() };
+}
+
+/** Post the test's whole filmstrip so far, to a viewer that asked it later. */
+function queueStrip(own: Link): void {
+  if (!filmstrip || !running || !layerAsked(own, 'filmstrip')) return;
+  const test = running.title;
+  thumbPosts.queue = filmstrip.of(test).map((kept) => ({ ...kept, test }));
+}
+
+/** Post the filmstrip's waiting images, `LANE_THUMBS_PER_SECOND` at most, one in flight. */
+function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
+  const timer = setInterval(() => {
+    if (thumbPosts.posting || !thumbPosts.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
+    const next = thumbPosts.queue.shift()!;
+    thumbPosts.posting = true;
+    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, next.test), next.data), LIVE_FRAME_TYPE)
+      .catch(() => undefined)
+      .finally(() => {
+        thumbPosts.posting = false;
+      });
+  }, 1000 / LANE_THUMBS_PER_SECOND);
+  timer.unref?.();
+  return timer;
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */
@@ -720,21 +906,29 @@ function startView(): void {
   page.once('close', onClose);
   view = { page, frames, onClose, following: null };
   followCalls(own);
+  applyLayers(own, new Set());
 }
 
 /**
- * Follow the call log of the view's page while a viewer shows the worker in full, and stop as none does. The call log
- * Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
+ * Follow the call log of the view's page while a viewer shows the worker in full, and stop as none does. The call
+ * stream Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses, and any other
+ * run is followed through Playwright's in-process instrumentation, which moves nothing.
  */
 function followCalls(own: Link): void {
   const shown = view;
   if (!shown || own !== link) return;
-  const wanted = own.ci && !!running && !running.mayPause && !own.logRefused && shownInFull(own);
+  const wanted = !!running && !own.logRefused && shownInFull(own);
   if (wanted && !shown.following) {
     const { page } = shown;
-    shown.following = followCallLog(page, running!.began, (log) => {
-      if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
-    }).catch(() => null);
+    const source = own.ci && !running!.mayPause ? 'stream' : 'listener';
+    shown.following = followCallLog(
+      page,
+      running!.began,
+      (log) => {
+        if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
+      },
+      { source, titleOf: layersTitleOf },
+    ).catch(() => null);
   } else if (!wanted && shown.following) {
     void shown.following.then((stop) => stop?.());
     shown.following = null;
@@ -753,6 +947,7 @@ function forgetLog(own: Link): void {
 async function stopView(): Promise<void> {
   const shown = view;
   view = null;
+  stopLayers();
   if (!shown) return;
   shown.page.off('close', shown.onClose);
   void shown.following?.then((stop) => stop?.());

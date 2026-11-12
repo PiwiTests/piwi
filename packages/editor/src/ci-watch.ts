@@ -6,8 +6,10 @@
  * is a new watch in its place. Each image goes to the client as it comes, one at a time, the newest alone waiting
  * (`FrameSender`), and nothing is kept. An instance that has not answered the watch within `OPEN_MS` is refused, its
  * request let go. The watch ends as the client asks, as the run's session ends, as the instance ends it, once it brings
- * nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. Nothing here reaches the run's
- * workers: no control, input or pick.
+ * nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. The layers the client asks
+ * (`CiWatchParams.layers`) are the watch's (`layers`, changed in place), the call log being the full view's own: each
+ * goes to the client as it comes (`piwi/ciLayer`), the lane's alone, none it did not ask for. Nothing here reaches the
+ * run's workers: no control, input or pick.
  */
 import {
   LIVE_STREAM_TYPE,
@@ -19,9 +21,11 @@ import {
   type LiveViewerMessage,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
+import { LANE_TEXTS_PER_SECOND, readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import { FrameSender } from './client-page-view.js';
 import type { PiwiClient } from './piwi-client.js';
-import type { CiFrame, CiSession, CiWatchParams, RunControlResult } from './protocol.js';
+import type { CiFrame, CiLayer, CiSession, CiWatchParams, RunControlResult } from './protocol.js';
 
 /** The size the editors' panels show a CI lane at, in device pixels; the instance holds it within its bounds. */
 export const CI_WATCH_SIZE = { width: 960, height: 600 };
@@ -57,10 +61,14 @@ export interface CiWatchOptions {
   target: (root: string | undefined, runId: number, shard: number | null, lane: number) => CiWatchTarget | null;
   /** Tell the client: an image, why none shows, or why the watch ended. */
   send: (frame: CiFrame) => Promise<void>;
+  /** Tell the client a layer of the lane it asked for. */
+  sendLayer?: (layer: CiLayer) => Promise<void>;
   /** How long a watch may bring nothing, the instance's heartbeat included, before it ends. */
   idleMs?: number;
   /** How long the instance may take to answer a new watch before it is refused. */
   openMs?: number;
+  /** How long after the page's text was asked another ask of it is merged with that one. */
+  textMs?: number;
 }
 
 /** A lane of a CI run, as the client names it (`lane` from 1, as `CiTest.lane`), and the worker that ran there last. */
@@ -79,12 +87,19 @@ interface Watch extends Lane {
   id: string | null;
   /** The lanes asked of it, counted: an answer to an earlier one changes nothing. */
   asked: number;
+  /** The layers the client shows, in `LANE_LAYERS`' order. */
+  layers: LaneLayer[];
+  /**
+   * The page's text as last asked of the instance: when, its answer, and whether that answer is still to come. Another
+   * ask meanwhile, or within `textMs` of it, shares its answer.
+   */
+  textAsk: { at: number; answer: Promise<RunControlResult>; pending: boolean } | null;
 }
 
 /** A client's params, checked field by field; why not, as a sentence. */
 function readParams(
   params: CiWatchParams | null | undefined,
-): (Omit<CiWatchParams, 'root'> & { root?: string }) | string {
+): (Omit<CiWatchParams, 'root' | 'layers'> & { root?: string; layers: LaneLayer[] }) | string {
   if (!params || typeof params.on !== 'boolean') return 'Watching needs on or off.';
   const shard = params.shard ?? null;
   const root = params.root ?? undefined;
@@ -98,7 +113,14 @@ function readParams(
   ) {
     return 'The command needs the CI run and the worker’s lane it watches.';
   }
-  return { root, runId: params.runId, shard, lane: params.lane, on: params.on };
+  const layers = params.layers == null ? [] : readLaneLayers(params.layers);
+  if (!layers) return 'The layers are a list: calls, events, text, filmstrip.';
+  return { root, runId: params.runId, shard, lane: params.lane, on: params.on, layers, text: params.text === true };
+}
+
+/** The layers the instance's watch takes, comma-separated: the call log comes with the full view itself. */
+function watchLayers(layers: readonly LaneLayer[]): LaneLayer[] {
+  return layers.filter((layer) => layer !== 'calls');
 }
 
 /** `worker 2`, or `shard 1, worker 2`: a CI lane as the clients name it. */
@@ -147,6 +169,10 @@ async function refusal(response: Response): Promise<string> {
 const SUPERSEDED: RunControlResult = { ok: false, message: 'Another CI watch took the place of this one.' };
 const LATE = 'The instance did not open the watch in time: try again in a moment.';
 
+/** How long after the page's text was asked another ask shares that one's answer. */
+const TEXT_MS = 1000 / LANE_TEXTS_PER_SECOND;
+const TEXT_ON_ITS_WAY: RunControlResult = { ok: true, message: 'The page’s text is on its way.' };
+
 /** One per service: the client's one watch of a CI lane. */
 export class CiWatch {
   private current: Watch | null = null;
@@ -191,12 +217,12 @@ export class CiWatch {
     // A watch the instance opened shows another lane of its run without a new one.
     if (own?.id && own.root === lane.root && own.runId === lane.runId && sameConnection(own.client, target.client)) {
       if (own.shard === lane.shard && own.lane === lane.lane) {
-        return { ok: true, message: `You watch ${laneName(lane)} of CI run #${lane.runId}.` };
+        return this.relayer(own, asked.layers, asked.text === true);
       }
-      return this.change(own, lane);
+      return this.change(own, lane, asked.layers);
     }
     this.stop();
-    return this.open(target.client, lane);
+    return this.open(target.client, lane, asked.layers);
   }
 
   /** A session changed: one that ended ends the watch of its run, saying whether the run ended. */
@@ -242,8 +268,8 @@ export class CiWatch {
   }
 
   /** Open the instance's watch of the run on the lane's worker, and read it until it ends. */
-  private async open(client: PiwiClient, lane: Lane): Promise<RunControlResult> {
-    const watch: Watch = { ...lane, client, abort: new AbortController(), id: null, asked: 0 };
+  private async open(client: PiwiClient, lane: Lane, layers: LaneLayer[]): Promise<RunControlResult> {
+    const watch: Watch = { ...lane, client, abort: new AbortController(), id: null, asked: 0, layers, textAsk: null };
     this.current = watch;
     const query = new URLSearchParams({
       worker: String(lane.worker),
@@ -252,6 +278,7 @@ export class CiWatch {
       height: String(CI_WATCH_SIZE.height),
     });
     if (lane.shard !== null) query.set('shard', String(lane.shard));
+    if (watchLayers(layers).length) query.set('layers', watchLayers(layers).join(','));
     let late = false;
     const wait = setTimeout(() => {
       late = true;
@@ -292,21 +319,81 @@ export class CiWatch {
     }
   }
 
+  /**
+   * Change the layers of the lane the watch shows (`layers`), or ask its worker for its page's text now (`text`, and as
+   * the layers list it anew): the instance sends the filmstrip again to a watch that takes it anew. An ask of the text
+   * while the last one is answered, or within `textMs` of it, is that one: the instance hears none.
+   */
+  private async relayer(watch: Watch, layers: LaneLayer[], text: boolean): Promise<RunControlResult> {
+    const said = { ok: true, message: `You watch ${laneName(watch)} of CI run #${watch.runId}.` };
+    if (text && !layers.includes('text')) return { ok: false, message: 'Show the page’s text first.' };
+    // The call log comes with the full view: the instance hears of the other layers alone.
+    const changed = watchLayers(layers).join() !== watchLayers(watch.layers).join();
+    const before = watch.layers;
+    const last = watch.textAsk;
+    const now = Date.now();
+    const recent = !!last && (last.pending || now - last.at < (this.options.textMs ?? TEXT_MS));
+    const asks = (text || (layers.includes('text') && !before.includes('text'))) && !recent;
+    watch.layers = layers;
+    if (!changed && !asks) return text ? last!.answer : said;
+    const body: Record<string, unknown> = { watch: watch.id };
+    if (changed) body.layers = watchLayers(layers);
+    if (asks) body.text = true;
+    const posted = this.post(watch, body, watch.asked, false).then((answer) => {
+      // Refused, the watch takes the layers it took before, which the client may ask to change again.
+      if (!answer.ok && watch.layers === layers) watch.layers = before;
+      return answer;
+    });
+    const ask = asks ? { at: now, pending: true, answer: posted } : null;
+    if (ask) {
+      watch.textAsk = ask;
+      ask.answer = posted.then((answer) => {
+        ask.pending = false;
+        return answer.ok ? TEXT_ON_ITS_WAY : answer;
+      });
+    }
+    const answer = await posted;
+    if (!answer.ok || !text) return answer.ok ? said : answer;
+    return (ask ?? last)!.answer;
+  }
+
   /** Show another lane of the run on the watch open: its images go from now on, the lane before's no more. */
-  private async change(watch: Watch, lane: Lane): Promise<RunControlResult> {
+  private async change(watch: Watch, lane: Lane, layers: LaneLayer[]): Promise<RunControlResult> {
     Object.assign(watch, lane);
+    // An instance that predates the layers hears of none while none were asked.
+    const named = watchLayers(layers).length || watchLayers(watch.layers).length;
+    watch.layers = layers;
     const asked = ++watch.asked;
     this.sender.clear();
-    let response: Response;
-    try {
-      response = await watch.client.changeLiveWatch(watch.runId, {
+    const answer = await this.post(
+      watch,
+      {
         watch: watch.id,
         focus: { worker: lane.worker, shard: lane.shard, slot: lane.lane - 1 },
         ...CI_WATCH_SIZE,
-      });
+        ...(named ? { layers: watchLayers(layers) } : {}),
+      },
+      asked,
+    );
+    return answer.ok ? { ok: true, message: `You watch ${laneName(lane)} of CI run #${lane.runId}.` } : answer;
+  }
+
+  /**
+   * Change what the watch shows (`POST …/live-view/watch`), as the client asked it the `asked`th time: a later ask, or
+   * another watch, takes its place, and a refusal ends the watch when `ends`, else leaves it as it was.
+   */
+  private async post(
+    watch: Watch,
+    body: Record<string, unknown>,
+    asked: number,
+    ends = true,
+  ): Promise<RunControlResult> {
+    let response: Response;
+    try {
+      response = await watch.client.changeLiveWatch(watch.runId, body);
     } catch {
       if (this.current !== watch || watch.asked !== asked) return SUPERSEDED;
-      this.stop();
+      if (ends) this.stop();
       return { ok: false, message: 'The instance did not answer.' };
     }
     if (this.current !== watch || watch.asked !== asked) {
@@ -315,11 +402,11 @@ export class CiWatch {
     }
     if (!response.ok) {
       const message = await refusal(response);
-      if (this.current === watch && watch.asked === asked) this.stop();
+      if (ends && this.current === watch && watch.asked === asked) this.stop();
       return { ok: false, message };
     }
     await response.body?.cancel().catch(() => {});
-    return { ok: true, message: `You watch ${laneName(lane)} of CI run #${lane.runId}.` };
+    return { ok: true, message: 'The watch changed.' };
   }
 
   /** Read the watch's live messages until it ends, the lane's images and refusals to the client. */
@@ -383,10 +470,35 @@ export class CiWatch {
       case 'refused':
         if (ofLane(watch, message)) this.sender.send({ ...where(watch), refused: message.message });
         return;
+      case 'call-log':
+        return this.layer(watch, message, { layer: 'calls', log: message.log });
+      case 'page-event':
+        return this.layer(watch, message, { layer: 'events', event: message.event, at: message.at });
+      case 'text':
+        return this.layer(
+          watch,
+          message,
+          'refused' in message ? { layer: 'text', refused: message.refused } : { layer: 'text', text: message.text },
+        );
+      case 'thumb':
+        return this.layer(watch, message, {
+          layer: 'filmstrip',
+          thumb: message.thumb,
+          data: Buffer.from(message.image).toString('base64'),
+        });
       default:
-        // The call log and a test's outcome: the panels show the images alone.
+        // A test's outcome: the CI sessions say how each test ended.
         return;
     }
+  }
+
+  /**
+   * A layer of the lane watched, to the client when it asked for it, with the worker that sent it: each as it comes,
+   * none of another lane.
+   */
+  private layer(watch: Watch, message: LiveWorkerId & { test: string | null }, data: LaneLayerData): void {
+    if (!ofLane(watch, message) || !watch.layers.includes(data.layer) || !this.options.sendLayer) return;
+    this.options.sendLayer({ ...where(watch), worker: message.worker, test: message.test, ...data }).catch(() => {});
   }
 }
 

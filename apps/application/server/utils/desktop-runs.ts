@@ -83,12 +83,12 @@ export const DESKTOP_HUB_CLIENT = 'Piwi desktop app';
 const MAX_WINDOWS = 16;
 
 /**
- * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, and the frames of the
- * stops (`frame`) and the lanes (`lane-frame`) it watches. A joined peer hears no `welcome`, and its answers come back
- * to the command that asked.
+ * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, the frames of the
+ * stops (`frame`) and the lanes (`lane-frame`) it watches, and the layers of those lanes it asked for (`lane-layer`). A
+ * joined peer hears no `welcome`, and its answers come back to the command that asked.
  */
 function relayed(message: HubMessage): message is Extract<HubMessage, DesktopRunEvent> {
-  return ['session', 'code', 'frame', 'lane-frame'].includes(message.type);
+  return ['session', 'code', 'frame', 'lane-frame', 'lane-layer'].includes(message.type);
 }
 
 /** What the run channel's socket folder is named from, in the temporary directory: this server's alone. */

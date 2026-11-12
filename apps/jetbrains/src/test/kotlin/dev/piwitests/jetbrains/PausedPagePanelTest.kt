@@ -1,6 +1,8 @@
 package dev.piwitests.jetbrains
 
+import com.google.gson.Gson
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.ui.components.JBTextArea
 import java.awt.Component
 import java.awt.Container
 import java.awt.event.InputEvent
@@ -8,8 +10,11 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import javax.swing.ImageIcon
+import javax.swing.JButton
 import javax.swing.JCheckBox
+import javax.swing.JComponent
 import javax.swing.JLabel
+import javax.swing.JList
 
 /**
  * The native preview keeps watching and interaction separate, releases the keys held with a click, keeps Interact for
@@ -240,6 +245,42 @@ class PausedPagePanelTest : BasePlatformTestCase() {
             PageInput("mouse", "up", 60.0, 20.0, "left"),
         ), sent)
         panel.watching(false)
+    }
+
+    fun testTheLayersEscapeTheirTooltipsKeepTheTextsPlaceAndTurnTakeTheTextAgainOffWhileItIsAsked() {
+        val layers = LaneLayersPanel()
+        fun layer(fields: String) = Gson().fromJson("""{"ref":"ed-1","lane":0,"worker":0,"test":"t1",$fields}""", LaneViewLayer::class.java)
+        val image = BufferedImage(320, 200, BufferedImage.TYPE_INT_RGB)
+        layers.heard(
+            layer(""""layer":"filmstrip","thumb":{"call":"c1","title":"Click <img src=x onerror=alert(1)>","index":1,"width":320,"height":200,"at":1800000000000},"data":"/9j/AA==""""),
+            image to image,
+        )
+        val thumb = descendants(layers).filterIsInstance<JButton>().single { it.icon is ImageIcon }
+        assertEquals("<html>1. Click &lt;img src=x onerror=alert(1)&gt;</html>", thumb.toolTipText)
+        layers.heard(
+            layer(""""layer":"events","at":1800000000000,"event":{"kind":"request-failed","method":"GET","url":"https://shop.test/<b>x</b>","status":500}"""),
+            null,
+        )
+        @Suppress("UNCHECKED_CAST")
+        val events = descendants(layers).filterIsInstance<JList<*>>().single() as JList<Glue.EventLine>
+        val line = events.cellRenderer.getListCellRendererComponent(events, events.model.getElementAt(0), 0, false, false) as JComponent
+        assertEquals("<html>https://shop.test/&lt;b&gt;x&lt;/b&gt;</html>", line.toolTipText)
+
+        // New text keeps the caret where the person left it.
+        val text = descendants(layers).filterIsInstance<JBTextArea>().single { it.accessibleContext.accessibleName == "The page as roles and names" }
+        fun page(words: String) = layer(""""layer":"text","text":{"call":null,"source":"snapshot","text":"$words","cut":false,"at":1800000000000}""")
+        layers.heard(page("- heading Shop\\n- button Pay"), null)
+        text.caretPosition = 12
+        layers.heard(page("- heading Shop\\n- button Pay\\n- link Later"), null)
+        assertEquals(12, text.caretPosition)
+        layers.heard(page("- a"), null)
+        assertEquals(3, text.caretPosition)
+
+        val again = descendants(layers).filterIsInstance<JButton>().single { it.text == "Take the Text Again" }
+        layers.textAsking = true
+        assertFalse(again.isEnabled)
+        layers.textAsking = false
+        assertTrue(again.isEnabled)
     }
 
     private fun interacting(clickCounts: Boolean): Triple<PausedPagePanel, JLabel, MutableList<PageInput>> {

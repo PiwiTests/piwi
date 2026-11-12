@@ -670,6 +670,24 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   offers **Watch on the Dashboard** in a notification. Another CI lane takes the watch's place on the service's side
   without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
   within 20 s end it.
+- **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
+  `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
+  (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
+  `Glue.findIn` for the Text tab's search). `Glue.withLaneLayer` keeps one image per call as the worker sends the strip
+  again, and starts the call log and the strip anew for another test, another worker (a retry's), or an image placed at
+  or before the strip's last of a call it does not hold. The watch asks for the call log and the events, and for the text or the
+  filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
+  (`relayer`), a change the service refused not held as asked (`Glue.layersAfterAnswer`); **Take the Text Again**
+  sends `text: true`, and is off until the service answers (`LaneLayersPanel.textAsking`). A CI lane, whose instance and
+  reporter say nothing of it, says until its first layer but the call log comes that an older one of either sends the
+  images alone (`Glue.ciLaneLayersNote`). The layers reach the tab in the order they came, one pooled thread at a time
+  (`drawLayers`), each filmstrip image decoded and scaled off the event thread, and only once its JPEG header names a
+  size within twice the thumbnail's (`Glue.stripImageBytes`, `Glue.jpegSize`): the image kept for the enlarged view is
+  640 by 400 pixels at most. New text keeps the Text tab's caret and scroll where the person left them; only the search
+  moves them. Every text from the run goes into a `JBTextArea`, an `html.disable` label or a
+  `ColoredListCellRenderer`, never HTML, and each tooltip of it (an event's address, an image's number and title)
+  through `Glue.htmlTooltip`, which escapes it: the platform renders a component's tooltip as HTML whatever
+  `html.disable` says.
 - **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no
   gutter icon, highlight or link (`CiMarkInlay`, `Glue.ciMarksIn`), in each open editor of its file, drawn again as
   the sessions change and as an editor opens. The editors open are read, never a file from disk. The tests of several

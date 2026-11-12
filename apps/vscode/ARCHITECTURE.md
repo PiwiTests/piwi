@@ -467,9 +467,11 @@ away (`changed`), so a rerun under the ref starts with it off.
 **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
-not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is drawn
-anew (`shown`), so a message of the view before reaches nothing; at a stop, Interact's input and the pick on a click
-name that stop, as on the paused page. Interact is offered, and its input sent, only once the service accepted the
+not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is a
+view of its own (`shown`), so a message of the view before reaches nothing; at a stop, Interact's input and the pick on
+a click name that stop, as on the paused page. The document stays the slot's: its script takes the next view's `shown`
+from the state posted, the input made for the view before naming that one, so it goes nowhere, and keeps the layers
+and the strip's images it holds. A new slot or CI lane draws a new document; closing the panel forgets the layers. Interact is offered, and its input sent, only once the service accepted the
 watch (`accepted`, which the view's `live.input` follows). It stays on through the stops of the slot and the
 stretches between them (`laneKeepsInteract`), and going off gives back the stop it was last on for (`interactAt`), as
 on the paused page. A headless stop of the slot the panel watches, in sight, opens no paused page, and no stop's file
@@ -565,10 +567,26 @@ until one says `ended`, or the service stops (`withCiSession`).
 - **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
   `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
   follows, drawing again only when the caption or the watch changed: `ciLaneRedraws`) and drawn by `pausedPageHtml`
-  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready` and Watch dropped in the
-  extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused shows under the
-  caption, Watch then off. Another CI lane takes the watch's place on the service's side without an `on: false`; a
-  local slot ends it, and so does a `piwi/ciWatch` the service never answered.
+  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch and the layers' sections
+  dropped in the extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused
+  shows under the caption, Watch then off. Another CI lane takes the watch's place on the service's side without an
+  `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
+- **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's
+  (`piwi/ciLayer`) alike: **Why it waits** (the call log's last lines, what the locator matches: `waitsView`), then
+  **Events** (`eventLine`, the newest first, `MAX_LANE_EVENTS` at most, a pending request's line replaced in place),
+  **Text** (the masked ARIA text, which the webview's Find searches: `enableFindWidget`) and **Filmstrip** (one image
+  per call, a click showing it larger with its call's title). The watch asks for the call log and the events, and for
+  the text and the filmstrip while their `<details>` is open (`laneLayersAsked`), changing them on the open watch once
+  it was accepted; **Take the text again** sends `text: true`, and is off until the service answers (`textAsking`). The extension keeps them for the slot it shows
+  (`withLaneLayer`, which keeps one image per call as the worker sends the strip again, and starts the call log and
+  the strip anew for another test, another worker, a retry's, or an image placed at or before the strip's last of a
+  call it does not hold) and posts its script the parts
+  that changed, each JPEG once per document, the slot's (`laneLayersMessage`); the script sets every run text with
+  `textContent`.
+  A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`); a CI lane, whose
+  instance and reporter say nothing of it, says until its first layer but the call log comes that an older one of
+  either sends the images alone (`ciLaneLayersNote`). A change of the layers the service refused is not held as asked
+  (`layersAfterAnswer`): the next change of the sections asks again.
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
   runs on one line share one mark.

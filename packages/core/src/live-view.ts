@@ -21,10 +21,32 @@
  * of the view (`LiveViewerMessage`). A live message is a length-prefixed JSON header, then length-prefixed bytes
  * (`encodeLiveMessage`, `createLiveMessageReader`): the dashboard and any other viewer read it with this one reader.
  *
+ * Beside the images, a viewer of the worker in full may ask for the layers of `@piwitests/core/live-layers`
+ * (`LiveWatchAsk`'s `layers` on the instance): the instance says which on the worker's stream (`view`'s `layers`, the
+ * union of what its full views ask), and the worker posts them while asked alone, each naming its test: what the page
+ * and the test's requests said (`page-event`), the page's text (`text`, as the instance asks for it, `text` on the
+ * stream), and the images of its test's filmstrip (`thumb`, a live message whose data is the JPEG: the view's own masked
+ * images, kept in the worker's memory for a viewer who comes later, sent again on `resend`). The instance relays each to
+ * the watches that asked for that layer, and keeps none.
+ *
  * A CI run's workers open their streams at once. A run outside CI holds its key too, and its workers open no stream
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
+import {
+  LANE_THUMBS_PER_SECOND,
+  MAX_LANE_THUMB,
+  isLaneThumbBytes,
+  isLayerTime,
+  readLaneLayers,
+  readLaneText,
+  readLaneThumb,
+  readPageEvent,
+  type LaneLayer,
+  type LaneText,
+  type LaneThumb,
+  type PageEvent,
+} from './live-layers';
 import { tryParseLocatorChain } from './locator-chain';
 import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
@@ -320,13 +342,16 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * instance that does not say it is read as one that does. An instance that says `view` takes frames as live messages
  * (`LIVE_FRAME_TYPE`). `resend` asks the worker for its latest image and call log again: a watch that showed it as a
  * tile shows it in full now, which changes neither the count nor what they ask. A list this reader cannot read
- * (`locators: null`, from an instance newer than it) masks nothing it could trust.
+ * (`locators: null`, from an instance newer than it) masks nothing it could trust. `view`'s `layers` are the layers its
+ * full views ask beside the images (`@piwitests/core/live-layers`: `events`, `text` and `filmstrip`; the call log goes
+ * with `full`), none from an instance that does not say them; `text` asks for the page's text now (a viewer asked).
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
   | { type: 'masks'; locators: string[] | null }
-  | { type: 'view'; width: number; height: number; fps: number; full: boolean }
-  | { type: 'resend' };
+  | { type: 'view'; width: number; height: number; fps: number; full: boolean; layers: LaneLayer[] }
+  | { type: 'resend' }
+  | { type: 'text' };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
@@ -358,7 +383,12 @@ export type WorkerToInstance =
   /** The test the viewers watched ended, how when the worker knows (`outcome`), or none runs. */
   | (LiveWorkerId & { type: 'ended'; outcome?: LiveTestOutcome | null })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
-  | (LiveWorkerId & { type: 'unshared' });
+  | (LiveWorkerId & { type: 'unshared' })
+  /** Something the page or the test's requests said, when (`at`, epoch ms), while a viewer asked for `events`. */
+  | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
+  /** The page's text, while a viewer asked for `text`, or why none goes. */
+  | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null });
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -568,8 +598,22 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
     }
     case 'unshared':
       return { type: 'unshared', ...id };
+    case 'page-event': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at)
+        ? { type: 'page-event', ...id, event, at: value.at, test: readLiveTestTitle(value.test) }
+        : 'A page event names its kind, its fields and when it happened.';
+    }
+    case 'text': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      const text = readLaneText(value.text);
+      return text ? { type: 'text', ...id, text, test } : 'A text names its source, its text and when it was taken.';
+    }
     default:
-      return 'The message is of a type other than frame, stop, call-log, ended or unshared.';
+      return 'The message is of a type other than frame, stop, call-log, ended, unshared, page-event or text.';
   }
 }
 
@@ -587,9 +631,11 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
     const size = typeof value.width === 'number' ? readLiveViewSize(value.width, value.height) : null;
     if (!size || !isInt(value.fps, 1, 60)) return null;
     const full = typeof value.full === 'boolean' ? value.full : true;
-    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full };
+    const layers = (readLaneLayers(value.layers) ?? []).filter((layer) => layer !== 'calls');
+    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers };
   }
   if (value.type === 'resend') return { type: 'resend' };
+  if (value.type === 'text') return { type: 'text' };
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }
@@ -783,6 +829,39 @@ export function readLiveWorkerFrame(message: LiveMessage): LiveWorkerFrame | str
   return isEpochMs(header.at) ? { ...frame, at: Math.round(header.at) } : frame;
 }
 
+/** An image of a worker's test filmstrip as the instance reads it: its fields, and its JPEG's bytes. */
+export type LiveWorkerThumb = LiveWorkerId & {
+  type: 'thumb';
+  thumb: LaneThumb;
+  image: Uint8Array;
+  test: string | null;
+};
+
+/** The header of an image of a filmstrip a worker posts as a live message (`LIVE_FRAME_TYPE`); its JPEG is the data. */
+export function liveThumbHeader(id: LiveWorkerId, thumb: LaneThumb, test: string | null): Record<string, unknown> {
+  return { type: 'thumb', ...id, thumb, test };
+}
+
+/** The most images of a filmstrip a worker posts a second. */
+export const LIVE_THUMBS_PER_SECOND = LANE_THUMBS_PER_SECOND;
+
+/**
+ * What a worker posted as a live message, checked field by field: a frame (`readLiveWorkerFrame`), or an image of its
+ * test's filmstrip (`thumb`: its fields as `@piwitests/core/live-layers` reads them, its data a JPEG of
+ * `MAX_LANE_THUMB` bytes at most); why not, as a sentence, when it is neither.
+ */
+export function readLiveWorkerPost(message: LiveMessage): LiveWorkerFrame | LiveWorkerThumb | string {
+  const { header, data } = message;
+  if (header.type !== 'thumb') return readLiveWorkerFrame(message);
+  const id = readLiveWorkerId(header.shard, header.worker, header.slot);
+  if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
+  const thumb = readLaneThumb(header.thumb);
+  if (!thumb) return 'An image of a filmstrip names its call, its title, its place, its size and when it was taken.';
+  if (!data || !isLaneThumbBytes(data))
+    return `An image of a filmstrip is a JPEG of ${MAX_LANE_THUMB / 1024} KB at most.`;
+  return { type: 'thumb', ...id, thumb, image: data, test: readLiveTestTitle(header.test) };
+}
+
 /**
  * Why a viewer's view of a worker ended: its test ended, its worker left, the run ended, the project's live view was
  * turned off, the person who watched opened a further watch of the run, past their share, in its place (`replaced`),
@@ -799,7 +878,8 @@ export const LIVE_WATCH_ENDS: readonly LiveViewEnd[] = ['run-ended', 'off', 'rep
  * A message of a viewer's watch (`LIVE_STREAM_TYPE`). A watch shows one worker in full (its focus, a worker or the
  * worker of a lane, which it follows through the lane's next tests), each other worker's image as a tile while it
  * shows tiles (**Watch all**), or both; every message of a worker names it (`LiveWorkerId`), so the viewer files it. A
- * reader takes a message's data, a frame's JPEG, of `MAX_LIVE_FRAME` bytes at most.
+ * reader takes a message's data, an image's JPEG or a page's text, of `MAX_LIVE_FRAME` bytes at most, and its header
+ * of `MAX_LIVE_HEADER`, which no message's other fields reach.
  */
 export type LiveViewerMessage =
   /** The watch opened: the id its viewer names it by to change what it shows. */
@@ -814,6 +894,16 @@ export type LiveViewerMessage =
   | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
   /** Why no frame of the worker shows now. */
   | (LiveWorkerId & { type: 'refused'; message: string })
+  /** Something the focused worker's page or its test's requests said, as the watch asked for `events`. */
+  | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
+  /**
+   * The focused worker's page as text, as the watch asked for `text`, or why none goes: on the wire, the text's fields
+   * in the header and its text the data (`encodeLiveViewerMessage`).
+   */
+  | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
+  /** An image of the focused worker's test filmstrip, as the watch asked for `filmstrip`: its JPEG's bytes as the data. */
+  | (LiveWorkerId & { type: 'thumb'; thumb: LaneThumb; image: Uint8Array; test: string | null })
   /** The focused worker's test ended, how when it says (`outcome`): a view of its lane stays for the next. */
   | (LiveWorkerId & { type: 'test-ended'; outcome: LiveTestOutcome | null })
   /**
@@ -822,11 +912,35 @@ export type LiveViewerMessage =
    */
   | (Partial<LiveWorkerId> & { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null });
 
-/** The live message of a watch's message: its image as the data, every other field in the header. */
+/**
+ * The most bytes of a page's text a watch's message carries, in UTF-8: a frame's, which every reader of a watch takes
+ * as its data. A longer text is cut where a character ends, and says so (`cut`).
+ */
+const MAX_LIVE_TEXT_DATA = MAX_LIVE_FRAME;
+
+/**
+ * The live message of a watch's message: its image, or its page's text in UTF-8 (`MAX_LIVE_TEXT_DATA` bytes at most),
+ * as the data, every other field in the header.
+ */
 export function encodeLiveViewerMessage(message: LiveViewerMessage): Uint8Array {
-  if (message.type !== 'frame') return encodeLiveMessage(message as unknown as Record<string, unknown>);
-  const { image, ...header } = message;
-  return encodeLiveMessage(header as unknown as Record<string, unknown>, image);
+  if (message.type === 'frame' || message.type === 'thumb') {
+    const { image, ...header } = message;
+    return encodeLiveMessage(header as unknown as Record<string, unknown>, image);
+  }
+  if (message.type === 'text' && 'text' in message) {
+    const {
+      text: { text, ...fields },
+      ...header
+    } = message;
+    let data = new TextEncoder().encode(text);
+    const cut = data.length > MAX_LIVE_TEXT_DATA;
+    if (cut) {
+      data = new Uint8Array(MAX_LIVE_TEXT_DATA);
+      data = data.subarray(0, new TextEncoder().encodeInto(text, data).written);
+    }
+    return encodeLiveMessage({ ...header, text: { ...fields, cut: fields.cut || cut } }, data);
+  }
+  return encodeLiveMessage(message as unknown as Record<string, unknown>);
 }
 
 const WATCH_ID = /^[A-Za-z0-9_-]{16,64}$/;
@@ -872,6 +986,26 @@ export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage |
         : null;
     case 'test-ended':
       return { type: 'test-ended', ...id, outcome: readLiveTestOutcome(value.outcome) };
+    case 'page-event': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at)
+        ? { type: 'page-event', ...id, event, at: value.at, test: readLiveTestTitle(value.test) }
+        : null;
+    }
+    case 'text': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      if (!isObject(value.text) || !message.data) return null;
+      const text = readLaneText({ ...value.text, text: new TextDecoder().decode(message.data) });
+      return text ? { type: 'text', ...id, text, test } : null;
+    }
+    case 'thumb': {
+      const thumb = readLaneThumb(value.thumb);
+      if (!thumb || !message.data || !isLaneThumbBytes(message.data)) return null;
+      return { type: 'thumb', ...id, thumb, image: message.data, test: readLiveTestTitle(value.test) };
+    }
     default:
       return null;
   }

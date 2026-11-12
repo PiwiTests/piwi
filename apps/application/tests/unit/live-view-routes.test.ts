@@ -209,7 +209,7 @@ describe('watching a worker', () => {
     const at = (body: unknown) => ({ ...event(10), body });
     expect(await change(at({ watch: id, width: 900, height: 600 }))).toEqual({
       success: true,
-      watch: { focus: null, tiles: true, width: 900, height: 600 },
+      watch: { focus: null, tiles: true, width: 900, height: 600, layers: [] },
     });
     let refused: { statusCode?: number; data?: Record<string, unknown> } | null = null;
     try {
@@ -218,7 +218,20 @@ describe('watching a worker', () => {
       refused = error as typeof refused;
     }
     expect(refused?.statusCode).toBe(404);
-    expect(refused?.data?.watch).toEqual({ focus: null, tiles: false, width: 900, height: 600 });
+    expect(refused?.data?.watch).toEqual({ focus: null, tiles: false, width: 900, height: 600, layers: [] });
+  });
+
+  test('takes the layers a watch asks and its ask for the page’s text, and refuses them named wrongly', async () => {
+    const sink = heldStream();
+    expect(liveViewRelay.openWatch(10, 1, { focus: null, tiles: true }, () => sink, 3)).toBeNull();
+    const id = (sink.sent[0] as { watch: string }).watch;
+    const at = (body: unknown) => ({ ...event(10), body });
+    expect(await change(at({ watch: id, layers: ['text', 'calls', 'events'], text: true }))).toMatchObject({
+      success: true,
+      watch: { layers: ['events', 'text'] },
+    });
+    expect(await refusal(change, at({ watch: id, layers: 'text' }))).toBe(400);
+    expect(await refusal(change, at({ watch: id, text: false }))).toBe(400);
   });
 });
 

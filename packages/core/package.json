@@ -30,6 +30,8 @@
     "./run-hub": "./src/run-hub.ts",
     "./run-view": "./src/run-view.ts",
     "./live-view": "./src/live-view.ts",
+    "./live-layers": "./src/live-layers.ts",
+    "./live-layer-bounds": "./src/live-layer-bounds.ts",
     "./editor-discovery": "./src/editor-discovery.ts",
     "./function-match": "./src/function-match.ts",
     "./glob": "./src/glob.ts",

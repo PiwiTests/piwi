@@ -290,10 +290,22 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneFrame(frame)
     }
 
+    /** A layer of the slot the Worker tab watches, one it asked for. */
+    @JsonNotification("piwi/laneLayer")
+    fun laneLayer(layer: LaneViewLayer) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneLayer(layer)
+    }
+
     /** A CI run's lane the Worker tab watches, read-only: an image, why none shows, or why the watch ended. */
     @JsonNotification("piwi/ciFrame")
     fun ciFrame(frame: CiFrame) {
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciFrame(frame)
+    }
+
+    /** A layer of the CI run's lane the Worker tab watches, one it asked for. */
+    @JsonNotification("piwi/ciLayer")
+    fun ciLayer(layer: CiLayer) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciLayer(layer)
     }
 
     /** The code made at a stop, from here or Piwi Picker: written above the stopped line. */

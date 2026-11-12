@@ -29,6 +29,8 @@ import {
   type RunEndStatus,
   type RunPage,
 } from './run-channel';
+import { readLaneLayers, type LaneLayer } from './live-layers';
+import { readLaneLayerData, type LaneLayerData } from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
@@ -63,14 +65,15 @@ export const MAX_HUB_PRESENCE = 16;
  * other live hubs of the machine as they come and go (`peers`), shows a lane of a run while it runs (`lanes`: the
  * command `watch`, its frames `lane-frame`), keeps **Hold failures** for each run (`hold`: the command `hold`, the
  * session's `hold`), says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
- * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`), and stops a whole run the way the
- * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names). A reader keeps those it knows; a
+ * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`), stops a whole run the way the
+ * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names), and sends a watched lane's
+ * layers beside its frames (`layers`: `watch`'s `layers`, its messages `lane-layer`). A reader keeps those it knows; a
  * hub that predates the list does none of them, and a hub whose host cannot stop its runs leaves `stop` out.
  */
-export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers';
 
 /** The features of a hub of this version whose host can stop its runs. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop'];
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'];
 
 /**
  * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
@@ -511,9 +514,12 @@ export type HubCommand =
    * test, of its stop while it stands at one, through its tests, its stops and a worker Playwright starts in its place,
    * its frames coming to this connection alone (`HubLaneFrameMessage`) until it stops watching, the run ends or the
    * connection closes. Refused for a lane whose worker's `intents` lack `watch`, saying why. At a stop the frames
-   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`.
+   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`. `layers`, at a hub
+   * whose features list `layers`, are the lane's layers this connection takes beside its frames from now on
+   * (`HubLaneLayerMessage`, `@piwitests/core/live-layers`), none without it; a later `watch` on changes them, and one
+   * that lists `text` asks for the page's text now.
    */
-  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean };
+  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean; layers?: LaneLayer[] };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -638,6 +644,20 @@ export interface HubLaneFrameRefusal {
   refused: string;
 }
 
+/**
+ * A layer of the lane `lane` of the run (`LaneLayerData`), while this connection watches it and asked for that layer
+ * (`watch`'s `layers`), of the worker `worker` and the test `test` (Playwright's id; null for the text of a page no test
+ * shows): the call its test is in, something its page or its requests said, the page's text, an image of its
+ * filmstrip. Sent as the worker sends it, bounded as `@piwitests/core/live-layers` says; the hub keeps none.
+ */
+export type HubLaneLayerMessage = {
+  type: 'lane-layer';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string | null;
+} & LaneLayerData;
+
 /** A live hub as another one names it (`peers`): where it listens and whose it is, never its token. */
 export type PeerHub = Omit<LiveHub, 'token' | 'features'>;
 
@@ -661,6 +681,7 @@ export type HubMessage =
   | HubFrameRefusal
   | HubLaneFrameMessage
   | HubLaneFrameRefusal
+  | HubLaneLayerMessage
   | HubPeersMessage
   | { type: 'keepalive' };
 
@@ -825,9 +846,14 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   if (value.type === 'watch') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
     if (!isInt(value.lane, 0)) return invalid('watch needs the lane: a parallelIndex, from 0.');
-    return typeof value.on === 'boolean'
-      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on }
-      : invalid('watch needs on: true to watch the lane, false to stop watching it.');
+    if (typeof value.on !== 'boolean') {
+      return invalid('watch needs on: true to watch the lane, false to stop watching it.');
+    }
+    if (value.layers === undefined) return { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on };
+    const layers = readLaneLayers(value.layers);
+    return layers
+      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on, layers }
+      : invalid('watch names its layers in a list: calls, events, text, filmstrip.');
   }
   if (
     ![
@@ -977,6 +1003,15 @@ function readLaneFrame(value: Record<string, unknown>): HubLaneFrameMessage | Hu
     height: height as number,
     data,
   };
+}
+
+/** A layer of a lane, field by field; null when it is not one. */
+function readLaneLayer(value: Record<string, unknown>): HubLaneLayerMessage | null {
+  const { ref, lane, worker, test } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(lane, 0) || !isInt(worker, 0)) return null;
+  if (test !== null && (str(test, 256) === null || !test)) return null;
+  const data = readLaneLayerData(value);
+  return data ? { type: 'lane-layer', ref, lane, worker, test: test as string | null, ...data } : null;
 }
 
 /** The actions of a list, those this version knows, in their order; none for anything but a list. */
@@ -1243,6 +1278,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       return readFrame(value);
     case 'lane-frame':
       return readLaneFrame(value);
+    case 'lane-layer':
+      return readLaneLayer(value);
     case 'session': {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;

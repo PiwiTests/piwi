@@ -3390,4 +3390,222 @@ class GlueTest {
         assertEquals("The CI run ended.", ended.ended)
         assertEquals(null, ended.data)
     }
+
+    private fun layer(json: String): LaneViewLayer = Gson().fromJson(json, LaneViewLayer::class.java)
+
+    @Test
+    fun theWorkerTabAsksForTheCallLogAndTheEventsAlwaysAndTheTextAndTheFilmstripWhileSelected() {
+        assertEquals(listOf("calls", "events"), Glue.laneLayersAsked(text = false, filmstrip = false))
+        assertEquals(listOf("calls", "events", "text"), Glue.laneLayersAsked(text = true, filmstrip = false))
+        assertEquals(listOf("calls", "events", "filmstrip"), Glue.laneLayersAsked(text = false, filmstrip = true))
+    }
+
+    @Test
+    fun whyItWaitsSaysTheCallHowLongWhatItsLocatorMatchesAndTheLogsLastLines() {
+        val running = layer(
+            """{"ref":"ed-1","lane":1,"worker":3,"test":"t1","layer":"calls","log":{"id":"c3","call":{"title":"Click getByRole('button')","file":"a.spec.ts","line":9},"status":"running","lines":["waiting for getByRole","  locator resolved to <button disabled>","  element is not enabled","retrying"],"point":null,"target":{"count":1,"box":null,"enabled":false},"viewport":null,"ms":4200,"error":null}}""",
+        )
+        assertEquals(
+            Glue.WaitsView(
+                "Click getByRole('button') · waiting 4.2 s",
+                "1 element matches, disabled",
+                listOf("  locator resolved to <button disabled>", "  element is not enabled", "retrying"),
+                false,
+            ),
+            Glue.waitsView(running.log!!),
+        )
+        val log = running.log!!
+        assertEquals("No element matches yet", Glue.waitsView(log.copy(target = LiveCallTarget(0, null))).target)
+        assertEquals("3 elements match, the first enabled", Glue.waitsView(log.copy(target = LiveCallTarget(3, true))).target)
+        val failed = Glue.waitsView(log.copy(status = "failed", ms = 30_000, lines = listOf("a"), error = "Timeout 30000ms exceeded."))
+        assertEquals(Glue.WaitsView("Click getByRole('button') · failed after 30 s", null, listOf("a", "Timeout 30000ms exceeded."), true), failed)
+        assertEquals("999 ms", Glue.laneDuration(999))
+        assertEquals("17 s", Glue.laneDuration(17_400))
+    }
+
+    @Test
+    fun eachPageEventIsALineOfItsOwnARequestsPendingTimeByItsAddresssPath() {
+        val pending = PageEvent("request-pending", method = "POST", url = "https://shop.test/api/checkout?x=1", id = 4, ms = 17_000, done = false)
+        assertEquals(
+            Glue.EventLine("pending 2:4", "POST /api/checkout?x=1 pending 17 s", "warning", "https://shop.test/api/checkout?x=1", 9),
+            Glue.eventLine(pending, 9, 2, 1),
+        )
+        fun text(event: PageEvent) = Glue.eventLine(event, 0, 0, 1).text
+        assertEquals("Console error: Oops", text(PageEvent("console", text = "Oops")))
+        assertEquals("Uncaught error: x is undefined", text(PageEvent("page-error", text = "x is undefined")))
+        assertEquals("GET /cart answered 503", text(PageEvent("request-failed", method = "GET", url = "https://shop.test/cart", status = 503)))
+        assertEquals("GET /x failed: net::ERR_ABORTED", text(PageEvent("request-failed", method = "GET", url = "/x", failure = "net::ERR_ABORTED")))
+        assertEquals(
+            "Backend error on POST /pay (500): Card",
+            text(PageEvent("backend", method = "POST", url = "https://shop.test/pay", status = 500, level = "error", text = "Card")),
+        )
+        assertEquals("API POST /orders answered 201 in 85 ms", text(PageEvent("api", method = "POST", url = "https://api.test/orders", status = 201, ms = 85)))
+        assertEquals("12 more events were not sent: too many at once.", text(PageEvent("dropped", count = 12)))
+    }
+
+    @Test
+    fun theNewestEventsComeFirstCappedOneLinePerPendingRequestItsLastTimeInPlace() {
+        var shown = Glue.NO_LANE_LAYERS
+        fun event(json: String): Set<String> {
+            val (next, changed) = Glue.withLaneLayer(shown, layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"events","at":1800000000000,"event":$json}"""))
+            shown = next
+            return changed
+        }
+        val request = """{"kind":"request-pending","id":1,"method":"POST","url":"/api/checkout","ms":%d,"done":%b}"""
+        assertEquals(setOf("events"), event(request.format(5000, false)))
+        event("""{"kind":"console","text":"Oops"}""")
+        event(request.format(10_000, false))
+        assertEquals(listOf("POST /api/checkout pending 10 s", "Console error: Oops"), shown.events.map { it.text })
+        event(request.format(12_300, true))
+        assertEquals("POST /api/checkout answered after 12 s", shown.events.first().text)
+        assertEquals(2, shown.events.size)
+        repeat(Glue.MAX_LANE_EVENTS + 5) { event("""{"kind":"console","text":"n$it"}""") }
+        assertEquals(Glue.MAX_LANE_EVENTS, shown.events.size)
+        assertEquals("Console error: n${Glue.MAX_LANE_EVENTS + 4}", shown.events.first().text)
+    }
+
+    @Test
+    fun theFilmstripKeepsOneImagePerCallInTheTestsOrderAndStartsAnewWithAnotherTest() {
+        var shown = Glue.NO_LANE_LAYERS
+        fun hear(json: String): Set<String> {
+            val (next, changed) = Glue.withLaneLayer(shown, layer(json))
+            shown = next
+            return changed
+        }
+        fun thumb(call: String, index: Int, data: String = "/9j/$call==") =
+            """{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"filmstrip","thumb":{"call":"$call","title":"Call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"$data"}"""
+        assertEquals(setOf("strip"), hear(thumb("c1", 1)))
+        assertEquals(setOf("strip"), hear(thumb("c2", 2)))
+        // The strip sent again, as the tab asks for it again, changes nothing; nor does an image that is no JPEG.
+        assertEquals(emptySet<String>(), hear(thumb("c1", 1)))
+        assertEquals(emptySet<String>(), hear(thumb("c2", 2)))
+        assertEquals(emptySet<String>(), hear(thumb("c9", 9, "iVBORw0KGgo=")))
+        assertEquals(listOf("c1", "c2"), shown.strip.map { it.call })
+        hear("""{"ref":"ed-1","lane":0,"worker":0,"test":null,"layer":"text","text":{"call":null,"source":"snapshot","text":"- heading \"Shop\"","cut":false,"at":1800000000000}}""")
+        // Another test's call log clears the strip; the page's text stays.
+        val changed = hear("""{"ref":"ed-1","lane":0,"worker":0,"test":"t2","layer":"calls","log":{"id":"d1","call":{"title":"Click"},"status":"running","lines":[],"ms":0}}""")
+        assertEquals(setOf("strip", "waits"), changed)
+        assertTrue(shown.strip.isEmpty())
+        assertEquals("- heading \"Shop\"", shown.text?.text)
+        assertEquals("Read from the page.", Glue.laneTextNote(shown.text))
+        hear("""{"ref":"ed-1","lane":0,"worker":0,"test":"t2","layer":"text","refused":"The page is closed."}""")
+        assertEquals("The page is closed.", Glue.laneTextNote(shown.text))
+        assertEquals("From the test’s trace. Cut at 96 K characters.", Glue.laneTextNote(Glue.LaneTextShown("x", true, "trace", null)))
+        assertEquals("Nothing yet.", Glue.laneTextNote(null))
+    }
+
+    @Test
+    fun aRetryOfTheTestInAnotherWorkerOrFromItsFirstCallStartsTheFilmstripAndTheCallLogAnew() {
+        fun attempt(worker: Int, call: String, index: Int) = layer(
+            """{"ref":"ed-1","lane":0,"worker":$worker,"test":"same-test-id","layer":"filmstrip","thumb":{"call":"$call","title":"Attempt $worker call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"/9j/${call.filter { it.isLetterOrDigit() }}$worker=="}""",
+        )
+        fun strip(shown: Glue.LaneLayersShown) = shown.strip.map { "${it.call} ${it.title}" }
+        var shown = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("abcd@1" to 1, "abcd@2" to 2, "abcd@3" to 3)) shown = Glue.withLaneLayer(shown, attempt(0, call, index)).first
+        shown = Glue.withLaneLayer(
+            shown,
+            layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"same-test-id","layer":"calls","log":{"id":"c3","call":{"title":"Click"},"status":"running","lines":[],"ms":0}}"""),
+        ).first
+        // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+        val (retry, changed) = Glue.withLaneLayer(shown, attempt(1, "wxyz@1", 1))
+        assertEquals(setOf("strip", "waits"), changed)
+        assertNull(retry.waits)
+        shown = Glue.withLaneLayer(retry, attempt(1, "wxyz@2", 2)).first
+        assertEquals(listOf("wxyz@1 Attempt 1 call 1", "wxyz@2 Attempt 1 call 2"), strip(shown))
+
+        // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+        var restarted = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("pw:api@1" to 1, "pw:api@2" to 2, "pw:api@3" to 3)) restarted = Glue.withLaneLayer(restarted, attempt(0, call, index)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@1", 1)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@2", 2)).first
+        assertEquals(listOf("pw:api@1 Attempt 1 call 1", "pw:api@2 Attempt 1 call 2"), strip(restarted))
+        // An image placed at or before the strip's last, of a call it does not hold, is another attempt's, whatever
+        // worker names it.
+        assertEquals(listOf("qq@2 Attempt 1 call 2"), strip(Glue.withLaneLayer(restarted, attempt(1, "qq@2", 2)).first))
+    }
+
+    @Test
+    fun aFilmstripImageIsSizedFromItsJpegHeaderAndOneLargerThanTwiceAThumbnailIsLetGoBeforeItIsDecoded() {
+        fun jpeg(width: Int, height: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB), "jpg", out)
+            return out.toByteArray()
+        }
+        fun base64(bytes: ByteArray) = java.util.Base64.getEncoder().encodeToString(bytes)
+        val thumb = jpeg(320, 180)
+        assertEquals(320 to 180, Glue.jpegSize(thumb))
+        assertTrue(Glue.stripImageBytes(base64(thumb))!!.contentEquals(thumb))
+        assertEquals(640 to 400, Glue.jpegSize(jpeg(640, 400)))
+        assertTrue(Glue.stripImageBytes(base64(jpeg(640, 400))) != null)
+        assertNull(Glue.stripImageBytes(base64(jpeg(641, 100))))
+        assertNull(Glue.stripImageBytes(base64(jpeg(100, 401))))
+        // A progressive JPEG of a few bytes naming 4000 by 4000 pixels: refused from its header, never decoded.
+        fun u16(n: Int) = byteArrayOf((n shr 8).toByte(), n.toByte())
+        val huge = byteArrayOf(0xFF.toByte(), 0xD8.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xE0.toByte()) + u16(16) + "JFIF".toByteArray() + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xFF.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xC2.toByte()) + u16(17) + byteArrayOf(8) + u16(4000) + u16(4000) + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertEquals(4000 to 4000, Glue.jpegSize(huge))
+        assertNull(Glue.stripImageBytes(base64(huge)))
+        // No size before the scan, no JPEG, nothing past the thumbnail's bound in base64.
+        val scanFirst = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertNull(Glue.jpegSize(scanFirst))
+        assertNull(Glue.jpegSize("iVBORw0KGgo".toByteArray()))
+        assertNull(Glue.stripImageBytes("iVBORw0KGgo="))
+        assertNull(Glue.stripImageBytes("/9j/" + "A".repeat(180_000)))
+        assertNull(Glue.stripImageBytes(null))
+    }
+
+    @Test
+    fun aCiLayerReadsAsTheServiceSendsItAndAnOlderReporterIsNamed() {
+        val ci = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays","layer":"events","event":{"kind":"console","text":"Oops"},"at":1800000000000}""",
+            CiLayer::class.java,
+        )
+        assertEquals(4, ci.worker)
+        assertEquals("Console error: Oops", Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci).first.events.single().text)
+        assertTrue(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = false))!!.startsWith("This worker’s reporter sends its images alone"))
+        assertNull(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = true)))
+        assertNull(Glue.laneLayersNote(null))
+    }
+
+    @Test
+    fun aCiLaneSaysWhyItMayShowNoneOfItsLayersUntilTheFirstComes() {
+        assertTrue(Glue.ciLaneLayersNote(Glue.NO_LANE_LAYERS)!!.endsWith("older than the IDE’s sends the images alone."))
+        fun ci(fields: String) = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays",$fields}""",
+            CiLayer::class.java,
+        )
+        // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+        val calls = Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci(""""layer":"calls","log":{"id":"c1","call":{"title":"Click"},"status":"running","lines":[],"ms":0}""")).first
+        assertTrue(Glue.ciLaneLayersNote(calls) != null)
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"events","at":1800000000000,"event":{"kind":"console","text":"Oops"}""")).first))
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"text","refused":"No page."""")).first))
+        assertNull(
+            Glue.ciLaneLayersNote(
+                Glue.withLaneLayer(calls, ci(""""layer":"filmstrip","thumb":{"call":"c1","title":"Click","index":1,"width":320,"height":200,"at":1800000000000},"data":"/9j/AA=="""")).first,
+            ),
+        )
+    }
+
+    @Test
+    fun aChangeOfTheLayersIsHeldAsAskedUnlessTheServiceRefusedThatVeryChange() {
+        val asked = listOf("calls", "events", "text")
+        assertEquals(asked, Glue.layersAfterAnswer(asked, asked, ok = true))
+        assertEquals(emptyList<String>(), Glue.layersAfterAnswer(asked, asked, ok = false))
+        // A later change asked meanwhile stays held: its own answer decides.
+        assertEquals(listOf("calls", "events"), Glue.layersAfterAnswer(listOf("calls", "events"), asked, ok = false))
+    }
+
+    @Test
+    fun theTextTabsSearchFindsTheNextMatchIgnoringCaseAndWrapsToTheStart() {
+        val text = "- heading \"Shop\"\n- button \"Pay\"\n- link \"pay later\""
+        assertEquals(text.indexOf("\"Pay\"") + 1, Glue.findIn(text, "pay", 0))
+        val first = Glue.findIn(text, "pay", 0)
+        assertEquals(text.indexOf("pay later"), Glue.findIn(text, "pay", first + 1))
+        assertEquals(first, Glue.findIn(text, "PAY", text.indexOf("pay later") + 1))
+        assertEquals(-1, Glue.findIn(text, "checkout", 0))
+        assertEquals(-1, Glue.findIn(text, "", 0))
+    }
 }

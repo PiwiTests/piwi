@@ -221,6 +221,7 @@ import {
   CI_SESSION_NOTIFICATION,
   CI_WATCH_REQUEST,
   CI_FRAME_NOTIFICATION,
+  CI_LAYER_NOTIFICATION,
   type CiWatchParams,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
@@ -297,6 +298,7 @@ import {
   type LaneViewParams,
   LANE_VIEW_REQUEST,
   LANE_FRAME_NOTIFICATION,
+  LANE_LAYER_NOTIFICATION,
   type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
@@ -873,6 +875,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const ciWatch = new CiWatch({
     target: (root, runId, shard, lane) => ciSessions.watchTarget(root, runId, shard, lane),
     send: (frame) => connection.sendNotification(CI_FRAME_NOTIFICATION, frame),
+    sendLayer: (layer) => connection.sendNotification(CI_LAYER_NOTIFICATION, layer),
   });
   /** The CI runs of the contexts' branches while they run, read-only. */
   const ciSessions = new CiSessions({
@@ -1954,6 +1957,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runSessions,
     (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
     () => clientName,
+    (layer) => connection.sendNotification(LANE_LAYER_NOTIFICATION, layer),
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
