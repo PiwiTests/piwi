@@ -79,7 +79,7 @@ describe('buildDocsCorpus', () => {
       expect(markdown, page.path).not.toMatch(/^\s*<<<\s+@\//m);
       // Inline code may name a tag (`<div>`); only markup outside it counts.
       expect(markdown.replace(/`[^`\n]*`/g, ''), page.path).not.toMatch(
-        /<Needs\b|<DemoExamples\b|<div\b|<figure\b|<img\b/,
+        /<Needs\b|<DemoExamples\b|<DownloadApps\b|<div\b|<figure\b|<img\b/,
       );
     }
     expect(docsMarkdown(findDocsPage(corpus, 'operate/deployment')!)).toContain('docker run');
@@ -87,6 +87,14 @@ describe('buildDocsCorpus', () => {
     expect(docsMarkdown(findDocsPage(corpus, 'features/ai-diagnosis')!)).toContain(
       '](https://piwitests.dev/demo/failure-clusters/10): ',
     );
+    const started = docsMarkdown(findDocsPage(corpus, 'guide/getting-started')!);
+    expect(started).toMatch(
+      /^- Piwi Desktop: \[Windows, per user \(\.exe\)\]\(https:\/\/github\.com\/PiwiTests\/piwi\/releases\/latest\/download\/Piwi-Desktop_x64-setup\.exe\)/m,
+    );
+    expect(started).toMatch(/^- Piwi Runner: /m);
+    const runner = docsMarkdown(findDocsPage(corpus, 'features/piwi-runner')!);
+    expect(runner).toMatch(/^- Piwi Runner: /m);
+    expect(runner).not.toMatch(/^- Piwi Desktop: /m);
   });
 
   test('gives every heading of a page a distinct anchor', () => {

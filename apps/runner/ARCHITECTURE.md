@@ -38,7 +38,7 @@ shared with the desktop app:
 
 The Release workflow builds it with the same steps: the host, the window and the staging, then tauri-action with
 `--features runner --config src-tauri/runner.conf.json`, and attaches the installers to the tag's release under
-`ASSET_NAME_PATTERN` ("Piwi-Runner_<version>_<arch>"), beside the desktop app's "Piwi-Desktop_…". Off a tag it keeps
+`ASSET_NAME_PATTERN` ("Piwi-Runner_<arch>", no version), beside the desktop app's "Piwi-Desktop_…". Off a tag it keeps
 them as the run's artifacts.
 
 The two apps install side by side: each has its own identifier, product name, binary, sidecar, install folder, Linux

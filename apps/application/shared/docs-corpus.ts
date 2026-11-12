@@ -14,6 +14,7 @@ import { DOCS_BASE_URL } from '#shared/docs';
 import { FEATURE_NEED_LABELS, type FeatureNeed } from '#shared/piwi-features';
 import { isGeneratedDocsPage } from '#shared/docs-generated-pages';
 import { demoExamplesFor } from '#shared/demo/demo-examples.mjs';
+import { downloadsMarkdown } from '#shared/app-downloads.mjs';
 
 /** The top-level sections of the site, keyed by path prefix, in reading order. */
 export const DOCS_GROUPS = [
@@ -315,6 +316,13 @@ export function buildDocsCorpus(files: Record<string, string>): DocsCorpus {
       // The page's live-demo examples, from the registry the docs component reads.
       if (/^\s*<DemoExamples\b[^>]*\/>\s*$/.test(line)) {
         lines.push(...demoExamplesFor(path).map((e) => `- [${e.title}](${DOCS_BASE_URL}/demo${e.route}): ${e.shows}`));
+        continue;
+      }
+      // The installers' links, from the list the docs component reads.
+      const downloads = /^\s*<DownloadApps\b([^>]*)\/>\s*$/.exec(line);
+      if (downloads) {
+        const app = /\bapp="(\w+)"/.exec(downloads[1] ?? '')?.[1];
+        lines.push(...downloadsMarkdown(app ? [app] : undefined));
         continue;
       }
       const rendered = renderLine(line);

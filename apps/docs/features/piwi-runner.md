@@ -15,8 +15,9 @@ keeps no database and serves no dashboard.
 
 ## Where it is
 
-Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
-`Piwi-Runner_…`:
+<DownloadApps app="runner" />
+
+What each installer needs:
 
 | OS | Installer |
 |----|-----------|
@@ -37,11 +38,15 @@ Piwi Runner files can reach the release a few minutes after the desktop app's; u
 or fails, and the next one finds them. On a desktop that shows no tray icon, install a new version from the latest release over
 the old one.
 
-## Beside the desktop app
+## Piwi Runner or the desktop app
 
-Piwi Runner and the desktop app install side by side, and neither installer replaces the other: each has its own
-name, install folder, Linux package, settings, linked folders and keychain entry. Connected to the same instance, both
-are listed in **Connected apps**, and a request goes to the one you pick on the page.
+You need one of the two, not both. The desktop app takes the same requests, with the same confirmation and checks,
+and adds the dashboard on your machine and a requested run you can pause, step and watch live from its window, where
+Piwi Runner shows the run's output and **Stop**. Piwi Runner is for a machine that only runs what the instance asks.
+
+Installed together, they live side by side, and neither installer replaces the other: each has its own name, install
+folder, Linux package, settings, linked folders and keychain entry. Connected to the same instance, both are listed in
+**Connected apps**, and a request goes to the one you pick on the page.
 
 ## Connect it
 
