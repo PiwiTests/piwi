@@ -22,7 +22,7 @@ import {
   type RunToHub,
 } from '@piwitests/core/run-channel';
 import { writeDiscovery } from '@piwitests/editor/discovery';
-import type { ToolResult } from '@piwitests/editor/run-host';
+import type { ToolResult, TraceViewerLauncher } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
   parseLiveAnswer,
@@ -56,6 +56,13 @@ const SPEC =
 
 let folder = '';
 let worktree = '';
+/** What the hub asked the trace viewer to open, and where; each viewer stays open until the test closes them. */
+const traceLaunches: Array<Parameters<TraceViewerLauncher>[0]> = [];
+const traceClosers: Array<() => void> = [];
+const traceViewer: TraceViewerLauncher = async (launch) => {
+  traceLaunches.push(launch);
+  return { ok: true, closed: new Promise<void>((resolve) => traceClosers.push(resolve)) };
+};
 /** The editors' discovery folder the hub names its peers from. */
 let editors = '';
 let runs: DesktopRuns;
@@ -278,6 +285,7 @@ beforeAll(async () => {
     agentIdleMs: AGENT_IDLE_MS,
     editorsDir: editors,
     peersMs: 50,
+    traceViewer,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -386,7 +394,7 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
+        features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
       },
     ]);
   });
@@ -483,7 +491,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -927,6 +935,55 @@ describe('the window', () => {
       ok: false,
     });
     expect(worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane')).toBe(false);
+    window.close();
+    worker.socket.destroy();
+  });
+});
+
+describe('the trace so far of a desktop run', () => {
+  it('opens from the linked folder’s Playwright as the window or Piwi Picker asks, its path in no message', async () => {
+    const ref = 'desktop-trace-1';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).toMatchObject({ traces: true });
+    const traces = path.join(folder, 'test-results', '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 'id-pays.trace');
+    fs.writeFileSync(file, '{"type":"context-options"}\n');
+    const there = { ok: true, message: "The attempt's trace grows there.", file };
+    // The tray's Open the trace so far: the window's command reaches the viewer, run from the linked folder.
+    const asked = window.command({ type: 'openTrace', id: 7, ref, lane: 0 });
+    await worker.answer('trace', there);
+    expect(await asked).toEqual({
+      type: 'answer',
+      id: 7,
+      ok: true,
+      message: "Playwright's trace viewer opened on the trace so far.",
+    });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(traces, 'id-pays.json') }]);
+    // Piwi Picker's, while that viewer is open: one viewer for the attempt.
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.arrayContaining(['trace']),
+    });
+    picker.send({ type: 'openTrace', id: 8, ref, lane: 0 });
+    await worker.answer('trace', there, 1);
+    expect(await picker.answer(8)).toEqual({
+      type: 'answer',
+      id: 8,
+      ok: false,
+      message:
+        "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+    });
+    expect(traceLaunches).toHaveLength(1);
+    for (const said of [...window.events, ...picker.messages].map((m) => JSON.stringify(m))) {
+      expect(said).not.toContain(traces);
+      expect(said).not.toContain('.playwright-artifacts');
+    }
+    traceClosers.splice(0).forEach((close) => close());
+    picker.socket.close();
     window.close();
     worker.socket.destroy();
   });

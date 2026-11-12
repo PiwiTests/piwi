@@ -57,12 +57,14 @@ import {
   StopActions,
   expectModuleOf,
   siblingSpecs,
+  startTraceViewer,
   type AgentWords,
   type DiskFile,
   type HubPeer,
   type RunControlResult,
   type RunHoldFailures,
   type StopTarget,
+  type TraceViewerLauncher,
 } from '@piwitests/editor/run-host';
 import {
   DESKTOP_PICKS_PATH,
@@ -205,6 +207,11 @@ export interface DesktopRunsOptions {
   requestMs?: number;
   /** How long an agent follows a run after its last call on it (`RunAgent`'s `followIdleMs`). */
   agentIdleMs?: number;
+  /**
+   * Starts Playwright's trace viewer on a lane's running test's trace (the hub's `openTrace`), from the Playwright of
+   * the linked folder the run runs in: `startTraceViewer` by default.
+   */
+  traceViewer?: TraceViewerLauncher;
 }
 
 interface RunWindow {
@@ -357,6 +364,8 @@ export class DesktopRuns {
       },
       lingerMs: options.lingerMs,
       requestMs: options.requestMs,
+      // **Open the trace so far**: the viewer runs from the run's folder, the trace's path staying in this server.
+      traceViewer: options.traceViewer ?? startTraceViewer,
     });
     this.actions = new StopActions({
       sessions: this.sessions,
