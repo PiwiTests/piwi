@@ -7343,7 +7343,7 @@ const SCENES = [
   {
     name: 'run-live-desktop-watch',
     description:
-      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
+      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), with Open the trace so far in its head for a reporter that says where the trace grows, at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: 41,
@@ -7354,6 +7354,7 @@ const SCENES = [
       'run-live-desktop-watch-narrow.png',
       'run-live-desktop-watch-tray.png',
       'run-live-desktop-watch-tray-narrow.png',
+      'run-live-desktop-watch-trace.png',
       'run-live-desktop-watch-stop.png',
       'run-live-desktop-watch-running.png',
       'run-live-desktop-watch-waiting.png',
@@ -7402,6 +7403,12 @@ const SCENES = [
         await settle();
         await shoot('tray-narrow');
         await page.setViewportSize({ width: 1280, height: 900 });
+
+        // A reporter that says where the running test's trace grows: Open the trace so far in the page's head.
+        await send(session({ ...running, traces: true }));
+        await worker.getByRole('button', { name: 'Open the trace so far' }).waitFor();
+        await settle();
+        await shoot('trace', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
 
         // At a stop, the lane shows the stopped page, which takes the clicks and keys on it.
         const stop = {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canOpenTrace,
   heldUntilWatched,
   laneFrameNow,
   laneWatchOf,
@@ -105,6 +106,34 @@ describe('a point on an image of a stopped page', () => {
       y: 199.99,
     });
     expect(pagePoint({ x: 1, y: 1 }, { width: 0, height: 50 }, { width: 400, height: 200 })).toBeNull();
+  });
+});
+
+describe('the trace so far of a lane’s running test', () => {
+  const test = { id: 't1', title: ['pays'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: null };
+
+  it('opens for a worker whose reporter says where its trace grows, while it runs a test, stopped or not', () => {
+    expect(canOpenTrace(worker({ traces: true, test }))).toBe(true);
+    expect(canOpenTrace(worker({ traces: true, test, state: 'stopped', stop: stop('S') }))).toBe(true);
+  });
+
+  it('does not between two tests, nor for a reporter that does not say where its trace grows', () => {
+    expect(canOpenTrace(worker({ traces: true, state: 'between' }))).toBe(false);
+    expect(canOpenTrace(worker({ traces: true, test: null }))).toBe(false);
+    expect(canOpenTrace(worker({ test }))).toBe(false);
+  });
+
+  it('reads the editor’s worker too, which says whether its reporter answers as true or false', () => {
+    expect(canOpenTrace({ traces: true, test })).toBe(true);
+    expect(canOpenTrace({ traces: false, test })).toBe(false);
+    expect(canOpenTrace({ traces: true, test: null })).toBe(false);
+  });
+
+  it('has its button’s words, and its title says where the viewer opens', () => {
+    expect(englishRunSpeaker.say('runs_openTrace')).toBe('Open the trace so far');
+    expect(englishRunSpeaker.say('runs_openTraceTitle')).toBe(
+      'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
+    );
   });
 });
 

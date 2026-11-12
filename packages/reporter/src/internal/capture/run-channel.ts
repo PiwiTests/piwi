@@ -32,6 +32,7 @@ import {
   type RunToHub,
   type SnapshotAnswer,
   type StopReason,
+  type TraceAnswer,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
 import {
@@ -68,6 +69,8 @@ import {
 import {
   LaneFilmstrip,
   LaneTexts,
+  type NoTraceFile,
+  attemptTraceFile,
   followTraceText,
   layersTest,
   layersTitleOf,
@@ -1273,6 +1276,10 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         void answered.then((value) => tellHub({ type: 'answer', request, what: 'view-lane', value }));
         return;
       }
+      if (message.what === 'trace') {
+        void answerTrace().then((value) => tellHub({ type: 'answer', request, what: 'trace', value }));
+        return;
+      }
       if (message.what === 'text') {
         const texts = laneView ? layerRuns.text?.texts : undefined;
         const value = texts
@@ -1392,6 +1399,29 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         message: `@piwitests/reporter ${getReporterVersion()} does not take the editor's ${message.what}: update it.`,
       });
   }
+}
+
+/**
+ * Where the running attempt's own trace file grows, for the hub alone, which opens it in Playwright's trace viewer and
+ * names it to no one; or why there is none.
+ */
+async function answerTrace(): Promise<TraceAnswer> {
+  return traceAnswer(await attemptTraceFile().catch(() => ({ none: 'unknown' as const })));
+}
+
+/** Why a running attempt has no trace file to open, in the sentence the hub passes on. */
+const NO_TRACE_FILE: Record<NoTraceFile, string> = {
+  'no-test': 'No test runs on this worker now.',
+  'not-traced': "This test's attempt is not traced: its project's trace option records none of it.",
+  'not-yet': 'This test has written no trace yet: its trace starts with its first browser context.',
+  unknown:
+    "This test has no trace to open now: either its project's trace option records none of it, or its trace starts with its first browser context.",
+};
+
+/** The answer to `trace`, from the attempt's trace file or why there is none. */
+export function traceAnswer(found: { file: string } | { none: NoTraceFile }): TraceAnswer {
+  if ('file' in found) return { ok: true, message: "The attempt's trace grows there.", file: found.file };
+  return { ok: false, message: NO_TRACE_FILE[found.none] };
 }
 
 /** Why Show the browser is refused at a stop no pause bar shows: a headless one, or one whose page is not known. */

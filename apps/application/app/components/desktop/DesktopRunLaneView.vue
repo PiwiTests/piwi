@@ -11,12 +11,16 @@
  * while the lane says why it sends none. At a stop of a test, the stop takes the clicks, the keys (with **Interact**
  * on, `interact`, which Escape on the image turns off, but while a pick or a check runs in the page, which takes it) and **Pick on the image** on the image as it does on a stop
  * watched live: the window watches the stop through the lane. Turned off, Watch live and Interact go off for the worker
- * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`).
+ * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`). **Open the trace so
+ * far**, in the card's head while the lane is watched and its worker runs a test whose reporter answers the ask
+ * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer
+ * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
+ * do (`said`).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
 import { driverOf, givesBack } from '@piwitests/run-model/presence';
-import { laneFrameNow, stopIntents } from '@piwitests/run-model/stop';
+import { canOpenTrace, laneFrameNow, stopIntents } from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopLaneFrame, DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
@@ -39,7 +43,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** What a pick on the image or the input answered, to show under the test. */
+  /** What a pick on the image, the input or Open the trace so far answered, to show under the test. */
   said: [answer: DesktopRunAnswer, options: { picked?: boolean }];
   /** A pick on the image is on its way, or came back. */
   picking: [on: boolean];
@@ -235,6 +239,25 @@ async function interactOff(): Promise<void> {
 
 defineExpose({ interactOff, toggle });
 
+// ── Open the trace so far ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** The watched lane's worker runs a test whose reporter says where its trace grows. */
+const traceable = computed(() => watched.value && canOpenTrace(props.worker));
+/** Its ask waits for the hub's answer: the button waits with it. */
+const tracing = ref(false);
+
+/**
+ * The hub opens Playwright's trace viewer on the lane's running test, on the machine the run runs on; the window names
+ * no file.
+ */
+async function openTrace(): Promise<void> {
+  if (tracing.value || !traceable.value) return;
+  tracing.value = true;
+  const answer = await hub.command({ type: 'openTrace', ref: runRef.value, lane: lane.value });
+  tracing.value = false;
+  emit('said', answer, {});
+}
+
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
   void interactOff();
@@ -269,50 +292,65 @@ const note = computed((): { icon?: string; text: string } | null => {
     :data-watching="watched || undefined"
     data-shot="desktop-run-lane"
   >
-    <template v-if="stop" #tools>
+    <template v-if="stop || traceable" #tools>
+      <template v-if="stop">
+        <UButton
+          data-focus="page:watch"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-eye"
+          :aria-pressed="watched"
+          :aria-disabled="busy || undefined"
+          :class="watched ? PRESSED_TOGGLE_CLASS : ''"
+          :title="desktopSay('runs_watchTitle')"
+          @click="toggle"
+        >
+          {{ desktopSay('runs_watch') }}
+        </UButton>
+        <UButton
+          v-if="canInteract"
+          ref="interactButton"
+          data-focus="page:interact"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-hand"
+          :aria-pressed="interact"
+          :class="interact ? PRESSED_TOGGLE_CLASS : ''"
+          :title="desktopSay('runs_interactTitle')"
+          :aria-disabled="busy || undefined"
+          @click="!busy && (interact ? interactOff() : (interact = true))"
+        >
+          {{ desktopSay('runs_interact') }}
+        </UButton>
+        <UButton
+          v-if="pickable"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-mouse-pointer-click"
+          :aria-pressed="picking"
+          :aria-disabled="busy || undefined"
+          :class="picking ? PRESSED_TOGGLE_CLASS : ''"
+          title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
+          @click="!busy && (picking = !picking)"
+        >
+          {{ desktopSay('runs_pickAt') }}
+        </UButton>
+      </template>
       <UButton
-        data-focus="page:watch"
+        v-if="traceable"
+        data-focus="page:trace"
         size="xs"
         color="neutral"
         variant="outline"
-        icon="i-lucide-eye"
-        :aria-pressed="watched"
-        :aria-disabled="busy || undefined"
-        :class="watched ? PRESSED_TOGGLE_CLASS : ''"
-        :title="desktopSay('runs_watchTitle')"
-        @click="toggle"
+        icon="i-lucide-file-archive"
+        :aria-disabled="tracing || undefined"
+        :title="desktopSay('runs_openTraceTitle')"
+        @click="openTrace"
       >
-        {{ desktopSay('runs_watch') }}
-      </UButton>
-      <UButton
-        v-if="canInteract"
-        ref="interactButton"
-        data-focus="page:interact"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-hand"
-        :aria-pressed="interact"
-        :class="interact ? PRESSED_TOGGLE_CLASS : ''"
-        :title="desktopSay('runs_interactTitle')"
-        :aria-disabled="busy || undefined"
-        @click="!busy && (interact ? interactOff() : (interact = true))"
-      >
-        {{ desktopSay('runs_interact') }}
-      </UButton>
-      <UButton
-        v-if="pickable"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-mouse-pointer-click"
-        :aria-pressed="picking"
-        :aria-disabled="busy || undefined"
-        :class="picking ? PRESSED_TOGGLE_CLASS : ''"
-        title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
-        @click="!busy && (picking = !picking)"
-      >
-        {{ desktopSay('runs_pickAt') }}
+        {{ desktopSay('runs_openTrace') }}
       </UButton>
     </template>
     <DesktopRunLiveImage

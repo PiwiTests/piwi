@@ -22,6 +22,7 @@ import {
   startLaneRun,
   startRun,
   stopAtCheckout,
+  stubEditor,
   waitFor,
   CART_RESPONSE,
   CHECK,
@@ -2586,6 +2587,85 @@ test.describe('watching a running test', () => {
     } finally {
       worker.socket.destroy();
       await context.close();
+    }
+  });
+
+  test('Open the trace so far, on a watched lane at a hub that opens traces, asks for its lane and shows the answer', async () => {
+    const running = (traces: boolean) => ({
+      worker: 0,
+      parallelIndex: 0,
+      state: 'running' as const,
+      pausing: false,
+      intents: ['watch' as const],
+      test: {
+        id: 't0',
+        title: ['cart', 'pays'],
+        uri: 'file:///home/me/shop/tests/cart.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      },
+      stop: null,
+      ...(traces ? { traces: true as const } : {}),
+    });
+    const run = (traces: boolean, ref: string) => ({
+      ref,
+      root: '/home/me/shop',
+      label: path.basename(editor.dir),
+      command: 'npx playwright test',
+      project: null,
+      workers: [running(traces)],
+      ended: false,
+    });
+    const said = 'Playwright’s trace viewer opened on the trace so far.';
+    const answer = (command: Record<string, unknown>) =>
+      command.type === 'watch' ? { message: 'Watching.' } : command.type === 'openTrace' ? { message: said } : null;
+    const stub = await stubEditor([run(true, 'ed-trace')], '', { features: ['lanes', 'trace'], answer });
+    const { context, extensionId } = await pairedExtension(stub);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const card = liveRun(runs);
+      await expect(card.getByText('Running')).toBeVisible();
+      const trace = card.getByRole('button', { name: 'Open the trace so far' });
+      // Not watched, the lane shows no page, and no button.
+      await expect(trace).toHaveCount(0);
+      await card.getByRole('button', { name: 'Watch', exact: true }).click();
+      await expect(trace).toBeVisible();
+      await expect(trace).toHaveAttribute(
+        'title',
+        'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
+      );
+      await trace.click();
+      await expect(card.getByText(said)).toBeVisible();
+      // The window names the run and the lane, never a file.
+      expect(stub.heard.filter((m) => m.type === 'openTrace')).toEqual([
+        { type: 'openTrace', id: expect.any(Number), ref: 'ed-trace', lane: 0 },
+      ]);
+      await card.screenshot({ path: test.info().outputPath('runs-trace.png') });
+    } finally {
+      await context.close();
+      await stub.close();
+    }
+
+    // A hub that does not list `trace`, or a worker whose reporter does not say where its trace grows: no button.
+    for (const [features, traces] of [
+      [['lanes'], true],
+      [['lanes', 'trace'], false],
+    ] as const) {
+      const other = await stubEditor([run(traces, 'ed-other')], '', { features: [...features], answer });
+      const paired = await pairedExtension(other);
+      try {
+        const runs = await openRuns(paired.context, paired.extensionId);
+        const card = liveRun(runs);
+        await card.getByRole('button', { name: 'Watch', exact: true }).click();
+        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('figure')).toHaveCount(1);
+        await expect(card.getByRole('button', { name: 'Open the trace so far' })).toHaveCount(0);
+      } finally {
+        await paired.context.close();
+        await other.close();
+      }
     }
   });
 

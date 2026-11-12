@@ -74,7 +74,9 @@ the pointer: its locator shows under the test, with **Copy**.
 Under a watched page, from a reporter newer than 0.68.0, the tray shows what pixels cannot, as the editor does
 ([beside the image](./watch-running-test#beside-the-image)): **Why it waits**, **Events**, **Text** (**Show the page's
 text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click enlarges
-an image, with its call), kept in memory alone.
+an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens Playwright's
+trace viewer on the running test's trace up to now, on your machine, with a reporter newer than 0.68.0: [Watch a
+running test](./watch-running-test#open-the-trace-so-far).
 
 ## Code to copy
 
@@ -132,9 +134,6 @@ for an agent that left.
 - **A reload forgets the tray's runs.** A run still going shows among the app's other runs, without **Hold
   failures**: its failures go on, a reproduction's included.
 - **Run to cursor** stays in the editor, which has the file.
-- **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
-  passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 40 seconds at most
-  (a 30-second wait, then the stopped page's snapshot).
 
 ## Related
 

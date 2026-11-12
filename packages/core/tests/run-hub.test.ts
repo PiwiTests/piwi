@@ -3,6 +3,7 @@ import type { EditorDiscovery } from '../src/editor-discovery';
 import { MAX_STOP_ERROR } from '../src/run-channel';
 import {
   canStopRun,
+  HUB_FEATURES,
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -814,6 +815,41 @@ describe('a lane watched on the hub', () => {
     };
     expect(parseHubMessage(json(refused))).toEqual(refused);
     expect(parseHubMessage(json({ ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) }))).toBeNull();
+  });
+
+  test('reads openTrace, naming the run and its lane, and refuses one without either or with a path', () => {
+    const open = { type: 'openTrace', id: 4, ref: 'ed-1', lane: 1 };
+    expect(parseHubCommand(json(open))).toEqual(open);
+    // A file the client names is never read: the hub asks the lane's worker where its trace grows.
+    expect(parseHubCommand(json({ ...open, file: '/etc/passwd', worker: 3 }))).toEqual(open);
+    for (const broken of [
+      { ...open, ref: 'ed 1' },
+      { ...open, ref: undefined },
+      { ...open, lane: -1 },
+      { ...open, lane: 1.5 },
+      { ...open, lane: '1' },
+      { ...open, lane: undefined },
+    ]) {
+      expect(parseHubCommand(json(broken)), JSON.stringify(broken)).toMatchObject({ type: 'invalid', id: 4 });
+    }
+  });
+
+  test('has the extension read a hub that opens a trace, and a worker whose reporter answers where it grows', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(HUB_FEATURES).toContain('trace');
+    expect(parseHubMessage(json({ ...welcome, features: ['trace', 'lanes'] }))).toEqual({
+      ...welcome,
+      features: ['lanes', 'trace'],
+    });
+    const traced = { ...session, workers: [{ ...session.workers[0]!, traces: true }] };
+    expect(parseHubMessage(json({ type: 'session', session: traced }))).toEqual({ type: 'session', session: traced });
+    // Anything but true says nothing: the worker's reporter is read as one that cannot open its trace.
+    for (const traces of [false, 'yes', 1, null]) {
+      const read = parseHubMessage(
+        json({ type: 'session', session: { ...traced, workers: [{ ...traced.workers[0]!, traces }] } }),
+      );
+      expect(read).toEqual({ type: 'session', session });
+    }
   });
 
   test('is offered by a hub whose welcome lists lanes, for a worker whose intents list watch', () => {

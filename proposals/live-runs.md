@@ -239,7 +239,12 @@ instrumentation (open question 4), the page's events with its long-pending reque
 its text from the trace's ARIA files or a snapshot taken as asked, masked by `maskAriaSnapshot`, and the test's
 filmstrip, from the view's own masked images locally and for the team alike, kept in the worker's memory, for the
 team; the editors' worker panels, Piwi Picker's Runs window, the desktop app's Local runs tray and the run page's lane
-panel show them, each asking only for the layers it shows. Inspect (P11's second half) is proposed. The bugs the analysis
+panel show them, each asking only for the layers it shows. Built from P11's Inspect, its local half: **Open the trace
+so far** in an editor's worker view, Piwi Picker's Runs window and the desktop app's Local runs tray, which has the hub
+ask the lane's worker for its attempt's trace file (`trace`, the hub's `openTrace`, `piwi/openTrace`), check it and
+start the project's own Playwright trace viewer on it, the path never leaving the hub; Playwright 1.59 to 1.64 show
+the trace as it stood when the viewer opened, so a second click once the viewer is closed shows what came since. The
+team's Inspect (live-view-next Part 4) and the desktop app's snapshot view on the same file are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -457,10 +462,11 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | OS presence | Running, failing or waiting for you on the taskbar, Dock and tray; one flash per job | The desktop app, fed from every local run | None | The desktop app |
 
 The screencast JPEGs come free from what Playwright already records under `wrapConfig`'s trace, the ARIA files only
-under a trace that sets `snapshots.aria`, and Playwright's trace viewer opens a test's growing trace as a live view
+under a trace that sets `snapshots.aria`, and Playwright's trace viewer opens a test's growing trace as it stands
 (`npx playwright show-trace <outputDir>/.playwright-artifacts-<workerIndex>/traces/<name>.json`, where `<name>` is the
 test's id, with `-retry<k>` for a retry and `-recording<N>` for each recording after the worker's first; the viewer
-builds that `.json` over the growing `<name>.trace`). Others were weighed and left
+builds that `.json` over the growing `<name>.trace`, and from 1.59 to 1.64 shows what it read as it opened, its own
+polling answered from its cache). Others were weighed and left
 out ([Not in this plan](#not-in-this-plan)): WebRTC and VNC, a recorder in the page, following Playwright's video file,
 images in the terminal.
 
@@ -845,8 +851,9 @@ The fixes of #1110 but its editor focus (P4), and of most of #1111.
 - **Filmstrip**: locally and for the team from the view's own masked images (the trace's are not masked), taken only while
   someone watches and kept in the worker's memory for late joiners (this widens live-view-next D10, which allows only
   the trace's or the video's images).
-- **Inspect**: locally, **Open the trace so far** in Playwright's trace viewer, its path never leaving the hub, and the
-  desktop app's snapshot view on the same file; for the team, live-view-next Part 4.
+- **Inspect**: locally, **Open the trace so far** in Playwright's trace viewer, its path never leaving the hub, as the
+  trace stood when it opened (Playwright 1.59 to 1.64 do not follow it), and the desktop app's snapshot view on the same
+  file; for the team, live-view-next Part 4.
 - Addresses LV-5, and the layers of [Beyond video](#beyond-video-what-a-live-view-can-show).
 
 ### Throughout

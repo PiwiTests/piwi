@@ -303,6 +303,7 @@ export class RunHubs {
           presence: !!this.features.get(hub.url)?.includes('presence'),
           holds: !!this.features.get(hub.url)?.includes('hold'),
           stops: !!this.features.get(hub.url)?.includes('stop'),
+          traces: !!this.features.get(hub.url)?.includes('trace'),
         };
       }),
       runs: [...live, ...ended],
@@ -406,6 +407,11 @@ export class RunHubs {
           : connection.command({ type: 'hold', ref, on: request.on });
       case 'stop':
         return connection.command({ type: 'stop', ref });
+      case 'trace':
+        // `parseRunsRequest` takes none without the lane: the hub opens the trace viewer on its own machine.
+        return request.lane === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'openTrace', ref, lane: request.lane });
       case 'drive':
         // `parseRunsRequest` takes none without the stop it drives and whether to drive it.
         return since === null || request.on === undefined

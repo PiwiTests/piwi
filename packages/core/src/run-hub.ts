@@ -14,9 +14,13 @@
  * it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
- * asks. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
- * connection. Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates
- * code, reads a file or reaches an instance.
+ * asks; `openTrace` opens a lane's running test's trace so far in Playwright's trace viewer, on the hub's machine,
+ * from the file the lane's worker names to the hub alone. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a
+ * frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on
+ * both sides. Nothing a command asks evaluates code or reaches an instance, and no command names a file: for
+ * `openTrace` the hub checks the file the lane's worker named and the folder it is in, then starts the project's own
+ * Playwright's trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the
+ * subfolders its files share.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import {
@@ -66,14 +70,17 @@ export const MAX_HUB_PRESENCE = 16;
  * command `watch`, its frames `lane-frame`), keeps **Hold failures** for each run (`hold`: the command `hold`, the
  * session's `hold`), says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
  * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`), stops a whole run the way the
- * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names), and sends a watched lane's
- * layers beside its frames (`layers`: `watch`'s `layers`, its messages `lane-layer`). A reader keeps those it knows; a
- * hub that predates the list does none of them, and a hub whose host cannot stop its runs leaves `stop` out.
+ * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names), sends a watched lane's
+ * layers beside its frames (`layers`: `watch`'s `layers`, its messages `lane-layer`), and opens a lane's running test's
+ * trace so far in Playwright's trace viewer on its machine (`trace`: the command `openTrace`, for a worker whose
+ * `traces` says its reporter answers where the trace grows). A reader keeps those it knows; a hub that predates the
+ * list does none of them, a hub whose host cannot stop its runs leaves `stop` out, and one whose host cannot start the
+ * trace viewer leaves `trace` out.
  */
-export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers' | 'trace';
 
-/** The features of a hub of this version whose host can stop its runs. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'];
+/** The features of a hub of this version whose host can stop its runs and start the trace viewer. */
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'];
 
 /**
  * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
@@ -296,6 +303,11 @@ export interface HubWorker {
    * and from a hub without `presence`.
    */
   watchers?: HubPresence[];
+  /**
+   * Its reporter says where its running test's trace grows: `openTrace` opens it, at a hub whose features list
+   * `trace`. Absent for a reporter that does not, and from a hub that predates it.
+   */
+  traces?: true;
 }
 
 /**
@@ -519,7 +531,16 @@ export type HubCommand =
    * (`HubLaneLayerMessage`, `@piwitests/core/live-layers`), none without it; a later `watch` on changes them, and one
    * that lists `text` asks for the page's text now.
    */
-  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean; layers?: LaneLayer[] };
+  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean; layers?: LaneLayer[] }
+  /**
+   * Open the running test's trace so far of the lane `lane` (Playwright's `parallelIndex`) of the run in Playwright's
+   * trace viewer, on the hub's machine (**Open the trace so far**), at a hub whose features list `trace`: the hub asks
+   * the lane's worker where the trace grows, checks that file and its folder, and starts the project's own Playwright's
+   * trace viewer on the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its
+   * files share. The answer says what came of it in a sentence, never a file. Refused for a worker whose `traces` is
+   * absent, with no test running, or for an attempt the runner does not trace or that wrote no trace yet.
+   */
+  | { type: 'openTrace'; id: number; ref: string; lane: number };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -855,6 +876,12 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on, layers }
       : invalid('watch names its layers in a list: calls, events, text, filmstrip.');
   }
+  if (value.type === 'openTrace') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return isInt(value.lane, 0)
+      ? { type: 'openTrace', id, ref: value.ref, lane: value.lane }
+      : invalid('openTrace needs the lane: a parallelIndex, from 0.');
+  }
   if (
     ![
       'runControl',
@@ -1124,6 +1151,7 @@ function readWorker(value: unknown): HubWorker | null {
     ...(value.watchers === undefined || !readPresenceList(value.watchers)?.length
       ? {}
       : { watchers: readPresenceList(value.watchers)! }),
+    ...(value.traces === true ? { traces: true as const } : {}),
   };
 }
 

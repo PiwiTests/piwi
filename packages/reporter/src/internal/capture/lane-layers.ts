@@ -43,7 +43,8 @@ import { internalCall } from './quiet-capture.js';
  * - **The test's growing trace**: where the runner traces the attempt, its files are read as they grow (`traceOf`):
  *   `<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`, from where the
  *   last read stopped, only the lines of its ARIA snapshots parsed; the ARIA files the lines name, under that folder
- *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read.
+ *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read. The
+ *   attempt's own file is named to the hub alone as it asks (`attemptTraceFile`), which opens it in the trace viewer.
  * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the lane's page (by
  *   Playwright's id of the page, its time) when the project's trace writes them, else taken through an internal call
  *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), masked by `maskAriaSnapshot` with the masks the wire
@@ -81,6 +82,8 @@ export interface LayersTest {
   fixtureCall(callId: string): boolean;
   /** The folder the runner writes the attempt's trace in, and the name its files start with; null when unknown. */
   trace: { dir: string; base: string } | null;
+  /** Whether the runner traces the attempt; null, or absent, where its shape is not known. */
+  traced?: () => boolean | null;
 }
 
 let current: LayersTest | null = null;
@@ -298,6 +301,27 @@ async function attemptFiles(dir: string, base: string): Promise<string[]> {
     .sort((a, b) => a.n - b.n);
   const kept = files.length > MAX_TRACE_FILES ? [files[0]!, ...files.slice(1 - MAX_TRACE_FILES)] : files;
   return kept.map((file) => path.join(dir, file.name));
+}
+
+/**
+ * Why the running attempt has no trace file: no test runs (`no-test`), the runner does not trace it (`not-traced`), it
+ * does but no context of the attempt started tracing yet (`not-yet`), or the runner's shape does not say which of the
+ * last two (`unknown`).
+ */
+export type NoTraceFile = 'no-test' | 'not-traced' | 'not-yet' | 'unknown';
+
+/**
+ * The running attempt's own trace file as the runner writes it now: of its files, the first context's (the one without
+ * `-recording<N>`, else the lowest), which the hub opens in Playwright's trace viewer with the others of the attempt;
+ * else why there is none.
+ */
+export async function attemptTraceFile(): Promise<{ file: string } | { none: NoTraceFile }> {
+  const test = current;
+  if (!test) return { none: 'no-test' };
+  const [first] = test.trace ? await attemptFiles(test.trace.dir, test.trace.base) : [];
+  if (first) return { file: first };
+  const traced = test.traced?.() ?? null;
+  return { none: traced === null ? 'unknown' : traced ? 'not-yet' : 'not-traced' };
 }
 
 /** The running test's trace, read up to now; null for a test whose trace is not known. */

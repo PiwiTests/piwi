@@ -3571,6 +3571,32 @@ class GlueTest {
     }
 
     @Test
+    fun theWorkerTabOffersTheTraceSoFarOnlyForARunningTestWhoseReporterAnswersTraceAsks() {
+        val test = RunTest("t1", listOf("checkout", "pays"))
+        assertTrue(Glue.canOpenTrace(RunWorker(0, 1, "running", test, traces = true)))
+        // At a stop, the test runs on: its trace so far opens too.
+        assertTrue(Glue.canOpenTrace(RunWorker(0, 1, "stopped", test, traces = true)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "between", null, traces = true)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "running", test)))
+        assertFalse(Glue.canOpenTrace(RunWorker(0, 1, "running", test, traces = false)))
+        assertFalse(Glue.canOpenTrace(null))
+        // The protocol's field, as the service sends it.
+        val heard = Gson().fromJson("""{"worker":0,"parallelIndex":1,"state":"running","test":{"id":"t1"},"traces":true}""", RunWorker::class.java)
+        assertTrue(Glue.canOpenTrace(heard))
+        assertEquals(OpenTraceParams("r1", 1), Gson().fromJson("""{"ref":"r1","lane":1}""", OpenTraceParams::class.java))
+    }
+
+    @Test
+    fun aTraceAnswerNamesItsWorkerOnceTheWorkerTabShowsAnotherSlot() {
+        val said = "Playwright's trace viewer opened on the trace so far."
+        assertEquals(said, Glue.traceAnswerText("r1" to 0, "r1" to 0, said))
+        assertEquals("Worker 1: $said", Glue.traceAnswerText("r1" to 0, "r1" to 1, said))
+        assertEquals("Worker 3: $said", Glue.traceAnswerText("r1" to 2, "r2" to 2, said))
+        // The tab closed, or shows a CI run's lane.
+        assertEquals("Worker 2: $said", Glue.traceAnswerText("r1" to 1, null, said))
+    }
+
+    @Test
     fun aCiLaneSaysWhyItMayShowNoneOfItsLayersUntilTheFirstComes() {
         assertTrue(Glue.ciLaneLayersNote(Glue.NO_LANE_LAYERS)!!.endsWith("older than the IDE’s sends the images alone."))
         fun ci(fields: String) = Gson().fromJson(

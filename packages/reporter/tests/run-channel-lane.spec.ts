@@ -412,7 +412,7 @@ describe('the lane view of a worker', () => {
       ['headed', 'passed'],
     ]);
     const attach = heard.find(({ message: m }) => m.type === 'run-attach')?.message;
-    expect(attach).toMatchObject({ features: ['view-lane', 'give-up', 'front', 'layers'] });
+    expect(attach).toMatchObject({ features: ['view-lane', 'give-up', 'front', 'layers', 'trace'] });
   });
 
   it('sends the frames of each test it runs from one request, each naming its test, at the view’s pace', () => {

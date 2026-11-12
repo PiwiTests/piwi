@@ -99,7 +99,8 @@ click instead.
 In the [desktop app](/features/desktop#connecting-ai-assistants), **Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
 connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
 (`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start, so the app must run, and sends the token only
-to a server that proves it holds it. It writes only its own entry and keeps the first backup beside
+to a server that proves it holds it. The bridge handles one call at a time, for every client it serves: a `run_follow` or a
+`run_control` that waits holds the next call, 40 seconds at most (a 30-second wait, then the stopped page's snapshot). It writes only its own entry and keeps the first backup beside
 the config. A disk image (DMG), a translocated copy or a dev build writes nothing, for Connect, Disconnect and the
 startup repair alike; each client shows **Manual setup** with the reason. After a move, startup points that entry at the app again,
 as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**; **Update** replaces it. Restart the client afterwards. The page also installs the [agent skills](/features/agent-skills) into a linked folder.

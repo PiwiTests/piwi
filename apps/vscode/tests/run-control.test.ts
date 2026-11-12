@@ -4,6 +4,7 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
   CiSession,
   LocatorAtCaretResult,
+  RunControlResult,
   RunPresence,
   RunSession,
   RunStop,
@@ -81,6 +82,11 @@ import {
   watchableWorkers,
   liveTarget,
   liveText,
+  OPEN_TRACE_TITLE,
+  openTraceOffered,
+  openTraceParams,
+  TraceAsks,
+  traceAnswerText,
   PICK_HINT,
   RUN_COMMANDS,
   pagePoint,
@@ -2223,6 +2229,86 @@ describe('the CI runs of the branch', () => {
     expect(html).toContain('read-only');
     expect(html).toContain('alt="The page of the CI worker\'s test"');
     expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('the worker panel’s Open the trace so far', () => {
+  const view = {
+    image: null,
+    caption: 'Worker 2 · Running · checkout › pays',
+    lane: true,
+    live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+  };
+  const script = 'https://webview/paused-page.js';
+
+  test('draw the button beside Watch and Interact while the slot’s worker can open its trace, off while it is asked', () => {
+    const shown = pausedPageHtml({ ...view, trace: { asking: false } }, 'n', script);
+    expect(shown).toContain(
+      `Interact</label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toContain(
+      '>Open the trace so far</button>',
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toMatch(/id="trace"[^>]* disabled>/);
+    // Held hidden for a worker that cannot open its trace: the script shows it as the worker comes to one.
+    expect(pausedPageHtml(view, 'n', script)).toMatch(/<button id="trace" type="button" title="[^"]*" hidden>/);
+    // Neither a CI run's lane nor the paused page of one stop has it.
+    expect(pausedPageHtml({ ...view, ci: true, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+    expect(pausedPageHtml({ ...view, lane: false, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+  });
+
+  test('ask for the slot the panel shows, and say why not without one or for a CI run’s lane', () => {
+    expect(openTraceParams({ ref: 'r1', lane: 1 }, false)).toEqual({ ref: 'r1', lane: 1 });
+    expect(openTraceParams(null, false)).toEqual({ none: "no worker panel is open: watch a worker's test first." });
+    expect(openTraceParams(null, true)).toEqual({
+      none: 'a CI run’s trace is on the machine that runs it, not on this one.',
+    });
+  });
+
+  test('wait for one ask per slot: another slot’s button stays on, and asks for its own slot', async () => {
+    const asks = new TraceAsks();
+    const sent: number[] = [];
+    const answers = new Map<number, (said: RunControlResult) => void>();
+    const send = (lane: number) => () => {
+      sent.push(lane);
+      return new Promise<RunControlResult>((resolve) => answers.set(lane, resolve));
+    };
+    const first = asks.ask({ ref: 'r1', lane: 0 }, send(0));
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(true);
+    // Worker 2 shown while worker 1's ask waits: its button is on, and its click asks for it.
+    expect(asks.asking({ ref: 'r1', lane: 1 })).toBe(false);
+    expect(asks.asking({ ref: 'r2', lane: 0 })).toBe(false);
+    expect(asks.asking(null)).toBe(false);
+    const second = asks.ask({ ref: 'r1', lane: 1 }, send(1));
+    // A second click on worker 1 while its ask waits gets that ask's answer, and sends nothing.
+    expect(asks.ask({ ref: 'r1', lane: 0 }, send(0))).toBe(first);
+    expect(sent).toEqual([0, 1]);
+    answers.get(1)!({ ok: true, message: 'Opened.' });
+    expect(await second).toEqual({ ok: true, message: 'Opened.' });
+    expect(asks.asking({ ref: 'r1', lane: 1 })).toBe(false);
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(true);
+    answers.get(0)!({ ok: false, message: 'Not traced.' });
+    expect(await first).toEqual({ ok: false, message: 'Not traced.' });
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(false);
+  });
+
+  test('say an answer as it is beside its own slot, and with its worker’s name once the panel shows another', () => {
+    const said = "Playwright's trace viewer opened on the trace so far.";
+    expect(traceAnswerText({ ref: 'r1', lane: 0 }, { ref: 'r1', lane: 0 }, said)).toBe(said);
+    expect(traceAnswerText({ ref: 'r1', lane: 0 }, { ref: 'r1', lane: 1 }, said)).toBe(`Worker 1: ${said}`);
+    expect(traceAnswerText({ ref: 'r1', lane: 2 }, { ref: 'r2', lane: 2 }, said)).toBe(`Worker 3: ${said}`);
+    // The panel closed, or shows a CI run's lane.
+    expect(traceAnswerText({ ref: 'r1', lane: 1 }, null, said)).toBe(`Worker 2: ${said}`);
+  });
+
+  test('offer the command while the panel’s slot can open its trace and no ask of it waits', () => {
+    expect(openTraceOffered({ ...view, trace: { asking: false } })).toBe(true);
+    expect(openTraceOffered({ ...view, trace: { asking: true } })).toBe(false);
+    expect(openTraceOffered({ ...view, trace: null })).toBe(false);
+    expect(openTraceOffered(view)).toBe(false);
+    // A CI run's lane, and no panel.
+    expect(openTraceOffered({ ...view, ci: true, trace: { asking: false } })).toBe(false);
+    expect(openTraceOffered(null)).toBe(false);
   });
 });
 

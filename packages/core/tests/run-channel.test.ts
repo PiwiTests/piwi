@@ -919,7 +919,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers', 'trace']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });
@@ -927,6 +927,46 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, features: Array(65).fill('view-lane') }))).toMatchObject({
         features: [],
       });
+    });
+
+    test('reads a request for the running attempt’s trace, which names no stop, and its answer', () => {
+      const asked = { type: 'request', request: 9, what: 'trace' } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, stop: 3 }))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, request: 0 }))).toBeNull();
+      const file = '/work/shop/test-results/.playwright-artifacts-1/traces/a1b2-c3.trace';
+      const answered = {
+        type: 'answer',
+        request: 9,
+        what: 'trace',
+        value: { ok: true, message: 'The trace grows there.', file },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answered))).toEqual(answered);
+      const refused = {
+        type: 'answer',
+        request: 9,
+        what: 'trace',
+        value: { ok: false, message: 'No test runs on this worker now.' },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      // A refusal carries no file, whatever the line says.
+      expect(parseRunToHub(line({ ...refused, value: { ...refused.value, file } }))).toEqual(refused);
+      expect(parseRunToHub(line({ ...answered, value: { ...answered.value, message: 'x'.repeat(600) } }))).toEqual({
+        ...answered,
+        value: { ...answered.value, message: 'x'.repeat(500) },
+      });
+      for (const wrong of [
+        { ok: true, message: 'Here.' },
+        { ok: true, message: 'Here.', file: '' },
+        { ok: true, message: 'Here.', file: 4 },
+        { ok: true, message: 'Here.', file: '/a\0b.trace' },
+        { ok: true, message: 'Here.', file: `/${'x'.repeat(4096)}.trace` },
+        { ok: 'yes', message: 'Here.', file },
+        { ok: true, file },
+        null,
+      ]) {
+        expect(parseRunToHub(line({ ...answered, value: wrong })), JSON.stringify(wrong)?.slice(0, 80)).toBeNull();
+      }
     });
 
     test('reads a request to turn the lane view on or off, which names no stop', () => {

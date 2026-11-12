@@ -8,6 +8,7 @@ import type { LaneText } from '@piwitests/core/live-layers';
 import {
   LaneFilmstrip,
   LaneTexts,
+  attemptTraceFile,
   layersTestBegan,
   layersTestEnded,
   takeLaneText,
@@ -158,6 +159,40 @@ describe('the page’s text of a lane', () => {
     await sleep(1100);
     expect(takes).toEqual([false, true]);
     texts.close();
+  });
+});
+
+describe('the running attempt’s trace file', () => {
+  /** A test whose trace the runner writes in `folder` under `base`, as `traced` says it traces it. */
+  const began = (base: string, traced?: () => boolean | null) =>
+    layersTestBegan({
+      id: base,
+      began: Date.now(),
+      titleOf: () => null,
+      fixtureCall: () => false,
+      trace: { dir: folder, base },
+      traced,
+    });
+
+  it('names the attempt’s first context’s file, of its files alone', async () => {
+    for (const name of ['owned-recording3.trace', 'owned-recording1.trace', 'owned-other.trace', 'own.trace']) {
+      fs.writeFileSync(path.join(folder, name), '{}\n');
+    }
+    began('owned', () => true);
+    expect(await attemptTraceFile()).toEqual({ file: path.join(folder, 'owned-recording1.trace') });
+  });
+
+  it('says why there is none: no test, an attempt not traced, one traced before its first context, or not known', async () => {
+    layersTestEnded();
+    expect(await attemptTraceFile()).toEqual({ none: 'no-test' });
+    began('untraced', () => false);
+    expect(await attemptTraceFile()).toEqual({ none: 'not-traced' });
+    began('early', () => true);
+    expect(await attemptTraceFile()).toEqual({ none: 'not-yet' });
+    began('unknown', () => null);
+    expect(await attemptTraceFile()).toEqual({ none: 'unknown' });
+    began('unsaid');
+    expect(await attemptTraceFile()).toEqual({ none: 'unknown' });
   });
 });
 

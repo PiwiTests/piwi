@@ -97,6 +97,8 @@ export async function service(
     publish: (discovery) => void published.push(discovery),
     // No editor of this machine is a peer of the service under test.
     editorsDir: path.join(os.tmpdir(), 'piwi-no-editors-here'),
+    // The service under test shows Playwright's trace viewer, whatever display the machine has.
+    traceDisplay: () => true,
     ...options,
   });
   const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
