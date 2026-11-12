@@ -658,6 +658,82 @@ function holdLiveWorkerStream(base, runId, key, after = null) {
 }
 
 /**
+ * The page events the worker of `run-live-view-layers` posts, oldest first: the API call that seeded its cart, a
+ * console error, a save that waits, then fails with the exception the backend logged for it.
+ */
+const LIVE_LAYERS_EVENTS = [
+  {
+    kind: 'api',
+    method: 'POST',
+    url: 'https://shop.example.test/api/test/carts',
+    status: 201,
+    ms: 84,
+    failure: null,
+  },
+  {
+    kind: 'console',
+    text: "TypeError: Cannot read properties of undefined (reading 'brand')\n    at cardBrand (checkout.js:41:18)",
+  },
+  {
+    kind: 'request-pending',
+    id: 12,
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    ms: 5_000,
+    done: false,
+  },
+  {
+    kind: 'request-pending',
+    id: 12,
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    ms: 15_000,
+    done: false,
+  },
+  {
+    kind: 'request-failed',
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    status: 502,
+    failure: null,
+  },
+  {
+    kind: 'backend',
+    method: 'POST',
+    url: 'https://shop.example.test/api/payments/verify',
+    status: 502,
+    level: 'error',
+    text: 'PaymentGatewayTimeoutException: the card issuer did not answer within 15 s',
+  },
+];
+
+/** The calls of `run-live-view-layers`' test that ended, each with the page as its filmstrip shows it after the call. */
+const LIVE_LAYERS_CALLS = [
+  { call: 'call@41', title: 'Navigate to "/checkout"', fill: {} },
+  { call: 'call@47', title: 'Fill "jo@example.test" getByLabel(\'Email\')', fill: { email: 'jo@example.test' } },
+  {
+    call: 'call@52',
+    title: "Fill getByLabel('Card number')",
+    fill: { email: 'jo@example.test', card: '4242 4242 4242 4242' },
+  },
+  {
+    call: 'call@55',
+    title: "Fill getByLabel('Password')",
+    fill: { email: 'jo@example.test', card: '4242 4242 4242 4242', password: 'correct horse' },
+  },
+];
+
+/** One live message, as a worker posts an image of its filmstrip: the header's length, the header, the data's, the data. */
+function liveMessage(header, data) {
+  const json = Buffer.from(JSON.stringify(header));
+  const head = Buffer.alloc(4);
+  head.writeUInt32BE(json.length);
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(data.length);
+  return Buffer.concat([head, json, size, data]);
+}
+
+/**
  * A run still going on three workers, 48 s in: each worker finished a few tests
  * and runs one more, and the reporter posted what it measured so far (the
  * machine's CPU every second, the run's memory and each worker's CPU and memory
@@ -6365,6 +6441,215 @@ const SCENES = [
         await send();
         await settle();
         await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-live-view-layers',
+    description:
+      'The lane panel of a CI run’s worker with its layers: the filmstrip of the test’s calls, the page’s events (an API call, a console error, a request pending, then failing with the backend’s exception under it) and its text, masked, with the element the call waits on marked, at 1280 px; at 390 px the sheet’s filmstrip with one image larger, then its events and its text searched',
+    route: '/projects',
+    viewport: { width: 1280, height: 1500 },
+    outputs: ['run-live-view-layers.png', 'run-live-view-layers-narrow.png', 'run-live-view-layers-narrow-text.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) {
+        throw new Error('run-live-view-layers needs the seeded web-dashboard project (npm run app:seed:dev)');
+      }
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and its worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: now - 21_000,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: test,
+                workerIndex: 0,
+                startedAt: now - 6_400,
+              },
+            ],
+          },
+        });
+        const client = base.startsWith('https:') ? https : http;
+        const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=0&slot=0`, {
+          headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+        });
+        stream.on('response', (response) => response.resume());
+        stream.on('error', () => {});
+        stream.end();
+        closeStream = () => stream.destroy();
+
+        // The page the worker is on, its card and password fields painted over as the worker masks them, and the
+        // image of each call of its filmstrip.
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        const paint = async (fill) => {
+          await testPage.setContent(LIVE_VIEW_CHECKOUT);
+          await testPage.evaluate((values) => {
+            const [email, card, password] = document.querySelectorAll('input');
+            email.value = values.email ?? '';
+            card.value = values.card ?? '';
+            password.value = values.password ?? '';
+          }, fill);
+        };
+        const masked = async () => {
+          const style = await testPage.addStyleTag({
+            content: 'label:nth-of-type(n+2) input { background: #9aa5b1 !important; color: transparent !important }',
+          });
+          const image = await testPage.screenshot({ type: 'jpeg', quality: 50 });
+          await style.evaluate((node) => node.remove());
+          return image;
+        };
+        const thumbs = [];
+        for (const [i, shot] of LIVE_LAYERS_CALLS.entries()) {
+          await paint(shot.fill);
+          const image = await sharp(await masked())
+            .resize({ width: 320 })
+            .jpeg({ quality: 60 })
+            .toBuffer();
+          thumbs.push({ ...shot, index: i + 1, image });
+        }
+        await paint(LIVE_LAYERS_CALLS.at(-1).fill);
+        const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
+        const frame = (await masked()).toString('base64');
+        const text = await testPage.ariaSnapshot({ mode: 'ai' });
+        await testPage.close();
+
+        const id = { shard: null, worker: 0, slot: 0 };
+        const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
+        const post = (message) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}` },
+              data: { ...id, test, ...message },
+            })
+            .catch(() => undefined);
+        const send = () =>
+          Promise.all([
+            post({ type: 'frame', data: frame, call }),
+            post({
+              type: 'call-log',
+              log: {
+                id: 'call@58',
+                call,
+                status: 'running',
+                lines: LIVE_VIEW_CALL_LINES,
+                point: null,
+                target: { count: 1, box, enabled: false },
+                viewport,
+                ms: 6_400,
+                error: null,
+              },
+            }),
+          ]);
+        sending = setInterval(send, 400);
+        await goto(`/test-runs/${run.id}`);
+        await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '40'));
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        const panel = page.getByTestId('lane-panel');
+        await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await panel.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+
+        // The layers, as the worker posts them while the panel shows them.
+        const at = Date.now() - 4_000;
+        for (const [i, event] of LIVE_LAYERS_EVENTS.entries()) {
+          await post({ type: 'page-event', event, at: at + i * 500 });
+        }
+        for (const thumb of thumbs) {
+          const header = {
+            type: 'thumb',
+            ...id,
+            test,
+            thumb: { call: thumb.call, title: thumb.title, index: thumb.index, width: 320, height: 200, at: at },
+          };
+          await request.post(`${base}/api/test-runs/${run.id}/live-view`, {
+            headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': 'application/vnd.piwi.live-frame' },
+            data: liveMessage(header, thumb.image),
+          });
+        }
+        await panel
+          .getByTestId('live-filmstrip-shot')
+          .nth(thumbs.length - 1)
+          .waitFor({ timeout: 30_000 });
+        if ((await panel.getByTestId('live-text-section').getAttribute('data-state')) !== 'open') {
+          await panel.getByRole('button', { name: 'Page text' }).click();
+        }
+        await post({ type: 'text', text: { call: null, source: 'snapshot', text, cut: false, at: Date.now() } });
+        await panel.getByTestId('live-text').waitFor({ timeout: 30_000 });
+        // The worker's sends stop, so every image is of the same call log.
+        clearInterval(sending);
+        await send();
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+
+        // At 390 px, in the sheet: the filmstrip with one of its images larger, then the events and the text searched.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        const sheet = page.getByRole('dialog');
+        await sheet.getByTestId('live-filmstrip-shot').nth(2).click();
+        await sheet.getByTestId('live-filmstrip').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+        await sheet.getByTestId('live-filmstrip-shot').nth(2).click();
+        await sheet.getByTestId('live-text-search').fill('card');
+        await sheet.getByTestId('live-text-search').scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('narrow-text', { of: '[role="dialog"]', pad: 0 });
+        await sheet.getByTestId('live-text-search').fill('');
       } finally {
         clearInterval(sending);
         closeStream();
