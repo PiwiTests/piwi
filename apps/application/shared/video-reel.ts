@@ -127,6 +127,8 @@ export interface ReelEntry {
   lengthMs: number;
   /** Where the entry starts on the reel, in ms of playing time. */
   reelStartMs: number;
+  /** Listed for context only: another test of the file beside the one in focus. It has no video here and never ticks. */
+  context?: true;
 }
 
 export interface Reel {
@@ -145,11 +147,16 @@ function ran(execution: ReelExecution): boolean {
   return execution.status !== 'skipped' && execution.status !== 'didnotrun';
 }
 
+/** The key a test result is told apart by: the test case, its browser project and its repetition. */
+function resultKey(execution: ReelExecution): string {
+  return `${execution.testCaseId}\x00${execution.browserName ?? ''}\x00${execution.repeatEachIndex}`;
+}
+
 /** The final attempt of each test result: the highest retry of a test case, browser project and repetition. */
 function finalAttempts(executions: readonly ReelExecution[]): ReelExecution[] {
   const finals = new Map<string, ReelExecution>();
   for (const execution of executions) {
-    const key = `${execution.testCaseId}\x00${execution.browserName ?? ''}\x00${execution.repeatEachIndex}`;
+    const key = resultKey(execution);
     const earlier = finals.get(key);
     if (!earlier || execution.retries >= earlier.retries) finals.set(key, execution);
   }
@@ -181,11 +188,16 @@ export function entryEndMs(entry: Pick<ReelEntry, 'execution' | 'lengthMs'>, vid
   return Number.isFinite(length) ? length : 0;
 }
 
-/** Puts the entries on one reel, each starting where the one before ends. */
-function toReel(key: string, label: string, executions: ReelExecution[]): Reel {
+/** Puts the entries on one reel, each starting where the one before ends; `context` are the ones only listed. */
+function toReel(key: string, label: string, executions: ReelExecution[], context?: ReadonlySet<number>): Reel {
   let at = 0;
-  const entries = executions.map((execution) => {
-    const entry = { ...entryFor(execution), reelStartMs: at };
+  const entries = executions.map((execution): ReelEntry => {
+    const listedOnly = context?.has(execution.executionId) === true;
+    const entry: ReelEntry = {
+      ...entryFor(listedOnly ? { ...execution, video: null } : execution),
+      reelStartMs: at,
+      ...(listedOnly ? { context: true as const } : {}),
+    };
     at += entry.lengthMs;
     return entry;
   });
@@ -245,6 +257,68 @@ export function buildReel(executions: readonly ReelExecution[], group: ReelGroup
     });
 }
 
+/** What a reel around one test shows: its test only (with the file's other tests dimmed), its file, or its worker. */
+export type FocusMode = 'test' | 'file' | 'worker';
+
+/**
+ * Why a reel of the file or the worker cannot be built around an execution: `earlier-attempt` when the run's final
+ * attempt of the test is another execution (only final attempts are on those reels), `not-listed` when the run's list
+ * holds neither (it was cut at `MAX_LISTED_EXECUTIONS`). Null when both can be built.
+ */
+export type FocusLimit = 'earlier-attempt' | 'not-listed';
+
+/**
+ * Whether `focus` is on the run's final-attempt reels. `executions` is `GET /api/test-runs/:id/videos`; `focus` is the
+ * execution on show, which that list lacks when it is an earlier attempt or when the list was cut.
+ */
+export function focusLimit(executions: readonly ReelExecution[], focus: ReelExecution): FocusLimit | null {
+  const final = finalAttempts(executions).find((e) => e.executionId === focus.executionId);
+  if (final) return null;
+  const key = resultKey(focus);
+  return executions.some((e) => resultKey(e) === key && e.retries > focus.retries) ? 'earlier-attempt' : 'not-listed';
+}
+
+export interface FocusedReel {
+  reel: Reel;
+  /** The entry of the execution in focus: where the playhead starts, and the one tagged "This test". */
+  focusIndex: number;
+}
+
+/**
+ * The reel to review one execution in. `test`: the execution's own video, whichever attempt it is, with the other
+ * final attempts of its file listed after their declared order as context, not played. `file`: the file's final
+ * attempts in declared order. `worker`: the reel of the execution's parallel slot (and shard), as the run's Video tab
+ * builds it. Null when the mode needs the execution on a final-attempt reel (`focusLimit`) or the execution has no
+ * video to play.
+ */
+export function focusReel(
+  executions: readonly ReelExecution[],
+  focus: ReelExecution,
+  mode: FocusMode,
+): FocusedReel | null {
+  if (!focus.video) return null;
+  const finals = finalAttempts(executions).filter(ran);
+  if (mode === 'worker') {
+    const reel = buildReel(executions, 'worker').find((r) =>
+      r.entries.some((e) => e.execution.executionId === focus.executionId),
+    );
+    const focusIndex = reel?.entries.findIndex((e) => e.execution.executionId === focus.executionId) ?? -1;
+    return reel && focusIndex >= 0 ? { reel, focusIndex } : null;
+  }
+  const sameFile = finals.filter((e) => e.filePath === focus.filePath);
+  if (mode === 'file') {
+    const list = sameFile.sort(byDeclaration);
+    const focusIndex = list.findIndex((e) => e.executionId === focus.executionId);
+    return focusIndex < 0 ? null : { reel: toReel('file', focus.filePath, list), focusIndex };
+  }
+  // This test: the execution in focus stands in for the final attempt of its own result, or joins the list when
+  // the run's list holds none (it was cut).
+  const key = resultKey(focus);
+  const list = [...sameFile.filter((e) => resultKey(e) !== key), focus].sort(byDeclaration);
+  const context = new Set(list.filter((e) => e.executionId !== focus.executionId).map((e) => e.executionId));
+  return { reel: toReel('test', 'This test', list, context), focusIndex: list.findIndex((e) => e === focus) };
+}
+
 /** Where playback stands: the entry a video plays, and how far into it, in ms of video. */
 export interface ReelCursor {
   index: number;
@@ -261,7 +335,7 @@ export interface ReelCursor {
 export function tickedEntries(reel: Reel, cursor: ReelCursor | null): boolean[] {
   const ticked: boolean[] = [];
   reel.entries.forEach((entry, i) => {
-    if (cursor == null) ticked.push(false);
+    if (cursor == null || entry.context) ticked.push(false);
     else if (i < cursor.index) ticked.push(true);
     else if (entry.execution.video == null) ticked.push(i === 0 || ticked[i - 1]!);
     else {
