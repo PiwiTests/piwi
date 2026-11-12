@@ -544,13 +544,72 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
         hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
         assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(sessions.controls()))
-        assertTrue(myFixture.testAction(stop).isEnabled)
+        // Stop Sharing asks first, and a no keeps the share.
+        val stopAsked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            stopAsked += message
+            if (stopAsked.size == 1) Messages.NO else Messages.YES
+        }
+        try {
+            assertTrue(myFixture.testAction(stop).isEnabled)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(2, shares.size)
+            myFixture.testAction(stop)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(List(2) { Glue.stopSharingQuestion(RunLive(true, null, page, 2)) }, stopAsked)
         assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.getOrNull(2) })
     }
 
     /**
+     * The status bar's menu on a share leads with the run page, its link and Stop Sharing…, which stops the share only
+     * once the person confirms; while a test is stopped, the share's entries follow the run's controls.
+     */
+    fun testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking() {
+        val page = "https://piwi.example.com/test-runs/42"
+        hear(running("ed-live").copy(live = RunLive(true, null, page, 1), page = RunPage(42, page)))
+        val statusBar = PiwiStatusBarWidget(project)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        statusBar.update()
+        assertEquals("Piwi: shared live · 1 view", (statusBar.component as JLabel).text)
+        fun entries() = statusBar.actions().getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }
+        val first = entries().take(3)
+        assertEquals(
+            listOf("Open the Run Page", "Copy the Run Page's Link", "Stop Sharing the Run…"),
+            first.map { it.templatePresentation.text },
+        )
+        // The run's page is offered once.
+        assertEquals(1, entries().count { it.templatePresentation.text == "Open Run #42" || it.templatePresentation.text == "Open the Run Page" })
+        val event = AnActionEvent.createFromDataContext(ActionPlaces.STATUS_BAR_PLACE, null, SimpleDataContext.getProjectContext(project))
+        first[1].actionPerformed(event)
+        assertEquals(page, com.intellij.openapi.ide.CopyPasteManager.getInstance().getContents(java.awt.datatransfer.DataFlavor.stringFlavor))
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            if (asked.size == 1) Messages.NO else Messages.YES
+        }
+        try {
+            first[2].actionPerformed(event)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertTrue("a no stops nothing", shares.isEmpty())
+            first[2].actionPerformed(event)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(List(2) { Glue.stopSharingQuestion(RunLive(true, null, page, 1)) }, asked)
+        assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.firstOrNull() })
+        // A stop leads the item: the share's entries follow the run's controls.
+        val file = file("tests/pages/checkout.page.ts", this.page)
+        hear(stopped("ed-live", file, 3, bar = true, since = "2026-10-25T10:00:04.000Z").copy(live = RunLive(true, null, page, 1)))
+        statusBar.update()
+        val labels = entries().map { it.templatePresentation.text }
+        assertTrue(labels.indexOf("Stop Sharing the Run…") > labels.indexOf("Stop the Run"))
+    }
+
+    /**
      * The first share chooses the project's runs: their own warning comes, and its yes shares them; a later share of the
-     * project's runs asks no more, and stopping them asks nothing.
+     * project's runs asks no more, and stopping them asks to confirm.
      */
     fun testTheFirstShareMayShareTheProjectsRunsAfterTheirOwnWarning() {
         val page = "https://piwi.example.com/test-runs/42"
@@ -572,11 +631,21 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         try {
             sessions.shareWindow(true)
             waitFor("the second share") { shares.getOrNull(1) }
-            sessions.shareWindow(false)
-            assertEquals(ShareRunParams(null, false, "window"), waitFor("the stop") { shares.getOrNull(2) })
         } finally {
             TestDialogManager.setTestDialog(TestDialog.DEFAULT)
         }
+        val stopAsked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            stopAsked += message
+            Messages.YES
+        }
+        try {
+            sessions.shareWindow(false)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(listOf(Glue.stopSharingQuestion(null)), stopAsked)
+        assertEquals(ShareRunParams(null, false, "window"), waitFor("the stop") { shares.getOrNull(2) })
     }
 
     /** A run whose workers have not said yet how it stands on the instance is warned of too, before it is shared. */

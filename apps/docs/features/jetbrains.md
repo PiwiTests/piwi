@@ -68,7 +68,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   runs do.
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
   icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
-  item calls for: [the status bar](./editor-runs#the-status-bar).
+  item calls for: [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu
+  opens its page, copies its link, and has **Stop Sharing the Run…**, which asks first.
 - **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the Test at
   the Caret**, **Verify the Test at the Caret ×3** and **Run This Spec**, then **Run the Tests That Reach This File**,
   **Record Here** and a recording's controls. There and in **Tools → Piwi**, an entry that does not apply is left out.

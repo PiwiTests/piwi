@@ -1546,7 +1546,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * Share a run live on the team instance (`on`), or stop sharing it: the run `ref` names, else the only one it fits,
      * else the one chosen. The first share in this project since it opened says what goes out and to whom, and waits
      * for a yes, unless the run is known to be one that cannot be shared: it is asked anyway, and the service says why.
-     * Shared, the answer offers the run page's link and Stop Sharing. On the event thread.
+     * Stopping asks first. Shared, the answer offers the run page's link and Stop Sharing. On the event thread.
      */
     fun shareLive(on: Boolean, ref: String? = null) {
         when (val target = if (ref != null) Glue.LiveTarget.One(ref) else Glue.liveTarget(sessions, on)) {
@@ -1570,6 +1570,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     private fun shareLiveRun(ref: String, on: Boolean) {
         val live = sessions[ref]?.live
+        if (!on && !confirmStopSharing(live)) return
         if (on && live?.refused == null && !liveWarned) {
             // The first share of the project chooses its scope too: this run, or the project's runs until stopped.
             val picked = MessageDialogBuilder.yesNoCancel("Share the Run Live?", Glue.shareLiveWarning(live?.page))
@@ -1592,7 +1593,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     .addAction(NotificationAction.createSimpleExpiring("Copy the Run Page's Link") {
                         CopyPasteManager.getInstance().setContents(StringSelection(page))
                     })
-                    .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") { shareLive(false, ref) })
+                    .addAction(NotificationAction.createSimpleExpiring("Stop Sharing…") { shareLive(false, ref) })
                     .notify(project)
             }
         }
@@ -1600,10 +1601,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Share this project's runs live until the person stops or the project closes (`on`), the run of `ref` too when one
-     * is named, or stop sharing them all: the first share of the project says what goes out and waits for a yes. On the
-     * event thread.
+     * is named, or stop sharing them all: the first share of the project says what goes out and waits for a yes, and
+     * stopping asks first. On the event thread.
      */
     fun shareWindow(on: Boolean, ref: String? = null) {
+        if (!on && !confirmStopSharing(null)) return
         if (on && !windowWarned) {
             val yes = MessageDialogBuilder.yesNo("Share This Project's Runs Live?", Glue.shareLiveWarning(ref?.let { sessions[it]?.live?.page }, window = true))
                 .yesText("Share This Project's Runs")
@@ -1617,6 +1619,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             PiwiCommands.notify(project, answer?.message ?: "The editor service did not answer.")
         }
     }
+
+    /**
+     * Whether the person confirms stopping a share (`Glue.stopSharingQuestion`): of a run (`live`), or of the project's
+     * runs (`live` null). On the event thread.
+     */
+    private fun confirmStopSharing(live: RunLive?): Boolean =
+        MessageDialogBuilder.yesNo(if (live == null) "Stop Sharing This Project's Runs?" else "Stop Sharing the Run?", Glue.stopSharingQuestion(live))
+            .yesText("Stop Sharing")
+            .noText("Cancel")
+            .ask(project)
 
     /** The service says whether this project's runs are shared live: the status bar says so. */
     fun windowSharedChanged(on: Boolean) {
@@ -3271,7 +3283,7 @@ class HoldFailuresAction : RunControlAction() {
     }
 }
 
-/** **Stop Sharing the Run Live**: the views of the run on the team instance end, and nothing more goes there. */
+/** **Stop Sharing the Run Live…**: once the person confirms, the views of the run on the team instance end, and nothing more goes there. */
 class StopSharingRunAction : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.liveShared
 
@@ -3297,7 +3309,7 @@ class ShareWindowLiveAction : AnAction(), DumbAware {
     }
 }
 
-/** **Stop Sharing This Project's Runs Live**: every shared run of the project stops being shared. */
+/** **Stop Sharing This Project's Runs Live…**: once the person confirms, every shared run of the project stops being shared. */
 class StopSharingWindowLiveAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

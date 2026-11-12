@@ -343,7 +343,9 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
   controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
   progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`). Its tooltip says what
-  each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`).
+  each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
+- while a run is shared live: the share's entries, the run page, its link and **Stop Sharing…**, which asks first
+  ([Run control](#run-control)).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect (in
@@ -1009,9 +1011,13 @@ instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, 
 fits, else the one chosen (`Glue.liveTarget`). The first share in the project since it opened asks what goes out and
 to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`), a run its workers have not said anything of yet
 included; a run known not to be shareable is asked without it, and the service says why. Shared, the notification
-offers **Copy the Run Page's Link** and **Stop Sharing**, as does **Stop Sharing the Run Live**
+offers **Copy the Run Page's Link** and **Stop Sharing…**, as does **Stop Sharing the Run Live…**
 (`StopSharingRunAction`, while one is shared). The status bar item counts the views open of every shared run
-(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`).
+(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`), and its menu holds
+the share's entries (`Glue.liveMenu`: **Open the Run Page**, **Copy the Run Page's Link**, **Stop Sharing the Run…**
+for each shared run, named when several are, and **Stop Sharing This Project's Runs…** while they are shared), first
+while the item shows the share, else after the run's controls. Every way to stop a share, the run's or the project's,
+asks first (`PiwiRunSessions.confirmStopSharing`, `Glue.stopSharingQuestion`).
 
 ## Platform compatibility
 

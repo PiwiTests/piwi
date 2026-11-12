@@ -2306,6 +2306,45 @@ object Glue {
         return if (live.viewers == 0) "$where: nobody watches yet" else "$where: ${views(live.viewers)} open"
     }
 
+    /** What an entry of the status bar's menu on a share does: open the run page, copy its link, or stop sharing. */
+    enum class LiveEntryKind { OPEN_PAGE, COPY_LINK, STOP_SHARING, STOP_SHARING_PROJECT }
+
+    /** An entry of the status bar's menu on a share, for the run of `ref` and its page `url` where it has them. */
+    data class LiveEntry(val kind: LiveEntryKind, val label: String, val ref: String? = null, val url: String? = null)
+
+    /**
+     * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the Run Page**, **Copy the
+     * Run Page's Link** (while its page is known) and **Stop Sharing the Run…**, each naming its run when several are
+     * shared (`runLabel`); then **Stop Sharing This Project's Runs…** while the project's runs are shared. Both stops ask
+     * first ([stopSharingQuestion]).
+     */
+    fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
+        val shared = sharedRunsOf(sessions).filter { it.live.shared }
+        val entries = shared.flatMap { run ->
+            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it) } else null
+            listOfNotNull(
+                run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the Page of $n" } ?: "Open the Run Page", run.ref, it) },
+                run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the Link of $n" } ?: "Copy the Run Page's Link", run.ref, it) },
+                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop Sharing $it…" } ?: "Stop Sharing the Run…", run.ref),
+            )
+        }
+        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…") else entries
+    }
+
+    /**
+     * What Stop Sharing asks before it stops: for a run (`live`), where it is shared and the views that end there; for
+     * the project's runs (`live` null), that the runs to come are not shared either.
+     */
+    fun stopSharingQuestion(live: RunLive?): String {
+        if (live == null) {
+            return "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow " +
+                "are not shared."
+        }
+        val where = liveInstance(live.page)?.let { " on $it" }.orEmpty()
+        val views = if (live.viewers > 0) "The ${views(live.viewers)} open there end" else "Its page there stops showing it live"
+        return "Stop sharing the run live$where? $views, and nothing more goes there until you share it again."
+    }
+
     /** What a Share live action acts on: one run, a choice among several, or why there is none. */
     sealed class LiveTarget {
         data class One(val ref: String) : LiveTarget()

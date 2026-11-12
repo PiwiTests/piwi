@@ -771,6 +771,54 @@ class GlueTest {
     }
 
     @Test
+    fun `the status bar's menu on a share opens the run page, copies its link and stops sharing after asking`() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val shared = RunSession("ed-1", root = "/w/shop", live = RunLive(true, null, page, 2), page = RunPage(78, page))
+        val ready = RunSession("ed-2", live = RunLive(false, null, page, 0))
+        assertEquals(emptyList<Glue.LiveEntry>(), Glue.liveMenu(mapOf("ed-2" to ready), windowShared = false))
+        assertEquals(
+            listOf(
+                Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the Run Page", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the Run Page's Link", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1"),
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-2" to ready), windowShared = false),
+        )
+        // A run shared before its page is known offers Stop Sharing alone.
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1")),
+            Glue.liveMenu(mapOf("ed-1" to shared.copy(live = RunLive(true, null, null, 0))), windowShared = false),
+        )
+        // Several shared runs are each named; the project's runs shared add their own stop.
+        val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
+        assertEquals(
+            listOf(
+                "Open the Page of Run #78", "Copy the Link of Run #78", "Stop Sharing Run #78…",
+                "Open the Page of Run in admin (ed-3)", "Copy the Link of Run in admin (ed-3)", "Stop Sharing Run in admin (ed-3)…",
+                "Stop Sharing This Project's Runs…",
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
+        )
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…")),
+            Glue.liveMenu(emptyMap(), windowShared = true),
+        )
+        // What Stop Sharing asks first.
+        assertEquals(
+            "Stop sharing the run live on piwi.example.com? The 2 views open there end, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(shared.live),
+        )
+        assertEquals(
+            "Stop sharing the run live? Its page there stops showing it live, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(RunLive(true, null, null, 0)),
+        )
+        assertEquals(
+            "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow are not shared.",
+            Glue.stopSharingQuestion(null),
+        )
+    }
+
+    @Test
     fun `the workers a Worker tab can watch, and what it says of its slot`() {
         val sessions = mapOf(
             "ed-1" to session(
