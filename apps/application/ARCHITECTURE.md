@@ -190,8 +190,12 @@ Each entry names folders under `server/api/`.
     older reporter, as JSON), `[id]/live-view/watch` (a page's one watch of the run, `GET`, to a person who may open
     it: a stream of live messages carrying one worker's full view, of its test or of its lane, which follows the
     lane's tests and the worker started in it again, and every worker's tile for **Watch all**; `POST` changes what it
-    shows by the id it opened with) and `[id]/live-view/workers` (its workers and how many watches are open, which
-    `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
+    shows by the id it opened with), `[id]/live-view/watch/[watch]/snapshot` (**Inspect**: the page of a worker at
+    one of its calls, rendered from the DOM snapshot the worker sent while a watch had Inspect open, by
+    `dom-snapshot-render.ts` and the asset inlining of `dom-snapshot.ts`, kept in memory by
+    `server/utils/live-inspect.ts`, and served as the stored trace's snapshot frame is, by `dom-snapshot-frame.ts`;
+    `LaneInspect` shows it in the lane panel) and `[id]/live-view/workers` (its workers and how many watches are open,
+    which `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
     (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
     attention** moves the lane panel by `app/utils/live-attention.ts`. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader

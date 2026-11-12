@@ -135,7 +135,19 @@ responsibilities.
      listener above (`live-call-log.ts`), and the layers a full view asks (`view`'s `layers`: `page-event`, `text`, the
      filmstrip's `thumb`, the view's own masked images kept in the worker's memory for its test until the project's masks
      change, `lane-layers.ts`,
-     `tests/live-view-layers.spec.ts`); it always posts its test's stops (`showStop`). Each frame
+     `tests/live-view-layers.spec.ts`), and while a full view has Inspect open (`view`'s `inspect`) the page's DOM snapshots
+     and the stylesheets, fonts and images they name (`internal/capture/live-inspect.ts`): read from the runner's growing
+     trace and its `resources/` folder where it traces the attempt, else from a live trace of Piwi's own of the context
+     (`tracing.start` through `internalCall`), stopped unsaved as Inspect closes, its `.trace`, `.network` and `.stacks`
+     deleted, and each file of the folder's `resources/` that appeared while it ran and no other `.trace` or `.network`
+     file there names (the context's server tracing told to write it again, `_allResources`, feature-checked; without
+     it, deleted as the context closes), Playwright's snapshot script staying in the context's later documents, behind a
+     guard on `context.tracing` whose `start`, `startChunk`, `stop` and `stopChunk` wait for Piwi's trace to start, stop
+     it and go once it stopped, Piwi starting none from the test's `start` to its `stop` (`guardTracing`); each
+     snapshot through `hideFrameSnapshotSecrets` with the attempt's secrets, none while a page's secret fields cannot be
+     read nor one it cannot read whole, none for a project with masks, never a script, a document, an SVG nor bytes of
+     another kind than their type (`tests/live-view-inspect.spec.ts`, `tests/live-inspect.spec.ts`); it always posts
+     its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
      feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a

@@ -105,7 +105,7 @@ const views = computed<TileView[]>(() =>
 const stateText = computed(() => {
   const state = props.state;
   if (props.demo) {
-    return 'The demo runs no browser: each tile names the step its worker is on, with no image, page events, text or filmstrip.';
+    return 'The demo runs no browser: each tile names the step its worker is on. Its image, page events, text, filmstrip and Inspect need a running test.';
   }
   if (state.kind === 'connecting' && state.again) return 'Opening the watch again…';
   if (state.kind !== 'closed') return null;

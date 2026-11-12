@@ -1,16 +1,14 @@
-import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { files, testRunsCases } from '../../../database/schema';
 import { resolveCaseDomSnapshot } from '../../../utils/dom-snapshot';
 import { snapshotMomentFromQuery } from '../../../utils/dom-snapshot-render';
 import { resolveCasePayloadContents } from '../../../utils/case-payloads';
+import { snapshotFrameDocument, snapshotFrameMode } from '../../../utils/dom-snapshot-frame';
 import {
   requireResolvedProjectAccess,
   requireRouteId,
   resolveTestRunCaseProjectId,
 } from '../../../utils/project-access';
-import { buildPickerDocument, buildReadonlyDocument } from '#shared/snapshot-picker-document';
-import { CAPTURED_ATTRIBUTES } from '#shared/locator-generation';
 
 defineRouteMeta({
   openAPI: {
@@ -54,12 +52,6 @@ defineRouteMeta({
   },
 });
 
-// A minimal valid document for the "no snapshot" case, so the iframe renders a
-// blank frame rather than erroring. The client only points the frame here once
-// its metadata fetch reports a snapshot exists, so this is a defensive fallback.
-const EMPTY_DOC =
-  '<!doctype html><html><head><meta charset="utf-8"><title>No snapshot</title></head><body></body></html>';
-
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run case ID');
 
@@ -70,7 +62,7 @@ export default eventHandler(async (event) => {
   const query = getQuery(event);
   const sourceParam = query.source;
   const source = sourceParam === 'aria' || sourceParam === 'dom' ? sourceParam : undefined;
-  const mode = query.mode === 'readonly' ? 'readonly' : 'pick';
+  const mode = snapshotFrameMode(query);
 
   // Same load as `dom-snapshot.get.ts` (kept in step with it): the case's trace
   // blob and its ARIA snapshot (content-addressed on new rows, inline on legacy).
@@ -105,36 +97,5 @@ export default eventHandler(async (event) => {
     pageState: caseRows[0]?.pageState,
   });
 
-  // Sandbox the untrusted snapshot HTML: an opaque origin with scripts allowed,
-  // matching the iframe’s own `sandbox="allow-scripts"`. Only the nonce-marked
-  // builder script runs, and nothing loads from the network — the document
-  // carries its stylesheets and images inline, so any fetch left in the snapshot
-  // is blocked rather than sent to this origin or the tested app. Because this
-  // is served over HTTP (not `srcdoc`), the frame carries THIS policy instead of
-  // inheriting the dashboard page's `strict-dynamic` CSP, which would block the
-  // inline picker script.
-  const nonce = randomBytes(16).toString('base64');
-  setResponseHeader(
-    event,
-    'Content-Security-Policy',
-    [
-      'sandbox allow-scripts',
-      "default-src 'none'",
-      `script-src 'nonce-${nonce}'`,
-      "style-src 'unsafe-inline'",
-      'img-src data:',
-      'font-src data:',
-      'media-src data:',
-      "base-uri 'none'",
-      "form-action 'none'",
-    ].join('; '),
-  );
-  setResponseHeader(event, 'Content-Type', 'text/html; charset=utf-8');
-  setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
-  setResponseHeader(event, 'Cache-Control', 'no-store');
-
-  if (result.status !== 'ok' || !result.html) return EMPTY_DOC;
-  return mode === 'readonly'
-    ? buildReadonlyDocument(result.html, nonce)
-    : buildPickerDocument(result.html, { probedAttrs: CAPTURED_ATTRIBUTES }, nonce);
+  return snapshotFrameDocument(event, result.status === 'ok' ? (result.html ?? null) : null, mode);
 });

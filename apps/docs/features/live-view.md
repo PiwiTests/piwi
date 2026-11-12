@@ -62,8 +62,8 @@ On the run page's **Tests** tab, **Watch** at the end of a running test's row op
 the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
 taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
 caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
-Under it, the page's [events, text and filmstrip](./live-view-layers); [Watch all](./watch-all) shows every worker at
-once.
+Under it, the page's [events, text and filmstrip](./live-view-layers) and [Inspect](./live-inspect); [Watch all](./watch-all)
+shows every worker at once.
 
 The view follows that call: how long it has run, Playwright's log of it as a failed call's error prints it, and while
 it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point
@@ -113,7 +113,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
   [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
-  that person's oldest. Its workers send 4 MB of images a second at most together.
+  that person's oldest. Its workers send 4 MB of images and pages a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
   ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
   run's setup, its CI workers and the people watching are separate clients.

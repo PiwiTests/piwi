@@ -61,6 +61,22 @@ describe('stripNetworkReferences', () => {
     expect(stripNetworkReferences('<p>no references here</p>')).toBe('<p>no references here</p>');
   });
 
+  test('leaves no http-equiv a browser would read, whatever surrounds it', () => {
+    const refresh = '<meta http-equiv="refresh" content="0;url=https://evil.test/">';
+    for (const html of [
+      `<svg><style>${refresh}</style></svg>`,
+      `<math><style>${refresh}</style></math>`,
+      `<noscript><style></noscript>${refresh}</style></noscript>`,
+      '<meta content="0;url=https://evil.test/>" HTTP-EQUIV="refresh">',
+      '<style><meta " http-equiv=refresh content=0;url=https://evil.test/></style>',
+      `<p title="${refresh}">${refresh}</p>`,
+    ]) {
+      expect(stripNetworkReferences(html)).not.toMatch(/http-equiv/i);
+    }
+    // Read as text, the name stays as it reads.
+    expect(stripNetworkReferences('<p>Set http-equiv to refresh</p>')).toBe('<p>Set http&#45;equiv to refresh</p>');
+  });
+
   test('empties nested frames, plugins and script sources', () => {
     expect(stripNetworkReferences('<iframe src="/snapshot/frame@x" title="Map"></iframe>')).toBe(
       '<iframe  title="Map"></iframe>',

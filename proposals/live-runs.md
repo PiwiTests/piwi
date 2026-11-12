@@ -243,8 +243,13 @@ panel show them, each asking only for the layers it shows. Built from P11's Insp
 so far** in an editor's worker view, Piwi Picker's Runs window and the desktop app's Local runs tray, which has the hub
 ask the lane's worker for its attempt's trace file (`trace`, the hub's `openTrace`, `piwi/openTrace`), check it and
 start the project's own Playwright trace viewer on it, the path never leaving the hub; Playwright 1.59 to 1.64 show
-the trace as it stood when the viewer opened, so a second click once the viewer is closed shows what came since. The
-team's Inspect (live-view-next Part 4) and the desktop app's snapshot view on the same file are proposed. The bugs the analysis
+the trace as it stood when the viewer opened, so a second click once the viewer is closed shows what came since. Built
+from P11's Inspect, its team half (live-view-next Part 4): **Inspect** in the run page's lane panel shows the page at
+each call of a CI or shared run's test as a document, before it, at its action and after it, following the latest call
+until the viewer pins one, with the snapshot picker, from the snapshots the worker reads in its trace (or a live trace
+of its own) and sends only while a viewer has it open, its secret fields removed (`@piwitests/core/live-inspect`),
+which the instance keeps in memory for the run and serves rendered without a script. The desktop app's snapshot view
+on the same file is proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

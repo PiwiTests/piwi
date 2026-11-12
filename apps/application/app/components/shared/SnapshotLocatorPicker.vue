@@ -7,7 +7,10 @@
  * the user confirms one — which is saved back to the server. Without a failing
  * locator (a failure that was not about one) it is an inspector: any element's
  * locators, to copy. `at` names the trace action snapshot to open on, so the
- * picker shows the same page as the view it was opened from.
+ * picker shows the same page as the view it was opened from. `livePage` opens
+ * it as an inspector on a page of a running test the live view's Inspect shows
+ * (its address on the instance, its viewport, its call's title) in place of an
+ * execution's.
  */
 import {
   generateAlternatives,
@@ -23,7 +26,10 @@ import type { DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 
 const props = defineProps<{
-  testRunsCaseId: number;
+  /** The execution whose stored snapshot the picker shows; none with `livePage`. */
+  testRunsCaseId?: number;
+  /** A page of a running test, from the live view's Inspect: the picker's address (`mode` left out), its viewport. */
+  livePage?: { src: string; viewport: { width: number; height: number } | null; title: string } | null;
   /** The locator that failed; null opens the picker as an inspector. */
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   /** The healing result — its candidate names pre-highlight the likely element. */
@@ -63,6 +69,18 @@ const snapshotError = ref<string | null>(null);
 const viewSource = ref<SnapshotSource | undefined>(undefined);
 
 async function fetchSnapshot() {
+  // A live page is served whole by the live view, which said its viewport: nothing to ask first.
+  if (props.livePage) {
+    snapshot.value = {
+      status: 'ok',
+      html: '',
+      viewport: props.livePage.viewport ?? undefined,
+      source: 'dom',
+      availableSources: ['dom'],
+    };
+    snapshotError.value = null;
+    return;
+  }
   snapshotPending.value = true;
   snapshotError.value = null;
   try {
@@ -154,6 +172,7 @@ function reloadFrame() {
 // re-pick / reload re-runs the picker script (the endpoint is `no-store`, so
 // this only forces a fresh navigation rather than defeating a cache).
 const frameSrc = computed(() => {
+  if (props.livePage) return `${props.livePage.src}&mode=pick&r=${renderKey.value}`;
   if (isDemo || snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
   const params = new URLSearchParams({ mode: 'pick', ...momentParams() });
   if (viewSource.value) params.set('source', viewSource.value);
@@ -433,7 +452,7 @@ const failingLocatorText = computed(() =>
 const toast = useToast();
 
 async function confirm() {
-  if (!selectedAlt.value || !props.failingLocator) return;
+  if (!selectedAlt.value || !props.failingLocator || props.testRunsCaseId === undefined) return;
   saving.value = true;
   try {
     const result = await $fetch<{ status: string }>(`/api/test-run-cases/${props.testRunsCaseId}/locator-pick`, {
@@ -512,7 +531,10 @@ onBeforeUnmount(() => {
     <template #header>
       <div>
         <h3 class="text-lg font-medium">
-          {{ failingLocator ? 'Pick a locator from the DOM snapshot' : 'Find a locator on the failure-time page' }}
+          <template v-if="livePage">Find a locator on the page at this call</template>
+          <template v-else>
+            {{ failingLocator ? 'Pick a locator from the DOM snapshot' : 'Find a locator on the failure-time page' }}
+          </template>
         </h3>
         <p class="text-sm text-muted mt-0.5">
           <template v-if="failingLocatorText">
@@ -540,7 +562,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- No snapshot available -->
-      <div v-else-if="snapshot?.status !== 'ok' || !snapshot.html" class="py-8 text-center">
+      <div v-else-if="snapshot?.status !== 'ok' || (!snapshot.html && !livePage)" class="py-8 text-center">
         <UIcon name="i-lucide-file-x" class="size-8 text-gray-300 mx-auto mb-2" />
         <p class="text-sm text-gray-500">No DOM snapshot or ARIA data available for this execution</p>
         <p class="text-xs text-gray-400 mt-1">This test run has no stored trace or ARIA snapshot to pick from.</p>
@@ -562,6 +584,9 @@ onBeforeUnmount(() => {
             />
             <template v-if="snapshot.source === 'aria'">
               Accessibility tree from the failure-time ARIA snapshot — element styles are approximate
+            </template>
+            <template v-else-if="livePage">
+              Rendered from the page the worker sent at <span class="font-mono">{{ livePage.title }}</span>
             </template>
             <template v-else> Rendered from the failure-time DOM snapshot </template>
           </div>

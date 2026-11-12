@@ -13,6 +13,7 @@ import {
   errorPlace,
   failureError,
   runningCall,
+  runnerTraceSnapshots,
   runnerTraces,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
@@ -2204,6 +2205,26 @@ describe('runnerTraces', () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('runnerTraceSnapshots', () => {
+  const options = (value: unknown) =>
+    ({ _tracing: { traceOptions: () => value } }) as unknown as Parameters<typeof runnerTraceSnapshots>[0];
+
+  it('reads whether the runner’s trace takes DOM snapshots, as a flag or by kind', () => {
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: true }))).toBe(true);
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: false }))).toBe(false);
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: { dom: true, aria: true } }))).toBe(true);
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: { aria: true } }))).toBe(false);
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: { dom: false } }))).toBe(false);
+  });
+
+  it('knows nothing of a trace that does not say', () => {
+    expect(runnerTraceSnapshots(options(undefined))).toBeNull();
+    expect(runnerTraceSnapshots(options({ mode: 'on' }))).toBeNull();
+    expect(runnerTraceSnapshots(options({ mode: 'on', snapshots: ['dom'] }))).toBeNull();
+    expect(runnerTraceSnapshots({} as Parameters<typeof runnerTraceSnapshots>[0])).toBeNull();
   });
 });
 

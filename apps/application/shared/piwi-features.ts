@@ -190,6 +190,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view-layers',
       },
       {
+        title: "Inspect a running test's page",
+        summary:
+          'In a worker’s live view, the page at each call of its running test as a document, before it, at its action and after it, rendered without its scripts, with the locator picker on it: sent only while open, its secret fields removed in the worker, never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch → Inspect',
+        doc: 'features/live-inspect',
+      },
+      {
         title: 'Share a run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',

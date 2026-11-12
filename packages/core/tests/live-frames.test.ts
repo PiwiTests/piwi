@@ -208,6 +208,7 @@ describe('what the viewers ask of a worker', () => {
       fps: 4,
       full: true,
       layers: [],
+      inspect: false,
     });
     expect(parseInstanceToWorker(JSON.stringify({ type: 'view', width: 4000, height: 50, fps: 30 }))).toEqual({
       type: 'view',
@@ -216,6 +217,7 @@ describe('what the viewers ask of a worker', () => {
       fps: LIVE_FRAME_FPS,
       full: true,
       layers: [],
+      inspect: false,
     });
     expect(
       parseInstanceToWorker(JSON.stringify({ type: 'view', width: 320, height: 200, fps: LIVE_TILE_FPS, full: false })),

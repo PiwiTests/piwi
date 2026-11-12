@@ -169,6 +169,7 @@ import {
 } from './live-view.js';
 import { listenCalls, trackCalls } from './live-call-log.js';
 import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
+import { guardTracing } from './live-inspect.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
@@ -2516,6 +2517,27 @@ export function runnerTraces(testInfo: TestInfo): boolean | null {
 }
 
 /**
+ * Whether the runner's trace of the attempt takes DOM snapshots, as its tracing's options say (Playwright internal,
+ * feature-checked): `snapshots`, or its `dom` where it names each kind (1.64, `{ aria: true }` taking none); null where
+ * it does not trace the attempt or its shape is not known.
+ */
+export function runnerTraceSnapshots(testInfo: TestInfo): boolean | null {
+  const tracing = (testInfo as unknown as { _tracing?: { traceOptions?: unknown } })._tracing;
+  if (typeof tracing?.traceOptions !== 'function') return null;
+  try {
+    const options = (tracing.traceOptions as () => unknown).call(tracing) as { snapshots?: unknown } | undefined;
+    const snapshots = options?.snapshots;
+    if (typeof snapshots === 'boolean') return snapshots;
+    if (typeof snapshots === 'object' && snapshots !== null && !Array.isArray(snapshots)) {
+      return (snapshots as { dom?: unknown }).dom === true;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
  * failed; any other status as Playwright tells it.
  */
@@ -3402,6 +3424,8 @@ function instrumentContext(context: BrowserContext): void {
   observeOwnApiRequests(context);
   // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
   if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
+  // Inspect may trace the context itself: the test's own `tracing.start` stops Piwi's trace first.
+  if (liveViewOpen()) guardTracing(context);
 
   // Seed the probe for every document this context loads, so a capture ships a
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
@@ -4183,6 +4207,7 @@ export const piwiFixtures: Fixtures<
         fixtureCall: (id) => fixtureStep(testInfo, id),
         trace: attemptTrace(testInfo),
         traced: () => runnerTraces(testInfo),
+        snapshots: () => runnerTraceSnapshots(testInfo),
       });
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();

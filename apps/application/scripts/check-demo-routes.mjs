@@ -104,6 +104,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/test-runs/:id/live-view/watch',
   'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
+  'GET /api/test-runs/:id/live-view/watch/:watch/snapshot',
   // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
   // no reporter, so its simulated runs are never a run nobody shares.
   'POST /api/test-runs/:id/live-view/ask',
