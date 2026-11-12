@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { reactive } from 'vue';
+import { markRaw, reactive } from 'vue';
 import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { CONTROLS } from '@piwitests/run-model/controls';
@@ -724,6 +724,79 @@ describe('the window’s stream of its runs', () => {
     expect(lanesSaid()[4]).toEqual({ ref: 'desktop-7', lane: 0, on: false });
     runs.want(false);
     expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+  });
+
+  test('has the server read a lane’s pages for Inspect while a view shows it, afresh on each stream, until the lane’s watch ends', async () => {
+    const notice = (call: string) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title: `Click ${call}`,
+      phase: 'after',
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: true,
+      index: 0,
+      at: 1_800_000_000_000,
+      test: 'checkout › pays',
+    });
+    const listed: unknown[] = [];
+    vi.stubGlobal('markRaw', markRaw);
+    vi.stubGlobal('$fetch', async (url: string, init: { body?: Record<string, unknown>; query?: unknown }) => {
+      if (url === '/api/desktop/runs/inspect/calls') {
+        listed.push(init.query);
+        return { attempt: 't#0', heard: [notice('call@1')], refused: null };
+      }
+      posted.push(init.body!);
+      return { type: 'answer', ok: true, message: '', id: init.body!.id };
+    });
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const said = () =>
+      posted.filter((body) => body.type === 'inspect').map(({ ref, lane, on, viewer }) => ({ ref, lane, on, viewer }));
+
+    // Open, but shown nowhere: the server hears nothing.
+    expect(await runs.setInspect('desktop-7', 0, true)).toEqual({ ok: true, message: '' });
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ attempt: null, heard: [] });
+    expect(said()).toEqual([]);
+    // A view shows it: the server reads the lane's pages, and what it read so far comes, then each one it says.
+    runs.showInspect('desktop-7', 0);
+    await vi.waitFor(() => expect(said()).toEqual([{ ref: 'desktop-7', lane: 0, on: true, viewer: VIEWER }]));
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)?.heard).toHaveLength(1));
+    expect(listed).toEqual([{ viewer: VIEWER, ref: 'desktop-7', lane: 0 }]);
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 0, attempt: 't#0', snapshot: notice('call@2') });
+    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1', 'call@2']);
+    // Another lane's, or one of a lane not open, changes nothing.
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 1, attempt: 't#0', snapshot: notice('call@9') });
+    expect(runs.inspectOf('desktop-7', 1)).toBeNull();
+
+    // A view that leaves as another comes, in one tick, changes nothing.
+    const views = [runs.showInspect('desktop-7', 0)];
+    views.push(runs.showInspect('desktop-7', 0));
+    views.shift()!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(said()).toHaveLength(1);
+
+    // A new stream: the server is told again on it, the view starting afresh.
+    const turn = runs.inspectOf('desktop-7', 0)!.turn;
+    const other = 'b'.repeat(32);
+    source.send({ type: 'hello', viewer: other });
+    await vi.waitFor(() => expect(said()).toHaveLength(2));
+    expect(said()[1]).toEqual({ ref: 'desktop-7', lane: 0, on: true, viewer: other });
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn: turn + 1, attempt: 't#0' }));
+    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1']);
+
+    // The lane's watch off closes it.
+    await runs.setLaneWatch('desktop-7', 0, false);
+    await vi.waitFor(() => expect(said()).toHaveLength(3));
+    expect(said()[2]).toMatchObject({ ref: 'desktop-7', lane: 0, on: false });
+    expect(runs.inspectOf('desktop-7', 0)).toBeNull();
+    runs.want(false);
   });
 
   test('passes a lane’s frames to who listens, keeping the latest image while the lane is watched', async () => {

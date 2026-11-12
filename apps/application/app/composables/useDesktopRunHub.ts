@@ -22,10 +22,12 @@
  * again as the lane's next test begins); the layers that come are kept by lane for the test it runs (`laneLayers`, each
  * replaced as one comes), in memory alone, until the lane is no longer watched. A run the stream does not list as it
  * opens (`listed`) ended meanwhile: what the window kept of it goes. **Share live** asks what it sends the first time in
- * this session of the app (`shareAsks`). **Inspect** of a lane (`setInspect`) has the server read the pages of its
- * running test from the test's own trace while the window has it open: the window keeps what it heard of each by lane
- * (`inspectOf`, `hearDesktopInspect`), what the server listed as it opened and each `inspect` its stream says, and
- * opens it again as the stream opens again; the pages stay on the server.
+ * this session of the app (`shareAsks`). **Inspect** of a lane (`setInspect`, on until it is turned off, the lane is
+ * no longer watched or its run ends) has the server read the pages of its running test from the test's own trace while
+ * a view of it shows (`showInspect`), told once the tick ends, so a view that comes back changes nothing: the window
+ * keeps what it heard of each by lane (`inspectOf`, `hearDesktopInspect`), what the server listed as it opened and
+ * each `inspect` its stream says, afresh each time the server is told, and tells it again as the stream opens again;
+ * the pages stay on the server.
  *
  * A live run of several workers shows one at a time behind its worker tabs, kept here by run (`tabs`) and followed as
  * each of its sessions is heard (`tabsAfter`, `@piwitests/run-model/tabs`): the worker shown stays while it stands at a
@@ -219,6 +221,12 @@ let shareWarned = false;
 const stopRunListeners = new Set<(ref: string) => void>();
 /** The lanes the window has Inspect open on, by `desktopLaneKey`. */
 const inspectLanes = new Map<string, { ref: string; lane: number }>();
+/** How many views show each lane's Inspect, by `desktopLaneKey`: the server reads a lane's pages while one does. */
+const inspectViews = new Map<string, number>();
+/** The lanes the server was told the window has Inspect open on, on this stream, by `desktopLaneKey`. */
+let inspectsTold = new Map<string, { ref: string; lane: number }>();
+/** A change of the Inspects the window shows waits for the end of the tick: a view that comes back changes none. */
+let inspectsQueued: Promise<Map<string, DesktopRunAnswer>> | null = null;
 
 function heard(text: string): void {
   let value: Record<string, unknown>;
@@ -245,7 +253,8 @@ function heard(text: string): void {
       lanesTold = new Map();
       void tellShown();
       void tellLanesSoon();
-      for (const { ref, lane } of inspectLanes.values()) void openInspect(ref, lane);
+      inspectsTold = new Map();
+      void tellInspectsSoon();
       if (present) void command({ type: 'follow', on: true });
       return;
     case 'stop-code':
@@ -389,16 +398,52 @@ function heardInspect(value: Record<string, unknown>): void {
 }
 
 /**
- * Has the server read the lane's pages for the window's Inspect, then takes what it read so far; a refusal closes it.
- * Answers what the server said.
+ * Tells the server which lanes' Inspect the window shows, what changed since it was told last, once this tick ends;
+ * answers what it said of each lane it was told of.
  */
-async function openInspect(ref: string, lane: number): Promise<DesktopRunAnswer> {
-  const key = desktopLaneKey(ref, lane);
+function tellInspectsSoon(): Promise<Map<string, DesktopRunAnswer>> {
+  inspectsQueued ??= Promise.resolve().then(() => {
+    inspectsQueued = null;
+    return tellInspects();
+  });
+  return inspectsQueued;
+}
+
+async function tellInspects(): Promise<Map<string, DesktopRunAnswer>> {
+  const answers = new Map<string, DesktopRunAnswer>();
+  if (!viewer) return answers;
+  const shown = [...inspectLanes].filter(([key]) => (inspectViews.get(key) ?? 0) > 0);
+  const changes = [
+    ...shown.filter(([key]) => !inspectsTold.has(key)).map(([key, at]) => ({ key, ...at, on: true })),
+    ...[...inspectsTold]
+      .filter(([key]) => !shown.some(([one]) => one === key))
+      .map(([key, at]) => ({ key, ...at, on: false })),
+  ];
+  for (const { key, ref, lane, on } of changes) {
+    if (on) inspectsTold.set(key, { ref, lane });
+    else inspectsTold.delete(key);
+  }
+  await Promise.all(
+    changes.map(async ({ key, ref, lane, on }) => {
+      answers.set(key, on ? await openInspect(key, ref, lane) : await command({ type: 'inspect', ref, lane, on }));
+    }),
+  );
+  return answers;
+}
+
+/**
+ * Has the server read the lane's pages for the window's Inspect, the view starting afresh, then takes what it read so
+ * far; a refusal closes it. Answers what the server said.
+ */
+async function openInspect(key: string, ref: string, lane: number): Promise<DesktopRunAnswer> {
   const stream = viewer;
+  const before = state.inspects[key];
+  if (before) state.inspects[key] = markRaw({ ...NO_DESKTOP_INSPECT, attempt: before.attempt, turn: before.turn + 1 });
   const answer = await command({ type: 'inspect', ref, lane, on: true });
   if (!state.inspects[key] || viewer !== stream || !stream) return answer;
   if (!answer.ok) {
     inspectLanes.delete(key);
+    inspectsTold.delete(key);
     delete state.inspects[key];
     return answer;
   }
@@ -412,6 +457,13 @@ async function openInspect(ref: string, lane: number): Promise<DesktopRunAnswer>
     // What the server read so far comes again as it reads more.
   }
   return answer;
+}
+
+/** The window has Inspect of a lane open no more: the server is told once the tick ends. */
+function closeInspect(key: string): Promise<Map<string, DesktopRunAnswer>> | null {
+  if (!inspectLanes.delete(key)) return null;
+  delete state.inspects[key];
+  return tellInspectsSoon();
 }
 
 function heardSession(session: HubSession): void {
@@ -466,6 +518,7 @@ function forgetRun(ref: string): void {
     inspectLanes.delete(key);
     delete state.inspects[key];
   }
+  for (const key of [...inspectsTold.keys()]) if (desktopLaneRun(key) === ref) inspectsTold.delete(key);
 }
 
 function keep(item: Extract<DesktopRunEvent, { type: 'stop-code' | 'pick' }>): void {
@@ -510,6 +563,7 @@ function close(): void {
   viewer = null;
   told = new Set();
   inspectLanes.clear();
+  inspectsTold = new Map();
   lanesTold = new Map();
   latestFrames.clear();
   latestLaneFrames.clear();
@@ -601,13 +655,16 @@ async function askText(ref: string, lane: number, on: boolean): Promise<DesktopR
   return answer;
 }
 
-/** Watches a lane, or stops, for the window. */
+/** Watches a lane, or stops, for the window: Inspect of a lane no longer watched closes. */
 function setLane(ref: string, lane: number, on: boolean): void {
   const others = (state.lanes[ref] ?? []).filter((l) => l !== lane);
   if (on) state.lanes[ref] = [...others, lane];
   else if (others.length) state.lanes[ref] = others;
   else delete state.lanes[ref];
-  if (!on) forgetLane(ref, lane);
+  if (!on) {
+    forgetLane(ref, lane);
+    void closeInspect(desktopLaneKey(ref, lane));
+  }
 }
 
 /** The lanes the window shows now: those it watches that a listener shows, none while the window is hidden. */
@@ -808,20 +865,35 @@ export function useDesktopRunHub() {
     },
     /**
      * Opens Inspect of a lane of a run for the window, or closes it: the server reads the pages of the lane's running
-     * test from its own trace while the window has it open, and lets them go as it closes. Answers what it said.
+     * test from its own trace while a view of it shows (`showInspect`), and lets them go as it closes. Answers what the
+     * server said, once it was told.
      */
     async setInspect(ref: string, lane: number, on: boolean): Promise<DesktopRunAnswer> {
       const key = desktopLaneKey(ref, lane);
-      if (!on) {
-        if (!inspectLanes.delete(key)) return { ok: true, message: '' };
-        delete state.inspects[key];
-        return viewer ? command({ type: 'inspect', ref, lane, on: false }) : { ok: true, message: '' };
+      if (!on) return (await closeInspect(key))?.get(key) ?? { ok: true, message: '' };
+      if (!inspectLanes.has(key)) {
+        inspectLanes.set(key, { ref, lane });
+        state.inspects[key] = markRaw({ ...NO_DESKTOP_INSPECT });
       }
-      if (inspectLanes.has(key)) return { ok: true, message: '' };
-      inspectLanes.set(key, { ref, lane });
-      state.inspects[key] = markRaw({ ...NO_DESKTOP_INSPECT });
-      // A window not connected yet opens it as its stream opens (`hello`).
-      return viewer ? openInspect(ref, lane) : { ok: true, message: '' };
+      return (await tellInspectsSoon()).get(key) ?? { ok: true, message: '' };
+    },
+    /**
+     * A view shows Inspect of a lane: while one does, the server reads its pages, once the tick ends; returns what
+     * stops showing it.
+     */
+    showInspect(ref: string, lane: number): () => void {
+      const key = desktopLaneKey(ref, lane);
+      inspectViews.set(key, (inspectViews.get(key) ?? 0) + 1);
+      void tellInspectsSoon();
+      let shown = true;
+      return () => {
+        if (!shown) return;
+        shown = false;
+        const left = (inspectViews.get(key) ?? 1) - 1;
+        if (left > 0) inspectViews.set(key, left);
+        else inspectViews.delete(key);
+        void tellInspectsSoon();
+      };
     },
     /** The worker tabs of a live run of several workers; null for a run that shows none. */
     tabsOf(ref: string): WorkerTabs | null {

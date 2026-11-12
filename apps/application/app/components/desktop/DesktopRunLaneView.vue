@@ -16,9 +16,8 @@
  * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer
  * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
  * do (`said`). **Inspect**, beside it, shows the page of that test at each of its calls under the image
- * (`DesktopRunLaneInspect`), which the app's server reads from the test's own trace while the window has it open
- * (`setInspect`), following the lane's next tests, until it is turned off, the lane is no longer watched or the card
- * goes.
+ * (`DesktopRunLaneInspect`), which the app's server reads from the test's own trace while it shows (`setInspect`),
+ * following the lane's next tests, until it is turned off or the lane is no longer watched.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -266,21 +265,16 @@ async function openTrace(): Promise<void> {
 /** Inspect is open on the lane: the server reads its running test's pages from its own trace. */
 const inspecting = computed(() => !!hub.inspectOf(runRef.value, lane.value));
 
-/** Opens Inspect on the lane, or closes it; a refusal shows under the test as the worker's other answers do. */
+/**
+ * Opens Inspect on the lane, or closes it; a refusal shows under the test as the worker's other answers do. It closes
+ * with the lane's watch too (`useDesktopRunHub`).
+ */
 async function toggleInspect(): Promise<void> {
   const on = !inspecting.value;
   if (on && !traceable.value) return;
   const answer = await hub.setInspect(runRef.value, lane.value, on);
   if (!answer.ok) emit('said', answer, {});
 }
-
-// Inspect goes with the lane's watch, and with the card.
-watch(watched, (on) => {
-  if (!on && inspecting.value) void hub.setInspect(runRef.value, lane.value, false);
-});
-onBeforeUnmount(() => {
-  if (inspecting.value) void hub.setInspect(runRef.value, lane.value, false);
-});
 
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
