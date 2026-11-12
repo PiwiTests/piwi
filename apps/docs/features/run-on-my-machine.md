@@ -9,7 +9,7 @@ lang: en-US
 <Needs admin />
 
 Run on my machine lets a signed-in person ask the desktop app or [Piwi Runner](./piwi-runner) on their own machine to
-run tests they found on the dashboard. The instance carries the request; the app asks them before every run, in its own window, and runs the tests
+run tests they found on the dashboard; either one is enough. The instance carries the request; the app asks them before every run, in its own window, and runs the tests
 in their own folder. The run it starts reports back to the instance as a **requested run**: theirs alone, and kept
 out of everything the team sees.
 
