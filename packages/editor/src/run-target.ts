@@ -404,6 +404,16 @@ export function useLocalRuns(folders: readonly string[]): void {
   if (changed) void planWaiting();
 }
 
+/** The folders the shell links now, each with the id of the instance's project it is linked to. */
+export function linkedFolders(): { id: number; path: string }[] {
+  return [...state.links].map(([id, folder]) => ({ id, path: folder }));
+}
+
+/** The name the instance gave its project `id`; null while it gave none. */
+export function projectNameOf(id: number): string | null {
+  return state.projectNames.get(id) ?? null;
+}
+
 /** The folders the shell links changed. */
 export function useLinks(links: Map<number, string>): void {
   state.links = links;

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '../../app/utils/status-palette';
+import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '@piwitests/run-ui/status-palette';
 import { endedAtStopMark, formatExecutionStatus, statusChipLabel } from '../../app/utils/index';
 
 describe('statusPaletteKey', () => {
@@ -66,8 +66,8 @@ describe('STATUS_PALETTE', () => {
     }
   });
 
-  test('every entry has its token defined in main.css', () => {
-    const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
+  test('every entry has its token defined in run-ui.css', () => {
+    const css = readFileSync(new URL('../../../../packages/run-ui/app/assets/css/run-ui.css', import.meta.url), 'utf8');
     for (const key of Object.keys(STATUS_PALETTE)) expect(css).toContain(`--color-status-${key}:`);
   });
 

@@ -1,22 +1,21 @@
 ---
 title: Run on my machine
-description: 'Ask the desktop app on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone.'
+description: 'Ask the desktop app or Piwi Runner on your own machine to run Playwright tests from the dashboard: who may ask, how an administrator turns it on, Connected apps, and why a requested run is yours alone.'
 lang: en-US
 ---
 
 # Run on my machine
 
-<Needs desktop admin />
+<Needs admin />
 
-Run on my machine lets a signed-in person ask the desktop app on their own machine to run tests they found on the
-dashboard. The instance carries the request; the app asks them before every run, in its own window, and runs the tests
+Run on my machine lets a signed-in person ask the desktop app or [Piwi Runner](./piwi-runner) on their own machine to
+run tests they found on the dashboard; either one is enough. The instance carries the request; the app asks them before every run, in its own window, and runs the tests
 in their own folder. The run it starts reports back to the instance as a **requested run**: theirs alone, and kept
 out of everything the team sees.
 
 ## Experimental
 
-**Experimental.** Run on my machine is off by default, and only the desktop app takes requests in this release. The
-design is in the
+**Experimental.** Run on my machine is off by default. The design is in the
 [Run on my machine design record](https://github.com/PiwiTests/piwi/blob/main/proposals/run-on-my-machine.md).
 
 ## Turn it on

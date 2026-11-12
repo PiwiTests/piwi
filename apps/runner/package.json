@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@nuxt/ui": "^4.12.0",
+    "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@vueuse/nuxt": "^15.0.0",
     "nuxt": "^4.6.4"

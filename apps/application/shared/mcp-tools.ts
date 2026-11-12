@@ -860,7 +860,11 @@ export const MCP_TOOL_DEFS = [
           type: 'number',
           description: 'The cluster id, the execution (testRunsCaseId) or the bug report id',
         },
-        title: { type: 'string', description: 'Optional issue title; defaults to the cluster name' },
+        title: {
+          type: 'string',
+          description:
+            "Optional issue title; defaults to the cluster name. The project's title prefix (its Issue tracker setting) is put in front of it unless it already starts with it",
+        },
         includeDiagnosis: {
           type: 'boolean',
           description: 'Include the AI diagnosis summary and root cause (default true)',

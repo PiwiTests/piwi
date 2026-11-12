@@ -1,0 +1,424 @@
+/**
+ * The run page's Video tab: where a test sits in its recorded video, and the reels the tab plays.
+ *
+ * A Playwright video starts when the page is created, not when the test does, so the test's clock is mapped onto the
+ * video's. A reel is the final attempts of a run in the order the tab plays them. Pure, so the server, the demo and the
+ * page share them.
+ */
+import { compareWorkers, shownWorkerNumber, workerKey } from './worker-lane';
+
+/** How long before the end of the `Create page` step the recording starts. */
+export const VIDEO_ANCHOR_OFFSET_MS = 55;
+/** How far a mapped time may sit from the frame that shows it: the spread between the runs that measured the anchor. */
+export const VIDEO_TIMING_TOLERANCE_MS = 60;
+
+/** The executions with a video, and the executions with none, that the run's video list holds at most each. */
+export const MAX_LISTED_EXECUTIONS = 2000;
+
+/** The title of the step Playwright runs to create the page a video records. */
+const CREATE_PAGE_STEP = 'Create page';
+
+/** A stored step, as far as the timing map reads it. */
+export interface TimingStep {
+  title: string;
+  startTime?: number | null;
+  duration?: number | null;
+}
+
+/** When the first `Create page` step of an execution ended (epoch ms), or null when the steps hold none. */
+export function createPageEndMs(steps: readonly TimingStep[] | null | undefined): number | null {
+  let end: number | null = null;
+  let start = Infinity;
+  for (const step of steps ?? []) {
+    if (step.title !== CREATE_PAGE_STEP) continue;
+    if (typeof step.startTime !== 'number' || typeof step.duration !== 'number') continue;
+    if (step.startTime < start) {
+      start = step.startTime;
+      end = step.startTime + step.duration;
+    }
+  }
+  return end;
+}
+
+/** What the timing map reads of an execution. */
+export interface VideoTimingInput {
+  /** When the test started, epoch ms; null when the reporter sent none. */
+  startedAtMs: number | null;
+  /** The test's duration in ms; null when none was recorded. */
+  durationMs: number | null;
+  /** The end of its `Create page` step, epoch ms, from `createPageEndMs`; null when there is none. */
+  createPageEndMs: number | null;
+}
+
+export interface VideoTimingMap {
+  /** `create-page`: anchored on the end of the `Create page` step. `start`: on the test's start, which can be a browser launch early. */
+  source: 'create-page' | 'start';
+  /** The epoch ms the video's first frame shows. */
+  videoStartMs: number;
+  /** When the test started and ended, epoch ms. */
+  testStartMs: number;
+  testEndMs: number;
+  /** The video time of an epoch ms, held to `[0, the video's length]`. */
+  toVideoMs: (epochMs: number) => number;
+}
+
+/** Maps a test's clock onto its video's; `videoDurationMs` is the length of the video once it is known. */
+export function videoTimingMap(input: VideoTimingInput, videoDurationMs?: number | null): VideoTimingMap | null {
+  const testStartMs = input.startedAtMs;
+  if (testStartMs == null) return null;
+  const anchored = input.createPageEndMs != null;
+  const videoStartMs = anchored ? input.createPageEndMs! - VIDEO_ANCHOR_OFFSET_MS : testStartMs;
+  const limit = videoDurationMs != null && videoDurationMs >= 0 ? videoDurationMs : Infinity;
+  return {
+    source: anchored ? 'create-page' : 'start',
+    videoStartMs,
+    testStartMs,
+    testEndMs: testStartMs + Math.max(0, input.durationMs ?? 0),
+    toVideoMs: (epochMs) => Math.min(limit, Math.max(0, epochMs - videoStartMs)),
+  };
+}
+
+/** Where a test starts and ends in its video, in ms; the test's end is not the file's, which holds a frozen tail. */
+export function testSpanInVideo(map: VideoTimingMap): { startMs: number; endMs: number } {
+  return { startMs: map.toVideoMs(map.testStartMs), endMs: map.toVideoMs(map.testEndMs) };
+}
+
+/** The video an execution attached. */
+export interface ReelVideo {
+  id: number;
+  path: string;
+  contentType: string;
+  size: number | null;
+}
+
+/** An execution of a run, as `GET /api/test-runs/:id/videos` lists it. */
+export interface ReelExecution {
+  executionId: number;
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  line: number | null;
+  column: number | null;
+  status: string;
+  /** The retry this attempt was, 0 for the first. */
+  retries: number;
+  repeatEachIndex: number;
+  browserName: string | null;
+  passedAfterFailure: boolean;
+  shardIndex: number | null;
+  parallelIndex: number | null;
+  workerIndex: number | null;
+  startedAt: number | null;
+  durationMs: number | null;
+  createPageEndMs: number | null;
+  video: ReelVideo | null;
+}
+
+export type ReelGroup = 'worker' | 'file';
+
+export interface ReelEntry {
+  execution: ReelExecution;
+  /** The worker it ran on (`Worker 2`), null when the result names none. */
+  laneLabel: string | null;
+  /**
+   * The video plays up to here, in ms: where the test ends in it. 0 for a test with no video, and for one whose span
+   * in its video is unknown (no start time, or a span that maps to nothing): `entryEndMs` plays the whole video then.
+   */
+  lengthMs: number;
+  /** Where the entry starts on the reel, in ms of playing time. */
+  reelStartMs: number;
+  /** Listed for context only: another test of the file beside the one in focus. It has no video here and never ticks. */
+  context?: true;
+}
+
+export interface Reel {
+  key: string;
+  label: string;
+  entries: ReelEntry[];
+  /** Entries with a video. */
+  videoCount: number;
+  /** The playing time of the reel, in ms. */
+  totalMs: number;
+  hasFailure: boolean;
+}
+
+/** An execution a reel lists: one that ran. */
+function ran(execution: ReelExecution): boolean {
+  return execution.status !== 'skipped' && execution.status !== 'didnotrun';
+}
+
+/** The key a test result is told apart by: the test case, its browser project and its repetition. */
+function resultKey(execution: ReelExecution): string {
+  return `${execution.testCaseId}\x00${execution.browserName ?? ''}\x00${execution.repeatEachIndex}`;
+}
+
+/** The final attempt of each test result: the highest retry of a test case, browser project and repetition. */
+function finalAttempts(executions: readonly ReelExecution[]): ReelExecution[] {
+  const finals = new Map<string, ReelExecution>();
+  for (const execution of executions) {
+    const key = resultKey(execution);
+    const earlier = finals.get(key);
+    if (!earlier || execution.retries >= earlier.retries) finals.set(key, execution);
+  }
+  return [...finals.values()];
+}
+
+function entryFor(execution: ReelExecution): Omit<ReelEntry, 'reelStartMs'> {
+  const worker = shownWorkerNumber(execution);
+  const laneLabel =
+    worker == null ? null : `Worker ${worker}${execution.shardIndex != null ? ` (shard ${execution.shardIndex})` : ''}`;
+  const map = execution.video
+    ? videoTimingMap({
+        startedAtMs: execution.startedAt,
+        durationMs: execution.durationMs,
+        createPageEndMs: execution.createPageEndMs,
+      })
+    : null;
+  return { execution, laneLabel, lengthMs: map ? testSpanInVideo(map).endMs : 0 };
+}
+
+/**
+ * Where an entry's video stops playing, in ms of video: the end of its test, held to the video's length once that is
+ * known (`videoLengthMs`). A video whose test span is unknown plays whole, so it is 0 until the length is known.
+ */
+export function entryEndMs(entry: Pick<ReelEntry, 'execution' | 'lengthMs'>, videoLengthMs?: number | null): number {
+  if (!entry.execution.video) return 0;
+  const length = videoLengthMs != null && videoLengthMs >= 0 ? videoLengthMs : Infinity;
+  if (entry.lengthMs > 0) return Math.min(entry.lengthMs, length);
+  return Number.isFinite(length) ? length : 0;
+}
+
+/** Puts the entries on one reel, each starting where the one before ends; `context` are the ones only listed. */
+function toReel(key: string, label: string, executions: ReelExecution[], context?: ReadonlySet<number>): Reel {
+  let at = 0;
+  const entries = executions.map((execution): ReelEntry => {
+    const listedOnly = context?.has(execution.executionId) === true;
+    const entry: ReelEntry = {
+      ...entryFor(listedOnly ? { ...execution, video: null } : execution),
+      reelStartMs: at,
+      ...(listedOnly ? { context: true as const } : {}),
+    };
+    at += entry.lengthMs;
+    return entry;
+  });
+  return {
+    key,
+    label,
+    entries,
+    videoCount: entries.filter((e) => e.execution.video).length,
+    totalMs: at,
+    hasFailure: entries.some((e) => statusIsFailure(e.execution.status)),
+  };
+}
+
+function statusIsFailure(status: string): boolean {
+  return status === 'failed' || status === 'timedout' || status === 'timedOut';
+}
+
+/** Order by when the tests started, then by id for the ones that did not say. */
+function byStart(a: ReelExecution, b: ReelExecution): number {
+  return (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity) || a.executionId - b.executionId;
+}
+
+/** Order the way the spec files declare the tests: file, then line, then column. */
+function byDeclaration(a: ReelExecution, b: ReelExecution): number {
+  return (
+    a.filePath.localeCompare(b.filePath) ||
+    (a.line ?? 0) - (b.line ?? 0) ||
+    (a.column ?? 0) - (b.column ?? 0) ||
+    a.title.localeCompare(b.title) ||
+    a.executionId - b.executionId
+  );
+}
+
+/**
+ * The reels of a run: its final attempts that ran, an earlier attempt of a retried test never among them.
+ * `worker`: one reel per worker lane, each test after the one before it on that worker, in the order they ran. `file`:
+ * one reel, every test in the order its file declares, each tagged with its worker. A test with no video stays on the
+ * reel as an entry that takes no playing time.
+ */
+export function buildReel(executions: readonly ReelExecution[], group: ReelGroup): Reel[] {
+  const finals = finalAttempts(executions).filter(ran);
+  if (finals.length === 0) return [];
+  if (group === 'file') return [toReel('file', 'All files', finals.sort(byDeclaration))];
+
+  const lanes = new Map<string, ReelExecution[]>();
+  for (const execution of finals) {
+    const key = workerKey(execution) ?? 'none';
+    const lane = lanes.get(key);
+    if (lane) lane.push(execution);
+    else lanes.set(key, [execution]);
+  }
+  return [...lanes.entries()]
+    .sort(([, a], [, b]) => compareWorkers(a[0]!, b[0]!))
+    .map(([key, lane]) => {
+      lane.sort(byStart);
+      return toReel(key, entryFor(lane[0]!).laneLabel ?? 'No worker', lane);
+    });
+}
+
+/** What a reel around one test shows: its test only (with the file's other tests dimmed), its file, or its worker. */
+export type FocusMode = 'test' | 'file' | 'worker';
+
+/**
+ * Why a reel of the file or the worker cannot be built around an execution: `earlier-attempt` when the run's final
+ * attempt of the test is another execution (only final attempts are on those reels), `did-not-run` when the execution
+ * is its test's final attempt but the test was skipped or did not run (those reels list only tests that ran),
+ * `not-listed` when the run's list holds neither (it was cut at `MAX_LISTED_EXECUTIONS`). Null when both can be built.
+ */
+export type FocusLimit = 'earlier-attempt' | 'did-not-run' | 'not-listed';
+
+/** The execution on show, as `GET /api/test-run-cases/:id` returns it: what a reel entry needs of it. */
+export interface FocusDetail {
+  id: number;
+  testCaseId: number;
+  title: string;
+  filePath: string | null;
+  line: number | null;
+  column?: number | null;
+  status: string;
+  retries: number | null;
+  /** The Playwright project and repetition of the attempt: with `testCaseId`, they name the result it belongs to. */
+  browserName?: string | null;
+  repeatEachIndex?: number | null;
+  passedAfterFailure: boolean;
+  shardIndex: number | null;
+  parallelIndex: number | null;
+  workerIndex: number | null;
+  startedAt: number | null;
+  duration: number | null;
+  steps: readonly TimingStep[] | null;
+}
+
+/**
+ * The execution on show as a reel execution. The run's video list holds the final attempts, so the execution itself
+ * is taken from it when it is there, with the server's choice of video. An earlier attempt is not, nor is a test the
+ * list was cut before: it is built from the detail and its own `video`. Its project, repetition and column are its
+ * own, read from the detail: an earlier attempt's list of attempts ends at itself, so the final attempt cannot be
+ * found through it, and the result key (`resultKey`) must match the final attempt's in a run of named projects.
+ */
+export function focusExecution(
+  detail: FocusDetail,
+  video: ReelVideo,
+  executions: readonly ReelExecution[],
+): ReelExecution {
+  const listed = executions.find((e) => e.executionId === detail.id);
+  if (listed) return listed;
+  return {
+    executionId: detail.id,
+    testCaseId: detail.testCaseId,
+    title: detail.title,
+    filePath: detail.filePath ?? '',
+    line: detail.line,
+    column: detail.column ?? null,
+    status: detail.status,
+    retries: detail.retries ?? 0,
+    repeatEachIndex: detail.repeatEachIndex ?? 0,
+    browserName: detail.browserName ?? null,
+    passedAfterFailure: detail.passedAfterFailure,
+    shardIndex: detail.shardIndex,
+    parallelIndex: detail.parallelIndex,
+    workerIndex: detail.workerIndex,
+    startedAt: detail.startedAt,
+    durationMs: detail.duration,
+    createPageEndMs: createPageEndMs(detail.steps),
+    video,
+  };
+}
+
+/**
+ * A `focusExecution` that hands back the same object for the same execution and video, however often the page
+ * re-reads the detail: a new object makes a new reel, and a new reel starts the player over.
+ */
+export function createFocusMemo(): typeof focusExecution {
+  let last: { id: number; videoPath: string; built: ReelExecution } | null = null;
+  return (detail, video, executions) => {
+    const listed = executions.find((e) => e.executionId === detail.id);
+    if (listed) return listed;
+    if (last?.id === detail.id && last.videoPath === video.path) return last.built;
+    const built = focusExecution(detail, video, executions);
+    last = { id: detail.id, videoPath: video.path, built };
+    return built;
+  };
+}
+
+/**
+ * Whether `focus` is on the run's final-attempt reels, which hold the tests that ran. `executions` is
+ * `GET /api/test-runs/:id/videos`; `focus` is the execution on show, which that list lacks when it is an earlier
+ * attempt or when the list was cut.
+ */
+export function focusLimit(executions: readonly ReelExecution[], focus: ReelExecution): FocusLimit | null {
+  const final = finalAttempts(executions).find((e) => e.executionId === focus.executionId);
+  if (final) return ran(final) ? null : 'did-not-run';
+  const key = resultKey(focus);
+  return executions.some((e) => resultKey(e) === key && e.retries > focus.retries) ? 'earlier-attempt' : 'not-listed';
+}
+
+export interface FocusedReel {
+  reel: Reel;
+  /** The entry of the execution in focus: where the playhead starts, and the one tagged "This test". */
+  focusIndex: number;
+}
+
+/**
+ * The reel to review one execution in. `test`: the execution's own video, whichever attempt it is, with the other
+ * final attempts of its file listed after their declared order as context, not played. `file`: the file's final
+ * attempts in declared order. `worker`: the reel of the execution's parallel slot (and shard), as the run's Video tab
+ * builds it. Null when the mode needs the execution on a final-attempt reel (`focusLimit`) or the execution has no
+ * video to play.
+ */
+export function focusReel(
+  executions: readonly ReelExecution[],
+  focus: ReelExecution,
+  mode: FocusMode,
+): FocusedReel | null {
+  if (!focus.video) return null;
+  const finals = finalAttempts(executions).filter(ran);
+  if (mode === 'worker') {
+    const reel = buildReel(executions, 'worker').find((r) =>
+      r.entries.some((e) => e.execution.executionId === focus.executionId),
+    );
+    const focusIndex = reel?.entries.findIndex((e) => e.execution.executionId === focus.executionId) ?? -1;
+    return reel && focusIndex >= 0 ? { reel, focusIndex } : null;
+  }
+  const sameFile = finals.filter((e) => e.filePath === focus.filePath);
+  if (mode === 'file') {
+    const list = sameFile.sort(byDeclaration);
+    const focusIndex = list.findIndex((e) => e.executionId === focus.executionId);
+    return focusIndex < 0 ? null : { reel: toReel('file', focus.filePath, list), focusIndex };
+  }
+  // This test: the execution in focus stands in for the final attempt of its own result, or joins the list when
+  // the run's list holds none (it was cut).
+  const key = resultKey(focus);
+  const list = [...sameFile.filter((e) => resultKey(e) !== key), focus].sort(byDeclaration);
+  const context = new Set(list.filter((e) => e.executionId !== focus.executionId).map((e) => e.executionId));
+  return { reel: toReel('test', 'This test', list, context), focusIndex: list.findIndex((e) => e === focus) };
+}
+
+/** Where playback stands: the entry a video plays, and how far into it, in ms of video. */
+export interface ReelCursor {
+  index: number;
+  videoMs: number;
+  /** Where the playing test ends in its video once the video's length is known; else the entry's `lengthMs`. */
+  endMs?: number;
+}
+
+/**
+ * Whether each entry is ticked at the cursor: every entry from `from` up to the playing one, and the playing one once
+ * its video passes the end of the test. An entry with no video takes no playing time, so it ticks with the entry
+ * before it. Null before playback has begun: nothing is ticked. `from` is the first entry the playback has been at: a
+ * reel that starts at one of its tests has not played the ones before it, so they do not tick.
+ */
+export function tickedEntries(reel: Reel, cursor: ReelCursor | null, from = 0): boolean[] {
+  const ticked: boolean[] = [];
+  reel.entries.forEach((entry, i) => {
+    if (cursor == null || entry.context || i < from) ticked.push(false);
+    else if (i < cursor.index) ticked.push(true);
+    else if (entry.execution.video == null) ticked.push(i === 0 || ticked[i - 1]!);
+    else {
+      const end = cursor.endMs ?? entry.lengthMs;
+      ticked.push(i === cursor.index && end > 0 && cursor.videoMs >= end);
+    }
+  });
+  return ticked;
+}

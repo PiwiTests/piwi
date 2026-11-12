@@ -58,7 +58,14 @@ import {
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
 } from '../shared/demo/demo-test-management.mjs';
-import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import {
+  demoTestMeta,
+  demoTags,
+  demoLocks,
+  demoExternalId,
+  buildAiUsage,
+  DEMO_JIRA_ISSUES,
+} from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
@@ -2820,6 +2827,30 @@ for (const shot of PASSING_SCREENSHOTS) {
   }
 }
 
+// The newest run of the first project keeps its video on the short passing and failing tests, as a suite
+// that records every test does, so the run page's Video tab has reels on several worker lanes. The long
+// failing tests keep none, which shows the tests a reel steps over. Attached last for the same reason.
+{
+  const run = TEST_RUNS.find((r) => r.project_id === 1);
+  const clips = ['checkout-pay-timeout.webm', 'mobile-nav-timeout.webm', 'button-strict-mode.webm'];
+  const MAX_CLIP_TEST_MS = 6000;
+  const recorded = TEST_RUNS_CASES.filter(
+    (t) =>
+      t.test_run_id === run?.id &&
+      (t.status === 'passed' || t.status === 'failed') &&
+      (t.retries ?? 0) === 0 &&
+      t.duration <= MAX_CLIP_TEST_MS,
+  ).sort((a, b) => a.started_at - b.started_at || a.id - b.id);
+  recorded.forEach((trc, i) => {
+    attach(trc, {
+      type: 'attachment',
+      subtype: 'video',
+      label: 'video/webm',
+      relPath: `demo/videos/${clips[i % clips.length]}`,
+    });
+  });
+}
+
 // ── Build failure_clusters rows ────────────────────────────────────────────
 
 // Runs are generated newest-first (index 0 is the newest, ids descend as time
@@ -3561,7 +3592,7 @@ const ENTITY_LINKS = [
     url: 'https://demo.atlassian.net/browse/DEMO-42',
     provider: 'jira',
     key: 'DEMO-42',
-    title: 'Login returns 500 when verifyCredentials finds no user',
+    title: '[Piwi] Login returns 500 when verifyCredentials finds no user',
     status_text: 'In Progress',
     status_color: 'warning',
     metadata: { statusCategory: 'indeterminate', assignee: 'David Lee' },
@@ -3574,6 +3605,64 @@ const ENTITY_LINKS = [
     updated_at: ts('2025-04-25T08:00:00') * 1000,
   },
 ];
+
+// The links the link step writes when a run fails into a cluster, for the issues its tests name. The Apple Pay
+// checkout's `piwi:issue` annotation (`demoTestMeta`) names DEMO-57 and DEMO-61, issues of the bound DEMO project the
+// demo's Jira knows (`DEMO_JIRA_ISSUES`), linked read-only with the test as their source into cluster 2; DEMO-64 is not
+// in Jira, so the cluster's links end with *and 1 more named by its tests*. DEMO-61 is Done, so the known issue is
+// DEMO-57, the oldest one still open. The PayPal and credit card checkouts name DEMO-52 and DEMO-53 in tags the
+// project's issue key pattern matches (`demoTags`) into cluster 1: DEMO-52 is a Bug, the binding's issue type, so it
+// is linked with the tag as its source, and DEMO-53 is a Task, so cluster 1 neither links nor counts it, since keys the
+// type filter drops stay out of the count. No connection row backs them, like DEMO-42.
+{
+  const demoIssue = (key) => DEMO_JIRA_ISSUES.find((issue) => issue.key === key);
+  const seedDeclaredLink = ({ clusterId, key, origin, title, source, offset }) => {
+    const issue = demoIssue(key);
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const testCaseId = caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+    // Linked when the test's latest run failed into the cluster finished.
+    const linkedAt =
+      (latestTrc(testCaseId, (t) => t.failure_cluster_id === clusterId)?.started_at ?? cluster.updated_at * 1000) +
+      offset;
+    ENTITY_LINKS.push({
+      id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
+      failure_cluster_id: clusterId,
+      url: `https://demo.atlassian.net/browse/${issue.key}`,
+      provider: 'jira',
+      key: issue.key,
+      title: issue.title,
+      status_text: issue.status,
+      status_color: issue.statusColor,
+      metadata: { statusCategory: issue.statusCategory, source: { testCaseId, ...source } },
+      unfurled_at: linkedAt,
+      connection_id: null,
+      external_id: issue.id,
+      origin,
+      created_by: null,
+      created_at: linkedAt,
+      updated_at: linkedAt,
+    });
+  };
+  ['DEMO-57', 'DEMO-61'].forEach((key, offset) =>
+    seedDeclaredLink({
+      clusterId: 2,
+      key,
+      origin: 'annotation',
+      title: 'should complete checkout with Apple Pay',
+      source: {},
+      offset,
+    }),
+  );
+  FAILURE_CLUSTERS.find((c) => c.id === 2).declared_issues_more = 1;
+  seedDeclaredLink({
+    clusterId: 1,
+    key: 'DEMO-52',
+    origin: 'tag',
+    title: 'should complete checkout with PayPal',
+    source: { tag: '@DEMO-52' },
+    offset: 0,
+  });
+}
 
 // ── Users, groups & role bindings ───────────────────────────────────────────
 // Seed the canonical demo identities and groups so the access model is usable
@@ -5803,7 +5892,7 @@ const REBASE_SQL = [
     `WHERE json_extract(result, '$.uploadStartedAt') IS NOT NULL;`,
   `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS} ` +
     `WHERE json_extract(result, '$.uploadStartedAt') IS NULL;`,
-  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, unfurled_at = unfurled_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,

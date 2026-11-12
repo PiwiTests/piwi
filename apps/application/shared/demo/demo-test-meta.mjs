@@ -41,8 +41,67 @@ export function demoTestMeta(filePath, index) {
   // everything is critical teaches nothing about filtering.
   if (match.owner === '@checkout-team') meta.priority = index === 0 ? 'critical' : 'high';
   else if (index === 0) meta.priority = 'medium';
+  const issues = DEMO_DECLARED_ISSUES.get(`${filePath}#${index}`);
+  if (issues) meta.issues = [...issues];
   return meta;
 }
+
+/**
+ * The issues a demo test names with `piwi:issue`, keyed by spec and case index: the Apple Pay checkout names two
+ * issues of the bound DEMO project the demo's Jira knows ({@link DEMO_JIRA_ISSUES}) and one it does not, so its
+ * cluster shows the links from the tests and the *and 1 more* line.
+ */
+const DEMO_DECLARED_ISSUES = new Map([
+  ['tests/checkout/checkout.spec.ts#2', ['DEMO-57', 'https://demo.atlassian.net/browse/DEMO-61', 'DEMO-64']],
+]);
+
+/**
+ * The issues the demo's Jira answers a lookup of the keys the tests name with, as the bulk lookup returns them. The
+ * seed links them as the link step would, and a simulated run that fails into the cluster looks them up here. The
+ * demo binding's issue type is Bug (id 1), the only type the tag source links.
+ */
+export const DEMO_JIRA_ISSUES = [
+  {
+    key: 'DEMO-57',
+    id: '10057',
+    title: 'Apple Pay sheet drops the contact email on the checkout page',
+    status: 'In Progress',
+    statusColor: 'warning',
+    statusCategory: 'indeterminate',
+    issueType: 'Bug',
+    issueTypeId: '1',
+  },
+  {
+    key: 'DEMO-61',
+    id: '10061',
+    title: 'Checkout contact form: move the email field into its own group',
+    status: 'Done',
+    statusColor: 'success',
+    statusCategory: 'done',
+    issueType: 'Bug',
+    issueTypeId: '1',
+  },
+  {
+    key: 'DEMO-52',
+    id: '10052',
+    title: 'Pay button stays disabled until the PayPal sheet has loaded',
+    status: 'To Do',
+    statusColor: 'info',
+    statusCategory: 'new',
+    issueType: 'Bug',
+    issueTypeId: '1',
+  },
+  {
+    key: 'DEMO-53',
+    id: '10053',
+    title: 'Document the payment timeout in the checkout runbook',
+    status: 'To Do',
+    statusColor: 'info',
+    statusCategory: 'new',
+    issueType: 'Task',
+    issueTypeId: '2',
+  },
+];
 
 /** The checkout specs' numbers in the demo's test management tool, for their external IDs. */
 const DEMO_EXTERNAL_ID_FILES = new Map([
@@ -66,6 +125,12 @@ export function demoTags(filePath, index) {
   const tags = [];
   if (index === 0) tags.push('smoke');
   if (/\/checkout\//.test(`/${filePath}`)) tags.push('critical');
+  // Issues of the bound DEMO project named in tags, read by the project's issue key pattern: the tag source links
+  // DEMO-52, a Bug, and not DEMO-53, a Task.
+  if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
+    if (index === 0) tags.push('DEMO-53');
+    if (index === 1) tags.push('DEMO-52');
+  }
   if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
     if (index === 1) tags.push('SHOP-1234');
     if (index === 2) tags.push('SHOP-T123');

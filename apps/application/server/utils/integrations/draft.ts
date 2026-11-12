@@ -33,7 +33,7 @@ import {
 import { resolveLinkEntityProjectId } from '../project-access';
 import { draftShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
-import { bindingRowToResolved } from './binding';
+import { bindingRowToResolved, bindingTitlePrefix } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
 import { resolveClusterOwner } from './owner';
 import { findFixedBefore } from '../cluster-memory';
@@ -208,21 +208,19 @@ export async function buildIssueDraft(
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const include = { ...resolved.include, ...(opts.include ?? {}) };
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
+  const buildOpts = {
+    ...include,
+    locale,
+    siteUrl: opts.siteUrl,
+    mintShareToken: draftShareTokenMinter,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  };
 
   const built: BuiltClusterIssue | null =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, {
-          ...include,
-          locale,
-          siteUrl: opts.siteUrl,
-          mintShareToken: draftShareTokenMinter,
-        })
-      : await buildExecutionIssue(db, entityId, {
-          ...include,
-          locale,
-          siteUrl: opts.siteUrl,
-          mintShareToken: draftShareTokenMinter,
-        });
+      ? await buildClusterIssue(db, entityId, buildOpts)
+      : await buildExecutionIssue(db, entityId, buildOpts);
   if (!built) return null;
 
   // The cluster's effective owner picks the first matching route; its overrides
@@ -301,7 +299,12 @@ async function buildRunDraft(
   const chosenId = boundConnection(connections, resolved);
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
-  const buildOpts = { locale, siteUrl: opts.siteUrl, filedBy: opts.filedBy ?? null };
+  const buildOpts = {
+    locale,
+    siteUrl: opts.siteUrl,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  };
   const built =
     entityType === 'test_run'
       ? await buildRunIssue(db, entityId, buildOpts)
@@ -356,7 +359,12 @@ async function buildBugReportDraft(
   const chosenId = boundConnection(connections, resolved);
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
-  const built = await buildBugReportIssue(db, bugReportId, { locale, siteUrl: opts.siteUrl });
+  const built = await buildBugReportIssue(db, bugReportId, {
+    locale,
+    siteUrl: opts.siteUrl,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  });
   if (!built) return null;
   const linked = await db
     .select()

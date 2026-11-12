@@ -84,7 +84,7 @@ export function isBrowserRequest(event: H3Event): boolean {
 }
 
 /** What the shared guard reads of a request: its headers and cookies. */
-function hostRequestOf(event: H3Event): HostRequest {
+export function hostRequestOf(event: H3Event): HostRequest {
   const headers = headersOf(event.node.req.headers);
   return { headers, cookies: cookiesOf(headers.cookie) };
 }

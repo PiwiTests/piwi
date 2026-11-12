@@ -6,7 +6,7 @@ import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { endedAtStopIn } from '@piwitests/core/run-channel';
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
-import { renderAnsi } from '~/utils';
+import { renderAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
 import { buildRetryCommand } from '~/utils/retry-command';

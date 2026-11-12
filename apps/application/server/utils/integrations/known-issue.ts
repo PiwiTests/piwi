@@ -1,14 +1,15 @@
 /**
  * The tracker issue a cluster is already known by, if any — the join every
  * surface that "carries the key" reads: the notifications, the PR feedback
- * comment, the fix plan, and the MCP outputs. A cluster's known issue is the
- * newest tracker link pinned to it (or created for it) that has a key.
+ * comment, the fix plan, and the MCP outputs. A cluster's known issue is its
+ * tracker link when it has one, else a link its tests declared
+ * (`clusterKnownIssues`).
  */
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { entityLinks } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
-import { clusterKnownIssues, isTrackerLink } from '#shared/handlers/known-issues';
+import { clusterKnownIssues, isDeclaredLink, isTrackerLink } from '#shared/handlers/known-issues';
 
 export interface KnownIssue {
   key: string;
@@ -18,8 +19,9 @@ export interface KnownIssue {
 
 /**
  * The cluster's tracker link — the newest link with a key that Piwi can write
- * back through (a Jira link, or any link that carries a `connection_id`). The
- * full row, for the sync task and the policies that comment and transition.
+ * back through (a Jira link, or any link that carries a `connection_id`), pinned
+ * or created: a link the tests declared is never written to. The full row, for
+ * the policies that comment and transition.
  */
 export async function getClusterTrackerLink(db: DbClient, clusterId: number): Promise<EntityLink | null> {
   const links = await db
@@ -27,14 +29,13 @@ export async function getClusterTrackerLink(db: DbClient, clusterId: number): Pr
     .from(entityLinks)
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
-  return links.find(isTrackerLink) ?? null;
+  return links.find((link) => isTrackerLink(link) && !isDeclaredLink(link)) ?? null;
 }
 
 /** The cluster's known tracker issue, or null. */
 export async function getClusterKnownIssue(db: DbClient, clusterId: number): Promise<KnownIssue | null> {
-  const link = await getClusterTrackerLink(db, clusterId);
-  if (!link?.key) return null;
-  return { key: link.key, url: link.url, status: link.statusText ?? null };
+  const issue = (await clusterKnownIssues(db, [clusterId])).get(clusterId);
+  return issue ? { key: issue.key, url: issue.url, status: issue.status } : null;
 }
 
 /** Known issues for several clusters at once, keyed by cluster id. */

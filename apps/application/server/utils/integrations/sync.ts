@@ -15,7 +15,8 @@
  * person reopened or that regressed under a closed ticket is not pulled back on
  * every sweep; a regressed cluster is never closed by its ticket. Each move is
  * one conditional write, so a person's triage made while the tracker answered
- * is never overwritten.
+ * is never overwritten. A link the tests declared is refreshed but never moves
+ * its cluster.
  * Work is bounded per sweep and a connection's failure is recorded on its
  * `last_error` rather than failing the whole sweep.
  */
@@ -30,6 +31,7 @@ import { readProjectIntegration } from './binding';
 import { linksOnBoundConnection } from './bound-connection';
 import { updateEntityLinkStatus, mergeEntityLinkMetadata } from './entity-links';
 import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
+import { isDeclaredLink } from '#shared/handlers/known-issues';
 import { SYNC_BATCH_LIMIT, isLinkRefreshDue } from '#shared/integrations/sync-config';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 
@@ -71,7 +73,10 @@ async function recordConnectionError(db: DbClient, connectionId: number, message
     .where(eq(integrationConnections.id, connectionId));
 }
 
-/** Refresh one link's cached status and drive the resolve/reopen policies. */
+/**
+ * Refresh one link's cached status and drive the resolve/reopen policies. A link the tests declared is refreshed only,
+ * and deleted once its issue moved out of the bound Jira project.
+ */
 async function syncOneLink(
   db: DbClient,
   tracker: IssueTracker,
@@ -83,6 +88,16 @@ async function syncOneLink(
   if (!idOrKey) return;
   const issue = await tracker.getIssue(idOrKey);
   if (!issue) return;
+
+  // A link the tests declared stands only for an issue of the bound project: one moved out of it is dropped.
+  const declared = isDeclaredLink(link);
+  if (declared && cluster && issue.projectKey) {
+    const { projectKey } = await bindingFor(cluster.projectId);
+    if (projectKey && issue.projectKey !== projectKey) {
+      await db.delete(entityLinks).where(eq(entityLinks.id, link.id));
+      return;
+    }
+  }
 
   await updateEntityLinkStatus(db, link.id, {
     title: issue.title,
@@ -103,7 +118,8 @@ async function syncOneLink(
     await syncBugReport(db, link.bugReportId, previousCategory, issue.statusCategory, bindingFor);
     return;
   }
-  if (!cluster) return;
+  // Its status never moves the cluster.
+  if (!cluster || declared) return;
   const move = ticketMove(previousCategory, issue.statusCategory);
   if (!move) return;
   const binding = await bindingFor(cluster.projectId);

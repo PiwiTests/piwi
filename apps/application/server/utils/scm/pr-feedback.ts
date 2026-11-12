@@ -572,9 +572,17 @@ export interface FinishedRunAnalysis {
  * Start a finished run's analysis in the background, whether or not its
  * verdict is posted: the project's scenario gaps, the run's change coverage
  * and the verification of the clusters it fixed, each under its own use. Each
- * step logs its own failure.
+ * step logs its own failure. Fix verification starts once `linked` settles, so
+ * it, and every step that waits on `fixed` (automatic creation, the
+ * pull-request comment), count a cluster just linked to the issue its tests
+ * name as tracked.
  */
-export function analyzeFinishedRunInBackground(db: DbClient, runId: number): FinishedRunAnalysis {
+export function analyzeFinishedRunInBackground(
+  db: DbClient,
+  runId: number,
+  /** Settles once the run's clusters are linked to the issues their tests name; fix verification waits for it. */
+  linked: Promise<unknown> = Promise.resolve(),
+): FinishedRunAnalysis {
   // Recompute the project-wide scenario gaps off the request path, so success-
   // only, single-covering-test and surface-drift gaps and their self-closing
   // stay live on every finished run — not only from the manual recompute.
@@ -587,10 +595,13 @@ export function analyzeFinishedRunInBackground(db: DbClient, runId: number): Fin
     console.error('[change-coverage] computeRunChangeCoverage failed', e);
     return null;
   });
-  const fixed = verifyClusterFixes(db, runId).catch((e) => {
-    console.error('[fix-verification] verifyClusterFixes failed', e);
-    return [] as VerifiedFix[];
-  });
+  const fixed = linked
+    .catch(() => undefined)
+    .then(() => verifyClusterFixes(db, runId))
+    .catch((e) => {
+      console.error('[fix-verification] verifyClusterFixes failed', e);
+      return [] as VerifiedFix[];
+    });
   return { fixed, coverage };
 }
 

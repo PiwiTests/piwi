@@ -945,7 +945,7 @@ async fn run_sidecar(
     keep_stdout: bool,
 ) -> (Option<i32>, String) {
     let mut stdout = String::new();
-    let command = match app.shell().sidecar("node") {
+    let command = match app.shell().sidecar(crate::NODE_SIDECAR) {
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)

@@ -20,6 +20,8 @@ import { mergeEntityLinkMetadata } from './entity-links';
  * or out of it) and its policies act on it. `readable` is the projects the
  * caller can read, for the unfurl (`unfurlLink`). A read through the connection
  * stores the issue's stable id as `externalId`; a failed one keeps the key there.
+ * On a cluster, a link from the tests with the same key is turned into the
+ * pinned one (`createLink`), so the write-backs apply to it.
  */
 export async function createEnrichedLink(
   db: DbClient,

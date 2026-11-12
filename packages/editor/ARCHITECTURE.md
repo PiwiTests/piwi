@@ -147,6 +147,10 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
 - `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
+- `src/shell-runs.ts`, `src/shell-run-events.ts`: the hub of the runs a desktop shell starts, built on it, which the
+  desktop app's server and Piwi Runner's host run, and what its window reads and sends.
+- `src/shell-runs-routes.ts`, `src/shell-runs-http.ts`: that hub's routes, framework-neutral, and on a bare
+  `node:http` host.
 - `src/run-target.ts`, `src/run-target-view.ts`: a run target of one team instance (**Run on my machine**) as a host
   serves it, the desktop app's server on its `/api/desktop/run-target` routes, and what its window shows.
 - `src/run-target-routes.ts`, `src/run-target-http.ts`: those routes, framework-neutral, and on a bare `node:http` host.
@@ -1350,9 +1354,22 @@ tool: a bound browser is open to any process of this user.
 
 ### Another host
 
-The desktop app's server is the hub of the runs its shell starts (`apps/application/server/utils/desktop-runs.ts`).
-It runs these classes through `src/run-host.ts`, with no language server, and wires their callbacks to its own
-surfaces as `server.ts` wires them to the client:
+A desktop shell's host is the hub of the runs its shell starts: `ShellRuns` (`src/shell-runs.ts`) runs these classes
+through `src/run-host.ts`, with no language server, and wires their callbacks to the shell's window as `server.ts`
+wires them to the client. The desktop app's server runs it (`apps/application/server/utils/desktop-runs.ts`, which adds
+the editors' runs it observes and the agents' tools), and so does Piwi Runner's host (`apps/runner/server/main.ts`).
+Each gives it its words (`ShellRunsWords`), the folders its runs run in, and the prefix of its run channel's folder.
+Its routes (`src/shell-runs-routes.ts`) are the run channel the shell reads (`GET /api/desktop/run-channel`, refused
+to a browser), the window's stream and commands (`/api/desktop/runs/events`, `/api/desktop/runs/commands`) and the
+runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone); `tests/shell-runs-routes.test.ts` holds
+them on a bare `node:http` host (`src/shell-runs-http.ts`), and the app's Nitro routes call the same functions. A host
+that does more for its window extends `ShellRuns` through hooks that name no feature of its: `sessionChanged` (a run
+changed, as the hub tells its peers), `relaying` (a hub message on its way to a window's stream), `windowCommand` (a
+window command of a type the hub does not know, answered before `parseHubCommand` reads it), `windowLeft` (a window's
+stream closed) and `sendToWindow` (an event of the host's own, `HostEvent`, to one window), with `close` overridden
+for what it opened. The desktop app's server reads a lane's trace for its window's **Inspect** through them
+(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. The
+pieces it wires:
 
 - `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
   worker of this run is connected to the desktop app.`), and `declines`, the intents the host never starts, refused

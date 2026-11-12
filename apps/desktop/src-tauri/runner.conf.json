@@ -20,7 +20,28 @@
   },
   "bundle": {
     "fileAssociations": null,
-    "windows": { "nsis": { "installerHooks": null } },
+    "linux": {
+      "deb": { "conflicts": null, "replaces": null },
+      "rpm": { "conflicts": null, "obsoletes": null }
+    },
+    "windows": {
+      "wix": {
+        "upgradeCode": null
+      },
+      "nsis": {
+        "installerHooks": "windows/runner-installer-hooks.nsh",
+        "installerIcon": "icons-runner/icon.ico",
+        "uninstallerIcon": "icons-runner/icon.ico"
+      }
+    },
+    "icon": [
+      "icons-runner/32x32.png",
+      "icons-runner/128x128.png",
+      "icons-runner/128x128@2x.png",
+      "icons-runner/icon.icns",
+      "icons-runner/icon.ico"
+    ],
+    "externalBin": ["binaries/piwi-runner-node"],
     "resources": ["resources/runner-host"],
     "shortDescription": "Run the tests a Piwi team instance asks for on this machine.",
     "longDescription": "Piwi Runner takes run requests from one Piwi team instance and runs them in the folders you link on this machine, with your own tools and environment. It keeps no database and serves no dashboard."

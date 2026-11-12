@@ -73,12 +73,24 @@ window is a single-page Nuxt app that extends `packages/run-ui`, the layer the d
 connection card, the confirmation of a request, the stream of the host's events); it shows the runs the shell started,
 with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of
 its own in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or
-watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Of PR 4c, the installers are
-built: the Release workflow builds Runner's for the desktop app's platforms on every run, tags included, and keeps them
-as the run's artifacts; they are not published. What remains of 4c: publishing them, together with Runner's docs page
-and a clear split from the desktop app on the release; signing; the updater; Runner's own installer art; and the Linux
-packages' Node (D8): the `.deb` and the `.rpm` of both apps install the bundled Node as `/usr/bin/node`, so the two
-apps' packages clash, and each clashes with the distribution's `nodejs`. The instance's side of PR 2 is done. The
+watched live. The run-host wiring that gives it those (D7) is two PRs, before 4c. The first is built: the hub of the
+runs a shell starts is the editor's `ShellRuns` (`shell-runs`, its routes in `shell-runs-routes`), which the desktop
+app's server and Runner's host run alike; Runner's host serves the run channel, the window's stream and commands and
+the runs' picks, and the shell names it as the hub of each requested run (`PIWI_RUN_CHANNEL`, `PIWI_EDITOR_SEND`,
+`PIWI_RUN_REF`). Runner stays the hub of its own runs only: it names its hub to no other tool and writes no discovery
+file. The second is built too: the live view of the dashboard's Local runs tray (`useDesktopRunHub`, the `DesktopRun*`
+components) moved into `packages/run-ui`, and Runner's window shows each requested run's workers live with Pause, Step,
+Resume, the stopped test's page, **Hold failures** (off until the person turns it on) and the code to copy, and comes
+to the front at a stop; what only the dashboard does there (a worker's own window, a stop's link to the editor) comes in
+through `RUN_VIEW_HOST`, which Runner does not provide. Of PR 4c, publishing is built: the Release workflow attaches Runner's installers to the tag's release, for the
+desktop app's platforms, as `Piwi-Runner_…` beside the desktop app's `Piwi-Desktop_…`; Piwi Runner has a docs
+page of its own; Runner bundles Node as `piwi-runner-node`, so its `.deb` and `.rpm` clash neither with the desktop
+app's nor with the distribution's `nodejs`; the desktop app's is `piwi-desktop-node`; it has
+an icon of its own (the Piwi mark on a teal tile, with a play sign) and a tray with **Run in background**, on by
+default, and **Start on login**. Runner updates itself from
+`latest-runner.json`, one manifest keyed by installer, signed with the desktop app's key, from its tray's **Check for
+updates…** and a startup check. What remains of 4c: signing the installers (a Developer ID on macOS, a certificate on
+Windows) and Runner's own installer art. The instance's side of PR 2 is done. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner
 take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
 confirmed in the target (D2); a request carries resolved tests and is
@@ -331,8 +343,8 @@ after it; IDE windows are not a target in this plan.
   it runs `run-host` for its own runs; Piwi Runner runs it as a small Node process, without the server or the database
   (D8).
 - **Each target is a hub for the runs it starts**, through `run-host`, so a requested run can be paused, watched and
-  shared live from that machine's own surfaces like any local run. Piwi Runner's side, the run-host wiring, ships as
-  the PR after 4b and before 4c; until then a run requested in Piwi Runner cannot be paused or watched there.
+  shared live from that machine's own surfaces like any local run. Piwi Runner's side, the run-host wiring, ships in
+  two PRs after 4b and before 4c: its host as the runs' hub, then its window's live view, both built.
 - **The native parts stay native**: starting and stopping the process tree, the keychain, the tray, the notifications
   and the `piwi://` scheme stay in the Rust shell.
 - **Which target takes a request**: the page lists the person's online targets for the project (a target says which
@@ -358,14 +370,14 @@ only: it does not become the fallback hub of terminal runs, which stays the desk
 - **Its window is a small app of its own on a shared layer**: a single-page Nuxt app (`apps/runner`) that extends
   `packages/run-ui`, which holds the confirmation, the connection card and the host's event stream the dashboard's
   desktop pages use, so both show the same components with the same words. Built in PR 4b (open question 1).
-- **Node**: bundled, as the desktop app bundles it (`binaries/node`), so the run code takes one path on both and does
+- **Node**: bundled, as the desktop app bundles it (`binaries/piwi-desktop-node`), so the run code takes one path on both and does
   not depend on the `PATH` a launch from Finder or the Start menu sees. Piwi Runner runs the same sidecar with its own
   host script (`resources/runner-host`).
 - **Updates**: signed, from the same release, as a separate artifact on each platform (PR 4c).
 - **Before publishing the installers (PR 4c)**: on Linux, where the package puts the bundled Node and how the host
   script finds it. Checked on the 0.67.0 builds: the `.deb` and the `.rpm` of both apps put it at `/usr/bin/node`
-  (the AppImage keeps it inside its own image), so one name per app or a path under the app's `/usr/lib` folder is
-  needed first. And Runner's own installer art.
+  (the AppImage keeps it inside its own image). Settled in PR 4c: Runner's is `piwi-runner-node` and the desktop app's `piwi-desktop-node`, one name per app.
+  Runner's own installer art remains.
 
 Alternatives:
 

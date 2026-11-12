@@ -37,6 +37,7 @@ import { keepRun, releaseRun } from './run-keep';
 import { notLabRun } from './probes';
 import { isOptInCapabilityOn, isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
+import { countRunVideos } from './run-videos';
 import { loadRunEnvironments } from './environment-snapshots';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
@@ -377,6 +378,7 @@ export async function getTestRun(
     planId: runPlanId(testRun.metadata),
     hasResources:
       (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
+    videoCount: await countRunVideos(db, id),
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
     project: projectPublic,
     environments: await loadRunEnvironments(db, id),

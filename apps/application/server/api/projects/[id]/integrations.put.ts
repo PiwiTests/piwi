@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Save the project tracker binding',
     description:
-      'Replace the project-integration binding with a normalized settings object. A null connection clears the binding; a connection that is not a tracker answers HTTP 400. Requires `project:manage` (Project admin on the project).',
+      'Replace the project-integration binding with a normalized settings object (`titlePrefix` is one line of at most 40 characters, empty to inherit the default of the connection). A null connection clears the binding; a connection that is not a tracker answers HTTP 400. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },

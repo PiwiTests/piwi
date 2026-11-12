@@ -1,13 +1,13 @@
 /**
- * The run control a host other than the language server builds on: the desktop app's server, the hub of the runs its
- * shell starts (`apps/application/server/utils/desktop-runs.ts`). Each piece is the service's own, and none speaks the
- * Language Server Protocol: the socket every run names, which takes the workers' run connections with its token
- * (`RecordChannel`); the sessions and the controls they pass on (`RunSessions`); the hub's WebSocket for Piwi Picker,
- * and the peers a host joins to it with a transport of its own (`RunHub.join`); the code made at a stop
- * (`StopActions`), placed where the stopped statement stands (`RunLines`); Playwright's trace viewer on a lane's running
- * test's trace so far, from the project's own Playwright (`startTraceViewer`), and the checked file of that trace for the
- * host to read itself (`RunSessions.laneTrace`, `LaneTrace`); the agents' tools for those runs, in the
- * host's words (`RunAgent`, `agentTools`), which a host serves from an MCP server of its own. A host wires their
+ * The run control a host other than the language server builds on: a desktop shell's host, the hub of the runs its
+ * shell starts (`./shell-runs.ts`, which the desktop app's server and Piwi Runner's host run). Each piece is the
+ * service's own, and none speaks the Language Server Protocol: the socket every run names, which takes the workers' run
+ * connections with its token (`RecordChannel`); the sessions and the controls they pass on (`RunSessions`); the hub's
+ * WebSocket for Piwi Picker, and the peers a host joins to it with a transport of its own (`RunHub.join`); the code
+ * made at a stop (`StopActions`), placed where the stopped statement stands (`RunLines`); Playwright's trace viewer on
+ * a lane's running test's trace so far, from the project's own Playwright (`startTraceViewer`), and the checked file of
+ * that trace for the host to read itself (`RunSessions.laneTrace`, `LaneTrace`); the agents' tools for those runs, in
+ * the host's words (`RunAgent`, `agentTools`), which a host serves from an MCP server of its own. A host wires their
  * callbacks to its own surfaces, as `server.ts` wires them to the client.
  */
 export { RecordChannel, sameToken, type Handoff } from './recorder/handoff.js';

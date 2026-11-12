@@ -16,7 +16,7 @@ const recordRunHealth = vi.fn(
 );
 /** What the run's analysis answers: its fixed clusters and its change coverage, both settled. */
 const analysis = { fixed: Promise.resolve([]), coverage: Promise.resolve(null) };
-const analyzeFinishedRunInBackground = vi.fn((_db: unknown, _id: number) => analysis);
+const analyzeFinishedRunInBackground = vi.fn((_db: unknown, _id: number, _linked?: Promise<unknown>) => analysis);
 const postRunPrFeedbackInBackground = vi.fn((_db: unknown, _id: number, _analysis: unknown) => Promise.resolve());
 const maybeEnqueueHealActionInBackground = vi.fn();
 const inferRunOutcomes = vi.fn((_db: unknown, _id: number) => Promise.resolve());
@@ -45,6 +45,8 @@ vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 const runTrackerAutomation = vi.fn((_db: unknown, _id: number) => Promise.resolve(0));
 const runTestManagementSync = vi.fn((_db: unknown, _id: number) => Promise.resolve(null));
 vi.mock('../../server/utils/integrations/automation', () => ({ runTrackerAutomation, runTestManagementSync }));
+const linkDeclaredIssues = vi.fn((_db: unknown, _id: number): Promise<unknown> => Promise.resolve({}));
+vi.mock('../../server/utils/integrations/declared-issues', () => ({ linkDeclaredIssues }));
 /** The uses the eligibility check answers false for, whatever the run. */
 const refusedUses = new Set<string>();
 vi.mock('#shared/run-eligibility', async (importOriginal) => {
@@ -96,7 +98,50 @@ describe('runFinalizeSideEffects', () => {
     emitIncidentNotification.mockClear();
     recordRunHealth.mockClear();
     runTestManagementSync.mockClear();
+    linkDeclaredIssues.mockClear();
     refusedUses.clear();
+  });
+
+  test('the issues the failing tests name are linked, and fix verification waits for it', async () => {
+    let done!: () => void;
+    const linking = new Promise<void>((resolve) => (done = resolve));
+    linkDeclaredIssues.mockImplementationOnce(() => linking);
+    // The caller's rollup does not wait for the link step.
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    expect(linkDeclaredIssues).toHaveBeenCalledWith(db, 42);
+    const linked = analyzeFinishedRunInBackground.mock.calls[0]?.[2];
+    let settled = false;
+    void linked?.then(() => (settled = true));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    done();
+    await vi.waitFor(() => expect(settled).toBe(true));
+  });
+
+  test('a run that sends no notifications still links the issues its tests name', async () => {
+    refusedUses.add('notifications');
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    expect(linkDeclaredIssues).toHaveBeenCalledWith(db, 42);
+  });
+
+  test('a run the tracker use leaves out links nothing', async () => {
+    refusedUses.add('tracker');
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+    expect(linkDeclaredIssues).not.toHaveBeenCalled();
+    expect(analyzeFinishedRunInBackground).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failing link step is logged and fix verification still starts', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      linkDeclaredIssues.mockRejectedValueOnce(new Error('jira down'));
+      await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { ci: {} } });
+      const linked = analyzeFinishedRunInBackground.mock.calls[0]?.[2];
+      await expect(linked).resolves.toBeUndefined();
+      expect(errors).toHaveBeenCalledWith('[integrations] linkDeclaredIssues failed', expect.any(Error));
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   test('a complete run sends its results to the test management tool once fix verification is done', async () => {
@@ -158,6 +203,7 @@ describe('runFinalizeSideEffects', () => {
       classifyRunFlakyTests,
       analyzeFinishedRunInBackground,
       inferRunOutcomes,
+      linkDeclaredIssues,
       ...outbound,
     ]) {
       expect(fn).not.toHaveBeenCalled();
@@ -210,7 +256,7 @@ describe('runFinalizeSideEffects', () => {
       status: 'failed',
     });
     // Fix verification, change coverage and the scenario gaps, each under its own use.
-    expect(analyzeFinishedRunInBackground).toHaveBeenCalledWith(db, 42);
+    expect(analyzeFinishedRunInBackground).toHaveBeenCalledWith(db, 42, expect.any(Promise));
     await vi.waitFor(() => expect(inferRunOutcomes).toHaveBeenCalledWith(db, 42));
     expect(syncAutoMarkersForRun).toHaveBeenCalledTimes(1);
     for (const fn of outbound) expect(fn).not.toHaveBeenCalled();

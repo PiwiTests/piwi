@@ -15,7 +15,7 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
-import { PRESSED_TOGGLE_CLASS } from '~/utils';
+import { PRESSED_TOGGLE_CLASS } from '@piwitests/run-ui/ui-classes';
 import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
 import {
@@ -1292,6 +1292,9 @@ const timelineCases = computed(() => (isLive.value ? throttledTestCases.value : 
 /** The Timeline tab's count: the lanes the timeline lays out, the workers its header counts. */
 const timelineLanes = computed(() => timelineLaneCount(timelineCases.value));
 
+/** The run's final attempts with a video: the Video tab's count, and it stays off when there are none. */
+const videoCount = computed(() => testRun.value?.videoCount ?? 0);
+
 const tabItems = computed(() => [
   {
     label: `Tests (${dedupedDisplayCases.value.length})`,
@@ -1312,6 +1315,18 @@ const tabItems = computed(() => [
     icon: 'i-lucide-timeline',
     value: 'workers',
     slot: 'workers',
+  },
+  {
+    label: !isLive.value && videoCount.value > 0 ? `Video (${videoCount.value})` : 'Video',
+    icon: 'i-lucide-video',
+    value: 'video',
+    slot: 'video',
+    disabled: isLive.value || videoCount.value === 0,
+    disabledReason: isLive.value
+      ? 'available once the run finishes'
+      : videoCount.value === 0
+        ? 'no videos in this run'
+        : undefined,
   },
   ...(testRun.value?.hasResources
     ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
@@ -1683,6 +1698,10 @@ const moreMenuItems = computed(() => {
                 :project-name="testRun?.project?.name"
               />
             </div>
+          </template>
+
+          <template #tab-video>
+            <RunVideoTab data-tour="run-video" :run-id="Number(runId)" />
           </template>
 
           <template #tab-resources>

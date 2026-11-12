@@ -5,6 +5,9 @@ import {
   applyRunEvent,
   createRunnerRuns,
   finishedStatus,
+  isRunnerRunRef,
+  runnerShellIdOf,
+  runnerShownRefs,
   type RunnerRun,
   type RunnerRunBackend,
 } from '../app/utils/runner-runs';
@@ -132,5 +135,30 @@ describe('a run', () => {
     }
     expect(runs.filter((r) => r.status !== 'running')).toHaveLength(RUNNER_MAX_FINISHED);
     expect(runs).toContain(first);
+  });
+});
+
+describe('the hub’s name of a run', () => {
+  test('is the shell’s run id, as the shell names it on the run channel', () => {
+    expect(isRunnerRunRef('desktop-7', 7)).toBe(true);
+    expect(isRunnerRunRef('desktop-7-unattended', 7)).toBe(true);
+    expect(isRunnerRunRef('desktop-70', 7)).toBe(false);
+    expect(isRunnerRunRef('terminal-7', 7)).toBe(false);
+    expect(isRunnerRunRef('desktop-7', null)).toBe(false);
+    expect(runnerShellIdOf('desktop-12')).toBe(12);
+    expect(runnerShellIdOf('desktop-12-unattended')).toBe(12);
+    expect(runnerShellIdOf('terminal-12')).toBeNull();
+    expect(runnerShellIdOf('desktop-12x')).toBeNull();
+  });
+
+  test('is shown to the hub for a running run whose Hold failures is on, and no other', async () => {
+    const { runs, book } = setup();
+    await book.start(input);
+    expect(runs[0]!.holdFailures).toBe(false);
+    expect(runnerShownRefs(runs)).toEqual([]);
+    runs[0]!.holdFailures = true;
+    expect(runnerShownRefs(runs)).toEqual(['desktop-7']);
+    book.handle({ id: 7, kind: 'exit', code: 0 });
+    expect(runnerShownRefs(runs)).toEqual([]);
   });
 });

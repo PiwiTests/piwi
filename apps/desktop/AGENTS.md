@@ -73,8 +73,10 @@ shell and are feature-equivalent.
   `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--ui`, or with `--repeat-each` above 1 unless it stops at its first failure) ends its ref in `-unattended`
   (`attended_args`, mirrored by `desktopArgsAttended`), and the server never holds its failures. The hub's WebSocket
-  takes the desktop token in `hello`; its code is `apps/application/server/utils/desktop-runs.ts`. Agents steer those
-  runs only through `/mcp`, behind the same token (`server/utils/mcp/run-tools.ts`), and never a run nobody attends.
+  takes the desktop token in `hello`; it is `ShellRuns` (`packages/editor/src/shell-runs.ts`), which
+  `apps/application/server/utils/desktop-runs.ts` wires. Agents steer those runs only through `/mcp`, behind the same
+  token (`server/utils/mcp/run-tools.ts`), and never a run nobody attends. Piwi Runner's requested runs take the same
+  `bundled_hub_env` from Runner's host (`a_requested_run_names_the_hosts_hub_and_nothing_else` in `runner_app.rs`).
 - **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
   - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
     the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in
@@ -144,22 +146,43 @@ shell and are feature-equivalent.
   `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
   `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
   keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
-- **The app calls itself Piwi Desktop (`APP_NAME` in `lib.rs`, `DESKTOP_APP_NAME` in `shared/piwi-ecosystem.ts`) in its
-  windows, splash, tray, taskbar, questions and notifications**; `productName` keeps Piwi Dashboard, which the OS lists,
-  until the installers' upgrade path is checked. Checked by `apps/application/tests/unit/desktop-app-name.test.ts`.
+- **The app is Piwi Desktop everywhere**: `productName`, `APP_NAME` in `lib.rs` and `DESKTOP_APP_NAME` in
+  `shared/piwi-ecosystem.ts` (`apps/application/tests/unit/desktop-app-name.test.ts`). The `identifier` stays
+  `io.piwitests.dashboard`: the app data folder, the settings and the installer's `PIWI_APP_DATA` derive from it.
+- **Every installer upgrades an install of the former product name, Piwi Dashboard** ([how](README.md#from-piwi-dashboard-to-piwi-desktop)):
+  the pinned `wix.upgradeCode`, the `.exe`'s `PIWI_REMOVE_FORMER_INSTALL` hook, the packages' `piwi-dashboard`
+  relations, and the start-on-login move (`login_item.rs`, whose test holds the three to `FORMER_PRODUCT_NAME`). Never
+  change `upgradeCode`; `runner.conf.json` drops all of these (`apps/runner/tests/bundle-config.test.ts`).
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
 - **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
   product, the sidecar's script, the keychain service and the request folders' prefix, and shares the rest of
   `run_target.rs`, the window guards and the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
-- **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
-  `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
+- **Piwi Runner is the hub of its own runs only, and never writes `~/.piwi/desktop.json`.** Its host serves the run
+  channel its requested runs name, and nothing in `runner_app.rs` publishes that hub (`publish_discovery_hub`) or the
+  file, so no terminal run or other tool finds it; `runner_app` compiles with and without the feature so `cargo test`
+  covers both.
+  Its tray shares the desktop app's Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
+  with Run in background on until the person turns it off, and its window holds the same two toggles: a desktop with
+  no tray host must still be able to turn it off and quit.
+- **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config:
+  `piwi-desktop-node`, `piwi-runner-node`): the `.deb` and the `.rpm` install the sidecar in `/usr/bin`, so a plain
+  `node` would clash with the other app's package and the distribution's `nodejs`.
+  `apps/runner/tests/bundle-config.test.ts` holds the constant and both configs together.
+- **Piwi Runner updates from `latest-runner.json` alone**, one manifest keyed by installer (`windows-x86_64-msi`,
+  `-nsis`, `darwin-aarch64-app`, `linux-x86_64-deb`…), written by the `manifest` job of `reusable-publish-runner.yml`
+  (`apps/runner/scripts/update-manifest.mjs`); it never writes or reads `latest.json`. `runner.updater.conf.json`
+  holds the desktop app's public key, and `apps/runner/tests/bundle-config.test.ts` checks both.
+- **The release's file names come from `ASSET_NAME_PATTERN`** in `reusable-publish-desktop.yml` (`Piwi-Desktop_…`) and
+  `reusable-publish-runner.yml` (`Piwi-Runner_…`), never from `productName`, and carry no version: the docs link
+  `releases/latest/download/<file>` (`apps/application/shared/app-downloads.mjs`, held to the patterns by
+  `tests/unit/app-downloads.test.ts`). The step that writes `latest-nsis.json` finds the `.exe` by that pattern.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
-- **The sidecar layout** (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
-  packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means
+- **The sidecar layout** (`src-tauri/binaries/piwi-desktop-node-<triple>`, Runner's `piwi-runner-node-<triple>`,
+  `src-tauri/resources/app-server/.output/`) is what the packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means
   updating both.
 - **Commit scope**: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where
   backend work goes, behind a desktop guard: the common case), `desktop` for a change confined to this directory (the

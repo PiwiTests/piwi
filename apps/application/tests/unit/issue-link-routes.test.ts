@@ -107,7 +107,12 @@ const createLink = underRoutePermission(
 );
 const jiraWebhook = (await import('../../server/api/integrations/jira/webhook/[token].post'))
   .default as unknown as Handler;
+const deleteLinkRoute = underRoutePermission(
+  state,
+  (await import('../../server/api/links/[id].delete')).default as unknown as Handler,
+);
 const linkIssue = MCP_TOOLS.find((t) => t.name === 'link_issue')!.handler;
+const unlinkIssue = MCP_TOOLS.find((t) => t.name === 'unlink_issue')!.handler;
 
 const WEB = 10;
 const BILLING = 11;
@@ -118,6 +123,12 @@ const REPORT = { [WEB]: 1, [BILLING]: 2, [DOCS]: 3 } as const;
 /** An issue on billing's site, and one on web's. */
 const PAY_7 = `https://${BILLING_HOST}/browse/PAY-7`;
 const WEB_5 = `https://${WEB_HOST}/browse/WEB-5`;
+
+// With authentication off every request acts as the administrator with id 0, which has no user row.
+const system: RouteCaller = {
+  user: { id: 0, role: InstanceRole.ADMINISTRATOR, username: 'system', name: 'System' } as unknown as User,
+  access: buildAccessSummary(InstanceRole.ADMINISTRATOR, []),
+};
 
 // Robin: Contributor on web and docs, nothing on billing.
 const robin: RouteCaller = {
@@ -474,6 +485,31 @@ describe('the status sync and the webhook', () => {
     expect(await syncTrackerLinks(db as never, { limit: 1 })).toEqual({ refreshed: 1, failed: 0, skipped: 0 });
     expect(sentTo(WEB_HOST)).toEqual(['GET /rest/api/3/issue/WEB-1']);
     expect(sentTo(BILLING_HOST)).toEqual([]);
+  });
+});
+
+describe('removing a keyed cluster link with authentication off', () => {
+  const dismissals = () =>
+    db
+      .select({ key: schema.entityLinkDismissals.key, removedBy: schema.entityLinkDismissals.removedBy })
+      .from(schema.entityLinkDismissals)
+      .where(eq(schema.entityLinkDismissals.failureClusterId, CLUSTER[WEB]));
+
+  test('the delete route removes it and records the removal with no remover', async () => {
+    state.caller = system;
+    const link = await pinThrough(webJira, 'WEB-5', { failureClusterId: CLUSTER[WEB] });
+    expect(await deleteLinkRoute({ params: { id: String(link.id) } })).toMatchObject({ success: true });
+    expect(await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.id, link.id))).toEqual([]);
+    expect(await dismissals()).toEqual([{ key: 'WEB-5', removedBy: null }]);
+  });
+
+  test('the unlink_issue MCP tool removes it and records the removal with no remover', async () => {
+    const link = await pinThrough(webJira, 'WEB-6', { failureClusterId: CLUSTER[WEB] });
+    const ctx = { user: system.user, access: system.access, scope: 'all' as const };
+    expect(
+      await unlinkIssue(db as never, { entityType: 'failure_cluster', entityId: CLUSTER[WEB], url: link.url }, ctx),
+    ).toMatchObject({ removed: 1 });
+    expect(await dismissals()).toEqual([{ key: 'WEB-6', removedBy: null }]);
   });
 });
 

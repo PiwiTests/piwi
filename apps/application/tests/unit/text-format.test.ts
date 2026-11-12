@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { stripAnsi, isImageFile, isVideoFile, withTypedValue } from '../../app/utils/text-format';
+import { isImageFile, isVideoFile, withTypedValue } from '../../app/utils/text-format';
+import { stripAnsi } from '@piwitests/run-ui/ansi';
 
 const ESC = String.fromCharCode(27); // ANSI escape
 

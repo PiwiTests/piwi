@@ -4,36 +4,38 @@ import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { CONTROLS } from '@piwitests/run-model/controls';
 import {
-  DESKTOP_RUN_ICONS,
-  DESKTOP_TONE_COLORS,
   desktopArgsAttended,
-  desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
-  desktopImagePoint,
-  desktopLaneKey,
-  desktopLiveInstance,
-  desktopLiveText,
-  desktopPickItem,
-  desktopRunName,
   desktopRowWorker,
   desktopHeldSessions,
   desktopRunHoldRefusal,
   desktopRunHolds,
   desktopRunOf,
   desktopRunRef,
-  desktopSaidAround,
-  desktopSay,
   desktopSessionsOfRun,
   desktopEditorRunOf,
+  desktopShownRefs,
+  desktopStopLink,
+} from '../../app/utils/desktop-run-view';
+import {
+  DESKTOP_RUN_ICONS,
+  DESKTOP_TONE_COLORS,
+  desktopCodeItem,
+  desktopImagePoint,
+  desktopLaneKey,
+  desktopLiveInstance,
+  desktopLiveText,
+  desktopPickItem,
+  desktopRunName,
+  desktopSaidAround,
+  desktopSay,
   desktopShareOffered,
   desktopShareWarning,
-  desktopShownRefs,
   desktopWaitedFor,
-  desktopStopLink,
   desktopStopSaid,
   isDesktopRunImage,
-} from '../../app/utils/desktop-run-view';
+} from '@piwitests/run-ui/run-view';
 import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 
@@ -490,8 +492,21 @@ describe('the window’s stream of its runs', () => {
 
   async function hub() {
     vi.resetModules();
-    const { useDesktopRunHub } = await import('../../app/composables/useDesktopRunHub');
+    const { useDesktopRunHub } = await import('../../../../packages/run-ui/app/composables/useDesktopRunHub');
     return useDesktopRunHub();
+  }
+
+  /** The window's stream with the dashboard's Inspect as its host: Inspect opens with it, and what it heard reads. */
+  async function inspectHub() {
+    const runs = await hub();
+    const { useDesktopLaneInspects } = await import('../../app/composables/useDesktopLaneInspects');
+    const { reader, inspectOf } = useDesktopLaneInspects();
+    const host = { ...reader, view: {}, title: '' };
+    return {
+      ...runs,
+      setInspect: (ref: string, lane: number, on: boolean) => runs.setInspect(ref, lane, on ? host : null),
+      inspectOf,
+    };
   }
 
   test('opens while it is wanted, names its stream, and closes when it is not', async () => {
@@ -752,7 +767,7 @@ describe('the window’s stream of its runs', () => {
       posted.push(init.body!);
       return { type: 'answer', ok: true, message: '', id: init.body!.id };
     });
-    const runs = await hub();
+    const runs = await inspectHub();
     runs.want(true);
     const source = FakeSource.last!;
     source.send({ type: 'hello', viewer: VIEWER });
@@ -834,7 +849,7 @@ describe('the window’s stream of its runs', () => {
       const refused = init.body!.type === 'inspect' && init.body!.on && refusal;
       return { type: 'answer', ok: !refused, message: refused || '', id: init.body!.id };
     });
-    const runs = await hub();
+    const runs = await inspectHub();
     runs.want(true);
     const source = FakeSource.last!;
     source.send({ type: 'hello', viewer: VIEWER });

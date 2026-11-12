@@ -30,7 +30,11 @@ import {
 import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
-import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
+import {
+  resolveProjectIntegration,
+  resolveTagSource,
+  type ResolvedProjectIntegration,
+} from '#shared/integrations/binding';
 import { previewAutoCreate, type AutoCreatePreview } from '#shared/handlers/tracker-automation';
 import { projectDefaultBranch } from '~~/server/utils/scm/stored-default-branch';
 import {
@@ -41,8 +45,12 @@ import {
   buildStandaloneExecutionIssue,
 } from '~~/server/utils/integrations/documents';
 import { normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
-import { entityLinks, projects, testRunsCases } from '~~/server/database/schema';
+import { entityLinks, projects, testRuns, testRunsCases } from '~~/server/database/schema';
+import { isEligibleRun } from '#shared/run-eligibility';
+import { linkNamedIssues, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
+import { DEMO_JIRA_ISSUES } from '#shared/demo/demo-test-meta.mjs';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { TrackerIssueBatch, TrackerStatusCategory } from '~~/server/utils/integrations/types';
 
 /**
  * The demo has no server to reach Jira or Zephyr Scale, so it ships one canned connection of each and answers the
@@ -235,6 +243,7 @@ const DEMO_TRACKER: TrackerSummary = {
   provider: 'jira',
   name: DEMO_CONNECTION.name,
   baseUrl: DEMO_CONNECTION.baseUrl,
+  titlePrefix: null,
 };
 
 export function demoTrackerStatus(): { trackers: TrackerSummary[] } {
@@ -281,6 +290,11 @@ async function demoExisting(
     }));
 }
 
+/** The prefix the demo's canned binding puts before every ticket title. */
+function demoTitlePrefix(): string | null {
+  return getDemoProjectIntegration().titlePrefix;
+}
+
 /** The draft fields every entity shares: the canned binding, and nothing that links back. */
 function demoDraftBase(locale: IssueLocale) {
   const binding = getDemoProjectIntegration();
@@ -299,8 +313,13 @@ function demoDraftBase(locale: IssueLocale) {
 }
 
 /** The draft for a bug report, as the server builds it: its own document and labels, no cluster. */
-async function demoBugReportDraft(db: DrizzleDB, bugReportId: number, locale: IssueLocale): Promise<IssueDraft | null> {
-  const built = await buildBugReportIssue(db, bugReportId, { locale });
+async function demoBugReportDraft(
+  db: DrizzleDB,
+  bugReportId: number,
+  locale: IssueLocale,
+  filedBy: string | null,
+): Promise<IssueDraft | null> {
+  const built = await buildBugReportIssue(db, bugReportId, { locale, filedBy, titlePrefix: demoTitlePrefix() });
   if (!built) return null;
   return {
     ...demoDraftBase(locale),
@@ -321,8 +340,9 @@ function demoRunIssue(
   db: DrizzleDB,
   entityType: IssueEntityType,
   entityId: number,
-  opts: { locale?: IssueLocale; comment?: IssueComment | null; filedBy?: string | null },
+  rawOpts: { locale?: IssueLocale; comment?: IssueComment | null; filedBy?: string | null },
 ) {
+  const opts = { ...rawOpts, titlePrefix: demoTitlePrefix() };
   return entityType === 'test_run'
     ? buildRunIssue(db, entityId, opts)
     : buildStandaloneExecutionIssue(db, entityId, opts);
@@ -373,16 +393,17 @@ async function demoIssueDraftFor(
   locale: IssueLocale,
   filedBy: string | null,
 ): Promise<IssueDraft | null> {
-  if (entityType === 'bug_report') return demoBugReportDraft(db, entityId, locale);
+  if (entityType === 'bug_report') return demoBugReportDraft(db, entityId, locale, filedBy);
   if (entityType === 'test_run') return demoRunDraft(db, entityType, entityId, locale, filedBy);
   const clusterId = await resolveClusterId(db, entityType, entityId);
   if (clusterId == null) {
     return entityType === 'test_runs_case' ? demoRunDraft(db, entityType, entityId, locale, filedBy) : null;
   }
+  const buildOpts = { locale, filedBy, titlePrefix: demoTitlePrefix() };
   const built =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, { locale })
-      : await buildExecutionIssue(db, entityId, { locale });
+      ? await buildClusterIssue(db, entityId, buildOpts)
+      : await buildExecutionIssue(db, entityId, buildOpts);
   if (!built) return null;
   return {
     ...demoDraftBase(locale),
@@ -414,6 +435,7 @@ export async function demoCreateIssue(
     fields?: unknown;
     comment?: string | null;
     filedBy?: string | null;
+    filedById?: number | null;
     submissionId?: string | null;
   } = {},
 ): Promise<CreateIssueResponse | null> {
@@ -443,6 +465,7 @@ export async function demoCreateIssue(
       db,
       entityType === 'test_run' ? { testRunId: entityId } : { testRunsCaseId: entityId },
       title?.trim() || built.title,
+      request.filedById ?? null,
     );
     if (submission) DEMO_SUBMISSIONS.set(submission, filed);
     return filed;
@@ -453,15 +476,19 @@ export async function demoCreateIssue(
   let linkTarget: { failureClusterId: number } | { bugReportId: number };
   let built: { title: string } | null;
   if (entityType === 'bug_report') {
-    built = await buildBugReportIssue(db, entityId, {});
+    built = await buildBugReportIssue(db, entityId, {
+      filedBy: request.filedBy ?? null,
+      titlePrefix: demoTitlePrefix(),
+    });
     if (!built) return null;
     linkTarget = { bugReportId: entityId };
   } else {
     linkTarget = { failureClusterId: clusterId ?? entityId };
+    const buildOpts = { filedBy: request.filedBy ?? null, titlePrefix: demoTitlePrefix() };
     built =
       entityType === 'failure_cluster'
-        ? await buildClusterIssue(db, entityId, {})
-        : await buildExecutionIssue(db, entityId, {});
+        ? await buildClusterIssue(db, entityId, buildOpts)
+        : await buildExecutionIssue(db, entityId, buildOpts);
   }
 
   const [filed] = await db
@@ -487,7 +514,7 @@ export async function demoCreateIssue(
     };
   }
 
-  return insertDemoIssueLink(db, linkTarget, title?.trim() || built?.title || null);
+  return insertDemoIssueLink(db, linkTarget, title?.trim() || built?.title || null, request.filedById ?? null);
 }
 
 /** What each submission of the create dialog filed in the demo, so sending it again files nothing new. */
@@ -502,6 +529,7 @@ async function insertDemoIssueLink(
     | { testRunId: number }
     | { testRunsCaseId: number },
   title: string | null,
+  createdBy: number | null,
 ): Promise<CreateIssueResponse> {
   const existing = await db.select().from(entityLinks).where(isNotNull(entityLinks.key));
   const n = 100 + existing.filter((l) => l.provider === 'jira').length + 1;
@@ -521,6 +549,7 @@ async function insertDemoIssueLink(
       connectionId: DEMO_CONNECTION.id,
       externalId: String(10000 + n),
       origin: 'created',
+      createdBy,
       unfurledAt: new Date(),
     })
     .returning({ id: entityLinks.id });
@@ -727,6 +756,53 @@ export async function demoConnectionBoundProjects(db: DrizzleDB, connectionId: n
   return (await db.select({ id: projects.id }).from(projects)).map((p) => p.id);
 }
 
+/** The demo's Jira as the link step reads it: the keys of {@link DEMO_JIRA_ISSUES}, in the DEMO project. */
+const DEMO_ISSUE_LOOKUP = {
+  parseIssueUrl(url: string) {
+    const match = /^https:\/\/demo\.atlassian\.net\/browse\/([A-Z][A-Z0-9_]+-\d+)\/?$/.exec(url);
+    return match ? { key: match[1]! } : null;
+  },
+  async getIssues(keys: string[]): Promise<TrackerIssueBatch> {
+    const asked = new Set(keys);
+    return {
+      issues: DEMO_JIRA_ISSUES.filter((issue) => asked.has(issue.key)).map((issue) => ({
+        ...issue,
+        statusCategory: issue.statusCategory as TrackerStatusCategory,
+        assignee: null,
+        url: `${DEMO_CONNECTION.baseUrl}/browse/${issue.key}`,
+        projectKey: DEMO_PROJECT_KEY,
+      })),
+    };
+  },
+};
+
+/**
+ * The link step at a demo run's finish, as the server runs it: a run the `tracker` use admits links the issues its
+ * failing tests name, looked up in the demo's Jira through the canned binding, which admits every run. A tag the
+ * project's issue key pattern matches names an issue too, linked when it is of the binding's issue type.
+ */
+export async function linkDemoDeclaredIssues(db: DrizzleDB, runId: number): Promise<DeclaredLinksResult | null> {
+  const [run] = await db
+    .select({
+      metadata: testRuns.metadata,
+      isFullRun: testRuns.isFullRun,
+      status: testRuns.status,
+      projectId: testRuns.projectId,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run || !isEligibleRun(run, 'tracker')) return null;
+  const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, run.projectId));
+  return linkNamedIssues(db, runId, {
+    projectKey: DEMO_PROJECT_KEY,
+    // No connection row backs the canned connection, as for the seeded links.
+    connectionId: null,
+    tracker: DEMO_ISSUE_LOOKUP,
+    tagSource: resolveTagSource(project?.tagKeys, getDemoProjectIntegration()),
+    deadline: AbortSignal.timeout(10_000),
+  });
+}
+
 /** The project binding the demo shows — a canned Jira binding on the demo connection. */
 export function getDemoProjectIntegration(): ResolvedProjectIntegration {
   return resolveProjectIntegration({
@@ -735,6 +811,7 @@ export function getDemoProjectIntegration(): ResolvedProjectIntegration {
     issueType: '1',
     labels: ['piwi'],
     locale: 'en',
+    titlePrefix: '[Piwi]',
   });
 }
 

@@ -1,25 +1,17 @@
 /**
  * Desktop build: what the app's window reads and sends to follow the Playwright runs the desktop shell starts, which
- * the bundled server is the hub of (`server/utils/desktop-runs.ts`). The window is a peer of the same hub Piwi Picker
- * reaches over its WebSocket, through two routes behind the desktop guard: a stream (`GET /api/desktop/runs/events`)
- * of the hub's own messages and of the code made at a stop, and the hub's commands (`POST /api/desktop/runs/commands`),
- * each naming the stream it is from. Code from a stop, and the locators the runs' tests pick (`DESKTOP_PICKS_PATH`),
- * come to the window alone, for it to copy, never to Piwi Picker.
+ * the bundled server is the hub of (`server/utils/desktop-runs.ts`). The stream, the commands and the picks are the
+ * editor service's (`@piwitests/editor/shell-run-events`), which Piwi Runner's host serves too; this file adds what
+ * the app alone shows: the editors' runs it observes, the runs nobody attends, and **Inspect** of a lane, an event and a
+ * command of the app's own that Piwi Runner's host neither sends nor takes.
  */
-import type {
-  HubCommand,
-  HubFrameMessage,
-  HubFrameRefusal,
-  HubCodeMessage,
-  HubLaneFrameMessage,
-  HubLaneFrameRefusal,
-  HubLaneLayerMessage,
-  HubSession,
-  HubSessionMessage,
-} from '@piwitests/core/run-hub';
 import { UNATTENDED_REF_SUFFIX, isUnattendedRef } from '@piwitests/core/run-channel';
 import type { LiveSnapshotNotice, LiveWorkerId } from '@piwitests/core/live-view';
-import type { StopCode } from '@piwitests/editor/run-host';
+import type { HubSession } from '@piwitests/core/run-hub';
+import type {
+  DesktopRunCommand as ShellRunCommand,
+  DesktopRunEvent as ShellRunEvent,
+} from '@piwitests/editor/shell-run-events';
 
 /**
  * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
@@ -56,25 +48,7 @@ export function isUnattendedDesktopRun(ref: string): boolean {
   return isUnattendedRef(ref);
 }
 
-/** The most codes made at stops and locators picked the server keeps, the latest, for a window that opens later. */
-export const MAX_KEPT_STOP_CODES = 20;
-
-/**
- * Where a run the shell starts sends the locators its tests pick (`PIWI_EDITOR_SEND`, as an editor's Send to editor
- * pairing names its endpoint): the pause bar's **Pick a locator**, and a pick on the image of a stop. The server, which
- * the shell asks for the address with the run channel, passes each one to the window, to copy.
- */
-export const DESKTOP_PICKS_PATH = '/api/desktop/runs/picks';
-
-/**
- * A locator a test of a run picked, as the window shows it to copy: the locator, and the file, relative to the run's
- * folder, and the 1-based line of the call it was picked for, when the test named one.
- */
-export interface DesktopRunPick {
-  locator: string;
-  file: string | null;
-  line: number | null;
-}
+export { DESKTOP_PICKS_PATH, isDesktopRunViewer } from '@piwitests/editor/shell-run-events';
 
 /**
  * A snapshot of a lane's page **Inspect** read from its test's trace, as the window hears of it: its call, title and
@@ -107,70 +81,14 @@ export interface DesktopInspectCalls {
 /** The most snapshots a window hears of a lane as it opens Inspect: the latest. */
 export const MAX_DESKTOP_INSPECT_LISTED = 600;
 
-/** What the window's stream sends. */
-export type DesktopRunEvent =
-  /** First, once: the id the window's commands name the stream by. */
-  | { type: 'hello'; viewer: string }
-  /**
-   * Each run live as the stream opens, then each change, as Piwi Picker hears them, with what each stop takes from
-   * the window.
-   */
-  | HubSessionMessage
-  /** Once, after every run live as the stream opened: a run the window kept that is not among them ended meanwhile. */
-  | { type: 'listed' }
-  /** A frame of a stop the window watches (`view`), or why its view sends none now. */
-  | HubFrameMessage
-  | HubFrameRefusal
-  /** A frame of a lane the window watches (`watch`), as its test runs or stands at a stop, or why none comes now. */
-  | HubLaneFrameMessage
-  | HubLaneFrameRefusal
-  /**
-   * A layer of a lane the window watches and asked for (`watch`'s `layers`): the call its test is in, what its page
-   * said, the page's text, an image of its filmstrip. Kept nowhere on the way.
-   */
-  | HubLaneLayerMessage
-  /** What each code made at a stop came to, whichever surface started it: its sentence. */
-  | HubCodeMessage
-  /** The code itself, made at a stop of a run, for the window to copy; the latest ones again as the stream opens. */
-  | { type: 'stop-code'; code: StopCode }
-  /** A locator a test of a run picked, for the window to copy; the latest ones again as the stream opens, with the codes. */
-  | { type: 'pick'; pick: DesktopRunPick }
-  /** What **Inspect** read of a lane the window has it open on (`inspect`): its attempt, a snapshot, why none shows. */
-  | DesktopInspectEvent
-  /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
-  | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string }
-  /**
-   * A signed-in teammate asks to watch the run `ref`, which is not shared live (**Ask to watch**): the window asks the
-   * person, naming them (`by`) and the run's number on the instance (`run`), with Share live and Not now (`answer-ask`).
-   */
-  | { type: 'ask-to-watch'; ref: string; id: string; by: string; run: number | null }
-  /**
-   * Another tool asked through the hub to stop the run `ref` (the hub's `stop`): the window that holds it stops it as
-   * its own Stop does, else the main window has the shell stop its process.
-   */
-  | { type: 'stop-run'; ref: string };
+/** What the window's stream sends: the hub's events, and what **Inspect** read of a lane the window has it open on. */
+export type DesktopRunEvent = ShellRunEvent | DesktopInspectEvent;
 
 /**
- * A command of the window: one of the hub's (`HubCommand`, answered as the hub answers it), or `show`, which only the
- * window sends: the person turned **Hold failures** on for the run `ref` (`on`), so a failure no pause bar shows is
- * held in it, until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
- * from (`viewer`, the stream's `hello`), whose views it watches and whose input it plays.
+ * A command of the window: the hub's (`ShellRunCommand`), or `inspect`, which the app's server alone answers:
+ * **Inspect** of the lane `lane` of the run `ref` opens (`on`) or closes for the window, and the server reads the pages
+ * of the lane's running test from its own trace while a window has it open, and tells it (`DesktopInspectEvent`).
  */
-export type DesktopRunCommand = (
-  | HubCommand
-  | { type: 'show'; id: number; ref: string; on: boolean }
-  /** The person's Not now to a teammate's ask to watch the run `ref` (`ask`, the ask's id). */
-  | { type: 'answer-ask'; id: number; ref: string; ask: string }
-  /**
-   * **Inspect** of the lane `lane` of the run `ref` opens (`on`) or closes for the window: the server reads the pages of
-   * the lane's running test from its own trace while a window has it open, and tells it (`DesktopInspectEvent`).
-   */
-  | { type: 'inspect'; id: number; ref: string; lane: number; on: boolean }
-) & {
-  viewer: string;
-};
-
-/** The stream id a command names: 32 lowercase hex characters, as `hello` gives it. */
-export function isDesktopRunViewer(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
-}
+export type DesktopRunCommand =
+  | ShellRunCommand
+  | { type: 'inspect'; id: number; ref: string; lane: number; on: boolean; viewer: string };

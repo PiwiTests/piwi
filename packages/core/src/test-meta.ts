@@ -29,6 +29,12 @@ export const MAX_TEST_LOCK_CHARS = 100;
 /** Cap for `owner` and `feature`; `link` gets its own, longer cap. */
 const MAX_TEST_META_CHARS = 120;
 const MAX_TEST_LINK_CHARS = 500;
+/** The most issues one test names with `piwi:issue`; later ones are dropped. */
+export const MAX_TEST_ISSUES = 10;
+/** The most `issues` entries `sanitizeTestMetadata` reads; the rest are dropped unread. */
+const MAX_TEST_ISSUE_ENTRIES = 4 * MAX_TEST_ISSUES;
+/** A bare issue key as a test may write it: a project part, a dash and a number. */
+const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 /** The largest `piwi:bug` id: bug report ids are 32-bit serials. */
 const MAX_BUG_ID = 2_147_483_647;
 
@@ -43,6 +49,11 @@ export interface TestMetadata {
   link?: string;
   /** The id of the Piwi bug report this test reproduces (`piwi:bug`), digits only. */
   bug?: string;
+  /**
+   * The issues this test's failures are tracked in (`piwi:issue`), each an absolute `http(s)` URL or a bare key
+   * (stored upper-case), in declaration order, without duplicates, at most `MAX_TEST_ISSUES`.
+   */
+  issues?: string[];
 }
 
 const PRIORITY_SET: ReadonlySet<string> = new Set(TEST_PRIORITIES);
@@ -302,10 +313,19 @@ function normalizeLink(value: unknown): string | undefined {
   }
 }
 
+/** A `piwi:issue` value: an absolute `http(s)` URL as `normalizeLink` accepts it, or a bare key, upper-cased. */
+function normalizeIssue(value: unknown): string | undefined {
+  const raw = cleanString(value, MAX_TEST_LINK_CHARS + 1);
+  if (!raw || raw.length > MAX_TEST_LINK_CHARS) return undefined;
+  if (ISSUE_KEY.test(raw)) return raw.toUpperCase();
+  return normalizeLink(raw);
+}
+
 /**
  * Extract `piwi:` metadata from a test's annotations. Annotation types are
  * matched case-insensitively; unknown `piwi:` fields and unparseable values are
- * ignored, and a later annotation of the same field wins. Returns `null` when
+ * ignored, and a later annotation of the same field wins, except `piwi:issue`,
+ * which several annotations repeat to name several issues. Returns `null` when
  * nothing usable was declared, so callers can store a null column rather than
  * an empty object.
  */
@@ -350,6 +370,13 @@ export function parseTestMetadata(annotations: unknown): TestMetadata | null {
         if (value && /^[1-9]\d{0,9}$/.test(value) && Number(value) <= MAX_BUG_ID) meta.bug = value;
         break;
       }
+      case 'issue': {
+        const value = normalizeIssue(description);
+        if (!value) break;
+        const issues = (meta.issues ??= []);
+        if (issues.length < MAX_TEST_ISSUES && !issues.includes(value)) issues.push(value);
+        break;
+      }
       default:
         break;
     }
@@ -366,10 +393,20 @@ export function parseTestMetadata(annotations: unknown): TestMetadata | null {
  */
 export function sanitizeTestMetadata(raw: unknown): TestMetadata | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const asAnnotations = Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
-    type: `${PIWI_ANNOTATION_PREFIX}${key}`,
-    description: typeof value === 'string' ? value : undefined,
-  }));
+  const asAnnotations = Object.entries(raw as Record<string, unknown>).flatMap(([key, value]) => {
+    // `issues` is the one list field: each entry becomes one `piwi:issue` annotation.
+    if (key === 'issues') {
+      const entries = Array.isArray(value) ? value.slice(0, MAX_TEST_ISSUE_ENTRIES) : [];
+      return entries.map((entry) => ({
+        type: `${PIWI_ANNOTATION_PREFIX}issue`,
+        description: typeof entry === 'string' ? entry : undefined,
+      }));
+    }
+    // The singular `issue` is the annotation, not a wire field: dropped however it is cased or spaced, as the parser
+    // trims and lower-cases a type, so no variant of it adds issues.
+    if (key.trim().toLowerCase() === 'issue') return [];
+    return [{ type: `${PIWI_ANNOTATION_PREFIX}${key}`, description: typeof value === 'string' ? value : undefined }];
+  });
   return parseTestMetadata(asAnnotations);
 }
 
