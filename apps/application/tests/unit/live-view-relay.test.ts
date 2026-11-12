@@ -1701,6 +1701,26 @@ describe('Inspect', () => {
     expect(live.receive(7, snapshot(0, 'call@1', 'after'))).toMatchObject({ status: 409, message: SNAPSHOT_MASKED });
   });
 
+  test('tells a worker a list of masks it cannot read as such, and takes no Inspect page while it holds', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const sink = new FakeSink();
+    // The route read a stored list it cannot read: the worker hears `null`, which masks everything.
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => sink, null);
+    expect(sink.sent[0]).toEqual({ type: 'masks', locators: null });
+    watch(live, 7, { shard: null, worker: 0 }, new FakeSink(), null, { inspect: true });
+    expect(live.receive(7, snapshot(0, 'call@1', 'after'))).toMatchObject({ status: 409, message: SNAPSHOT_MASKED });
+    // A project admin's list it cannot read is the same, for the workers connected and those that connect later.
+    live.setMasks(1, []);
+    expect(live.receive(7, snapshot(0, 'call@2', 'after'))).toBeNull();
+    live.setMasks(1, null);
+    expect(sink.sent.at(-1)).toEqual({ type: 'masks', locators: null });
+    expect(live.receive(7, snapshot(0, 'call@3', 'after'))).toMatchObject({ status: 409, message: SNAPSHOT_MASKED });
+    const late = new FakeSink();
+    live.connectWorker(live.authorize(9, live.mintKey(9, 1))!, { shard: null, worker: 0 }, () => late, []);
+    expect(late.sent[0]).toEqual({ type: 'masks', locators: null });
+  });
+
   test('lets a worker’s snapshots go as its test ends: a watch that opens Inspect hears the next test’s alone', () => {
     const { live } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;

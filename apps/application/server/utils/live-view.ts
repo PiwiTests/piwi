@@ -293,8 +293,8 @@ interface RunLive {
   inspectBytes: RateWindow;
   /** What Inspect keeps of the run: made as its first snapshot or resource comes. */
   inspect: RunInspect | null;
-  /** The elements its project masks, as the route read them as a worker connected. */
-  masks: readonly string[];
+  /** The elements its project masks, as the route read them as a worker connected: null for a list it cannot read. */
+  masks: readonly string[] | null;
 }
 
 /**
@@ -393,8 +393,8 @@ export class LiveViewRelay {
   private readonly endedRuns = new Set<number>();
   /** How many viewers came so far, which orders them. */
   private viewersCame = 0;
-  /** The elements each project masks, as a project admin last set them on this server. */
-  private readonly projectMasks = new Map<number, string[]>();
+  /** The elements each project masks, as a project admin last set them on this server: null for a list it cannot read. */
+  private readonly projectMasks = new Map<number, string[] | null>();
 
   constructor(
     private readonly publish: (runId: number, state: LiveWorkerState) => void = (runId, state) =>
@@ -515,7 +515,7 @@ export class LiveViewRelay {
     entry: KeyEntry,
     id: LiveWorkerId,
     open: () => EventStreamSink,
-    masks: readonly string[] = [],
+    masks: readonly string[] | null = [],
   ): LiveViewRefusal | null {
     const key = liveWorkerKey(id);
     const known = this.runs.get(entry.runId);
@@ -524,7 +524,7 @@ export class LiveViewRelay {
       return { status: 429, message: `A run has ${MAX_LIVE_WORKERS_PER_RUN} workers in its live view at most.` };
     }
     const run = this.runOf(entry.runId, entry.projectId);
-    run.masks = [...masks];
+    run.masks = masks === null ? null : [...masks];
     entry.streamed = true;
     const sink = open();
     const link: WorkerLink = {
@@ -557,8 +557,8 @@ export class LiveViewRelay {
     if (lane !== null && (!before || run.lanes.get(lane) === before)) this.takeLane(run, link, lane);
     sink.onClose(() => this.disconnectWorker(entry.runId, key, link));
     // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
-    const locators = this.projectMasks.get(entry.projectId) ?? masks;
-    sink.send({ type: 'masks', locators: [...locators] } satisfies InstanceToWorker);
+    const locators = this.projectMasks.has(entry.projectId) ? this.projectMasks.get(entry.projectId)! : masks;
+    sink.send({ type: 'masks', locators: locators === null ? null : [...locators] } satisfies InstanceToWorker);
     this.tell(link);
     this.publish(entry.runId, { ...id, connected: true, paused: link.paused });
     return null;
@@ -714,9 +714,13 @@ export class LiveViewRelay {
     return run.inspect;
   }
 
-  /** Whether the run's project masks elements: as a project admin last set them here, else as the route read them. */
+  /**
+   * Whether the run's project masks elements, as a project admin last set them here, else as the route read them: a
+   * list that cannot be read masks everything.
+   */
   private masked(run: RunLive): boolean {
-    return (this.projectMasks.get(run.projectId) ?? run.masks).length > 0;
+    const masks = this.projectMasks.has(run.projectId) ? this.projectMasks.get(run.projectId)! : run.masks;
+    return masks === null || masks.length > 0;
   }
 
   /** What a watch hears of a snapshot of `link`'s page: its header, but the resources it names. */
@@ -916,17 +920,18 @@ export class LiveViewRelay {
   }
 
   /**
-   * The project now masks `locators` beside the secret fields: the workers of its live runs hear so, and a worker that
-   * connects later gets them, whatever its route read before. With any, what Inspect kept of its runs, taken without
-   * them, goes, and the watches with Inspect open hear why in its place.
+   * The project now masks `locators` beside the secret fields (null for a stored list this server cannot read, which
+   * masks everything: the workers send no image then): the workers of its live runs hear so, and a worker
+   * that connects later gets them, whatever its route read before. With any, or null, what Inspect kept of its runs,
+   * taken without them, goes, and the watches with Inspect open hear why in its place.
    */
-  setMasks(projectId: number, locators: readonly string[]): void {
-    this.projectMasks.set(projectId, [...locators]);
-    const message: InstanceToWorker = { type: 'masks', locators: [...locators] };
+  setMasks(projectId: number, locators: readonly string[] | null): void {
+    this.projectMasks.set(projectId, locators === null ? null : [...locators]);
+    const message: InstanceToWorker = { type: 'masks', locators: locators === null ? null : [...locators] };
     for (const run of this.runs.values()) {
       if (run.projectId !== projectId) continue;
       for (const worker of run.workers.values()) worker.sink.send(message);
-      if (!locators.length) continue;
+      if (locators !== null && !locators.length) continue;
       run.inspect?.mask();
       for (const viewer of run.viewers.values()) viewer.notices = [];
       for (const link of run.workers.values()) {

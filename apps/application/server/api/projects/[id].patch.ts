@@ -275,7 +275,10 @@ export default eventHandler(async (event) => {
         }
       }
       // The workers of the project's live runs mask the elements listed now from their next image on.
-      if (liveViewMasks !== undefined) liveViewRelay.setMasks(id, parseLiveMasks(project.project.liveViewMasks) ?? []);
+      if (liveViewMasks !== undefined) {
+        const stored = project.project.liveViewMasks;
+        liveViewRelay.setMasks(id, stored == null ? [] : parseLiveMasks(stored));
+      }
       // A changed OpenAPI URL is read at once, off the request, so its declared routes are gaps before the next
       // run; a cleared one declares nothing. The recompute closes no snoozed or accepted gap, as the sweep's.
       if (openApiUrlChanged) {
