@@ -60,7 +60,8 @@ describe('a run’s session, with a client that answers stops', () => {
     const channel = parseRecordChannel(debugged.env?.PIWI_RUN_CHANNEL)!;
     const watched = new FakeWorker(channel.path, dir).attach(channel.token, debugged.ref!, 0);
     try {
-      expect(debugged.args).not.toContain('--headed');
+      // The workspace installs no reporter: of a version unknown, it may stop at none headless.
+      expect(debugged.args).toContain('--headed');
       quiet.begin();
       failed(quiet);
       expect(await quiet.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
