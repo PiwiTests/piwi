@@ -1368,7 +1368,7 @@
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@piwitests/run-model": "*",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
