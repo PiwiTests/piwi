@@ -1,15 +1,23 @@
 <script setup lang="ts">
 /**
  * One reel of the Video tab: the video on show, the bar with a block for each test, and the checklist of the tests.
- * The reel's playing is `useReelPlayer`.
+ * The reel's playing is `useReelPlayer`. The Evidence's video review plays a reel around one test: that test is tagged
+ * (`focusId`), the playhead starts at it (`startIndex`), and tests listed only for context are dimmed and not played.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
 import { statusPalette } from '~/utils/status-palette';
 
-const props = defineProps<{ reel: Reel; group: ReelGroup }>();
+const props = defineProps<{
+  reel: Reel;
+  group: ReelGroup;
+  /** The execution the review was opened on: its block and row carry a "This test" tag. */
+  focusId?: number | null;
+  /** The entry the playhead starts at; the reel's first video when none. */
+  startIndex?: number | null;
+}>();
 
-const player = useReelPlayer(toRef(props, 'reel'));
+const player = useReelPlayer(toRef(props, 'reel'), toRef(props, 'startIndex'));
 const { current, ticked, failed, playing } = player;
 
 /** A test with no video takes this much of the bar, whatever its duration. */
@@ -26,6 +34,11 @@ function palette(entry: ReelEntry) {
 }
 const playingEntry = computed(() => (current.value == null ? null : props.reel.entries[current.value]!));
 const tickedCount = computed(() => ticked.value.filter(Boolean).length);
+const hasContext = computed(() => props.reel.entries.some((e) => e.context));
+/** The tests the reel plays; the others of a file are listed beside the one in focus. */
+const playedTotal = computed(() => props.reel.entries.filter((e) => !e.context).length);
+const contextTotal = computed(() => props.reel.entries.length - playedTotal.value);
+const isFocus = (entry: ReelEntry) => props.focusId != null && entry.execution.executionId === props.focusId;
 
 const bar = ref<HTMLElement | null>(null);
 const blocks = ref<HTMLElement[]>([]);
@@ -54,7 +67,7 @@ function seekFromBar(index: number, event: MouseEvent) {
 }
 
 function blockLabel(entry: ReelEntry): string {
-  return `${entry.execution.title}, ${resultStatus(entry)}${entry.execution.video ? '' : ', no video'}`;
+  return `${entry.execution.title}, ${resultStatus(entry)}${entry.execution.video ? '' : ', no video'}${isFocus(entry) ? ', this test' : ''}`;
 }
 </script>
 
@@ -99,43 +112,48 @@ function blockLabel(entry: ReelEntry): string {
       </div>
 
       <div ref="bar" class="flex h-6 items-stretch gap-px overflow-x-auto" role="group" aria-label="Tests in this reel">
-        <button
-          v-for="(entry, i) in reel.entries"
-          :key="entry.execution.executionId"
-          ref="blocks"
-          :data-index="i"
-          type="button"
-          class="relative overflow-hidden rounded-sm transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1"
-          :class="[
-            palette(entry).bg,
-            entry.execution.video
-              ? failed.has(i)
-                ? 'opacity-30'
-                : ''
-              : 'border border-dashed border-default bg-transparent!',
-            current === i ? 'ring-2 ring-inverted' : ticked[i] ? 'opacity-100' : 'opacity-60',
-          ]"
-          :style="
-            entry.execution.video
-              ? { flex: `${Math.max(player.lengthOf(i), 1)} 1 0`, minWidth: MIN_BLOCK_WIDTH }
-              : { flex: `0 1 ${STUB_WIDTH}`, minWidth: MIN_BLOCK_WIDTH }
-          "
-          :aria-label="blockLabel(entry)"
-          :aria-current="current === i ? 'true' : undefined"
-          @click="seekFromBar(i, $event)"
-        >
-          <span
-            v-if="current === i && entry.execution.video"
-            class="absolute inset-y-0 w-0.5 bg-white mix-blend-difference"
-            :style="{ left: `${player.progress.value * 100}%` }"
-          />
-        </button>
+        <template v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
+          <button
+            v-if="!entry.context"
+            ref="blocks"
+            :data-index="i"
+            type="button"
+            class="relative overflow-hidden rounded-sm transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1"
+            :class="[
+              palette(entry).bg,
+              entry.execution.video
+                ? failed.has(i)
+                  ? 'opacity-30'
+                  : ''
+                : 'border border-dashed border-default bg-transparent!',
+              current === i ? 'ring-2 ring-inverted' : ticked[i] ? 'opacity-100' : 'opacity-60',
+            ]"
+            :style="
+              entry.execution.video
+                ? { flex: `${Math.max(player.lengthOf(i), 1)} 1 0`, minWidth: MIN_BLOCK_WIDTH }
+                : { flex: `0 1 ${STUB_WIDTH}`, minWidth: MIN_BLOCK_WIDTH }
+            "
+            :aria-label="blockLabel(entry)"
+            :aria-current="current === i ? 'true' : undefined"
+            @click="seekFromBar(i, $event)"
+          >
+            <span
+              v-if="current === i && entry.execution.video"
+              class="absolute inset-y-0 w-0.5 bg-white mix-blend-difference"
+              :style="{ left: `${player.progress.value * 100}%` }"
+            />
+            <span v-if="isFocus(entry)" class="absolute inset-x-0 bottom-0 h-1 bg-inverted" title="This test" />
+          </button>
+        </template>
       </div>
     </div>
 
     <div class="min-w-0">
-      <p class="mb-1 text-xs text-muted tabular-nums">
-        {{ tickedCount }} of {{ reel.entries.length }} tests · {{ reel.videoCount }}
+      <p v-if="hasContext" class="mb-1 text-xs text-muted tabular-nums">
+        This test's video · {{ contextTotal }} other {{ contextTotal === 1 ? 'test' : 'tests' }} in its file, not played
+      </p>
+      <p v-else class="mb-1 text-xs text-muted tabular-nums">
+        {{ tickedCount }} of {{ playedTotal }} tests · {{ reel.videoCount }}
         {{ reel.videoCount === 1 ? 'video' : 'videos' }}
       </p>
       <ul class="max-h-96 overflow-y-auto divide-y divide-default rounded-lg border border-default lg:max-h-[28rem]">
@@ -146,6 +164,7 @@ function blockLabel(entry: ReelEntry): string {
             :class="[
               current === i ? SELECTED_ROW_CLASS : 'hover:bg-elevated/50',
               !entry.execution.video || failed.has(i) ? 'cursor-default' : '',
+              entry.context ? 'opacity-50' : '',
             ]"
             :disabled="!entry.execution.video || failed.has(i)"
             :aria-current="current === i ? 'true' : undefined"
@@ -157,13 +176,30 @@ function blockLabel(entry: ReelEntry): string {
               :class="ticked[i] ? palette(entry).text : 'text-muted opacity-50'"
               aria-hidden="true"
             />
-            <span class="sr-only">{{ ticked[i] ? `Played, ${resultStatus(entry)}: ` : 'Not played yet: ' }}</span>
+            <span class="sr-only">{{
+              entry.context
+                ? 'Another test in this file: '
+                : ticked[i]
+                  ? `Played, ${resultStatus(entry)}: `
+                  : 'Not played yet: '
+            }}</span>
             <span class="min-w-0 flex-1">
-              <span class="block text-sm text-highlighted">{{ entry.execution.title }}</span>
+              <span class="block text-sm text-highlighted">
+                {{ entry.execution.title }}
+                <UBadge
+                  v-if="isFocus(entry)"
+                  label="This test"
+                  color="neutral"
+                  variant="subtle"
+                  size="sm"
+                  class="ml-1 align-middle"
+                />
+              </span>
               <span class="block text-xs text-muted">
                 <template v-if="group === 'file' && entry.laneLabel">{{ entry.laneLabel }} · </template>
                 {{ formatDuration(entry.execution.durationMs) }}
-                <template v-if="!entry.execution.video"> · no video</template>
+                <template v-if="entry.context"> · not played here</template>
+                <template v-else-if="!entry.execution.video"> · no video</template>
                 <template v-else-if="failed.has(i)"> · video failed to load</template>
               </span>
             </span>

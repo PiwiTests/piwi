@@ -16,7 +16,9 @@
  * evidence and scrolls the card so its tab strip stays in view; a citation of
  * one request or console entry rings that row for a moment. A link opens
  * another tab with `?evidence=<tab>`. The Playwright trace opens from the
- * card's header, whichever tab is showing. A test that never ran and left
+ * card's header, whichever tab is showing, and so does the video review: the run's
+ * Video tab player in a modal, around this test, when the execution recorded a
+ * video and its run is finished. A test that never ran and left
  * nothing behind shows no card at all.
  */
 import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
@@ -33,6 +35,7 @@ import type { TimelineCitation } from '~/utils/timeline-rows';
 import { extractStepLocatorUses } from '#shared/locator-chain';
 import type { LightboxSubject } from '~/utils/lightbox';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
+import type { ReelVideo } from '#shared/video-reel';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -361,6 +364,20 @@ const videos = computed(() =>
       name: att.name || att.path.split('/').pop() || att.path,
     })),
 );
+// The video review (a modal over the run's Video tab player) opens from the header. Like the run's Video tab it waits
+// for the run to finish, and it needs a video this execution recorded: Playwright's own, else the first attached.
+const reviewOpen = ref(false);
+const reviewVideo = computed<ReelVideo | null>(() => {
+  const found = (attachments.value as AttachmentInfo[]).filter((att) => isVideoFile(att.path, att.contentType));
+  const own = found.find((att) => att.name === 'video') ?? found[0];
+  return own ? { id: own.id, path: own.path, contentType: own.contentType ?? 'video/webm', size: own.size } : null;
+});
+const runIsFinished = computed(() => {
+  const runStatus = props.testCase?.testRun?.status;
+  return runStatus != null && runStatus !== 'running' && runStatus !== 'finalizing';
+});
+const canReviewVideo = computed(() => reviewVideo.value != null && runId.value != null && runIsFinished.value);
+
 // Only a failed execution has a page at the failure, or a failing action to diff the page across.
 const executionFailed = computed(() => status.value !== 'passed' && status.value !== 'skipped');
 const screenExtraViews = computed(() => [
@@ -530,29 +547,41 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
   >
     <!-- Header: the section title, its help, the trace, and the content-level tab strip -->
     <div class="p-3 sm:px-4 sm:py-3 border-b border-default" data-tour="evidence">
-      <div class="flex items-center gap-2 mb-2.5">
+      <div class="flex flex-wrap items-center gap-2 mb-2.5">
         <UIcon name="i-lucide-microscope" class="size-5 shrink-0" :class="CARD_ICON_CLASS" data-card-icon />
         <h2 class="text-lg font-medium">Evidence</h2>
         <HelpHint v-if="help" :topic="help" />
-        <!-- The viewer URL carries the page origin, known only in the browser. -->
-        <ClientOnly v-if="primaryTrace">
+        <div v-if="primaryTrace || canReviewVideo" class="ml-auto flex flex-wrap items-center justify-end gap-2">
           <UButton
-            :to="traceViewUrl ?? undefined"
-            target="_blank"
+            v-if="canReviewVideo"
+            icon="i-lucide-list-video"
             size="xs"
             color="neutral"
             variant="outline"
-            label="Open trace"
-            :title="traceViewUnavailable ?? 'Open the Playwright trace of this execution in the trace viewer'"
-            :disabled="!!traceViewUnavailable"
-            class="ml-auto"
-            data-tour="open-trace"
-            @click="onViewTrace"
+            label="Open video review"
+            title="Play this test's video with the run's test-case list"
+            data-tour="open-video-review"
+            @click="reviewOpen = true"
           />
-          <template #fallback>
-            <UButton size="xs" color="neutral" variant="outline" label="Open trace" class="ml-auto" disabled />
-          </template>
-        </ClientOnly>
+          <!-- The viewer URL carries the page origin, known only in the browser. -->
+          <ClientOnly v-if="primaryTrace">
+            <UButton
+              :to="traceViewUrl ?? undefined"
+              target="_blank"
+              size="xs"
+              color="neutral"
+              variant="outline"
+              label="Open trace"
+              :title="traceViewUnavailable ?? 'Open the Playwright trace of this execution in the trace viewer'"
+              :disabled="!!traceViewUnavailable"
+              data-tour="open-trace"
+              @click="onViewTrace"
+            />
+            <template #fallback>
+              <UButton size="xs" color="neutral" variant="outline" label="Open trace" disabled />
+            </template>
+          </ClientOnly>
+        </div>
       </div>
       <!-- What the evidence is of, when the page shows one execution among several -->
       <p v-if="$slots.subject" data-shot="evidence-subject" class="-mt-1 mb-2.5 text-xs text-muted break-words">
@@ -806,5 +835,12 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         </template>
       </p>
     </div>
+
+    <EvidenceVideoReview
+      v-if="canReviewVideo && reviewVideo"
+      v-model:open="reviewOpen"
+      :test-case="testCase"
+      :video="reviewVideo"
+    />
   </section>
 </template>
