@@ -67,7 +67,7 @@ const source = computed(() => {
       {{ link.statusText }}
     </UBadge>
 
-    <span v-if="source" class="min-w-0 truncate font-normal text-muted" :title="source" data-testid="link-chip-source">
+    <span v-if="source" class="shrink-0 whitespace-nowrap font-normal text-muted" data-testid="link-chip-source">
       {{ source }}
     </span>
 
