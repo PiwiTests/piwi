@@ -25,6 +25,7 @@ fn main() {
             "desktop_open_output_window",
             "desktop_open_worker_window",
             "desktop_close_output_window",
+            "desktop_close_other_output_windows",
             "desktop_bring_to_front",
             "desktop_notify",
             "desktop_log",

@@ -1,7 +1,7 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the half the app alone has: which run of the
  * Local runs tray a hub session is (`desktopRunRef`, `desktopRunOf`), how far it is and which test its end leads to
- * (`desktopRunProgress`, `desktopFailedExecution`), which runs hold their failures, which live runs report a run's
+ * (`desktopRunProgress`, `desktopFailedStep`, `desktopFailedExecution`), which runs hold their failures, which live runs report a run's
  * page and which worker runs each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), and where a stop's
  * file opens. The half Piwi Runner's window shares is the layer's (`@piwitests/run-ui/run-view`).
  */
@@ -12,6 +12,8 @@ import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun } from '#shared/desktop-r
 import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
+import { hideSecretsInText } from '@piwitests/core/mask';
+import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -79,17 +81,19 @@ interface DesktopRunCase {
 }
 
 /**
- * The execution a failed run's end leads to: its failed test the run's own process named first (`failure`, its
- * describe blocks' titles then its own, joined by ` › `), else the first failed test of the run; null for none.
+ * The execution a failed run's end leads to: its failed test the run's own process named (`failure`, its describe
+ * blocks' titles then its own, joined by ` › `, as the reporter sends it: its secrets hidden and cut at
+ * `MAX_RUN_FAILURE_TEXT` characters), the first of those it names when a cut title names several, else the first failed
+ * test of the run; null for none.
  */
 export function desktopFailedExecution(
   cases: readonly DesktopRunCase[],
   failure: Pick<NonNullable<HubProgress['failure']>, 'title'> | null,
 ): number | null {
   const failed = cases.filter((test) => isFailedStatus(test.status));
-  const named = failure
-    ? failed.find((test) => [...(test.suitePath ?? []), test.title].join(' › ') === failure.title)
-    : null;
+  const sent = (test: DesktopRunCase) =>
+    hideSecretsInText([...(test.suitePath ?? []), test.title].join(' › ')).slice(0, MAX_RUN_FAILURE_TEXT);
+  const named = failure ? failed.find((test) => sent(test) === failure.title) : null;
   return (named ?? failed[0])?.executionId ?? null;
 }
 
@@ -336,16 +340,16 @@ export function desktopStopLink(
 }
 
 /**
- * The first failure a run of the tray's steps named as they ended (`HubProgress.failure`, by ref in `ended`), its
- * latest step's first; null when none did.
+ * The first of a run of the tray's steps that failed, as the hub counted it once it ended (`HubProgress`, by ref in
+ * `ended`), with the failure it named first (null when it named none); null when none failed or none counted.
  */
-export function desktopRunFailure(
+export function desktopFailedStep(
   run: { hubRefs: readonly string[] },
   ended: Readonly<Record<string, HubProgress>>,
-): HubProgress['failure'] {
-  for (const ref of [...run.hubRefs].reverse()) {
-    const failure = (ended[ref] ?? ended[`${ref}${UNATTENDED_RUN_SUFFIX}`])?.failure;
-    if (failure) return failure;
+): { ref: string; failure: HubProgress['failure'] } | null {
+  for (const ref of run.hubRefs) {
+    const progress = ended[ref] ?? ended[`${ref}${UNATTENDED_RUN_SUFFIX}`];
+    if (progress && (progress.failed > 0 || progress.failure)) return { ref, failure: progress.failure };
   }
   return null;
 }

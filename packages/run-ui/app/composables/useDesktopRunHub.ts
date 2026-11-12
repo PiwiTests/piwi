@@ -775,6 +775,17 @@ export function useDesktopRunHub() {
     /** What the window heard: read it, never write it. */
     state: state as Readonly<HubState>,
     command,
+    /**
+     * Takes back how far the runs that ended before a reload of the page came (`endedProgress`, `endedAtStop`), by ref,
+     * as the page before kept them: a run the window heard of since keeps what it heard.
+     */
+    takeBackEnded(ended: Readonly<Record<string, { progress?: HubProgress; endedAtStop?: number }>>): void {
+      for (const [ref, kept] of Object.entries(ended)) {
+        if (kept.progress && !state.endedProgress[ref]) keepEndedProgress(ref, kept.progress);
+        if (kept.endedAtStop && kept.endedAtStop > 0 && !state.endedAtStop[ref])
+          state.endedAtStop[ref] = kept.endedAtStop;
+      }
+    },
     /** Whether the window wants the stream: open while it does, closed, and every stop let go, once it does not. */
     want(on: boolean): void {
       wanted = on;

@@ -1356,7 +1356,7 @@ async fn bisect_driver(
         }
         if let Some(sha) = parse_first_bad(&output) {
             let first_bad = describe_commit(git, worktree, &sha);
-            emit(
+            crate::runner::emit_verdict(
                 app,
                 RunEventPayload::bisect(
                     id,
@@ -1761,7 +1761,7 @@ async fn lab_job_driver(
     let args = lab_job_args(&cli, plan_file);
     let env = lab_env_with_hub(app, id, false).await;
     let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
-    emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
+    crate::runner::emit_verdict(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
 }
 

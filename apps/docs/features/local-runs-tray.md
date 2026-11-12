@@ -27,7 +27,9 @@ the run counts the results Playwright prints.
 
 Once it reported to the app, a run links **Open run #N**, and **Compare with run #N** when its tests come from another
 run. A failed one leads to its failure: **Open the failure**, on the run and in the message at its end, opens the
-page of its first failed test, the one its process named first; the run's page when the run names none. **Run again**
+page of its first failed test, the one its process named first; the run's page when the run names none. A run of
+several Playwright projects reports one run for each: the failure is the first one of the first project that failed,
+in that project's run. **Run again**
 starts an ended run as it ran, with its options and its **Hold failures**.
 
 ## Compact list
@@ -48,14 +50,18 @@ Each run shows its output under its workers, in Playwright's terminal colors. **
 separate window**, the window button on the run, moves it to a window of its own, beside your editor or on another
 screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
 here**, brings it back. The window stays open whatever page the app shows, an analytics dashboard in TV mode
-included, and through a reload; it closes as its run leaves the tray (**Clear finished runs**) and with the app.
+included, and through a reload; it closes as its run leaves the tray (**Clear finished runs**) and with the app. A
+window the reloaded tray no longer shows a run in closes.
 
 ## A reload
 
 A reload of the window keeps the tray's runs. A run still going is followed again: its output goes on, with its
-**Hold failures** and its separate window as you left them. A run whose step ended during the reload ends with that
-step's exit code, and goes on to its next step if it has one. A run that was starting as the window reloaded ends,
-saying so: run it again. The tray keeps the last 300 lines of each run's output through a reload.
+**Hold failures**, its separate window, and how far each of its ended projects came, as you left them. A run whose
+step ended during the reload ends with that step's exit code, and goes on to its next step if it has one; a
+reproduction, a bisect or a Flake Lab job that ended meanwhile still records its verdict, once. A run of tests that
+was starting, its first Playwright project or its next, goes on with the one the app started. Any other run that was
+starting as the window reloaded ends, saying so: run it again. What the run printed while the window reloaded is lost, and the tray
+keeps the last 300 lines of each run's output through a reload.
 
 ## Limits
 

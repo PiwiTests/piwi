@@ -16,6 +16,7 @@ import {
   desktopSessionsOfRun,
   desktopEditorRunOf,
   desktopFailedExecution,
+  desktopFailedStep,
   desktopRunProgress,
   desktopShownRefs,
   desktopStopLink,
@@ -41,6 +42,8 @@ import {
 } from '@piwitests/run-ui/run-view';
 import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
+import { hideSecretsInText } from '@piwitests/core/mask';
+import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
 
 /**
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
@@ -126,6 +129,45 @@ describe('how far a run of the tray is, and where its end leads', () => {
     expect(desktopFailedExecution(cases, { title: 'refunds', error: null })).toBe(12);
     expect(desktopFailedExecution(cases, null)).toBe(12);
     expect(desktopFailedExecution(cases.slice(0, 1), null)).toBeNull();
+  });
+
+  test('finds a failure whose title its process sent cut or with its secrets hidden, never a test it only begins', () => {
+    const long = 'pays '.repeat(120);
+    const cases = [
+      { executionId: 21, title: 'lists the cart', suitePath: ['cart'], status: 'failed' },
+      { executionId: 22, title: 'pays', suitePath: ['checkout'], status: 'failed' },
+      { executionId: 23, title: `${long}by card`, suitePath: ['checkout'], status: 'failed' },
+      { executionId: 24, title: 'logs in with AKIAIOSFODNN7EXAMPLE', suitePath: [], status: 'failed' },
+    ];
+    // As the reporter sends them: cut at MAX_RUN_FAILURE_TEXT, its secrets hidden.
+    const cut = `checkout › ${long}by card`.slice(0, MAX_RUN_FAILURE_TEXT);
+    expect(desktopFailedExecution(cases, { title: cut, error: null })).toBe(23);
+    const hidden = hideSecretsInText('logs in with AKIAIOSFODNN7EXAMPLE');
+    expect(hidden).not.toContain('AKIA');
+    expect(desktopFailedExecution(cases, { title: hidden, error: null })).toBe(24);
+    // A title another test's only begins with names that test alone.
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(22);
+  });
+
+  test('leads a run of several steps to the first step that failed, and the failure it named', () => {
+    const progress = (failed: number, title: string | null) => ({
+      total: 2,
+      done: 2,
+      failed,
+      flaky: 0,
+      skipped: 0,
+      status: failed ? ('failed' as const) : ('passed' as const),
+      failure: title ? { title, error: null } : null,
+    });
+    const run = { hubRefs: ['desktop-1', 'desktop-2', 'desktop-3'] };
+    expect(
+      desktopFailedStep(run, {
+        'desktop-1': progress(0, null),
+        'desktop-2-unattended': progress(1, 'checkout › pays'),
+        'desktop-3': progress(1, 'cart › lists'),
+      }),
+    ).toEqual({ ref: 'desktop-2', failure: { title: 'checkout › pays', error: null } });
+    expect(desktopFailedStep(run, { 'desktop-1': progress(0, null) })).toBeNull();
   });
 });
 
@@ -564,6 +606,17 @@ describe('the window’s stream of its runs', () => {
     expect(source.closed).toBe(true);
     expect(runs.state.connected).toBe(false);
     expect(runs.state.sessions).toEqual({});
+  });
+
+  test('takes back how far the runs that ended before a reload came, without counting one again', async () => {
+    const runs = await hub();
+    const progress = { total: 2, done: 2, failed: 1, flaky: 0, skipped: 1, status: 'failed' as const, failure: null };
+    runs.takeBackEnded({ 'desktop-7': { progress, endedAtStop: 1 }, 'desktop-8': { endedAtStop: 2 } });
+    expect(runs.state.endedProgress).toEqual({ 'desktop-7': progress });
+    expect(runs.state.endedAtStop).toEqual({ 'desktop-7': 1, 'desktop-8': 2 });
+    // A run the stream tells of again keeps what the stream says.
+    runs.takeBackEnded({ 'desktop-7': { progress: { ...progress, failed: 2 } } });
+    expect(runs.state.endedProgress['desktop-7']?.failed).toBe(1);
   });
 
   test('says which runs it shows live, again on each new stream, and names its stream in every command', async () => {

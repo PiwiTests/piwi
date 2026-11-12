@@ -37,6 +37,8 @@ declare global {
     __exitRun: (code: number) => void;
     /** Prints `line` as shell run 41's output. */
     __printLine: (line: string) => void;
+    /** The commands the page asked the shell for, each with its arguments. */
+    __invoked: Array<{ cmd: string; args?: Record<string, unknown> }>;
   }
 }
 
@@ -52,12 +54,14 @@ async function installBridge(page: Page) {
     };
     Object.assign(window, {
       __notes: [],
+      __invoked: [],
       __endRun: () => emit({ id: 41, kind: 'exit', line: null, code: 0 }),
       __exitRun: (code: number) => emit({ id: 41, kind: 'exit', line: null, code }),
       __printLine: (line: string) => emit({ id: 41, kind: 'stdout', line, code: null }),
       __TAURI__: {
         core: {
           invoke: async (cmd: string, args?: Record<string, unknown>) => {
+            window.__invoked.push({ cmd, args });
             switch (cmd) {
               case 'desktop_notify':
                 window.__notes.push(`${String(args?.title)} | ${String(args?.body)}`);
@@ -1986,6 +1990,35 @@ test.describe('Desktop run live view', () => {
     await page.evaluate(() => window.__endRun());
     await expect(output.getByText('Passed', { exact: true })).toBeVisible();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+  });
+
+  test('closes a separate output window that does not answer after a reload, and keeps no other', async ({ page }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
+    const name = `piwi-run-output-${key}`;
+
+    // Reloaded, with no output page to answer: the window the run kept is closed by its name, its output back in the
+    // tray, and the shell keeps no window no run shows its output in.
+    await page.reload();
+    await waitForHydration(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.find((i) => i.cmd === 'desktop_close_other_output_windows')))
+      .toMatchObject({ args: { keep: [name] } });
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_close_output_window')), {
+        timeout: 10_000,
+      })
+      .toEqual([{ cmd: 'desktop_close_output_window', args: { name } }]);
+    await expect(tray(page).getByText('The output is in a separate window.')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_open_output_window'))).toEqual(
+      [],
+    );
   });
 
   test('counts a running run’s tests as its own process does, a test held at its failure among the failed', async ({

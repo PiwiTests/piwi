@@ -4,7 +4,8 @@
  * the shell open the window (`desktop_open_output_window`) on the dashboard's `/desktop/run-output` page and feeds
  * that page over `RUN_OUTPUT_CHANNEL`: the run's header, then the lines the page does not have yet. A window the page
  * before a reload had open (`kept`) is asked whether it is still there and fed again from its last line, never opened
- * again; one that does not answer within `KEPT_ANSWER_MS` was closed meanwhile. It renders nothing here. Emits `stop`
+ * again; one that does not answer within `KEPT_ANSWER_MS` is closed by its name, whatever shows in it. It renders
+ * nothing here. Emits `stop`
  * when the window's Stop is pressed, and `closed` once the window is gone, with `opened` false when it could not
  * open; unmounting it closes the window.
  */
@@ -110,13 +111,16 @@ onMounted(async () => {
   stopListening = unlisten ?? null;
   if (unmounted) {
     stopListening?.();
+    if (props.kept && !open) closeByName();
     return;
   }
   if (props.kept) {
     channel.postMessage({ type: 'ask', name } satisfies RunOutputMessage);
     keptWait = setTimeout(() => {
       keptWait = null;
-      if (!open && !unmounted) emit('closed', true);
+      if (open || unmounted) return;
+      closeByName();
+      emit('closed', true);
     }, KEPT_ANSWER_MS);
     return;
   }
@@ -135,18 +139,26 @@ onMounted(async () => {
   }
 });
 
+/** Has the shell close the window of this name, if it has one. */
+function closeByName() {
+  tauriCore()
+    ?.invoke('desktop_close_output_window', { name })
+    .catch(() => {});
+}
+
 function closeWindow() {
-  if (open)
-    tauriCore()
-      ?.invoke('desktop_close_output_window', { name })
-      .catch(() => {});
+  if (open) closeByName();
   open = false;
 }
 
 onBeforeUnmount(() => {
   unmounted = true;
   if (pending) clearTimeout(pending);
-  if (keptWait) clearTimeout(keptWait);
+  // A kept window that has not answered yet may still be open.
+  if (keptWait) {
+    clearTimeout(keptWait);
+    closeByName();
+  }
   channel?.close();
   stopListening?.();
   closeWindow();

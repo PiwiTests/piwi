@@ -2438,6 +2438,18 @@ fn desktop_close_output_window(app: tauri::AppHandle, name: String) -> Result<()
     Ok(())
 }
 
+/// Close every run output window whose name `keep` does not hold: the
+/// dashboard window's page, once it took back its runs after a reload, keeps
+/// the windows its runs show their output in, and no other.
+#[tauri::command]
+fn desktop_close_other_output_windows(app: tauri::AppHandle, keep: Vec<String>) {
+    for (label, window) in app.webview_windows() {
+        if output_window_name(&label).is_some_and(|name| !keep.iter().any(|kept| kept == name)) {
+            let _ = window.close();
+        }
+    }
+}
+
 /// Event the shell emits to the dashboard window with the `id` of a
 /// notification the user clicked (see `desktop_notify`).
 const NOTIFICATION_CLICK_EVENT: &str = "piwi:notification-click";
@@ -3448,6 +3460,7 @@ pub fn run() {
             desktop_open_output_window,
             desktop_open_worker_window,
             desktop_close_output_window,
+            desktop_close_other_output_windows,
             desktop_bring_to_front,
             desktop_notify,
             desktop_log,
