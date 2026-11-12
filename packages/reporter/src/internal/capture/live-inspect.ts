@@ -49,15 +49,18 @@ import { callMethod, internalCall } from './quiet-capture.js';
  *   call, feature-checked) from as Inspect opens, stopped unsaved as it closes, its files deleted; a test that starts
  *   tracing itself meanwhile gets it, Piwi's stopped first (`guardTracing`). A runner's trace that takes no snapshots,
  *   or a page Piwi cannot trace, sends why in place of a snapshot.
- * - **What goes.** The watched page's snapshots since its last navigation (the main frame's last full one onward, of
- *   every frame), `MAX_SNAPSHOT_BACKLOG` bytes at most, the oldest left out, then each new one, in the trace's order,
- *   each numbered in its frame as Playwright numbers it (a reference names the snapshot `back` places before).
- *   `SNAPSHOTS_PER_SECOND` at most, one post in flight, after the bytes the live view's frames and Inspect's own posts
- *   took (`LiveByteBudget`, a wait of a second at most): a frame never waits on one. Each snapshot has what the page's
- *   secrets show and the credentials its addresses and texts hold removed before it goes, its scripts emptied
- *   (`hideFrameSnapshotSecrets`, with the attempt's secrets `lane-layers.ts` keeps: the values its secret fields held,
- *   read through internal calls, and those its calls typed into one); its title is the runner's, the text it types and
- *   its credentials hidden. A snapshot past `MAX_SNAPSHOT_BYTES`, or one that cannot be read whole, does not go. A
+ * - **What goes.** Once the reads caught up with the trace, the watched page's snapshots since its last navigation (the
+ *   main frame's last full one onward, of every frame), `MAX_SNAPSHOT_BACKLOG` bytes at most (past them, the oldest of
+ *   those after a frame's full one left out, never a full one), then each new one, in the trace's order, each numbered
+ *   in its frame as Playwright numbers it (a reference names the snapshot `back` places before), a line passed over for
+ *   its length counted where it was. `SNAPSHOTS_PER_SECOND` at most, one post in flight, each waiting once, a second
+ *   at most, for the bytes the live view's frames and Inspect's own posts took (`LiveByteBudget`), its own counted
+ *   so the frames after it are spaced. Each has what the page's secrets show and the credentials its addresses and
+ *   texts hold removed before it goes (`hideFrameSnapshotSecrets`, with the attempt's secrets `lane-layers.ts` keeps:
+ *   the values its secret fields held, read through internal calls, and those its calls typed into one); its title is
+ *   the runner's, the text it types and its credentials hidden. A snapshot that does not go (past `MAX_SNAPSHOT_BYTES`,
+ *   one that cannot be read whole, one whose page's secret fields could not be read, one past `MAX_SNAPSHOT_BACKLOG`
+ *   waiting) stops its frame's chain until its next full snapshot, and the viewers hear why for the main frame. A
  *   project that masks elements gets no snapshot, and the viewers hear why: its masks are locators, which a snapshot
  *   cannot find.
  * - **Resources.** Before a snapshot, each resource it names (`snapshotResourceUrls`, and what a stylesheet among them
@@ -92,9 +95,19 @@ const CSS_DEPTH = 3;
 /** Why no snapshot goes, as a viewer reads it. */
 export const INSPECT_MASKED =
   'This project masks elements: Inspect sends no page of it, since a snapshot cannot hide what its masks name.';
+export const INSPECT_UNREAD_MASKS =
+  'Inspect sends no page: the project masks elements this reporter cannot read. Update the Piwi reporter.';
 const NO_SNAPSHOTS =
-  "Inspect has no page to show: this project's trace takes no DOM snapshots (its trace option's snapshots is off).";
+  "Inspect has no page to show: this project's trace takes no DOM snapshots (its trace option's snapshots, or their dom, is off).";
 const NO_TRACE = 'Inspect cannot trace this page: the test traces it itself, or its browser keeps no trace folder.';
+/** Why a page's snapshots stop until its next navigation, as a viewer reads it. */
+const UNREAD_SECRETS = 'The page is not sent: its secret fields could not be read, so Inspect could not hide them.';
+const UNREAD_SNAPSHOT =
+  'The page is not sent: Inspect could not read its snapshot whole (too deep, too large, or naming one it no longer holds), so it could not hide its secrets.';
+const TOO_LARGE = `The page is not sent: its snapshot is larger than ${MAX_SNAPSHOT_BYTES / 1024 / 1024} MB.`;
+const BEHIND = 'The page is not sent: Inspect fell behind the test’s calls.';
+const OVER_BACKLOG = `The page is not sent: its snapshots since its navigation are larger than ${MAX_SNAPSHOT_BACKLOG / 1024 / 1024} MB.`;
+const UNTIL_NAVIGATION = 'Inspect sends it again from its next navigation.';
 
 /** The trace lines read: a call as it begins, a DOM snapshot, a resource the page loaded. */
 const BEFORE_LINE = '{"type":"before"';
@@ -102,8 +115,9 @@ const SNAPSHOT_LINE = '{"type":"frame-snapshot"';
 const RESOURCE_LINE = '{"type":"resource-snapshot"';
 
 /**
- * The bytes a second the live view posts, shared by its frames and Inspect: a frame never waits on it, and each of
- * Inspect's posts waits until the bytes posted before it would have gone at `LIVE_FRAME_BYTE_RATE`, a second at most.
+ * The bytes a second the live view posts, shared by its frames and Inspect: each of Inspect's posts waits once until the
+ * bytes posted before it would have gone at `LIVE_FRAME_BYTE_RATE`, a second at most, then goes, and a frame is spaced
+ * after it the same way.
  */
 export class LiveByteBudget {
   private freeAt = 0;
@@ -113,7 +127,7 @@ export class LiveByteBudget {
     this.freeAt = Math.max(Date.now(), this.freeAt) + (bytes * 1000) / LIVE_FRAME_BYTE_RATE;
   }
 
-  /** How long an Inspect post waits now, in milliseconds. */
+  /** How long a post waits now for the bytes posted before it, in milliseconds: a second at most. */
   wait(): number {
     return Math.min(MAX_BUDGET_WAIT_MS, Math.max(0, this.freeAt - Date.now()));
   }
@@ -226,6 +240,8 @@ interface Waiting {
   fields: Omit<LiveSnapshot, 'resources' | 'title'>;
   snapshot: Record<string, unknown>;
   bytes: number;
+  /** Whether it waited for the bytes posted before it: it waits once. */
+  waited: boolean;
 }
 
 /** What the trace's files are read from: the folder, and the files of the attempt now. */
@@ -249,6 +265,11 @@ export interface InspectLink {
   sent: Set<string>;
 }
 
+/** A wait of `ms` milliseconds that keeps no process alive. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+}
+
 /**
  * Inspect of `page` while a viewer has it open: reads its trace from as it opens and posts its snapshots and their
  * resources through `link` until `close`.
@@ -260,6 +281,8 @@ export class LiveInspect {
   /** The next post's turn, once the pace and the budget allow it. */
   private pumpTimer: ReturnType<typeof setTimeout> | null = null;
   private reading = false;
+  /** Whether the reads caught up with the trace once: no snapshot goes before, so the latest page's go first. */
+  private caughtUp = false;
   private readonly tails = new Map<string, TraceTail>();
   /** How many snapshots of each frame of the page the trace holds so far: the next one's place. */
   private readonly counts = new Map<string, number>();
@@ -270,6 +293,8 @@ export class LiveInspect {
   /** The snapshots that wait to go, oldest first, and their bytes. */
   private queue: Waiting[] = [];
   private queued = 0;
+  /** The frames whose chain stopped: none of their snapshots goes until their next full one. */
+  private readonly stopped = new Set<string>();
   /** The runner's step and a title of each call, by the trace's id of it. */
   private readonly calls = new Map<string, { step: string; title: string }>();
   /** The resources the trace recorded, by address. */
@@ -278,7 +303,7 @@ export class LiveInspect {
   private readonly cssNames = new Map<string, string[]>();
   private posting = false;
   private readonly pace = new RateWindow(SNAPSHOTS_PER_SECOND);
-  private secrets: { values: string[]; at: number } | null = null;
+  private secrets: { values: string[] | null; at: number } | null = null;
 
   constructor(
     private readonly page: Page,
@@ -288,7 +313,8 @@ export class LiveInspect {
   /** Start: say why none goes, or find the page's trace and read it. Never throws. */
   async open(): Promise<void> {
     const masks = this.link.masks();
-    if (masks === null || masks.length) return void this.refuse(INSPECT_MASKED);
+    if (masks === null) return void this.refuse(INSPECT_UNREAD_MASKS);
+    if (masks.length) return void this.refuse(INSPECT_MASKED);
     const source = await this.findSource().catch(() => null);
     if (this.closed) return void (typeof source === 'object' ? source?.own?.stop() : undefined);
     if (typeof source === 'string' || !source) return void this.refuse(source ?? NO_TRACE);
@@ -298,15 +324,21 @@ export class LiveInspect {
 
   /** Stop reading and posting; Piwi's own trace, if it ran one, stops unsaved. */
   async close(): Promise<void> {
+    this.halt();
+    await this.source?.own?.stop();
+  }
+
+  /** Nothing more is read nor posted. */
+  private halt(): void {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     if (this.pumpTimer) clearTimeout(this.pumpTimer);
     this.timer = null;
     this.pumpTimer = null;
     this.queue = [];
+    this.queued = 0;
     this.chains.clear();
     this.chainSizes.clear();
-    await this.source?.own?.stop();
   }
 
   private refuse(why: string): void {
@@ -319,17 +351,20 @@ export class LiveInspect {
     const test = layersTest();
     const traced = test?.traced?.() ?? null;
     const runner = test?.trace ?? null;
+    const runnerSource = (dir: string, base: string): Source => ({
+      dir,
+      files: () => attemptFiles(dir, base),
+      own: null,
+    });
     if (traced && runner) {
       if (test?.snapshots?.() === false) return NO_SNAPSHOTS;
-      return { dir: runner.dir, files: () => attemptFiles(runner.dir, runner.base), own: null };
+      return runnerSource(runner.dir, runner.base);
     }
     const own = await startOwnTrace(this.page.context());
     if (own && own !== 'busy') {
       return { dir: own.dir, files: async () => [path.join(own.dir, `${own.name}.trace`)], own };
     }
-    if (own === 'busy' && traced === null && runner) {
-      return { dir: runner.dir, files: () => attemptFiles(runner.dir, runner.base), own: null };
-    }
+    if (own === 'busy' && traced === null && runner) return runnerSource(runner.dir, runner.base);
     return null;
   }
 
@@ -342,12 +377,12 @@ export class LiveInspect {
     this.timer.unref?.();
   }
 
-  /** Read what the trace gained, then post what waits; again `READ_MS` later. */
+  /** Read what the trace gained, then post what waits once the reads caught up with it; again `READ_MS` later. */
   private async turn(): Promise<void> {
     if (this.closed || this.reading) return;
     this.reading = true;
     try {
-      await this.read();
+      if (!(await this.read())) this.caughtUp = true;
     } catch {
       // A trace that cannot be read now is read again next turn.
     } finally {
@@ -357,40 +392,59 @@ export class LiveInspect {
     this.schedule(READ_MS);
   }
 
-  private tail(file: string, maxLine: number, onLong: ((head: string) => void) | null): TraceTail {
+  private tail(file: string, maxLine: number): TraceTail {
     let tail = this.tails.get(file);
     if (!tail) {
-      tail = new TraceTail(file, maxLine, onLong);
+      tail = new TraceTail(file, maxLine);
       this.tails.set(file, tail);
     }
     return tail;
   }
 
-  /** Read each file of the trace from where it stopped: its resources first, then its calls and snapshots. */
-  private async read(): Promise<void> {
+  /**
+   * Read each file of the trace from where it stopped: its resources first, then its calls and snapshots, in their
+   * order. Whether a file holds more than the reads took.
+   */
+  private async read(): Promise<boolean> {
     const source = this.source;
-    if (!source) return;
+    if (!source) return false;
+    let behind = false;
     for (const file of await source.files()) {
-      const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE, null);
+      const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
-        for (const line of await network.read()) if (line.startsWith(RESOURCE_LINE)) this.takeResource(line);
+        for (const line of await network.read()) {
+          if (typeof line === 'string' && line.startsWith(RESOURCE_LINE)) this.takeResource(line);
+        }
         if (!network.behind) break;
       }
-      const trace = this.tail(file, MAX_SNAPSHOT_LINE, (head) => this.passedOver(head));
+      const trace = this.tail(file, MAX_SNAPSHOT_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await trace.read()) {
-          if (line.startsWith(BEFORE_LINE)) this.takeCall(line);
+          if (typeof line !== 'string') this.passedOver(line.head);
+          else if (line.startsWith(BEFORE_LINE)) this.takeCall(line);
           else if (line.startsWith(SNAPSHOT_LINE)) this.takeSnapshot(line);
         }
         if (!trace.behind) break;
       }
+      behind ||= network.behind || trace.behind;
     }
+    return behind;
   }
 
   /** Playwright's id of the watched page, as its trace names it. */
   private pageId(): string | null {
     const id = (this.page as unknown as { _guid?: unknown })._guid;
     return typeof id === 'string' && id ? id : null;
+  }
+
+  /** Whether `frame` is the watched page's main frame, by Playwright's id of it; true when the page does not say. */
+  private isMainFrame(frame: string): boolean {
+    try {
+      const id = (this.page.mainFrame() as unknown as { _guid?: unknown })._guid;
+      return typeof id !== 'string' || id === frame;
+    } catch {
+      return true;
+    }
   }
 
   /** A resource the page loaded: kept by its address when Inspect may send it. */
@@ -432,12 +486,13 @@ export class LiveInspect {
     if (this.calls.size > MAX_CALLS) this.calls.delete(this.calls.keys().next().value!);
   }
 
-  /** A snapshot's line passed over for its length: its frame still counts it, though it does not go. */
+  /** A snapshot's line passed over for its length: its frame counts it where it was, and its chain stops there. */
   private passedOver(head: string): void {
     const page = this.pageId();
     const frame = /"frameId":"([^"]{1,200})"/.exec(head)?.[1];
     if (!head.startsWith(SNAPSHOT_LINE) || !page || !frame || !head.includes(`"pageId":"${page}"`)) return;
     this.counts.set(frame, (this.counts.get(frame) ?? 0) + 1);
+    this.stopChain(frame, this.isMainFrame(frame), TOO_LARGE, 'kept');
   }
 
   /** A snapshot of the watched page: numbered in its frame, kept for its chain, and queued to go. */
@@ -454,15 +509,21 @@ export class LiveInspect {
     if (pageId !== page || typeof frameId !== 'string' || !isLayerCallId(frameId)) return;
     const index = this.counts.get(frameId) ?? 0;
     this.counts.set(frameId, index + 1);
-    const phase = snapshotPhase(snapshot);
-    if (!phase || !isLayerCallId(callId) || !Array.isArray(snapshot.html)) return;
+    if (!Array.isArray(snapshot.html)) return;
     const full = isFullSnapshot(snapshot.html);
     const main = snapshot.isMainFrame !== false;
     this.keepInChain(frameId, index, full, snapshot, line.length);
+    if (full) this.stopped.delete(frameId);
+    const phase = snapshotPhase(snapshot);
+    if (!phase || !isLayerCallId(callId) || this.stopped.has(frameId)) return;
     if (main && full) {
       // The page navigated: the snapshots before it go unsent.
       this.queue = [];
       this.queued = 0;
+    }
+    if (this.caughtUp && this.queued + line.length > MAX_SNAPSHOT_BACKLOG) {
+      this.stopChain(frameId, main, BEHIND, 'kept');
+      return;
     }
     const call = this.calls.get(callId);
     const at = typeof wallTime === 'number' && wallTime > 1e12 ? wallTime : Date.now();
@@ -470,9 +531,48 @@ export class LiveInspect {
       fields: { call: call?.step ?? callId, phase, page, frame: frameId, main, full, index, at },
       snapshot,
       bytes: line.length,
+      waited: false,
     });
     this.queued += line.length;
-    while (this.queued > MAX_SNAPSHOT_BACKLOG && this.queue.length > 1) this.queued -= this.queue.shift()!.bytes;
+    if (!this.caughtUp) this.trimBacklog();
+  }
+
+  /**
+   * The snapshots waiting as Inspect opens, within `MAX_SNAPSHOT_BACKLOG`: past it, the oldest after a frame's full one
+   * go, never a full one; with full ones alone left, the oldest one's frame sends none of its chain.
+   */
+  private trimBacklog(): void {
+    while (this.queued > MAX_SNAPSHOT_BACKLOG && this.queue.length) {
+      const at = this.queue.findIndex((one) => !one.fields.full);
+      if (at >= 0) {
+        this.queued -= this.queue.splice(at, 1)[0]!.bytes;
+        continue;
+      }
+      const { frame, main } = this.queue[0]!.fields;
+      this.stopChain(frame, main, OVER_BACKLOG, 'none');
+    }
+  }
+
+  /**
+   * A snapshot of `frame` does not go, for `why`: its chain stops until its next full snapshot, and the viewers hear why
+   * for the page's main frame. The frame's snapshots waiting stay (`kept`: they come before it), go up to a full one,
+   * which starts its chain again (`until-full`: they come after it), or all go (`none`).
+   */
+  private stopChain(frame: string, main: boolean, why: string, waiting: 'kept' | 'until-full' | 'none'): void {
+    let restarts = false;
+    if (waiting !== 'kept') {
+      const kept: Waiting[] = [];
+      for (const one of this.queue) {
+        if (one.fields.frame === frame && one.fields.full && waiting === 'until-full') restarts = true;
+        if (one.fields.frame === frame && !restarts) this.queued -= one.bytes;
+        else kept.push(one);
+      }
+      this.queue = kept;
+    }
+    if (restarts) return;
+    const told = this.stopped.has(frame);
+    this.stopped.add(frame);
+    if (main && !told) this.refuse(`${why} ${UNTIL_NAVIGATION}`);
   }
 
   /** Keep a frame's snapshot for the references of later ones, its chain started again by a full one. */
@@ -492,7 +592,7 @@ export class LiveInspect {
     chain.set(index, snapshot);
     this.chainSizes.set(snapshot, bytes);
     this.chainBytes += bytes;
-    // Past the backlog's bound, the oldest kept go: a label they held is not read.
+    // Past the backlog's bound, the oldest kept go: a snapshot that names one of them does not go.
     for (const kept of this.chains.values()) {
       for (const [at, old] of kept) {
         if (this.chainBytes <= 2 * MAX_SNAPSHOT_BACKLOG) return;
@@ -528,30 +628,28 @@ export class LiveInspect {
     return at(index);
   }
 
-  /** The attempt's secrets: read from its pages at most once a `SECRETS_MS`, else those known. */
-  private async readSecrets(): Promise<string[]> {
+  /**
+   * The attempt's secrets: read from its pages at most once a `SECRETS_MS`, those known once the page closed; null when
+   * a page's secret fields could not be read.
+   */
+  private async readSecrets(): Promise<string[] | null> {
     if (this.secrets && Date.now() - this.secrets.at < SECRETS_MS) return this.secrets.values;
-    const values = (this.page.isClosed() ? null : await attemptSecrets(this.page).catch(() => null)) ?? knownSecrets();
+    const values = this.page.isClosed() ? knownSecrets() : await attemptSecrets(this.page).catch(() => null);
     this.secrets = { values, at: Date.now() };
     return values;
   }
 
-  /** Post the next snapshot that waits, its resources first, as the pace and the budget allow. */
+  /** Post the next snapshot that waits, its resources first, as the pace allows, once it waited for the budget. */
   private pump(): void {
-    if (this.closed || this.posting || this.pumpTimer || !this.queue.length) return;
-    const wait = this.link.budget.wait();
-    if (wait > 0 || !this.pace.take(1)) {
-      this.pumpTimer = setTimeout(
-        () => {
-          this.pumpTimer = null;
-          this.pump();
-        },
-        Math.max(wait, 1000 / SNAPSHOTS_PER_SECOND),
-      );
-      this.pumpTimer.unref?.();
-      return;
+    if (this.closed || !this.caughtUp || this.posting || this.pumpTimer || !this.queue.length) return;
+    const next = this.queue[0]!;
+    const wait = next.waited ? 0 : this.link.budget.wait();
+    if (wait > 0) {
+      next.waited = true;
+      return this.pumpLater(wait);
     }
-    const next = this.queue.shift()!;
+    if (!this.pace.take(1)) return this.pumpLater(1000 / SNAPSHOTS_PER_SECOND);
+    this.queue.shift();
     this.queued -= next.bytes;
     this.posting = true;
     void this.send(next)
@@ -562,18 +660,28 @@ export class LiveInspect {
       });
   }
 
+  private pumpLater(ms: number): void {
+    this.pumpTimer = setTimeout(() => {
+      this.pumpTimer = null;
+      this.pump();
+    }, ms);
+    this.pumpTimer.unref?.();
+  }
+
   /**
    * Post a snapshot, what the page's secrets show and its credentials removed, after the resources it names that did not
-   * go yet; none it cannot read whole.
+   * go yet; its frame's chain stops when it does not go.
    */
   private async send(waiting: Waiting): Promise<void> {
     const { fields, snapshot } = waiting;
     const secrets = await this.readSecrets();
     if (this.closed) return;
-    const shown = hideFrameSnapshotSecrets(snapshot, { secrets, resolve: this.resolver(fields.frame, fields.index) });
-    if (!shown) return;
+    if (!secrets) return this.stopChain(fields.frame, fields.main, UNREAD_SECRETS, 'until-full');
+    const resolve = this.resolver(fields.frame, fields.index);
+    const shown = hideFrameSnapshotSecrets(snapshot, { secrets, resolve });
+    if (!shown) return this.stopChain(fields.frame, fields.main, UNREAD_SNAPSHOT, 'until-full');
     const data = Buffer.from(JSON.stringify(shown));
-    if (data.length > MAX_SNAPSHOT_BYTES) return;
+    if (data.length > MAX_SNAPSHOT_BYTES) return this.stopChain(fields.frame, fields.main, TOO_LARGE, 'until-full');
     const resources = await this.resourcesOf(snapshot);
     for (const resource of resources) {
       if (this.closed) return;
@@ -601,13 +709,14 @@ export class LiveInspect {
 
   /**
    * Post a resource from the trace folder's `resources/`, its bytes of the kind its content type says, once per run,
-   * `MAX_RESOURCE_BYTES` at most.
+   * after one wait for the budget.
    */
   private async sendResource(resource: LiveSnapshotResource & Recorded): Promise<void> {
     const bytes = await this.resourceBytes(resource.sha1);
     if (!bytes || this.closed || !isInspectResourceBytes(resource.contentType, bytes)) return;
     const wait = this.link.budget.wait();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait).unref?.());
+    if (wait > 0) await sleep(wait);
+    if (this.closed) return;
     const body = encodeLiveMessage(
       liveResourceHeader(this.link.id, { sha1: resource.sha1, contentType: resource.contentType }),
       bytes,

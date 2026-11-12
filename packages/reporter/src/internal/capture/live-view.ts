@@ -97,7 +97,8 @@ import type { PageFrame } from './page-view.js';
  * test alone (`LaneFilmstrip`) until the project's masks change, all of them posted again to a viewer that asks later
  * (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most, `MAX_FILMSTRIP` waiting at most. None is
  * stored. While a full view has Inspect open (`view`'s `inspect`), the page's DOM snapshots and the resources they name
- * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`), and Inspect opens again as the
+ * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`: each of its posts waits once, a
+ * second at most, and the frames after it are spaced by its bytes, a second at most), and Inspect opens again as the
  * project's masks change.
  */
 
@@ -932,7 +933,8 @@ function startView(): void {
     get fps() {
       return own.asked?.fps ?? LIVE_FRAME_FPS;
     },
-    spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
+    // A frame is spaced by its own bytes, and by those Inspect posted before it, a second at most.
+    spacing: (frame) => Math.max((frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE, budget.wait()),
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,

@@ -140,9 +140,10 @@ responsibilities.
      trace and its `resources/` folder where it traces the attempt, else from a live trace of Piwi's own of the context
      (`tracing.start` through `internalCall`), stopped unsaved and its files deleted as Inspect closes, behind a guard on
      `context.tracing.start` that stops it first (`guardTracing`); each snapshot through `hideFrameSnapshotSecrets` with
-     the attempt's secrets, none it cannot read whole, none for a project with masks, never a script, a document, an SVG
-     nor bytes of another kind than their type (`tests/live-view-inspect.spec.ts`); it always posts its test's stops
-     (`showStop`). Each frame
+     the attempt's secrets, none while a page's secret fields cannot be read nor one it cannot read whole, none for a
+     project with masks, never a script, a document, an SVG nor bytes of another kind than their type
+     (`tests/live-view-inspect.spec.ts`, `tests/live-inspect.spec.ts`); it always posts its test's stops (`showStop`).
+     Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
      feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a

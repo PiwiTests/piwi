@@ -64,7 +64,7 @@ import { internalCall } from './quiet-capture.js';
 
 /** The most bytes of a trace read at once: the rest waits for the next read. */
 const MAX_READ = 8 * 1024 * 1024;
-/** The longest line of a trace kept whole across two reads: a longer one (a DOM snapshot's) is passed over. */
+/** The longest line of a trace read: a longer one (a DOM snapshot's) is passed over. */
 const MAX_LINE = 64 * 1024;
 /** The longest ARIA file of a trace read, in bytes. */
 const MAX_ARIA_FILE = 4 * 1024 * 1024;
@@ -176,13 +176,18 @@ export function tellPageEvent(event: PageEvent): void {
   }
 }
 
-/** How much of a line passed over for its length is told (`TraceTail`'s `onLong`): where its fields start. */
+/** How much of a line passed over for its length is told (`TraceGap`): where its fields start. */
 const LONG_LINE_HEAD = 1024;
+
+/** A line of a trace passed over for its length, where it was among the others: its first `LONG_LINE_HEAD` characters. */
+export interface TraceGap {
+  head: string;
+}
 
 /**
  * One file of the trace, read from where the last read stopped, its complete lines alone: a line longer than
- * `maxLine` is passed over, its first `LONG_LINE_HEAD` characters told to `onLong`. `behind` says the file held more
- * than the last read took.
+ * `maxLine` is passed over, a `TraceGap` in its place among them. `behind` says the file held more than the last read
+ * took.
  */
 export class TraceTail {
   private offset = 0;
@@ -195,11 +200,13 @@ export class TraceTail {
   constructor(
     readonly file: string,
     private readonly maxLine = MAX_LINE,
-    private readonly onLong: ((head: string) => void) | null = null,
   ) {}
 
-  /** The lines the file gained since the last read, `MAX_READ` bytes at most; none when it cannot be read. */
-  async read(): Promise<string[]> {
+  /**
+   * The lines the file gained since the last read, in their order, `MAX_READ` bytes at most, each passed over for its
+   * length a gap in its place; none when it cannot be read.
+   */
+  async read(): Promise<Array<string | TraceGap>> {
     let handle: fs.FileHandle;
     try {
       handle = await fs.open(this.file, 'r');
@@ -228,11 +235,14 @@ export class TraceTail {
         this.skipping = false;
         text = text.slice(end + 1);
       }
-      const lines = (this.rest + text).split('\n');
-      this.rest = lines.pop() ?? '';
-      if (this.rest.length > this.maxLine) {
-        this.onLong?.(this.rest.slice(0, LONG_LINE_HEAD));
-        this.rest = '';
+      const lines: Array<string | TraceGap> = (this.rest + text)
+        .split('\n')
+        .map((line) => (line.length > this.maxLine ? { head: line.slice(0, LONG_LINE_HEAD) } : line));
+      const rest = lines.pop() ?? '';
+      this.rest = typeof rest === 'string' ? rest : '';
+      if (typeof rest !== 'string') {
+        // The line the read ends in is passed over to its end, which a later read finds.
+        lines.push(rest);
         this.skipping = true;
       }
       return lines;
@@ -361,7 +371,7 @@ async function traceOf(): Promise<AttemptTrace | null> {
     for (const file of trace.tails.keys()) if (!files.includes(file)) trace.tails.delete(file);
     for (const file of files) if (!trace.tails.has(file)) trace.tails.set(file, new TraceTail(file));
     for (const tail of trace.tails.values()) {
-      for (const line of await tail.read()) takeLine(trace, line);
+      for (const line of await tail.read()) if (typeof line === 'string') takeLine(trace, line);
     }
   });
   trace.reading = read.catch(() => undefined);

@@ -578,19 +578,28 @@ What the package does to a user's run, process by process.
   true })` through `internalCall`, in the tracing's `_tracesDir`), stops it unsaved as Inspect
   closes and deletes its `.trace`, `.network` and `.stacks`. `instrumentContext` hands the test
   `context.tracing` behind a proxy (`guardTracing`) whose `start` stops Piwi's trace first.
-  It numbers each snapshot of the watched page in its frame as Playwright does (a line passed
-  over for its length still counts), keeps each frame's chain since its full snapshot for the
+- `TraceTail.read()` returns a file's new lines in order, each line longer than its bound a
+  gap in its place (`TraceGap`, its head), so Inspect numbers each snapshot of the watched page
+  in its frame as Playwright does. It keeps each frame's chain since its full snapshot for the
   labels a later one's references name, and queues the page's snapshots since its main
-  frame's last full one, 16 MB at most. Each goes `SNAPSHOTS_PER_SECOND` at most, one post in
-  flight, after the bytes the frames and its own posts took (`LiveByteBudget`, which the
-  frames feed and never wait on, a second's wait at most), through `hideFrameSnapshotSecrets`
-  with `attemptSecrets` (read from the pages once a second at most, else `knownSecrets`), not
-  at all when it cannot be read whole, its title the runner's step's. Before it, each resource
-  it and its stylesheets name that the `.network` file recorded with a content type
-  `inspectResourceType` allows, read from the trace folder's `resources/` (a regular file,
-  2 MB at most, its bytes of that kind: `isInspectResourceBytes`), once per run; the header
-  names each by its address hidden as the snapshot's are (`hideResourceUrl`). A project with
-  masks, or a runner's trace without snapshots, gets a `snapshot` that says why instead.
+  frame's last full one; it posts none until its reads caught up with the trace. As Inspect
+  opens, the queue holds 16 MB at most: past them, the oldest snapshot after a frame's full
+  one goes, never a full one, and with full ones alone, the oldest one's frame sends none of
+  its chain. Later, a snapshot past the 16 MB waiting stops its frame's chain until its next
+  full snapshot. Each goes `SNAPSHOTS_PER_SECOND` at most, one post in flight, after one wait
+  (a second at most) for the bytes the frames and its own posts took (`LiveByteBudget`), its
+  bytes then spacing the frames after it, a second at most. It goes through
+  `hideFrameSnapshotSecrets` with `attemptSecrets` (read from the pages once a second at most;
+  `knownSecrets` once the page closed); a snapshot whose page's secret fields could not be
+  read, that cannot be read whole, or past 4 MB does not go, and stops its frame's chain until
+  its next full snapshot, the viewers told why for the main frame. Its title is the runner's
+  step's. Before it, each resource it and its stylesheets name that the `.network` file
+  recorded with a content type `inspectResourceType` allows, read from the trace folder's
+  `resources/` (a regular file, 2 MB at most), its bytes of that kind
+  (`isInspectResourceBytes`), once per run; the header names each by its address hidden as
+  the snapshot's are (`hideResourceUrl`). A project with masks (or masks this reporter cannot
+  read), or a runner's trace without DOM snapshots (`snapshots` off, or without `dom` in
+  1.64's object form), gets a `snapshot` that says why instead.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
