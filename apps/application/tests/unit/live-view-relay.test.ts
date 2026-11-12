@@ -404,8 +404,94 @@ describe('the layers of a worker', () => {
     expect(got(none)).toEqual([]);
     // A tile shows a worker's images alone, never its layers.
     expect(got(tiles).filter((m) => (m as { type: string }).type !== 'refused')).toEqual([]);
-    // An image of the filmstrip is charged to the run's bytes as a frame is.
+    // An image of the filmstrip is charged to the run's bytes as a frame is: past them, a frame is refused.
+    const rest = new Uint8Array(MAX_LIVE_BYTES_PER_RUN - image(1).length);
+    expect(live.receive(7, { ...thumb(0, 2), image: rest } as LiveRelayMessage)).toBeNull();
+    expect(live.receive(7, frame(0, image(3)))).toMatchObject({ status: 429 });
     expect(live.countsFor(7)).toMatchObject({ frames: 0 });
+  });
+
+  test('send a page event while an image waits for the watch’s bytes, and the filmstrip’s images in their order once it may', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page, null, { layers: ['events', 'filmstrip'] });
+    const heavy = (n: number) => {
+      const bytes = new Uint8Array(MAX_WATCH_BYTES_PER_SECOND / 2).fill(n);
+      bytes.set([0xff, 0xd8, 0xff, 0xe0, n]);
+      return bytes;
+    };
+    for (const n of [1, 2, 3]) live.receive(7, frame(0, heavy(n)));
+    // The watch's bytes of this second are spent, and the third frame waits: an event goes at once all the same.
+    live.receive(7, event(0));
+    live.receive(7, thumb(0, 4));
+    live.receive(7, thumb(0, 5));
+    const heard = () =>
+      got(page).map((m) => {
+        const message = m as { type: string; image?: Uint8Array };
+        return message.image ? `${message.type} ${message.image[4]}` : message.type;
+      });
+    expect(heard()).toEqual(['frame 1', 'frame 2', 'page-event']);
+    now += 1000;
+    vi.advanceTimersByTime(250);
+    expect(heard()).toEqual(['frame 1', 'frame 2', 'page-event', 'frame 3', 'thumb 4', 'thumb 5']);
+  });
+
+  test('count the page events a backed up watch could not take, and say how many as it reads again', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page, null, { layers: ['events'] });
+    page.full = true;
+    for (let i = 0; i < 3; i++) live.receive(7, event(0));
+    expect(got(page)).toEqual([]);
+    page.drain();
+    live.receive(7, event(0));
+    expect(got(page)).toEqual([
+      { type: 'page-event', shard: null, worker: 0, event: { kind: 'dropped', count: 3 }, at: AT, test: 'pays' },
+      { ...event(0) },
+    ]);
+  });
+
+  test('send the strip again to a watch that takes the filmstrip anew, and not for its events or its text', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    const [first, second] = [new FakeSink(), new FakeSink()];
+    watch(live, 7, { shard: null, worker: 0 }, first, null, { layers: ['events', 'text', 'filmstrip'] });
+    watch(live, 7, { shard: null, worker: 0 }, second);
+    told();
+    const id = (second.sent[0] as { watch: string }).watch;
+    const resends = () => worker.sent.filter((m) => (m as { type: string }).type === 'resend').length;
+    const before = resends();
+    live.changeWatch(7, id, null, { layers: ['events'] });
+    told();
+    vi.advanceTimersByTime(1000);
+    live.changeWatch(7, id, null, { layers: ['events', 'text'] });
+    told();
+    expect(resends()).toBe(before);
+    live.changeWatch(7, id, null, { layers: ['events', 'text', 'filmstrip'] });
+    told();
+    expect(resends()).toBe(before + 1);
+  });
+
+  test('let a text waiting for a backed up watch go once the watch no longer takes the text', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page, null, { layers: ['text', 'filmstrip'] });
+    const id = (page.sent[0] as { watch: string }).watch;
+    page.full = true;
+    live.receive(7, text(0));
+    live.receive(7, thumb(0, 1));
+    live.changeWatch(7, id, null, { layers: [] });
+    page.drain();
+    expect(got(page)).toEqual([]);
   });
 
   test('ask the worker for the page’s text as a watch that takes it asks, and send a watch that takes a layer anew the strip again', () => {
@@ -430,7 +516,8 @@ describe('the layers of a worker', () => {
   });
 
   test('are bounded a second for each worker, and kept for nobody', () => {
-    const { live } = relay();
+    let now = 1_000_000;
+    const { live } = relay(() => now);
     const entry = live.authorize(7, live.mintKey(7, 1))!;
     live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
     const viewer = new FakeSink();
@@ -439,14 +526,18 @@ describe('the layers of a worker', () => {
     expect(live.receive(7, event(0))).toMatchObject({ status: 429 });
     for (let i = 0; i < MAX_RELAYED_THUMBS; i++) expect(live.receive(7, thumb(0, i + 1))).toBeNull();
     expect(live.receive(7, thumb(0, 99))).toMatchObject({ status: 429 });
-    // A viewer whose stream is backed up gets no event nor image meanwhile, and none waits for it.
+    // A viewer whose stream is backed up gets no event nor image meanwhile: the image waits, the event is counted.
     viewer.full = true;
     const before = got(viewer).length;
-    vi.advanceTimersByTime(1000);
-    live.receive(7, event(0));
-    live.receive(7, thumb(0, 100));
-    viewer.drain();
+    now += 1000;
+    expect(live.receive(7, event(0))).toBeNull();
+    expect(live.receive(7, thumb(0, 100))).toBeNull();
     expect(got(viewer)).toHaveLength(before);
+    viewer.drain();
+    expect(got(viewer).slice(before)).toEqual([
+      { ...thumb(0, 100) },
+      { type: 'page-event', shard: null, worker: 0, event: { kind: 'dropped', count: 1 }, at: AT, test: 'pays' },
+    ]);
   });
 });
 

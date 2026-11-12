@@ -27,6 +27,8 @@ import {
   LANE_LAYERS,
   LANE_TEXTS_PER_SECOND,
   LANE_THUMBS_PER_SECOND,
+  MAX_FILMSTRIP,
+  MAX_FILMSTRIP_BYTES,
   MAX_PAGE_EVENTS_PER_SECOND,
   type LaneLayer,
 } from '@piwitests/core/live-layers';
@@ -173,6 +175,16 @@ interface Viewer {
    * are spent, so the one never pushes the other out: an image or why none shows (`frame`, `refused`), and a call log.
    */
   pending: Map<PendingKind, LiveViewerMessage>;
+  /**
+   * The images of its focused worker's filmstrip waiting while its stream is backed up or its bytes a second are spent,
+   * oldest first: a strip's worth at most (`MAX_FILMSTRIP` images, `MAX_FILMSTRIP_BYTES`), the oldest going past it.
+   */
+  thumbs: Array<Extract<LiveViewerMessage, { type: 'thumb' }>>;
+  /**
+   * The page events of its focused worker's test its backed up stream could not take: how many, of which test, and
+   * when the latest happened, said (`dropped`) before the next event that goes, or as the stream drains.
+   */
+  dropped: { count: number; test: string | null; at: number } | null;
   /** The signed-in person watching, null when the instance knows nobody (authentication off). */
   person: number | null;
   /** When it came, in the order of all viewers. */
@@ -625,6 +637,8 @@ export class LiveViewRelay {
       id: randomBytes(16).toString('base64url'),
       sink,
       pending: new Map(),
+      thumbs: [],
+      dropped: null,
       person,
       since: this.viewersCame++,
       focus: null,
@@ -700,10 +714,14 @@ export class LiveViewRelay {
     if (ask.layers) {
       const before = viewer.layers;
       viewer.layers = watchLayers(ask.layers);
+      // What waits of a layer the watch no longer takes goes nowhere.
+      if (!viewer.layers.has('text')) viewer.pending.delete('text');
+      if (!viewer.layers.has('filmstrip')) viewer.thumbs = [];
+      if (!viewer.layers.has('events')) viewer.dropped = null;
       if (viewer.link) {
         told.add(viewer.link);
-        // A layer this watch did not take: the worker sends the filmstrip it kept again.
-        if ([...viewer.layers].some((layer) => !before.has(layer))) viewer.link.attached = true;
+        // The filmstrip this watch did not take: the worker sends the strip it kept again.
+        if (viewer.layers.has('filmstrip') && !before.has('filmstrip')) viewer.link.attached = true;
       }
     }
     for (const link of told) if (run.workers.get(liveWorkerKey(link.id)) === link) this.tell(link);
@@ -894,8 +912,18 @@ export class LiveViewRelay {
     viewer.link = null;
     viewer.lane = null;
     viewer.focus = null;
-    viewer.pending.clear();
+    this.dropWaiting(viewer);
+    viewer.dropped = null;
     for (const { viewers } of run.waiting.values()) viewers.delete(viewer);
+  }
+
+  /**
+   * What waits for the watch of its focused worker goes nowhere: its latest image, call log and text, and its
+   * filmstrip's images.
+   */
+  private dropWaiting(viewer: Viewer): void {
+    viewer.pending.clear();
+    viewer.thumbs = [];
   }
 
   /** The watch shows no tile any more: the tiles waiting go nowhere. */
@@ -954,16 +982,53 @@ export class LiveViewRelay {
 
   /**
    * Send a layer of a worker to the watches that show it in full and asked for that layer: the page's text as the
-   * latest of its kind while a stream is backed up; a page event or a filmstrip image at once, or not at all while the
-   * stream is backed up or, for an image, past the watch's bytes a second.
+   * latest of its kind while a stream is backed up; a page event at once, whatever waits, or, while the stream is
+   * backed up, counted and said (`sendEvent`); a filmstrip image at once, or in its turn once the stream and the
+   * watch's bytes a second allow (`offerThumb`).
    */
   private deliverLayer(link: WorkerLink, layer: LaneLayer, message: LiveViewerMessage): void {
     for (const viewer of link.viewers) {
       if (!viewer.layers.has(layer)) continue;
-      if (layer === 'text') this.offer(viewer, 'text', message);
-      else if (!viewer.pending.size && !this.backedUp(viewer) && this.affords(viewer, message))
-        this.send(viewer, message);
+      if (message.type === 'page-event') this.sendEvent(viewer, message);
+      else if (message.type === 'thumb') this.offerThumb(viewer, message);
+      else this.offer(viewer, 'text', message);
     }
+  }
+
+  /**
+   * Send a page event at once, whatever waits; while the stream is backed up it goes nowhere, counted, and the count
+   * of its test goes before the next event that goes.
+   */
+  private sendEvent(viewer: Viewer, message: Extract<LiveViewerMessage, { type: 'page-event' }>): void {
+    if (this.backedUp(viewer)) {
+      const same = viewer.dropped?.test === message.test;
+      viewer.dropped = { count: (same ? viewer.dropped!.count : 0) + 1, test: message.test, at: message.at };
+      return;
+    }
+    this.sayDropped(viewer);
+    this.send(viewer, message);
+  }
+
+  /** Tell the watch how many page events it could not take, once its stream takes it. */
+  private sayDropped(viewer: Viewer): void {
+    const dropped = viewer.dropped;
+    if (!dropped || !viewer.link || this.backedUp(viewer)) return;
+    viewer.dropped = null;
+    const event = { kind: 'dropped' as const, count: dropped.count };
+    this.send(viewer, { type: 'page-event', ...idOf(viewer.link.id), event, at: dropped.at, test: dropped.test });
+  }
+
+  /** Send an image of the filmstrip at once, or after those waiting, as the stream and the bytes a second allow. */
+  private offerThumb(viewer: Viewer, message: Extract<LiveViewerMessage, { type: 'thumb' }>): void {
+    if (!viewer.thumbs.length && !this.backedUp(viewer) && this.affords(viewer, message)) {
+      return this.send(viewer, message);
+    }
+    viewer.thumbs.push(message);
+    let bytes = viewer.thumbs.reduce((sum, thumb) => sum + thumb.image.length, 0);
+    while (viewer.thumbs.length > MAX_FILMSTRIP || bytes > MAX_FILMSTRIP_BYTES) {
+      bytes -= viewer.thumbs.shift()!.image.length;
+    }
+    this.flushSoon(viewer);
   }
 
   /**
@@ -1018,7 +1083,10 @@ export class LiveViewRelay {
     this.flushSoon(viewer);
   }
 
-  /** Send what waits for the watch, oldest first, while its stream takes it and its bytes a second allow. */
+  /**
+   * Send what waits for the watch while its stream takes it and its bytes a second allow: the latest of each kind,
+   * oldest first, then the filmstrip's images in their order, then how many page events it could not take.
+   */
   private flush(viewer: Viewer): void {
     for (const [kind, waiting] of viewer.pending) {
       if (this.backedUp(viewer)) return;
@@ -1026,6 +1094,12 @@ export class LiveViewRelay {
       viewer.pending.delete(kind);
       this.send(viewer, waiting);
     }
+    while (viewer.thumbs.length) {
+      if (this.backedUp(viewer)) return;
+      if (!this.affords(viewer, viewer.thumbs[0]!)) return this.flushSoon(viewer);
+      this.send(viewer, viewer.thumbs.shift()!);
+    }
+    this.sayDropped(viewer);
   }
 
   /** Try again soon to send what waits for the watch past its bytes a second; a backed up stream's drain does it. */
@@ -1104,8 +1178,10 @@ export class LiveViewRelay {
     if (!link.viewers.size) return;
     const id = idOf(link.id);
     for (const viewer of [...link.viewers]) {
-      // What the viewer has waiting is of the test that ended: it goes no later than its end.
-      viewer.pending.clear();
+      // What the viewer has waiting is of the test that ended: it goes no later than its end. How many page events it
+      // could not take is said before it, or once its stream takes it.
+      this.dropWaiting(viewer);
+      this.sayDropped(viewer);
       if (viewer.lane !== null) {
         this.send(viewer, { type: 'test-ended', ...id, outcome } satisfies LiveViewerMessage);
         continue;
@@ -1184,7 +1260,8 @@ export class LiveViewRelay {
         link.viewers.delete(viewer);
         viewer.link = null;
         // What the viewer has waiting is of the worker that left: it goes no later than the wait.
-        viewer.pending.clear();
+        this.dropWaiting(viewer);
+        viewer.dropped = null;
         this.send(viewer, { type: 'refused', ...id, message: LANE_RESTARTING } satisfies LiveViewerMessage);
       }
       const timer = setTimeout(() => this.stopWaiting(runId, run, lane, 'worker-left'), LANE_WAIT_MS);

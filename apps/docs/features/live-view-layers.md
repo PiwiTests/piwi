@@ -27,8 +27,8 @@ backend logged for it. Each part comes from the worker only while the panel show
 - the test's **API calls** through Playwright's `request`, with their status and time: a test with no page shows these.
 
 Addresses and texts reach the dashboard with their credentials hidden. A worker sends 20 events a second at most and
-counts the others, and the list keeps the latest 100; both say how many they left out. Folding the section stops them
-coming.
+counts the others, the dashboard counts those a page reading too slowly could not take, and the list keeps the latest
+100; each says how many it left out. Folding the section stops them coming.
 
 ## Page text
 
@@ -60,7 +60,8 @@ along.
 - **Only what a panel shows.** The worker sends events while a panel shows **Page events**, the text as one opens
   **Page text**, and the filmstrip while a panel shows the worker; to those panels alone.
 - **Bounded.** The dashboard relays at most 40 events, 4 texts and 16 filmstrip images a second of a worker; the images
-  count against the [bytes](./live-view#limits) a run's workers and each page may send.
+  count against the [bytes](./live-view#limits) a run's workers and each page may send, and a page past its bytes gets
+  the filmstrip's images a little later, in their order.
 - **Nothing is kept.** As with the images, the dashboard relays each part and drops it: never written to the database,
   the logs or an export. The panel holds the parts of the test it shows in the browser's memory, until the view moves
   to the next test or closes.
