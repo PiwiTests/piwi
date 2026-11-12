@@ -19,6 +19,7 @@ import type { IssueFilingFailure } from '#shared/handlers/known-issues';
 import { getProviderName, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
+  filedBySentence,
   filingFailureSentence,
   filingSkippedSentence,
   issueKeyTitle,
@@ -41,6 +42,12 @@ const props = defineProps<{
     title?: string | null;
     status: string | null;
     statusCategory?: string | null;
+    /** When the issue was filed from Piwi. */
+    linkedAt?: string | null;
+    /** The person who filed it from Piwi. */
+    filedBy?: string | null;
+    /** Piwi filed it by itself, through an automation rule. */
+    automatic?: boolean;
   } | null;
   /** The cluster's newest filing failed for good. */
   filingFailure?: IssueFilingFailure | null;
@@ -69,6 +76,12 @@ const doneWhileFailing = computed(
 const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
+});
+/** Who filed the issue and when, once the line is mounted: a person's name, or "automatically" for a rule. */
+const filedLine = computed(() => {
+  const issue = props.knownIssue;
+  if (!issue || !mounted.value) return null;
+  return filedBySentence(issue, issue.linkedAt ? formatRelativeTime(issue.linkedAt) : null);
 });
 /** A rule left the filing to a person: the open issue it found is one click from linked. */
 const linksFound = computed(() => offersFoundIssueLink(props.filingFailure, canLink.value));
@@ -100,6 +113,7 @@ const failureSentence = computed(() => {
           >, {{ knownIssue.status }}<template v-if="providerName"> in {{ providerName }}</template></template
         >.<template v-if="doneWhileFailing"> The issue is Done, but the failure goes on.</template>
       </p>
+      <p v-if="filedLine" class="text-xs text-muted" data-testid="issue-line-filed-by">{{ filedLine }}</p>
       <template v-if="doneWhileFailing">
         <p v-if="failureSentence" class="text-xs text-muted" data-testid="issue-line-filing-failed">
           {{ failureSentence }}

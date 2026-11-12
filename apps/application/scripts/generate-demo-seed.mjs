@@ -3592,7 +3592,7 @@ const ENTITY_LINKS = [
     url: 'https://demo.atlassian.net/browse/DEMO-42',
     provider: 'jira',
     key: 'DEMO-42',
-    title: 'Login returns 500 when verifyCredentials finds no user',
+    title: '[Piwi] Login returns 500 when verifyCredentials finds no user',
     status_text: 'In Progress',
     status_color: 'warning',
     metadata: { statusCategory: 'indeterminate', assignee: 'David Lee' },

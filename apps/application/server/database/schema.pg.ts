@@ -1519,6 +1519,7 @@ export const projectIntegrations = pgTable(
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    titlePrefix: text('title_prefix'), // put before every ticket title Piwi files for this project; null inherits the connection's
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]

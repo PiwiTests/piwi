@@ -62,7 +62,7 @@ describe('the demo issue draft and create for a run', () => {
   test('drafts about the run, with no cluster', async () => {
     const d = await draft('entityType=test_run&entityId=5');
     expect(d).toMatchObject({ entityType: 'test_run', entityId: 5, clusterId: null, projectId: 1 });
-    expect(d.title).toBe('Run #5 on main');
+    expect(d.title).toBe('[Piwi] Run #5 on main');
     expect(d.markdown).toContain('keeps the basket');
   });
 
@@ -100,7 +100,7 @@ describe('the demo issue draft and create for a run', () => {
 
   test('an execution with no cluster files for itself', async () => {
     const d = await draft('entityType=test_runs_case&entityId=50');
-    expect(d).toMatchObject({ entityType: 'test_runs_case', clusterId: null, title: 'keeps the basket' });
+    expect(d).toMatchObject({ entityType: 'test_runs_case', clusterId: null, title: '[Piwi] keeps the basket' });
     const filed = await create({ entityType: 'test_runs_case', entityId: 50, title: d.title });
     const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.key, filed.key!));
     expect(link).toMatchObject({ testRunsCaseId: 50, failureClusterId: null, origin: 'created' });

@@ -1,0 +1,1 @@
+ALTER TABLE `project_integrations` ADD `title_prefix` text;

@@ -19,6 +19,7 @@ import {
   type JiraTokenKind,
 } from '#shared/integrations/jira-setup';
 import type { ConnectionCheckResult, ConnectionSummary } from '#shared/integrations/types';
+import { normalizeTitlePrefix, TITLE_PREFIX_MAX_LENGTH } from '#shared/integrations/title-prefix';
 
 const props = defineProps<{
   /** The connection being edited; absent when connecting a new one. */
@@ -50,6 +51,7 @@ const form = reactive({
   tokenExpiresOn: typeof storedConfig.tokenExpiresOn === 'string' ? storedConfig.tokenExpiresOn : '',
   name: props.connection?.name ?? '',
   locale: storedConfig.locale === 'fr' ? 'fr' : 'en',
+  titlePrefix: typeof storedConfig.titlePrefix === 'string' ? storedConfig.titlePrefix : '',
 });
 
 const TOKEN_KIND_ITEMS = [
@@ -155,6 +157,9 @@ async function submit() {
   saving.value = true;
   try {
     const config: Record<string, unknown> = { ...storedConfig, locale: form.locale };
+    const titlePrefix = normalizeTitlePrefix(form.titlePrefix);
+    if (titlePrefix) config.titlePrefix = titlePrefix;
+    else delete config.titlePrefix;
     if (form.tokenExpiresOn) config.tokenExpiresOn = form.tokenExpiresOn;
     else delete config.tokenExpiresOn;
     // A check that signed in knows the token kind: route a scoped token through the
@@ -393,6 +398,12 @@ const envSnippet = computed(() =>
       </UFormField>
       <UFormField label="Default language" description="Issues are written in it unless a project overrides it.">
         <USelect v-model="form.locale" :items="LOCALE_ITEMS" value-key="value" class="w-full" />
+      </UFormField>
+      <UFormField
+        label="Default title prefix"
+        description="Put before every issue title Piwi files, unless a project sets its own."
+      >
+        <UInput v-model="form.titlePrefix" :maxlength="TITLE_PREFIX_MAX_LENGTH" placeholder="[Piwi]" class="w-full" />
       </UFormField>
     </section>
 
