@@ -441,7 +441,10 @@ describe('Inspect’s store of a run', () => {
     expect(store.heard('w')).toEqual([]);
     expect(store.heard('other')).toHaveLength(1);
     expect(await store.render('w', 'call@1', 'before')).toEqual({ status: 410, message: SNAPSHOT_TEST_ENDED });
-    // The next test's pages are kept again.
+    // The next test's pages are kept again, of its own chains: one that builds on a page not sent says so.
+    store.addSnapshot('w', snapshot('call@4', 'before', ['HTML', {}, [[1, 1]]], { full: false, index: 1 }));
+    expect(await store.render('w', 'call@4', 'before')).toEqual({ status: 410, message: SNAPSHOT_UNSENT });
+    // A full one starts a chain of its own, the one before it whose start never came going.
     store.addSnapshot('w', snapshot('call@5', 'before', ['HTML', {}, ['BODY', {}, 'Paid']]));
     expect(store.heard('w').map((s) => s.call)).toEqual(['call@5']);
   });

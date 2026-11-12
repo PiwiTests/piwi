@@ -427,12 +427,14 @@ export class RunInspect {
     const store = this.workers.get(worker);
     if (!store) return;
     for (const held of [...store.order.values()]) this.remove(held, 'test-ended');
+    store.chains.clear();
     this.dropPages(worker);
   }
 
   /** The project began masking elements: every snapshot and resource goes, and a page of one says so. */
   mask(): void {
     for (const held of [...this.order.values()]) this.remove(held, 'masked');
+    for (const store of this.workers.values()) store.chains.clear();
     this.dropResources();
     this.dropPages(null);
   }
