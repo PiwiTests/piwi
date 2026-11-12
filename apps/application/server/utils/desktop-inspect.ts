@@ -17,8 +17,9 @@
  *   passed over. Of the network file: each resource a page loaded (`resource-snapshot`) that `inspectResourceType`
  *   allows, by its page and address.
  * - **What is kept.** The snapshots of every page's main frame, from the main frame's last full snapshot as Inspect
- *   opens (`MAX_SNAPSHOT_BACKLOG` bytes at most, the oldest after a frame's full one left out), then each new one, in
- *   the trace's order. Before one is kept, what its page's secrets show is removed (`hideFrameSnapshotSecrets`) with
+ *   opens (`MAX_SNAPSHOT_BACKLOG` bytes and `MAX_WAITING` snapshots at most, the oldest after a frame's full one left
+ *   out), then each new one, in the trace's order; the reading and the keeping run in slices (`SLICE_MS`,
+ *   `SLICE_ITEMS`), the server's other work running between them. Before one is kept, what its page's secrets show is removed (`hideFrameSnapshotSecrets`) with
  *   the attempt's secrets as the trace tells them: the values its secret fields held in the snapshots read so far, this
  *   one included (`snapshotFieldSecrets`), and each value its calls typed into a field their locator names for a secret
  *   or with no locator; its call's title is the runner's of its step as the lane's layers named it (`titled`; the
@@ -75,6 +76,7 @@ import {
 import {
   InspectBudget,
   MAX_WORKER_SNAPSHOTS,
+  MAX_WORKER_SNAPSHOT_COUNT,
   RunInspect,
   SNAPSHOT_MASKED_GONE,
   SNAPSHOT_TOO_LARGE,
@@ -111,6 +113,11 @@ const MAX_RESOURCE_LIST = 32 * 1024;
 const CSS_DEPTH = 3;
 /** The most bytes of snapshots a turn hides and keeps: the rest waits for a turn right after. */
 const MAX_TAKEN_A_TURN = 16 * MB;
+/** The most snapshots that wait to be kept: as many as the store keeps of a lane. */
+const MAX_WAITING = MAX_WORKER_SNAPSHOT_COUNT;
+/** How long, and over how many lines or snapshots, a reader works before the server's other work runs. */
+const SLICE_MS = 20;
+const SLICE_ITEMS = 256;
 /** How long after a worker named no trace of its running attempt it is asked again, while Inspect is open. */
 const ASK_AGAIN_MS = 2000;
 /** The most lanes Inspect reads at once: one more is refused. */
@@ -121,7 +128,7 @@ const MAX_DESKTOP_INSPECT_BYTES = 256 * MB;
 /** What the desktop app's store says of a page it does not show: it reads the pages from the test's own trace. */
 export const DESKTOP_INSPECT_WORDS: InspectWords = {
   gone: `The page at this call is no longer kept: the desktop app keeps a lane’s latest ${MAX_WORKER_SNAPSHOTS / MB} MB of pages while its test runs.`,
-  unsent: `The desktop app did not keep the page this one builds on: it leaves out a page over ${MAX_SNAPSHOT_BYTES / MB} MB, one it cannot read whole, and, as Inspect opens, the oldest past ${MAX_SNAPSHOT_BACKLOG / MB} MB.`,
+  unsent: `The desktop app did not keep the page this one builds on: it leaves out a page over ${MAX_SNAPSHOT_BYTES / MB} MB, one it cannot read whole, and, as Inspect opens, the oldest past ${MAX_WAITING.toLocaleString('en-US')} pages or ${MAX_SNAPSHOT_BACKLOG / MB} MB.`,
   testEnded: 'The page at this call is of a test that ended: the desktop app keeps the running test’s.',
   maskedGone: SNAPSHOT_MASKED_GONE,
   missing: 'The test’s trace holds no page of this call at that moment.',
@@ -134,7 +141,7 @@ const TOO_LARGE = `The page is not shown: its snapshot is larger than ${MAX_SNAP
 const UNREAD_SNAPSHOT =
   'The page is not shown: the desktop app could not read its snapshot whole (too deep, too large, or naming one it no longer holds), so it could not hide its secrets.';
 const BEHIND = 'The page is not shown: Inspect fell behind the test’s calls.';
-const OVER_BACKLOG = `The page is not shown: its snapshots since its navigation are larger than ${MAX_SNAPSHOT_BACKLOG / MB} MB.`;
+const OVER_BACKLOG = `The page is not shown: its snapshots since its navigation are more than ${MAX_WAITING.toLocaleString('en-US')}, or larger than ${MAX_SNAPSHOT_BACKLOG / MB} MB.`;
 const FULL = 'The page is not shown: the desktop app keeps no more pages for Inspect now.';
 const UNTIL_NAVIGATION = 'Inspect shows it again from its next navigation.';
 /** Why the reading of the trace stops: its folder is no longer the one checked. */
@@ -285,12 +292,186 @@ interface Recorded {
   contentType: string;
 }
 
-/** A snapshot read, as it waits to be kept. */
+/** A snapshot read, as it waits to be kept: what it is, and where it is in the queue (`WaitingQueue`). */
 interface Waiting {
   fields: Omit<LiveSnapshot, 'resources' | 'title'>;
   callId: string;
   snapshot: Record<string, unknown>;
   bytes: number;
+  /** Its frame's turn in the queue as it came: a frame's snapshots dropped together end that turn. */
+  turn: number;
+  gone: boolean;
+}
+
+/** A frame's snapshots that wait: their turn, how many and their bytes, and the full one among them, if any. */
+interface WaitingFrame {
+  turn: number;
+  count: number;
+  bytes: number;
+  full: Waiting | null;
+}
+
+/**
+ * The snapshots that wait to be kept, oldest first, with how many and their bytes: each change takes a constant time,
+ * but what it lets go, each once. A frame's snapshots go together (`dropFrame`) by ending its turn, and the queue is
+ * built again once those gone outnumber, or outweigh, those that wait.
+ */
+class WaitingQueue {
+  private items: Array<Waiting | undefined> = [];
+  private head = 0;
+  /** Where the oldest snapshot that is not full is looked for: each one before it is full, or gone. */
+  private partial = 0;
+  private turns = 0;
+  private readonly frames = new Map<string, WaitingFrame>();
+  /** The snapshots let go by their frame that the list still holds, and their bytes. */
+  private goneCount = 0;
+  private goneBytes = 0;
+  count = 0;
+  bytes = 0;
+
+  push(one: Omit<Waiting, 'turn' | 'gone'>): void {
+    let frame = this.frames.get(one.fields.frame);
+    if (!frame) {
+      frame = { turn: ++this.turns, count: 0, bytes: 0, full: null };
+      this.frames.set(one.fields.frame, frame);
+    }
+    const waiting: Waiting = { ...one, turn: frame.turn, gone: false };
+    frame.count++;
+    frame.bytes += one.bytes;
+    if (one.fields.full) frame.full = waiting;
+    this.items.push(waiting);
+    this.count++;
+    this.bytes += one.bytes;
+  }
+
+  /** The oldest that waits, taken out of the queue; undefined when none waits. */
+  shift(): Waiting | undefined {
+    const one = this.peek();
+    if (!one) return undefined;
+    this.items[this.head++] = undefined;
+    this.remove(one);
+    this.compact();
+    return one;
+  }
+
+  /** The oldest that waits, left in the queue, those gone before it let go. */
+  peek(): Waiting | undefined {
+    while (this.head < this.items.length) {
+      const one = this.items[this.head];
+      if (one && this.waits(one)) return one;
+      if (one) this.forgetGone(one);
+      this.items[this.head++] = undefined;
+    }
+    this.reset();
+    return undefined;
+  }
+
+  /** Whether a full snapshot of `frame` waits: the oldest of its frame's that wait, which starts its chain again. */
+  waitsFull(frame: string): boolean {
+    return !!this.frames.get(frame)?.full;
+  }
+
+  /** Let go every snapshot of `frame` that waits. */
+  dropFrame(frame: string): void {
+    const waiting = this.frames.get(frame);
+    if (!waiting) return;
+    this.frames.delete(frame);
+    this.count -= waiting.count;
+    this.bytes -= waiting.bytes;
+    this.goneCount += waiting.count;
+    this.goneBytes += waiting.bytes;
+    this.compact();
+  }
+
+  /** Let go the oldest snapshot that waits and is not full; false when every one that waits is full. */
+  dropOldestPartial(): boolean {
+    this.partial = Math.max(this.partial, this.head);
+    for (; this.partial < this.items.length; this.partial++) {
+      const one = this.items[this.partial];
+      if (!one || !this.waits(one) || one.fields.full) continue;
+      this.items[this.partial++] = undefined;
+      this.remove(one);
+      return true;
+    }
+    return false;
+  }
+
+  /** Let go everything. */
+  clear(): void {
+    this.frames.clear();
+    this.count = 0;
+    this.bytes = 0;
+    this.reset();
+  }
+
+  private waits(one: Waiting): boolean {
+    return !one.gone && this.frames.get(one.fields.frame)?.turn === one.turn;
+  }
+
+  /** Take a snapshot that waits out of the counts. */
+  private remove(one: Waiting): void {
+    one.gone = true;
+    const frame = this.frames.get(one.fields.frame)!;
+    frame.count--;
+    frame.bytes -= one.bytes;
+    if (frame.full === one) frame.full = null;
+    if (!frame.count) this.frames.delete(one.fields.frame);
+    this.count--;
+    this.bytes -= one.bytes;
+  }
+
+  /** A snapshot its frame let go, which the list held, is out of the list. */
+  private forgetGone(one: Waiting): void {
+    if (one.gone) return;
+    one.gone = true;
+    this.goneCount--;
+    this.goneBytes -= one.bytes;
+  }
+
+  /** Build the list again of those that wait once those gone outnumber or outweigh them, or its read part is long. */
+  private compact(): void {
+    if (this.goneCount > this.count + 1024 || this.goneBytes > this.bytes + MAX_SNAPSHOT_BYTES) {
+      const waiting: Waiting[] = [];
+      for (let at = this.head; at < this.items.length; at++) {
+        const one = this.items[at];
+        if (one && this.waits(one)) waiting.push(one);
+        else if (one) one.gone = true;
+      }
+      this.items = waiting;
+      this.head = 0;
+      this.partial = 0;
+      this.goneCount = 0;
+      this.goneBytes = 0;
+    } else if (this.head > 4096 && this.head * 2 > this.items.length) {
+      this.items = this.items.slice(this.head);
+      this.partial = Math.max(0, this.partial - this.head);
+      this.head = 0;
+    }
+  }
+
+  private reset(): void {
+    this.items = [];
+    this.head = 0;
+    this.partial = 0;
+    this.goneCount = 0;
+    this.goneBytes = 0;
+  }
+}
+
+/** Work cut in slices: `due` once a slice is spent, and `next` lets the event loop's other work run before the next. */
+class Slices {
+  private since = performance.now();
+  private items = 0;
+
+  due(): boolean {
+    return ++this.items >= SLICE_ITEMS || performance.now() - this.since >= SLICE_MS;
+  }
+
+  async next(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    this.since = performance.now();
+    this.items = 0;
+  }
 }
 
 /** What a reader of a lane's trace reads, and where what it read goes. */
@@ -339,9 +520,8 @@ export class DesktopTraceReader {
   private readonly chains = new Map<string, Map<number, Record<string, unknown>>>();
   private chainBytes = 0;
   private readonly chainSizes = new Map<Record<string, unknown>, number>();
-  /** The snapshots that wait to be kept, oldest first, and their bytes. */
-  private queue: Waiting[] = [];
-  private queued = 0;
+  /** The snapshots that wait to be kept, oldest first. */
+  private readonly queue = new WaitingQueue();
   /** The frames whose chain stopped: none of their snapshots is kept until their next full one. */
   private readonly stopped = new Set<string>();
   /** The runner's step and the trace's title of each call, by the trace's id of it. */
@@ -369,8 +549,7 @@ export class DesktopTraceReader {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    this.queue = [];
-    this.queued = 0;
+    this.queue.clear();
     this.chains.clear();
     this.chainSizes.clear();
   }
@@ -419,10 +598,12 @@ export class DesktopTraceReader {
     let behind = false;
     const { traces } = this.options.trace;
     if (!(await this.holds(traces)) || (await this.holds(path.join(traces, 'resources'))) === false) return false;
+    const slices = new Slices();
     for (const file of await desktopAttemptFiles(traces, this.options.trace.base)) {
       const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await network.read()) {
+          if (slices.due()) await slices.next();
           if (this.closed) break;
           if (typeof line === 'string' && line.startsWith(RESOURCE_LINE)) this.takeResource(line);
         }
@@ -431,6 +612,7 @@ export class DesktopTraceReader {
       const trace = this.tail(file, MAX_SNAPSHOT_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await trace.read()) {
+          if (slices.due()) await slices.next();
           if (this.closed) break;
           if (typeof line !== 'string') this.passedOver(line.head);
           else if (line.startsWith(BEFORE_LINE)) this.takeCall(line);
@@ -521,43 +703,40 @@ export class DesktopTraceReader {
     this.mainFrames.add(frameId);
     const full = isFullSnapshot(snapshot.html);
     this.keepInChain(frameId, index, full, snapshot, line.length);
-    if (full) this.stopped.delete(frameId);
+    if (full) {
+      // The page navigated: its main frame's snapshots before it are not kept, and its chain starts again.
+      this.queue.dropFrame(frameId);
+      this.stopped.delete(frameId);
+    }
     const phase = snapshotPhase(snapshot);
     if (!phase || !isLayerCallId(callId) || this.stopped.has(frameId)) return;
-    if (full) {
-      // The page navigated: its snapshots before it are not kept.
-      const before = this.queue.length;
-      this.queue = this.queue.filter((one) => one.fields.page !== pageId);
-      if (this.queue.length !== before) this.queued = this.queue.reduce((sum, one) => sum + one.bytes, 0);
-    }
-    if (this.caughtUp && this.queued + line.length > MAX_SNAPSHOT_BACKLOG) {
+    const queue = this.queue;
+    if (this.caughtUp && (queue.bytes + line.length > MAX_SNAPSHOT_BACKLOG || queue.count >= MAX_WAITING)) {
       this.stopChain(frameId, BEHIND, 'kept');
       return;
     }
     const at = typeof wallTime === 'number' && wallTime > 1e12 ? wallTime : Date.now();
     const step = this.calls.get(callId)?.step ?? callId;
-    this.queue.push({
+    queue.push({
       fields: { call: step, phase, page: pageId, frame: frameId, main: true, full, index, at },
       callId,
       snapshot,
       bytes: line.length,
     });
-    this.queued += line.length;
     if (!this.caughtUp) this.trimBacklog();
   }
 
   /**
-   * The snapshots waiting as Inspect opens, within `MAX_SNAPSHOT_BACKLOG`: past it, the oldest after a frame's full one
-   * go, never a full one; with full ones alone left, the oldest one's frame keeps none of its chain.
+   * The snapshots waiting as Inspect opens, within `MAX_SNAPSHOT_BACKLOG` and `MAX_WAITING`: past them, the oldest
+   * after a frame's full one go, never a full one; with full ones alone left, the oldest one's frame keeps none of its
+   * chain.
    */
   private trimBacklog(): void {
-    while (this.queued > MAX_SNAPSHOT_BACKLOG && this.queue.length) {
-      const at = this.queue.findIndex((one) => !one.fields.full);
-      if (at >= 0) {
-        this.queued -= this.queue.splice(at, 1)[0]!.bytes;
-        continue;
-      }
-      this.stopChain(this.queue[0]!.fields.frame, OVER_BACKLOG, 'none');
+    while (this.queue.bytes > MAX_SNAPSHOT_BACKLOG || this.queue.count > MAX_WAITING) {
+      if (this.queue.dropOldestPartial()) continue;
+      const oldest = this.queue.peek();
+      if (!oldest) return;
+      this.stopChain(oldest.fields.frame, OVER_BACKLOG, 'none');
     }
   }
 
@@ -567,17 +746,9 @@ export class DesktopTraceReader {
    * which starts its chain again (`until-full`: they come after it), or all go (`none`).
    */
   private stopChain(frame: string, why: string, waiting: 'kept' | 'until-full' | 'none'): void {
-    let restarts = false;
-    if (waiting !== 'kept') {
-      const kept: Waiting[] = [];
-      for (const one of this.queue) {
-        if (one.fields.frame === frame && one.fields.full && waiting === 'until-full') restarts = true;
-        if (one.fields.frame === frame && !restarts) this.queued -= one.bytes;
-        else kept.push(one);
-      }
-      this.queue = kept;
-    }
-    if (restarts) return;
+    // A frame's full snapshot that waits is the oldest of its frame's that wait: its navigation let go those before it.
+    if (waiting === 'until-full' && this.queue.waitsFull(frame)) return;
+    if (waiting !== 'kept') this.queue.dropFrame(frame);
     const told = this.stopped.has(frame);
     this.stopped.add(frame);
     if (this.mainFrames.has(frame) && !told) this.tell(`${why} ${UNTIL_NAVIGATION}`);
@@ -664,12 +835,14 @@ export class DesktopTraceReader {
   /** Keep what waits, oldest first, `MAX_TAKEN_A_TURN` bytes at most; whether more waits. */
   private async keepWaiting(): Promise<boolean> {
     let taken = 0;
-    while (this.queue.length && !this.closed) {
+    const slices = new Slices();
+    while (!this.closed) {
       if (taken >= MAX_TAKEN_A_TURN) return true;
-      const next = this.queue.shift()!;
-      this.queued -= next.bytes;
+      const next = this.queue.shift();
+      if (!next) return false;
       taken += next.bytes;
       await this.keep(next);
+      if (slices.due()) await slices.next();
     }
     return false;
   }

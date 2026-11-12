@@ -26,7 +26,7 @@ import {
   readDesktopInspectMoment,
   type DesktopInspectSessions,
 } from '../../server/utils/desktop-inspect';
-import { InspectBudget, RunInspect } from '../../server/utils/live-inspect';
+import { InspectBudget, MAX_WORKER_SNAPSHOT_COUNT, RunInspect } from '../../server/utils/live-inspect';
 
 const requireHere = createRequire(import.meta.url);
 type Chromium = typeof import('@playwright/test').chromium;
@@ -374,6 +374,47 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
     own.reader.close();
     none.reader.close();
   });
+});
+
+describe('a long trace', () => {
+  it('is caught up with in slices the server’s other work runs between, its latest pages kept', async () => {
+    const traces = path.join(root, 'long', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    const out = fs.openSync(file, 'w');
+    const count = 100_000;
+    fs.writeSync(out, `${snapshotLine('call@0', 'after', ['HTML', {}, ['P', {}, 'start']])}\n`);
+    for (let from = 1; from <= count; from += 10_000) {
+      const lines: string[] = [];
+      for (let i = from; i < from + 10_000 && i <= count; i++) {
+        lines.push(snapshotLine(`call@${i}`, 'after', ['HTML', {}, [[1, 1]], ['P', {}, `n${i}`]]));
+      }
+      fs.writeSync(out, `${lines.join('\n')}\n`);
+    }
+    fs.closeSync(out);
+    const own = readerOf(traces, 't1');
+    let last = performance.now();
+    let longest = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+    }, 1);
+    try {
+      own.reader.start();
+      await waitFor(() => own.kept.at(-1)?.call === `call@${count}`, 60_000);
+    } finally {
+      clearInterval(tick);
+      own.reader.close();
+    }
+    expect(longest).toBeLessThan(150);
+    // As many pages as the store keeps of a lane wait as Inspect opens: the navigation's, then the latest.
+    expect(own.kept).toHaveLength(MAX_WORKER_SNAPSHOT_COUNT);
+    expect(own.kept[0]).toMatchObject({ call: 'call@0', full: true });
+    expect(own.kept[1]).toMatchObject({ call: `call@${count - MAX_WORKER_SNAPSHOT_COUNT + 2}` });
+    const latest = await own.store.render('0', `call@${count}`, 'after');
+    expect('html' in latest && latest.html).toContain(`n${count}`);
+  }, 120_000);
 });
 
 describe.skipIf(process.platform === 'win32')('a file of the trace that is a named pipe as it opens', () => {
