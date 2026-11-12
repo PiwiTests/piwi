@@ -6377,10 +6377,20 @@
     "message": "Mudar o atalho"
   },
   "runs_failOffline": {
-    "message": "O serviço do editor não está conectado: o Piwi Picker se conecta de novo."
+    "message": "Sem conexão com $tool$: o Piwi Picker se conecta de novo.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "O editor não respondeu a tempo."
+    "message": "Sem resposta a tempo de $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: a execução terminou.",
@@ -7279,12 +7289,6 @@
   "runs_requestNoSize": {
     "message": "tamanho desconhecido"
   },
-  "runs_live": {
-    "message": "Ver ao vivo"
-  },
-  "runs_liveTitle": {
-    "message": "Mostrar a página do teste enquanto ela é desenhada, no lugar da imagem: Interagir então envia seus cliques e teclas para ela"
-  },
   "runs_interact": {
     "message": "Interagir"
   },
@@ -7304,7 +7308,12 @@
     "message": "Iniciando a visualização ao vivo…"
   },
   "runs_liveLost": {
-    "message": "A conexão com o editor foi perdida: a visualização ao vivo recomeça quando ela voltar."
+    "message": "A conexão com $tool$ foi perdida: a visualização ao vivo recomeça quando ela voltar.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc desativa Interagir e devolve a parada, mas vai para a página enquanto nela se escolhe um elemento ou se verifica; Shift+clique escolhe um locator."
@@ -7618,10 +7627,10 @@
     "message": "Outra janela Execuções assiste agora a outro worker: o Piwi Picker mostra um worker de CI por vez."
   },
   "runs_pageAtStop": {
-    "message": "A página de um teste aparece aqui quando ele para: em um ponto de interrupção, em page.pause() ou quando você o pausa. Ver ao vivo a mostra então enquanto ela é desenhada."
+    "message": "A página de um teste aparece aqui quando ele para: em um ponto de interrupção, em page.pause() ou quando você o pausa. Assistir a mostra então enquanto ela é desenhada."
   },
   "runs_pageAtStopDesktop": {
-    "message": "A página de um teste aparece aqui quando ele para: em page.pause() ou quando você o pausa. Ver ao vivo a mostra então enquanto ela é desenhada."
+    "message": "A página de um teste aparece aqui quando ele para: em page.pause() ou quando você o pausa. Assistir a mostra então enquanto ela é desenhada."
   },
   "runs_shareRefusedLocal": {
     "message": "Esta execução não pode ser compartilhada ao vivo: ela reporta ao aplicativo de desktop do Piwi desta máquina, que nenhum colega alcança. Informe a instância da sua equipe em PIWI_DASHBOARD_URL para compartilhar uma execução lá."

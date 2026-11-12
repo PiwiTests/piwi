@@ -7548,12 +7548,22 @@
     "description": "Runs window, the same button once the run shortcut has a key."
   },
   "runs_failOffline": {
-    "message": "The editor’s service is not connected: Piwi Picker connects again.",
-    "description": "Runs window, under a button whose command could not reach the editor’s service."
+    "message": "Not connected to $tool$: Piwi Picker connects again.",
+    "description": "Runs window, under a test, when a command could not reach the tool whose hub follows the run: the worker connects again. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "The editor did not answer in time.",
-    "description": "Runs window, under a button whose command the editor did not answer."
+    "message": "No answer in time from $tool$.",
+    "description": "Runs window, under a test, when the tool whose hub follows the run did not answer a command in time. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: the run ended.",
@@ -7615,7 +7625,7 @@
   },
   "runs_editor": {
     "message": "your editor",
-    "description": "Runs window, in runs_reconnecting when the editor does not say its name. Lower case."
+    "description": "Runs window, the editor inside a sentence when it does not say its name: in runs_reconnecting, runs_failOffline, runs_failTimeout and runs_liveLost. Lower case."
   },
   "runs_following_one": {
     "message": "Following $count$ editor window",
@@ -7703,7 +7713,7 @@
   },
   "runs_desktopName": {
     "message": "the desktop app",
-    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
+    "description": "Runs window, the Piwi desktop app as its hub’s runs name it inside a sentence: in runs_reconnecting, runs_runAway, runs_failOffline, runs_failTimeout and runs_liveLost. Lower case."
   },
   "runs_followingDesktop": {
     "message": "Following the desktop app",
@@ -8639,14 +8649,6 @@
     "message": "size unknown",
     "description": "Runs window, in a request of the list, in place of its size when the response did not state one (its body came in chunks). Short."
   },
-  "runs_live": {
-    "message": "Watch live",
-    "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
-  },
-  "runs_liveTitle": {
-    "message": "Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it",
-    "description": "Runs window, the Watch live button’s tooltip."
-  },
   "runs_interact": {
     "message": "Interact",
     "description": "Runs window, a toggle in the stopped page’s card: on, the person’s clicks, wheel and keys on the live view go to the test’s page, and they drive the stop."
@@ -8672,8 +8674,13 @@
     "description": "Runs window, under the image while the live view starts."
   },
   "runs_liveLost": {
-    "message": "The connection to the editor was lost: the live view starts again once it is back.",
-    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
+    "message": "The connection to $tool$ was lost: the live view starts again once it is back.",
+    "description": "Runs window, under a live view or a watched lane that ended because the connection to the tool whose hub follows the run was lost. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks a locator.",
@@ -8701,7 +8708,7 @@
   },
   "runs_watchToUse": {
     "message": "Watch to use",
-    "description": "Runs window, the tooltip of Pick, Record and Assert, held, at a stop no pause bar shows (a headless test) that this window does not watch: they work once the person turns on Watch (runs_watch) or Watch live (runs_live). Short."
+    "description": "Runs window, the tooltip of Pick, Record and Assert, held, at a stop no pause bar shows (a headless test) that this window does not watch: they work once the person turns on Watch (runs_watch). Short."
   },
   "runs_laneRunning": {
     "message": "Running…",
@@ -9056,12 +9063,12 @@
     "description": "Runs window, why the watch of a CI run’s worker ended: another Runs window watches another CI worker now, and Piwi Picker watches one at a time."
   },
   "runs_pageAtStop": {
-    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
-    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."
+    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch then shows it as it paints.",
+    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch is the button’s name (runs_watch)."
   },
   "runs_pageAtStopDesktop": {
-    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch live then shows it as it paints.",
-    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch live is the button’s name (runs_live)."
+    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch then shows it as it paints.",
+    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch is the button’s name (runs_watch)."
   },
   "runs_shareRefusedLocal": {
     "message": "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team’s instance in PIWI_DASHBOARD_URL to share a run there.",

@@ -333,7 +333,7 @@ test('picker-runs-live', async ({ context }) => {
         bar: false,
       });
       await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: image, ...STOP_VIEWPORT });
-      await runs.getByRole('button', { name: 'Watch live' }).click();
+      await runs.locator('button[data-focus$="|live"]').click();
       await answerNext(run.worker, 'view', { ok: true, message: 'The live view is on.' });
       run.worker.send({ type: 'frame', stop: 1, ...STOP_VIEWPORT, data: frame });
       await expect(runs.locator('img.live')).toBeVisible();

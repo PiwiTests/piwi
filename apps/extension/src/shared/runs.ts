@@ -680,7 +680,7 @@ export function keyTargetOf(
 
 /**
  * Names a worker's slot within a run (Playwright's `parallelIndex`), which a worker started in its place after a failure
- * takes: what the window keeps Watch live by.
+ * takes: what the window keeps the stop's Watch by.
  */
 export function slotKey(hub: string, ref: string, parallelIndex: number): string {
   return `${hub}|${ref}|slot-${parallelIndex}`;

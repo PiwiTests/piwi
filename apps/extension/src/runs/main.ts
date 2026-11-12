@@ -116,9 +116,9 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * watch, with its page's link to copy and **Stop sharing**; a run that cannot be shared says why, under its workers, in
  * place of Share live.
  *
- * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
- * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
- * stays on. Where the stop takes input from this window (`input`), Interact, while the view is on, sends the pointer
+ * A stop's own Watch shows its frames in place of its image, while the window shows that stop: the view ends as the
+ * stop does, the window hides or the stop's Watch is turned off, and comes again at the worker's next stop while
+ * the stop's Watch stays on. Where the stop takes input from this window (`input`), Interact, while the view is on, sends the pointer
  * and the keys on it to the page, and the first of them drives the stop: the left and right buttons with the click
  * count the system gave them where the stop takes it (`input-clicks`), Control, Alt and Meta held around a click. Tab
  * moves the focus on unless a click into the view took the keyboard; Escape turns Interact off and gives the stop
@@ -131,7 +131,7 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * worker Playwright starts in its place, until it is turned off or the run ends; a hidden window watches nothing, and
  * watches again as it shows. A frame taken before a Step, a Resume or the end of a test stays shown, dimmed and marked
  * as running, until the next one comes. At a stop the lane's frames show, they are its live view, taking Interact's
- * input as Watch live's do; a watched lane that stops is brought into view. Pause and watch pauses the worker and watches it. At a
+ * input as a stop's own Watch's do; a watched lane that stops is brought into view. Pause and watch pauses the worker and watches it. At a
  * stop no pause bar shows and that the window does not watch, the actions in the test's window show held, saying to
  * watch first. At a hub that sends a lane's layers, a watched lane shows them under its page once its worker's reporter
  * sent one (`@piwitests/run-model/layers`): why its call waits (the latest lines of Playwright's log of it, what its locator matches and how), its
@@ -277,7 +277,7 @@ function connect(): void {
     if (port === opened) port = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
-    // The worker that relayed the views is gone: the next one watches each again that Watch live left on, and each lane
+    // The worker that relayed the views is gone: the next one watches each again that a stop's Watch left on, and each lane
     // Watch left on.
     for (const [key, view] of views) if (isLive(view)) endView(key, false);
     for (const lane of lanes.values()) if (isLive(lane)) idleLane(lane, false);
@@ -326,9 +326,19 @@ function command(
   });
 }
 
-function failureText(answer: RunsAnswer): string {
-  if (answer.failure === 'offline') return t('runs_failOffline');
-  if (answer.failure === 'timeout') return t('runs_failTimeout');
+/**
+ * The tool whose hub follows a run, as the window's sentences name it: the desktop app for its hub's runs, else the
+ * editor by its name (`Visual Studio Code`), or "your editor" when its hub names none.
+ */
+function toolName(hub: string): string {
+  const found = state?.hubs.find((h) => h.id === hub);
+  return found?.desktop ? t('runs_desktopName') : (found?.client ?? t('runs_editor'));
+}
+
+/** What an answer says, the worker's own failures naming the tool whose hub it did not reach (`toolName`). */
+function failureText(answer: RunsAnswer, hub: string): string {
+  if (answer.failure === 'offline') return t('runs_failOffline', { tool: toolName(hub) });
+  if (answer.failure === 'timeout') return t('runs_failTimeout', { tool: toolName(hub) });
   if (answer.failure === 'unwatched') return t('runs_failUnwatched');
   return answer.message;
 }
@@ -380,7 +390,7 @@ function say(
   options: { sent?: boolean; warnings?: string[]; rich?: boolean; copy?: string | null } = {},
 ): void {
   const { sent = false, warnings = [], rich = false, copy = null } = options;
-  const text = answer.ok ? answer.message : failureText(answer);
+  const text = answer.ok ? answer.message : failureText(answer, key.split('|')[0]!);
   answers.set(key, {
     ok: answer.ok,
     text,
@@ -428,7 +438,7 @@ async function share(run: RunsRun, on: boolean, byWindow = false): Promise<void>
   if (byWindow && answer.ok && state?.hubs.find((h) => h.id === run.hub)?.windowShared !== on) {
     windowsAsked.add(run.hub);
   }
-  const text = answer.ok ? answer.message : failureText(answer);
+  const text = answer.ok ? answer.message : failureText(answer, run.hub);
   if (!answer.ok) shareRefusals.set(key, text);
   if (text) announce(text);
   render();
@@ -574,7 +584,7 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       since: stop.since,
       loading: false,
       img,
-      note: img ? '' : failureText(answer),
+      note: img ? '' : failureText(answer, run.hub),
       viewport,
       ...(answer.failure === 'offline' ? { lost: run.hub } : {}),
     });
@@ -676,14 +686,14 @@ const views = new Map<string, LiveView>();
  */
 const lanes = new Map<string, LaneView>();
 /**
- * The slots whose Watch live the person left on (`slotKey`), each with its hub and run: each new stop of the worker in
+ * The slots whose stop's Watch the person left on (`slotKey`), each with its hub and run: each new stop of the worker in
  * the slot is watched too, a worker Playwright starts in its place after a failure included, until it is turned off or
  * the run ends.
  */
 const watchLive = new Map<string, { hub: string; run: string }>();
 /**
  * The slots whose Interact the person turned on (`slotKey`), each with its hub and run: the views of the slot's stops
- * send the person's clicks, wheel and keys to the page, through each next stop, until Interact, Watch live or Watch is
+ * send the person's clicks, wheel and keys to the page, through each next stop, until Interact, the stop's Watch or the lane's is
  * turned off, `Esc` is pressed on the view, or the run ends.
  */
 const interacting = new Map<string, { hub: string; run: string }>();
@@ -735,14 +745,14 @@ function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubSto
 }
 
 /**
- * Watch live, on or off for a worker's slot; on, every next stop in the slot is watched too, until it is turned off.
+ * The stop's Watch, on or off for a worker's slot; on, every next stop in the slot is watched too, until it is turned off.
  */
 function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   const key = workerKey(run.hub, run.session.ref, { worker });
   if (releasing.has(key)) return;
   const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex ?? worker;
   const slot = slotKey(run.hub, run.session.ref, lane);
-  // The run of a hub not connected now is shown as last heard: its Watch live waits for the hub.
+  // The run of a hub not connected now is shown as last heard: its stop's Watch waits for the hub.
   if (!hubAnswers(run.hub)) return;
   const view = views.get(key);
   if (view?.since === stop.since && isLive(view)) {
@@ -764,8 +774,8 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
 /**
  * Interact, on or off for a worker's slot. On, the slot's views send the person's input to the page, and the first of
  * it drives the stop, where its hub names who drives (`presence`). Off, the input waiting goes first, then a stop this
- * window drives, or reached with its input, is given back, whatever command is on its way. Watch live or Watch turned
- * off, a view or a lane refused, and Give back turn it off too.
+ * window drives, or reached with its input, is given back, whatever command is on its way. The stop's Watch or the
+ * lane's turned off, a view or a lane refused, and Give back turn it off too.
  */
 function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean): Promise<void> {
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
@@ -818,7 +828,7 @@ function hubAnswers(hub: string): boolean {
 
 /**
  * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing while
- * the port to the worker is down: Watch live left on starts it once the worker is back.
+ * the port to the worker is down: a stop's Watch left on starts it once the worker is back.
  */
 function startView(run: RunsRun, worker: number, stop: HubStop): void {
   if (!port) return;
@@ -854,7 +864,7 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
       // A view asked as its hub's connection was lost ends as the loss does, to start again once it answers.
       const lost = answer.failure === 'offline';
       view.status = lost ? 'ended' : 'refused';
-      view.note = lost ? t('runs_liveLost') : failureText(answer);
+      view.note = lost ? t('runs_liveLost', { tool: toolName(run.hub) }) : failureText(answer, run.hub);
       view.next = null;
       announce(view.note);
     }
@@ -911,7 +921,7 @@ async function sendInput(at: RunsView, slot: string, showing: () => boolean, eve
   const answer = await command(at.hub, at.ref, at.worker, 'input', at.since, { events });
   if (answer.ok && events.some((e) => e.type !== 'mouse' || e.action !== 'move')) inputAt.set(slot, at.since);
   if (answer.ok || !showing()) return answer.ok;
-  if (answers.get(key)?.text !== failureText(answer)) {
+  if (answers.get(key)?.text !== failureText(answer, at.hub)) {
     say(key, answer, at.since);
     render();
   }
@@ -970,7 +980,7 @@ function heardViewEnded(ended: RunsView): void {
   if (!isLive(view) || view.since !== ended.since) return;
   stopInput(view);
   view.status = 'ended';
-  view.note = t('runs_liveLost');
+  view.note = t('runs_liveLost', { tool: toolName(ended.hub) });
   view.next = null;
   view.img.removeAttribute('src');
   view.viewport = null;
@@ -1078,7 +1088,7 @@ function askLane(slot: string, lane: LaneView): void {
       // A lane asked as its hub's connection was lost ends as the loss does, to be asked again once it answers.
       const lost = answer.failure === 'offline';
       lane.status = lost ? 'ended' : 'refused';
-      lane.note = lost ? t('runs_liveLost') : failureText(answer);
+      lane.note = lost ? t('runs_liveLost', { tool: toolName(lane.hub) }) : failureText(answer, lane.hub);
       lane.waitAway = lost;
       lane.refusedAt = lost || !state ? null : lanePlace(state, lane);
       lane.next = null;
@@ -1197,7 +1207,7 @@ function heardLaneEnded(ended: RunsLane): void {
   if (!isLive(lane)) return;
   idleLane(lane, false);
   lane.status = 'ended';
-  lane.note = t('runs_liveLost');
+  lane.note = t('runs_liveLost', { tool: toolName(ended.hub) });
   lane.waitAway = true;
   announce(lane.note);
   render();
@@ -1418,7 +1428,7 @@ function askText(slot: string, on: boolean): void {
     (answer) => {
       if (lanes.get(slot) !== lane || answer.ok || !lane.textAsking) return;
       lane.textAsking = false;
-      lane.textNote = failureText(answer);
+      lane.textNote = failureText(answer, lane.hub);
       render();
     },
   );
@@ -1851,7 +1861,7 @@ document.addEventListener('keydown', (event) => {
   render();
 });
 
-// A window the person cannot see watches nothing: its views and lanes stop, and come again as it shows, Watch live and
+// A window the person cannot see watches nothing: its views and lanes stop, and come again as it shows, the stop's Watch and
 // Watch left on.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
@@ -2087,7 +2097,7 @@ function bringIntoView(): void {
 
 /**
  * Drops what is kept for a stop a worker no longer stands at: its image, its live view, its list of requests, an
- * answer for it; and Watch live and Watch for a worker whose run ended. A view whose hub's connection was lost stays
+ * answer for it; and the stop's Watch and the lane's for a worker whose run ended. A view whose hub's connection was lost stays
  * shown as ended while the hub is away, so the run that comes back at the same stop says so.
  */
 function forgetGone(current: RunsState): void {
@@ -2110,7 +2120,7 @@ function forgetGone(current: RunsState): void {
     if (!at.has(key) && view.status === 'ended' && !connected(view.hub) && named(view.hub)) continue;
     endView(key, false);
   }
-  // A slot's Watch live lasts while its run does: a worker Playwright starts in its place keeps it.
+  // A slot's stop's Watch lasts while its run does: a worker Playwright starts in its place keeps it.
   const liveRuns = new Set(current.runs.filter((r) => !r.session.ended).map((r) => `${r.hub}|${r.session.ref}`));
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
@@ -2841,7 +2851,7 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
     runBusy.delete(key);
     for (const worker of workers) busy.delete(worker);
     const refused = said.find((answer) => !answer.ok);
-    if (refused) announce(failureText(refused));
+    if (refused) announce(failureText(refused, run.hub));
     render();
   };
   const buttons: HTMLButtonElement[] = [];
@@ -2893,8 +2903,8 @@ function renderStopRun(run: RunsRun): HTMLElement {
       render();
       const answer = await command(run.hub, run.session.ref, null, 'stop', null);
       stopping.delete(key);
-      if (!answer.ok) stopRefusals.set(key, failureText(answer));
-      announce(answer.ok ? answer.message : failureText(answer));
+      if (!answer.ok) stopRefusals.set(key, failureText(answer, run.hub));
+      announce(answer.ok ? answer.message : failureText(answer, run.hub));
       render();
     },
     { icon: 'stop', small: true, tone: 'remove', title: t('runs_stopRunTitle') },
@@ -2917,7 +2927,7 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
   render();
   const answer = await command(run.hub, run.session.ref, null, 'hold', null, { on });
   holding.delete(key);
-  const text = answer.ok ? answer.message : failureText(answer);
+  const text = answer.ok ? answer.message : failureText(answer, run.hub);
   if (!answer.ok && text) holdRefusals.set(key, text);
   if (text) announce(text);
   render();
@@ -3628,7 +3638,7 @@ async function drive(
 }
 
 /**
- * The stopped page, in a card: its head with who watches it, and Watch live and Pick on the image where the stop takes
+ * The stopped page, in a card: its head with who watches it, and the stop's Watch and Pick on the image where the stop takes
  * them; then its live view once a frame came (the Live badge on it), else its image, else why there is none in its
  * place; under it, why the view ended, the first time the view takes input how, and who drives the stop. The image's
  * box stays the same element for the stop, so the live view keeps the focus.
@@ -3640,7 +3650,7 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
   const still = kept?.since === stop.since ? kept : undefined;
   if (views.get(key)?.since !== stop.since) endView(key, false);
   const canView = intents.includes('view');
-  // Watch live left on for the slot watches this stop, and starts again on its own once a lost hub answers.
+  // A stop's Watch left on for the slot watches this stop, and starts again on its own once a lost hub answers.
   const watched = watchLive.has(slotKey(run.hub, run.session.ref, worker.parallelIndex));
   const restart = !views.has(key) || views.get(key)!.status === 'ended';
   if (canView && watched && restart && !away && !document.hidden) startView(run, worker.worker, stop);
@@ -3663,7 +3673,7 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
 
   const figure = part(`${key}|page`, stop.since, () => element('figure', 'page'));
   figure.toggleAttribute('data-picking', picking.has(key));
-  // While its hub is away, Watch live shows as the person left it, for when the hub answers.
+  // While its hub is away, the stop's Watch shows as the person left it, for when the hub answers.
   const tools = {
     since: stop.since,
     watchers: around.watchers,
@@ -3729,7 +3739,7 @@ interface PageAround {
 
 /**
  * The page card's head, which names the card (`figure`): its caption, who watches the page under it, then the tools
- * the stop takes on its page, each a toggle saying whether it is on: Watch live (`live`, null where the stop takes no
+ * the stop takes on its page, each a toggle saying whether it is on: the stop's Watch (`live`, null where the stop takes no
  * view of its own), Watch for a watched lane's stop (`watch`), Interact once a view the hub accepted shows the stop
  * and it takes input (`interact`), and Pick on the image; then, on a watched lane's page, Open the trace so far, a
  * button (`trace`, held while its ask waits). Who watches and the tools are each drawn again only when they change, so
@@ -3776,10 +3786,11 @@ function pageHead(
     const row = part(`${key}|page-tools`, tools, () => {
       const made = element('div', 'piwi-actions page-tools');
       if (tools.live !== null && stop) {
-        const live = makeButton(t('runs_live'), () => toggleLive(run, worker.worker, stop), {
+        // The stop's own view, named as the lane's: one view, one name.
+        const live = makeButton(t('runs_watch'), () => toggleLive(run, worker.worker, stop), {
           icon: 'eye',
           small: true,
-          title: t('runs_liveTitle'),
+          title: t('runs_watchTitle'),
         });
         live.setAttribute('aria-pressed', String(tools.live));
         live.dataset.focus = `${key}|live`;
@@ -3871,7 +3882,7 @@ function markTools(row: HTMLElement, key: string, away: boolean): void {
  * on the image, and while the lane is watched at a hub that opens traces, Open the trace so far (`canOpenTrace`); then
  * the lane's
  * frame of where the worker stands, with the Live badge (at a stop, the stop's live view, which takes Interact's input
- * as Watch live's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
+ * as a stop's own Watch's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
  * Why the lane sends no frame shows in place of its image; under it, why the lane ended or was refused, that it starts,
  * or why the stop has no image, the first time the view takes input how, and who drives the stop. Null for a worker
  * that runs, its lane neither watched nor refused.

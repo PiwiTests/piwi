@@ -6377,10 +6377,20 @@
     "message": "Changer le raccourci"
   },
   "runs_failOffline": {
-    "message": "Le service de l’éditeur n’est pas connecté : Piwi Picker se reconnecte."
+    "message": "Pas de connexion à $tool$ : Piwi Picker se reconnecte.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "L’éditeur n’a pas répondu à temps."
+    "message": "Pas de réponse à temps de $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$ : l’exécution est terminée.",
@@ -7279,12 +7289,6 @@
   "runs_requestNoSize": {
     "message": "taille inconnue"
   },
-  "runs_live": {
-    "message": "Voir en direct"
-  },
-  "runs_liveTitle": {
-    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : Interagir y envoie alors vos clics et vos touches"
-  },
   "runs_interact": {
     "message": "Interagir"
   },
@@ -7304,7 +7308,12 @@
     "message": "Démarrage de la vue en direct…"
   },
   "runs_liveLost": {
-    "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
+    "message": "La connexion à $tool$ a été perdue : la vue en direct reprend une fois la connexion revenue.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap désactive Interagir et rend l’arrêt, mais va à la page tant qu’un choix ou une vérification s’y déroule ; Maj+clic choisit un locator."
@@ -7618,10 +7627,10 @@
     "message": "Une autre fenêtre Exécutions regarde maintenant un autre worker : Piwi Picker montre un worker de CI à la fois."
   },
   "runs_pageAtStop": {
-    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Regarder pour la suivre telle qu’elle se dessine."
   },
   "runs_pageAtStopDesktop": {
-    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Regarder pour la suivre telle qu’elle se dessine."
   },
   "runs_shareRefusedLocal": {
     "message": "Cette exécution ne peut pas être partagée en direct : elle rend compte à l’application de bureau Piwi de cet ordinateur, que vos collègues ne peuvent pas joindre. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL pour y partager une exécution."

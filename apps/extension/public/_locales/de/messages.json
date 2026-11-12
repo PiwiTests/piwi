@@ -6377,10 +6377,20 @@
     "message": "Tastenkürzel ändern"
   },
   "runs_failOffline": {
-    "message": "Der Dienst des Editors ist nicht verbunden: Piwi Picker verbindet sich erneut."
+    "message": "Nicht mit $tool$ verbunden: Piwi Picker verbindet sich erneut.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "Der Editor hat nicht rechtzeitig geantwortet."
+    "message": "Keine rechtzeitige Antwort von $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: Der Lauf ist beendet.",
@@ -7279,12 +7289,6 @@
   "runs_requestNoSize": {
     "message": "Größe unbekannt"
   },
-  "runs_live": {
-    "message": "Live ansehen"
-  },
-  "runs_liveTitle": {
-    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Interagieren sendet dann Ihre Klicks und Tasten an sie"
-  },
   "runs_interact": {
     "message": "Interagieren"
   },
@@ -7304,7 +7308,12 @@
     "message": "Die Live-Ansicht startet…"
   },
   "runs_liveLost": {
-    "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
+    "message": "Die Verbindung mit $tool$ ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc schaltet Interagieren aus und gibt den Halt zurück, geht aber an die Seite, solange dort eine Auswahl oder eine Prüfung läuft; Umschalt+Klick wählt einen Locator."
@@ -7618,10 +7627,10 @@
     "message": "Ein anderes Läufe-Fenster sieht jetzt einen anderen Worker an: Piwi Picker zeigt einen CI-Worker auf einmal."
   },
   "runs_pageAtStop": {
-    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },
   "runs_pageAtStopDesktop": {
-    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },
   "runs_shareRefusedLocal": {
     "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an die Piwi-Desktop-App auf diesem Rechner, die kein Teammitglied erreicht. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein, um einen Lauf dort zu teilen."

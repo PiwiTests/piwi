@@ -192,6 +192,8 @@ export interface Desktop {
   channel: Channel;
   /** The code made at a stop of its runs, which the app's window alone receives, to copy. */
   codes: StopCode[];
+  /** The command line the shell said it started each run with, by ref, which the hub names on the run. */
+  commands: Map<string, string>;
   close(): Promise<void>;
 }
 
@@ -209,6 +211,7 @@ const DESKTOP_DECLINES = new Set(['pick', 'record', 'assert']);
  */
 export async function startDesktop(dir: string): Promise<Desktop> {
   const codes: StopCode[] = [];
+  const commands = new Map<string, string>();
   let hub: RunHub | null = null;
   const sessions = new RunSessions({
     notify: (session) => hub?.push(session),
@@ -252,7 +255,11 @@ export async function startDesktop(dir: string): Promise<Desktop> {
   hub = (await RunHub.open({
     sessions,
     actions,
-    runInfo: (_ref, root) => ({ command: null, label: root ? path.basename(root) : null, project: null }),
+    runInfo: (ref, root) => ({
+      command: commands.get(ref) ?? null,
+      label: root ? path.basename(root) : null,
+      project: null,
+    }),
     welcome: () => ({ pid: process.pid, version: '0.62.0', client: 'Piwi desktop app', roots: [dir] }),
     surfacesChanged: () => sessions.surfacesChanged(),
     token: DESKTOP_TOKEN,
@@ -296,6 +303,7 @@ export async function startDesktop(dir: string): Promise<Desktop> {
     hub: live,
     channel: { path: channel.path, token: channel.token },
     codes,
+    commands,
     close: async () => {
       hub?.close();
       channel.close();
