@@ -394,7 +394,96 @@ describe('useReelPlayer', () => {
       await flush();
       expect(player.current.value).toBe(1);
       expect(els[0].plays).toBe(1);
+      // The test before it was not played: it is not ticked.
+      expect(player.ticked.value).toEqual([false, false, false, false]);
+    });
+
+    /** Moves the playing video past its test's end, so the reel goes on to the next test. */
+    async function endTest(player: ReturnType<typeof setupReel>['player'], els: FakeVideo[]) {
+      const el = els[player.front.value]!;
+      el.currentTime = 1.2;
+      el.dispatchEvent(new Event('timeupdate'));
+      await flush();
+      await vi.advanceTimersByTimeAsync(4000);
+    }
+
+    /** Lets the videos that are waiting to load finish loading. */
+    async function loaded(els: FakeVideo[]) {
+      for (const el of els) {
+        if (el.srcValue == null || el.readyState >= 4) continue;
+        el.readyState = 4;
+        el.dispatchEvent(new Event('loadedmetadata'));
+        el.dispatchEvent(new Event('loadeddata'));
+      }
+      await flush();
+    }
+
+    it('ticks the tests it plays, from the one it started at', async () => {
+      const all = fileOf(4);
+      const { reel } = focusReel(all, all[1]!, 'file')!;
+      const { player, els } = setupReel(reel, 1);
+      player.togglePlay();
+      await flush();
+      await endTest(player, els);
+      expect(player.current.value).toBe(2);
+      expect(player.ticked.value).toEqual([false, true, false, false]);
+      await endTest(player, els);
+      expect(player.current.value).toBe(3);
+      expect(player.ticked.value).toEqual([false, true, true, false]);
+    });
+
+    it('ticks a test played after the reel was moved back before its start', async () => {
+      const all = fileOf(4);
+      const { reel } = focusReel(all, all[2]!, 'file')!;
+      const { player, els } = setupReel(reel, 2);
+      player.togglePlay();
+      await flush();
+      void player.seekTo(0, 0);
+      await loaded(els);
+      expect(player.current.value).toBe(0);
+      await endTest(player, els);
+      expect(player.current.value).toBe(1);
       expect(player.ticked.value).toEqual([true, false, false, false]);
+    });
+
+    it('plays from the test it started at when Play is pressed after the reel finished', async () => {
+      const all = fileOf(4);
+      const { reel } = focusReel(all, all[1]!, 'file')!;
+      const { player, els } = setupReel(reel, 1);
+      player.togglePlay();
+      await flush();
+      await endTest(player, els);
+      await endTest(player, els);
+      await endTest(player, els);
+      expect(player.finished.value).toBe(true);
+      expect(player.ticked.value).toEqual([false, true, true, true]);
+
+      player.togglePlay();
+      await loaded(els);
+
+      expect(player.finished.value).toBe(false);
+      expect(player.playing.value).toBe(true);
+      expect(player.current.value).toBe(1);
+      expect(player.ticked.value).toEqual([false, false, false, false]);
+    });
+
+    it('goes back to the first test, as the run page does, when the reel has no start', async () => {
+      const all = fileOf(3);
+      const { reel } = focusReel(all, all[1]!, 'file')!;
+      const { player, els } = setupReel(reel);
+      player.togglePlay();
+      await flush();
+      await endTest(player, els);
+      await endTest(player, els);
+      await endTest(player, els);
+      expect(player.finished.value).toBe(true);
+      expect(player.ticked.value).toEqual([true, true, true]);
+
+      player.togglePlay();
+      await loaded(els);
+
+      expect(player.current.value).toBe(0);
+      expect(player.ticked.value).toEqual([false, false, false]);
     });
 
     it('starts at the first video when the wanted test has none', () => {

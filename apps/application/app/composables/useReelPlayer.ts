@@ -4,7 +4,8 @@
  * test's end and before the file's, by showing the other element. The visible element's `src` never changes during
  * playback. Only the playing and the next video have a `src`.
  *
- * A reel can start at an entry other than its first (`startAt`): that test's video is the one loaded and waiting.
+ * A reel can start at an entry other than its first (`startAt`): that test's video is the one loaded and waiting, the
+ * tests before it are not ticked as played, and Play after the reel finishes starts there again.
  *
  * Where playback stands comes from `requestVideoFrameCallback`, which reports every frame as it is shown, with
  * `timeupdate` where a browser has none.
@@ -37,6 +38,8 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
   const started = ref(false);
   /** The whole reel is played to its end. */
   const finished = ref(false);
+  /** The first entry playback has been at: the entries before it were not played, so they do not tick. */
+  const playedFrom = ref(0);
   /** The entries whose video failed to load. */
   const failed = reactive(new Set<number>());
   /** The length of each loaded video, in ms. */
@@ -47,6 +50,15 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
   /** The entries with a video that has not failed. */
   function playable(): number[] {
     return entries.value.flatMap((e, i) => (e.execution.video && !failed.has(i) ? [i] : []));
+  }
+  /** The entry a reel starts, and starts over, at: `startAt` when it has a video that can play, else the first. */
+  function startEntry(): number | null {
+    const wanted = startAt?.value;
+    return (wanted != null && playable().includes(wanted) ? wanted : playable()[0]) ?? null;
+  }
+  /** Where the ticks begin on a reel that starts, or starts over, at `first`: its `startAt` test, else its first test. */
+  function ticksFrom(first: number | null): number {
+    return first != null && first === startAt?.value ? first : 0;
   }
   function nextVideo(after: number): number | null {
     return playable().find((i) => i > after) ?? null;
@@ -68,11 +80,11 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
   /** Ticks change only as a test's end passes, so the checklist does not render on every frame. */
   const ticked = computed(() => {
     if (!reel.value || current.value == null || !started.value) return entries.value.map(() => false);
-    return tickedEntries(reel.value, {
-      index: current.value,
-      videoMs: endPassed.value ? endMs.value : -1,
-      endMs: endMs.value,
-    });
+    return tickedEntries(
+      reel.value,
+      { index: current.value, videoMs: endPassed.value ? endMs.value : -1, endMs: endMs.value },
+      playedFrom.value,
+    );
   });
   /** How far through the playing test's video, 0 to 1. */
   const progress = computed(() => (endMs.value > 0 ? Math.min(1, positionMs.value / endMs.value) : 0));
@@ -154,6 +166,7 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     const mine = ++token;
     started.value = true;
     finished.value = false;
+    playedFrom.value = Math.min(playedFrom.value, index);
     moving = true;
     const onShow = held[front.value] === index;
     const slot: Slot = onShow ? front.value : ((1 - front.value) as Slot);
@@ -272,8 +285,12 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     const el = els[front.value];
     if (!el || current.value == null) return;
     if (finished.value || (!started.value && el.paused)) {
-      const first = finished.value ? playable()[0] : current.value;
-      if (first != null) void seekTo(first, 0);
+      const first = finished.value ? startEntry() : current.value;
+      if (first != null) {
+        // Starting over from the reel's start: what the last pass ticked is not carried into this one.
+        if (finished.value) playedFrom.value = ticksFrom(first);
+        void seekTo(first, 0);
+      }
     } else if (playing.value) {
       // A move that is still waiting (a video to load, a seek) is dropped, so it cannot start playing again.
       token++;
@@ -352,8 +369,8 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     finished.value = false;
     playing.value = false;
     positionMs.value = 0;
-    const wanted = startAt?.value;
-    const first = (wanted != null && playable().includes(wanted) ? wanted : playable()[0]) ?? null;
+    const first = startEntry();
+    playedFrom.value = ticksFrom(first);
     current.value = first;
     held[0] = held[1] = null;
     for (const slot of [0, 1] as const) {
