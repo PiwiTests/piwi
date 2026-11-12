@@ -273,15 +273,50 @@ export function serviceDownView(): StatusBarView {
   };
 }
 
+/** How far a run got: the tests that ended, out of all, and how many failed. */
+export type RunCounts = Pick<RunProgress, 'done' | 'total' | 'failed'>;
+
+/** The most runs whose last count `OwnRunCounts` keeps: past them, the oldest go. */
+const MAX_KEPT_COUNTS = 16;
+
+/**
+ * The count each of the editor's own runs told last through its session (`RunSession.progress`), kept once the session
+ * ended while the instance still counts the run behind it, so the status bar's count never goes back: until the
+ * instance's count reaches it, the instance says the run ends (`finalizing`), or another run takes the ref.
+ */
+export class OwnRunCounts {
+  private kept = new Map<string, { runId: number; counts: RunCounts }>();
+
+  /** The count of the run of `ref` the instance counts as `instance`: `told` by its session, else the one kept. */
+  count(ref: string, told: RunCounts | undefined, instance: LiveRun): RunCounts | undefined {
+    if (told) {
+      this.kept.delete(ref);
+      this.kept.set(ref, { runId: instance.runId, counts: told });
+      for (const oldest of this.kept.keys()) {
+        if (this.kept.size <= MAX_KEPT_COUNTS) break;
+        this.kept.delete(oldest);
+      }
+      return told;
+    }
+    const kept = this.kept.get(ref);
+    if (!kept) return undefined;
+    if (kept.runId !== instance.runId || instance.status === 'finalizing' || instance.done >= kept.counts.done) {
+      this.kept.delete(ref);
+      return undefined;
+    }
+    return kept.counts;
+  }
+}
+
 /**
  * The editor's own run in progress counted from its own process's events (`RunSession.progress`), which come before the
  * instance hears them and without one; any other run, or one whose events say nothing, as the instance counts it.
  */
 function withOwnProgress(
   live: LiveRun | null,
-  progressOf: (ref: string) => Pick<RunProgress, 'done' | 'total' | 'failed'> | undefined,
+  progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined,
 ): LiveRun | null {
-  const told = live?.own && live.ref ? progressOf(live.ref) : undefined;
+  const told = live?.own && live.ref ? progressOf(live.ref, live) : undefined;
   return live && told ? { ...live, done: told.done, total: told.total, failed: told.failed } : live;
 }
 
@@ -298,7 +333,7 @@ export function statusBarView(
   desktopChosen = false,
   now = Date.now(),
   activeFile: string | null = null,
-  progressOf: (ref: string) => Pick<RunProgress, 'done' | 'total' | 'failed'> | undefined = () => undefined,
+  progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined = () => undefined,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);

@@ -17,6 +17,7 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  OwnRunCounts,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
   heldStops,
@@ -269,6 +270,35 @@ describe('statusBarView', () => {
     );
   });
 
+  test('the count the editor’s own run told last, kept past its session until the instance’s reaches it or the run ends', () => {
+    const instance: LiveRun = {
+      runId: 124,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T11:00:00.000Z',
+      own: true,
+      ref: 'ed-1',
+    };
+    const told = { done: 6, total: 9, failed: 2 };
+    const counts = new OwnRunCounts();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    expect(counts.count('ed-1', told, instance)).toEqual(told);
+    expect(counts.count('ed-1', undefined, instance)).toEqual(told);
+    // Another run under the ref, a rerun, is counted by the instance alone.
+    expect(counts.count('ed-1', undefined, { ...instance, runId: 125 })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    // The instance says the run ends.
+    counts.count('ed-1', told, instance);
+    expect(counts.count('ed-1', undefined, { ...instance, status: 'finalizing' })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+    // The instance's count reached it.
+    counts.count('ed-1', told, instance);
+    expect(counts.count('ed-1', undefined, { ...instance, done: 6 })).toBeUndefined();
+    expect(counts.count('ed-1', undefined, instance)).toBeUndefined();
+  });
+
   test('a run in progress, the editor’s own or one on the branch, in the item and beside the latest run', () => {
     const inProgress: LiveRun = {
       runId: 124,
@@ -309,6 +339,23 @@ describe('statusBarView', () => {
     );
     expect(statusBarView(connected, live({ ref: 'ed-1', own: false }), false, Date.now(), null, told).text).toBe(
       '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing',
+    );
+    // Its session ended: the count it told last stays until the instance's reaches it, so it never goes back.
+    const counts = new OwnRunCounts();
+    let session: typeof told = told;
+    const kept = (ref: string, instance: LiveRun) => counts.count(ref, session(ref), instance);
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+    );
+    session = () => undefined;
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1', done: 7 }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 7/9 · 1 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
     );
     // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
     const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));

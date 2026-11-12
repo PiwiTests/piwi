@@ -627,7 +627,9 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 
 **The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
 control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
-in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). The run control's progress item
+in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
+told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
+the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
 counts the window's runs from the same events, with or without an instance.
 
 **A click** depends on the state:

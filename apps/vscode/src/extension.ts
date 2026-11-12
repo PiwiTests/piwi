@@ -163,6 +163,7 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  OwnRunCounts,
   serviceDownView,
   heldStops,
   heldText,
@@ -763,17 +764,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
+  const ownRunCounts = new OwnRunCounts();
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = serviceDown
       ? serviceDownView()
-      : statusBarView(
-          status,
-          runs,
-          desktopChosen,
-          Date.now(),
-          activeFile(),
-          (ref) => runSessions().find((s) => s.ref === ref)?.progress,
+      : statusBarView(status, runs, desktopChosen, Date.now(), activeFile(), (ref, instance) =>
+          ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
         );
     statusItem.text = refreshing
       ? refreshingText(view.text)
