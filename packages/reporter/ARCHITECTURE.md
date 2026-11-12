@@ -282,29 +282,41 @@ What the package does to a user's run, process by process.
   listeners, which tell them while any sink subscribes (`subscribePageEvents`), each
   sink at twenty a second at most, the rest counted: a console error, an uncaught error, a
   failed request or one answered 400 and more, each request of the page past 5 s without
-  its answer (`request-pending`, told every 5 s, then once as it ends: the `request`
-  listener follows 200 at most, none while no sink asks), the errors and warnings of a
-  response's `X-Piwi-Logs` (`readServerLogs`, which the capture fixtures read too), and
+  its answer (`request-pending`, told every 5 s, then once as it is answered, a stream's as
+  its headers come, or fails: the `request` listener follows 200 at most, none while no sink
+  asks), the errors and warnings of a response's `X-Piwi-Logs` (`readServerLogs`, which the
+  capture fixtures read too, 4 MB at most once gunzipped), and
   each call through an API request context (`tellApiCall`); the page's text (`takeLaneText`):
-  where the runner traces the attempt with ARIA snapshots, the latest it wrote, rendered
-  by core's `ariaTreeText`, followed once a second as it grows (`followTraceText`), else an
-  ARIA snapshot in AI mode, 8 levels deep, through an internal call, only as asked (the
-  request `text`, or the layer asked); and the test's filmstrip (`LaneFilmstrip`), from
+  where the runner traces the attempt with ARIA snapshots, the latest it wrote of the lane's
+  page (the event's `pageId`, the page's `_guid`, by the trace's time), rendered by core's
+  `ariaTreeText`, followed once a second as it grows (`followTraceText`), else an ARIA
+  snapshot in AI mode, 8 levels deep, through an internal call, only as asked (the request
+  `text`, or the layer asked), each sink taking one at a time, once a second at most, the
+  asks that came meanwhile taken once (`LaneTexts`); and the test's filmstrip
+  (`LaneFilmstrip`), from
   the lane view's own frames, masked as each one it sends is: while the lane view is on,
   300 ms after each call of the test the runner names ended, outside the fixtures' setup
-  and teardown (`fixtureCall`), the view's latest frame (`LaneSubscription.latest`), held
+  and teardown (`fixtureCall`; both looked up, by the step's id in the runner's `_stepMap`,
+  only while the lane view is on), the view's latest frame (`LaneSubscription.latest`), held
   until it is scaled down within 320 by 200 at quality 60 with `jpeg-js` (`thumbnailOf`;
   without it, a frame of 128 KB at most as it is), one every 500 ms at most, six frames
   waiting at most; kept for the test alone (40 images and 1 MB at most, the oldest let go,
-  all of them as the next test begins), sent eight a second at most, all of it again as
-  `layers` asks again, those of a test no longer sent once the next one began. The
-  trace's screencast images are never read: they show the page unmasked. The text is masked by core's
-  `maskAriaSnapshot` with the values the page's secret fields hold now
-  (`fieldSecrets`, through an internal call) and the sink's masks, its credentials hidden;
-  a mask it cannot find by name (`ariaMaskProblem`) sends no text, saying why. The trace
-  is read from where the last read stopped (`TraceTail`), every line but its ARIA
+  all of them as the next test begins), sent eight a second at most, all of it again to a
+  viewer that comes later (`view-lane` asked on again, which sends the latest call log and
+  takes the text again too; `layers` asking the same layers again sends nothing), those of
+  a test no longer sent once the next one began. The trace's screencast images are never
+  read: they show the page unmasked. The text is masked by core's `maskAriaSnapshot` with
+  the sink's masks and the attempt's secrets: the values the secret fields of every page of
+  the lane page's context held at each read of the attempt (`readFieldSecrets`, through
+  internal calls), and each text a call typed (`onTyped`, `trackCalls`) into a field its
+  locator names a secret or with no locator (the keyboard's, an element handle's), kept in
+  memory for the attempt alone, 256 and 64 at most; its credentials hidden, then cut by
+  core's `cutLaneText`. A mask it cannot find (`ariaMaskProblem`) sends no text, nor does a
+  page whose fields could not all be read (a frame that failed, one past 32), saying why.
+  The trace is read from where the last read stopped (`TraceTail`), every line but its ARIA
   snapshots passed over unparsed, the files it names only under its folder
-  (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>]…`). The
+  (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>]…`, its own
+  and the newest `-recording<N>` by number, 8 at most). The
   instance's live view takes the same layers as its full views ask them (`view`'s
   `layers`), its filmstrip from its own frames by the same `LaneFilmstrip` (`live-view.ts`).
 - At a headed stop, that view paints the pause bar over in each frame, for every sink, as
@@ -520,8 +532,10 @@ What the package does to a user's run, process by process.
   that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
   log (`onCallLog`, the `api` log alone), act at its point (`onBeforeInputAction`) and end
   (`onAfterCall`), Playwright 1.64's progress argument or an earlier one's metadata, synchronously,
-  pausing nothing, removed as the context closes; the title is the runner's step for the call's id
-  (`layersTitleOf`). In a worker with a run connection, or a live view key outside CI, the listener
+  pausing nothing, removed as the context closes, each hook's body in a `try` so none throws into
+  the call; what it hears is kept as heard, and hidden as a view is told it (`settle`): the title,
+  the runner's step for the call's id (`layersTitleOf`), the log's lines and the error. In a worker
+  with a run connection, or a live view key outside CI, the listener
   is added to each context as the capture fixtures instrument it (`listenCalls`), so a view that
   comes while a call waits shows that call at once; elsewhere, as the first view follows it. A browser the worker connected to has no in-process server: the call alone is
   followed there, from the worker's instrumentation, without its log. In a CI run nothing may
@@ -548,11 +562,13 @@ What the package does to a user's run, process by process.
   them as the lane view does (`lane-layers.ts`): the page's events (`page-event`, eight posts in
   flight at most, the others going nowhere), its text
   (`text`, as the trace writes it, and taken as the instance asks, `text`, or as the layer is
-  asked anew, one a second at most, masked with the project's masks too), and its test's
+  asked anew, one take and post at a time, once a second at most, masked with the project's
+  masks too, none of a view, test or masks that changed while it was taken), and its test's
   filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, the
   view's own masked frames as the run channel's lane view takes them (`LaneFilmstrip`,
-  above), forgotten as the next test begins, posted eight a second at most, one in
-  flight, all of it again on `resend` and as the layer is asked anew.
+  above), forgotten as the next test begins and as the project's masks change, posted
+  eight a second at most, one in flight, 40 waiting at most, all of it again on `resend`
+  and as the layer is asked anew.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a

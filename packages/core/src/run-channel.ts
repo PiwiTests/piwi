@@ -580,8 +580,8 @@ export type RunToHub =
   /**
    * A layer of the worker's lane view (`LaneLayerData`), while its lane view is on and `layers` asked for it, for the
    * test `test` (Playwright's id; null for the text of a page no test shows): never stored, each layer bounded as
-   * `@piwitests/core/live-layers` says, the latest call log alone sent again as `layers` asks for `calls` again, and a
-   * test's filmstrip again as it asks for `filmstrip` again (a viewer that comes later).
+   * `@piwitests/core/live-layers` says, the latest call log, the test's filmstrip so far and the page's text sent again
+   * as `view-lane` asks on again (a viewer that comes later).
    */
   | ({ type: 'lane-layer'; test: string | null } & LaneLayerData)
   /**
@@ -662,20 +662,23 @@ export type HubToRun =
   /**
    * Start the lane view (`on`), to a worker whose `run-attach` lists `view-lane` in `features`: the page of its stop
    * while it stands at one, else of its running test, its frames sent as `lane-frame` through its tests and stops until
-   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on, the worker sends its
-   * latest frame again.
+   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on (a viewer that comes
+   * later), the worker sends its latest frame again, and of the layers `layers` asks its latest call log, its test's
+   * filmstrip so far and the page's text.
    */
   | { type: 'request'; request: number; what: 'view-lane'; on: boolean }
   /**
    * The layers of the lane view from now on, to a worker whose `run-attach` lists `layers` in `features`, while its
-   * lane view is on (`LaneLayer`, none turning them off; they end with the lane view): each goes as `lane-layer`, the
-   * call log and the filmstrip of the running test sent again for a layer asked again.
+   * lane view is on (`LaneLayer`, none turning them off; they end with the lane view): each goes as `lane-layer`, a
+   * layer asked anew starting with the call log, the filmstrip so far or the page's text; one asked again sends nothing
+   * more.
    */
   | { type: 'layers'; layers: LaneLayer[] }
   /**
-   * The page's text now, to a worker that lists `layers`, while its lane view is on, at a stop or not: the trace's
-   * latest of its running test where the trace writes one, else an ARIA snapshot taken now, sent as `lane-layer`
-   * (`text`); answered at once, saying whether it is on its way.
+   * The page's text now, to a worker that lists `layers`, while its lane view is on and `layers` asks for `text`, at a
+   * stop or not: the trace's latest of its running test where the trace writes one, else an ARIA snapshot taken now,
+   * sent as `lane-layer` (`text`), one take at a time and `LANE_TEXTS_PER_SECOND` at most, asks that come meanwhile
+   * taken once; answered at once, saying whether it is on its way.
    */
   | { type: 'request'; request: number; what: 'text' }
   /**

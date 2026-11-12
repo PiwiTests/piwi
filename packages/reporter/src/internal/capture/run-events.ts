@@ -127,14 +127,19 @@ export function watchCalls(playwright: unknown): boolean {
   return true;
 }
 
+/** The most bytes a backend's log of one request is read to, once gunzipped: a longer one does not read. */
+const MAX_SERVER_LOGS_BYTES = 4 * 1024 * 1024;
+
 /**
  * What a backend's instrumentation said about a request (`X-Piwi-Logs`: gzip, then base64, of a JSON list), as the
- * capture fixtures keep it with the request; undefined for no header, or one that does not read.
+ * capture fixtures keep it with the request; undefined for no header, or one that does not read, or reads past
+ * `MAX_SERVER_LOGS_BYTES`.
  */
 export function readServerLogs(header: string | undefined): unknown {
   if (!header) return undefined;
   try {
-    return JSON.parse(gunzipSync(Buffer.from(header, 'base64')).toString('utf-8'));
+    const json = gunzipSync(Buffer.from(header, 'base64'), { maxOutputLength: MAX_SERVER_LOGS_BYTES });
+    return JSON.parse(json.toString('utf-8'));
   } catch {
     return undefined;
   }
@@ -247,7 +252,7 @@ export function watchPageEvents(page: Page): void {
       /* a page event handler must never throw */
     }
   };
-  /** A request that waited and was told so is told once more as it ends. */
+  /** A request that waited and was told so is told once more as it is answered, or fails. */
   const settle = (request: Request): void => {
     const followed = waiting.get(request);
     if (!followed) return;
@@ -307,6 +312,8 @@ export function watchPageEvents(page: Page): void {
   });
   page.on('response', (response: Response) =>
     guard(() => {
+      // A response that streams (server-sent events) answers its request as its headers come.
+      settle(response.request());
       const status = response.status();
       const request = response.request();
       if (status >= 400 && status <= 599) {

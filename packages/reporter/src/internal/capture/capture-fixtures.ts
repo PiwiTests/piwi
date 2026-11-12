@@ -2445,8 +2445,28 @@ function fixtureStep(testInfo: TestInfo, id: string): boolean {
   return runnerStepOf(testInfo, id)?.fixture ?? false;
 }
 
-/** The runner's step `id` of the test (a Playwright internal, feature-checked), and whether a fixture's step holds it. */
+/** A runner's step as its map by id holds it: its info names the step it is in (`_parentStep._stepId`). */
+type MappedStep = RunnerStep & { info?: { _parentStep?: { _stepId?: unknown } | null } };
+
+/**
+ * The runner's step `id` of the test (a Playwright internal, feature-checked), and whether a fixture's step holds it:
+ * looked up by its id in the runner's map of the test's steps (`_stepMap`, from Playwright 1.59), its parents through
+ * their ids; else found in the test's tree of steps.
+ */
 function runnerStepOf(testInfo: TestInfo, id: string): { step: RunnerStep; fixture: boolean } | null {
+  const map = (testInfo as unknown as { _stepMap?: unknown })._stepMap;
+  if (map instanceof Map) {
+    const step = map.get(id) as MappedStep | undefined;
+    if (!step) return null;
+    let fixture = false;
+    let at: MappedStep | undefined = step;
+    for (let depth = 0; at && depth < 1000 && !fixture; depth++) {
+      fixture = at.category === 'fixture';
+      const parent: unknown = at.info?._parentStep?._stepId;
+      at = typeof parent === 'string' ? (map.get(parent) as MappedStep | undefined) : undefined;
+    }
+    return { step, fixture };
+  }
   let found: { step: RunnerStep; fixture: boolean } | null = null;
   const visit = (steps: unknown, fixture: boolean): void => {
     if (!Array.isArray(steps)) return;

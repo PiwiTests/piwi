@@ -53,18 +53,29 @@ const MAX_FRAMES = 32;
 
 /** The values of the page's secret fields (a password, a card's number), in each of its frames: none goes in a snapshot. */
 export async function fieldSecrets(page: Page): Promise<string[]> {
+  return (await readFieldSecrets(page)).values;
+}
+
+/**
+ * The values of the page's secret fields in each of its frames, `MAX_FRAMES` at most, and whether every frame was read
+ * (`complete`: none failed, and none was past them).
+ */
+export async function readFieldSecrets(page: Page): Promise<{ values: string[]; complete: boolean }> {
+  const frames = page.frames();
+  let complete = frames.length <= MAX_FRAMES;
   const values = await Promise.all(
-    page
-      .frames()
-      .slice(0, MAX_FRAMES)
-      .map((frame) =>
-        frame
-          .locator(SECRET_FIELDS)
-          .evaluateAll((fields) => fields.map((field) => (field as unknown as { value?: unknown }).value))
-          .catch(() => [] as unknown[]),
-      ),
+    frames.slice(0, MAX_FRAMES).map((frame) =>
+      frame
+        .locator(SECRET_FIELDS)
+        .evaluateAll((fields) => fields.map((field) => (field as unknown as { value?: unknown }).value))
+        .catch(() => {
+          complete = false;
+          return [] as unknown[];
+        }),
+    ),
   );
-  return [...new Set(values.flat().filter((v): v is string => typeof v === 'string' && v.length > 0))];
+  const read = values.flat().filter((v): v is string => typeof v === 'string' && v.length > 0);
+  return { values: [...new Set(read)], complete };
 }
 
 /**

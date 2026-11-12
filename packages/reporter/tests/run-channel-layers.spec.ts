@@ -16,9 +16,11 @@ import { playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_h
  * socket the run names watches the worker's lane and asks for every layer, as a lane view of the Runs window does.
  * It hears the call a click waits in from Playwright's in-process instrumentation in a run Piwi may pause, the page's
  * console error, uncaught error, failed request, a request pending long and the backend's logged error, the test's API
- * call, the page's text from the trace with its password and card number hidden, and the test's filmstrip from the
- * lane view's own images, sent again as asked again. A second project whose trace is off has its text taken as asked,
- * and its filmstrip all the same. Nothing goes once the lane view is off.
+ * call, the page's text from the trace with its password and card number hidden, a PIN and a code hidden by their
+ * field's name alone (a key Playwright quotes, a value under a placeholder), and the test's filmstrip from the lane
+ * view's own images, sent again to a viewer that comes later and not as the same layers are asked again. A response
+ * that streams is not pending. A second project whose trace is off has its text taken as asked, and its filmstrip all
+ * the same. Nothing goes once the lane view is off.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -28,6 +30,9 @@ const REF = 'ed-1a7e1a7e';
 const TOKEN = 'run-layers-token-0123456789';
 const SECRET = 'S3cr3t!Pw';
 const CARD = '4111 1111 1111 1111';
+/** Typed into fields whose name alone says they hold a secret: no other rule finds them. */
+const PIN = '7319';
+const CODE = '482913';
 const requireHere = createRequire(import.meta.url);
 /** The trace writes ARIA snapshots from Playwright 1.64 on. */
 const TRACE_ARIA = playwrightAtLeast('1.64');
@@ -37,6 +42,8 @@ const SHOP = `<!doctype html><meta charset="utf-8"><title>shop</title>
 <style>body { margin: 0; padding: 20px; font: 16px sans-serif }</style>
 <label>Password <input type="password"></label>
 <label>Card number <input autocomplete="cc-number"></label>
+<label>PIN # <input id="f1"></label>
+<label>Verification code <input id="f2" placeholder="6 digits"></label>
 <button onclick="setTimeout(() => { document.getElementById('pay').disabled = false; }, 2500)">Check</button>
 <button id="pay" disabled>Pay</button>`;
 
@@ -45,6 +52,8 @@ test('checkout', async ({ page, request }) => {
   await page.goto('${base}/shop');
   await page.getByLabel('Password').fill('${SECRET}');
   await page.getByLabel('Card number').fill('${CARD}');
+  await page.locator('#f1').fill('${PIN}');
+  await page.locator('#f2').fill('${CODE}');
   await page.getByRole('button', { name: 'Check' }).click();
   await page.getByRole('button', { name: 'Pay' }).click();
   await page.evaluate(() => {
@@ -52,6 +61,7 @@ test('checkout', async ({ page, request }) => {
     setTimeout(() => { throw new Error('boom in page'); });
     void fetch('/api/missing');
     void fetch('/api/checkout', { method: 'POST' });
+    void fetch('/api/stream');
   });
   await page.waitForTimeout(7500);
   expect((await request.get('${base}/api/items')).status()).toBe(200);
@@ -63,7 +73,9 @@ const PLAIN_SPEC = (base: string) => `const { test } = require('../fixture.cjs')
 test('plain', async ({ page }) => {
   await page.goto('${base}/shop');
   await page.getByLabel('Password').fill('${SECRET}');
-  await page.waitForTimeout(2500);
+  await page.locator('#f1').fill('${PIN}');
+  await page.locator('#f2').fill('${CODE}');
+  await page.waitForTimeout(3000);
   await page.evaluate(() => console.error('after the view'));
   await page.waitForTimeout(800);
 });
@@ -88,7 +100,8 @@ let socket: net.Socket | null = null;
 const ids: Record<string, string> = {};
 let tests: Array<{ title: string; status: string; errors: string[] }> = [];
 let output = '';
-/** When the lane's filmstrip was asked again, and when the lane view went off. */
+/** When the same layers were asked again, when a viewer came later, and when the lane view went off. */
+let repeatedAt = Infinity;
 let askedAgainAt = Infinity;
 let offAt = Infinity;
 let textAnswer: unknown = null;
@@ -113,7 +126,10 @@ async function ask(message: Record<string, unknown> & { what: string }): Promise
   throw new Error('no answer');
 }
 
-/** The editor's side: the lane view with every layer, the filmstrip asked again, then the text, then the view off. */
+/**
+ * The editor's side: the lane view with every layer, the same layers asked again, a viewer that comes later (the lane
+ * view asked on again, then its layers), then the text, then the view off.
+ */
 async function onMessage(message: RunToHub): Promise<void> {
   if (message.type === 'run-attach') {
     const on = ask({ what: 'view-lane', on: true });
@@ -125,15 +141,20 @@ async function onMessage(message: RunToHub): Promise<void> {
   const title = message.title[message.title.length - 1]!;
   ids[title] = message.testId;
   if (title === 'checkout') {
-    await sleep(9000);
-    askedAgainAt = Date.now();
+    await sleep(7000);
+    repeatedAt = Date.now();
     send({ type: 'layers', layers: ['calls', 'events', 'text', 'filmstrip'] });
+    await sleep(2000);
+    askedAgainAt = Date.now();
+    const on = ask({ what: 'view-lane', on: true });
+    send({ type: 'layers', layers: ['calls', 'events', 'text', 'filmstrip'] });
+    await on;
     return;
   }
-  // The plain project's test: its text as asked, then the lane view off.
-  await sleep(1200);
+  // The plain project's test: its text as asked once its fields are filled, then the lane view off.
+  await sleep(2000);
   textAnswer = await ask({ what: 'text' });
-  await sleep(800);
+  await sleep(1000);
   await ask({ what: 'view-lane', on: false });
   offAt = Date.now();
 }
@@ -177,6 +198,13 @@ beforeAll(async () => {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end('{}');
       }, 6500);
+      return;
+    }
+    if (route === '/api/stream') {
+      // Server-sent events: answered at once, then open for longer than a request may wait before it is pending.
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+      res.write('data: open\n\n');
+      setTimeout(() => res.end(), 7000);
       return;
     }
     if (route === '/api/items') {
@@ -298,6 +326,8 @@ describe('the layers of a worker’s lane view', () => {
     expect(pending[0]).toMatchObject({ method: 'POST', done: false });
     expect((pending[0] as { ms: number }).ms).toBeGreaterThanOrEqual(5000);
     expect(pending[pending.length - 1]).toMatchObject({ done: true });
+    // A response that streams answered its request as its headers came.
+    expect(events.filter((e) => e.kind === 'request-pending' && e.url.endsWith('/api/stream'))).toEqual([]);
     expect(
       events.some((e) => e.kind === 'api' && e.method === 'GET' && e.status === 200 && e.url.endsWith('/api/items')),
     ).toBe(true);
@@ -305,11 +335,41 @@ describe('the layers of a worker’s lane view', () => {
 
   it.runIf(TRACE_ARIA)('sends the page’s text as the trace writes it, its password and card number hidden', () => {
     const texts = layers('text', ids.checkout).flatMap(({ message }) => ('text' in message ? [message.text] : []));
-    const traced = texts.find((text) => text.source === 'trace' && text.text.includes('textbox "Password"'));
+    // The trace's latest text, once the fields hold their value.
+    const filled = texts.filter((text) => text.source === 'trace' && text.text.includes('textbox "Password":'));
+    const traced = filled[filled.length - 1];
     expect(traced, JSON.stringify(texts)).toBeDefined();
     expect(traced!.text).toContain('textbox "Password": <hidden>');
     expect(traced!.text).toContain('textbox "Card number": <hidden>');
     expect(traced!.call).toBeTruthy();
+  });
+
+  it.runIf(TRACE_ARIA)('hides in the trace’s text a PIN and a code by their field’s name alone', () => {
+    const texts = layers('text', ids.checkout).flatMap(({ message }) => ('text' in message ? [message.text] : []));
+    // The trace's latest text, once both fields hold their value.
+    const filled = texts.filter((text) => text.source === 'trace' && text.text.includes('textbox "PIN #":'));
+    const traced = filled[filled.length - 1];
+    expect(traced, JSON.stringify(texts)).toBeDefined();
+    expect(traced!.text).toContain('textbox "PIN #": <hidden>');
+    expect(traced!.text).toMatch(/textbox "Verification code":\n\s+- \/placeholder: 6 digits\n\s+- text: <hidden>/);
+  });
+
+  it('sends nothing more as the same layers are asked again, and all of it to a viewer that comes later', () => {
+    const between = layers(undefined, ids.checkout).filter(({ at }) => at >= repeatedAt && at < askedAgainAt);
+    const before = new Set(
+      layers('filmstrip', ids.checkout)
+        .filter(({ at }) => at < repeatedAt)
+        .map(({ message }) => (message as Extract<Layer, { layer: 'filmstrip' }>).thumb.call),
+    );
+    expect(before.size).toBeGreaterThan(0);
+    const resent = between.filter(
+      ({ message }) =>
+        message.layer === 'filmstrip' && before.has((message as Extract<Layer, { layer: 'filmstrip' }>).thumb.call),
+    );
+    expect(resent).toEqual([]);
+    expect(between.filter(({ message }) => message.layer === 'text')).toEqual([]);
+    const later = layers('text', ids.checkout).filter(({ at }) => at >= askedAgainAt);
+    expect(later.length).toBeGreaterThan(0);
   });
 
   it('takes the page’s text as asked where the trace writes none, its password hidden', () => {
@@ -319,9 +379,14 @@ describe('the layers of a worker’s lane view', () => {
     expect(texts[0]).toMatchObject({ source: 'snapshot', call: null });
     expect(texts[0]!.text).toMatch(/textbox "Password"(?: \[[^\]]*\])*: <hidden>/);
     expect(texts[0]!.text).not.toContain(SECRET);
+    // A key Playwright quotes, and a value under a placeholder, hidden by their field's name alone.
+    expect(texts[0]!.text).toMatch(/'textbox "PIN #"(?: \[[^\]]*\])*': <hidden>/);
+    expect(texts[0]!.text).toMatch(
+      /textbox "Verification code"(?: \[[^\]]*\])*:\n\s+- \/placeholder: 6 digits\n\s+- text: <hidden>/,
+    );
   });
 
-  it('sends the test’s filmstrip from the lane view, one image a call, and all of it again as asked again', () => {
+  it('sends the test’s filmstrip from the lane view, one image a call, and all of it again to a later viewer', () => {
     const thumbs = layers('filmstrip', ids.checkout).map(({ at, message }) => ({
       at,
       ...(message as Extract<Layer, { layer: 'filmstrip' }>),
@@ -348,6 +413,8 @@ describe('the layers of a worker’s lane view', () => {
     const said = JSON.stringify(layers());
     expect(said).not.toContain(SECRET);
     expect(said).not.toContain(CARD);
+    expect(said).not.toContain(PIN);
+    expect(said).not.toContain(CODE);
     expect(offAt).toBeLessThan(Infinity);
     expect(layers().filter(({ at }) => at > offAt + 200)).toEqual([]);
   });

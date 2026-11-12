@@ -1234,11 +1234,12 @@ export function maskAriaSnapshot(snapshot: string, options: AriaMaskOptions = {}
     verdict.value = hides || secret || valueSecret;
     open.push({ indent, hides, secret });
   }
+  const shown = [...maskedNames];
   const out = lines.map((line, i) => {
     if (line.kind === 'unread') return line.blank ? written[i]! : hiddenLine(line);
     const verdict = hidden[i]!;
-    const name = collapsed(line.name ?? '');
-    if (name && [...maskedNames].some((masked) => name.includes(masked))) verdict.name = true;
+    const name = shown.length ? collapsed(line.name ?? '') : '';
+    if (name && shown.some((masked) => name.includes(masked))) verdict.name = true;
     return verdict.name || verdict.value ? writeAriaLine(line, verdict.name, verdict.value) : written[i]!;
   });
   return hiddenAnywhere(out.join('\n'), [...secrets]);

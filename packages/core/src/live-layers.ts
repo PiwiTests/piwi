@@ -65,8 +65,9 @@ const MAX_EVENT_MS = 7 * 24 * 3_600_000;
  * - `request-failed`: a request of the page failed (`failure`, the browser's words) or was answered with a status of
  *   400 or more;
  * - `request-pending`: a request of the page has waited `ms` for its answer, told once it waited `PENDING_REQUEST_MS`
- *   and again each time as long passed (`done: false`), then once more as it ends (`done: true`, the time it took), by
- *   the worker's number for it (`id`), so a viewer shows one line for it ("POST /api/checkout pending 17 s");
+ *   and again each time as long passed (`done: false`), then once more as it is answered, a stream's as its headers
+ *   come, or fails (`done: true`, the time it waited), by the worker's number for it (`id`), so a viewer shows one line
+ *   for it ("POST /api/checkout pending 17 s");
  * - `backend`: the backend logged an error or a warning while it answered a request, as its instrumentation says on the
  *   response (`X-Piwi-Logs`, the capture fixtures' reading): the request, its status and the logged message;
  * - `api`: the test called its backend through an API request context (`request.post(…)`): how it was answered, or why

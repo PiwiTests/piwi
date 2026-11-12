@@ -49,10 +49,11 @@ responsibilities.
    - in a worker of a run Piwi may pause that can show a view (a run connection, or a live view key outside CI), the
      listener `live-call-log.ts` adds to each context's in-process server instrumentation as it opens
      (`context._connection.toImpl(context).instrumentation`, feature-checked, absent for a connected browser), which
-     only reads each call and goes as the context closes (`listenCalls`); and
+     only reads each call, never throws into it, and goes as the context closes (`listenCalls`); and
      while a viewer asks for the page's text, the reads of the ARIA snapshots in the runner's growing trace of the test
-     (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`; never its screencast images), and of
-     the page's ARIA snapshot through `internalCall` when asked where the trace writes none;
+     (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`; never its screencast images), of
+     the page's ARIA snapshot through `internalCall` when asked where the trace writes none, and of the secret fields of
+     every page of its context through `internalCall`;
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
@@ -129,7 +130,8 @@ responsibilities.
      nothing may pause (`mayPause`) from the context's call stream turned on through `context.debugger._enable()`,
      which stays on, and a listener on the worker's Playwright instrumentation, in any other from the in-process
      listener above (`live-call-log.ts`), and the layers a full view asks (`view`'s `layers`: `page-event`, `text`, the
-     filmstrip's `thumb`, the view's own masked images kept in the worker's memory for its test, `lane-layers.ts`,
+     filmstrip's `thumb`, the view's own masked images kept in the worker's memory for its test until the project's masks
+     change, `lane-layers.ts`,
      `tests/live-view-layers.spec.ts`); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
@@ -151,9 +153,12 @@ responsibilities.
    hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
    holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
-   (`tests/run-channel-code.spec.ts`); the page's text, on either wire, has the value of a field named for a secret, of
-   a card's number, of the page's secret fields and of the project's masked elements hidden (`maskAriaSnapshot`), and no
-   text goes for a mask it cannot find by name; for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
+   (`tests/run-channel-code.spec.ts`); the page's text, on either wire, has the value of a field named for a secret
+   (on its `- text:` line under a placeholder too, its key quoted or not), of a card's number, of what the attempt's
+   secret fields held and its calls typed into one, and the name and value of the project's masked elements hidden
+   (`maskAriaSnapshot`, a line it cannot read hidden whole), and no text goes for a mask it cannot find (by name or
+   placeholder: never `getByTitle`) nor when a page's secret fields could not be read (`tests/lane-layers.spec.ts`); for
+   an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
    `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
    (`withoutFieldSecrets`), painted over in the image as the live view's are, over the boxes Playwright measures too
    (`maskedImage`), in every frame, none of a page zoomed in, and never sent as an element's

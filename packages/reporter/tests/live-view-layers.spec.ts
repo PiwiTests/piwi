@@ -23,8 +23,8 @@ import { jsonRes, startServer, type FakeServer, withoutCi } from './_helpers.js'
  * built package, against a fake instance whose viewer asks for every layer: the call a click waits in comes from
  * Playwright's in-process instrumentation (the run may be paused, so the call stream stays off), the page's events go
  * as they happen, its text is taken as the instance asks with its password and the project's masked IBAN hidden, and
- * the test's filmstrip is the view's own images, scaled down, sent again as the instance asks again. Nothing goes once
- * nobody watches.
+ * the test's filmstrip is the view's own images, scaled down, sent again as the instance asks again, and forgotten as
+ * the project's masks change. Nothing goes once nobody watches.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -63,6 +63,10 @@ test('pay', async ({ page }) => {
   await page.waitForTimeout(1200);
   await fetch('${base}/resend');
   await page.waitForTimeout(2500);
+  await fetch('${base}/remask');
+  await page.waitForTimeout(400);
+  await fetch('${base}/resend2');
+  await page.waitForTimeout(1200);
   await fetch('${base}/unwatch');
   await page.evaluate(() => console.error('nobody watches'));
   await page.waitForTimeout(800);
@@ -74,10 +78,12 @@ type Post = { at: number; message: WorkerToInstance | LiveWorkerThumb };
 let server: FakeServer;
 const streams: http.ServerResponse[] = [];
 const posts: Post[] = [];
-const moments: Record<'watch' | 'text' | 'resend' | 'unwatch', number> = {
+const moments: Record<'watch' | 'text' | 'resend' | 'remask' | 'resend2' | 'unwatch', number> = {
   watch: Infinity,
   text: Infinity,
   resend: Infinity,
+  remask: Infinity,
+  resend2: Infinity,
   unwatch: Infinity,
 };
 let run = { exitCode: null as number | null, output: '' };
@@ -111,7 +117,9 @@ beforeAll(async () => {
       moments[route.slice(1) as keyof typeof moments] = Date.now();
       if (route === '/watch') say({ type: 'viewers', count: 1 });
       if (route === '/text') say({ type: 'text' });
-      if (route === '/resend') say({ type: 'resend' });
+      if (route === '/resend' || route === '/resend2') say({ type: 'resend' });
+      // Masks this reporter cannot read: no image goes, and none kept goes again.
+      if (route === '/remask') say({ type: 'masks', locators: null });
       if (route === '/unwatch') say({ type: 'viewers', count: 0 });
       return res.end();
     }
@@ -239,7 +247,8 @@ describe('the layers of the team’s live view', () => {
     expect(asked, JSON.stringify(of('text'))).toBeDefined();
     expect(asked!.text.source).toBe('snapshot');
     expect(asked!.text.text).toMatch(/textbox "Password"(?: \[[^\]]*\])*: <hidden>/);
-    expect(asked!.text.text).toMatch(/textbox "IBAN"(?: \[[^\]]*\])*: <hidden>/);
+    // The masked field's value is hidden by the mask alone, and its name with it.
+    expect(asked!.text.text).toMatch(/textbox "<hidden>"(?: \[[^\]]*\])*: <hidden>/);
   });
 
   it('posts the filmstrip from the view’s own images, scaled down, and all of it again as asked again', () => {
@@ -252,8 +261,15 @@ describe('the layers of the team’s live view', () => {
       expect(message.thumb.height).toBeLessThanOrEqual(LANE_THUMB_HEIGHT);
       expect(message.test).toBe('pay');
     }
-    const again = thumbs.filter(({ at }) => at >= moments.resend).map(({ message }) => message.thumb.call);
+    const again = thumbs
+      .filter(({ at }) => at >= moments.resend && at < moments.remask)
+      .map(({ message }) => message.thumb.call);
     expect(again).toEqual(expect.arrayContaining(first.map(({ message }) => message.thumb.call)));
+  });
+
+  it('forgets the filmstrip kept as the project’s masks change, and posts none of it again', () => {
+    expect(moments.resend2).toBeLessThan(Infinity);
+    expect(of('thumb').filter(({ at }) => at >= moments.remask + 300)).toEqual([]);
   });
 
   it('posts no layer before anyone watches, nor once nobody does, and never a secret the test typed', () => {

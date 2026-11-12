@@ -4,6 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 import type { Page } from '@playwright/test';
 import {
   LANE_TEXT_DEPTH,
+  LANE_TEXTS_PER_SECOND,
   LANE_THUMB_HEIGHT,
   LANE_THUMB_WIDTH,
   MAX_FILMSTRIP,
@@ -12,14 +13,21 @@ import {
   MAX_LANE_THUMB,
   MAX_PAGE_EVENTS_PER_SECOND,
   ariaTreeText,
+  cutLaneText,
   type LaneText,
   type LaneThumb,
   type PageEvent,
 } from '@piwitests/core/live-layers';
-import { ariaMaskProblem, hideSecretsInText, hideTypedText, maskAriaSnapshot } from '@piwitests/core/mask';
+import {
+  ariaMaskProblem,
+  hideSecretsInText,
+  hideTypedText,
+  isSecretLocator,
+  maskAriaSnapshot,
+} from '@piwitests/core/mask';
 import { RateWindow } from '@piwitests/core/run-view';
-import { fieldSecrets } from './agent-page.js';
-import { onCallEnded } from './live-call-log.js';
+import { readFieldSecrets } from './agent-page.js';
+import { onCallEnded, onTyped, type TypedValue } from './live-call-log.js';
 import { thumbnailOf } from './live-mask.js';
 import type { PageFrame } from './page-view.js';
 import { internalCall } from './quiet-capture.js';
@@ -36,10 +44,15 @@ import { internalCall } from './quiet-capture.js';
  *   `<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`, from where the
  *   last read stopped, only the lines of its ARIA snapshots parsed; the ARIA files the lines name, under that folder
  *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read.
- * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the attempt when the project's
- *   trace writes them, else taken through an internal call (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep),
- *   masked by `maskAriaSnapshot` with the values the page's secret fields hold now and the masks the wire names, its
- *   credentials hidden. A mask the text cannot find (`ariaMaskProblem`) sends no text, saying why.
+ * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the lane's page (by
+ *   Playwright's id of the page, its time) when the project's trace writes them, else taken through an internal call
+ *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), masked by `maskAriaSnapshot` with the masks the wire
+ *   names and the attempt's secrets: every value the secret fields of the page's context held at a read of the
+ *   attempt, and each value its calls typed into a field their locator names for a secret, or with no locator (the
+ *   keyboard's, an element handle's, `onTyped`), kept in memory for the attempt alone. Its credentials hidden, it is cut at its bounds (`cutLaneText`). No text goes for a
+ *   mask the text cannot find (`ariaMaskProblem`), nor when a page's secret fields could not be read, saying why. A
+ *   wire takes one at a time, `LANE_TEXTS_PER_SECOND` a second at most, the asks that came meanwhile taken once
+ *   (`LaneTexts`).
  * - **The filmstrip** (`LaneFilmstrip`): one image for each call of the test that ended, the runner's own (its title
  *   the runner's step), from the wire's own lane view, masked as each of its frames is (`live-mask.ts`): its latest
  *   frame `THUMB_AFTER_MS` after the call ended, scaled down, taken only while someone watches the lane and kept in the
@@ -72,16 +85,35 @@ export interface LayersTest {
 
 let current: LayersTest | null = null;
 
+/** The most values of secret fields an attempt keeps, read or typed: past them, the oldest go. */
+const MAX_ATTEMPT_SECRETS = 256;
+/** The most values an attempt's calls typed that are kept: past them, the oldest go. */
+const MAX_TYPED = 64;
+/** The values the attempt's secret fields held at a read, and the values its calls typed, the latest last. */
+let readSecrets = new Set<string>();
+let typed: TypedValue[] = [];
+/** What stops hearing the values the calls type. */
+let unhearTyped: (() => void) | null = null;
+
 /** The test whose layers are made from now on: its trace read from its start. */
 export function layersTestBegan(test: LayersTest): void {
   current = test;
   attempt = null;
+  readSecrets = new Set();
+  typed = [];
+  unhearTyped ??= onTyped((value) => {
+    if (!current) return;
+    typed.push(value);
+    if (typed.length > MAX_TYPED) typed.shift();
+  });
 }
 
-/** The test ended: its trace is no longer read, and its requests not followed. */
+/** The test ended: its trace is no longer read, and its requests not followed; its secrets go. */
 export function layersTestEnded(): void {
   current = null;
   attempt = null;
+  readSecrets = new Set();
+  typed = [];
 }
 
 /** The test the layers are of now; null between two tests. */
@@ -191,13 +223,23 @@ class TraceTail {
   }
 }
 
+/** An ARIA snapshot the trace wrote: its call, its file, and when (the trace's own time; null when it says none). */
+interface TracedAria {
+  call: string;
+  file: string;
+  at: number | null;
+}
+
+/** The most pages whose latest ARIA snapshot an attempt keeps: past them, the one heard of first goes. */
+const MAX_TRACED_PAGES = 64;
+
 /** What the attempt's trace told so far. */
 interface AttemptTrace {
   dir: string;
   base: string;
   tails: Map<string, TraceTail>;
-  /** The latest ARIA snapshot it wrote, and its call. */
-  aria: { call: string; file: string } | null;
+  /** The latest ARIA snapshot it wrote of each page, by Playwright's id of the page. */
+  aria: Map<string, TracedAria>;
   /** Reads one after the other. */
   reading: Promise<void>;
 }
@@ -214,7 +256,10 @@ function underTrace(dir: string, file: unknown): string | null {
   return full.startsWith(path.resolve(dir) + path.sep) ? full : null;
 }
 
-/** Take one line of the trace into what it told: its ARIA snapshot alone. */
+/**
+ * Take one line of the trace into what it told: its ARIA snapshot of a page alone, the latest of each page by the
+ * trace's time, else by the order it was read in.
+ */
 function takeLine(trace: AttemptTrace, line: string): void {
   if (!line.startsWith(ARIA_LINE)) return;
   let event: Record<string, unknown>;
@@ -223,12 +268,21 @@ function takeLine(trace: AttemptTrace, line: string): void {
   } catch {
     return;
   }
-  if (event.type === 'aria-snapshot' && typeof event.callId === 'string' && typeof event.file === 'string') {
-    trace.aria = { call: event.callId, file: event.file };
-  }
+  const { callId, file, pageId, timestamp } = event;
+  if (event.type !== 'aria-snapshot' || typeof callId !== 'string' || typeof file !== 'string') return;
+  if (typeof pageId !== 'string' || !pageId) return;
+  const at = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : null;
+  const known = trace.aria.get(pageId);
+  if (known && known.at !== null && at !== null && at < known.at) return;
+  trace.aria.delete(pageId);
+  trace.aria.set(pageId, { call: callId, file, at });
+  if (trace.aria.size > MAX_TRACED_PAGES) trace.aria.delete(trace.aria.keys().next().value!);
 }
 
-/** The trace files of the attempt now: its own, and those of the contexts it opened (`-recording<N>`). */
+/**
+ * The trace files of the attempt now, `MAX_TRACE_FILES` at most: its own, and those of the contexts it opened
+ * (`-recording<N>`), the newest ones past them.
+ */
 async function attemptFiles(dir: string, base: string): Promise<string[]> {
   let names: string[];
   try {
@@ -236,12 +290,14 @@ async function attemptFiles(dir: string, base: string): Promise<string[]> {
   } catch {
     return [];
   }
-  const own = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:-recording\\d+)?\\.trace$`);
-  return names
-    .filter((name) => own.test(name))
-    .sort()
-    .slice(0, MAX_TRACE_FILES)
-    .map((name) => path.join(dir, name));
+  const own = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:-recording(\\d+))?\\.trace$`);
+  const files = names
+    .map((name) => ({ name, match: own.exec(name) }))
+    .filter((file) => file.match)
+    .map(({ name, match }) => ({ name, n: match![1] === undefined ? -1 : Number(match![1]) }))
+    .sort((a, b) => a.n - b.n);
+  const kept = files.length > MAX_TRACE_FILES ? [files[0]!, ...files.slice(1 - MAX_TRACE_FILES)] : files;
+  return kept.map((file) => path.join(dir, file.name));
 }
 
 /** The running test's trace, read up to now; null for a test whose trace is not known. */
@@ -253,15 +309,15 @@ async function traceOf(): Promise<AttemptTrace | null> {
       dir: test.trace.dir,
       base: test.trace.base,
       tails: new Map(),
-      aria: null,
+      aria: new Map(),
       reading: Promise.resolve(),
     };
   }
   const trace = attempt;
   const read = trace.reading.then(async () => {
-    for (const file of await attemptFiles(trace.dir, trace.base)) {
-      if (!trace.tails.has(file)) trace.tails.set(file, new TraceTail(file));
-    }
+    const files = await attemptFiles(trace.dir, trace.base);
+    for (const file of trace.tails.keys()) if (!files.includes(file)) trace.tails.delete(file);
+    for (const file of files) if (!trace.tails.has(file)) trace.tails.set(file, new TraceTail(file));
     for (const tail of trace.tails.values()) {
       for (const line of await tail.read()) takeLine(trace, line);
     }
@@ -271,10 +327,25 @@ async function traceOf(): Promise<AttemptTrace | null> {
   return attempt === trace ? trace : null;
 }
 
-/** The latest ARIA snapshot the running test's trace wrote, as text, with its call; null when it wrote none. */
-async function traceAria(): Promise<{ call: string; text: string; cut: boolean } | null> {
+/** Playwright's id of a page, as its trace names it; null on a Playwright of another shape. */
+function pageIdOf(page: Page): string | null {
+  const id = (page as unknown as { _guid?: unknown })._guid;
+  return typeof id === 'string' && id ? id : null;
+}
+
+/** The latest ARIA snapshot the running test's trace wrote of `page`; null when it wrote none, or for no page. */
+function tracedOf(trace: AttemptTrace | null, page: Page | null): TracedAria | null {
+  const id = page ? pageIdOf(page) : null;
+  return trace && id ? (trace.aria.get(id) ?? null) : null;
+}
+
+/**
+ * The latest ARIA snapshot the running test's trace wrote of `page`, as text, with its call; null when it wrote none,
+ * or for a page it does not name.
+ */
+async function traceAria(page: Page): Promise<{ call: string; text: string; cut: boolean } | null> {
   const trace = await traceOf();
-  const written = trace?.aria;
+  const written = tracedOf(trace, page);
   const file = written && trace ? underTrace(trace.dir, written.file) : null;
   if (!written || !file) return null;
   try {
@@ -291,13 +362,54 @@ async function traceAria(): Promise<{ call: string; text: string; cut: boolean }
 const NO_PAGE_TEXT = 'No page to read: this test shows none now.';
 const UNREAD_MASKS =
   "The page's text is not sent: the project masks elements this reporter cannot read. Update the Piwi reporter.";
+const UNREAD_SECRETS = "The page's text is not sent: its secret fields could not be read, so it could not hide them.";
+
+/** A promise, or a rejection once `ms` passed. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('late')), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
 
 /**
- * The page's text now: the trace's latest ARIA snapshot of the running test where its trace writes them, else, with
- * `take`, an ARIA snapshot of `page` in AI mode, `LANE_TEXT_DEPTH` levels deep, through an internal call. Masked with
- * the values the page's secret fields hold now and `masks` (the project's; null for masks this reporter cannot read,
- * which sends no text), its credentials hidden, cut at `MAX_LANE_TEXT`. Null when the trace wrote none and `take` is
- * false. Never throws.
+ * The values the page's text hides of `page`'s context, read now: the values the secret fields of each of its pages
+ * hold, added to those read before in the attempt, and each value its calls typed into a field their locator names
+ * for a secret (`isSecretLocator`) or with no locator; null when a page's fields could not be read.
+ */
+async function attemptSecrets(page: Page): Promise<string[] | null> {
+  const pages = page.context().pages();
+  const reads = await Promise.all(
+    pages.map((one) =>
+      one.isClosed()
+        ? { values: [], complete: true }
+        : within(
+            internalCall(one, () => readFieldSecrets(one)),
+            TEXT_MS,
+          ).catch(() => null),
+    ),
+  );
+  if (reads.some((read) => !read?.complete)) return null;
+  for (const read of reads) {
+    for (const value of read!.values) {
+      readSecrets.delete(value);
+      readSecrets.add(value);
+    }
+  }
+  while (readSecrets.size > MAX_ATTEMPT_SECRETS) readSecrets.delete(readSecrets.values().next().value!);
+  const secrets = new Set(readSecrets);
+  for (const { selector, value } of typed) if (selector === null || isSecretLocator(selector)) secrets.add(value);
+  return [...secrets];
+}
+
+/**
+ * The page's text now: the trace's latest ARIA snapshot of `page` where the running test's trace writes them, else,
+ * with `take`, an ARIA snapshot of `page` in AI mode, `LANE_TEXT_DEPTH` levels deep, through an internal call. Masked
+ * with the attempt's secrets (`attemptSecrets`) and `masks` (the project's; null for masks this reporter cannot read,
+ * which sends no text), its credentials hidden, cut at its bounds (`cutLaneText`). Refused when a page's secret fields
+ * could not be read; null when the trace wrote none and `take` is false. Never throws.
  */
 export async function takeLaneText(
   page: Page | null,
@@ -309,47 +421,89 @@ export async function takeLaneText(
     const problem = ariaMaskProblem(mask);
     if (problem) return { refused: `The page's text is not sent, since it cannot hide a masked element: ${problem}` };
   }
-  const traced = await traceAria();
+  if (!page || page.isClosed()) return take ? { refused: NO_PAGE_TEXT } : null;
+  const traced = await traceAria(page);
   let raw: { call: string | null; source: LaneText['source']; text: string; cut: boolean } | null = traced
     ? { ...traced, source: 'trace' }
     : null;
   if (!raw) {
     if (!take) return null;
-    if (!page || page.isClosed()) return { refused: NO_PAGE_TEXT };
     try {
       const snapshot = await internalCall(page, () =>
         page.ariaSnapshot({ mode: 'ai', depth: LANE_TEXT_DEPTH, timeout: TEXT_MS }),
       );
-      raw = { call: null, source: 'snapshot', text: snapshot, cut: snapshot.length > MAX_LANE_TEXT };
+      raw = { call: null, source: 'snapshot', text: snapshot, cut: false };
     } catch {
       return { refused: 'The page could not be read: it closed, or did not answer in time.' };
     }
   }
-  const secrets =
-    page && !page.isClosed() ? await internalCall(page, () => fieldSecrets(page)).catch(() => [] as string[]) : [];
-  const text = hideSecretsInText(maskAriaSnapshot(raw.text, { secrets, masks }));
-  return {
-    call: raw.call,
-    source: raw.source,
-    text: text.slice(0, MAX_LANE_TEXT),
-    cut: raw.cut || text.length > MAX_LANE_TEXT,
-    at: Date.now(),
-  };
+  const secrets = await attemptSecrets(page).catch(() => null);
+  if (!secrets) return { refused: UNREAD_SECRETS };
+  const { text, cut } = cutLaneText(hideSecretsInText(maskAriaSnapshot(raw.text, { secrets, masks })));
+  return { call: raw.call, source: raw.source, text, cut: raw.cut || cut, at: Date.now() };
+}
+
+/**
+ * A wire's takes of the page's text: one in flight at a time, `LANE_TEXTS_PER_SECOND` a second at most, the asks that
+ * come meanwhile merged into one taken after it (an ARIA snapshot taken when one of them asked for it, `snapshot`).
+ */
+export class LaneTexts {
+  private running = false;
+  private asked: { snapshot: boolean } | null = null;
+  private last = -Infinity;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private closed = false;
+
+  constructor(private readonly take: (snapshot: boolean) => Promise<void>) {}
+
+  /** Take the page's text as soon as the pace allows: the trace's latest, or a snapshot with `snapshot`. */
+  ask(snapshot: boolean): void {
+    if (this.closed) return;
+    this.asked = { snapshot: snapshot || (this.asked?.snapshot ?? false) };
+    this.next();
+  }
+
+  /** No text is taken any more. */
+  close(): void {
+    this.closed = true;
+    this.asked = null;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  private next(): void {
+    if (this.closed || this.running || this.timer || !this.asked) return;
+    const wait = this.last + 1000 / LANE_TEXTS_PER_SECOND - Date.now();
+    if (wait > 0) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.next();
+      }, wait);
+      this.timer.unref?.();
+      return;
+    }
+    const { snapshot } = this.asked;
+    this.asked = null;
+    this.running = true;
+    this.last = Date.now();
+    void this.take(snapshot)
+      .catch(() => undefined)
+      .finally(() => {
+        this.running = false;
+        this.next();
+      });
+  }
 }
 
 /** How often the trace is read for a new ARIA snapshot while a wire follows the page's text. */
 const TEXT_READ_MS = 1000;
 
 /**
- * Follow the page's text as the running test's trace writes it: each ARIA snapshot it writes after the last one told
- * goes to `onText`, masked with `masks()` as `takeLaneText` masks it, one a second at most; nothing where the trace writes
- * none. Returns what stops following.
+ * Follow the page's text as the running test's trace writes it: each ARIA snapshot it writes of the page `page()`
+ * after the last one told is said to `onNew`, which takes the text; nothing where the trace writes none. Returns what
+ * stops following.
  */
-export function followTraceText(
-  masks: () => readonly string[] | null,
-  page: () => Page | null,
-  onText: (text: LaneText | { refused: string }) => void,
-): () => void {
+export function followTraceText(page: () => Page | null, onNew: () => void): () => void {
   let told: string | null = null;
   let reading = false;
   let stopped = false;
@@ -358,11 +512,11 @@ export function followTraceText(
     reading = true;
     void (async () => {
       const trace = await traceOf();
-      const key = trace?.aria ? `${trace.base}/${trace.aria.file}` : null;
-      if (!key || key === told) return;
+      const written = tracedOf(trace, page());
+      const key = written && trace ? `${trace.base}/${written.file}` : null;
+      if (!key || key === told || stopped) return;
       told = key;
-      const text = await takeLaneText(page(), masks(), false);
-      if (text && !stopped) onText(text);
+      onNew();
     })()
       .catch(() => undefined)
       .finally(() => {
@@ -449,9 +603,10 @@ export class LaneFilmstrip {
   }
 
   private callEnded(id: string | null): void {
-    const title = id ? layersTitleOf(id) : null;
-    const lane = this.watched();
-    if (!id || !title || !lane || current?.fixtureCall(id)) return;
+    const lane = id ? this.watched() : null;
+    if (!id || !lane || current?.fixtureCall(id)) return;
+    const title = layersTitleOf(id);
+    if (!title) return;
     const { test } = lane;
     const timer = setTimeout(() => this.hold(id, title, test), THUMB_AFTER_MS);
     timer.unref?.();

@@ -31,13 +31,7 @@ import {
   type InstanceToWorker,
   liveThumbHeader,
 } from '@piwitests/core/live-view';
-import {
-  LANE_TEXTS_PER_SECOND,
-  LANE_THUMBS_PER_SECOND,
-  type LaneLayer,
-  type LaneText,
-} from '@piwitests/core/live-layers';
-import { LatestPacer } from '@piwitests/core/run-view';
+import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
@@ -48,6 +42,7 @@ import { followCallLog } from './live-call-log.js';
 import { subscribeLane, type LaneSubscription } from './lane-feed.js';
 import {
   LaneFilmstrip,
+  LaneTexts,
   followTraceText,
   layersTitleOf,
   subscribePageEvents,
@@ -95,11 +90,12 @@ import type { PageFrame } from './page-view.js';
  * instrumentation (`live-call-log.ts`'s `listener`), which moves no stop, in place of the call stream. Beside the
  * images, a full view may ask for layers (`view`'s `layers`, `lane-layers.ts`), each posted while asked alone: the page's
  * events (`page-event`, `MAX_PAGE_EVENTS_PER_SECOND` at most), its text (`text`: as the trace writes it, and taken as the
- * instance asks, `text` on the stream, `LANE_TEXTS_PER_SECOND` at most, masked with the project's masks too), and the
- * test's filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, the view's own masked image
- * shortly after each call of the test ended, scaled down, kept in memory for the test alone (`LaneFilmstrip`), all of
- * them posted again to a viewer that asks later (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most.
- * None is stored.
+ * instance asks, `text` on the stream, one take at a time, `LANE_TEXTS_PER_SECOND` at most, `LaneTexts`, masked with
+ * the project's masks too), and the test's filmstrip (`thumb`, a live message whose data is the JPEG): while anyone
+ * watches, the view's own masked image shortly after each call of the test ended, scaled down, kept in memory for the
+ * test alone (`LaneFilmstrip`) until the project's masks change, all of them posted again to a viewer that asks later
+ * (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most, `MAX_FILMSTRIP` waiting at most. None is
+ * stored.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -202,9 +198,11 @@ interface Link {
 const layerRuns: {
   events: (() => void) | null;
   text: (() => void) | null;
-  texts: LatestPacer<LaneText | { refused: string }> | null;
+  texts: LaneTexts | null;
   thumbs: ReturnType<typeof setInterval> | null;
 } = { events: null, text: null, texts: null, thumbs: null };
+/** The view and its test now, counted: a text taken for another one goes nowhere. */
+let textGeneration = 0;
 /** The test's filmstrip, taken from the view's own masked images while someone watches. */
 let filmstrip: LaneFilmstrip | null = null;
 /** The filmstrip's images waiting to be posted, in order, each with its test, and whether one is in flight. */
@@ -388,7 +386,9 @@ export function openLiveView(
   if (link.sharing) connect(link);
   filmstrip?.close();
   filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
-    if (link && layerAsked(link, 'filmstrip')) thumbPosts.queue.push({ ...kept, test });
+    if (!link || !layerAsked(link, 'filmstrip')) return;
+    thumbPosts.queue.push({ ...kept, test });
+    thumbPosts.queue.splice(0, Math.max(0, thumbPosts.queue.length - MAX_FILMSTRIP));
   });
   changed();
   return true;
@@ -458,6 +458,7 @@ async function stopSharing(): Promise<void> {
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
   running = { title, page: null, call, mayPause, began: Date.now() };
+  textGeneration++;
   filmstrip?.forget();
   thumbPosts.queue = [];
 }
@@ -597,7 +598,7 @@ function connect(own: Link): void {
         if (message?.type === 'masks') setMasks(own, message.locators);
         else if (message?.type === 'view') setAsked(own, message);
         else if (message?.type === 'resend') resendView(own);
-        else if (message?.type === 'text') sendText(own, true);
+        else if (message?.type === 'text') sendText(own);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -724,13 +725,17 @@ function resendView(own: Link): void {
 }
 
 /**
- * The project masks `locators` from now on: the image kept for a later viewer was masked without them, so the view
- * takes one again.
+ * The project masks `locators` from now on: the images kept for a later viewer, the filmstrip's included, and a text
+ * being taken were masked without them, so they go, and the view takes one again.
  */
 function setMasks(own: Link, locators: string[] | null): void {
   if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
   own.masks = locators;
-  if (own === link) view?.frames.refresh();
+  if (own !== link) return;
+  textGeneration++;
+  filmstrip?.forget();
+  thumbPosts.queue = [];
+  view?.frames.refresh();
 }
 
 /**
@@ -766,15 +771,21 @@ function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
     layerRuns.events = null;
   }
   if (layerAsked(own, 'text')) {
+    if (!layerRuns.texts) {
+      const texts: LaneTexts = new LaneTexts((snapshot) => postText(own, texts, snapshot));
+      layerRuns.texts = texts;
+    }
+    const texts = layerRuns.texts;
     layerRuns.text ??= followTraceText(
-      () => own.masks,
       () => view?.page ?? null,
-      (text) => offerText(own, text),
+      () => texts.ask(false),
     );
-    if (!before.has('text')) sendText(own, true);
-  } else if (layerRuns.text) {
-    layerRuns.text();
+    if (!before.has('text')) texts.ask(true);
+  } else if (layerRuns.text || layerRuns.texts) {
+    layerRuns.text?.();
+    layerRuns.texts?.close();
     layerRuns.text = null;
+    layerRuns.texts = null;
   }
   if (layerAsked(own, 'filmstrip')) {
     layerRuns.thumbs ??= startThumbPosts(own);
@@ -788,6 +799,7 @@ function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
 
 /** Stop every layer: the view stopped. */
 function stopLayers(): void {
+  textGeneration++;
   layerRuns.events?.();
   layerRuns.text?.();
   layerRuns.texts?.close();
@@ -799,34 +811,27 @@ function stopLayers(): void {
   thumbPosts.queue = [];
 }
 
-/**
- * Take the page's text and post it, while a full view asks for it: the trace's latest, else, with `take` (the instance
- * asked, or the layer was asked anew), an ARIA snapshot of the page now.
- */
-function sendText(own: Link, take: boolean): void {
-  if (!layerAsked(own, 'text')) return;
-  const page = view?.page ?? null;
-  void takeLaneText(page, own.masks, take).then((text) => {
-    if (text) offerText(own, text);
-  });
+/** The instance asks for the page's text now, while a full view asks for it: an ARIA snapshot where the trace has none. */
+function sendText(own: Link): void {
+  if (layerAsked(own, 'text')) layerRuns.texts?.ask(true);
 }
 
-/** Post a text of the page, `LANE_TEXTS_PER_SECOND` at most, the latest alone waiting. */
-function offerText(own: Link, text: LaneText | { refused: string }): void {
-  layerRuns.texts ??= new LatestPacer<LaneText | { refused: string }>({
-    intervalMs: 1000 / LANE_TEXTS_PER_SECOND,
-    send: (next) => {
-      if (link !== own || !view || !active(own)) return;
-      const test = running?.title ?? null;
-      void post(
-        own,
-        'refused' in next
-          ? { type: 'text', ...own.id, refused: next.refused, test }
-          : { type: 'text', ...own.id, text: next, test },
-      );
-    },
-  });
-  layerRuns.texts.offer(text);
+/**
+ * Take the page's text and post it: the trace's latest, else, with `snapshot` (the instance asked, or the layer was
+ * asked anew), an ARIA snapshot of the page now; nothing once the view, its test or its takes (`texts`) changed.
+ */
+async function postText(own: Link, texts: LaneTexts, snapshot: boolean): Promise<void> {
+  const generation = textGeneration;
+  const test = running?.title ?? null;
+  const text = await takeLaneText(view?.page ?? null, own.masks, snapshot);
+  if (!text || generation !== textGeneration || layerRuns.texts !== texts) return;
+  if (link !== own || !view || !active(own) || !layerAsked(own, 'text')) return;
+  await post(
+    own,
+    'refused' in text
+      ? { type: 'text', ...own.id, refused: text.refused, test }
+      : { type: 'text', ...own.id, text, test },
+  );
 }
 
 /** The running test's view while someone watches it, for its filmstrip: its title, and the view's latest frame. */
