@@ -133,6 +133,55 @@ describe('Inspect’s store of a run', () => {
     expect(page.html).toContain(`<img src="data:image/png;base64,${Buffer.from('PNG').toString('base64')}">`);
   });
 
+  test('masks what a stored trace’s page masks: a token in its text and its attributes, a secret in its stylesheet', async () => {
+    const store = new RunInspect();
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqbyJ9.c2lnbmF0dXJlLXNlY3JldA';
+    const hex = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+    store.addResource({
+      sha1: `${'e'.repeat(40)}.css`,
+      contentType: 'text/css',
+      data: Buffer.from(`.k{--token:"${hex}"}`),
+    });
+    const html = [
+      'HTML',
+      {},
+      ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/k.css' }]],
+      ['BODY', { 'data-session': hex }, ['P', {}, `Bearer ${jwt}`], ['INPUT', { type: 'password', value: 'hunter2' }]],
+    ];
+    store.addSnapshot(
+      'w',
+      snapshot('call@1', 'after', html, {
+        resources: [{ url: 'https://shop.test/k.css', sha1: `${'e'.repeat(40)}.css` }],
+      }),
+    );
+    const page = await store.render('w', 'call@1', 'after');
+    if ('status' in page) throw new Error(page.message);
+    expect(page.html).not.toContain(jwt);
+    expect(page.html).not.toContain(hex);
+    expect(page.html).not.toContain('hunter2');
+    expect(page.html).toContain('[masked-token]');
+    expect(page.html).toContain('--token:"[masked-hex]"');
+  });
+
+  test('marks the action’s target as the trace names it, by its call’s id where an older Playwright does', async () => {
+    const store = new RunInspect();
+    // Playwright 1.59 writes `snapshotName` with no phase, and the target's mark holds the call's id.
+    const html = [
+      'HTML',
+      {},
+      ['BODY', {}, ['BUTTON', { __playwright_target__: 'call@8' }, 'Pay'], ['A', { __playwright_target__: 'call@2' }]],
+    ];
+    const old = snapshot('call@8', 'action', html);
+    const json = JSON.parse(new TextDecoder().decode(old.data)) as Record<string, unknown>;
+    delete json.phase;
+    delete json.callId;
+    json.snapshotName = 'input@call@8';
+    store.addSnapshot('w', { ...old, data: new TextEncoder().encode(JSON.stringify(json)) });
+    const page = await store.render('w', 'call@8', 'action');
+    if ('status' in page) throw new Error(page.message);
+    expect(page.html).toBe('<html><body><button data-piwi-target="">Pay</button><a></a></body></html>');
+  });
+
   test('keeps a page’s main frame alone, and the same moment once', () => {
     const store = new RunInspect();
     const html = ['HTML', {}];
