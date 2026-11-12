@@ -1,6 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { setResponseHeader, type H3Event } from 'h3';
-import { buildPickerDocument, buildReadonlyDocument } from '#shared/snapshot-picker-document';
+import {
+  buildPickerDocument,
+  buildReadonlyDocument,
+  readonlyScriptTag,
+  snapshotPickerScriptTag,
+} from '#shared/snapshot-picker-document';
 import { CAPTURED_ATTRIBUTES } from '#shared/locator-generation';
 
 /** How a snapshot frame shows the page: the interactive locator picker, or the read-only render. */
@@ -24,9 +29,15 @@ const EMPTY_DOC =
  * loads from the network. The document carries its stylesheets and images inline, so any fetch left in the snapshot is
  * blocked rather than sent to this origin or the tested app. Served over HTTP (not `srcdoc`), the frame carries this
  * policy instead of inheriting the dashboard page's `strict-dynamic` CSP, which would block the inline picker script.
- * `html` null serves an empty document.
+ * `html` null serves an empty document; `offline` says its network references were stripped already
+ * (`stripNetworkReferences`, as a live page kept rendered is).
  */
-export function snapshotFrameDocument(event: H3Event, html: string | null, mode: SnapshotFrameMode): string {
+export function snapshotFrameDocument(
+  event: H3Event,
+  html: string | null,
+  mode: SnapshotFrameMode,
+  { offline = false }: { offline?: boolean } = {},
+): string {
   const nonce = randomBytes(16).toString('base64');
   setResponseHeader(
     event,
@@ -47,7 +58,7 @@ export function snapshotFrameDocument(event: H3Event, html: string | null, mode:
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');
   if (!html) return EMPTY_DOC;
-  return mode === 'readonly'
-    ? buildReadonlyDocument(html, nonce)
-    : buildPickerDocument(html, { probedAttrs: CAPTURED_ATTRIBUTES }, nonce);
+  const config = { probedAttrs: CAPTURED_ATTRIBUTES };
+  if (offline) return html + (mode === 'readonly' ? readonlyScriptTag(nonce) : snapshotPickerScriptTag(config, nonce));
+  return mode === 'readonly' ? buildReadonlyDocument(html, nonce) : buildPickerDocument(html, config, nonce);
 }

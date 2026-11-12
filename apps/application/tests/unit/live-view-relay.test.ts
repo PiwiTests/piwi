@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { MAX_SNAPSHOT_BYTES, SNAPSHOTS_PER_SECOND } from '@piwitests/core/live-inspect';
 import {
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
@@ -24,7 +25,9 @@ import {
   MAX_LIVE_WORKERS_PER_RUN,
   MAX_LIVE_TILE_FRAME,
   MAX_RELAYED_FPS,
+  MAX_INSPECT_BYTES_PER_RUN,
   MAX_RELAYED_PAGE_EVENTS,
+  MAX_RELAYED_RESOURCE_BYTES,
   MAX_RELAYED_SNAPSHOTS,
   MAX_RELAYED_THUMBS,
   MAX_RELAYED_TILE_FPS,
@@ -37,6 +40,7 @@ import {
   type LiveWatchAsk,
 } from '../../server/utils/live-view';
 import type { EventStreamSink } from '../../server/utils/event-stream';
+import { InspectBudget, SNAPSHOT_MASKED } from '../../server/utils/live-inspect';
 import { runEventBus } from '../../server/utils/run-events';
 
 /**
@@ -1542,6 +1546,8 @@ describe('Inspect', () => {
     const { live } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;
     live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => new FakeSink());
+    // Another watch has Inspect open on the worker: what it sends is kept.
+    watch(live, 7, { shard: null, worker: 0, slot: 0 }, new FakeSink(), null, { inspect: true });
     live.receive(7, snapshot(0, 'call@1', 'before', { slot: 0 }));
     live.receive(7, snapshot(0, 'call@1', 'after', { slot: 0, full: false }));
     const page = new FakeSink();
@@ -1574,24 +1580,141 @@ describe('Inspect', () => {
     expect(notices(page).map((m) => (m as { call: string }).call)).toEqual(['call@1', 'call@2', 'call@3']);
   });
 
-  test('bounds a worker’s snapshots a second, and charges them and the resources to the run’s bytes', () => {
-    const { live } = relay();
+  /** A resource of `bytes` bytes, named `n`, as worker `worker` posts it. */
+  const resource = (worker: number, n: number, bytes: number): LiveRelayMessage => ({
+    type: 'resource',
+    shard: null,
+    worker,
+    resource: { sha1: `${n.toString(16).padStart(40, '0')}.png`, contentType: 'image/png' },
+    data: new Uint8Array(bytes),
+  });
+  /** Run 7 with workers 0 to `count` - 1 connected, each inspected by a watch; the relay's clock is `at`. */
+  function inspected(count: number, budget?: InspectBudget) {
+    const at = { now: 1_000_000 };
+    const live = new LiveViewRelay(
+      () => {},
+      () => at.now,
+      budget,
+    );
     const entry = live.authorize(7, live.mintKey(7, 1))!;
-    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
-    live.connectWorker(entry, { shard: null, worker: 1 }, () => new FakeSink());
-    for (let i = 0; i < MAX_RELAYED_SNAPSHOTS; i++) {
+    const sinks = Array.from({ length: count }, (_, worker) => {
+      live.connectWorker(entry, { shard: null, worker }, () => new FakeSink());
+      const sink = new FakeSink();
+      watch(live, 7, { shard: null, worker }, sink, null, { inspect: true });
+      return sink;
+    });
+    return { live, at, sinks, entry };
+  }
+
+  test('takes a worker’s snapshots as it paces them, and its resources by their bytes, counted apart', () => {
+    const { live, at } = inspected(1);
+    // The worker takes 12 a second in its own seconds: 12 at the end of one and 12 at the start of the next can come
+    // within one of the instance's.
+    for (let i = 0; i < 2 * SNAPSHOTS_PER_SECOND; i++) {
+      at.now += 10;
       expect(live.receive(7, snapshot(0, `call@${i}`, 'before'))).toBeNull();
     }
     expect(live.receive(7, snapshot(0, 'call@99', 'before'))).toMatchObject({ status: 429 });
-    const resource: LiveRelayMessage = {
-      type: 'resource',
+    expect(MAX_RELAYED_SNAPSHOTS).toBe(2 * SNAPSHOTS_PER_SECOND);
+    // A page's first snapshot names dozens of resources, which the worker posts back to back.
+    for (let n = 0; n < 48; n++) expect(live.receive(7, resource(0, n, 40 * 1024))).toBeNull();
+    // Past the bytes a second of a worker's resources, refused.
+    at.now += 1000;
+    expect(live.receive(7, resource(0, 100, MAX_RELAYED_RESOURCE_BYTES - 1024))).toBeNull();
+    expect(live.receive(7, resource(0, 101, 2048))).toMatchObject({ status: 429 });
+  });
+
+  test('takes a run’s snapshots in a byte window of their own, whatever its frames took', () => {
+    const { live, at } = inspected(5);
+    // The run's frames take all the bytes of images a second.
+    expect(live.receive(7, frame(0, new Uint8Array(MAX_LIVE_BYTES_PER_RUN - 1024).fill(0xff)))).toBeNull();
+    expect(live.receive(7, frame(1, new Uint8Array(2048).fill(0xff)))).toMatchObject({ status: 429 });
+    // A snapshot of the largest a worker sends still goes, and a few more of other workers.
+    const most = (worker: number) => snapshot(worker, 'call@1', 'before', { bytes: MAX_SNAPSHOT_BYTES - 1024 });
+    expect(live.receive(7, most(0))).toBeNull();
+    for (let worker = 1; worker < 4; worker++) expect(live.receive(7, most(worker))).toBeNull();
+    expect(MAX_INSPECT_BYTES_PER_RUN).toBe(4 * MAX_SNAPSHOT_BYTES);
+    expect(live.receive(7, most(4))).toMatchObject({ status: 429 });
+    at.now += 1000;
+    expect(live.receive(7, most(4))).toBeNull();
+  });
+
+  test('refuses a worker’s snapshots and resources while no watch has Inspect open on it', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page);
+    expect(live.receive(7, snapshot(0, 'call@1', 'before'))).toMatchObject({ status: 409 });
+    expect(live.receive(7, resource(0, 1, 1024))).toMatchObject({ status: 409 });
+    const id = (page.sent[0] as { watch: string }).watch;
+    live.changeWatch(7, id, null, { inspect: true });
+    expect(live.receive(7, snapshot(0, 'call@1', 'before'))).toBeNull();
+    expect(live.receive(7, resource(0, 1, 1024))).toBeNull();
+    live.changeWatch(7, id, null, { inspect: false });
+    expect(live.receive(7, snapshot(0, 'call@2', 'before'))).toMatchObject({ status: 409 });
+  });
+
+  test('refuses what would take every run’s Inspect past the instance’s budget, and frees a run’s as it ends', () => {
+    const budget = new InspectBudget(6 * 1024 * 1024);
+    const { live, at } = inspected(1, budget);
+    expect(live.receive(7, snapshot(0, 'call@1', 'before', { bytes: 3 * 1024 * 1024 }))).toBeNull();
+    at.now += 1000;
+    expect(live.receive(7, snapshot(0, 'call@2', 'before', { bytes: 3 * 1024 * 1024 }))).toMatchObject({ status: 503 });
+    live.endRun(7);
+    expect(budget.used).toBe(0);
+  });
+
+  test('lets what Inspect kept go as the project starts masking elements, refusing it while the project masks any', async () => {
+    const { live, sinks } = inspected(1);
+    live.receive(7, snapshot(0, 'call@1', 'after'));
+    const id = (sinks[0]!.sent[0] as { watch: string }).watch;
+    live.setMasks(1, ["getByTestId('balance')"]);
+    // The watch with Inspect open hears why in place of the page, and asks for the page in vain.
+    expect(notices(sinks[0]!).at(-1)).toEqual({
+      type: 'snapshot',
       shard: null,
-      worker: 1,
-      resource: { sha1: `${'b'.repeat(40)}.png`, contentType: 'image/png' },
-      data: new Uint8Array(MAX_LIVE_BYTES_PER_RUN - 2000),
-    };
-    expect(live.receive(7, resource)).toBeNull();
-    expect(live.receive(7, snapshot(1, 'call@1', 'before', { bytes: 4096 }))).toMatchObject({ status: 429 });
+      worker: 0,
+      refused: SNAPSHOT_MASKED,
+      test: null,
+    });
+    expect(live.inspectOf(7, id, null)).toEqual({ status: 410, message: SNAPSHOT_MASKED });
+    expect(live.receive(7, snapshot(0, 'call@2', 'after'))).toMatchObject({ status: 409, message: SNAPSHOT_MASKED });
+    // A watch that opens Inspect now hears of nothing kept.
+    const late = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, late, null, { inspect: true });
+    expect(notices(late)).toEqual([]);
+    // Masks taken off: the worker's pages are taken again.
+    live.setMasks(1, []);
+    expect(live.receive(7, snapshot(0, 'call@3', 'after'))).toBeNull();
+    const kept = live.inspectOf(7, id, null);
+    if ('status' in kept) throw new Error(kept.message);
+    expect(await kept.render(':0', 'call@1', 'after')).toMatchObject({ status: 410 });
+    expect(await kept.render(':0', 'call@3', 'after')).toMatchObject({ html: '<html><body>call@3</body></html>' });
+  });
+
+  test('refuses Inspect’s posts of a run whose project masked elements as its worker connected', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink(), ["getByTestId('balance')"]);
+    watch(live, 7, { shard: null, worker: 0 }, new FakeSink(), null, { inspect: true });
+    expect(live.receive(7, snapshot(0, 'call@1', 'after'))).toMatchObject({ status: 409, message: SNAPSHOT_MASKED });
+  });
+
+  test('lets a worker’s snapshots go as its test ends: a watch that opens Inspect hears the next test’s alone', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const lane = { shard: null, worker: 0, slot: 0 };
+    live.connectWorker(entry, lane, () => new FakeSink());
+    // A watch of the lane, which stays for its next test.
+    watch(live, 7, lane, new FakeSink(), null, { inspect: true });
+    live.receive(7, snapshot(0, 'call@1', 'before', { slot: 0 }));
+    live.receive(7, { type: 'ended', shard: null, worker: 0, slot: 0 });
+    // The next test, of the same title.
+    live.receive(7, snapshot(0, 'call@7', 'before', { slot: 0 }));
+    const late = new FakeSink();
+    watch(live, 7, lane, late, null, { inspect: true });
+    expect(notices(late).map((m) => (m as { call: string }).call)).toEqual(['call@7']);
   });
 
   test('serves what it keeps to its own person’s watch with Inspect open alone, and drops it with the run', async () => {

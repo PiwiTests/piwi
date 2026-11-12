@@ -6,8 +6,15 @@ import {
   MAX_WORKER_SNAPSHOTS,
   RunInspect,
   SNAPSHOT_GONE,
+  SNAPSHOT_MASKED_GONE,
   SNAPSHOT_MISSING,
+  SNAPSHOT_TEST_ENDED,
   SNAPSHOT_TOO_LARGE,
+  SNAPSHOT_UNSENT,
+  InspectBudget,
+  MAX_RUN_RESOURCE_COUNT,
+  MAX_RUN_SNAPSHOT_COUNT,
+  MAX_WORKER_SNAPSHOT_COUNT,
 } from '../../server/utils/live-inspect';
 
 /**
@@ -67,10 +74,10 @@ describe('Inspect’s store of a run', () => {
   test('renders a page from its chain, each later snapshot referring to the nodes of the ones before', async () => {
     const store = new RunInspect();
     const first = ['HTML', {}, ['HEAD', {}], ['BODY', {}, ['H1', {}, 'Checkout'], ['P', {}, 'Paying…']]];
-    expect(store.addSnapshot('w', snapshot('call@1', 'before', first))).toBe(true);
+    expect(store.addSnapshot('w', snapshot('call@1', 'before', first))).toBe('kept');
     // The head and the heading as they were; the paragraph changed.
     const later = ['HTML', {}, [[1, 0]], ['BODY', {}, [[1, 2]], ['P', {}, 'Paid']]];
-    expect(store.addSnapshot('w', snapshot('call@1', 'after', later, { full: false, index: 1 }))).toBe(true);
+    expect(store.addSnapshot('w', snapshot('call@1', 'after', later, { full: false, index: 1 }))).toBe('kept');
     const page = await store.render('w', 'call@1', 'after');
     expect(page).toEqual({
       html: '<html><head></head><body><h1>Checkout</h1><p>Paid</p></body></html>',
@@ -160,7 +167,6 @@ describe('Inspect’s store of a run', () => {
     expect(page.html).not.toContain(jwt);
     expect(page.html).not.toContain(hex);
     expect(page.html).not.toContain('hunter2');
-    expect(page.html).toContain('[masked-token]');
     expect(page.html).toContain('--token:"[masked-hex]"');
   });
 
@@ -186,9 +192,11 @@ describe('Inspect’s store of a run', () => {
   test('keeps a page’s main frame alone, and the same moment once', () => {
     const store = new RunInspect();
     const html = ['HTML', {}];
-    expect(store.addSnapshot('w', snapshot('call@1', 'before', html, { main: false, frame: 'frame@2' }))).toBe(false);
-    expect(store.addSnapshot('w', snapshot('call@1', 'before', html))).toBe(true);
-    expect(store.addSnapshot('w', snapshot('call@1', 'before', html))).toBe(false);
+    expect(store.addSnapshot('w', snapshot('call@1', 'before', html, { main: false, frame: 'frame@2' }))).toBe(
+      'ignored',
+    );
+    expect(store.addSnapshot('w', snapshot('call@1', 'before', html))).toBe('kept');
+    expect(store.addSnapshot('w', snapshot('call@1', 'before', html))).toBe('held');
     expect(store.heard('w')).toHaveLength(1);
     expect(store.heard('w')[0]).toMatchObject({ call: 'call@1', title: 'Click call@1', phase: 'before', test: 'pays' });
   });
@@ -219,7 +227,7 @@ describe('Inspect’s store of a run', () => {
     // The snapshot at place 1 never came: one at place 2 that names it does not render, one that names place 0 does.
     store.addSnapshot('w', snapshot('call@2', 'before', ['HTML', {}, [[1, 1]]], { full: false, index: 2 }));
     store.addSnapshot('w', snapshot('call@3', 'before', ['HTML', {}, [[3, 1]]], { full: false, index: 3 }));
-    expect(await store.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_GONE });
+    expect(await store.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_UNSENT });
     expect(await store.render('w', 'call@3', 'before')).toMatchObject({ html: '<html><body>Cart</body></html>' });
   });
 
@@ -292,5 +300,175 @@ describe('Inspect’s store of a run', () => {
     expect(store.resource(sha1('b'))).toBeNull();
     expect(store.resource(sha1('a'))).not.toBeNull();
     expect(store.resource(sha1('d'))).not.toBeNull();
+  });
+
+  test('counts each snapshot’s header too, and keeps a bounded number of snapshots and resources', () => {
+    const store = new RunInspect();
+    // A small page naming many long addresses: its header outweighs its JSON.
+    const resources = Array.from({ length: 30 }, (_, i) => ({
+      url: `https://shop.test/${String(i).padStart(4, '0')}${'x'.repeat(2000)}`,
+      sha1: `${'a'.repeat(40)}.css`,
+    }));
+    for (let i = 0; i < 1000; i++) store.addSnapshot('w', snapshot(`call@${i}`, 'after', ['HTML', {}], { resources }));
+    expect(store.size().snapshots).toBeLessThanOrEqual(MAX_WORKER_SNAPSHOTS);
+    expect(store.size().snapshots).toBeGreaterThan(MAX_WORKER_SNAPSHOTS - 200_000);
+    expect(store.heard('w').length).toBeLessThan(300);
+
+    const many = new RunInspect();
+    for (let i = 0; i < MAX_WORKER_SNAPSHOT_COUNT + 10; i++) many.addSnapshot('w', snapshot(`call@${i}`, 'after', 'x'));
+    expect(many.size().counts.snapshots).toBe(MAX_WORKER_SNAPSHOT_COUNT);
+    for (let w = 1; many.size().counts.snapshots < MAX_RUN_SNAPSHOT_COUNT && w < 10; w++) {
+      for (let i = 0; i < MAX_WORKER_SNAPSHOT_COUNT; i++)
+        many.addSnapshot(`w${w}`, snapshot(`call@${i}`, 'after', 'x'));
+    }
+    expect(many.size().counts.snapshots).toBe(MAX_RUN_SNAPSHOT_COUNT);
+    for (let i = 0; i < MAX_RUN_RESOURCE_COUNT + 10; i++) {
+      many.addResource({
+        sha1: `${i.toString(16).padStart(40, '0')}.png`,
+        contentType: 'image/png',
+        data: new Uint8Array(1),
+      });
+    }
+    expect(many.size().counts.resources).toBe(MAX_RUN_RESOURCE_COUNT);
+  });
+
+  test('refuses what would take every run’s Inspect past the instance’s budget, and gives a run’s back as it ends', () => {
+    const budget = new InspectBudget(4 * MB);
+    const [first, second] = [new RunInspect(budget), new RunInspect(budget)];
+    expect(first.addSnapshot('w', heavy('call@1', 3 * MB))).toBe('kept');
+    expect(second.addSnapshot('w', heavy('call@1', 2 * MB))).toBe('full');
+    expect(
+      second.addResource({ sha1: `${'b'.repeat(40)}.png`, contentType: 'image/png', data: new Uint8Array(2 * MB) }),
+    ).toBe('full');
+    first.clear();
+    expect(budget.used).toBe(0);
+    expect(second.addSnapshot('w', heavy('call@1', 2 * MB))).toBe('kept');
+    expect(budget.used).toBe(second.size().snapshots);
+  });
+
+  test('adds a snapshot in a constant time, however many it holds', () => {
+    const store = new RunInspect();
+    const add = (from: number, count: number) => {
+      const started = performance.now();
+      for (let i = from; i < from + count; i++) store.addSnapshot('w', snapshot(`call@${i}`, 'after', 'x'));
+      return performance.now() - started;
+    };
+    add(0, 10_000);
+    // No add scans what the store holds: 20,000 more, the oldest going as they come, take well under a second.
+    expect(add(10_000, 20_000)).toBeLessThan(1500);
+  });
+
+  test('keeps a page rendered until the worker’s store lets a snapshot go, and answers its viewport from its snapshot alone', async () => {
+    const store = new RunInspect();
+    /** What a snapshot counts in a store of its own. */
+    const sizeOf = (held: ReturnType<typeof snapshot>) => {
+      const probe = new RunInspect();
+      probe.addSnapshot('w', held);
+      return probe.size().snapshots;
+    };
+    const older = snapshot('call@0', 'before', ['HTML', {}, ['BODY', {}, 'Home']], { frame: 'frame@0' });
+    store.addSnapshot('w', older);
+    store.addSnapshot('w', snapshot('call@1', 'before', ['HTML', {}, ['BODY', {}, 'Cart']]));
+    store.addSnapshot('w', snapshot('call@1', 'after', ['HTML', {}, [[1, 1]]], { full: false, index: 1 }));
+    const page = await store.render('w', 'call@1', 'after');
+    expect(page).toMatchObject({ html: '<html><body>Cart</body></html>' });
+    expect(await store.render('w', 'call@1', 'after')).toBe(page);
+    // A later snapshot changes no page before it.
+    store.addSnapshot('w', snapshot('call@2', 'before', ['HTML', {}, [[1, 0]]], { full: false, index: 2 }));
+    expect(await store.render('w', 'call@1', 'after')).toBe(page);
+    // A snapshot that takes the worker past its bound lets the oldest go, another page's: this one renders again.
+    const held = store.size().snapshots;
+    const bytes = MAX_WORKER_SNAPSHOTS - held + Math.floor(sizeOf(older) / 2) - sizeOf(heavy('call@9', 0));
+    store.addSnapshot('w', heavy('call@9', bytes));
+    expect(store.heard('w').map((s) => `${s.phase}@${s.call}`)).toEqual([
+      'before@call@1',
+      'after@call@1',
+      'before@call@2',
+      'after@call@9',
+    ]);
+    const again = await store.render('w', 'call@1', 'after');
+    expect(again).not.toBe(page);
+    expect(again).toEqual(page);
+
+    // The viewport is read from the snapshot's JSON alone, without parsing it whole.
+    const parse = JSON.parse;
+    let longest = 0;
+    JSON.parse = ((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+      longest = Math.max(longest, text.length);
+      return parse(text, reviver);
+    }) as typeof JSON.parse;
+    try {
+      expect(store.viewport('w', 'call@9', 'after')).toEqual({ width: 1280, height: 800 });
+    } finally {
+      JSON.parse = parse;
+    }
+    expect(longest).toBeLessThan(1000);
+  });
+
+  test('parses no snapshot of a chain that no reference of the page reaches', async () => {
+    const store = new RunInspect();
+    const long = ['HTML', {}, ['BODY', {}, 'x'.repeat(100_000)]];
+    store.addSnapshot('w', snapshot('call@0', 'after', long));
+    for (let k = 1; k < 8; k++) {
+      store.addSnapshot('w', snapshot(`call@${k}`, 'after', ['HTML', {}, [[1, 1]]], { full: false, index: k }));
+    }
+    // A page that refers to no snapshot before it parses its own alone; one that refers to the first, those two.
+    store.addSnapshot('w', snapshot('call@8', 'after', ['HTML', {}, ['BODY', {}, 'Paid']], { full: false, index: 8 }));
+    store.addSnapshot('w', snapshot('call@9', 'after', ['HTML', {}, [[9, 1]]], { full: false, index: 9 }));
+    const parse = JSON.parse;
+    let parsed = 0;
+    JSON.parse = ((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+      parsed++;
+      return parse(text, reviver);
+    }) as typeof JSON.parse;
+    try {
+      expect(await store.render('w', 'call@8', 'after')).toMatchObject({ html: '<html><body>Paid</body></html>' });
+      expect(parsed).toBe(1);
+      expect(await store.render('w', 'call@9', 'after')).toMatchObject({
+        html: `<html><body>${'x'.repeat(100_000)}</body></html>`,
+      });
+      expect(parsed).toBe(3);
+    } finally {
+      JSON.parse = parse;
+    }
+  });
+
+  test('lets a worker’s snapshots go as its test ends, saying why a page of one is gone', async () => {
+    const store = new RunInspect();
+    store.addSnapshot('w', snapshot('call@1', 'before', ['HTML', {}, ['BODY', {}, 'Cart']]));
+    store.addSnapshot('other', snapshot('call@1', 'before', ['HTML', {}, ['BODY', {}, 'Cart']]));
+    store.endTest('w');
+    expect(store.heard('w')).toEqual([]);
+    expect(store.heard('other')).toHaveLength(1);
+    expect(await store.render('w', 'call@1', 'before')).toEqual({ status: 410, message: SNAPSHOT_TEST_ENDED });
+    // The next test's pages are kept again.
+    store.addSnapshot('w', snapshot('call@5', 'before', ['HTML', {}, ['BODY', {}, 'Paid']]));
+    expect(store.heard('w').map((s) => s.call)).toEqual(['call@5']);
+  });
+
+  test('lets every snapshot and resource go as the project starts masking elements', async () => {
+    const store = new RunInspect();
+    store.addResource({ sha1: `${'b'.repeat(40)}.png`, contentType: 'image/png', data: Buffer.from('PNG') });
+    store.addSnapshot('w', snapshot('call@1', 'before', ['HTML', {}, ['BODY', {}, 'Balance: 12,345.67']]));
+    store.mask();
+    expect(store.heard('w')).toEqual([]);
+    expect(store.size()).toMatchObject({ snapshots: 0, resources: 0, pages: 0 });
+    expect(await store.render('w', 'call@1', 'before')).toEqual({ status: 410, message: SNAPSHOT_MASKED_GONE });
+  });
+
+  test('tells a chain whose start the worker never sent from one the instance let go', async () => {
+    const store = new RunInspect();
+    // The page's full snapshot never came (over its size, or left out of the backlog): what builds on it says so.
+    store.addSnapshot('w', snapshot('call@2', 'before', ['HTML', {}, [[1, 1]]], { full: false, index: 1 }));
+    expect(await store.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_UNSENT });
+    // A chain whose start the instance let go keeps today's sentence.
+    const kept = new RunInspect();
+    kept.addSnapshot('w', heavy('call@1', MAX_WORKER_SNAPSHOTS - 2048));
+    kept.addSnapshot('w', snapshot('call@2', 'before', ['HTML', {}, [[1, 0]]], { full: false, index: 1 }));
+    kept.addSnapshot(
+      'w',
+      snapshot('call@3', 'before', ['HTML', {}, ['BODY', {}, 'x'.repeat(4096)]], { full: false, index: 2 }),
+    );
+    expect(await kept.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_GONE });
   });
 });

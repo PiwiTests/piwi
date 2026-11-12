@@ -22,7 +22,7 @@ import {
   type LiveWorkerPost,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
-import { SNAPSHOTS_PER_SECOND } from '@piwitests/core/live-inspect';
+import { MAX_RESOURCE_BYTES, MAX_SNAPSHOT_BYTES, SNAPSHOTS_PER_SECOND } from '@piwitests/core/live-inspect';
 import {
   LANE_LAYERS,
   LANE_TEXTS_PER_SECOND,
@@ -38,7 +38,7 @@ import type { DbClient } from '../database';
 import { projects, testRuns } from '../database/schema';
 import { apiError } from './api-error';
 import type { EventStreamSink } from './event-stream';
-import { RunInspect, type HeardSnapshot } from './live-inspect';
+import { InspectBudget, MAX_INSPECT_BYTES, RunInspect, SNAPSHOT_MASKED, type HeardSnapshot } from './live-inspect';
 import { runEventBus, type GlobalRunEvent } from './run-events';
 import { timingSafeEqualStr } from './timing-safe';
 
@@ -65,10 +65,12 @@ import { timingSafeEqualStr } from './timing-safe';
  * logs it (`call-log`), which goes to the watches that show it in full the same way, the latest kept apart from the
  * frame. A watch with **Inspect** open on its full view (`inspect`) has the worker told so (`view`'s `inspect`); the
  * worker then posts the DOM snapshots of its page and the resources they name (`@piwitests/core/live-inspect`), which the
- * run keeps in memory alone, bounded (`RunInspect`), each watch with Inspect open hearing of each snapshot of its
- * worker's pages' main frames as it comes, and of those kept as it opens Inspect or follows its lane to another worker,
- * without their JSON: the page is served rendered (`inspectOf`). A run that ended takes no watch any more. The worker's
- * stops go to everyone
+ * run keeps in memory alone, bounded (`RunInspect`, every run's within the instance's `InspectBudget`), each watch with
+ * Inspect open hearing of each snapshot of its worker's pages' main frames as it comes, and of those kept as it opens
+ * Inspect or follows its lane to another worker, without their JSON: the page is served rendered (`inspectOf`). A
+ * worker no watch inspects has its snapshots and resources refused; a worker's go as its test ends, and every one of a
+ * run as its project starts masking elements, its watches with Inspect open hearing why, its posts refused while the
+ * project masks any. A run that ended takes no watch any more. The worker's stops go to everyone
  * with the run page open, through the run's event stream (`live-worker`), and so does each worker's leaving, whatever
  * ends it; a developer who stops sharing their run has each worker's full views hear so (`unshared`) before its stream
  * closes. A run's keys, workers and watches end with the run (its finish or cancel), with the project's setting turned
@@ -80,9 +82,12 @@ import { timingSafeEqualStr } from './timing-safe';
  * still runs, or may go on, in a project with the live view on, within `LIVE_KEY_TTL_MS` of the run's creation
  * (`authorizeLiveViewKey`). Bounded throughout: keys per project and in all (the expired ones go first, then those
  * that never opened a stream: a run on a developer's machine nobody shares), workers and watches per run, watches per
- * person (the oldest replaced), frames, call logs and snapshots a second per worker, bytes of images, snapshots and
- * resources a second per run, what Inspect keeps of a run, and each message's bytes (the route's).
+ * person (the oldest replaced), frames, call logs and snapshots a second and bytes of resources a second per worker,
+ * bytes of images a second per run and, apart, bytes of snapshots and resources, what Inspect keeps of a run and of
+ * every run together, and each message's bytes (the route's).
  */
+
+const MB = 1024 * 1024;
 
 /** The most workers of one run that hold a stream. */
 export const MAX_LIVE_WORKERS_PER_RUN = 64;
@@ -90,7 +95,7 @@ export const MAX_LIVE_WORKERS_PER_RUN = 64;
 export const MAX_LIVE_VIEWERS_PER_RUN = 16;
 /** The most frames a second relayed of one worker: twice what a worker sends, for the jitter of the way. */
 export const MAX_RELAYED_FPS = LIVE_FRAME_FPS * 2;
-/** The most bytes of images, snapshots and resources the workers of one run post in a second, together: past it, refused. */
+/** The most bytes of images the workers of one run post in a second, together: a frame past it is refused. */
 export const MAX_LIVE_BYTES_PER_RUN = 4 * 1024 * 1024;
 /** The most call logs a worker's view relays a second: twice what a worker posts, for posts the network brings together. */
 export const MAX_RELAYED_CALL_LOGS = LIVE_CALL_LOGS_PER_SECOND * 2;
@@ -100,8 +105,21 @@ export const MAX_RELAYED_PAGE_EVENTS = MAX_PAGE_EVENTS_PER_SECOND * 2;
 export const MAX_RELAYED_TEXTS = LANE_TEXTS_PER_SECOND * 4;
 /** The most images of a filmstrip relayed of one worker a second: twice what a worker sends. */
 export const MAX_RELAYED_THUMBS = LANE_THUMBS_PER_SECOND * 2;
-/** The most snapshots of its page and resources they name a worker posts a second while Inspect is open: twice its pace. */
+/**
+ * The most snapshots of its page, or refusals in their place, a worker posts a second while Inspect is open: twice its
+ * pace, as a second the instance counts may straddle two of the worker's.
+ */
 export const MAX_RELAYED_SNAPSHOTS = SNAPSHOTS_PER_SECOND * 2;
+/**
+ * The most bytes of resources a worker posts a second while Inspect is open: it posts them back to back as a page names
+ * them, a second's wait at most each past its live view's budget, so a few of the largest at most.
+ */
+export const MAX_RELAYED_RESOURCE_BYTES = 4 * MAX_RESOURCE_BYTES;
+/**
+ * The most bytes of snapshots and resources the workers of one run post in a second, together, counted apart from
+ * their images: a few of the largest snapshots, whatever the frames took.
+ */
+export const MAX_INSPECT_BYTES_PER_RUN = 4 * MAX_SNAPSHOT_BYTES;
 /** The most notices of snapshots a watch's backed up stream holds back: past them, the oldest go. */
 const MAX_WAITING_NOTICES = 256;
 /** How long a key opens a stream at most, whatever its run does. */
@@ -242,8 +260,9 @@ interface WorkerLink {
   eventRate: RateWindow;
   textRate: RateWindow;
   thumbRate: RateWindow;
-  /** Its snapshots and resources posted in the last second. */
-  inspectRate: RateWindow;
+  /** Its snapshots posted in the last second, and the bytes of its resources. */
+  snapshotRate: RateWindow;
+  resourceBytes: RateWindow;
   /** How many watch it, and what they ask, as it last heard: each is said again when it changes alone. */
   told: { count: number; view: string } | null;
   /** Tells it how many watch and what they ask, `TELL_MS` apart at most. */
@@ -268,10 +287,14 @@ interface RunLive {
   waiting: Map<string, { id: LiveWorkerId; viewers: Set<Viewer>; timer: ReturnType<typeof setTimeout> }>;
   /** Every watch of the run, by its id. */
   viewers: Map<string, Viewer>;
-  /** The bytes of images, snapshots and resources its workers posted in the last second. */
+  /** The bytes of images its workers posted in the last second. */
   bytes: RateWindow;
+  /** The bytes of snapshots and resources its workers posted in the last second. */
+  inspectBytes: RateWindow;
   /** What Inspect keeps of the run: made as its first snapshot or resource comes. */
   inspect: RunInspect | null;
+  /** The elements its project masks, as the route read them as a worker connected. */
+  masks: readonly string[];
 }
 
 /**
@@ -288,7 +311,7 @@ export interface LiveViewCounts {
 type PendingKind = 'image' | 'call-log' | 'text';
 
 /** Why a relay refused. */
-export type LiveViewRefusal = { status: 404 | 409 | 410 | 429; message: string };
+export type LiveViewRefusal = { status: 404 | 409 | 410 | 429 | 503; message: string };
 
 /**
  * What a watch shows, as its page hears it after a change: the full view as the page asked it (null for none, or once
@@ -377,6 +400,7 @@ export class LiveViewRelay {
     private readonly publish: (runId: number, state: LiveWorkerState) => void = (runId, state) =>
       runEventBus.publish(runId, { type: 'live-worker', data: state }),
     private readonly now: () => number = Date.now,
+    private readonly inspectBudget: InspectBudget = new InspectBudget(),
   ) {}
 
   /**
@@ -474,7 +498,9 @@ export class LiveViewRelay {
       waiting: new Map(),
       viewers: new Map(),
       bytes: new RateWindow(MAX_LIVE_BYTES_PER_RUN, this.now),
+      inspectBytes: new RateWindow(MAX_INSPECT_BYTES_PER_RUN, this.now),
       inspect: null,
+      masks: [],
     };
     this.runs.set(runId, run);
     return run;
@@ -498,6 +524,7 @@ export class LiveViewRelay {
       return { status: 429, message: `A run has ${MAX_LIVE_WORKERS_PER_RUN} workers in its live view at most.` };
     }
     const run = this.runOf(entry.runId, entry.projectId);
+    run.masks = [...masks];
     entry.streamed = true;
     const sink = open();
     const link: WorkerLink = {
@@ -511,7 +538,8 @@ export class LiveViewRelay {
       eventRate: new RateWindow(MAX_RELAYED_PAGE_EVENTS, this.now),
       textRate: new RateWindow(MAX_RELAYED_TEXTS, this.now),
       thumbRate: new RateWindow(MAX_RELAYED_THUMBS, this.now),
-      inspectRate: new RateWindow(MAX_RELAYED_SNAPSHOTS, this.now),
+      snapshotRate: new RateWindow(MAX_RELAYED_SNAPSHOTS, this.now),
+      resourceBytes: new RateWindow(MAX_RELAYED_RESOURCE_BYTES, this.now),
       told: null,
       teller: new LatestPacer<true>({ intervalMs: TELL_MS, send: () => this.tellNow(run, link) }),
       attached: false,
@@ -624,8 +652,11 @@ export class LiveViewRelay {
       }
       case 'snapshot':
       case 'resource': {
-        if (!link.inspectRate.take(1)) {
-          return { status: 429, message: `${MAX_RELAYED_SNAPSHOTS} snapshots and resources a second at most.` };
+        if (![...link.viewers].some((viewer) => viewer.inspect)) {
+          return { status: 409, message: 'No watch has Inspect open on this worker: it sends no page.' };
+        }
+        if (message.type === 'snapshot' && !link.snapshotRate.take(1)) {
+          return { status: 429, message: `${MAX_RELAYED_SNAPSHOTS} snapshots a second at most.` };
         }
         if ('refused' in message) {
           this.deliverNotice(link, {
@@ -636,21 +667,33 @@ export class LiveViewRelay {
           });
           return null;
         }
-        if (!run.bytes.take(message.data.length)) {
-          const most = MAX_LIVE_BYTES_PER_RUN / (1024 * 1024);
-          return { status: 429, message: `The workers of a run send ${most} MB of images and pages a second at most.` };
+        if (this.masked(run)) return { status: 409, message: SNAPSHOT_MASKED };
+        if (message.type === 'resource' && !link.resourceBytes.take(message.data.length)) {
+          return { status: 429, message: `${MAX_RELAYED_RESOURCE_BYTES / MB} MB of resources a second at most.` };
         }
-        run.inspect ??= new RunInspect();
-        if (message.type === 'resource') {
-          run.inspect.addResource({ ...message.resource, data: message.data });
-          return null;
+        if (!run.inspectBytes.take(message.data.length)) {
+          const most = MAX_INSPECT_BYTES_PER_RUN / MB;
+          return { status: 429, message: `The workers of a run send ${most} MB of pages a second at most.` };
         }
-        const kept = run.inspect.addSnapshot(liveWorkerKey(link.id), {
-          ...message.snapshot,
-          data: message.data,
-          test: message.test,
-        });
-        if (kept) this.deliverNotice(link, this.notice(link, { ...message.snapshot, test: message.test }));
+        run.inspect ??= new RunInspect(this.inspectBudget);
+        const added =
+          message.type === 'resource'
+            ? run.inspect.addResource({ ...message.resource, data: message.data })
+            : run.inspect.addSnapshot(liveWorkerKey(link.id), {
+                ...message.snapshot,
+                data: message.data,
+                test: message.test,
+              });
+        if (added === 'full') {
+          const most = MAX_INSPECT_BYTES / MB;
+          return {
+            status: 503,
+            message: `This instance keeps ${most} MB of live runs’ pages at most: more as runs end.`,
+          };
+        }
+        if (added === 'kept' && message.type === 'snapshot') {
+          this.deliverNotice(link, this.notice(link, { ...message.snapshot, test: message.test }));
+        }
         return null;
       }
     }
@@ -666,8 +709,14 @@ export class LiveViewRelay {
     const viewer = run?.viewers.get(watchId);
     if (!run || !viewer || viewer.person !== person) return { status: 404, message: 'No such watch of this run.' };
     if (!viewer.inspect) return { status: 409, message: 'This watch has no Inspect open: open it first.' };
-    run.inspect ??= new RunInspect();
+    if (this.masked(run)) return { status: 410, message: SNAPSHOT_MASKED };
+    run.inspect ??= new RunInspect(this.inspectBudget);
     return run.inspect;
+  }
+
+  /** Whether the run's project masks elements: as a project admin last set them here, else as the route read them. */
+  private masked(run: RunLive): boolean {
+    return (this.projectMasks.get(run.projectId) ?? run.masks).length > 0;
   }
 
   /** What a watch hears of a snapshot of `link`'s page: its header, but the resources it names. */
@@ -868,7 +917,8 @@ export class LiveViewRelay {
 
   /**
    * The project now masks `locators` beside the secret fields: the workers of its live runs hear so, and a worker that
-   * connects later gets them, whatever its route read before.
+   * connects later gets them, whatever its route read before. With any, what Inspect kept of its runs, taken without
+   * them, goes, and the watches with Inspect open hear why in its place.
    */
   setMasks(projectId: number, locators: readonly string[]): void {
     this.projectMasks.set(projectId, [...locators]);
@@ -876,6 +926,12 @@ export class LiveViewRelay {
     for (const run of this.runs.values()) {
       if (run.projectId !== projectId) continue;
       for (const worker of run.workers.values()) worker.sink.send(message);
+      if (!locators.length) continue;
+      run.inspect?.mask();
+      for (const viewer of run.viewers.values()) viewer.notices = [];
+      for (const link of run.workers.values()) {
+        this.deliverNotice(link, { type: 'snapshot', ...idOf(link.id), refused: SNAPSHOT_MASKED, test: null });
+      }
     }
   }
 
@@ -929,6 +985,7 @@ export class LiveViewRelay {
     const run = this.runs.get(runId);
     if (!run) return;
     this.runs.delete(runId);
+    run.inspect?.clear();
     for (const { timer } of run.waiting.values()) clearTimeout(timer);
     run.waiting.clear();
     for (const viewer of [...run.viewers.values()]) this.endWatch(run, viewer, reason);
@@ -1290,6 +1347,7 @@ export class LiveViewRelay {
   private forgetIfIdle(runId: number, run: RunLive): void {
     if (!run.workers.size && !run.waiting.size && !run.viewers.size && this.runs.get(runId) === run) {
       this.runs.delete(runId);
+      run.inspect?.clear();
     }
   }
 
@@ -1298,6 +1356,8 @@ export class LiveViewRelay {
    * that follow its lane hear how the test ended and stay for the next one.
    */
   private testEnded(run: RunLive, link: WorkerLink, outcome: LiveTestOutcome | null): void {
+    // The test's pages go with it: the worker's next test's alone are kept, and told a watch that opens Inspect.
+    run.inspect?.endTest(liveWorkerKey(link.id));
     if (!link.viewers.size) return;
     const id = idOf(link.id);
     for (const viewer of [...link.viewers]) {

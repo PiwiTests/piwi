@@ -211,6 +211,13 @@ export function buildPickerDocument(html: string, config: SnapshotPickerConfig, 
   return stripNetworkReferences(html) + snapshotPickerScriptTag(config, nonce);
 }
 
+/** The read-only document's script: the page's recorded state put back, then made inert and measured. */
+export function readonlyScriptTag(nonce?: string): string {
+  const restoreSrc = escScriptClose(String(restoreSnapshotState));
+  const src = escScriptClose(String(readonlySnapshotScript));
+  return `<script${nonceAttr(nonce)}>(${restoreSrc})();(${src})();</script>`;
+}
+
 /**
  * Build the read-only document: the snapshot with its network references
  * stripped, plus the page's recorded state put back (`restoreSnapshotState`)
@@ -220,7 +227,5 @@ export function buildPickerDocument(html: string, config: SnapshotPickerConfig, 
  * as the picker does.
  */
 export function buildReadonlyDocument(html: string, nonce?: string): string {
-  const restoreSrc = escScriptClose(String(restoreSnapshotState));
-  const src = escScriptClose(String(readonlySnapshotScript));
-  return stripNetworkReferences(html) + `<script${nonceAttr(nonce)}>(${restoreSrc})();(${src})();</script>`;
+  return stripNetworkReferences(html) + readonlyScriptTag(nonce);
 }

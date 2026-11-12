@@ -89,6 +89,7 @@ const page = underRoutePermission(
   (await import('../../server/api/test-runs/[id]/live-view/watch/[watch]/snapshot.get')).default as unknown as Route,
 );
 const { liveViewRelay, storeLiveViewKey } = await import('../../server/utils/live-view');
+const { SNAPSHOT_MASKED } = await import('../../server/utils/live-inspect');
 
 function event(runId: number, query: Record<string, string> = {}, headers: Record<string, string> = {}): FakeEvent {
   return { context: {}, params: { id: String(runId) }, query, headers, node: { req: { headers }, res: {} } };
@@ -519,6 +520,22 @@ describe('Inspect’s page of a call', () => {
     expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }))).toBe(401);
     state.caller = viewerOf(1);
     expect(watchId).toBeTruthy();
+  });
+
+  test('answers a page kept from before its project masked elements with why it shows none', async () => {
+    const { ask, send } = inspecting();
+    const balance = ['HTML', {}, ['BODY', {}, ['P', { 'data-testid': 'balance' }, 'Balance: 12,345.67']]];
+    const data = new TextEncoder().encode(JSON.stringify({ html: balance }));
+    expect(await send(liveSnapshotHeader(ID, header('call@1', 'before'), 'pays'), data)).toBeNull();
+    expect(await page(ask({ call: 'call@1', phase: 'before', mode: 'readonly' }))).toContain('Balance: 12,345.67');
+    liveViewRelay.setMasks(1, ["getByTestId('balance')"]);
+    try {
+      const refused = await page(ask({ call: 'call@1', phase: 'before', mode: 'readonly' })).catch((error) => error);
+      expect(refused).toMatchObject({ statusCode: 410, message: SNAPSHOT_MASKED });
+      expect(await send(liveSnapshotHeader(ID, header('call@2', 'before'), 'pays'), data)).toBe(409);
+    } finally {
+      liveViewRelay.setMasks(1, []);
+    }
   });
 
   test('is gone with the run', async () => {
