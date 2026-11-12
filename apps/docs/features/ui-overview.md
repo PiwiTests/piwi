@@ -84,7 +84,7 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 
 `/test-runs/:id`: one run. The header carries the status, the primary action ([**Copy retry command**](./ci-rerun) on a red run,
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
-results stream in live, and the tab's icon and title show its progress. When ingest left something out or rebuilt
+results stream in live and the tab title shows its progress. When ingest left something out or rebuilt
 it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the
 [ingest caps](/reference/configuration#ingest-limits), traces not stored, evidence rebuilt from a trace, and the
 fallback the reporter took to send the run. When Playwright reported
@@ -95,14 +95,15 @@ not load), the header shows them under the facts line. The tabs:
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
+- **Video**: the tests' videos in sequence beside a checklist ([Run video](./run-video)).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits, locks and [breakpoint](./editor-breakpoints)
   stops, the slowest tests and the worker distribution ([Slow tests & wasted time](./slow-tests)).
   - **Hooks**: hook time is hatched over each test's bar: setup (`beforeAll`, `beforeEach`, fixtures) at the start,
     teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is drawn in dark red and counted in
-    the header, even with **Show hooks** off; hover it for the hooks that section ran, their times and the error, and
+    the header, even with **Show hooks** off; hover it for the hooks, times and error, and
     click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
     fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
-    reported. Runs sent by an older reporter show the sections without their hook list.
+    reported. Older reporters send no hook list.
   - **Gaps**: a lane is one [worker](/reference/test-metadata#worker-lanes). Playwright replaces a worker process
     after a failed test, so a lane can hold several processes one after another: **↻** marks where a new one took
     over, and the stretch before it is the old process stopping and the new one starting. A dashed line is time the
