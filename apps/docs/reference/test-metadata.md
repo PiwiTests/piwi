@@ -200,7 +200,7 @@ which the cross-shard clue points out.
 
 ### Ownership metadata (`piwi:` annotations)
 
-Five `piwi:`-prefixed annotations attach ownership to a test, and a sixth, `piwi:id`, its [external ID](#external-test-ids). They are ordinary Playwright annotations, so no new API is
+Six `piwi:`-prefixed annotations attach ownership to a test, and a seventh, `piwi:id`, its [external ID](#external-test-ids). They are ordinary Playwright annotations, so no new API is
 involved:
 
 ```typescript
@@ -228,6 +228,7 @@ test(
 | `piwi:feature` | Any text — the product area, for grouping across spec files |
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
 | `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
+| `piwi:issue` | The issue the test's failures are tracked in: its absolute `http(s)` URL or its key (`SHOP-412`). Repeat the annotation to name several, up to 10; a failure cluster is [linked to it](#issues-the-tests-declare) |
 | `piwi:id` | The test's ID in your test management tool, see [External test IDs](#external-test-ids) |
 
 Metadata shows as badges next to the test wherever it is listed, is searchable with `owner:`, `priority:` and `feature:`
@@ -236,6 +237,55 @@ that owns it. Unknown `piwi:` fields and unparseable values are ignored — a ty
 
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the
 reporter.
+
+### Issues the tests declare
+
+A `piwi:issue` annotation names the issue a test's failures are tracked in, by its URL or its key:
+
+```typescript
+test(
+  'pays with a saved card',
+  {
+    annotation: [
+      { type: 'piwi:issue', description: 'https://acme.atlassian.net/browse/SHOP-412' },
+      { type: 'piwi:issue', description: 'SHOP-415' },
+    ],
+  },
+  async ({ page }) => {
+    /* … */
+  },
+)
+```
+
+It stays apart from `piwi:link` and from Playwright's own `{ type: 'issue' }`, which suites use for any related page.
+When a [run that writes to the ticket](/features/issue-automation#the-runs-that-write) finishes, on a project
+[bound](/features/issue-tracking#the-project-binding) to a Jira connection and a Jira project, Piwi links each failure
+cluster to the issues its failing tests name ([Issue tracking](/features/issue-tracking#links-the-tests-declare)). A
+test counts by its last attempt, so one whose retry passed names nothing:
+
+- **Only issues of the bound Jira project.** A key needs the shape `SHOP-412` with the binding's project as its
+  prefix, a URL must point at the connection's site, and Jira must return the issue under that key and project, so an
+  issue moved to another project is dropped. Anything else is dropped, not stored as a plain link. A binding without a
+  Jira project links nothing.
+- **One lookup per run**, of at most 50 keys, the ones the most tests name first, within 10 seconds for the whole step.
+  With Jira down or slow, nothing is linked, and the next failing run that names the issue tries again.
+- **At most 10 per cluster**, the first linked staying; links pinned by hand or filed by Piwi do not count. The other
+  keys of the bound project its tests named in that run, neither linked nor removed, show as *and N more named by its
+  tests* at the end of its links. A cluster already linking a key, by any route, gets no second link to it.
+- The link's chip says *From the test's annotation*.
+- **Removing one keeps it off.** A link from the tests removed on the dashboard or through the MCP tools is not linked
+  to that cluster again, even once the issue moves; a merge keeps the removal on the surviving cluster and a split
+  copies it to the new one. Pinning the issue on that cluster by hand lifts it.
+- **Read-only.** No [policy](/features/issue-tracking#keep-the-ticket-honest) or [rule](/features/issue-automation)
+  comments on it, moves it or updates its description, its status never resolves or reopens the cluster on its own
+  (a person can still mark the cluster resolved once it is Done), and the issue body Piwi writes does not list it. The sync refreshes its status and removes it once the issue leaves the bound
+  project.
+- **It counts as tracked.** The cluster's known issue is its latest ticket filed or pinned while that is not Done,
+  else the oldest link from its tests that is not Done, else that Done ticket, else the oldest link from its tests. So
+  a Done pinned issue gives way to an open one its tests name, though the write-backs still act on the pinned one. While that issue is not Done, automatic creation files no issue and
+  the cluster leaves *Needs ticket*; the inbox, the pull-request comment and the `cluster.*` notifications name it.
+- Pinning it with *Link an issue*, by its URL on the connection's site, turns it into a pinned link, which the
+  write-backs then act on. The same key on another site stays a plain link beside it.
 
 ### External test IDs
 

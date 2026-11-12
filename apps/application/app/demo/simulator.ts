@@ -121,7 +121,12 @@ interface SimTest {
   browser?: Record<string, unknown> | null;
   tags?: string[];
   locks?: string[];
-  testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
+  testMeta?: {
+    owner?: string | null;
+    priority?: string | null;
+    feature?: string | null;
+    issues?: string[];
+  } | null;
   externalId?: string | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;

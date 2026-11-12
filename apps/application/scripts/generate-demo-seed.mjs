@@ -58,7 +58,14 @@ import {
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
 } from '../shared/demo/demo-test-management.mjs';
-import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import {
+  demoTestMeta,
+  demoTags,
+  demoLocks,
+  demoExternalId,
+  buildAiUsage,
+  DEMO_JIRA_ISSUES,
+} from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
@@ -3575,6 +3582,40 @@ const ENTITY_LINKS = [
   },
 ];
 
+// The links the Apple Pay checkout's `piwi:issue` annotation declares (`demoTestMeta`), as the link step writes them
+// when a run fails into its cluster (2): DEMO-57 and DEMO-61 are issues of the bound DEMO project the demo's Jira knows
+// (`DEMO_JIRA_ISSUES`), linked read-only
+// with the test as their source; DEMO-64 is not in Jira, so the cluster's links end with *and 1 more named by its
+// tests*. DEMO-61 is Done, so the known issue is DEMO-57, the oldest one still open. No connection row backs them,
+// like DEMO-42.
+{
+  const cluster = FAILURE_CLUSTERS.find((c) => c.id === 2);
+  const testCaseId = caseIdByKey.get('1\x00tests/checkout/checkout.spec.ts\x00should complete checkout with Apple Pay');
+  // Linked when the test's latest run failed into the cluster finished.
+  const linkedAt = latestTrc(testCaseId, (t) => t.failure_cluster_id === 2)?.started_at ?? cluster.updated_at * 1000;
+  DEMO_JIRA_ISSUES.forEach((issue, i) => {
+    ENTITY_LINKS.push({
+      id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
+      failure_cluster_id: 2,
+      url: `https://demo.atlassian.net/browse/${issue.key}`,
+      provider: 'jira',
+      key: issue.key,
+      title: issue.title,
+      status_text: issue.status,
+      status_color: issue.statusColor,
+      metadata: { statusCategory: issue.statusCategory, source: { testCaseId } },
+      unfurled_at: linkedAt + i,
+      connection_id: null,
+      external_id: issue.id,
+      origin: 'annotation',
+      created_by: null,
+      created_at: linkedAt + i,
+      updated_at: linkedAt + i,
+    });
+  });
+  cluster.declared_issues_more = 1;
+}
+
 // ── Users, groups & role bindings ───────────────────────────────────────────
 // Seed the canonical demo identities and groups so the access model is usable
 // in the demo (the "act as" switcher in the banner picks one of these).
@@ -5803,7 +5844,7 @@ const REBASE_SQL = [
     `WHERE json_extract(result, '$.uploadStartedAt') IS NOT NULL;`,
   `UPDATE integration_actions SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS} ` +
     `WHERE json_extract(result, '$.uploadStartedAt') IS NULL;`,
-  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, unfurled_at = unfurled_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,

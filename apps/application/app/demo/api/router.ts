@@ -3751,7 +3751,7 @@ const routes: RouteEntry[] = [
     permission: 'link:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoLinkScope(ctx, +m[1]!);
-      return deleteLink(await getDemoDb(), +m[1]!);
+      return deleteLink(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
 

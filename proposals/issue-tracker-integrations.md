@@ -11,9 +11,10 @@ the automatic creation of step 4 (ordered rules over branches, environments, tes
 the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope for the write-backs, a
 diagnosis comment and description updates that never overwrite an edit made in the tracker), and run tickets: a
 run's issue, and one for an execution with no failure cluster, filed by hand with a comment, once per submission
-([run-on-my-machine.md](run-on-my-machine.md), D17). Flaky-test tickets, the `relatedIssue` run link and the links the
-tests declare (the rest of step 4, the last designed in [Links the tests declare](#links-the-tests-declare)) and
-Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+([run-on-my-machine.md](run-on-my-machine.md), D17), and the links the tests declare from `piwi:issue` annotations,
+with the dismissals and the read-only handling by origin (the first of their two pull requests). Flaky-test tickets,
+the `relatedIssue` run link, the tag source of [Links the tests declare](#links-the-tests-declare) (the rest of step
+4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -443,8 +444,9 @@ needs a binding).
 
 Requested in [#1153](https://github.com/PiwiTests/piwi/issues/1153). A suite often names, on each test, the issue its
 failures are tracked in, so a person still opens each new cluster and pastes the same URL into *Link an issue*. Piwi
-reads that name when the run is ingested and links the cluster itself. Not built; each *Default* below answers one of
-open questions 10 to 14.
+reads that name when the run is ingested and links the cluster itself. The `piwi:issue` source, the link step, the
+dismissals and the read-only handling by origin shipped (the first pull request of rollout step 4); the tag source
+remains. Each *Default* below answers one of open questions 10 to 14.
 
 **Two sources, both declared in the spec.**
 
@@ -812,7 +814,7 @@ Each step is a separately mergeable pull request that leaves the app green and u
 4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see
    `shared/integrations/automation.ts`); flaky-test tickets; the `relatedIssue` run link; the links the
    tests declare, in two pull requests: `piwi:issue` in core with the link step, the dismissals and the read-only
-   handling by origin (`feat(app)`, `feat(db)` for the migrations), then the tag source, with or after Zephyr's
+   handling by origin (`feat(app)`, `feat(db)` for the migrations) ✅ *shipped*, then the tag source, with or after Zephyr's
    shared tag-key helper ([zephyr-sync.md](zephyr-sync.md#rollout), step 3).
 5. **Confluence** — the wiki interface, the storage renderer, publish investigation and run report, page-in-place
    updates.

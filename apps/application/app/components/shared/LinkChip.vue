@@ -6,7 +6,8 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 /**
  * A pinned link as a chip: the provider icon, the key and title as one link to
  * the page (a new tab; a link with no address, such as a Zephyr Scale test run,
- * is named without one), the synced status, and a remove button for writers.
+ * is named without one), the synced status, where a link the tests declared came
+ * from, and a remove button for writers.
  * The chip wraps inside a narrow container rather than overflowing it, and the
  * remove button shows on hover, on keyboard focus and on touch screens.
  */
@@ -27,6 +28,8 @@ const displayLabel = computed(() => {
 const href = computed(() => safeHttpUrl(props.link.url));
 const providerIcon = computed(() => getProviderIcon(props.link.provider as any));
 const name = computed(() => props.link.key || displayLabel.value);
+// Where a link the tests declared came from; Piwi does not write to it until a person pins it.
+const source = computed(() => (props.link.origin === 'annotation' ? "From the test's annotation" : null));
 </script>
 
 <template>
@@ -45,7 +48,7 @@ const name = computed(() => props.link.key || displayLabel.value);
       :title="href ? (link.title ? `${link.title} (${link.url})` : link.url) : (link.title ?? undefined)"
       data-testid="link-chip-open"
     >
-      <span v-if="link.key" class="font-mono text-primary font-medium whitespace-nowrap">{{ link.key }}</span>
+      <span v-if="link.key" class="shrink-0 font-mono text-primary font-medium whitespace-nowrap">{{ link.key }}</span>
       <span v-if="link.title || !link.key" class="max-w-48 truncate">{{ displayLabel }}</span>
     </component>
 
@@ -54,10 +57,14 @@ const name = computed(() => props.link.key || displayLabel.value);
       :color="(link.statusColor as any) || 'neutral'"
       variant="subtle"
       size="xs"
-      class="whitespace-nowrap"
+      class="shrink-0 whitespace-nowrap"
     >
       {{ link.statusText }}
     </UBadge>
+
+    <span v-if="source" class="min-w-0 truncate font-normal text-muted" :title="source" data-testid="link-chip-source">
+      {{ source }}
+    </span>
 
     <UButton
       v-if="removable"

@@ -32,6 +32,7 @@ export const {
   projectTags,
   markers,
   entityLinks,
+  entityLinkDismissals,
   integrationConnections,
   projectIntegrations,
   projectTestManagement,

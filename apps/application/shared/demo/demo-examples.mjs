@@ -22,7 +22,11 @@
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.
  * - `issue: { key, status }`: the cluster is tracked in the Jira issue with that
- *   key, in that status: its newest tracker link, the one its pages show.
+ *   key, in that status: its known issue, the one its pages show (its newest
+ *   tracker link, else the oldest link from its tests still open, else the
+ *   oldest link from its tests).
+ * - `declaredMore: n`: the cluster's links end with *and n more named by its
+ *   tests*.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
  * - `incident: true`: the run is flagged as an environment incident.
@@ -185,6 +189,19 @@ export const DEMO_EXAMPLES = [
       'The login 500 is tracked in DEMO-42, filed from Piwi and In Progress in Jira; its key follows the failure to its executions and the inbox.',
     route: '/failure-clusters/3',
     expect: { cluster: { id: 3, story: 'auth-login-500' }, issue: { key: 'DEMO-42', status: 'In Progress' } },
+  },
+  {
+    id: 'declared-issue-links',
+    doc: 'features/issue-tracking',
+    title: 'E2E Checkout › should complete checkout with Apple Pay',
+    shows:
+      'Its test names three DEMO issues with piwi:issue: DEMO-57 and DEMO-61 are linked from the test’s annotation, DEMO-64 is not in Jira, and DEMO-61 is Done, so the known issue is DEMO-57.',
+    route: '/failure-clusters/2',
+    expect: {
+      cluster: { id: 2, story: 'checkout-email-renamed' },
+      issue: { key: 'DEMO-57', status: 'In Progress' },
+      declaredMore: 1,
+    },
   },
   {
     id: 'ai-diagnosis-simulated',

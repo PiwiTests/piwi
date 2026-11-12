@@ -256,9 +256,11 @@ async function relatedTrackerIssues(
   ownKeys: Set<string>,
 ): Promise<RelatedIssueFact[]> {
   if (fixedBefore.length === 0) return [];
+  // An issue body lists only the issues Piwi filed or a person pinned, never one a test named.
   const known = await clusterKnownIssues(
     db,
     fixedBefore.map((m) => m.clusterId),
+    { declared: false },
   ).catch(() => new Map());
   const related: RelatedIssueFact[] = [];
   for (const match of fixedBefore) {
@@ -470,7 +472,7 @@ async function gatherRunFacts(
         .from(failureClusters)
         .where(inArray(failureClusters.id, clusterIds))
     : [];
-  const issues = await clusterKnownIssues(db, clusterIds);
+  const issues = await clusterKnownIssues(db, clusterIds, { declared: false });
 
   const facts: RunIssueFacts = {
     runId: run.id,

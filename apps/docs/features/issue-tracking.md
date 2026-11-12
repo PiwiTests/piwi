@@ -9,8 +9,8 @@ lang: en-US
 <Needs reporter admin />
 
 An investigation ends with what a ticket needs: a headline, the affected tests and owners, the diagnosis, a
-validated patch, the verify command. **Create issue** makes it a Jira issue: the body is the fix plan, the issue
-is linked back as the cluster's *known issue*, and the key travels wherever the failure appears.
+validated patch, the verify command. **Create issue** makes it a Jira issue, linked back as the cluster's
+*known issue*.
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
@@ -32,8 +32,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   back to Piwi. Every section degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer
   for JQL.
-- **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or a create from
-  another of its executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
+- **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or another of its
+  executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
   Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
   link, a matching label, or a *fixed-before* match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
@@ -45,8 +45,9 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 
 ## The key travels
 
-A cluster's **known issue** is its most recently linked ticket; earlier ones stay among its links, which an execution's
-*Details* also lists. Its key follows the failure everywhere:
+A cluster's **known issue** is its ticket filed or pinned, else one [its tests name](#links-the-tests-declare),
+open ones first; others stay among its links, which an execution's *Details* also lists. Its key follows the failure
+everywhere:
 
 - the cluster's **Issue** line and a failing execution's **Cluster** line, the **inbox row** and the execution's row in
   the **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
@@ -59,9 +60,15 @@ A cluster's **known issue** is its most recently linked ticket; earlier ones sta
   <figcaption>The cluster's Issue line names the Jira issue that tracks it.</figcaption>
 </figure>
 
+## Links the tests declare
+
+A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) links its cluster to up to 10 issues
+of the bound Jira project; a link removed stays removed. It counts as tracked, yet Piwi never writes to it and its
+status never resolves or reopens the cluster on its own.
+
 ## Keep the ticket honest
 
-Once a cluster carries a known issue, Piwi keeps the two in step. A background sync
+A background sync
 ([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
 its status, title and assignee (open clusters every sweep, resolved ones daily). Per-project **policies**, all **off by
 default**, each a durable deduped outbox action, write back as the cluster evolves:
@@ -75,7 +82,7 @@ default**, each a durable deduped outbox action, write back as the cluster evolv
 | The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed. Otherwise, once the latest finished run no longer fails and the fix did not regress, the next step is *Mark the cluster resolved — PROJ-123 is Done*; while it fails, the Issue or Cluster line offers *File a new issue*. |
 | The **ticket is reopened** | With *reopen on ticket reopen*, reopens a resolved cluster with a note. |
 
-Both status policies act on a **move** of the ticket, so a cluster a person reopened or resolved stays as they set it.
+Both status policies act on a **move** of the ticket, so a person's reopen or resolve stands.
 
 Every comment is written in the [ticket's language](#language), for the [runs that
 write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
@@ -102,7 +109,7 @@ policies skip them.
 Piwi reads the issue type's create screen and asks for every required field it does not fill, such as a
 *Severity* or a *Team*:
 
-- The project binding's **Jira fields** block lists them; a value set there fills every issue filed from the project.
+- The project binding's **Jira fields** block lists them; a value there fills every issue from the project.
 - The create modal shows them under **Required by Jira**, prefilled from those defaults, and keeps *Create* disabled
   until each has a value or a Jira default. A search in both adds any other field, custom ones included. An issue
   field, such as the *Parent*, searches Jira; a team is typed as its id.
@@ -138,8 +145,7 @@ binding names a Jira project and issue type.
 
 ## Language
 
-A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default
-(a French Atlassian site can default every ticket to French), else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
+A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default, else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
 `locale`. **English and French ship.**
 
 Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data
@@ -152,8 +158,8 @@ prose follows the separate [AI response-language setting](/features/ai-diagnosis
 - **Jira Cloud only** (REST v3, email + API token).
 - A ticket's body is a **snapshot** at creation, unless [description updates](./issue-automation#comments-and-description-updates)
   are on for an issue Piwi filed.
-- The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates**, so they
-  stay English even in a French ticket.
+- The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates**, even in a
+  French ticket.
 - Attachments honor the [export size budget](/features/offline-export); the trace is never attached.
 
 ## Try it in the demo

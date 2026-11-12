@@ -3089,7 +3089,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
-    const removed = await deleteLinksTo(db, entityType, entityId, url);
+    const removed = await deleteLinksTo(db, entityType, entityId, url, ctx.user?.id || null);
     if (removed === 0) throw new Error(`${entityType} ${entityId} has no link to ${url}`);
     return { entityType, entityId, url, removed };
   },

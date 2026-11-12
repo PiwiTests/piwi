@@ -41,8 +41,12 @@ import {
   buildStandaloneExecutionIssue,
 } from '~~/server/utils/integrations/documents';
 import { normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
-import { entityLinks, projects, testRunsCases } from '~~/server/database/schema';
+import { entityLinks, projects, testRuns, testRunsCases } from '~~/server/database/schema';
+import { isEligibleRun } from '#shared/run-eligibility';
+import { linkNamedIssues, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
+import { DEMO_JIRA_ISSUES } from '#shared/demo/demo-test-meta.mjs';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { TrackerIssueBatch, TrackerStatusCategory } from '~~/server/utils/integrations/types';
 
 /**
  * The demo has no server to reach Jira or Zephyr Scale, so it ships one canned connection of each and answers the
@@ -725,6 +729,46 @@ export function demoIssuePicker(query: string): { issues: TrackerIssueOption[] }
 export async function demoConnectionBoundProjects(db: DrizzleDB, connectionId: number): Promise<number[] | null> {
   if (connectionId !== DEMO_CONNECTION.id) return null;
   return (await db.select({ id: projects.id }).from(projects)).map((p) => p.id);
+}
+
+/** The demo's Jira as the link step reads it: the keys of {@link DEMO_JIRA_ISSUES}, in the DEMO project. */
+const DEMO_ISSUE_LOOKUP = {
+  parseIssueUrl(url: string) {
+    const match = /^https:\/\/demo\.atlassian\.net\/browse\/([A-Z][A-Z0-9_]+-\d+)\/?$/.exec(url);
+    return match ? { key: match[1]! } : null;
+  },
+  async getIssues(keys: string[]): Promise<TrackerIssueBatch> {
+    const asked = new Set(keys);
+    return {
+      issues: DEMO_JIRA_ISSUES.filter((issue) => asked.has(issue.key)).map((issue) => ({
+        ...issue,
+        statusCategory: issue.statusCategory as TrackerStatusCategory,
+        assignee: null,
+        url: `${DEMO_CONNECTION.baseUrl}/browse/${issue.key}`,
+        projectKey: DEMO_PROJECT_KEY,
+        issueType: DEMO_ISSUE_TYPE,
+      })),
+    };
+  },
+};
+
+/**
+ * The link step at a demo run's finish, as the server runs it: a run the `tracker` use admits links the issues its
+ * failing tests name, looked up in the demo's Jira through the canned binding, which admits every run.
+ */
+export async function linkDemoDeclaredIssues(db: DrizzleDB, runId: number): Promise<DeclaredLinksResult | null> {
+  const [run] = await db
+    .select({ metadata: testRuns.metadata, isFullRun: testRuns.isFullRun, status: testRuns.status })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run || !isEligibleRun(run, 'tracker')) return null;
+  return linkNamedIssues(db, runId, {
+    projectKey: DEMO_PROJECT_KEY,
+    // No connection row backs the canned connection, as for the seeded links.
+    connectionId: null,
+    tracker: DEMO_ISSUE_LOOKUP,
+    deadline: AbortSignal.timeout(10_000),
+  });
 }
 
 /** The project binding the demo shows — a canned Jira binding on the demo connection. */
