@@ -59,6 +59,7 @@ import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integra
 import { commentOnFiledIssueKey, createIssueKey, createIssueSubmissionKey } from '#shared/integrations/action-keys';
 import { commentNodes, normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
 import { t } from '#shared/integrations/messages';
+import { prefixedTitle } from '#shared/integrations/title-prefix';
 import { resolveClusterOwner } from './owner';
 import type { DraftEntityType } from './draft';
 
@@ -69,6 +70,12 @@ export interface CreateIssueParams {
   projectKey: string;
   issueType: string;
   title?: string;
+  /**
+   * The title was written without the project's prefix in view (an agent's): the
+   * project's prefix goes in front of it unless it already starts with it. A
+   * title from the create dialog is filed as typed.
+   */
+  prefixTitle?: boolean;
   labels?: string[];
   assignee?: string | null;
   locale?: IssueLocale;
@@ -196,6 +203,18 @@ async function ticketTitlePrefix(
 ): Promise<string | null> {
   const connection = await getConnectionRow(db, params.connectionId);
   return bindingTitlePrefix(binding, connection?.config);
+}
+
+/** The title the ticket is filed under: the one given, with the project's prefix when it asks for it, else the built one. */
+async function filedTitle(
+  db: DbClient,
+  params: CreateIssueParams,
+  binding: ResolvedProjectIntegration,
+  built: string,
+): Promise<string> {
+  const given = params.title?.trim();
+  if (!given) return built;
+  return params.prefixTitle ? prefixedTitle(await ticketTitlePrefix(db, params, binding), given) : given;
 }
 
 /** The person's comment with their name, or null when they wrote nothing. */
@@ -478,7 +497,7 @@ async function fileIssue(
   const payload: CreateIssueActionPayload = {
     projectKey: params.projectKey,
     issueType: params.issueType,
-    title: params.title?.trim() || issue.title,
+    title: await filedTitle(db, params, binding, issue.title),
     document: issue.document,
     labels: issue.labels,
     assigneeId: params.assignee ?? null,

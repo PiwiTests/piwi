@@ -2156,6 +2156,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       entityId,
       connectionId: draft.connectionId,
       title: typeof params.title === 'string' ? params.title : draft.title,
+      // An agent never saw the project's prefix: it goes on the title it gives.
+      prefixTitle: typeof params.title === 'string',
       projectKey: draft.projectKey,
       issueType: draft.issueType,
       labels: draft.labels,

@@ -22,6 +22,7 @@ import { renderMarkdown } from '../../shared/integrations/render-markdown';
 import { resolveProjectIntegration } from '../../shared/integrations/binding';
 import { couponBugReport } from '../utils/bug-report-sample';
 import { clusterKnownIssues } from '../../shared/handlers/known-issues';
+import { ADMIN_ACCESS } from '../../shared/permissions';
 
 /**
  * The title prefix and the filer's name on a ticket: the pure helpers and
@@ -37,6 +38,7 @@ const { writeProjectIntegration, readProjectIntegration, bindingTitlePrefix } =
   await import('../../server/utils/integrations/binding');
 const { createIssue } = await import('../../server/utils/integrations/create');
 const { buildIssueDraft } = await import('../../server/utils/integrations/draft');
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 const { enqueueDescriptionUpdate } = await import('../../server/utils/integrations/policies');
 
 describe('normalizeTitlePrefix', () => {
@@ -357,7 +359,7 @@ beforeAll(async () => {
   await db.insert(schema.users).values({ id: 7, username: 'robin', password: '', role: 'member', name: 'Robin Shaw' });
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
-  for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+  for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
     await db.insert(schema.testCases).values({ id, projectId: 1, title: `test ${id}`, filePath: 'tests/a.spec.ts' });
     await db.insert(schema.failureClusters).values({
       id,
@@ -456,6 +458,32 @@ describe('filing with a prefix', () => {
     const from = sent.length;
     await file(2, { title: 'Checkout is down', filedBy: 'Robin Shaw' });
     expect(createdSummary(from)).toBe('Checkout is down');
+  });
+
+  test('a title an agent gives through MCP gets the prefix, once', async () => {
+    await bind('[Piwi]');
+    const createIssueTool = MCP_TOOLS.find((t) => t.name === 'create_issue')!.handler;
+    const asAgent = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
+
+    const from = sent.length;
+    await createIssueTool(
+      dbc as never,
+      { entityType: 'failure_cluster', entityId: 10, title: 'Checkout is down' },
+      asAgent,
+    );
+    expect(createdSummary(from)).toBe('[Piwi] Checkout is down');
+
+    const next = sent.length;
+    await createIssueTool(
+      dbc as never,
+      { entityType: 'failure_cluster', entityId: 11, title: '[piwi] Checkout is down' },
+      asAgent,
+    );
+    expect(createdSummary(next)).toBe('[piwi] Checkout is down');
+
+    const last = sent.length;
+    await createIssueTool(dbc as never, { entityType: 'failure_cluster', entityId: 12 }, asAgent);
+    expect(createdSummary(last)).toBe('[Piwi] Checkout fails 12');
   });
 
   test('a rule files with the prefix and names no person', async () => {
