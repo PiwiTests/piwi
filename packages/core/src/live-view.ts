@@ -29,6 +29,11 @@
  * images, kept in the worker's memory for a viewer who comes later, sent again on `resend`). The instance relays each to
  * the watches that asked for that layer, and keeps none.
  *
+ * A full view may also ask for **Inspect** (`view`'s `inspect`): the worker then posts the DOM snapshots its page's
+ * trace takes at each call (`snapshot`) and the resources they name (`resource`), as `@piwitests/core/live-inspect`
+ * says, and the instance tells each watch with Inspect open of each snapshot (`snapshot`, its data left out), which it
+ * serves rendered on its own.
+ *
  * A CI run's workers open their streams at once. A run outside CI holds its key too, and its workers open no stream
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
@@ -47,6 +52,16 @@ import {
   type LaneThumb,
   type PageEvent,
 } from './live-layers';
+import {
+  LIVE_INSPECT_DATA_LIMITS,
+  MAX_SNAPSHOT_BYTES,
+  liveSnapshotFields,
+  readLiveResource,
+  readLiveSnapshot,
+  readLiveSnapshotFields,
+  type LiveResource,
+  type LiveSnapshot,
+} from './live-inspect';
 import { tryParseLocatorChain } from './locator-chain';
 import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
@@ -345,11 +360,21 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * (`locators: null`, from an instance newer than it) masks nothing it could trust. `view`'s `layers` are the layers its
  * full views ask beside the images (`@piwitests/core/live-layers`: `events`, `text` and `filmstrip`; the call log goes
  * with `full`), none from an instance that does not say them; `text` asks for the page's text now (a viewer asked).
+ * `view`'s `inspect` says a full view has Inspect open (`@piwitests/core/live-inspect`), false from an instance that
+ * does not say it.
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
   | { type: 'masks'; locators: string[] | null }
-  | { type: 'view'; width: number; height: number; fps: number; full: boolean; layers: LaneLayer[] }
+  | {
+      type: 'view';
+      width: number;
+      height: number;
+      fps: number;
+      full: boolean;
+      layers: LaneLayer[];
+      inspect: boolean;
+    }
   | { type: 'resend' }
   | { type: 'text' };
 
@@ -632,7 +657,8 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
     if (!size || !isInt(value.fps, 1, 60)) return null;
     const full = typeof value.full === 'boolean' ? value.full : true;
     const layers = (readLaneLayers(value.layers) ?? []).filter((layer) => layer !== 'calls');
-    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers };
+    const inspect = value.inspect === true;
+    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
   }
   if (value.type === 'resend') return { type: 'resend' };
   if (value.type === 'text') return { type: 'text' };
@@ -646,8 +672,15 @@ export const LIVE_FRAME_TYPE = 'application/vnd.piwi.live-frame';
 export const LIVE_STREAM_TYPE = 'application/vnd.piwi.live-stream';
 /** The longest header of a live message, in bytes of JSON. */
 export const MAX_LIVE_HEADER = 64 * 1024;
-/** The longest live message a worker posts as `LIVE_FRAME_TYPE`, in bytes. */
+/** The longest live message a worker posts as `LIVE_FRAME_TYPE`, in bytes: a frame's, or an image of a filmstrip's. */
 export const MAX_LIVE_FRAME_MESSAGE = 8 + MAX_LIVE_HEADER + MAX_LIVE_FRAME;
+/** The longest live message a worker posts as `LIVE_FRAME_TYPE` while Inspect is open: a snapshot's, in bytes. */
+export const MAX_LIVE_INSPECT_MESSAGE = 8 + MAX_LIVE_HEADER + MAX_SNAPSHOT_BYTES;
+/**
+ * The bounds a reader of what a worker posts holds each live message to: a frame's data, and the larger data of the
+ * Inspect types (`snapshot`, `resource`) for those types alone.
+ */
+export const LIVE_WORKER_POST_LIMITS: LiveMessageLimits = { maxData: MAX_LIVE_FRAME, byType: LIVE_INSPECT_DATA_LIMITS };
 
 /**
  * A live message: a JSON object (`header`), and bytes (`data`, an image), null when it carries none. On the wire, the
@@ -659,10 +692,22 @@ export interface LiveMessage {
   data: Uint8Array | null;
 }
 
-/** The bounds a reader holds each live message to, in bytes: its header (`MAX_LIVE_HEADER` unless said) and its data. */
+/**
+ * The bounds a reader holds each live message to, in bytes: its header (`MAX_LIVE_HEADER` unless said) and its data,
+ * `maxData` unless its header's `type` is one of `byType`'s, which says the bound of that type's data.
+ */
 export interface LiveMessageLimits {
   maxHeader?: number;
   maxData: number;
+  byType?: Readonly<Record<string, number>>;
+}
+
+/** The most data a message of the header `header` carries under `limits`. */
+function maxDataOf(limits: LiveMessageLimits, header: Record<string, unknown>): number {
+  const type = header.type;
+  return typeof type === 'string' && limits.byType && Object.prototype.hasOwnProperty.call(limits.byType, type)
+    ? limits.byType[type]!
+    : limits.maxData;
 }
 
 /** A heartbeat: a live message with no header and no data, which a reader passes over. */
@@ -694,9 +739,9 @@ function readHeader(bytes: Uint8Array): Record<string, unknown> | string {
 
 /**
  * A reader of live messages as they arrive, in chunks of any size: each call takes the next chunk and returns the
- * messages it completed, in order, heartbeats left out. A header longer than `limits.maxHeader`, data longer than
- * `limits.maxData`, data without a header, or a header that is not a JSON object throws, as soon as its length or its
- * text is read, with a sentence that says why; the reader then throws on every call, the stream being broken. A
+ * messages it completed, in order, heartbeats left out. A header longer than `limits.maxHeader`, data longer than its
+ * type's bound (`limits.maxData`, or `limits.byType`'s), data without a header, or a header that is not a JSON object
+ * throws, as soon as its length or its text is read, with a sentence that says why; the reader then throws on every call, the stream being broken. A
  * message's data is a copy of its own, which the caller keeps as long as it pleases. The bytes not read yet wait in
  * one buffer, as long as the message they begin needs once its lengths are read, whatever the chunks' sizes.
  */
@@ -707,6 +752,8 @@ export function createLiveMessageReader(limits: LiveMessageLimits): (chunk: Uint
   let size = 0;
   let need = 4;
   let broken: string | null = null;
+  // The header of the message being read, once its text came whole: its data waits behind it.
+  let header: Record<string, unknown> | null = null;
   const fail = (why: string): never => {
     broken = why;
     buffer = new Uint8Array(0);
@@ -733,19 +780,19 @@ export function createLiveMessageReader(limits: LiveMessageLimits): (chunk: Uint
       need = 8 + headerLength;
       if (size - at < need) break;
       const dataLength = view.getUint32(at + 4 + headerLength);
-      if (dataLength > limits.maxData) fail(`A live message’s data is ${limits.maxData} bytes at most.`);
       if (headerLength === 0 && dataLength > 0) fail('A live message with data has a header.');
+      if (headerLength > 0 && !header) {
+        const read = readHeader(buffer.subarray(at + 4, at + 4 + headerLength));
+        if (typeof read === 'string') fail(read);
+        header = read as Record<string, unknown>;
+      }
+      const maxData = header ? maxDataOf(limits, header) : limits.maxData;
+      if (dataLength > maxData) fail(`A live message’s data is ${maxData} bytes at most.`);
       need = 8 + headerLength + dataLength;
       const end = at + need;
       if (size < end) break;
-      if (headerLength > 0) {
-        const header = readHeader(buffer.subarray(at + 4, at + 4 + headerLength));
-        if (typeof header === 'string') fail(header);
-        messages.push({
-          header: header as Record<string, unknown>,
-          data: dataLength > 0 ? buffer.slice(end - dataLength, end) : null,
-        });
-      }
+      if (header) messages.push({ header, data: dataLength > 0 ? buffer.slice(end - dataLength, end) : null });
+      header = null;
       at = end;
       need = 4;
     }
@@ -777,10 +824,11 @@ export function decodeLiveMessage(bytes: Uint8Array, limits: LiveMessageLimits):
   if (headerLength > maxHeader) return `A live message’s header is ${maxHeader} bytes at most.`;
   if (headerLength === 0 || bytes.length < 8 + headerLength) return whole;
   const dataLength = view.getUint32(4 + headerLength);
-  if (dataLength > limits.maxData) return `A live message’s data is ${limits.maxData} bytes at most.`;
-  if (bytes.length !== 8 + headerLength + dataLength) return whole;
   const header = readHeader(bytes.subarray(4, 4 + headerLength));
   if (typeof header === 'string') return header;
+  const maxData = maxDataOf(limits, header);
+  if (dataLength > maxData) return `A live message’s data is ${maxData} bytes at most.`;
+  if (bytes.length !== 8 + headerLength + dataLength) return whole;
   return { header, data: dataLength > 0 ? bytes.slice(8 + headerLength) : null };
 }
 
@@ -846,15 +894,83 @@ export function liveThumbHeader(id: LiveWorkerId, thumb: LaneThumb, test: string
 export const LIVE_THUMBS_PER_SECOND = LANE_THUMBS_PER_SECOND;
 
 /**
- * What a worker posted as a live message, checked field by field: a frame (`readLiveWorkerFrame`), or an image of its
- * test's filmstrip (`thumb`: its fields as `@piwitests/core/live-layers` reads them, its data a JPEG of
- * `MAX_LANE_THUMB` bytes at most); why not, as a sentence, when it is neither.
+ * A DOM snapshot of a worker's test page, as the instance reads it while Inspect is open (`@piwitests/core/live-inspect`):
+ * its header's fields (`snapshot`), its JSON's bytes (`data`) and the test's title.
  */
-export function readLiveWorkerPost(message: LiveMessage): LiveWorkerFrame | LiveWorkerThumb | string {
+export type LiveWorkerSnapshot = LiveWorkerId & {
+  type: 'snapshot';
+  snapshot: LiveSnapshot;
+  data: Uint8Array;
+  test: string | null;
+};
+
+/** Why a worker sends no snapshot of its page while Inspect is open: the sentence the viewers see in its place. */
+export type LiveWorkerSnapshotRefusal = LiveWorkerId & { type: 'snapshot'; refused: string; test: string | null };
+
+/** A resource the snapshots of a worker's test page name, as the instance reads it: its header's fields, and its bytes. */
+export type LiveWorkerResource = LiveWorkerId & { type: 'resource'; resource: LiveResource; data: Uint8Array };
+
+/** The header of a snapshot a worker posts as a live message (`LIVE_FRAME_TYPE`); its JSON is the message's data. */
+export function liveSnapshotHeader(
+  id: LiveWorkerId,
+  snapshot: LiveSnapshot,
+  test: string | null,
+): Record<string, unknown> {
+  return { type: 'snapshot', ...id, ...liveSnapshotFields(snapshot), test };
+}
+
+/** The header of why a worker sends no snapshot, a live message without data (`LIVE_FRAME_TYPE`). */
+export function liveSnapshotRefusalHeader(
+  id: LiveWorkerId,
+  refused: string,
+  test: string | null,
+): Record<string, unknown> {
+  return { type: 'snapshot', ...id, refused, test };
+}
+
+/** The header of a resource a worker posts as a live message (`LIVE_FRAME_TYPE`); its bytes are the message's data. */
+export function liveResourceHeader(id: LiveWorkerId, resource: LiveResource): Record<string, unknown> {
+  return { type: 'resource', ...id, sha1: resource.sha1, contentType: resource.contentType };
+}
+
+/** Everything a worker posts as a live message (`LIVE_FRAME_TYPE`), as `readLiveWorkerPost` reads it. */
+export type LiveWorkerPost =
+  | LiveWorkerFrame
+  | LiveWorkerThumb
+  | LiveWorkerSnapshot
+  | LiveWorkerSnapshotRefusal
+  | LiveWorkerResource;
+
+/**
+ * What a worker posted as a live message, checked field by field: a frame (`readLiveWorkerFrame`), an image of its
+ * test's filmstrip (`thumb`: its fields as `@piwitests/core/live-layers` reads them, its data a JPEG of
+ * `MAX_LANE_THUMB` bytes at most), a DOM snapshot of its page or why none goes (`snapshot`), or a resource a snapshot
+ * names (`resource`), both as `@piwitests/core/live-inspect` reads them; why not, as a sentence, when it is none of
+ * them. A reader of the message itself takes the Inspect types' larger data (`LIVE_WORKER_POST_LIMITS`).
+ */
+export function readLiveWorkerPost(message: LiveMessage): LiveWorkerPost | string {
   const { header, data } = message;
-  if (header.type !== 'thumb') return readLiveWorkerFrame(message);
+  if (header.type !== 'thumb' && header.type !== 'snapshot' && header.type !== 'resource') {
+    return readLiveWorkerFrame(message);
+  }
   const id = readLiveWorkerId(header.shard, header.worker, header.slot);
   if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
+  if (header.type === 'snapshot') {
+    const test = readLiveTestTitle(header.test);
+    if (typeof header.refused === 'string' && header.refused.trim()) {
+      return { type: 'snapshot', ...id, refused: header.refused.slice(0, MAX_REFUSAL), test };
+    }
+    const read = readLiveSnapshot(header, data);
+    if (typeof read === 'string') return read;
+    const { data: json, ...snapshot } = read;
+    return { type: 'snapshot', ...id, snapshot, data: json, test };
+  }
+  if (header.type === 'resource') {
+    const read = readLiveResource(header, data);
+    if (typeof read === 'string') return read;
+    const { data: bytes, ...resource } = read;
+    return { type: 'resource', ...id, resource, data: bytes };
+  }
   const thumb = readLaneThumb(header.thumb);
   if (!thumb) return 'An image of a filmstrip names its call, its title, its place, its size and when it was taken.';
   if (!data || !isLaneThumbBytes(data))
@@ -904,6 +1020,13 @@ export type LiveViewerMessage =
   | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
   /** An image of the focused worker's test filmstrip, as the watch asked for `filmstrip`: its JPEG's bytes as the data. */
   | (LiveWorkerId & { type: 'thumb'; thumb: LaneThumb; image: Uint8Array; test: string | null })
+  /**
+   * A DOM snapshot of the focused worker's page came, as the watch has Inspect open: its call, title, moment, page,
+   * frame, whether it is of the main frame and full, and when it was taken, its JSON left with the instance, which serves
+   * it rendered; or why none comes (`refused`).
+   */
+  | (LiveWorkerId & LiveSnapshotNotice & { type: 'snapshot'; test: string | null })
+  | (LiveWorkerId & { type: 'snapshot'; refused: string; test: string | null })
   /** The focused worker's test ended, how when it says (`outcome`): a view of its lane stays for the next. */
   | (LiveWorkerId & { type: 'test-ended'; outcome: LiveTestOutcome | null })
   /**
@@ -943,7 +1066,18 @@ export function encodeLiveViewerMessage(message: LiveViewerMessage): Uint8Array 
   return encodeLiveMessage(message as unknown as Record<string, unknown>);
 }
 
+/** What a watch hears of a snapshot: its header's fields but the resources it names. */
+export type LiveSnapshotNotice = Omit<LiveSnapshot, 'resources'>;
+
 const WATCH_ID = /^[A-Za-z0-9_-]{16,64}$/;
+
+/** A snapshot's notice to a watch, checked field by field as a snapshot's header is; null when it is not one. */
+function readSnapshotNotice(value: Record<string, unknown>): LiveSnapshotNotice | null {
+  const read = readLiveSnapshotFields({ ...value, resources: [] });
+  if (typeof read === 'string') return null;
+  const { call, title, phase, page, frame, main, full, at } = read;
+  return { call, title, phase, page, frame, main, full, at };
+}
 
 /** A live message of a viewer's watch, checked field by field; null when it is not one this version reads. */
 export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage | null {
@@ -1005,6 +1139,14 @@ export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage |
       const thumb = readLaneThumb(value.thumb);
       if (!thumb || !message.data || !isLaneThumbBytes(message.data)) return null;
       return { type: 'thumb', ...id, thumb, image: message.data, test: readLiveTestTitle(value.test) };
+    }
+    case 'snapshot': {
+      const test = readLiveTestTitle(value.test);
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { type: 'snapshot', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
+      }
+      const notice = readSnapshotNotice(value);
+      return notice ? { type: 'snapshot', ...id, ...notice, test } : null;
     }
     default:
       return null;
