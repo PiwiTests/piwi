@@ -78,8 +78,8 @@ none of them.
 
 While an editor watches a worker of your run, the line of the call its test is in is marked until the test ends or
 stops, the call named after it (VS Code dims the line, `Worker 2 · Click getByRole('button')`; a JetBrains IDE adds an
-inlay), and the page's events go to VS Code's **Piwi: Page** output or the JetBrains Piwi tool window's **Page** tab,
-each test named as it begins.
+inlay), and the page's events go to VS Code's **Piwi: Page** output, its console and uncaught errors to the
+JetBrains Piwi tool window's **Page** tab, each test named as it begins.
 
 ## Open the trace so far
 

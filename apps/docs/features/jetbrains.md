@@ -68,9 +68,10 @@ The rest is native, and every action is under **Tools → Piwi**:
   runs do.
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
   icon for its state and the error color while its tests fail. It counts a run you started (`3 of 9 · 1 failed`) as
-  the run itself reports it, with no instance too, as does the run's node in the Piwi tool window. A click opens a menu of the actions, led by what the
-  item calls for: [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu
-  opens its page, copies its link, and has **Stop Sharing the Run…**, which asks first.
+  the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
+  way. A click opens a menu of the actions, led by what the item calls for:
+  [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu opens its page,
+  copies its link, and has **Stop Sharing the Run…**, which asks first.
 - **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the Test at
   the Caret**, **Verify the Test at the Caret ×3** and **Run This Spec**, then **Run the Tests That Reach This File**,
   **Record Here** and a recording's controls. There and in **Tools → Piwi**, an entry that does not apply is left out.
@@ -84,7 +85,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[A running test](./watch-running-test)**: while the **Worker** tab watches one, an inlay after the line of
-  the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first.
+  the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first
+  (closed, it stays closed until the next run).
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line

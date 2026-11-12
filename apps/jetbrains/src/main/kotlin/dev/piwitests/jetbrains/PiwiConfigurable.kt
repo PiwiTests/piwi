@@ -136,7 +136,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
-                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
+                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
                             "A run with a breakpoint in a test or page object pauses before the action on that line, " +
