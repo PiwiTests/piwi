@@ -48,6 +48,9 @@ const props = defineProps<{
   stuckCount?: number;
 }>();
 
+/** The stuck tests' count, in the warning tone of their bars. */
+const STUCK_TEXT_CLASS = STATUS_PALETTE.running.stuck!.text;
+
 /** What the header says of the shards: which have started while the run is live, else how many there are. */
 const shardsText = computed(() => {
   const total = props.shardTotal ?? 0;
@@ -124,7 +127,7 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
         </template>
         <template v-if="stuckCount && stuckCount > 0">
           &middot;
-          <span class="whitespace-nowrap text-warning-700 dark:text-warning-400" data-testid="timeline-stuck"
+          <span class="whitespace-nowrap" :class="STUCK_TEXT_CLASS" data-testid="timeline-stuck"
             >{{ stuckCount }} stuck</span
           >
         </template>
