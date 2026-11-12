@@ -80,13 +80,48 @@ function fileNameOf(storagePath: string, fallback: string): string {
 }
 
 /**
- * An export leaves the instance, as a file or behind a share link, so the known
- * issue it carries names the tracker issue and no person: who filed it stays on
- * the dashboard.
+ * An export leaves the instance, as a file or behind a share link, so a link it
+ * carries names the tracker issue and no person: who filed it stays on the
+ * dashboard. The creating user, the stored filer and the author of the filing
+ * comment are dropped; everything else about the link stays.
  */
+function exportLink<T>(link: T): T {
+  if (!link || typeof link !== 'object') return link;
+  const { createdBy: _createdBy, ...rest } = link as Record<string, any>;
+  const meta = rest.metadata;
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    const { filedBy: _filedBy, comment, ...kept } = meta as Record<string, any>;
+    rest.metadata = comment && typeof comment === 'object' ? { ...kept, comment: { ...comment, author: null } } : kept;
+  }
+  return rest as T;
+}
+
+function exportLinks(links: unknown): unknown {
+  return Array.isArray(links) ? links.map(exportLink) : links;
+}
+
+/** A failure cluster as an export carries it: its known issue and its links name no person. */
 function withoutFiler<T extends Record<string, any>>(holder: T): T {
   const known = holder.knownIssue;
-  return known && typeof known === 'object' ? { ...holder, knownIssue: { ...known, filedBy: null } } : holder;
+  return {
+    ...holder,
+    ...(known && typeof known === 'object' ? { knownIssue: { ...known, filedBy: null } } : {}),
+    ...('links' in holder ? { links: exportLinks(holder.links) } : {}),
+  };
+}
+
+/** An execution's detail as an export carries it: every link it holds names no person. */
+function withoutPeopleOnLinks(detail: Record<string, any>): Record<string, any> {
+  const testRun = detail.testRun;
+  return {
+    ...detail,
+    ...(detail.failureCluster ? { failureCluster: withoutFiler(detail.failureCluster) } : {}),
+    ...('links' in detail ? { links: exportLinks(detail.links) } : {}),
+    ...('stableLinks' in detail ? { stableLinks: exportLinks(detail.stableLinks) } : {}),
+    ...(testRun && typeof testRun === 'object' && 'links' in testRun
+      ? { testRun: { ...testRun, links: exportLinks(testRun.links) } }
+      : {}),
+  };
 }
 
 async function collectCase(db: DrizzleDB, executionId: number): Promise<ExportCase | null> {
@@ -117,7 +152,7 @@ async function collectCase(db: DrizzleDB, executionId: number): Promise<ExportCa
     location: detail.location ?? null,
     status: String(detail.status ?? 'unknown'),
     slug,
-    detail: detail.failureCluster ? { ...detail, failureCluster: withoutFiler(detail.failureCluster) } : detail,
+    detail: withoutPeopleOnLinks(detail),
     traces,
     diagnosis: (diagnosis as Record<string, any> | null) ?? null,
     assets,
