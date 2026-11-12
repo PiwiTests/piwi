@@ -158,26 +158,24 @@ interface TraceGap {
   head: string;
 }
 
-/** Whether `file` is a regular file, not a link; false when it is not there. */
-async function isPlainFile(file: string): Promise<boolean> {
-  try {
-    return (await fs.lstat(file)).isFile();
-  } catch {
-    return false;
-  }
-}
+/** How a file of the trace opens: to read, never through a link, and without waiting on a named pipe. */
+const OPEN_PLAIN = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
 
-/** Opens a regular file for reading, never through a link; null when it cannot. */
+/** Opens a regular file for reading, never through a link, and nothing else; null when it cannot. */
 async function openPlain(file: string): Promise<fs.FileHandle | null> {
-  if (!(await isPlainFile(file))) return null;
+  let handle: fs.FileHandle;
   try {
-    const handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
-    if ((await handle.stat()).isFile()) return handle;
-    await handle.close();
-    return null;
+    handle = await fs.open(file, OPEN_PLAIN);
   } catch {
     return null;
   }
+  try {
+    if ((await handle.stat()).isFile()) return handle;
+  } catch {
+    // Its kind cannot be read: it is not read.
+  }
+  await handle.close().catch(() => undefined);
+  return null;
 }
 
 /**

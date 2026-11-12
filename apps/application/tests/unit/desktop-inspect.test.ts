@@ -8,6 +8,7 @@
  * next test letting go of the one before, and nothing kept once the last window closes it. Skipped where Chromium is
  * not installed.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
@@ -85,8 +86,11 @@ async function waitFor<T>(read: () => T | undefined | false | null, ms = 15_000)
   }
 }
 
-/** Node's file system promises, as the reader calls them: a test holds one of its calls with `holdOpen`. */
-const fsPromises = requireHere('node:fs/promises') as { open: (...args: unknown[]) => Promise<unknown> };
+/** Node's file system promises, as the reader calls them: a test holds or changes one of its calls. */
+const fsPromises = requireHere('node:fs/promises') as {
+  open: (...args: unknown[]) => Promise<unknown>;
+  lstat: (...args: unknown[]) => Promise<unknown>;
+};
 
 /**
  * Holds the next opening of `file` until `release` is called, `at` resolving as it is held: a read of the reader in
@@ -326,6 +330,38 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
     ]);
     own.reader.close();
     none.reader.close();
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('a file of the trace that is a named pipe as it opens', () => {
+  it('is not read, and the reader goes on', async () => {
+    const traces = path.join(root, 'pipe', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    fs.writeFileSync(file, `${snapshotLine('c@1', 'after', ['HTML', {}, ['BODY', {}, 'Cart']])}\n`);
+    const pipe = path.join(traces, 't1.network');
+    execFileSync('mkfifo', [pipe]);
+    // The pipe is a regular file when looked at, and a named pipe as it opens: a file renamed over it in between.
+    const lstat = fsPromises.lstat;
+    fsPromises.lstat = (...args: unknown[]) => lstat(args[0] === pipe ? file : args[0], ...args.slice(1));
+    syncBuiltinESMExports();
+    const own = readerOf(traces, 't1');
+    try {
+      const turn = own.reader.turn().then(() => 'read');
+      const late = new Promise((resolve) => setTimeout(() => resolve('waiting on the pipe'), 2000));
+      expect(await Promise.race([turn, late])).toBe('read');
+      expect(own.kept.map((n) => n.call)).toEqual(['c@1']);
+    } finally {
+      fsPromises.lstat = lstat;
+      syncBuiltinESMExports();
+      own.reader.close();
+      // A read still waiting on the pipe opens as a writer comes.
+      try {
+        fs.closeSync(fs.openSync(pipe, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK));
+      } catch {
+        // No read waits on it.
+      }
+    }
   });
 });
 
