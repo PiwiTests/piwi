@@ -530,7 +530,7 @@ export function actionsFromSteps(steps: unknown): RawAction[] {
       const stored = typeof param === 'string' ? param : null;
       const prefix = kind === 'fill' ? 'Fill "' : title.startsWith('Insert') ? 'Insert "' : 'Type "';
       const value = whole(stored ?? titleValue(title, prefix));
-      typedChars = value == null ? null : Array.from(value).length;
+      typedChars = textLength(value);
     } else if (kind === 'press') {
       key = typeof params.key === 'string' ? params.key : titleValue(title, 'Press "');
     }

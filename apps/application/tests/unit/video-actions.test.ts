@@ -389,6 +389,15 @@ describe('actionsFromSteps', () => {
     expect(secret!.label).toBe("Fill getByLabel('Password'): typed text");
   });
 
+  it('shows no count for a card number or a token typed into a field that is not secret', () => {
+    const labelOf = (title: string) => actionsFromSteps([step({ title, category: 'input' })])[0]!.label;
+    expect(labelOf(`Fill "4111 1111 1111 1111" getByLabel('Notes')`)).toBe("Fill getByLabel('Notes'): typed text");
+    expect(labelOf(`Fill "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij" getByLabel('Notes')`)).toBe(
+      "Fill getByLabel('Notes'): typed text",
+    );
+    expect(labelOf(`Fill "ada@example.com" getByLabel('Notes')`)).toBe("Fill getByLabel('Notes'): typed 15 chars");
+  });
+
   it('counts a value from the params first, and says no count for a hidden or cut one', () => {
     const [byParam] = actionsFromSteps([
       step({ title: 'Fill "<hidden>"', params: { locator: "getByLabel('Nickname')", value: '123456' } }),
