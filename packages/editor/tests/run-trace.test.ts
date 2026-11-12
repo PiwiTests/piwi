@@ -46,7 +46,7 @@ let run = '';
 let traces = '';
 
 beforeAll(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-trace-')));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-trace-')));
   run = path.join(root, 'shop');
   traces = path.join(run, 'test-results', '.playwright-artifacts-0', 'traces');
   fs.mkdirSync(traces, { recursive: true });
@@ -460,7 +460,7 @@ describe('the trace’s path', () => {
   });
 
   test('goes to no editor client: piwi/openTrace answers in a sentence, from the run’s folder', async () => {
-    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-trace-lsp-')));
+    const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-trace-lsp-')));
     writeRunWorkspace(dir);
     const own = standIn();
     const svc = await service(dir, true, { traceViewer: own.launcher });
@@ -519,7 +519,7 @@ describe('the launcher', () => {
    * up a moment as a viewer does; or, for a trace whose name holds `fail`, says why on its error output and stops.
    */
   beforeAll(() => {
-    project = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-viewer-')));
+    project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-viewer-')));
     const pkg = path.join(project, 'node_modules', '@playwright', 'test');
     fs.mkdirSync(pkg, { recursive: true });
     fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1' }));
