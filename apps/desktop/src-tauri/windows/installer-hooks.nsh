@@ -202,7 +202,7 @@ FunctionEnd
 ; Hooks.
 
 !macro NSIS_HOOK_PREINSTALL
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   !insertmacro PIWI_STOP_SIDECAR node
 !macroend
 
@@ -211,6 +211,6 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   !insertmacro PIWI_STOP_SIDECAR node
 !macroend

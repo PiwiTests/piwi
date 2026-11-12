@@ -6,11 +6,11 @@
 !include "${__FILEDIR__}\stop-sidecar.nsh"
 
 !macro NSIS_HOOK_PREINSTALL
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   !insertmacro PIWI_STOP_SIDECAR piwi-runner-node
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
   !insertmacro PIWI_STOP_SIDECAR piwi-runner-node
 !macroend

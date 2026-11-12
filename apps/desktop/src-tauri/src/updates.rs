@@ -71,7 +71,7 @@ const APP: &str = if cfg!(feature = "runner") { "Piwi Runner" } else { crate::AP
 
 /// Where the startup notification sends the person to install the update.
 const INSTALL_FROM: &str = if cfg!(feature = "runner") {
-    "Install it from the tray icon's menu: Check for updates."
+    "Install it from Check for updates in the tray icon's menu, or download it from the latest release."
 } else {
     "Install it from Settings → About → Updates."
 };
@@ -261,7 +261,9 @@ fn remember_offered(app: &AppHandle, version: &str) {
     let Ok(version) = Version::parse(version) else {
         return;
     };
-    let state = app.state::<ReleaseNotesState>();
+    let Some(state) = app.try_state::<ReleaseNotesState>() else {
+        return;
+    };
     let mut held = state.0.lock().unwrap();
     if held.as_ref().map(|(v, _)| v) != Some(&version) {
         held.replace((version, None));
@@ -515,23 +517,19 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
                             return;
                         }
                         let after = handle.clone();
-                        crate::confirm_stopping_local_runs(
+                        crate::ask_stopping_local_runs(
                             &handle,
                             &format!("Update {APP}?"),
                             "updating",
                             "Update",
-                            move || {
-                                tauri::async_runtime::spawn(install_and_restart(after, idle_tooltip));
+                            move |go| {
+                                if go {
+                                    tauri::async_runtime::spawn(install_and_restart(after, idle_tooltip));
+                                } else {
+                                    after.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+                                }
                             },
                         );
-                        // While runs go, that question waits for the person, and a Cancel leaves the
-                        // update for the next click.
-                        let runs_going = handle
-                            .try_state::<crate::runner::LocalRuns>()
-                            .is_some_and(|runs| runs.active_count() > 0);
-                        if runs_going {
-                            handle.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
-                        }
                     });
             }
         }
@@ -542,7 +540,6 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
 /// tray's tooltip, then restart. On Windows the install never returns: the
 /// plugin hands over to the installer, which starts the app again.
 async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
-    app.state::<TrayUpdateBusy>().0.store(true, Ordering::SeqCst);
     let tooltip = |text: &str| {
         if let Some(tray) = app.tray_by_id("main") {
             let _ = tray.set_tooltip(Some(text));

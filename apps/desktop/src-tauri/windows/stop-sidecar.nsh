@@ -9,8 +9,8 @@
 ; so a sidecar still running holds those files locked and the copy fails with
 ; "Error opening file for writing". That happens whenever the app stops without
 ; its quit cleanup: an update started by a build whose updater leaves the
-; sidecar running (the desktop app's 0.37 and earlier, see src/updates.rs), a
-; kill from Task Manager, or the installer's own "close the app" step.
+; sidecar running, a kill from Task Manager, or the installer's own "close the
+; app" step.
 ;
 ; So before any file is written or removed: run the app check first (a stopped
 ; app cannot restart the sidecar behind us; the template's own check then finds

@@ -192,6 +192,26 @@ struct BackgroundMenu {
     login: tauri::menu::CheckMenuItem<tauri::Wry>,
 }
 
+/// Event the shell sends the windows when Run in background or Start on login changes, with both as they stand
+/// (`BackgroundSettings`), so a window shows what the tray set.
+const BACKGROUND_SETTINGS_EVENT: &str = "piwi:background-settings";
+
+#[derive(Clone, serde::Serialize)]
+struct BackgroundSettings {
+    run_in_background: bool,
+    start_on_login: bool,
+}
+
+fn announce_background_settings(app: &AppHandle) {
+    let _ = app.emit(
+        BACKGROUND_SETTINGS_EVENT,
+        BackgroundSettings {
+            run_in_background: app.try_state::<RunInBackground>().is_some_and(|s| s.is_on()),
+            start_on_login: app.autolaunch().is_enabled().unwrap_or(false),
+        },
+    );
+}
+
 /// Turn Run in background on or off, save the choice, and check the tray's item to match.
 pub(crate) fn set_run_in_background(app: &AppHandle, enabled: bool) {
     if let Some(state) = app.try_state::<RunInBackground>() {
@@ -204,6 +224,7 @@ pub(crate) fn set_run_in_background(app: &AppHandle, enabled: bool) {
     if let Some(menu) = app.try_state::<BackgroundMenu>() {
         let _ = menu.run_bg.set_checked(enabled);
     }
+    announce_background_settings(app);
 }
 
 /// Turn Start on login on or off, and check the tray's item as the system now holds it.
@@ -213,6 +234,7 @@ pub(crate) fn set_start_on_login(app: &AppHandle, enabled: bool) -> Result<(), S
     if let Some(menu) = app.try_state::<BackgroundMenu>() {
         let _ = menu.login.set_checked(mgr.is_enabled().unwrap_or(false));
     }
+    announce_background_settings(app);
     result
 }
 
@@ -2974,12 +2996,28 @@ pub(crate) fn confirm_stopping_local_runs(
     confirm_label: &str,
     proceed: impl FnOnce() + Send + 'static,
 ) {
+    ask_stopping_local_runs(app, title, verb, confirm_label, move |go| {
+        if go {
+            proceed();
+        }
+    });
+}
+
+/// `confirm_stopping_local_runs`, with the answer: `true` when nothing runs or the person confirmed, `false` on
+/// Cancel.
+pub(crate) fn ask_stopping_local_runs(
+    app: &AppHandle,
+    title: &str,
+    verb: &str,
+    confirm_label: &str,
+    answer: impl FnOnce(bool) + Send + 'static,
+) {
     let active = app
         .try_state::<runner::LocalRuns>()
         .map(|runs| runs.active_count())
         .unwrap_or(0);
     if active == 0 {
-        proceed();
+        answer(true);
         return;
     }
     app.dialog()
@@ -2992,11 +3030,7 @@ pub(crate) fn confirm_stopping_local_runs(
             confirm_label.into(),
             "Cancel".into(),
         ))
-        .show(move |confirmed| {
-            if confirmed {
-                proceed();
-            }
-        });
+        .show(answer);
 }
 
 /// The question asked before quitting stops local runs, titled with the app's name.

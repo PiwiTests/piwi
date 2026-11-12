@@ -34,7 +34,8 @@ updates…** in the tray menu checks again; when one is found, **Install and res
 signature, installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb` or `.rpm`) and starts
 the new version, after asking to stop the runs still going. Your connection and linked folders stay. A new release's
 Piwi Runner files can reach the release a few minutes after the desktop app's; until then the check finds nothing new
-or fails, and the next one finds them.
+or fails, and the next one finds them. On a desktop that shows no tray icon, install a new version from the latest release over
+the old one.
 
 ## Beside the desktop app
 

@@ -178,9 +178,9 @@ jobs:
           #
           # In-app updates are opt-in and OFF until the updater keypair exists.
           # To enable them: run `npx tauri signer generate` locally, put the
-          # public key into BOTH src-tauri/tauri.updater.conf.json (the .msi
-          # channel) and src-tauri/tauri.updater.nsis.conf.json (the .exe
-          # channel), and add the private key (+ its password) as the two secrets
+          # public key into src-tauri/tauri.updater.conf.json (the .msi
+          # channel), src-tauri/tauri.updater.nsis.conf.json (the .exe
+          # channel) and src-tauri/runner.updater.conf.json (Piwi Runner), and add the private key (+ its password) as the two secrets
           # below. Each leg's overlay (matrix.updaterConfig) is applied only when
           # the secret is present, so releases without it build exactly as
           # before, installers with no update artifacts and apps that report

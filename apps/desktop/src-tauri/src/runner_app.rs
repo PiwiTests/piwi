@@ -343,6 +343,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .manage(QuitConfirmed::default())
         .manage(updates::UpdaterSupport(can_update))
         .manage(updates::PendingUpdate::default())
+        .manage(updates::ReleaseNotesState::default())
         .manage(updates::TrayUpdateBusy::default())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;

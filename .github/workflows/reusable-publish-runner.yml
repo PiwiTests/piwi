@@ -154,8 +154,7 @@ jobs:
 
       # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
       # damaged, and the Node sidecar the bundler re-signed must still run the host: start it from the bundle, as the
-      # shell does on launch, and wait for /api/health. The bundler deletes the .app once the dmg holds it, so the check
-      # opens the dmg: the file a user installs from.
+      # shell does on launch, and wait for /api/health. The check opens the dmg: the file a user installs from.
       - name: Check the macOS app bundle
         if: runner.os == 'macOS'
         working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg
@@ -218,6 +217,7 @@ jobs:
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: release
     permissions:
       contents: write # upload the manifest to the release
     steps:

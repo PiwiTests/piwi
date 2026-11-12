@@ -2,7 +2,7 @@
 /**
  * Whether closing the window leaves Piwi Runner in the tray, and whether it starts on login: the tray menu's two
  * toggles, here too for a desktop that shows no tray icon. Reads and writes them through the shell, which keeps the
- * tray's checks in step.
+ * tray's checks in step and sends `piwi:background-settings` when either side changes them.
  */
 interface BackgroundSettings {
   run_in_background: boolean;
@@ -13,15 +13,23 @@ const toast = useToast();
 const settings = ref<BackgroundSettings | null>(null);
 const saving = ref(false);
 
+let unlisten: (() => void) | null = null;
+
 onMounted(async () => {
   const core = tauriCore();
   if (!core) return;
+  unlisten =
+    (await tauriEvent()?.listen<BackgroundSettings>('piwi:background-settings', ({ payload }) => {
+      settings.value = payload;
+    })) ?? null;
   try {
     settings.value = await core.invoke<BackgroundSettings>('desktop_get_service_settings');
   } catch {
     // Leaves the card hidden: the tray menu holds the same toggles.
   }
 });
+
+onScopeDispose(() => unlisten?.());
 
 async function save(command: string, field: keyof BackgroundSettings, enabled: boolean) {
   const core = tauriCore();
