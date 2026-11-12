@@ -850,6 +850,45 @@ describe('a live run’s lanes', () => {
     expect(bar().duration).toBe(0);
   });
 
+  test('keeps what a finished bar draws the same objects as the clock ticks', () => {
+    const hooked: CaseLike = {
+      ...done,
+      locks: ['db', 'auth'],
+      stepEvents: [
+        { title: 'Before Hooks', category: 'hook', startedAt: 1000, duration: 300, status: 'passed' },
+        { title: 'Paused', category: 'pause', startedAt: 2000, duration: 500, status: 'pause' },
+        { title: 'After Hooks', category: 'hook', startedAt: 4500, duration: 400, status: 'failed' },
+      ],
+    };
+    const input = reactive({
+      testCases: [hooked, { ...running, locks: ['db'] }] as unknown as TestCaseResult[],
+      live: true,
+      now: 7000 as number | null,
+      usualDurations: usual,
+      showHooks: true,
+    });
+    const { timelineData, settledData, hooksByTest, barLockColors, lockColorMap } = useTimelineModel(input);
+    const ticking = timelineData.value;
+    const settled = settledData.value;
+    const hooks = hooksByTest.value.get(1)!;
+    const colors = barLockColors.value.get('t1')!;
+    expect(hooks.map((item) => item.title)).toEqual(['Before Hooks', 'Paused', 'After Hooks']);
+    expect(colors).toEqual([lockColorMap.value.get('auth'), lockColorMap.value.get('db')]);
+
+    input.now = 8000;
+    // The running bar reaches now on a new array; what the finished bar draws is read from the settled items.
+    expect(timelineData.value).not.toBe(ticking);
+    expect(settledData.value).toBe(settled);
+    expect(hooksByTest.value.get(1)).toBe(hooks);
+    expect(barLockColors.value.get('t1')).toBe(colors);
+    // The running bar's lock colors are one array too, the same before and after its copy.
+    expect(barLockColors.value.get('t-1')).toEqual([lockColorMap.value.get('db')]);
+
+    // With the hooks hidden, the bar keeps its failed section and its stop.
+    input.showHooks = false;
+    expect(hooksByTest.value.get(1)!.map((item) => item.title)).toEqual(['Paused', 'After Hooks']);
+  });
+
   test('takes the usual duration a Stuck? mark carries, marks the bar stuck, and draws no ghost on a finished bar', () => {
     const stuck = { ...running, stuck: { elapsedMs: 200_000, usualMs: 9000 } };
     const { timelineData, knownUntil } = model([done, stuck], { live: true, now: 10_000, usualDurations: usual });

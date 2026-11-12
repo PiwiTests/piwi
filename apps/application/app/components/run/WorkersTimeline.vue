@@ -5,12 +5,17 @@ import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } f
 import type { UsualDuration } from '#shared/handlers/stuck-tests';
 import { usualDurationKey } from '#shared/stuck-tests';
 import type { SeriesPoint } from '#shared/types';
-import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
+import {
+  useTimelineModel,
+  isHookKind,
+  isShownItem,
+  isTestSection,
+  type TimelineItem,
+} from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
 import {
   livePlotEnd,
   liveRunNow,
-  lockColorHex,
   TIMELINE_HOOK_COLORS,
   TIMELINE_LAYOUT,
   TIMELINE_PAUSE_COLORS,
@@ -100,6 +105,12 @@ onBeforeUnmount(() => runClock(false));
 const heard = shallowRef<{ at: number; seenAt: number } | null>(null);
 const runNow = computed(() => (browserNow.value === null ? null : liveRunNow(browserNow.value, heard.value)));
 
+// Tests and expanded step spans are always drawn (expanding a row is itself the
+// request to see its steps). Hook sections are drawn by default and a failed
+// one is drawn even with hooks off; wasted waits are drawn on request.
+const showHooks = ref(true);
+const showWaits = ref(false);
+
 // Getter-based input so useTimelineModel keeps tracking the component props and
 // the expansion refs reactively (a spread would snapshot them).
 const modelInput = {
@@ -127,9 +138,24 @@ const modelInput = {
   get usualDurations() {
     return usualDurations.value;
   },
+  get showHooks() {
+    return showHooks.value;
+  },
 };
 
-const { timelineData, workerRows, laneCount, maxTime, origin, knownUntil, runLocks } = useTimelineModel(modelInput);
+const {
+  timelineData,
+  settledData,
+  hooksByTest,
+  workerRows,
+  laneCount,
+  maxTime,
+  origin,
+  knownUntil,
+  runLocks,
+  lockColorMap,
+  barLockColors,
+} = useTimelineModel(modelInput);
 
 // The latest moment the results tell, and when this page heard it: the run's clock goes on from there.
 watch(
@@ -281,6 +307,8 @@ const workerMetricOptions = computed(() => {
 });
 
 const testItems = computed(() => timelineData.value.filter((item) => item.kind === 'test'));
+/** The test bars as the results tell them, a running one at its start: the same array as the clock ticks. */
+const settledTests = computed(() => settledData.value.filter((item) => item.kind === 'test'));
 
 const workerStrips = computed<WorkerStripSet | null>(() => {
   const kind = workerMetric.value;
@@ -288,7 +316,7 @@ const workerStrips = computed<WorkerStripSet | null>(() => {
   return buildWorkerStrips(kind, {
     rows: workerRows.value,
     bands: resourceBands.value,
-    tests: testItems.value,
+    tests: settledTests.value,
     costs: executionCosts.value,
     sharded: sharded.value,
     leftOpen: leftOpenByLane.value,
@@ -413,13 +441,6 @@ function collapseAll(): void {
   expandedExecutions.value = new Set();
 }
 
-// Lock name → its color (assigned by the run's sorted lock order, so a lock
-// keeps its color across the brackets, the legend and the tooltip).
-const lockColorMap = computed(() => {
-  const map = new Map<string, string>();
-  runLocks.value.forEach((lock, i) => map.set(lock, lockColorHex(i)));
-  return map;
-});
 const hasLocks = computed(() => runLocks.value.length > 0);
 const showLocks = ref(false);
 
@@ -428,8 +449,8 @@ const NO_LOCK_COLORS: string[] = [];
 
 /** The colors for one bar's locks, in the run's stable lock order. */
 function lockColorsFor(item: TimelineItem): string[] {
-  if (!showLocks.value || item.kind !== 'test' || !item.locks?.length) return NO_LOCK_COLORS;
-  return runLocks.value.filter((lock) => item.locks!.includes(lock)).map((lock) => lockColorMap.value.get(lock)!);
+  if (!showLocks.value || item.kind !== 'test') return NO_LOCK_COLORS;
+  return barLockColors.value.get(item.key) ?? NO_LOCK_COLORS;
 }
 
 const containerRef = ref<HTMLElement | null>(null);
@@ -463,29 +484,21 @@ const {
   extraHeight,
 });
 
-// Header counts: tests (an attempt Playwright retried is not another test),
-// retries, hook sections that failed, wasted waits.
-const retryCount = computed(() => testItems.value.filter((d) => d.retried).length);
-const testCount = computed(() => testItems.value.length - retryCount.value);
-const hasHooks = computed(() => timelineData.value.some((d) => isHookKind(d.kind)));
+// Header counts, from the items as the results tell them: tests (an attempt
+// Playwright retried is not another test), retries, hook sections that failed,
+// wasted waits.
+const retryCount = computed(() => settledTests.value.filter((d) => d.retried).length);
+const testCount = computed(() => settledTests.value.length - retryCount.value);
+const hasHooks = computed(() => settledData.value.some((d) => isHookKind(d.kind)));
 const hookFailureCount = computed(
-  () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
+  () => settledData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
 );
-const waitCount = computed(() => timelineData.value.filter((d) => d.kind === 'wait').length);
-const pauseCount = computed(() => timelineData.value.filter((d) => d.kind === 'pause').length);
-const restartCount = computed(() => timelineData.value.filter((d) => d.kind === 'restart').length);
+const waitCount = computed(() => settledData.value.filter((d) => d.kind === 'wait').length);
+const pauseCount = computed(() => settledData.value.filter((d) => d.kind === 'pause').length);
+const restartCount = computed(() => settledData.value.filter((d) => d.kind === 'restart').length);
 
-// Tests and expanded step spans are always drawn (expanding a row is itself the
-// request to see its steps). Hook sections are drawn by default and a failed
-// one is drawn even with hooks off; wasted waits are drawn on request.
-const showHooks = ref(true);
-const showWaits = ref(false);
 const visibleItems = computed(() =>
-  timelineData.value.filter((item) => {
-    if (isHookKind(item.kind)) return showHooks.value || item.status === 'failed';
-    if (item.kind === 'wait') return showWaits.value;
-    return true;
-  }),
+  timelineData.value.filter((item) => isShownItem(item, { hooks: showHooks.value, waits: showWaits.value })),
 );
 
 /** A test with no hook section drawn: one shared array, so its bar keeps equal props. */
@@ -502,32 +515,14 @@ const shardsStarted = computed(() =>
     ? [...new Set(workerRows.value.flatMap((row) => (row.shardIndex == null ? [] : [row.shardIndex])))]
     : null,
 );
-const stuckCount = computed(() => testItems.value.filter((d) => d.stuck).length);
+const stuckCount = computed(() => settledTests.value.filter((d) => d.stuck).length);
 
-/** Whether an item is a test's hook section or one of its stops, which the test's own bar draws. */
-function isTestHook(item: TimelineItem): boolean {
-  return (item.kind === 'hook' || item.kind === 'fixture' || item.kind === 'pause') && item.testCaseId != null;
-}
-
-// Each test's visible hook sections and stops, drawn by the test's bar rather
-// than as bars of their own, so a section costs no component when the view
-// zooms. A stop is drawn whatever the hooks toggle says.
-const hooksByTest = computed(() => {
-  const map = new Map<number, TimelineItem[]>();
-  for (const item of visibleItems.value) {
-    if (!isTestHook(item)) continue;
-    const list = map.get(item.testCaseId!);
-    if (list) list.push(item);
-    else map.set(item.testCaseId!, [item]);
-  }
-  return map;
-});
 // Only the bars near the viewport are drawn: zoomed in on a large run, most of
 // them are off-screen, and every zoom step would re-position each one.
 const barItems = computed(() => {
   const { start, end } = renderRange.value;
   return visibleItems.value.filter(
-    (item) => !isTestHook(item) && item.start <= end && item.start + item.duration >= start,
+    (item) => !isTestSection(item) && item.start <= end && item.start + item.duration >= start,
   );
 });
 
@@ -544,6 +539,10 @@ function attemptsFor(item: TimelineItem): TimelineItem[] {
   return item.attemptKeys.flatMap((key) => map.get(key) ?? []);
 }
 
+/**
+ * The test's hook sections and stops (`hooksByTest`), drawn by its bar rather than as bars of their own, so a section
+ * costs no component when the view zooms.
+ */
 function hooksFor(item: TimelineItem): TimelineItem[] {
   return item.kind === 'test' && item.testCaseId != null
     ? (hooksByTest.value.get(item.testCaseId) ?? NO_HOOKS)

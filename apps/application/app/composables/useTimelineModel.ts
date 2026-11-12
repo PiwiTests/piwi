@@ -4,7 +4,7 @@ import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted
 import { buildStepSpans } from '~/utils/step-spans';
 import { stepPhases } from '#shared/step-tree';
 import { pauseSpans, pausedOverlap } from '#shared/step-analysis';
-import { formatTimelineTime } from '~/utils/timeline';
+import { formatTimelineTime, lockColorHex } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
 import { isStuckAttempt, testAttemptKey } from '~/utils/test-attempts';
 import { isFlakyExecution } from '#shared/utils/test-counts';
@@ -28,6 +28,24 @@ export function isHookKind(kind: TimelineItemKind): boolean {
 /** Whether an item is an empty stretch of a lane rather than something that ran. */
 export function isGapKind(kind: TimelineItemKind): boolean {
   return kind === 'idle' || kind === 'restart';
+}
+
+/** Whether an item is a test's hook section or one of its stops, which the test's own bar draws. */
+export function isTestSection(item: Pick<TimelineItem, 'kind' | 'testCaseId'>): boolean {
+  return (item.kind === 'hook' || item.kind === 'fixture' || item.kind === 'pause') && item.testCaseId != null;
+}
+
+/**
+ * Whether an item is drawn: a hook section with the hooks shown, or when it failed, whatever the toggle says; a wasted
+ * wait with the waits shown; anything else always.
+ */
+export function isShownItem(
+  item: Pick<TimelineItem, 'kind' | 'status'>,
+  shown: { hooks: boolean; waits: boolean },
+): boolean {
+  if (isHookKind(item.kind)) return shown.hooks || item.status === 'failed';
+  if (item.kind === 'wait') return shown.waits;
+  return true;
 }
 
 /** A test next to a gap, as the gap's tooltip names it. */
@@ -232,6 +250,8 @@ export interface TimelineModelInput {
   now?: number | null;
   /** Each test's usual duration by `usualDurationKey`, for the ghost behind its running attempt. */
   usualDurations?: ReadonlyMap<string, number> | null;
+  /** Whether the hook sections are shown (the default): hidden, a test's bar draws its failed ones and its stops. */
+  showHooks?: boolean;
 }
 
 /** The usual duration of a running attempt's test: what its Stuck? mark says, else what the run's project knows. */
@@ -579,6 +599,13 @@ function linkAttempts(groups: Iterable<TimelineItem[]>): void {
  */
 export function useTimelineModel(props: TimelineModelInput): {
   timelineData: ComputedRef<TimelineItem[]>;
+  /**
+   * Every item as the results tell it, each running attempt's bar at its start: the same array as the clock ticks, for
+   * what reads the items but not how far a running bar reaches (the header's counts, the strips under the workers).
+   */
+  settledData: ComputedRef<TimelineItem[]>;
+  /** Each test's hook sections and stops its bar draws (`showHooks`), by `testCaseId`: the same arrays as the clock ticks. */
+  hooksByTest: ComputedRef<Map<number, TimelineItem[]>>;
   workerRows: ComputedRef<WorkerRow[]>;
   laneCount: ComputedRef<number>;
   shardGroups: ComputedRef<ShardGroup[]>;
@@ -591,6 +618,13 @@ export function useTimelineModel(props: TimelineModelInput): {
    */
   knownUntil: ComputedRef<number | null>;
   runLocks: ComputedRef<string[]>;
+  /** Each lock's color, by its place in the run's sorted lock order, so a lock keeps its color everywhere. */
+  lockColorMap: ComputedRef<Map<string, string>>;
+  /**
+   * The colors of the locks each locked test bar's execution held, by the bar's key, in the run's lock order: the same
+   * arrays as the clock ticks.
+   */
+  barLockColors: ComputedRef<Map<string, string[]>>;
   lockSummary: ComputedRef<LockSummary[]>;
 } {
   /** Effective wasted-wait patterns (falls back to the built-in default). */
@@ -907,9 +941,52 @@ export function useTimelineModel(props: TimelineModelInput): {
     return [...locks].sort((a, b) => a.localeCompare(b));
   });
 
+  const lockColorMap = computed(() => new Map(runLocks.value.map((lock, i) => [lock, lockColorHex(i)])));
+
+  // From the settled items, by the bar's key, which a running bar's copy keeps: one array per bar as the clock ticks.
+  const barLockColors = computed(() => {
+    const map = new Map<string, string[]>();
+    for (const item of baseData.value) {
+      if (item.kind !== 'test' || !item.locks?.length) continue;
+      const held = item.locks;
+      map.set(
+        item.key,
+        runLocks.value.filter((lock) => held.includes(lock)).map((lock) => lockColorMap.value.get(lock)!),
+      );
+    }
+    return map;
+  });
+
+  // From the settled items: one array per bar as the clock ticks.
+  const hooksByTest = computed(() => {
+    const shown = { hooks: props.showHooks ?? true, waits: false };
+    const map = new Map<number, TimelineItem[]>();
+    for (const item of baseData.value) {
+      if (!isTestSection(item) || !isShownItem(item, shown)) continue;
+      const list = map.get(item.testCaseId!);
+      if (list) list.push(item);
+      else map.set(item.testCaseId!, [item]);
+    }
+    return map;
+  });
+
   const lockSummary = computed(() => computeLockSummary(baseData.value, maxTime.value));
 
   const origin = computed(() => (hasStartedAt.value ? minStartedAt.value : null));
 
-  return { timelineData, workerRows, laneCount, shardGroups, maxTime, origin, knownUntil, runLocks, lockSummary };
+  return {
+    timelineData,
+    settledData: baseData,
+    hooksByTest,
+    workerRows,
+    laneCount,
+    shardGroups,
+    maxTime,
+    origin,
+    knownUntil,
+    runLocks,
+    lockColorMap,
+    barLockColors,
+    lockSummary,
+  };
 }
