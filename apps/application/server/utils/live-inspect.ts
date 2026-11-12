@@ -197,7 +197,7 @@ function parsedSnapshot(held: HeldSnapshot): TraceFrameSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const shown = hideFrameSnapshotSecrets(value as Record<string, unknown>, { secrets: [] });
   if (!shown) return null;
-  const snapshot = shown as TraceFrameSnapshot;
+  const snapshot = shown as unknown as TraceFrameSnapshot;
   return {
     ...snapshot,
     callId: held.call,
