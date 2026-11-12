@@ -4316,6 +4316,122 @@ const SCENES = [
     },
   },
   {
+    name: 'settings-title-prefix',
+    description: 'Project → Settings → Issue tracker: the Title prefix field, set to [Piwi] on the binding',
+    // The binding is answered as bound to CHK / Bug with the prefix the issues are filed under.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings&section=issue-tracker',
+    viewport: { width: 1280, height: 2400 },
+    of: '[data-shot="issue-tracker-destination"]',
+    pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            labels: ['piwi'],
+            fieldDefaults: JIRA_FIELD_DEFAULTS,
+            titlePrefix: '[Piwi]',
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      await page.locator('[data-shot="project-integration-binding"]').waitFor({ timeout: 20000 });
+      await page.getByLabel('Title prefix').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    {
+      name: 'create-dialog-prefixed',
+      of: '[role="dialog"]',
+      description: 'Create issue modal: the title carries the prefix',
+    },
+    {
+      name: 'ticket-preview-filed-by',
+      of: '[data-shot="issue-preview"]',
+      description: 'Create issue modal: the preview ends with the line naming who files the issue',
+    },
+  ].map(({ name, of, description }) => ({
+    name,
+    description,
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/4',
+    viewport: { width: 1280, height: 1300 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+        route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+      );
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        const markdown = String(draft.markdown ?? '').replace('Filed from Piwi.', 'Filed by Priya Shah from Piwi.');
+        await route.fulfill({
+          json: {
+            ...draft,
+            title: draft.title.startsWith('[Piwi] ') ? draft.title : `[Piwi] ${draft.title}`,
+            markdown,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            projectBound: true,
+            fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+          },
+        });
+      });
+      await page.locator('[data-shot="issue-line-create"]').first().click();
+      await page.getByRole('dialog').waitFor();
+      await page
+        .getByText('What happened')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await page.locator('[data-shot="issue-preview"] *').evaluateAll((nodes) => {
+        for (const node of nodes) node.scrollTop = node.scrollHeight;
+      });
+      await settle();
+      await shoot(undefined, { of, pad: 0 });
+    },
+  })),
+  {
+    name: 'issue-line-filed-by',
+    description: 'Cluster situation block: the Issue line names the issue and says who filed it and when',
+    prepare: async ({ base, request }) => {
+      await pinSceneIssue({ base, request }, { clusterId: 10, key: 'PROJ-128', title: 'Checkout button is disabled' });
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await page.route('**/api/failure-clusters/10', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const cluster = await (await route.fetch()).json();
+        if (cluster.knownIssue) {
+          cluster.knownIssue.filedBy = 'Priya Shah';
+          cluster.knownIssue.automatic = false;
+          cluster.knownIssue.linkedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+        }
+        await route.fulfill({ json: cluster });
+      });
+      // The cluster page is server-rendered on a direct load, which the page cannot answer for:
+      // opening it from the app fetches it in the browser.
+      await goto('/');
+      await page.evaluate(() => window.useNuxtApp().$router.push('/failure-clusters/10'));
+      await page.locator('[data-testid="issue-line-filed-by"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'project-integration-auto-create',
     description:
       'Project → Settings → Issue tracker: automatic creation with two rules, and the preview of what they file',

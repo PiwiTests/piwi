@@ -695,7 +695,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </p>
           </UFormField>
 
-          <div>
+          <div data-shot="issue-preview">
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
             <MarkdownPreview :text="previewMarkdown" max-height="16rem" />
           </div>

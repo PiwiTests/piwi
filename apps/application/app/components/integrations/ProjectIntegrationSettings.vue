@@ -294,7 +294,7 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
       </div>
       <div v-else class="space-y-6">
         <!-- Destination -->
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-2" data-shot="issue-tracker-destination">
           <UFormField label="Connection">
             <USelectMenu v-model="form.connectionId" :items="connectionItems" value-key="value" class="w-full" />
           </UFormField>
