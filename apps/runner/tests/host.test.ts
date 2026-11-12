@@ -10,8 +10,10 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { resetDesktopRunTarget } from '@piwitests/editor/run-target';
+import { linkedFolders, resetDesktopRunTarget, useLinks } from '@piwitests/editor/run-target';
+import { ShellRuns } from '@piwitests/editor/shell-runs';
 import { isLoopbackHost, runnerHandler } from '../server/host';
+import { RUNNER_RUN_CHANNEL_PREFIX, RUNNER_RUNS_WORDS } from '../server/runs';
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
 const SHELL = { 'x-piwi-token': TOKEN };
@@ -34,6 +36,8 @@ let root: string;
 let secret: string;
 let server: http.Server;
 let base: string;
+/** The hub of the runs the shell starts, as the host serves it: none until a test opens one. */
+let hub: ShellRuns | null = null;
 
 beforeEach(async () => {
   const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-runner-host-')));
@@ -43,12 +47,14 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(root, 'index.html'), '<!doctype html><title>Piwi Runner</title>');
   fs.writeFileSync(path.join(root, '_nuxt', 'entry.js'), 'export {};');
   fs.writeFileSync(secret, 'not for the window');
-  server = http.createServer(runnerHandler({ token: TOKEN, root }));
+  server = http.createServer(runnerHandler({ token: TOKEN, root, runs: () => hub }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
 afterEach(async () => {
+  hub?.close();
+  hub = null;
   resetDesktopRunTarget();
   await new Promise<void>((resolve) => {
     server.closeAllConnections();
@@ -180,6 +186,67 @@ describe('the run-target routes', () => {
     expect((await call('GET', '/api/projects', SHELL)).status).toBe(404);
     expect((await call('GET', '/api/projects')).status).toBe(404);
     expect((await call('GET', '/__piwi/other')).status).toBe(404);
+  });
+});
+
+describe('the hub of the runs the shell starts', () => {
+  const open = async () => {
+    hub = await ShellRuns.start({
+      token: TOKEN,
+      version: '0.0.0',
+      folders: linkedFolders,
+      words: RUNNER_RUNS_WORDS,
+      folderPrefix: RUNNER_RUN_CHANNEL_PREFIX,
+    });
+    return hub;
+  };
+
+  test('names its run channel and the picks address to the shell alone, with the token', async () => {
+    const runs = await open();
+    expect((await call('GET', '/api/desktop/run-channel')).status).toBe(401);
+    const asBrowser = await call('GET', '/api/desktop/run-channel', { ...SHELL, origin: 'http://127.0.0.1:1' });
+    expect(asBrowser.status).toBe(403);
+    const asShell = await call('GET', '/api/desktop/run-channel', SHELL);
+    expect(asShell.status).toBe(200);
+    const port = new URL(base).port;
+    expect(JSON.parse(asShell.text)).toEqual({
+      runChannel: runs.runChannel,
+      picks: `http://127.0.0.1:${port}/api/desktop/runs/picks#${runs.picksToken()}`,
+      hub: { url: expect.stringMatching(/^ws:\/\/127\.0\.0\.1:/), token: TOKEN },
+    });
+    expect(path.basename(path.dirname(runs.runChannel!.split('#')[0]!))).toMatch(/^piwi-runner-run-/);
+  });
+
+  test('names no channel before the hub opens, so a run starts without one', async () => {
+    const answer = await call('GET', '/api/desktop/run-channel', SHELL);
+    expect(JSON.parse(answer.text)).toEqual({ runChannel: null, picks: null, hub: null });
+    expect((await call('POST', '/api/desktop/runs/commands', SHELL_HEADERS, '{}')).status).toBe(503);
+  });
+
+  test('takes the window’s commands and a run’s picks behind their tokens', async () => {
+    const runs = await open();
+    expect(
+      (await call('POST', '/api/desktop/runs/commands', { 'content-type': 'application/json' }, '{}')).status,
+    ).toBe(401);
+    expect((await call('POST', '/api/desktop/runs/commands', SHELL_HEADERS, '{}')).status).toBe(404);
+    const pick = JSON.stringify({ kind: 'locator', text: "getByText('Pay')" });
+    const picks = { authorization: `Bearer ${runs.picksToken()}`, 'content-type': 'application/json' };
+    expect((await call('POST', '/api/desktop/runs/picks', picks, pick)).status).toBe(200);
+    expect((await call('GET', '/api/desktop/run-target', picks)).status).toBe(401);
+    expect((await call('GET', '/api/desktop/run-channel', picks)).status).toBe(401);
+  });
+
+  test('takes the folders the shell links to the instance’s projects as its runs’ folders', async () => {
+    const runs = await open();
+    const folder = path.dirname(root);
+    useLinks(new Map([[4, folder]]));
+    expect(runs.live()[0]?.roots).toEqual([folder]);
+    expect(runs.live()[0]?.client).toBe('Piwi Runner');
+  });
+
+  test('serves no other route of the dashboard’s desktop build', async () => {
+    await open();
+    expect((await call('GET', '/api/desktop/live', SHELL)).status).toBe(404);
   });
 });
 

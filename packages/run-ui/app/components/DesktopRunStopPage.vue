@@ -18,13 +18,8 @@ import { isViewFrameData } from '@piwitests/core/run-view';
 import { driverOf, givesBack } from '@piwitests/run-model/presence';
 import { stopError } from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import type { DesktopFrame, DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import {
-  desktopImagePoint,
-  desktopSay,
-  isDesktopRunImage,
-  type DesktopLiveImageHandle,
-} from '~/utils/desktop-run-view';
+import type { DesktopFrame, DesktopRunAnswer } from '../composables/useDesktopRunHub';
+import { desktopImagePoint, desktopSay, isDesktopRunImage, type DesktopLiveImageHandle } from '../utils/run-view';
 
 const props = defineProps<{
   runRef: string;

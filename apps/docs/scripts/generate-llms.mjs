@@ -36,6 +36,7 @@ const GENERATED = new Set([
 const jiti = createJiti(import.meta.url);
 const { sidebars } = await jiti.import(join(docsRoot, '.vitepress/navigation.ts'));
 const { demoExamplesFor } = await jiti.import(join(docsRoot, '../application/shared/demo/demo-examples.mjs'));
+const { downloadsMarkdown } = await jiti.import(join(docsRoot, '../application/shared/app-downloads.mjs'));
 
 const config = readFileSync(join(docsRoot, '.vitepress/config.mts'), 'utf8');
 const title = /^\s*title: '([^']+)'/m.exec(config)?.[1];
@@ -86,7 +87,7 @@ writeFileSync(join(docsRoot, 'public/llms.txt'), index.join('\n'));
 
 // llms-full.txt: the hand-written pages, each introduced by its URL. A snippet
 // include (`<<< @/snippets/file{lang}` or `… [tab]`) becomes a fenced block,
-// <DemoExamples /> becomes the page's list of demo links, and the <Needs> chips
+// <DemoExamples /> becomes the page's list of demo links, <DownloadApps /> the installers' links, and the <Needs> chips
 // and the configuration widgets render nothing as text.
 const inline = (body, page) =>
   body
@@ -95,6 +96,10 @@ const inline = (body, page) =>
         .map((example) => `- [${example.title}](${SITE}/demo${example.route}): ${example.shows}`)
         .join('\n'),
     )
+    .replace(/^[ \t]*<DownloadApps\b([^>]*)\/>[ \t]*$/gm, (_, attrs) => {
+      const app = /\bapp="(\w+)"/.exec(attrs)?.[1];
+      return downloadsMarkdown(app ? [app] : undefined).join('\n');
+    })
     .replace(/^([ \t]*)<<< @\/snippets\/([\w.-]+)(?:\{(\w+)\})?(?: \[([^\]]+)\])?[ \t]*$/gm, (_, indent, file, lang, tab) => {
       const code = readFileSync(join(docsRoot, 'snippets', file), 'utf8').trimEnd();
       const fence = `\`\`\`${lang ?? file.split('.').pop()}${tab ? ` [${tab}]` : ''}`;

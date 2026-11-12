@@ -31,14 +31,15 @@ function archOf(name) {
  * @param {string} release.pubDate When the manifest is written (ISO 8601).
  * @param {{ name: string, url: string }[]} release.assets The release's files: name and download URL.
  * @param {Record<string, string>} release.signatures The text of each signature file, by the name of the file it signs.
- * @param {string} [release.prefix] The start of every file name of the app's.
+ * @param {string} [release.prefix] The start of every file name of the app's (`ASSET_NAME_PATTERN`, which carries no
+ *   version: the release's own files are the ones listed).
  * @returns {{ version: string, pub_date: string, platforms: Record<string, { signature: string, url: string }> }}
  */
 export function runnerUpdateManifest({ version, pubDate, assets, signatures, prefix = 'Piwi-Runner_' }) {
   const platforms = {};
   const fallbacks = {};
   for (const asset of assets) {
-    if (!asset.name.startsWith(`${prefix}${version}_`)) continue;
+    if (!asset.name.startsWith(prefix)) continue;
     const kind = PACKAGES.find((p) => asset.name.endsWith(p.end));
     const signature = signatures[asset.name];
     const arch = archOf(asset.name);
@@ -48,7 +49,7 @@ export function runnerUpdateManifest({ version, pubDate, assets, signatures, pre
     if (kind.fallback) fallbacks[`${kind.os}-${arch}`] = entry;
   }
   if (Object.keys(platforms).length === 0) {
-    throw new Error(`no signed ${prefix}${version}_ package on the release`);
+    throw new Error(`no signed ${prefix} package on the release of ${version}`);
   }
   return { version, pub_date: pubDate, platforms: { ...fallbacks, ...platforms } };
 }

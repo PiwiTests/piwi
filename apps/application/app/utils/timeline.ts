@@ -3,7 +3,7 @@
  * and SVG layout constants). Kept dependency-free so the timeline composables
  * and the presentational sub-components can all share one source of truth.
  */
-import { STATUS_PALETTE, statusPalette } from './status-palette';
+import { STATUS_PALETTE, statusPalette } from '@piwitests/run-ui/status-palette';
 import { stopWords } from './stop-words';
 
 /** Fixed pixel geometry for the timeline SVG. */

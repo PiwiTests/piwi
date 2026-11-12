@@ -4,36 +4,38 @@ import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { CONTROLS } from '@piwitests/run-model/controls';
 import {
-  DESKTOP_RUN_ICONS,
-  DESKTOP_TONE_COLORS,
   desktopArgsAttended,
-  desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
-  desktopImagePoint,
-  desktopLaneKey,
-  desktopLiveInstance,
-  desktopLiveText,
-  desktopPickItem,
-  desktopRunName,
   desktopRowWorker,
   desktopHeldSessions,
   desktopRunHoldRefusal,
   desktopRunHolds,
   desktopRunOf,
   desktopRunRef,
-  desktopSaidAround,
-  desktopSay,
   desktopSessionsOfRun,
   desktopEditorRunOf,
+  desktopShownRefs,
+  desktopStopLink,
+} from '../../app/utils/desktop-run-view';
+import {
+  DESKTOP_RUN_ICONS,
+  DESKTOP_TONE_COLORS,
+  desktopCodeItem,
+  desktopImagePoint,
+  desktopLaneKey,
+  desktopLiveInstance,
+  desktopLiveText,
+  desktopPickItem,
+  desktopRunName,
+  desktopSaidAround,
+  desktopSay,
   desktopShareOffered,
   desktopShareWarning,
-  desktopShownRefs,
   desktopWaitedFor,
-  desktopStopLink,
   desktopStopSaid,
   isDesktopRunImage,
-} from '../../app/utils/desktop-run-view';
+} from '@piwitests/run-ui/run-view';
 import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 
@@ -490,7 +492,7 @@ describe('the window’s stream of its runs', () => {
 
   async function hub() {
     vi.resetModules();
-    const { useDesktopRunHub } = await import('../../app/composables/useDesktopRunHub');
+    const { useDesktopRunHub } = await import('../../../../packages/run-ui/app/composables/useDesktopRunHub');
     return useDesktopRunHub();
   }
 

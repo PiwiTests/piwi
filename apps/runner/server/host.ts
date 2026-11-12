@@ -2,13 +2,17 @@
  * Piwi Runner's Node host, on `node:http`: what the Tauri shell starts as its sidecar and the window talks to.
  * It answers the shell's readiness probe (`/api/health`, proving it holds the access token), the run-target routes, the
  * window's session and its two event streams (`serveRunTarget` of `@piwitests/editor`, the same routes and guard the
- * dashboard's desktop build serves), and the window's own files. It has no database, no account and no other route.
+ * dashboard's desktop build serves), the hub of the runs the shell starts (`serveShellRuns`: the run channel the shell
+ * names in each run, the window's stream and commands, and the runs' picks), and the window's own files. It has no
+ * database, no account and no other route.
  */
 import * as fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as path from 'node:path';
 import { challengeAnswer, headersOf } from '@piwitests/editor/host-guard';
 import { serveRunTarget } from '@piwitests/editor/run-target-http';
+import type { ShellRuns } from '@piwitests/editor/shell-runs';
+import { serveShellRuns } from '@piwitests/editor/shell-runs-http';
 
 /** The readiness probe the shell sends before it loads the window's session. */
 export const HEALTH_PATH = '/api/health';
@@ -18,6 +22,8 @@ export interface RunnerHostOptions {
   token: string;
   /** The folder of the window's built files, with its `index.html`. */
   root: string;
+  /** The hub of the runs the shell starts, once open; none until then. */
+  runs?: () => ShellRuns | null;
 }
 
 const TYPES: Record<string, string> = {
@@ -123,6 +129,8 @@ export function runnerHandler(options: RunnerHostOptions): (req: IncomingMessage
         return;
       }
       if (await serveRunTarget(req, res, options.token)) return;
+      const runs = options.runs?.() ?? null;
+      if (await serveShellRuns(req, res, options.token, runs, req.socket.localPort ?? 0)) return;
       if (pathname.startsWith('/api/') || pathname.startsWith('/__piwi/')) {
         req.resume();
         sendJson(res, 404, { message: 'Not found' });

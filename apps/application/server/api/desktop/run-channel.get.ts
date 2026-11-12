@@ -6,7 +6,8 @@
 import { requireAuth } from '../../utils/auth';
 import { apiError } from '../../utils/api-error';
 import { desktopRuns } from '../../utils/desktop-runs';
-import { isBrowserRequest } from '../../utils/desktop-access';
+import { hostRequestOf } from '../../utils/desktop-access';
+import { answerRunChannel, messageOf } from '@piwitests/editor/shell-runs-routes';
 
 defineRouteMeta({
   openAPI: {
@@ -21,15 +22,9 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  if (isBrowserRequest(event))
-    throw apiError({ statusCode: 403, message: 'The desktop shell alone reads the run channel' });
   setResponseHeader(event, 'cache-control', 'no-store');
-  const runs = await desktopRuns();
   const port = process.env.NITRO_PORT || process.env.PORT || '3000';
-  const hub = runs?.live()[0];
-  return {
-    runChannel: runs?.runChannel ?? null,
-    picks: runs?.picksAddress(port) ?? null,
-    hub: hub ? { url: hub.url, token: hub.token } : null,
-  };
+  const answer = answerRunChannel(await desktopRuns(), { headers: hostRequestOf(event).headers }, port);
+  if (answer.status !== 200) throw apiError({ statusCode: answer.status, message: messageOf(answer) });
+  return answer.body;
 });

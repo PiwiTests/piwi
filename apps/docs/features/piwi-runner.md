@@ -15,14 +15,15 @@ keeps no database and serves no dashboard.
 
 ## Where it is
 
-Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
-`Piwi-Runner_…`:
+<DownloadApps app="runner" />
 
-| OS | Installer |
-|----|-----------|
-| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
-| **macOS** 13.5+ (Apple silicon) | `.dmg` |
-| **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
+What each installer needs:
+
+| OS                              | Installer                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| **Windows**                     | `.exe` (per-user, no admin) or `.msi` (per-machine)                               |
+| **macOS** 13.5+ (Apple silicon) | `.dmg`                                                                            |
+| **Linux** (x86-64)              | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
 The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
 Windows, **More info** then **Run anyway** in SmartScreen.
@@ -37,11 +38,15 @@ Piwi Runner files can reach the release a few minutes after the desktop app's; u
 or fails, and the next one finds them. On a desktop that shows no tray icon, install a new version from the latest release over
 the old one.
 
-## Beside the desktop app
+## Piwi Runner or the desktop app
 
-Piwi Runner and the desktop app install side by side, and neither installer replaces the other: each has its own
-name, install folder, Linux package, settings, linked folders and keychain entry. Connected to the same instance, both
-are listed in **Connected apps**, and a request goes to the one you pick on the page.
+You need one of the two, not both. The desktop app takes the same requests, with the same confirmation and checks,
+and adds the dashboard on your machine and a requested run you can pause, step and watch live from its window, where
+Piwi Runner shows the run's output and **Stop**. Piwi Runner is for a machine that only runs what the instance asks.
+
+Installed together, they live side by side, and neither installer replaces the other: each has its own name, install
+folder, Linux package, settings, linked folders and keychain entry. Connected to the same instance, both are listed in
+**Connected apps**, and a request goes to the one you pick on the page.
 
 ## Connect it
 
@@ -49,6 +54,22 @@ Its window connects to an instance the way the desktop app does: enter the insta
 then allow **Piwi Runner** on the instance's page with the code the window shows. Its key stays in the operating
 system's keychain. Each project's folder is linked on the first request for it. The rest, from the confirmation to
 **Stop**, is described in [Run on my machine](./run-on-my-machine#in-the-app).
+
+## Pause and watch a run
+
+Each run Piwi Runner starts shows in its window live, as the desktop app's runs show in its
+[Local runs tray](./desktop-runs): each worker's test and where it stands, **Pause**, **Step**, **Resume** and
+**Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch live**. A `page.pause()`,
+a step or a breakpoint waits in the window until you answer it, and the window comes to the front. **Hold failures**,
+on each running run you attend and off until you turn it on, keeps a failing test at its line too, until you resume
+it; a run in UI mode, or one that repeats its tests past a failure, offers none. A run that goes on while the window
+reloads shows again, with **Stop**.
+**Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
+writes no file. **Share live** shows the run's stops to your team on the instance it reports to, as in the desktop
+app.
+
+Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an
+editor starts, not Piwi Runner's.
 
 ## In the tray
 

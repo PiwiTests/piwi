@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { computed, ref, toValue } from 'vue';
 import type { TestCaseResult } from '../../types/api';
 import { isFailedStatus } from '#shared/utils/test-counts';
-import { statusPaletteKey } from '../../app/utils/status-palette';
+import { statusPaletteKey } from '@piwitests/run-ui/status-palette';
 
 /** The composable with its Nuxt auto-imports in place; a fresh import per case. */
 async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown) {

@@ -9,8 +9,8 @@
  * nothing.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopLiveText, desktopShareOffered, desktopShareWarning } from '~/utils/desktop-run-view';
+import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
+import { desktopLiveText, desktopShareOffered, desktopShareWarning } from '../utils/run-view';
 
 const props = defineProps<{ session: HubSession }>();
 const emit = defineEmits<{ announce: [text: string] }>();

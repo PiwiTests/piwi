@@ -1,5 +1,5 @@
 /** Shared geometry helpers, palette and series definitions for the SVG trend charts. */
-import { STATUS_PALETTE } from './status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
 /** One plotted series: how it is drawn and how the legend names it. */
 export interface ChartSeries<K extends string = string> {

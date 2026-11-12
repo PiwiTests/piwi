@@ -1,6 +1,6 @@
 /** How the panel names and colors what an answer shows: entity kinds, outcomes, routes. */
 import type { AssistantEntityType } from '#shared/assistant';
-import { statusPaletteKey, type StatusPaletteKey } from '~/utils/status-palette';
+import { statusPaletteKey, type StatusPaletteKey } from '@piwitests/run-ui/status-palette';
 
 /** What a person calls each kind of entity. */
 export const ASSISTANT_ENTITY_LABELS: Record<AssistantEntityType, string> = {

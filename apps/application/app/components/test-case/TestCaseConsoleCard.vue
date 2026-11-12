@@ -5,7 +5,7 @@
  * entry, ANSI-stripped) and the fold state persists per user; without one it is
  * a plain always-open card.
  */
-import { stripAnsi } from '~/utils/text-format';
+import { stripAnsi } from '@piwitests/run-ui/ansi';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 

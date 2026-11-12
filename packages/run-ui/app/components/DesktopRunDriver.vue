@@ -5,7 +5,7 @@
  * while an agent may act on it, or **Give back** while this window drives it (`mine`). A press waits while a command of
  * the worker is on its way (`busy`), the button keeping the focus.
  */
-import { desktopSay } from '~/utils/desktop-run-view';
+import { desktopSay } from '../utils/run-view';
 
 const props = defineProps<{
   /** Who drives the stop, in the run model's words. */

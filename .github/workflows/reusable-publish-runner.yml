@@ -17,9 +17,10 @@ on:
 permissions:
   contents: read
 
-# The release's file names: "Piwi-Runner_<version>_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…".
+# The release's file names: "Piwi-Runner_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…", with no
+# version: the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs).
 env:
-  ASSET_NAME_PATTERN: 'Piwi-Runner_[version]_[arch][setup][ext]'
+  ASSET_NAME_PATTERN: 'Piwi-Runner_[arch][setup][ext]'
 
 jobs:
   runner:
@@ -238,7 +239,7 @@ jobs:
             const listed = await github.paginate(github.rest.repos.listReleaseAssets, {
               owner, repo, release_id: release.data.id, per_page: 100,
             });
-            const sigs = listed.filter((a) => a.name.startsWith(`Piwi-Runner_${version}_`) && a.name.endsWith('.sig'));
+            const sigs = listed.filter((a) => a.name.startsWith('Piwi-Runner_') && a.name.endsWith('.sig'));
             if (sigs.length === 0) {
               core.info('No Piwi Runner update signature on the release (no signing key): no latest-runner.json');
               return;

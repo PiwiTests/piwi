@@ -248,7 +248,7 @@ describe('letterAvatarColor', () => {
   });
 
   test('uses no hue of a test outcome, a status color, the accent or its neighbors', () => {
-    const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../../../../packages/run-ui/app/assets/css/run-ui.css', import.meta.url), 'utf8');
     const config = readFileSync(new URL('../../app/app.config.ts', import.meta.url), 'utf8');
     const statusHues = [...css.matchAll(/--color-status-[\w-]+:\s*var\(--color-([a-z]+)-\d+\)/g)].map((m) => m[1]);
     const configHues = [...config.matchAll(/^\s+(?:primary|success|error|warning|flaky|info): '([a-z]+)'/gm)].map(

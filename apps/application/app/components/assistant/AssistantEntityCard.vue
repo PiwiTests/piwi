@@ -6,7 +6,7 @@
  */
 import { assistantEntityKey, assistantEntityRoute, type AssistantEntityRef } from '#shared/assistant';
 import { ASSISTANT_ENTITY_LABELS, assistantOutcome } from '~/utils/assistant/display';
-import { STATUS_PALETTE } from '~/utils/status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
 const props = defineProps<{
   entity: AssistantEntityRef;

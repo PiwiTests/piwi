@@ -12,7 +12,7 @@ import {
   passRateTone as sharedPassRateTone,
   type PassRateTone as SharedPassRateTone,
 } from '#shared/status-colors';
-import { STATUS_PALETTE } from './status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
 /** Lowest percentage that reads as good. */
 export const PASS_RATE_GOOD = SHARED_PASS_RATE_GOOD;
