@@ -24,8 +24,8 @@ are on [Pause and step from the editor](./editor-run-control).
 | **Assert a region** | `await expect(…).toMatchAriaSnapshot(…)` with the ARIA snapshot of the region you pick | The test's window |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
-The first four need the pause bar, so a headed browser: a run Piwi starts with breakpoints is headed. **Mock a
-request** works headless too.
+The first four need the pause bar, so a headed browser: choose **Run headed**
+([How a run starts](./editor-runs#how-a-run-starts)). **Mock a request** works headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
   in the palette while a stop offers them (**Piwi: Assert in the stopped test's page**, **Piwi: Mock a request of the
@@ -106,7 +106,7 @@ counted, and a line without a locator says nothing.
 
 In a run Piwi started, a failing test holds its page once the test function, its hooks and its fixtures are done,
 instead of closing it, when someone can see it: in a headed browser, where the pause bar shows the failure (a run
-started with breakpoints, or for a spec with `page.pause()`, is headed, and its
+started with **Run headed**, or for a spec with `page.pause()`, is headed; with breakpoints or a `page.pause()`, its
 [**Hold failures**](/guide/concepts#hold-failures) is on from its start, unless
 [your run options](./editor-runs#how-a-run-starts) choose otherwise), or while you turn the run's Hold failures on,
 from the editor (**Piwi: Hold failures: turn on or off for the run**, **Tools → Piwi → Turn Hold Failures On or Off**)

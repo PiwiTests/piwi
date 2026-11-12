@@ -655,6 +655,57 @@ class GlueTest {
     private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
 
     @Test
+    fun `the running line of a watched slot is marked until its test ends or stops, or its run ends`() {
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Pay' })", specUri, 7)
+        val line = RunningLine("ed-1", 1, 3, call)
+        val lines = Glue.withRunningLine(emptyMap(), line)
+        assertEquals(mapOf(("ed-1" to 1) to line), lines)
+        // A line with no call goes; another slot's stays.
+        val other = RunningLine("ed-1", 0, 2, call.copy(line = 9))
+        assertEquals(mapOf(("ed-1" to 0) to other), Glue.withRunningLine(lines + (("ed-1" to 0) to other), line.copy(call = null)))
+        assertEquals("Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })", Glue.runningLineText(line))
+        assertEquals("Piwi: Worker 2 runs ${"x".repeat(59)}…", Glue.runningLineText(line.copy(call = call.copy(title = "x".repeat(80)))))
+
+        val running = mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest())))
+        assertEquals(listOf(line), Glue.runningLinesShown(lines, running))
+        // The test ended: its worker runs another, or none.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest().copy(id = "t2"))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "between")))))
+        // Another worker took the slot (a retry), the test stopped, or the run ended.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(4, 1, "running", runTest())))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "stopped", runTest(), stopAt(specUri, 7))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest()), ended = true))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, emptyMap()))
+    }
+
+    @Test
+    fun `the Page tab says what the watched slot's page says, each test named before its first line`() {
+        val output = Glue.PageOutput()
+        output.watching("ed-1", 1)
+        fun event(kind: String, text: String? = null, test: String? = "t1", worker: Int = 3) =
+            LaneViewLayer("ed-1", 1, worker, test, "events", event = PageEvent(kind, text))
+        assertEquals(
+            listOf("Worker 2 · checkout › pays", "  Console error: TypeError: x is undefined"),
+            output.layer(event("console", "TypeError: x is undefined"), runTest()),
+        )
+        assertEquals(listOf("  Uncaught error: boom"), output.layer(event("page-error", "boom"), runTest()))
+        // A request's lines and the other layers are not the page's own words.
+        assertEquals(emptyList<String>(), output.layer(event("request-failed"), runTest()))
+        assertEquals(emptyList<String>(), output.layer(LaneViewLayer("ed-1", 1, 3, "t1", "calls"), runTest()))
+        // The next test is named, by its id while the session does not name it yet.
+        assertEquals(listOf("Worker 2 · t2", "  Console error: again"), output.layer(event("console", "again", test = "t2"), runTest()))
+        assertEquals(
+            listOf("  12 more events were not sent: too many at once."),
+            output.layer(LaneViewLayer("ed-1", 1, 3, "t2", "events", event = PageEvent("dropped", count = 12)), null),
+        )
+        // A watch of the same slot keeps going; another slot's names its test again.
+        output.watching("ed-1", 1)
+        assertEquals(listOf("  Console error: still"), output.layer(event("console", "still", test = "t2"), null))
+        output.watching("ed-1", 0)
+        assertEquals("Worker 1 · t2", output.layer(event("console", "other", test = "t2"), null).first())
+    }
+
+    @Test
     fun `a run's session is kept until it ends`() {
         val running = session("ed-1", RunWorker(0, 0, "running", runTest()))
         val stopped = session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))
@@ -760,6 +811,9 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // A failure so far takes the error color, as the hub counts it.
+        assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
+        assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))
         // A test ended at a stop is marked so, not counted as a plain pass.
         val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
         assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
@@ -767,6 +821,54 @@ class GlueTest {
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
+        )
+    }
+
+    @Test
+    fun `the status bar's menu on a share opens the run page, copies its link and stops sharing after asking`() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val shared = RunSession("ed-1", root = "/w/shop", live = RunLive(true, null, page, 2), page = RunPage(78, page))
+        val ready = RunSession("ed-2", live = RunLive(false, null, page, 0))
+        assertEquals(emptyList<Glue.LiveEntry>(), Glue.liveMenu(mapOf("ed-2" to ready), windowShared = false))
+        assertEquals(
+            listOf(
+                Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the Run Page", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the Run Page's Link", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1"),
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-2" to ready), windowShared = false),
+        )
+        // A run shared before its page is known offers Stop Sharing alone.
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1")),
+            Glue.liveMenu(mapOf("ed-1" to shared.copy(live = RunLive(true, null, null, 0))), windowShared = false),
+        )
+        // Several shared runs are each named; the project's runs shared add their own stop.
+        val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
+        assertEquals(
+            listOf(
+                "Open the Page of Run #78", "Copy the Link of Run #78", "Stop Sharing Run #78…",
+                "Open the Page of Run in admin (ed-3)", "Copy the Link of Run in admin (ed-3)", "Stop Sharing Run in admin (ed-3)…",
+                "Stop Sharing This Project's Runs…",
+            ),
+            Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
+        )
+        assertEquals(
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…")),
+            Glue.liveMenu(emptyMap(), windowShared = true),
+        )
+        // What Stop Sharing asks first.
+        assertEquals(
+            "Stop sharing the run live on piwi.example.com? The 2 views open there end, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(shared.live),
+        )
+        assertEquals(
+            "Stop sharing the run live? Its page there stops showing it live, and nothing more goes there until you share it again.",
+            Glue.stopSharingQuestion(RunLive(true, null, null, 0)),
+        )
+        assertEquals(
+            "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow are not shared.",
+            Glue.stopSharingQuestion(null),
         )
     }
 
@@ -2734,6 +2836,35 @@ class GlueTest {
         val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live).single().description)
         assertEquals("4 min ago", Glue.failureNodes(treeFailures, treeNow, live.copy(own = false)).single().description)
+        assertEquals("running 4/9 · 1 failed", Glue.failureNodes(treeFailures, treeNow, live.copy(failed = 1)).single().description)
+    }
+
+    @Test
+    fun `the editor's own run is counted from what its process tells the hub, else from the instance`() {
+        val instance = LiveRun(runId = 125, status = "running", done = 2, total = 9, own = true, ref = "ed-1")
+        val contexts = listOf(RunStatus(root = "/w/shop", live = instance))
+        val told = RunSession("ed-1", root = "/w/shop", progress = RunProgress(total = 9, done = 5, failed = 1))
+        // The hub's count wins over the instance's, which lags behind it.
+        assertEquals(
+            instance.copy(done = 5, failed = 1) to "/w/shop",
+            Glue.ownRunInProgress(contexts, mapOf("ed-1" to told)),
+        )
+        // A reporter that tells nothing: the instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-1" to told.copy(progress = null))))
+        // Another run of the same config is not the instance's run, nor is any run when the instance names none: the
+        // instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-2" to told.copy(ref = "ed-2"))))
+        val unnamed = instance.copy(ref = null)
+        assertEquals(unnamed to "/w/shop", Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = unnamed)), mapOf("ed-1" to told)))
+        // Offline, or with the desktop app hosting the run: the hub's count alone.
+        assertEquals(
+            LiveRun(status = "running", done = 5, total = 9, failed = 1, own = true, ref = "ed-1") to "/w/shop",
+            Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told)),
+        )
+        // A run of a terminal is not the editor's own; one that ended counts no more.
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("t-1" to told.copy(ref = "t-1", terminal = true))))
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told.copy(progress = told.progress!!.copy(status = "failed")))))
+        assertEquals(null, Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = instance.copy(own = false))), emptyMap()))
     }
 
     @Test

@@ -222,13 +222,16 @@ the custom messages of `src/protocol.ts`:
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
-  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
+  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
+  `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
 another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
-agent (`piwi/startRun`), and `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
+agent (`piwi/startRun`), `runningLine` when it marks the line of the call the lane it watches is in
+(`piwi/runningLine`, [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)), and
+`agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
 requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
 (`RunControlResult`) refuses a run the client did not start; and `piwi/startRun`, whose answer says whether the client
 started the run.
@@ -658,11 +661,15 @@ those in files under the context's folder:
 
 - they go in the command's environment as `PIWI_PAUSE_AT`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
   relative to that folder, 1-based, separated by semicolons (`pauseAtValue` in `src/analysis.ts`);
-- `--headed` is appended to the arguments and to the command, unless it carries `--headed`, `--ui` or `--debug`
-  (`headedCommand`), and the run is started to be watched.
+- the run is started to be watched (its Hold failures on), and stays headless: a stop at a breakpoint is watched in
+  the worker view as any headless stop is. It goes headed (`headedCommand`) only for a reporter that stops at none
+  headless, older than `HEADLESS_PAUSE_REPORTER_VERSION` (0.62.0) or of a version unknown, or for a run with no run
+  channel, the record channel having failed to listen (`breakpointRunHeaded`).
 
 The person's start options (`RunStartOptions`, the clients' settings, sent with every test run the editor starts) go
-over that: `headed` appends `--headed` (a repeated run takes it too), and `holdFailures` turns the run's Hold failures on
+over that: `headed` appends `--headed` unless the command carries `--headed`, `--ui` or `--debug` (`headedCommand`;
+a repeated run takes it too), the only way a test run the editor starts runs headed but for a `page.pause()` and a
+debug run, and `holdFailures` turns the run's Hold failures on
 or off from its start for a run with a run channel that holds failures (`withStartOptions`). A debug run, and a
 command the service names (`piwi.runCommand`: a Flake Lab line, a fix plan's verification), take none.
 
@@ -818,6 +825,18 @@ was: the worker hears no request of it. `layers` that list `text` anew count as 
 hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
 send them.
 
+**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), the lane view asks the
+lane's call log (`calls`) beside the layers the client names, and tells the call the lane's running test is in as
+`piwi/runningLine` (`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and
+its place as a file URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits
+since the run started). It goes (`call: null`) as the test ends or stops (a stop has a mark of its own), for a call
+that names no place in the user's code, as the watch ends and as the run does; a call log of a test the lane no
+longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, one lane at a
+time: the line of the lane watched before goes first. The call log reaches the client as `piwi/laneLayer` only when
+its layers name it. A client without the option hears none, and a service that predates it sends none: the client
+then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
+`events` layer of the same lane.
+
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
 whatever the device scale factor), and send its locator where a pick goes. It answers `{ ok, message, locator }`, and
@@ -851,7 +870,7 @@ clients answer stops, so a plain Run would hold every failure. One no pause bar 
 run's **Hold failures** is on (`RunHoldFailures`, `RunSession.hold` and the hub's `HubSession.hold`, with who set it):
 
 - on from its start in a run started to be watched (`watched`: the service built it with the editor's breakpoints or
-  for a `page.pause()`, both headed, or the person's start options ask it), `by: 'start'`, off from its start
+  for a `page.pause()`, headed, or the person's start options ask it), `by: 'start'`, off from its start
   otherwise;
 - as a person turns it on or off (`piwi/holdRun`, the hub's `hold`: an editor, Piwi Picker, the desktop app's window),
   `by: 'person'`, or an agent does (`run_follow`'s `hold`), `by: 'agent'`, kept by ref (`RunSessions.hold`, the latest
@@ -1232,8 +1251,8 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
   text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
   the one of the spec as saved whose describe blocks' titles and its own, joined by `›`, are the title, else the
   only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
-  `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
-  be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
+  `--workers=1`, headed (`headedCommand`), with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a
+  run started to be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
 - **The one-shot stop.** The failing line is a breakpoint of that run alone: `piwi/setRunBreakpoints` for the run
   carries it beside the client's places until a worker stops there (heard through `RunSessions`' `heard`), and then
   the run's breakpoints become the client's own, for its workers and those that connect later. The client never

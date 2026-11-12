@@ -14,6 +14,8 @@ import type {
   PageInputParams,
   PageViewParams,
   RunControlResult,
+  RunningCall,
+  RunningLine,
 } from './protocol.js';
 import type { LaneViewFrame, RunSessions, Viewer } from './run-sessions.js';
 
@@ -183,13 +185,22 @@ interface WatchedLane {
   layers: LaneLayer[];
 }
 
+/** The layers a watch asks of the lane: the client's, and the call log while the client marks the running line. */
+function layersAsked(layers: LaneLayer[], runningLine: boolean): LaneLayer[] {
+  return runningLine && !layers.includes('calls') ? (['calls', ...layers] as LaneLayer[]) : layers;
+}
+
 /**
  * One editor panel's viewer of a worker's lane (`piwi/laneView`): its frames, running or stopped, through its tests and
  * the workers Playwright starts in it, the layers it asked for beside them (`piwi/laneLayer`), and its input at a stop
- * of the lane's running test, which watching the lane makes it a viewer of.
+ * of the lane's running test, which watching the lane makes it a viewer of. For a client that marks the running line
+ * (`runningLine`), it asks the lane's call log too and tells the call its running test is in (`piwi/runningLine`),
+ * and that it goes once the test ends or stops, the watch ends or the run does.
  */
 export class ClientLaneView {
   private current: WatchedLane | null = null;
+  /** The running line last told, of the lane it names; null while none shows. */
+  private line: RunningLine | null = null;
   private readonly held = new HeldInput();
   /** The stop the input held down was sent to, which a release goes to. */
   private heldAt: PageInputParams | null = null;
@@ -201,6 +212,8 @@ export class ClientLaneView {
     notify: (frame: LaneFrame) => Promise<void>,
     editor: () => string | null = () => null,
     private readonly notifyLayer: (layer: LaneViewLayer) => Promise<void> = async () => {},
+    private readonly notifyLine: (line: RunningLine) => Promise<void> = async () => {},
+    private readonly marksLines: () => boolean = () => false,
   ) {
     this.viewer = editorViewer(editor, {
       frame: () => {},
@@ -235,7 +248,10 @@ export class ClientLaneView {
       if (layers.join() !== own.layers.join()) {
         const shows = layers.includes('text') && !own.layers.includes('text');
         own.layers = layers;
-        const answer = await this.sessions.watchLane({ ref: own.ref, lane: own.lane, on: true, layers }, this.viewer);
+        const answer = await this.sessions.watchLane(
+          { ref: own.ref, lane: own.lane, on: true, layers: layersAsked(layers, this.marksLines()) },
+          this.viewer,
+        );
         if (!answer.ok || (params.text !== true && !shows)) return answer;
         if (params.text !== true) {
           if (this.current === own) void this.sessions.laneText(own, this.viewer);
@@ -251,7 +267,10 @@ export class ClientLaneView {
     this.dispose();
     this.current = { ref: params.ref, lane: params.lane, layers };
     const watched = this.current;
-    const answer = await this.sessions.watchLane({ ref: params.ref, lane: params.lane, on: true, layers }, this.viewer);
+    const answer = await this.sessions.watchLane(
+      { ref: params.ref, lane: params.lane, on: true, layers: layersAsked(layers, this.marksLines()) },
+      this.viewer,
+    );
     if (this.current !== watched) return { ok: false, message: 'The worker view changed.' };
     if (!answer.ok) this.dispose();
     else if (layers.includes('text')) void this.sessions.laneText(watched, this.viewer);
@@ -282,10 +301,15 @@ export class ClientLaneView {
     return this.sessions.input(params, this.viewer, events);
   }
 
-  /** A session changed: a run that ended ends the watch. */
+  /** A session changed: a run that ended ends the watch, and a test that ended or stopped takes its line with it. */
   changed(): void {
     const own = this.current;
     if (own && !this.sessions.watchesLane(this.viewer, own.ref, own.lane)) this.dispose();
+    const line = this.line;
+    if (line?.call) {
+      const running = this.sessions.laneRunning(line.ref, line.lane);
+      if (running?.worker !== line.worker || running.test !== line.call.test) this.tellLine(line, null);
+    }
   }
 
   dispose(): void {
@@ -293,6 +317,8 @@ export class ClientLaneView {
     this.releaseHeld();
     this.current = null;
     this.sender.clear();
+    if (this.line?.call) this.tellLine(this.line, null);
+    this.line = null;
     if (own) void this.sessions.watchLane({ ...own, on: false }, this.viewer);
   }
 
@@ -317,9 +343,34 @@ export class ClientLaneView {
    */
   private layer(layer: LaneViewLayer): void {
     const own = this.current;
-    if (!own || !this.matches(layer) || !own.layers.includes(layer.layer)) return;
+    if (!own || !this.matches(layer)) return;
     if (!this.sessions.watchesLane(this.viewer, own.ref, own.lane)) return;
-    this.notifyLayer(layer).catch(() => {});
+    if (layer.layer === 'calls' && this.marksLines()) this.running(layer);
+    if (own.layers.includes(layer.layer)) this.notifyLayer(layer).catch(() => {});
+  }
+
+  /**
+   * The lane's call log changed: the call its running test is in, at its place in the run's code, or none when the call
+   * names no place. A log of a test the lane no longer runs, or of one stopped, changes nothing.
+   */
+  private running(layer: Extract<LaneViewLayer, { layer: 'calls' }>): void {
+    const running = this.sessions.laneRunning(layer.ref, layer.lane);
+    if (!running || running.worker !== layer.worker || running.test !== layer.test) return;
+    const { title, file, line } = layer.log.call;
+    const uri = file && line && line > 0 ? this.sessions.placeUri(layer.ref, layer.worker, file) : null;
+    const call: RunningCall | null = uri && line ? { test: running.test, title, uri, line: line - 1 } : null;
+    this.tellLine({ ref: layer.ref, lane: layer.lane, worker: layer.worker }, call);
+  }
+
+  /** Tell the client the running line of a lane when it differs from the one last told, the line before going first. */
+  private tellLine(at: Omit<RunningLine, 'call'>, call: RunningCall | null): void {
+    const next: RunningLine = { ref: at.ref, lane: at.lane, worker: at.worker, call };
+    const last = this.line;
+    const sameWorker = !!last && last.ref === next.ref && last.lane === next.lane && last.worker === next.worker;
+    this.line = next;
+    if (last?.call && !sameWorker) this.notifyLine({ ...last, call: null }).catch(() => {});
+    const shown = sameWorker ? last.call : null;
+    if (JSON.stringify(shown) !== JSON.stringify(call)) this.notifyLine(next).catch(() => {});
   }
 
   private frame(frame: LaneViewFrame): void {

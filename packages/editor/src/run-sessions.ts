@@ -1849,6 +1849,30 @@ export class RunSessions {
     return !!session && !session.ended && !!session.lanes.get(lane)?.has(viewer);
   }
 
+  /**
+   * The test the lane `lane` of the run `ref` runs now and its worker, while it runs it, a Pause waiting for it
+   * included; null between tests, at a stop, once the run ended, and while no worker of the lane is connected.
+   */
+  laneRunning(ref: string, lane: number): { worker: number; test: string } | null {
+    const session = this.sessions.get(ref);
+    const state = session?.laneStates.get(lane);
+    if (!session || session.ended || !state?.test || state.worker === null) return null;
+    if (state.state !== 'running' && state.state !== 'pausing') return null;
+    return session.workers.get(state.worker)?.parallelIndex === lane
+      ? { worker: state.worker, test: state.test.id }
+      : null;
+  }
+
+  /**
+   * A place a worker of the run `ref` named (`file`, relative to the run's working directory) as a file URI under the
+   * run's folder as the workspace spells it; null for a worker not connected now.
+   */
+  placeUri(ref: string, workerIndex: number, file: string): string | null {
+    const session = this.sessions.get(ref);
+    const worker = session?.workers.get(workerIndex);
+    return session && worker ? this.uri(worker, file, session.root) : null;
+  }
+
   /** Whether `viewer` watches the live view of the stop `since` names, of the run's worker `workerIndex`. */
   viewing(viewer: Viewer, ref: string, workerIndex: number, since: string): boolean {
     const worker = this.sessions.get(ref)?.workers.get(workerIndex);

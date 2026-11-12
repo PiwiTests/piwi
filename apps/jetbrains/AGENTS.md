@@ -104,9 +104,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `PiwiRunControlTest`. ([MCP server configuration](ARCHITECTURE.md#mcp-server-configuration))
 - **A run is shared live on the team instance only from the person's action, after `Glue.shareLiveWarning` the first
   time in the project since it opened**, as the VS Code extension does (`PiwiRunSessions.shareLive`); only a run known
-  not to be shareable is asked without it, for the service to say why. Checked by `PiwiRunControlTest`
-  (`testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime`, `testARunNotHeardOfYetIsWarnedOfBeforeItIsShared`) and
-  `GlueTest`.
+  not to be shareable is asked without it, for the service to say why. Every Stop Sharing asks first
+  (`confirmStopSharing`). Checked by `PiwiRunControlTest`
+  (`testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime`, `testARunNotHeardOfYetIsWarnedOfBeforeItIsShared`,
+  `testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking`) and `GlueTest`.
 - **An `mcp-remote` entry runs one exact release over HTTP alone** (`Glue.MCP_REMOTE`, `--transport http-only`), for
   the instance's servers and the runs' alike. Checked by `GlueTest`.
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
@@ -149,6 +150,13 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the
   platform sends the service the change; checked by `PiwiRunControlTest` (`testTheCodeAStopMadeIsWrittenInOneCommand`).
   ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
+- **The running line's inlay goes as its test ends or stops, as the run ends and as the watch does, whatever the
+  service says after** (`Glue.runningLinesShown`, drawn on every draw). Checked by `GlueTest` and `PiwiRunControlTest`
+  (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`, `testARunningLineOfASlotNoLongerWatchedIsNotTaken`).
+  ([Run control](ARCHITECTURE.md#run-control))
+- **The Worker tab's watch goes on while the Worker tab or the Page tab is in sight, and ends once neither is**
+  (`laneSightChanged`). Checked by `PiwiRunControlTest` (`testThePageTabKeepsTheWatchWhileItShows`).
+  ([Run control](ARCHITECTURE.md#run-control))
 - **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
   start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
   ([Run control](ARCHITECTURE.md#run-control))

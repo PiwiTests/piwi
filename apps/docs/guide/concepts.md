@@ -294,6 +294,11 @@ after it), rendered without its scripts, with the locator picker on it; the work
 fields' values removed, only while someone has Inspect open, and the instance keeps them in memory alone
 ([Inspect a running test's page](/features/live-inspect)).
 
+On your machine, a view's images follow the test's own screencast: when the test records its own (a video, a trace
+with screenshots), the view takes its size and quality; when none can start, it is an image of the page twice a
+second. A frame over 384 KB gives way to a lighter image of the page, twice a second; when even that is too heavy, the
+view says so in its place.
+
 ### Trace so far
 
 **A running test's trace up to now, opened in Playwright's trace viewer** (**Open the trace so far**, [Watch a running
@@ -301,7 +306,9 @@ test](/features/watch-running-test#open-the-trace-so-far)). The editor service o
 machine the run runs on, asks the test's worker where its trace grows, checks that file, and starts the viewer there
 from your project's own Playwright. The trace's path never leaves that service: each tool hears a sentence alone,
 saying why when the viewer does not start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it
-opened: close it, then choose the button again, for what came since.
+opened: close it, then choose the button again, for what came since. The attempt must be traced: `trace: 'on'` or
+`'retain-on-failure'` (`wrapConfig`'s default when your config sets none) traces every attempt, `'on-first-retry'` and
+`'on-all-retries'` a retry alone. Its trace starts with its first browser context.
 
 **Inspect** on a lane watched in the desktop app's tray reads the same checked file on the app's server, while the
 tray shows it and the window is not hidden; the window hears each page's call and reads the page rendered, never the

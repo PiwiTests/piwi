@@ -568,8 +568,9 @@ object Glue {
 
     /**
      * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
-     * description (`4 min ago`), and, while the editor's own run is `live`, that run on the node of the run of its
-     * Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9`).
+     * description (`4 min ago`), and, while the editor's own run is `live` ([ownRunInProgress]), that run on the node of
+     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9 · 1
+     * failed`).
      */
     fun failureNodes(
         result: FailuresResult?,
@@ -584,7 +585,7 @@ object Glue {
             kind = node.kind,
             label = node.label,
             description = if (running != null && node.kind == "run" && (liveRoot == null || node.root == null || node.root == liveRoot)) {
-                "running ${running.done}/${running.total}"
+                "running ${running.done}/${running.total}" + if (running.failed > 0) " · ${running.failed} failed" else ""
             } else {
                 listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
             },
@@ -598,6 +599,24 @@ object Glue {
             tooltip = node.tooltip.orEmpty(),
         )
         return result?.tree.orEmpty().map { draw(it) }
+    }
+
+    /**
+     * The editor's own run in progress the failures tree counts, and the folder of its Playwright config: counted from
+     * what the run's own process tells the hub (`RunSession.progress`, from its `run-begin` and `run-progress`) when it
+     * does, so it counts with no instance and with the desktop app as the instance, else from the instance (`LiveRun`).
+     * The instance's run is matched to its session by its ref alone: with none matched, the instance's count shows. A
+     * run started in a terminal is not the editor's own. Null while none runs.
+     */
+    fun ownRunInProgress(contexts: List<RunStatus>, sessions: Map<String, RunSession>): Pair<LiveRun, String?>? {
+        val own = contexts.firstOrNull { it.live?.own == true }
+        val ownLive = own?.live
+        val told = sessions.values.filter { !it.ended && !it.terminal && it.progress?.status == "running" }
+        val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
+        val progress = session?.progress ?: return ownLive?.let { it to own.root }
+        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
+            .copy(done = progress.done, total = progress.total, failed = progress.failed)
+        return counted to (if (ownLive != null) own.root else session.root)
     }
 
     /**
@@ -2135,6 +2154,9 @@ object Glue {
             if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
     }
 
+    /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
+    fun runsFailing(sessions: Map<String, RunSession>): Boolean = sessions.values.any { (it.progress?.failed ?: 0) > 0 }
+
     /**
      * A stop's or a share's status with how far the runs are after it, so neither hides the other:
      * `Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9`.
@@ -2151,6 +2173,71 @@ object Glue {
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
+    fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {
+        val key = line.ref to line.lane
+        return if (line.call == null) lines - key else lines + (key to line)
+    }
+
+    /**
+     * The running lines to mark: each of a run still live whose slot's worker still runs that test and stands at no
+     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after.
+     */
+    fun runningLinesShown(lines: Map<Pair<String, Int>, RunningLine>, sessions: Map<String, RunSession>): List<RunningLine> =
+        lines.values.filter { line ->
+            val call = line.call ?: return@filter false
+            val session = sessions[line.ref]?.takeIf { !it.ended } ?: return@filter false
+            val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == line.lane } ?: return@filter false
+            val test = worker.test ?: return@filter false
+            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test)
+        }
+
+    /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */
+    fun runningLineText(line: RunningLine): String =
+        "Piwi: ${workerName(line.lane)} runs ${clipped(line.call?.title.orEmpty())}"
+
+    /**
+     * The Page tab of the Piwi tool window: what the page of the watched slot says, one line each, as the lane's events
+     * carry them (its console errors and its uncaught errors), each test named before its first line. A watch of
+     * another slot starts it anew ([watching]).
+     */
+    class PageOutput {
+        private var slot: Pair<String, Int>? = null
+        private var named: Pair<Int, String>? = null
+
+        /** A watch of the slot `lane` of the run `ref` begins: its next test is named again. */
+        fun watching(ref: String, lane: Int) {
+            if (slot == ref to lane) return
+            slot = ref to lane
+            named = null
+        }
+
+        /**
+         * A layer of the watched slot: the page's line it carries, after the name of its test (`test`, the slot's test
+         * as the run's session says it, its title) when that test said nothing before.
+         */
+        fun layer(layer: LaneLayerFields, test: RunTest?): List<String> {
+            if (layer.layer != "events") return emptyList()
+            val event = layer.event ?: return emptyList()
+            val text = when (event.kind) {
+                "console" -> "Console error: ${event.text.orEmpty()}"
+                "page-error" -> "Uncaught error: ${event.text.orEmpty()}"
+                "dropped" -> "${event.count ?: 0} more events were not sent: too many at once."
+                else -> return emptyList()
+            }
+            val id = layer.test ?: test?.id
+            val worker = layer.worker ?: named?.first ?: 0
+            val name = if (id == null || named == worker to id) {
+                emptyList()
+            } else {
+                named = worker to id
+                val title = test?.takeIf { it.id == id }?.title.orEmpty().joinToString(" › ").ifEmpty { id }
+                listOf("${workerName(slot?.second ?: 0)} · $title")
+            }
+            return name + "  $text"
+        }
+    }
 
     /**
      * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
@@ -2304,6 +2391,48 @@ object Glue {
     fun sharedLiveText(live: RunLive): String {
         val where = liveInstance(live.page)?.let { "Shared live on $it" } ?: "Shared live"
         return if (live.viewers == 0) "$where: nobody watches yet" else "$where: ${views(live.viewers)} open"
+    }
+
+    /** What an entry of the status bar's menu on a share does: open the run page, copy its link, or stop sharing. */
+    enum class LiveEntryKind { OPEN_PAGE, COPY_LINK, STOP_SHARING, STOP_SHARING_PROJECT }
+
+    /** An entry of the status bar's menu on a share, for the run of `ref` and its page `url` where it has them. */
+    data class LiveEntry(val kind: LiveEntryKind, val label: String, val ref: String? = null, val url: String? = null)
+
+    /**
+     * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the Run Page**, **Copy the
+     * Run Page's Link** (while its page is known) and **Stop Sharing the Run…**, each naming its run when several are
+     * shared (`runLabel`); then **Stop Sharing This Project's Runs…** while the project's runs are shared. Both stops ask
+     * first ([stopSharingQuestion]).
+     */
+    fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
+        val shared = sharedRunsOf(sessions).filter { it.live.shared }
+        val entries = shared.flatMap { run ->
+            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it) } else null
+            listOfNotNull(
+                run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the Page of $n" } ?: "Open the Run Page", run.ref, it) },
+                run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the Link of $n" } ?: "Copy the Run Page's Link", run.ref, it) },
+                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop Sharing $it…" } ?: "Stop Sharing the Run…", run.ref),
+            )
+        }
+        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…") else entries
+    }
+
+    /** What Stop Sharing says, asking nothing, for a run that ended or is shared no more. */
+    const val SHARE_ENDED = "That run is not shared live any more: it ended, or its share was stopped."
+
+    /**
+     * What Stop Sharing asks before it stops: for a run (`live`), where it is shared and the views that end there; for
+     * the project's runs (`live` null), that the runs to come are not shared either.
+     */
+    fun stopSharingQuestion(live: RunLive?): String {
+        if (live == null) {
+            return "Stop sharing this project's runs live? Their views on the team instance end, and the runs that follow " +
+                "are not shared."
+        }
+        val where = liveInstance(live.page)?.let { " on $it" }.orEmpty()
+        val views = if (live.viewers > 0) "The ${views(live.viewers)} open there end" else "Its page there stops showing it live"
+        return "Stop sharing the run live$where? $views, and nothing more goes there until you share it again."
     }
 
     /** What a Share live action acts on: one run, a choice among several, or why there is none. */

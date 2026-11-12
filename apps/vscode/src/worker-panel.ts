@@ -13,7 +13,8 @@
  * (`piwi/ciWatch`, `piwi/ciFrame`), read-only: Watch alone, no Interact, input or pick, its caption from the CI
  * sessions, and why the watch ended said under it. One slot, local or CI, at a time. Under the image, the lane's layers
  * (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked
- * for while their section is open, kept for the slot it shows until the panel closes. **Open the trace so far**, beside
+ * for while their section is open, kept for the slot it shows until the panel closes; the Events also go to the
+ * **Piwi: Page** output, one line each, each test of the slot named as it begins (`PageLog`). **Open the trace so far**, beside
  * Watch and Interact while the slot's worker can open its running test's trace (`canOpenTrace`), and
  * `piwi.openTraceSoFar`, offered meanwhile (`piwi.runCanOpenTrace`), ask the service to open Playwright's trace viewer on
  * it (`piwi/openTrace`), one ask per slot (`TraceAsks`), and say its answer, with the worker it is for once the panel
@@ -69,6 +70,9 @@ import {
   NO_LANE_LAYERS,
   openTraceOffered,
   openTraceParams,
+  PageLog,
+  PageOutputLines,
+  type PageLine,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
@@ -170,6 +174,18 @@ export function createWorkerPanel(
   const traceAsks = new TraceAsks();
   /** What `piwi.runCanOpenTrace` was set to last: it is set again only when it changes. */
   let traceOffered = false;
+  /** **Piwi: Page**: what the watched slot's page says, one line each, its tests named as they begin. */
+  const pageLog = new PageLog();
+  /** A plain output channel, which no log file keeps, holding its last `MAX_PAGE_LINES` (`PageOutputLines`). */
+  let pageOutput: vscode.OutputChannel | null = null;
+  const pageLines = new PageOutputLines();
+  const writePage = (lines: PageLine[]) => {
+    if (!lines.length) return;
+    pageOutput ??= vscode.window.createOutputChannel('Piwi: Page');
+    const written = pageLines.add(lines);
+    if ('replace' in written) pageOutput.replace(written.replace);
+    else for (const line of written.append) pageOutput.appendLine(line);
+  };
 
   const script = () =>
     panel!.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'paused-page.js')).toString();
@@ -589,6 +605,7 @@ export function createWorkerPanel(
   /** A layer of the slot the panel watches, asked for by its sections. */
   const laneLayer = (l: LaneViewLayer) => {
     if (!target || !watching || l.ref !== target.ref || l.lane !== target.lane || !panel?.visible) return;
+    if (l.layer === 'events') writePage(pageLog.event(l, sessions));
     heardLayer(l);
   };
 
@@ -687,6 +704,7 @@ export function createWorkerPanel(
       // Interact stays on through the slot's stops that take input and the stretches between them.
       if (!laneKeepsInteract(interacting, lane.stop)) interactOff();
       else if (lane.stop) interactAt = lane.stop;
+      if (watching && panel?.visible) writePage(pageLog.lane(now, target.ref, target.lane));
       if ((lane.stop?.stop.since ?? null) === before) return draw();
       // A new stop, or the worker going on, is a view of its own, Interact kept: no message of the view before reaches
       // it. The document stays, with the layers and the strip's images it holds.
@@ -697,6 +715,7 @@ export function createWorkerPanel(
     dispose() {
       disposed = true;
       for (const subscription of subscriptions) subscription.dispose();
+      pageOutput?.dispose();
       stopWatching();
       forgetLayers();
       panel?.dispose();

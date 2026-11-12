@@ -411,7 +411,8 @@ const tests = {
       await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1] });
       const run = api.lastRun();
       assert.equal(run.env.PIWI_PAUSE_AT, 'tests/checkout.spec.ts:3');
-      // Built in the editor from the instance's args; the instance's own command text is never run.
+      // Built in the editor from the instance's args; the instance's own command text is never run. The fixture
+      // installs no reporter: of a version unknown, it may stop at none headless, so the run goes headed.
       assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3 --headed');
       assert.match(run.env.PIWI_EDITOR_SEND, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send#[\w-]{16,}$/);
 

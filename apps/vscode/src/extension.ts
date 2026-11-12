@@ -163,6 +163,7 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  OwnRunCounts,
   serviceDownView,
   heldStops,
   heldText,
@@ -302,6 +303,8 @@ export interface PiwiApi {
   runSessions(): RunSession[];
   /** The lines of a file drawn as where a run is stopped, by its URI. */
   executionPoints(uri: string): number[];
+  /** The lines of a file marked as a watched lane's running call. */
+  runningLines(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
   /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
@@ -469,6 +472,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl: true,
       stopCode: true,
       stopsRuns: true,
+      // The run control marks the line of the call the watched lane's test is in (`piwi/runningLine`).
+      runningLine: true,
       // The service builds an agent's run_start, and the extension runs it as a person's (`piwi/startRun`).
       startsRuns: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
@@ -759,9 +764,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
+  const ownRunCounts = new OwnRunCounts();
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = serviceDown ? serviceDownView() : statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
+    const view = serviceDown
+      ? serviceDownView()
+      : statusBarView(status, runs, desktopChosen, Date.now(), activeFile(), (ref, instance) =>
+          ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
+        );
     statusItem.text = refreshing
       ? refreshingText(view.text)
       : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
@@ -1833,6 +1843,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     testExplorer: () => explorer?.shown() ?? null,
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
+    runningLines: (uri) => runControl.runningLines(uri),
     pausedPage: () => runControl.pausedPage(),
     workerView: () => runControl.workerView(),
     workerMessage: (message) => runControl.workerMessage(message),

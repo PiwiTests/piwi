@@ -61,6 +61,7 @@ import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
   applyPatchFile,
   breakMessage,
+  breakpointRunHeaded,
   breakpointsNotice,
   breaksByAnchor,
   breaksOfChange,
@@ -302,6 +303,7 @@ import {
   OPEN_TRACE_REQUEST,
   LANE_FRAME_NOTIFICATION,
   LANE_LAYER_NOTIFICATION,
+  RUNNING_LINE_NOTIFICATION,
   type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
@@ -1846,6 +1848,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let stopsRuns = false;
   /** Whether the client runs a command the service built for an agent (`InitializationOptions.startsRuns`). */
   let startsRuns = false;
+  /** Whether the client marks the running call's line of the lane it watches (`InitializationOptions.runningLine`). */
+  let marksRunningLine = false;
   /** The editor's display language, as `initialize` names it. */
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
@@ -1967,6 +1971,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
     () => clientName,
     (layer) => connection.sendNotification(LANE_LAYER_NOTIFICATION, layer),
+    (line) => connection.sendNotification(RUNNING_LINE_NOTIFICATION, line),
+    () => marksRunningLine,
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
@@ -2409,6 +2415,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     writesCode = init?.stopCode === true;
     stopsRuns = init?.stopsRuns === true;
     startsRuns = init?.startsRuns === true;
+    marksRunningLine = init?.runningLine === true;
     if (init?.shareWindow === true) runSessions.share({ on: true, scope: 'window' });
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
@@ -3428,8 +3435,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
-   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`), and a
+   * notice when the project's reporter does not pause at them. Headless, its stop watched in the worker view, unless
+   * the project's reporter stops at none headless or the run has no run channel (`breakpointRunHeaded`): `--headed`
+   * then. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
@@ -3448,9 +3457,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!pauseAt) return command;
     if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
+    const headed = breakpointRunHeaded(context.reporterVersion, !!recordChannel);
     return {
       ...command,
-      ...headedCommand(command.command, command.args),
+      ...(headed ? headedCommand(command.command, command.args) : {}),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };
@@ -3594,7 +3604,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const borrowed = !!debug.ref && !runCommands.has(debug.ref);
     const ref = borrowed ? debug.ref! : newRunRef();
     runWatch.watch(context, ref, null, borrowed);
-    const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      ...headedCommand(command, args),
+      env: editorRunEnv(ref),
+      ref,
+    };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
     const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
     const execution = debug.execution;

@@ -1881,7 +1881,7 @@ describe('breakpoints', () => {
     await client.sendRequest('piwi/refresh');
   });
 
-  test('pause a run at their lines, headed, and say when the reporter is too old for them', async () => {
+  test('pause a run at their lines, headed with a reporter that stops at none headless, and say when it is too old for them', async () => {
     write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.46.0' }));
     await client.sendRequest('piwi/refresh');
     const command = (await client.sendRequest('piwi/runArgs', {

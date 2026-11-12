@@ -133,9 +133,10 @@ data class EditorBreakpoint(val uri: String, val line: Int)
 
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
- * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion), headed, with Piwi's
- * pause bar, when their file is under the Playwright config's folder. `root` names the Playwright config's folder to
- * run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
+ * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion) when their file is
+ * under the Playwright config's folder; they run it headed only when the project's reporter stops at none headless
+ * (older than 0.62.0, or of a version unknown) or the run has no run channel. `root` names the Playwright config's
+ * folder to run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
@@ -144,7 +145,8 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * names, headed, with one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds
  * no such test. `headed` and `holdFailures` start the run as the person chose for every run of the project
  * (`RunStartOptions`): headed (`--headed`), and with **Hold failures** on or off from its start, over what its
- * breakpoints decided; left out, the service decides. A repeated run takes `headed` alone.
+ * breakpoints decided; left out, the service decides: headless but for a `page.pause()` and the breakpoints above,
+ * and Hold failures on with a breakpoint or a `page.pause()`. A repeated run takes `headed` alone.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -1228,6 +1230,20 @@ data class LaneText(val call: String? = null, val source: String = "", val text:
 
 /** An image of a lane's filmstrip: the call it ended (`call`), its title and its place in the strip (`index`, from 1). */
 data class LaneThumb(val call: String = "", val title: String = "", val index: Int = 0, val width: Int = 0, val height: Int = 0, val at: Long = 0)
+
+/**
+ * `piwi/runningLine`, to a client that takes it (`runningLine` in its initialization options): the call the running
+ * test of the slot the IDE watches (`piwi/laneView`) is in, of the worker `worker`; or none (`call` null) once the line
+ * goes: the test ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run
+ * did. Sent only when it differs from the last one sent for the slot.
+ */
+data class RunningLine(val ref: String = "", val lane: Int = 0, val worker: Int = 0, val call: RunningCall? = null)
+
+/**
+ * The call a slot's running test (`test`, Playwright's id) is in: its title, and its place in the run's code (`uri` and
+ * the 0-based `line`, as a stop's: mapped through the edits since the run started).
+ */
+data class RunningCall(val test: String = "", val title: String = "", val uri: String = "", val line: Int = 0)
 
 /**
  * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the

@@ -1318,6 +1318,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals("server", args.coverage)
                 val run = server.runArgs(args).get(10, TimeUnit.SECONDS)
                 assertEquals("lines", run?.env?.get("PIWI_COVERAGE_SERVER"))
+                // A breakpoint pauses the run, headed while the project's reporter may stop at none headless: the
+                // fixture installs none, so its version is unknown. The service's tests check a newer one stays headless.
+                val atBreakpoint = args.copy(coverage = null, breakpoints = listOf(EditorBreakpoint(pageObject, 4)))
+                val paused = server.runArgs(Glue.withRunStart(atBreakpoint, headed = false, holdFailures = "auto")).get(10, TimeUnit.SECONDS)
+                assertNotNull(paused?.env?.get("PIWI_PAUSE_AT"))
+                assertTrue(paused?.command.orEmpty(), paused?.args.orEmpty().contains("--headed"))
+                val headed = server.runArgs(Glue.withRunStart(atBreakpoint, headed = true, holdFailures = "auto")).get(10, TimeUnit.SECONDS)
+                assertTrue(headed?.command.orEmpty(), headed?.args.orEmpty().contains("--headed"))
                 assertTrue(client.runStatusChanges > 0)
 
                 runChannel(server, client, run!!, spec, pageObject)

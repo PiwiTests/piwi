@@ -124,8 +124,11 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val render: () -> Unit = {
             val local = service.local()
             val result = service.failuresResult
-            val own = service.runs?.contexts.orEmpty().firstOrNull { it.live?.own == true }
-            val nodes = Glue.failureNodes(result, live = own?.live, liveRoot = own?.root)
+            val own = Glue.ownRunInProgress(
+                service.runs?.contexts.orEmpty(),
+                project.getServiceIfCreated(PiwiRunSessions::class.java)?.sessions.orEmpty(),
+            )
+            val nodes = Glue.failureNodes(result, live = own?.first, liveRoot = own?.second)
             val before = shown
             if (before != null && nodes != before && Glue.sameShape(before, nodes)) {
                 // Only what the nodes say changed, such as a run in progress counting its tests: each row is redrawn in
@@ -235,6 +238,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val content = ContentFactory.getInstance().createContent(panel, TAB_NAME, false).apply { isCloseable = false }
         toolWindow.contentManager.addContent(content)
         service.onChange(content, render)
+        // The editor's own run counts as its process tells the hub.
+        project.service<PiwiRunSessions>().onChange(content, render)
         render()
         service.refreshStatus()
     }

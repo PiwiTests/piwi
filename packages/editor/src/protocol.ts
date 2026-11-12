@@ -290,8 +290,8 @@ export interface EditorBreakpoint {
 /**
  * How a run starts, as the person chose it for every test run the editor starts (kept, so a rerun starts the same
  * way): headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
- * decides: headed, with Hold failures on, for a run with the editor's breakpoints or a `page.pause()`; headless and off
- * otherwise.
+ * decides: Hold failures on for a run with the editor's breakpoints or a `page.pause()`, off otherwise; headless but
+ * for a `page.pause()`, a breakpoint never running a test headed.
  */
 export interface RunStartOptions {
   headed?: boolean;
@@ -307,8 +307,10 @@ export interface RunTestsArgs extends RunStartOptions {
   testIds: number[];
   /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
-   * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion), headed, with
-   * Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
+   * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion)
+   * (`PIWI_PAUSE_AT` in `RunCommand.env`). A breakpoint runs a test headed only when the project's reporter stops at
+   * none headless or the run has no run channel: the run shows Piwi's pause bar only when it is headed
+   * (`RunStartOptions.headed`), and a headless stop shows in the editor.
    */
   breakpoints?: EditorBreakpoint[];
   /**
@@ -624,6 +626,11 @@ export interface InitializationOptions {
    * is open shares them as the person left them.
    */
   shareWindow?: boolean;
+  /**
+   * The client marks the line of the call the test of the lane it watches is in (`piwi/runningLine`). Without it, the
+   * service sends none.
+   */
+  runningLine?: boolean;
 }
 
 /**
@@ -2229,6 +2236,31 @@ export type LaneViewLayer = { ref: string; lane: number; worker: number; test: s
 export const LANE_VIEW_REQUEST = 'piwi/laneView';
 export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
 export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
+
+/**
+ * `piwi/runningLine` (notification, server to client), to a client that takes it (`InitializationOptions.runningLine`):
+ * the call the running test of the lane the editor watches (`piwi/laneView`) is in, from the lane's call log, its
+ * title (`Click getByRole('button', { name: 'Pay' })`) and its place in the run's code (`uri` and the 0-based `line`,
+ * as a stop's: a client maps it through the edits since the run started); or null once the line goes: the test
+ * ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run did. Sent only
+ * when it differs from the last one sent for the lane, of the worker `worker` and its test `test` (Playwright's id).
+ */
+export interface RunningLine {
+  ref: string;
+  lane: number;
+  worker: number;
+  call: RunningCall | null;
+}
+
+/** The call a lane's running test is in, and its place in the run's code. */
+export interface RunningCall {
+  test: string;
+  title: string;
+  uri: string;
+  line: number;
+}
+
+export const RUNNING_LINE_NOTIFICATION = 'piwi/runningLine';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

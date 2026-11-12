@@ -251,7 +251,9 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
   above its tree, and the header line names no run.
-- **The editor's own run in progress** shows on the run of its config (`liveRoot`).
+- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
+  as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
+  session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
 - **A row.** A `ColoredTreeCellRenderer` draws a failure's title, headline, run and place. The run is
   `Glue.FailureNode.note`, which the service writes with `failureRunNote` in `packages/editor/src/failure-tree.ts`:
   `your run #N`, `edited since run #N` with the information icon, `fixed` with the passed icon. `TreeSpeedSearch` finds
@@ -319,7 +321,8 @@ platform's text presentations take no color. It shows:
 - an icon (`Glue.StatusIcon`): the plugin's, an `AllIcons` icon for the connection and for a failing or passed run,
   `AnimatedIcon.Default` for a run in progress or a read;
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) while tests of the run it counts fail,
-  a run in progress by its own failures (`StatusView.error`), and in the status bar's foreground
+  a run in progress by its own failures (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's
+  progress), and in the status bar's foreground
   (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`) otherwise.
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config
@@ -342,8 +345,10 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's
   controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
-  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`). Its tooltip says what
-  each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`).
+  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
+  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
+- while a run is shared live: the share's entries, the run page, its link and **Stop Sharing…**, which asks first
+  ([Run control](#run-control)).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect (in
@@ -436,7 +441,9 @@ and verifies the test the same way.
 
 Every test run takes the person's start options (`Glue.withRunStart`, `RunStartOptions` in the protocol), kept in
 `PiwiLocalSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run Headed**
-is on, `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
+is on, nothing otherwise (the service runs it headless but for a spec with a `page.pause()`, and for a run with
+breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
+`holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
 `PiwiCommands.runTests`, a verification included, and **Run Selection…**; a debug run (`RunTestsArgs.debug`) is sent as
 built. **Tools → Piwi → Run Headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold Failures from Each Run's Start…**
 (`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.
@@ -555,7 +562,21 @@ worker whose reporter shows its running test (`Glue.watchableWorkers`). It watch
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
 other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
-The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off. Both tabs close
+The watch goes on while the Worker tab or the Page tab is in sight, ends once neither is, and starts again as one
+shows (`laneSightChanged`, decided once the tool window's change of tabs is done); the run's end turns Watch off.
+
+**The running line and the Page tab.** The descriptor sends `runningLine` in the initialization options, so the
+service tells the call the watched slot's running test is in (`piwi/runningLine`, `PiwiRunSessions.runningLine`, taken
+only for the slot watched then): an inlay after that line in each editor of its file (`RunningLineInlay`, drawn as the
+count at the caret is), naming the worker and the call (`Glue.runningLineText`), at the line the edits since the run
+started brought it to. A file no editor shows is not read: its document is drawn in once an editor opens it
+(`getCachedDocument`, `editorCreated`), and a released editor is let go of (`editorReleased`). The service takes it
+away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot, as the
+run ends and as the watch does (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates it
+sends none. The watched slot's console errors and uncaught errors, from the events layer the watch asks for anyway, go
+one line each into the **Page** tab of the Piwi tool window (`Glue.PageOutput`, `writePage`, a viewer `ConsoleView`),
+each test named before its first line; the tab is added, never selected, on the first line, and closes: closed by the
+person, it stays closed until the next run begins (`pageClosed`). Both tabs close
 (`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
 opens it again, and the Paused Page stops its view and the next stop opens it again. **Open the Trace So Far**, beside
 Watch while the slot's worker runs a test whose reporter answers trace asks (`Glue.canOpenTrace`, as the run model's
@@ -1009,9 +1030,14 @@ instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, 
 fits, else the one chosen (`Glue.liveTarget`). The first share in the project since it opened asks what goes out and
 to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`), a run its workers have not said anything of yet
 included; a run known not to be shareable is asked without it, and the service says why. Shared, the notification
-offers **Copy the Run Page's Link** and **Stop Sharing**, as does **Stop Sharing the Run Live**
+offers **Copy the Run Page's Link** and **Stop Sharing…**, as does **Stop Sharing the Run Live…**
 (`StopSharingRunAction`, while one is shared). The status bar item counts the views open of every shared run
-(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`).
+(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`), and its menu holds
+the share's entries (`Glue.liveMenu`: **Open the Run Page**, **Copy the Run Page's Link**, **Stop Sharing the Run…**
+for each shared run, named when several are, and **Stop Sharing This Project's Runs…** while they are shared), first
+while the item shows the share, else after the run's controls. Every way to stop a share, the run's or the project's,
+asks first (`PiwiRunSessions.confirmStopSharing`, `Glue.stopSharingQuestion`), about the run picked: one that ended or
+is shared no more is not asked about, and `Glue.SHARE_ENDED` says so.
 
 ## Platform compatibility
 

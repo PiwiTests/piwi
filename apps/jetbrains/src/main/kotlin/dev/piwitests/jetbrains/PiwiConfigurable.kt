@@ -136,19 +136,23 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
-                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
+                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
-                            "A run with a breakpoint in a test or page object runs headed and pauses before the action on " +
-                                "that line. Needs @piwitests/reporter 0.48.0 or later. Kept for you only, in .idea/workspace.xml",
+                            "A run with a breakpoint in a test or page object pauses before the action on that line, " +
+                                "headless unless Run Headed is on: its page shows in the Paused Page tab. Needs " +
+                                "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
+                                "older reporter, or one whose version Piwi cannot read, the run starts headed. " +
+                                "Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {
                     checkBox("Run every test Piwi starts headed, with its browser window shown")
                         .bindSelected({ local.runHeaded }, { local.runHeaded = it })
                         .comment(
-                            "A verification too. Otherwise a run is headed with a breakpoint in a spec, a page object or a " +
-                                "fixture, or a page.pause(). Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
+                            "A verification too. Otherwise a run is headless but for a spec with a page.pause(), and " +
+                                "for a run with breakpoints when @piwitests/reporter is older than 0.62.0. " +
+                                "Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {

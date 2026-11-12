@@ -258,10 +258,15 @@ let view: View | null = null;
 let laneView: LaneSubscription | null = null;
 /** The layers the editor asks of the lane view (`layers`), which run while it is on. */
 let layersAsked = new Set<LaneLayer>();
+/** A call log of the lane, with the test it was made in. */
+interface TestCallLog {
+  log: LiveCallLog;
+  test: string | null;
+}
 /** What runs for each layer of the lane view now. */
 const layerRuns: {
   events: (() => void) | null;
-  calls: { stop(): void; pacer: LatestPacer<LiveCallLog>; latest: LiveCallLog | null } | null;
+  calls: { stop(): void; pacer: LatestPacer<TestCallLog>; latest: TestCallLog | null } | null;
   text: { stop(): void; texts: LaneTexts } | null;
   strip: { stop(): void; queue: Array<KeptThumb & { test: string }> } | null;
 } = { events: null, calls: null, text: null, strip: null };
@@ -779,7 +784,11 @@ function applyLayers(again: ReadonlySet<LaneLayer>): void {
   }
   if (!on('calls')) stopLaneCalls();
   else if (!layerRuns.calls) startLaneCalls();
-  else if (again.has('calls') && layerRuns.calls.latest) layerRuns.calls.pacer.offer(layerRuns.calls.latest);
+  else if (again.has('calls')) {
+    // A viewer that came later is sent the call log of the test running now alone.
+    const { latest } = layerRuns.calls;
+    if (latest && latest.test === laneAt().test) layerRuns.calls.pacer.offer(latest);
+  }
   if (!on('text')) {
     layerRuns.text?.stop();
     layerRuns.text = null;
@@ -816,31 +825,37 @@ async function sendLaneText(texts: LaneTexts, snapshot: boolean): Promise<void> 
 
 /**
  * Follow the call the lane's test is in, on the page the lane shows, from Playwright's in-process instrumentation,
- * which pauses nothing: each change goes as `lane-layer` (`calls`), `LIVE_CALL_LOGS_PER_SECOND` at most, the latest
- * alone waiting, and the page followed changes with the page the lane shows.
+ * which pauses nothing: each change goes as `lane-layer` (`calls`) of the test it was made in, while that test runs,
+ * `LIVE_CALL_LOGS_PER_SECOND` at most, the latest alone waiting, and the page followed changes with the page the lane
+ * shows, the log waiting dropped.
  */
 function startLaneCalls(): void {
-  const pacer = new LatestPacer<LiveCallLog>({
-    intervalMs: 1000 / LIVE_CALL_LOGS_PER_SECOND,
-    busy: framesBackedUp,
-    send: (log) => tellLayer({ layer: 'calls', log }),
-  });
+  const paced = (): LatestPacer<TestCallLog> =>
+    new LatestPacer<TestCallLog>({
+      intervalMs: 1000 / LIVE_CALL_LOGS_PER_SECOND,
+      busy: framesBackedUp,
+      send: ({ log, test }) => {
+        if (test === laneAt().test) tellLayer({ layer: 'calls', log }, test);
+      },
+    });
   let page: Page | null = null;
   let following: Promise<(() => void) | null> | null = null;
-  const run = { stop: () => undefined as void, pacer, latest: null as LiveCallLog | null };
+  const run = { stop: () => undefined as void, pacer: paced(), latest: null as TestCallLog | null };
   const follow = (): void => {
     const now = lanePageNow();
     if (now === page) return;
     void following?.then((stop) => stop?.());
     page = now;
     run.latest = null;
+    run.pacer.close();
+    run.pacer = paced();
     following = now
       ? followCallLog(
           now,
           layersTest()?.began ?? Date.now(),
           (log) => {
-            run.latest = log;
-            pacer.offer(log);
+            run.latest = { log, test: laneAt().test };
+            run.pacer.offer(run.latest);
           },
           { source: 'listener', titleOf: layersTitleOf, secrets: knownSecrets },
         ).catch(() => null)
@@ -850,7 +865,7 @@ function startLaneCalls(): void {
   run.stop = () => {
     unhear();
     void following?.then((stop) => stop?.());
-    pacer.close();
+    run.pacer.close();
   };
   layerRuns.calls = run;
   follow();

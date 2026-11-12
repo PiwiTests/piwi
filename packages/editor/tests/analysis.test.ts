@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { diffLines } from '@piwitests/core/line-diff';
 import * as path from 'node:path';
 import {
+  breakpointRunHeaded,
   breakpointsNotice,
   callEndLine,
   caseOfCall,
@@ -295,6 +296,17 @@ describe('the breakpoints of a run', () => {
     expect(breakpointsNotice('1.0.0')).toBeNull();
     expect(breakpointsNotice(null)).toBeNull();
     expect(breakpointsNotice('workspace:*')).toBeNull();
+  });
+
+  test('run headed while the reporter cannot stop at them headless: older than 0.62.0, unknown, or with no run channel', () => {
+    expect(breakpointRunHeaded('0.62.0', true)).toBe(false);
+    expect(breakpointRunHeaded('0.68.1', true)).toBe(false);
+    expect(breakpointRunHeaded('1.0.0', true)).toBe(false);
+    expect(breakpointRunHeaded('0.61.9', true)).toBe(true);
+    expect(breakpointRunHeaded('0.48.0', true)).toBe(true);
+    expect(breakpointRunHeaded(null, true)).toBe(true);
+    expect(breakpointRunHeaded('workspace:*', true)).toBe(true);
+    expect(breakpointRunHeaded('0.68.0', false)).toBe(true);
   });
 });
 

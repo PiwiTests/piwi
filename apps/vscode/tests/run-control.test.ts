@@ -4,7 +4,9 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
   CiSession,
   LocatorAtCaretResult,
+  LaneViewLayer,
   RunControlResult,
+  RunningLine,
   RunPresence,
   RunSession,
   RunStop,
@@ -65,6 +67,17 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  liveMenu,
+  testsBegun,
+  PageLog,
+  PageOutputLines,
+  MAX_PAGE_LINES,
+  MAX_PAGE_PENDING,
+  pageText,
+  type PageLine,
+  RunningLines,
+  stopSharingQuestion,
+  STOP_SHARING,
   progressItem,
   holdTarget,
   holdText,
@@ -177,6 +190,25 @@ const session = (ref: string, workers: RunWorker[], ended = false): RunSession =
 });
 
 const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSession(map, s), new Map());
+
+describe('the tests a run begins, as the Testing view shows them running', () => {
+  test('each test a worker begins, each attempt once, from the run’s own events', () => {
+    const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
+    expect(testsBegun(undefined, begun)).toEqual([{ uri: spec, line: 2 }]);
+    expect(testsBegun(begun, begun)).toEqual([]);
+    // A stop of the same test begins nothing; its retry, or another worker's test, does.
+    const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
+    expect(testsBegun(begun, stopped)).toEqual([]);
+    const retried = session('ed-1', [
+      worker(0, 'running', { test: runTest(1) }),
+      worker(1, 'running', { test: { ...runTest(), id: 't2', line: 9 } }),
+    ]);
+    expect(testsBegun(stopped, retried)).toEqual([
+      { uri: spec, line: 2 },
+      { uri: spec, line: 9 },
+    ]);
+  });
+});
 
 describe('what the Testing view writes of a run', () => {
   test('a test each worker starts, each attempt, a stop and why, and the stop answered, each once', () => {
@@ -776,14 +808,15 @@ describe('Share live', () => {
     });
   });
 
-  test('says how a shared run stands, and stops sharing it from the status bar', () => {
+  test('says how a shared run stands, and opens its menu from the status bar', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
     expect(liveItem(shared)).toEqual({
       name: 'Piwi: Share live',
       text: '$(broadcast) Live · 2 views',
-      tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
-      command: 'piwi.stopSharingRun',
+      tooltip:
+        'Piwi: Shared live on piwi.example.com: 2 views open. Click to open the run page, copy its link or stop sharing.',
+      command: 'piwi.liveMenu',
     });
     // Two runs shared: the views open of both, as JetBrains counts them.
     expect(
@@ -791,8 +824,8 @@ describe('Share live', () => {
     ).toEqual({
       name: 'Piwi: Share live',
       text: '$(broadcast) Live · 3 views',
-      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
-      command: 'piwi.stopSharingRun',
+      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to open a run page, copy its link or stop sharing.',
+      command: 'piwi.liveMenu',
     });
     expect(liveText({ shared: true, refused: null, stopped: null, page, viewers: 0 })).toBe(
       'Shared live on piwi.example.com: nobody watches yet',
@@ -804,6 +837,238 @@ describe('Share live', () => {
     expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
     // Two runs that can be shared: the person chooses.
     expect(liveTarget(sessionsOf(live('ed-1'), live('ed-2')), true)).toEqual({ candidates: ['ed-1', 'ed-2'] });
+  });
+});
+
+describe('the running line', () => {
+  const told = (ref: string, lane: number, line: number | null, title = "Click getByRole('button')"): RunningLine => ({
+    ref,
+    lane,
+    worker: lane,
+    call: line === null ? null : { test: 't1', title, uri: spec, line },
+  });
+  const same = (_uri: string, line: number) => line;
+
+  test('marks the call each watched lane runs at its line now, with the call after it', () => {
+    const lines = new RunningLines();
+    expect(lines.heard(told('ed-1', 0, 4))).toBe(true);
+    expect(lines.heard(told('ed-1', 0, 4))).toBe(false);
+    expect(lines.marks(spec, 20, same)).toEqual([{ line: 4, text: "Worker 1 · Click getByRole('button')" }]);
+    // The edits since the run started move it, and it is not drawn past the document's end or in another file.
+    expect(lines.marks(spec, 20, (_uri, line, ref) => (ref === 'ed-1' ? line + 2 : line))).toEqual([
+      { line: 6, text: "Worker 1 · Click getByRole('button')" },
+    ]);
+    expect(lines.marks(spec, 4, same)).toEqual([]);
+    expect(lines.marks(pageObject, 20, same)).toEqual([]);
+    // A line pushed past the document's end is still told there, so an edit that brings it back draws it again.
+    expect(lines.tells(spec)).toBe(true);
+    expect(lines.tells(pageObject)).toBe(false);
+    // One per worker: the lane's next call moves it, another lane's stands beside it.
+    lines.heard(told('ed-1', 0, 7, "Fill getByLabel('Name')"));
+    lines.heard(told('ed-1', 1, 9));
+    expect(lines.marks(spec, 20, same)).toEqual([
+      { line: 7, text: "Worker 1 · Fill getByLabel('Name')" },
+      { line: 9, text: "Worker 2 · Click getByRole('button')" },
+    ]);
+  });
+
+  test('clears a lane’s line as the service says it goes, and every line of a run that ended or is gone', () => {
+    const lines = new RunningLines();
+    lines.heard(told('ed-1', 0, 4));
+    lines.heard(told('ed-1', 1, 5));
+    lines.heard(told('ed-2', 0, 6));
+    // The test ended or stopped, the watch or the call's place went: the service says so.
+    expect(lines.heard(told('ed-1', 1, null))).toBe(true);
+    expect(lines.heard(told('ed-1', 1, null))).toBe(false);
+    expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([4, 6]);
+    // The run ended: its lines go though the service said nothing yet.
+    const live = sessionsOf(session('ed-2', [worker(0, 'running')]));
+    expect(lines.sessionsChanged(live)).toBe(true);
+    expect(lines.sessionsChanged(live)).toBe(false);
+    expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([6]);
+    // A service started again holds no line.
+    expect(lines.clear()).toBe(true);
+    expect(lines.marks(spec, 20, same)).toEqual([]);
+    expect(lines.tells(spec)).toBe(false);
+    expect(lines.clear()).toBe(false);
+  });
+});
+
+describe('the Piwi: Page output', () => {
+  const at = 1_800_000_000_000;
+  const eventOf = (event: PageEvent, test = 't1', worker = 0): Extract<LaneViewLayer, { layer: 'events' }> => ({
+    ref: 'ed-1',
+    lane: 0,
+    worker,
+    test,
+    layer: 'events',
+    event,
+    at,
+  });
+  const running = sessionsOf(session('ed-1', [worker(0, 'running')]));
+
+  test('names each test the watched lane begins, then what its page says, one line each', () => {
+    const log = new PageLog();
+    expect(log.lane(running, 'ed-1', 0)).toEqual([{ text: '── Worker 1 · checkout › pays', level: 'info' }]);
+    expect(log.lane(running, 'ed-1', 0)).toEqual([]);
+    expect(log.event(eventOf({ kind: 'console', text: 'boom' }), running)).toEqual([
+      { text: 'Console error: boom', level: 'error' },
+    ]);
+    // A request pending is said once, then as it is answered.
+    const pending = (ms: number, done: boolean): PageEvent => ({
+      kind: 'request-pending',
+      id: 3,
+      method: 'POST',
+      url: 'https://shop.example/api/pay',
+      ms,
+      done,
+    });
+    expect(log.event(eventOf(pending(5000, false)), running)).toEqual([
+      { text: 'POST /api/pay pending 5.0 s', level: 'warning' },
+    ]);
+    expect(log.event(eventOf(pending(10_000, false)), running)).toEqual([]);
+    expect(log.event(eventOf(pending(12_000, true)), running)).toEqual([
+      { text: 'POST /api/pay answered after 12 s', level: 'info' },
+    ]);
+    // The next attempt is named again, as an event of a test not named yet is.
+    const retried = sessionsOf(session('ed-1', [worker(0, 'running', { test: { ...runTest(1), id: 't1' } })]));
+    expect(log.lane(retried, 'ed-1', 0)).toEqual([
+      { text: '── Worker 1 · checkout › pays (attempt 2)', level: 'info' },
+    ]);
+    const other = sessionsOf(
+      session('ed-1', [worker(0, 'running', { test: { ...runTest(), id: 't2', title: ['cart', 'adds'] } })]),
+    );
+    expect(log.event(eventOf({ kind: 'page-error', text: 'oops' }, 't2'), other)).toEqual([
+      { text: '── Worker 1 · cart › adds', level: 'info' },
+      { text: 'Uncaught error: oops', level: 'error' },
+    ]);
+    // Between tests, nothing is named.
+    expect(log.lane(sessionsOf(session('ed-1', [worker(0, 'between')])), 'ed-1', 0)).toEqual([]);
+  });
+
+  test('forgets a request said pending once its test ends, and the oldest past a cap', () => {
+    const pending = (id: number): PageEvent => ({
+      kind: 'request-pending',
+      id,
+      method: 'GET',
+      url: 'https://shop.example/api/items',
+      ms: 5000,
+      done: false,
+    });
+    const log = new PageLog();
+    log.event(eventOf(pending(1)), running);
+    expect(log.waiting).toBe(1);
+    // The test ended: the worker is between tests, then in the next one.
+    log.lane(sessionsOf(session('ed-1', [worker(0, 'between')])), 'ed-1', 0);
+    expect(log.waiting).toBe(0);
+    log.event(eventOf(pending(1)), running);
+    const next = sessionsOf(session('ed-1', [worker(0, 'running', { test: { ...runTest(), id: 't2' } })]));
+    log.lane(next, 'ed-1', 0);
+    expect(log.waiting).toBe(0);
+    // Past the cap, the oldest go: said again as they are told pending.
+    for (let id = 0; id < MAX_PAGE_PENDING + 5; id++) log.event(eventOf(pending(id), 't2'), next);
+    expect(log.waiting).toBe(MAX_PAGE_PENDING);
+    expect(log.event(eventOf(pending(0), 't2'), next)).toEqual([
+      { text: 'GET /api/items pending 5.0 s', level: 'warning' },
+    ]);
+  });
+
+  test('keeps its last lines, the level before a warning’s or an error’s, the oldest going past half again as many', () => {
+    expect(pageText({ text: '── Worker 1 · checkout › pays', level: 'info' })).toBe('── Worker 1 · checkout › pays');
+    expect(pageText({ text: 'Console error: boom', level: 'error' })).toBe('[error] Console error: boom');
+    expect(pageText({ text: 'GET /api/items pending 5.0 s', level: 'warning' })).toBe(
+      '[warning] GET /api/items pending 5.0 s',
+    );
+    const output = new PageOutputLines(4);
+    const info = (text: string): PageLine => ({ text, level: 'info' });
+    expect(output.add([info('1'), info('2'), info('3')])).toEqual({ append: ['1', '2', '3'] });
+    expect(output.add([info('4'), info('5'), info('6')])).toEqual({ append: ['4', '5', '6'] });
+    expect(output.add([info('7')])).toEqual({ replace: '4\n5\n6\n7\n' });
+    expect(output.add([info('8')])).toEqual({ append: ['8'] });
+    expect(MAX_PAGE_LINES).toBe(2000);
+  });
+});
+
+describe('the Live item’s menu', () => {
+  const page = 'https://piwi.example.com/test-runs/42';
+  const shared = (ref: string, id: number | null, viewers = 0): RunSession => ({
+    ...session(ref, [worker(0, 'running', { takes: ['share'] })]),
+    ...(id ? { page: { id, url: `https://piwi.example.com/test-runs/${id}` } } : {}),
+    live: {
+      shared: true,
+      refused: null,
+      stopped: null,
+      page: id ? `https://piwi.example.com/test-runs/${id}` : page,
+      viewers,
+    },
+  });
+
+  test('offers the run page, its link and Stop sharing… for the run shared', () => {
+    expect(liveMenu(sessionsOf(shared('ed-1', 42, 2)))).toEqual([
+      {
+        label: 'Open the run page',
+        detail: 'https://piwi.example.com/test-runs/42',
+        action: 'open',
+        ref: 'ed-1',
+        url: page,
+        question: null,
+      },
+      { label: "Copy the run page's link", detail: null, action: 'copy', ref: 'ed-1', url: page, question: null },
+      {
+        label: 'Stop sharing…',
+        detail: 'Shared live on piwi.example.com: 2 views open',
+        action: 'stop',
+        ref: 'ed-1',
+        url: null,
+        question:
+          'Piwi: stop sharing run #42 live? The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
+      },
+    ]);
+  });
+
+  test('asks about the run the menu showed, even once it ended while the menu was open', () => {
+    const sessions = sessionsOf(shared('ed-1', 42, 2));
+    const stop = liveMenu(sessions).find((item) => item.action === 'stop')!;
+    sessions.delete('ed-1');
+    expect(stop.question).toBe(stopSharingQuestion(shared('ed-1', 42, 2)));
+    expect(liveMenu(new Map(), true)[0]!.question).toBe(stopSharingQuestion(null));
+  });
+
+  test('names each run when several are shared, and the window’s share when it is on', () => {
+    const two = sessionsOf(shared('ed-1', 42), shared('ed-2', 43, 1));
+    expect(liveMenu(two).map((item) => [item.label, item.action, item.ref])).toEqual([
+      ['Open run #42’s page', 'open', 'ed-1'],
+      ['Copy run #42’s link', 'copy', 'ed-1'],
+      ['Stop sharing run #42…', 'stop', 'ed-1'],
+      ['Open run #43’s page', 'open', 'ed-2'],
+      ['Copy run #43’s link', 'copy', 'ed-2'],
+      ['Stop sharing run #43…', 'stop', 'ed-2'],
+    ]);
+    expect(liveMenu(sessionsOf(shared('ed-1', 42)), true).map((item) => [item.label, item.action])).toEqual([
+      ['Open the run page', 'open'],
+      ["Copy the run page's link", 'copy'],
+      ["Stop sharing this window's runs…", 'stop-window'],
+    ]);
+    expect(liveMenu(new Map(), true).map((item) => item.action)).toEqual(['stop-window']);
+    // A run shared without a page on the instance offers Stop sharing alone.
+    const noPage: RunSession = {
+      ...shared('ed-1', null),
+      live: { shared: true, refused: null, stopped: null, page: null, viewers: 0 },
+    };
+    expect(liveMenu(sessionsOf(noPage)).map((item) => item.action)).toEqual(['stop']);
+  });
+
+  test('asks to confirm before it stops sharing', () => {
+    expect(stopSharingQuestion(shared('ed-1', 42, 2))).toBe(
+      'Piwi: stop sharing run #42 live? The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    expect(stopSharingQuestion(shared('ed-1', null))).toBe(
+      'Piwi: stop sharing the run live? Nothing more of it goes to piwi.example.com.',
+    );
+    expect(stopSharingQuestion(null)).toBe(
+      "Piwi: stop sharing this window's runs live? Their views on the team instance close, and the runs you start next stay on this machine.",
+    );
+    expect(STOP_SHARING).toBe('Stop sharing');
   });
 });
 
@@ -2014,7 +2279,7 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('says the window is shared, with or without a run, and stops it on a click', () => {
     expect(liveItem(new Map(), true)).toMatchObject({
       text: '$(broadcast) Live · this window',
-      command: 'piwi.stopSharingWindowLive',
+      command: 'piwi.liveMenu',
     });
     expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
       /^Share this window's runs live, each run this window follows from now on \(those you start here, and those of a terminal it follows\) until you stop or close the window, on piwi\.example\.com\?/,

@@ -255,11 +255,15 @@ remainders, began with three: a streamed failure joins its cluster's group at on
 cluster, DB5); a person's own runs are always listed, past the partial-run and branch filters, marked "Yours"
 (`test_runs.reporter_id`, F2); and the lane model lives in `@piwitests/core/live-lane` (D5), which the hub's
 `RunSessions` and the instance's run event bus reduce with, the run page reading its lanes from the `lane` run event.
-Left of the plan, beside the remainders named above (P5's, P6's E10, P7's IO6 and compact tray, P8's `run_start` on
-the desktop app, P9's window scope in the Runs window), all planned and none deferred: the editors' running-line mark
-and Page output, the Testing view counting from the hub's events, F10 (the Live item's menu), **Watch** on the Runs
-window's CI runs, P4's CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here
-until they are built or recorded as deferred. The bugs the analysis
+Then the editors' remainders: the line of the call a watched lane's test is in marked in the editor (`piwi/runningLine`,
+VS Code's line highlight, JetBrains' inlay), the watched page's errors in VS Code's "Piwi: Page" output and JetBrains'
+Page tab, the editors' own run counted from the hub's events and VS Code's Testing view showing each test as a worker
+begins it, the Live item's menu with a confirmed **Stop sharing** (F10), and E10 answered (open question 10): a
+breakpoint makes a run headed only for a reporter that cannot stop headless (older than 0.62.0, or unknown, or no run
+channel). Left of the plan, beside the remainders named above (P5's, P7's IO6 and compact tray, P8's `run_start` on the
+desktop app, P9's window scope in the Runs window), all planned and none deferred: **Watch** on the Runs window's CI
+runs, P4's CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here until they are
+built or recorded as deferred. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -945,6 +949,7 @@ runs the performance check.
    Answered: a mark, every status kept (built in P9).
 9. JetBrains: keep Swing, fed with the service's words, or host the lane view in JCEF?
 10. Should a run with breakpoints stay headed by default, now that a headless stop can be watched?
+    Answered: no; a breakpoint makes a run headed only for a reporter that cannot stop headless (built in P12).
 11. `run_start`: a spec and a line only, or any argument the service's checker accepts? Should an agent's first run in
     a session ask the person?
 12. Does Document Picture-in-Picture work from an MV3 extension page, before it is offered in the Runs window?

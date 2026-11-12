@@ -348,7 +348,9 @@ Every test run passes the editor's breakpoints to the service (`breakpoints`), a
 (on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
 **Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
 tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
-a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`).
+a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). A run with breakpoints stays headless unless
+**Run headed** is on ([How a run starts](#how-a-run-starts)) or the service makes it headed for a reporter that stops at
+none headless (`breakpointRunHeaded`), and its stops show in the editor as any headless stop does.
 
 When the answer's environment carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the editor or Piwi Picker can
 pause), or the command says the run pauses at a `page.pause()` (`RunCommand.pauses`), `startRun` adds the pairing
@@ -482,6 +484,18 @@ Interact off, and Interact goes off with the watch (Watch off, a refused watch, 
 end), at another slot's view and at a stop that takes no input; the watch ends while the panel is hidden and starts
 again as it shows (`pausedPageViewChange`).
 
+**The running line and Piwi: Page.** The extension takes `piwi/runningLine` (`runningLine` in its initialization
+options): while the worker panel watches a slot, the line of the call its running test is in is drawn whole, in
+`editor.rangeHighlightBackground`, with `Worker 1 · <the call>` after it in the CodeLens color (`RunningLines`, one per
+slot, at the line it stands on now through `EditLog`, as a stop's, drawn again on an edit of a file a line is told in,
+one pushed past the document's end and back included: `tells`). It goes as the service says (the test ended or
+stopped, the watch ended), as its run ends, and as the service starts again; the API `activate` returns gives the lines
+(`runningLines`). The slot's `events` layer also goes, one line each in the worker panel's words, to the **Piwi: Page**
+output channel, made as its first line comes, the test the slot's worker begins named once per attempt
+(`PageLog`): only while the panel watches, as the layers do. It is a plain channel, never a log one, so no file of the
+extension's log folder keeps it, and holds its last `MAX_PAGE_LINES` (`PageOutputLines`); a request said pending is
+kept until it is answered, its test ends or `MAX_PAGE_PENDING` newer ones are.
+
 **Open the trace so far.** Beside Watch and Interact, while the slot's worker runs a test whose reporter answers trace
 asks (`canOpenTrace` of `@piwitests/run-model/stop`, the view's `trace`), the button posts `trace`; it and
 **Piwi: Open the trace so far** (`piwi.openTraceSoFar`) send `piwi/openTrace` for the slot (`openTraceParams`). The
@@ -526,8 +540,12 @@ window warns, in a modal, what goes out and to whom (`shareLiveWarning`), and on
 have not said anything of yet included; a run known not to be shareable is asked without it, and the service says why.
 Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
 Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
-counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
-(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key). Beside it, `progressItem` counts the tests the runs ran
+counts the views open of every shared run (`$(broadcast) Live · 3 views`, the `piwi.runSharedLive` context key), whose
+click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Copy the run page's link** and **Stop
+sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
+asks to confirm in a modal first (`stopSharingQuestion`), of the run as the menu showed it (`LiveMenuItem.question`),
+whatever became of it while the menu was open; the palette's commands (`piwi.stopSharingRun`,
+`piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
 out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
 run's own process tells the service: so it counts offline and with the desktop app.
 
@@ -609,6 +627,13 @@ The pure half is `src/run-control.ts` (`tests/run-control.test.ts`, "the CI runs
 The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright config (`statusContext`): the deepest
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
+
+**The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
+control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
+in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). Once the session ended, the count it
+told last stays while the instance's is behind it (`OwnRunCounts`), until the instance's reaches it, the instance says
+the run is finalizing or another run takes the ref, so the count never goes back. The run control's progress item
+counts the window's runs from the same events, with or without an instance.
 
 **A click** depends on the state:
 
@@ -818,6 +843,8 @@ test run, which:
 - follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);
 - takes each command's run in progress by its ref (`LiveRun.ref`), or by its config when the service no longer keeps
   the command;
+- shows each of its tests running as a worker of the command's run begins it, from the run sessions
+  (`sessionChanged`, `testsBegun`), so offline and before the instance names the run too;
 - ends once each command's task ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a task VS Code
   could not start) and its run was read.
 

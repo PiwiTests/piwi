@@ -274,13 +274,13 @@
             <action id="Piwi.ShareRunLive" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the Run Live"
                     description="Let anyone who can open the run on your team's Piwi instance watch its tests' pages from the run page"/>
             <action id="Piwi.StopSharingRun" class="dev.piwitests.jetbrains.StopSharingRunAction"
-                    text="Stop Sharing the Run Live"
+                    text="Stop Sharing the Run Live…"
                     description="End the views of the run on the team instance: nothing more goes there"/>
             <action id="Piwi.ShareWindowLive" class="dev.piwitests.jetbrains.ShareWindowLiveAction"
                     text="Share This Project's Runs Live Until I Stop"
                     description="Share each run of this project live on your team's Piwi instance from now on, until you stop or close the project"/>
             <action id="Piwi.StopSharingWindowLive" class="dev.piwitests.jetbrains.StopSharingWindowLiveAction"
-                    text="Stop Sharing This Project's Runs Live"
+                    text="Stop Sharing This Project's Runs Live…"
                     description="Stop sharing every run of this project live: nothing more goes to the team instance"/>
             <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn Hold Failures On or Off"
                     icon="AllIcons.Debugger.Db_exception_breakpoint"

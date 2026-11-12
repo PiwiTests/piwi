@@ -20,8 +20,10 @@ import type {
   PausedImage,
   RunControlAction,
   RunControlResult,
+  LaneViewLayer,
   RunLive,
   AskToWatchParams,
+  RunningLine,
   RunPresence,
   RunSession,
   RunStop,
@@ -552,6 +554,19 @@ export interface SessionLine {
 }
 
 /**
+ * The tests a run's change begins, each attempt once, by its spec and the line of its `test(…)` call: the Testing view
+ * shows them running from the run's own events, whether an instance follows the run or not.
+ */
+export function testsBegun(before: RunSession | undefined, now: RunSession): Array<{ uri: string; line: number }> {
+  return now.workers.flatMap((worker) => {
+    const was = before?.workers.find((w) => w.worker === worker.worker);
+    const test = worker.test;
+    if (!test || (test.id === was?.test?.id && test.retry === was.test.retry)) return [];
+    return [{ uri: test.uri, line: test.line }];
+  });
+}
+
+/**
  * What a run's change writes in the output of the Testing view's test run that follows it, each line naming the
  * worker's lane: a test a worker starts (`Worker 2 · cart › adds a mug · attempt 2`), a stop and why (`pausedText`),
  * and a stop answered (`Worker 2 · goes on`). Nothing for a session it already wrote.
@@ -643,6 +658,7 @@ export const RUN_COMMANDS = {
   stopSharing: 'piwi.stopSharingRun',
   shareWindow: 'piwi.shareWindowLive',
   stopSharingWindow: 'piwi.stopSharingWindowLive',
+  liveMenu: 'piwi.liveMenu',
   openPage: 'piwi.openRunPage',
   holdFailures: 'piwi.holdFailures',
 } as const;
@@ -1047,7 +1063,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
 
 /**
  * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
- * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
+ * and open the Live menu on a click (`liveMenu`); else a run that can be shared offers it, saying why its sharing stopped when it
  * stopped though nobody asked. None while no run can be shared: the command says why.
  */
 export function liveItem(sessions: Sessions, windowShared = false): ControlItem | null {
@@ -1061,8 +1077,8 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
       text: viewers > 0 ? `$(broadcast) Live · this window · ${viewsText(viewers)}` : '$(broadcast) Live · this window',
       tooltip:
         "Piwi: this window's runs are shared live, each run you start, until you stop or close the window" +
-        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to stop sharing them.`,
-      command: RUN_COMMANDS.stopSharingWindow,
+        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to open a run page, copy its link or stop sharing.`,
+      command: RUN_COMMANDS.liveMenu,
     };
   }
   if (shared.length) {
@@ -1074,8 +1090,8 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
     return {
       name: 'Piwi: Share live',
       text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
-      tooltip: `Piwi: ${what}. Click to stop sharing ${shared.length === 1 ? 'the run' : 'one'}.`,
-      command: RUN_COMMANDS.stopSharing,
+      tooltip: `Piwi: ${what}. Click to open ${shared.length === 1 ? 'the' : 'a'} run page, copy its link or stop sharing.`,
+      command: RUN_COMMANDS.liveMenu,
     };
   }
   const shareable = runs.find((r) => !r.live.refused);
@@ -1088,6 +1104,256 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
     tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
     command: RUN_COMMANDS.shareLive,
   };
+}
+
+/** The line of the call a watched lane's test runs, as the editor marks it: its 0-based line now and its words. */
+export interface RunningMark {
+  line: number;
+  text: string;
+}
+
+/**
+ * The running lines the service tells (`piwi/runningLine`), one per lane of a run, each a line of the run's code, kept
+ * until the service says it goes (the test ended or stopped, the watch ended) or its run ends.
+ */
+export class RunningLines {
+  private readonly lines = new Map<string, RunningLine>();
+
+  /** A running line told: kept, or gone for a null `call`; whether what the editor marks changed. */
+  heard(told: RunningLine): boolean {
+    const key = `${told.ref}\n${told.lane}`;
+    const before = this.lines.get(key);
+    if (!told.call) return this.lines.delete(key);
+    if (before && before.worker === told.worker && JSON.stringify(before.call) === JSON.stringify(told.call)) {
+      return false;
+    }
+    this.lines.set(key, told);
+    return true;
+  }
+
+  /** The runs changed: the lines of a run that ended, or that the sessions no longer hold, go; whether any went. */
+  sessionsChanged(sessions: Sessions): boolean {
+    let gone = false;
+    for (const [key, line] of this.lines) {
+      if (sessions.has(line.ref)) continue;
+      this.lines.delete(key);
+      gone = true;
+    }
+    return gone;
+  }
+
+  /** Every line goes (a service started again holds none); whether any did. */
+  clear(): boolean {
+    const any = this.lines.size > 0;
+    this.lines.clear();
+    return any;
+  }
+
+  /** Whether a line told is in the document `uri`, drawn or not (past its end now): an edit there draws them again. */
+  tells(uri: string): boolean {
+    return [...this.lines.values()].some((told) => told.call?.uri === uri);
+  }
+
+  /**
+   * The marks in the document `uri` of `lineCount` lines, each at its line now (`forward` maps a line of the run `ref`'s
+   * code through the edits since it started), by lane: `Worker 1 · Click getByRole('button')`.
+   */
+  marks(uri: string, lineCount: number, forward: (uri: string, line: number, ref: string) => number): RunningMark[] {
+    return [...this.lines.values()]
+      .filter((told) => told.call?.uri === uri)
+      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane)
+      .flatMap((told) => {
+        const line = forward(uri, told.call!.line, told.ref);
+        return line >= 0 && line < lineCount ? [{ line, text: `${workerName(told.lane)} · ${told.call!.title}` }] : [];
+      });
+  }
+}
+
+/** A line of the **Piwi: Page** output, and how it reads. */
+export interface PageLine {
+  text: string;
+  level: 'error' | 'warning' | 'info';
+}
+
+/** The most requests **Piwi: Page** keeps as said pending: past them, the oldest go. */
+export const MAX_PAGE_PENDING = 200;
+
+/**
+ * What **Piwi: Page** writes of the lane the worker panel watches: the test its worker begins, named once per attempt
+ * (`── Worker 1 · checkout › pays`), then each thing its page says, one line each, in the worker panel's words
+ * (`eventLine`), a request pending said once until it is answered, its test ends, or `MAX_PAGE_PENDING` newer ones are
+ * said.
+ */
+export class PageLog {
+  /** The test last named: its run, worker, id and attempt. */
+  private named: string | null = null;
+  /** The requests said pending, by their run, worker, test and id, until they are answered or their test ends. */
+  private readonly pending = new Set<string>();
+
+  /** How many requests are kept as said pending. */
+  get waiting(): number {
+    return this.pending.size;
+  }
+
+  /** The watched lane `lane` of the run `ref` as the sessions hold it: the test its worker began, named once. */
+  lane(sessions: Sessions, ref: string, lane: number): PageLine[] {
+    const worker = sessions.get(ref)?.workers.find((w) => w.parallelIndex === lane);
+    // A request of a test the watched lane no longer runs goes: nobody tells it answered.
+    const current = worker?.test ? `${ref}:${worker.worker}:${worker.test.id}:` : null;
+    for (const key of this.pending) if (!current || !key.startsWith(current)) this.pending.delete(key);
+    return worker?.test ? this.name(ref, worker, worker.test) : [];
+  }
+
+  /** A page event of the watched lane: its test named first when it was not, then its line. */
+  event(layer: Extract<LaneViewLayer, { layer: 'events' }>, sessions: Sessions): PageLine[] {
+    const worker = sessions.get(layer.ref)?.workers.find((w) => w.worker === layer.worker);
+    const test = worker?.test && worker.test.id === layer.test ? worker.test : null;
+    const header = worker && test ? this.name(layer.ref, worker, test) : [];
+    const { event } = layer;
+    if (event.kind === 'request-pending') {
+      const key = `${layer.ref}:${layer.worker}:${layer.test ?? ''}:${event.id}`;
+      if (!event.done && this.pending.has(key)) return header;
+      if (event.done) this.pending.delete(key);
+      else this.pending.add(key);
+      for (const oldest of this.pending) {
+        if (this.pending.size <= MAX_PAGE_PENDING) break;
+        this.pending.delete(oldest);
+      }
+    }
+    const said = eventLine(event, layer.at, layer.worker, 0);
+    return [...header, { text: said.text, level: said.level }];
+  }
+
+  private name(ref: string, worker: RunWorker, test: RunTest): PageLine[] {
+    const key = `${ref}:${worker.worker}:${test.id}:${test.retry}`;
+    if (key === this.named) return [];
+    this.named = key;
+    const attempt = test.retry > 0 ? ` (attempt ${test.retry + 1})` : '';
+    return [{ text: `── ${workerName(worker.parallelIndex)} · ${testTitle(test)}${attempt}`, level: 'info' }];
+  }
+}
+
+/** How a line of **Piwi: Page** reads in the output: a warning's and an error's level before it. */
+export function pageText(line: PageLine): string {
+  return line.level === 'info' ? line.text : `[${line.level}] ${line.text}`;
+}
+
+/** The most lines **Piwi: Page** keeps. */
+export const MAX_PAGE_LINES = 2000;
+
+/**
+ * The lines **Piwi: Page** holds: each one written is appended, until they are half again as many as it keeps
+ * (`max`); then the output is replaced by the last `max`.
+ */
+export class PageOutputLines {
+  private kept: string[] = [];
+
+  constructor(private readonly max = MAX_PAGE_LINES) {}
+
+  /** `lines` written: what to append, or the whole text to replace the output with. */
+  add(lines: PageLine[]): { append: string[] } | { replace: string } {
+    const texts = lines.map(pageText);
+    this.kept.push(...texts);
+    if (this.kept.length <= this.max + Math.floor(this.max / 2)) return { append: texts };
+    this.kept = this.kept.slice(-this.max);
+    return { replace: `${this.kept.join('\n')}\n` };
+  }
+}
+
+/** An entry of the Live item's menu: open a shared run's page, copy its link, or stop sharing it or the window's runs. */
+export interface LiveMenuItem {
+  label: string;
+  detail: string | null;
+  action: 'open' | 'copy' | 'stop' | 'stop-window';
+  /** The run it acts on; null for the window's share. */
+  ref: string | null;
+  /** The run's page on the team instance, for `open` and `copy`; null otherwise. */
+  url: string | null;
+  /**
+   * What `stop` and `stop-window` ask before they stop sharing (`stopSharingQuestion`), of the run as the menu showed it,
+   * whatever became of it since; null otherwise.
+   */
+  question: string | null;
+}
+
+/**
+ * The Live item's menu: for each run shared live, **Open the run page** and **Copy the run page's link** while it has
+ * a page on the team instance, and **Stop sharing…**, which asks to confirm; each run named by its number when several
+ * are shared. While this window's runs are shared, **Stop sharing this window's runs…** in place of each run's.
+ */
+export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem[] {
+  const shared = liveRunsOf(sessions).filter((r) => r.live.shared);
+  const several = shared.length > 1;
+  const items = shared.flatMap(({ ref, live }): LiveMenuItem[] => {
+    const id = sessions.get(ref)?.page?.id;
+    const run = id ? `run #${id}` : 'the run';
+    const pageItems: LiveMenuItem[] = live.page
+      ? [
+          {
+            label: several ? `Open ${run}’s page` : 'Open the run page',
+            detail: live.page,
+            action: 'open',
+            ref,
+            url: live.page,
+            question: null,
+          },
+          {
+            label: several ? `Copy ${run}’s link` : "Copy the run page's link",
+            detail: null,
+            action: 'copy',
+            ref,
+            url: live.page,
+            question: null,
+          },
+        ]
+      : [];
+    const stop: LiveMenuItem[] = windowShared
+      ? []
+      : [
+          {
+            label: several ? `Stop sharing ${run}…` : 'Stop sharing…',
+            detail: liveText(live),
+            action: 'stop',
+            ref,
+            url: null,
+            question: stopSharingQuestion(sessions.get(ref) ?? null),
+          },
+        ];
+    return [...pageItems, ...stop];
+  });
+  if (windowShared) {
+    items.push({
+      label: "Stop sharing this window's runs…",
+      detail: null,
+      action: 'stop-window',
+      ref: null,
+      url: null,
+      question: stopSharingQuestion(null),
+    });
+  }
+  return items;
+}
+
+/** The button that confirms **Stop sharing**. */
+export const STOP_SHARING = 'Stop sharing';
+
+/**
+ * What **Stop sharing** asks before it stops sharing a run live (`session`), or this window's runs (null): what closes,
+ * and that nothing more goes to the team instance.
+ */
+export function stopSharingQuestion(session: Pick<RunSession, 'page' | 'live'> | null): string {
+  if (!session) {
+    return "Piwi: stop sharing this window's runs live? Their views on the team instance close, and the runs you start next stay on this machine.";
+  }
+  const instance = (session.live && liveInstance(session.live)) ?? 'the team instance';
+  const viewers = session.live?.viewers ?? 0;
+  if (session.page && viewers > 0) {
+    const views =
+      viewers === 1 ? `The view open on ${instance} closes` : `The ${viewsText(viewers)} open on ${instance} close`;
+    return `Piwi: stop sharing run #${session.page.id} live? ${views}, and nothing more of the run goes there.`;
+  }
+  const run = session.page ? `run #${session.page.id}` : 'the run';
+  return `Piwi: stop sharing ${run} live? Nothing more of it goes to ${instance}.`;
 }
 
 /**
