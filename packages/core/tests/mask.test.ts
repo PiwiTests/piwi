@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   HIDDEN_VALUE,
+  hideKnownValues,
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
@@ -605,5 +606,33 @@ describe('a locator naming a field that holds a secret', () => {
     ]) {
       expect(isSecretLocator(locator), locator).toBe(false);
     }
+  });
+});
+
+describe('hideKnownValues', () => {
+  test('hides a value of 8 characters or more wherever it appears, repeated ones included', () => {
+    const text = 'locator resolved to <div id="out">SAMPLE-SECRET-VALUE</div> then SAMPLE-SECRET-VALUE again';
+    expect(hideKnownValues(text, ['SAMPLE-SECRET-VALUE'])).toBe(
+      `locator resolved to <div id="out">${HIDDEN_VALUE}</div> then ${HIDDEN_VALUE} again`,
+    );
+  });
+
+  test('hides a value as a quoted value of an ARIA snapshot escapes it', () => {
+    const value = 'say "hello" \\ now';
+    const escaped = 'say \\"hello\\" \\\\ now';
+    expect(hideKnownValues(`- textbox: "${escaped}"`, [value])).toBe(`- textbox: "${HIDDEN_VALUE}"`);
+    expect(hideKnownValues(`got ${value}`, [value])).toBe(`got ${HIDDEN_VALUE}`);
+  });
+
+  test('leaves a value under 8 characters, which would also match inside unrelated text', () => {
+    expect(hideKnownValues('a <b>1234567</b> and abc', ['1234567', 'abc'])).toBe('a <b>1234567</b> and abc');
+  });
+
+  test('hides each of several values, and leaves the text as it is with none, or empty ones', () => {
+    expect(hideKnownValues('one-AAAAAAAA two-BBBBBBBB', ['AAAAAAAA', 'BBBBBBBB'])).toBe(
+      `one-${HIDDEN_VALUE} two-${HIDDEN_VALUE}`,
+    );
+    expect(hideKnownValues('unchanged AAAAAAAA', [])).toBe('unchanged AAAAAAAA');
+    expect(hideKnownValues('unchanged', [''])).toBe('unchanged');
   });
 });

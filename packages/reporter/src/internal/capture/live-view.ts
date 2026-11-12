@@ -45,6 +45,7 @@ import {
   LaneFilmstrip,
   LaneTexts,
   followTraceText,
+  knownSecrets,
   layersTitleOf,
   subscribePageEvents,
   takeLaneText,
@@ -974,7 +975,7 @@ function followCalls(own: Link): void {
       (log) => {
         if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
       },
-      { source, titleOf: layersTitleOf },
+      { source, titleOf: layersTitleOf, secrets: knownSecrets },
     ).catch(() => null);
   } else if (!wanted && shown.following) {
     void shown.following.then((stop) => stop?.());

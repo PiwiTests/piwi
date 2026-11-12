@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import type { LaneText } from '@piwitests/core/live-layers';
+import type { LiveCallLog } from '@piwitests/core/live-view';
 import {
   LaneFilmstrip,
   LaneTexts,
@@ -251,6 +252,72 @@ describe('the calls a lane hears', () => {
     const track: Array<Record<string, (...args: unknown[]) => void>> = [];
     trackCalls({ _instrumentation: { addListener: (listener: (typeof track)[number]) => track.push(listener) } });
     expect(() => track[0]!.onApiCallBegin!({}, throwing)).not.toThrow();
+  });
+});
+
+describe('the call log a view is told', () => {
+  const VALUE = 'SAMPLE-SECRET-VALUE';
+  const LINE = `locator resolved to <div id="out">${VALUE}</div>`;
+
+  /** A context whose in-process instrumentation the test drives call by call, and a view that follows it. */
+  async function follow(secrets: () => readonly string[], titleOf: (id: string) => string | null = () => null) {
+    const hooks: Record<string, (...args: unknown[]) => void> = {};
+    const impl = {
+      instrumentation: {
+        addListener: (listener: typeof hooks) => Object.assign(hooks, listener),
+        removeListener: () => undefined,
+      },
+    };
+    const context = { _connection: { toImpl: () => impl }, once: () => undefined, pages: () => [] };
+    listenCalls(context as unknown as BrowserContext, titleOf);
+    const page = { context: () => context, isClosed: () => false, viewportSize: () => null } as unknown as Page;
+    const told: LiveCallLog[] = [];
+    const stop = await followCallLog(page, 0, (log) => told.push(log), { source: 'listener', titleOf, secrets });
+    return { hooks, told, stop };
+  }
+
+  it('hides each value the attempt knows is a secret in the title, the lines and the error', async () => {
+    const meta = { id: 'call@1', method: 'click', params: { selector: '#out' }, error: undefined as unknown };
+    const { hooks, told, stop } = await follow(
+      () => [VALUE],
+      () => `Click getByText("${VALUE}")`,
+    );
+    hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+    hooks.onCallLog!({}, meta, 'api', LINE);
+    meta.error = { error: { message: `Timeout waiting for ${VALUE}\n  more` } };
+    hooks.onAfterCall!({ metadata: meta }, {}, undefined);
+    stop?.();
+    const last = told[told.length - 1]!;
+    expect(last.lines.join('\n')).toContain('locator resolved to <div id="out"><hidden></div>');
+    expect(last.call.title).toBe('Click getByText("<hidden>")');
+    expect(last.error).toBe('Timeout waiting for <hidden>');
+    expect(JSON.stringify(told)).not.toContain(VALUE);
+  });
+
+  it('hides a value that became known after its line was first told', async () => {
+    const known: string[] = [];
+    const meta = { id: 'call@2', method: 'click', params: { selector: '#out' } };
+    const { hooks, told, stop } = await follow(() => known);
+    hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+    hooks.onCallLog!({}, meta, 'api', LINE);
+    // Not a secret yet: the line is told as it is, and kept settled.
+    expect(told[told.length - 1]!.lines.join('\n')).toContain(VALUE);
+    known.push(VALUE);
+    hooks.onCallLog!({}, meta, 'api', '  - waiting for element to be visible');
+    stop?.();
+    const last = told[told.length - 1]!;
+    expect(last.lines.length).toBeGreaterThan(1);
+    expect(JSON.stringify(last)).not.toContain(VALUE);
+    expect(last.lines.join('\n')).toContain('<hidden>');
+  });
+
+  it('tells a call log as it is while no value is known', async () => {
+    const meta = { id: 'call@3', method: 'click', params: { selector: '#out' } };
+    const { hooks, told, stop } = await follow(() => []);
+    hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+    hooks.onCallLog!({}, meta, 'api', LINE);
+    stop?.();
+    expect(told[told.length - 1]!.lines.join('\n')).toContain(LINE);
   });
 });
 

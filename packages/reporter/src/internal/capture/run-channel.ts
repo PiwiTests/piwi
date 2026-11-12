@@ -73,6 +73,7 @@ import {
   attemptTraceFile,
   followTraceText,
   layersTest,
+  knownSecrets,
   layersTitleOf,
   subscribePageEvents,
   takeLaneText,
@@ -841,7 +842,7 @@ function startLaneCalls(): void {
             run.latest = log;
             pacer.offer(log);
           },
-          { source: 'listener', titleOf: layersTitleOf },
+          { source: 'listener', titleOf: layersTitleOf, secrets: knownSecrets },
         ).catch(() => null)
       : null;
   };
