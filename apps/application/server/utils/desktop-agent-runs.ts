@@ -2,8 +2,9 @@
  * Desktop build: the runs agents ask the desktop app to start (`run_start` on `/mcp`), handed to its window, which
  * starts each as a person's run from its Local runs tray, through the shell. Each open window listens on the desktop
  * event stream (`/api/desktop/events`), which registers it here; the main window starts the run and answers with the
- * ref the shell gave it (`POST /api/desktop/runs/agent-started`), or why it did not. The hub of those runs
- * (`desktop-runs.ts`) checked the spec first.
+ * ref the shell gave it (`POST /api/desktop/runs/agent-started`), or why it did not; a window that (re)connects hears
+ * again the runs still waiting, and stops a run whose answer came too late. The hub of those runs (`desktop-runs.ts`)
+ * checked the spec first.
  */
 import { randomBytes } from 'node:crypto';
 import type { ShellRunStart } from '@piwitests/editor/shell-runs';
@@ -18,7 +19,11 @@ const MAX_WAITING = 8;
 type AgentRunListener = (run: DesktopAgentRun) => void;
 
 const listeners = new Set<AgentRunListener>();
-const waiting = new Map<string, (answer: { ref: string } | { refused: string }) => void>();
+/** The runs asked of the window that wait for its answer, by id, each with what settles it. */
+const waiting = new Map<
+  string,
+  { run: DesktopAgentRun; resolve: (answer: { ref: string } | { refused: string }) => void }
+>();
 
 /** Hears each run an agent asks the window to start; returns the unsubscribe. */
 export function subscribeAgentRuns(listener: AgentRunListener): () => void {
@@ -53,20 +58,31 @@ export function askWindowToStart(
       });
     }, waitMs);
     timer.unref?.();
-    waiting.set(id, (answer) => {
-      clearTimeout(timer);
-      waiting.delete(id);
-      resolve(answer);
-    });
     const run: DesktopAgentRun = { id, ...start };
+    waiting.set(id, {
+      run,
+      resolve: (answer) => {
+        clearTimeout(timer);
+        waiting.delete(id);
+        resolve(answer);
+      },
+    });
     for (const listener of listeners) listener(run);
   });
 }
 
-/** The window's answer to a run it was asked to start: false for a run no longer waiting. */
+/** The runs asked of the window that still wait for its answer: a window that (re)connects hears them again. */
+export function waitingAgentRuns(): DesktopAgentRun[] {
+  return [...waiting.values()].map((entry) => entry.run);
+}
+
+/**
+ * The window's answer to a run it was asked to start: false for a run no longer waiting (answered, or past the wait),
+ * whose run the window then stops.
+ */
 export function answerAgentRun(answer: DesktopAgentRunAnswer): boolean {
-  const resolve = waiting.get(answer.id);
-  if (!resolve) return false;
-  resolve('ref' in answer ? { ref: answer.ref } : { refused: answer.error });
+  const entry = waiting.get(answer.id);
+  if (!entry) return false;
+  entry.resolve('ref' in answer ? { ref: answer.ref } : { refused: answer.error });
   return true;
 }

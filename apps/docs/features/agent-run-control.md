@@ -105,7 +105,9 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
 The [desktop app](./desktop-runs#for-agents)'s MCP server serves the same tools for the runs it starts; there,
 `code_write` writes no file and a run nobody attends is not served. `run_start` takes a spec of a linked folder,
 which the app's window starts as you would from its Local runs tray, titled `Started by <agent>`, while a window is
-open; `npx @piwitests/reporter mcp` sends it a spec no editor's workspace holds.
+open. It runs each test once, outside UI mode, and counts among the three runs agents start at once until its process
+ends; a line in no test, or a spec whose name starts with `-`, is refused. `npx @piwitests/reporter mcp` sends the
+app a spec no editor's workspace holds.
 
 ## Limits
 

@@ -47,7 +47,12 @@ import {
 } from '../../server/utils/desktop-access';
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
 import type { DesktopAgentRun } from '#shared/desktop-agent-runs';
-import { answerAgentRun, askWindowToStart, subscribeAgentRuns } from '../../server/utils/desktop-agent-runs';
+import {
+  answerAgentRun,
+  askWindowToStart,
+  subscribeAgentRuns,
+  waitingAgentRuns,
+} from '../../server/utils/desktop-agent-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 /** How long an agent follows a run after its last call, short for the test that waits it out. */
@@ -1607,6 +1612,19 @@ describe("the agents' tools for the desktop app's runs", () => {
     const refusing = subscribeAgentRuns((run) => answerAgentRun({ id: run.id, error: 'The project has no folder.' }));
     expect(await askWindowToStart(start, 1000)).toEqual({ refused: 'The project has no folder.' });
     refusing();
+    // A run still waiting is sent again to a window that connects; once answered, or past the wait, it is not, and a
+    // late answer is not taken.
+    const sent: DesktopAgentRun[] = [];
+    const late = subscribeAgentRuns((run) => sent.push(run));
+    const waited = askWindowToStart(start, 1000);
+    expect(waitingAgentRuns()).toEqual(sent);
+    expect(answerAgentRun({ id: sent[0]!.id, ref: 'desktop-63' })).toBe(true);
+    expect(await waited).toEqual({ ref: 'desktop-63' });
+    expect(waitingAgentRuns()).toEqual([]);
+    await askWindowToStart(start, 20);
+    expect(waitingAgentRuns()).toEqual([]);
+    expect(answerAgentRun({ id: sent[1]!.id, ref: 'desktop-64' })).toBe(false);
+    late();
   });
 
   it('pause a run only while a window can show its stop, which goes on once the agent calls no more', async () => {
