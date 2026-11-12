@@ -18,6 +18,8 @@ export interface DetailTabItem {
 const props = defineProps<{
   tabItems: DetailTabItem[];
   tabPanelClass?: Record<string, string>;
+  /** Tabs that fill the height the page has left, below `lg` as well while the summary is folded away there, which they start with. */
+  fitTabs?: string[];
 }>();
 
 const activeTab = defineModel<string>({ required: true });
@@ -27,14 +29,39 @@ const activeTab = defineModel<string>({ required: true });
 // summary is pinned and the panel scrolls independently.
 const summaryCollapsed = ref(false);
 
+const fits = (value: string) => props.fitTabs?.includes(value) ?? false;
+
 const activeTabIcon = computed(() => props.tabItems.find((t) => t.value === activeTab.value)?.icon);
 
 // Desktop keeps the independent-scroll panel; on mobile the panel flows into
-// the page scroll (no clipping, no nested scroll area).
+// the page scroll (no clipping, no nested scroll area). A tab that fits the screen does so on a phone only while the
+// summary is folded: with it shown the page scrolls as one document, because the panel would get no height at all.
 function panelClasses(value: string) {
+  if (fits(value)) {
+    return summaryCollapsed.value
+      ? 'flex min-h-0 flex-1 flex-col overflow-y-auto'
+      : 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto';
+  }
   const desktop = props.tabPanelClass?.[value] ?? 'overflow-y-auto';
   return ['min-h-0', 'lg:flex-1', desktop, 'max-lg:!block', 'max-lg:!overflow-visible'].join(' ');
 }
+
+// A tab that fits the screen starts with the summary folded on a phone, where the summary would push it out of view.
+// The fold the person had before opening it comes back when they leave it for a tab that does not fit.
+let foldBeforeFit = false;
+watch(
+  activeTab,
+  (value, before) => {
+    const wasFit = before != null && fits(before);
+    if (fits(value) && !wasFit) {
+      foldBeforeFit = summaryCollapsed.value;
+      summaryCollapsed.value = true;
+    } else if (!fits(value) && wasFit) {
+      summaryCollapsed.value = foldBeforeFit;
+    }
+  },
+  { immediate: true },
+);
 
 // The strip is the Settings-style UNavigationMenu. Its active state is
 // route-driven by default; tabs are view state (no routes), so each item

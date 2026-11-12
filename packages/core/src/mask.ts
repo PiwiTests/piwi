@@ -857,11 +857,18 @@ export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]
       return hide ? writeAriaLine(read, false, true) : line;
     })
     .join('\n');
-  return hiddenAnywhere(out, values);
+  return hideKnownValues(out, values);
 }
 
-/** `text` with each value of 8 characters or more written as {@link HIDDEN_VALUE}, as written and escaped. */
-function hiddenAnywhere(text: string, values: readonly string[]): string {
+/**
+ * `text` with each of `values` of 8 characters or more written as {@link HIDDEN_VALUE} wherever it appears, as written
+ * and as a quoted value of an ARIA snapshot escapes it. A shorter value is left: it would also match inside words,
+ * numbers and markup that have nothing to do with it (a three-letter value hides part of every word that holds it),
+ * so a text shows it only where a rule reads where it stands (a field's value in a snapshot line, `withoutFieldSecrets`).
+ * The one rule for the values the attempt knows are secrets (`withoutFieldSecrets`, `maskAriaSnapshot`, the live call
+ * log), so what one path hides another cannot show. No values leave `text` as it is. Pure.
+ */
+export function hideKnownValues(text: string, values: readonly string[]): string {
   let out = text;
   for (const value of values) {
     if (value.length < 8) continue;
@@ -1242,7 +1249,7 @@ export function maskAriaSnapshot(snapshot: string, options: AriaMaskOptions = {}
     if (name && shown.some((masked) => name.includes(masked))) verdict.name = true;
     return verdict.name || verdict.value ? writeAriaLine(line, verdict.name, verdict.value) : written[i]!;
   });
-  return hiddenAnywhere(out.join('\n'), [...secrets]);
+  return hideKnownValues(out.join('\n'), [...secrets]);
 }
 
 /** The `/placeholder` a node's line at `index` shows, among the properties that follow it; null for none. */

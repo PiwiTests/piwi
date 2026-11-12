@@ -1589,7 +1589,12 @@ const moreMenuItems = computed(() => {
       </template>
 
       <template #body>
-        <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
+        <DetailPageLayout
+          v-model="activeTab"
+          :tab-items="tabItems"
+          :tab-panel-class="tabPanelClass"
+          :fit-tabs="['video']"
+        >
           <template #summary>
             <UAlert
               v-if="runReadEndedView"

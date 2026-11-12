@@ -52,7 +52,7 @@ watch(group, () => (chosenKey.value = null));
 </script>
 
 <template>
-  <div class="p-4" data-shot="run-video-tab">
+  <div class="flex min-h-0 flex-1 flex-col p-4" data-shot="run-video-tab">
     <ErrorState v-if="error" :text="error" padded>
       <template #action>
         <UButton size="sm" color="neutral" variant="outline" @click="load">Retry</UButton>
@@ -69,8 +69,8 @@ watch(group, () => (chosenKey.value = null));
       </p>
     </EmptyState>
 
-    <div v-else class="space-y-3">
-      <div class="flex flex-wrap items-center gap-3">
+    <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
+      <div class="flex shrink-0 flex-wrap items-center gap-3">
         <SegmentedSwitch v-model="group" :items="groupItems" aria-label="Group by" />
         <USelect
           v-if="group === 'worker' && reels.length > 1"
@@ -83,7 +83,7 @@ watch(group, () => (chosenKey.value = null));
         />
         <p v-if="group === 'file'" class="text-xs text-muted">Tests ran in parallel; played here in file order</p>
       </div>
-      <p v-if="data?.truncated" class="text-xs text-muted">
+      <p v-if="data?.truncated" class="shrink-0 text-xs text-muted">
         This run has more tests than the tab lists: the first {{ LISTED_LIMIT.toLocaleString() }} with a video and the
         first {{ LISTED_LIMIT.toLocaleString() }} without are shown.
       </p>

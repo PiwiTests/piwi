@@ -226,6 +226,8 @@ export const PROJECT = {
   URL_PATTERNS_GOTO: 'url-patterns-goto-test',
   URL_PATTERNS: 'url-patterns-test',
   USER_PROJECT_ROLES: 'user-project-roles-test',
+  VIDEO_ACTIONS: 'video-actions-test',
+  VIDEO_REVIEW_FIT: 'video-review-fit-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

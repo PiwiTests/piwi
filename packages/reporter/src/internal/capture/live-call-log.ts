@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { compressCallLog, MAX_LIVE_CALL_LOG_LINES, type LiveBox, type LiveCallLog } from '@piwitests/core/live-view';
 import {
+  hideKnownValues,
   hideSecretsInLog,
   hideSecretsInText,
   hideTypedText,
@@ -35,7 +36,8 @@ import { internalCall } from './quiet-capture.js';
  *   call on a frame of the page); a read that fails leaves the last one.
  *
  * Each text has what may be a secret hidden (`hideTypedText`, `hideSecretsInLog`, `hideSecretsInText`) before it is
- * cut, as a view is told it, never before: a call nobody is shown costs no more than its record. The log's lines go
+ * cut, as a view is told it, never before: a call nobody is shown costs no more than its record. As each view is told,
+ * the values the attempt knows are secrets (`FollowOptions.secrets`) are hidden in each text too, the ones known then. The log's lines go
  * folded as Playwright folds a failed call's (`compressCallLog`). No hook throws into the call it hears.
  */
 
@@ -98,10 +100,16 @@ function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefi
 /** Where a view follows a context's calls from: the call stream, or the in-process instrumentation. */
 export type CallSource = 'stream' | 'listener';
 
-/** How a view follows the calls: from which source, and the title the runner gives a call by its id. */
+/**
+ * How a view follows the calls: from which source, the title the runner gives a call by its id, and the values the
+ * attempt knows are secrets (`knownSecrets` of `lane-layers.ts`, which imports this module, so it is passed in). They
+ * are read as each view is told, never kept: it must be synchronous and cheap, and a value may become known after a
+ * line was heard, so the lines told have the values known then hidden (`hideKnownValues`).
+ */
 export interface FollowOptions {
   source?: CallSource;
   titleOf?: (id: string) => string | null;
+  secrets?: () => readonly string[];
 }
 
 /** Who hears each call of the worker's Playwright end (`onCallEnded`): its id, once the runner gave it one. */
@@ -604,6 +612,7 @@ export async function followCallLog(
 ): Promise<(() => void) | null> {
   const context = page.context();
   const titleOf = options.titleOf ?? (() => null);
+  const secrets = options.secrets ?? (() => []);
   let calls: ContextCalls | null;
   if (options.source === 'listener') {
     calls = listenContext(context, titleOf) ?? heardCalls(titleOf);
@@ -630,16 +639,19 @@ export async function followCallLog(
     if (stopped || !shown) return;
     settle(shown, calls.titleOf);
     const here = onThisPage();
+    // What the attempt knows are secrets now, which a page may show in a line (`locator resolved to <div>…</div>`).
+    const known = secrets();
+    const hidden = (text: string): string => hideKnownValues(text, known);
     onLog({
       id: shown.id,
-      call: { title: shown.title!, file: shown.file, line: shown.line },
+      call: { title: hidden(shown.title!), file: shown.file, line: shown.line },
       status: shown.status,
-      lines: compressCallLog(shown.lines).slice(-MAX_LIVE_CALL_LOG_LINES),
+      lines: compressCallLog(shown.lines).slice(-MAX_LIVE_CALL_LOG_LINES).map(hidden),
       point: here ? shown.point : null,
       target: here && shown.status === 'running' && target?.id === shown.id ? target.matches : null,
       viewport: page.viewportSize(),
       ms: (shown.ended ?? Date.now()) - shown.began,
-      error: shown.error,
+      error: shown.error === null ? null : hidden(shown.error),
     });
   };
   calls.views.add(tell);

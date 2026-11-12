@@ -26,6 +26,8 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
   let hasFrameCallback = false;
   let moving = false;
   let token = 0;
+  /** The seek that still waits for its video or its frame, so Play pressed meanwhile can start it again playing. */
+  let pendingSeek: { token: number; index: number; ms: number; play: boolean } | null = null;
 
   /** The element on show. */
   const front = ref<Slot>(0);
@@ -159,11 +161,15 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     }
   }
 
-  /** Plays entry `index` from `ms` of its video. */
-  async function seekTo(index: number, ms = 0) {
+  /**
+   * Moves to entry `index` at `ms` of its video and shows that frame. It plays on from there when `play` is true, which
+   * is the default while the reel is playing; a paused reel stays paused.
+   */
+  async function seekTo(index: number, ms = 0, play = playing.value) {
     const entry = entries.value[index];
     if (!entry?.execution.video || failed.has(index)) return;
     const mine = ++token;
+    pendingSeek = { token: mine, index, ms, play };
     started.value = true;
     finished.value = false;
     playedFrom.value = Math.min(playedFrom.value, index);
@@ -172,7 +178,10 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     const slot: Slot = onShow ? front.value : ((1 - front.value) as Slot);
     if (!onShow && held[slot] !== index) setHeld(slot, index);
     const el = els[slot];
-    if (!el) return;
+    if (!el) {
+      pendingSeek = null;
+      return;
+    }
     try {
       if (el.readyState < 1) await once(el, 'loadedmetadata');
       if (mine !== token) return;
@@ -182,24 +191,30 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     } catch {
       // The element's own `error` event. A newer move owns the player now, so a stale one leaves it be.
       if (mine !== token) return;
+      pendingSeek = null;
       moving = false;
       markFailed(index);
       return;
     }
+    pendingSeek = null;
     if (!onShow) {
       els[front.value]?.pause();
       front.value = slot;
     }
     current.value = index;
     positionMs.value = ms;
-    await el.play().catch(() => undefined);
-    if (mine !== token) return;
+    if (play) {
+      await el.play().catch(() => undefined);
+      if (mine !== token) return;
+    } else {
+      el.pause();
+    }
     playing.value = !el.paused;
     moving = false;
     preloadNext(index);
   }
 
-  /** Plays entry `index` from the point `fraction` (0 to 1) of the way through its test. */
+  /** Moves to entry `index` at the point `fraction` (0 to 1) of the way through its test. */
   function seekToFraction(index: number, fraction: number) {
     void seekTo(index, Math.min(1, Math.max(0, fraction)) * lengthOf(index));
   }
@@ -289,11 +304,16 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
       if (first != null) {
         // Starting over from the reel's start: what the last pass ticked is not carried into this one.
         if (finished.value) playedFrom.value = ticksFrom(first);
-        void seekTo(first, 0);
+        void seekTo(first, 0, true);
       }
+    } else if (pendingSeek?.token === token && !playing.value) {
+      // Play pressed while a paused reel's seek still waits for its video: that seek starts again with the other state, so
+      // it ends as the person last asked (pressed twice, paused).
+      void seekTo(pendingSeek.index, pendingSeek.ms, !pendingSeek.play);
     } else if (playing.value) {
       // A move that is still waiting (a video to load, a seek) is dropped, so it cannot start playing again.
       token++;
+      pendingSeek = null;
       moving = false;
       el.pause();
       playing.value = false;

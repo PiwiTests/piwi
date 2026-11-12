@@ -549,7 +549,9 @@ What the package does to a user's run, process by process.
   flight, again after a 429 and never after a 400: the running call told last (else the one
   that ended last), its status, its log folded by `compressCallLog`, its action point and its
   error's first line, each text through `hideTypedText` or `hideSecretsInLog`, then
-  `hideSecretsInText`, before it is cut. A listener on the worker's Playwright
+  `hideSecretsInText`, before it is cut, and, as each view is told, through `hideKnownValues` with the values the
+  attempt knows are secrets then (`knownSecrets`, passed in as `FollowOptions.secrets`; values of 8 characters or more, as
+  `withoutFieldSecrets` hides them). A listener on the worker's Playwright
   instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which
   never hears an internal call, gives each call's start and selector, matched to the stream by
   the id the runner gives the call. While the call shown has waited a second, and while the

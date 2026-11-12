@@ -338,6 +338,27 @@ export async function loadStoredTraceEvents(
 }
 
 /**
+ * The parsed event stream of a stored trace, and nothing else, for a view that reads the actions only (the marks
+ * under the video). A trace some other view has loaded is read from the shared bundle, as it is; any other is read
+ * here, inflating just its `.trace` entries, and is neither kept nor counted against the bundle budget, so the
+ * marks never push the traces the other views share out of memory.
+ */
+export async function loadStoredTraceActionEvents(blobPath: string): Promise<ParsedTraceData | null> {
+  const loaded = bundleCache.get(blobPath);
+  if (loaded) {
+    try {
+      return (await loaded.bundle)?.parsed ?? null;
+    } catch {
+      // A shared load that failed is retried by its own views; read the entries afresh below.
+    }
+  }
+  const archive = await readTraceArchive(blobPath);
+  if (!archive) return null;
+  const traceTexts = await decompressTextEntries(archive.zip, traceEventEntries(archive.metas));
+  return traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null;
+}
+
+/**
  * Resolve the stored spellings a resource may have: exact, and — because a body
  * ref (`_sha1` in v8 traces, `_file` in v9, already stripped of its `resources/`
  * prefix by `matchNetworkBodySha1`) sometimes includes the file extension and

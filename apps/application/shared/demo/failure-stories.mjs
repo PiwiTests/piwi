@@ -3164,6 +3164,20 @@ export const DEMO_PROJECTS = [
         arrival: false,
       },
       {
+        title: 'Check',
+        subtitle: "getByLabel('Save card for next time')",
+        category: 'input',
+        weight: 12,
+        params: { locator: "getByLabel('Save card for next time')" },
+      },
+      {
+        title: 'Hover',
+        subtitle: "getByRole('button', { name: 'Place order' })",
+        category: 'action',
+        weight: 300,
+        params: { locator: "getByRole('button', { name: 'Place order' })" },
+      },
+      {
         title: 'Click',
         subtitle: "getByRole('button', { name: 'Place order' })",
         category: 'action',
