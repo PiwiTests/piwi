@@ -11,7 +11,7 @@ import {
   passRateTone,
 } from '#shared/status-colors';
 import { PASS_RATE_STEPS, PASS_RATE_TONES } from '../../app/utils/pass-rate';
-import { STATUS_PALETTE } from '../../app/utils/status-palette';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
 const css = readFileSync(resolve(__dirname, '../../app/assets/css/main.css'), 'utf8');
 

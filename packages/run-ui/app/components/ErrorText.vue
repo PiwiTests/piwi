@@ -11,8 +11,8 @@
  * text as a tooltip. `block` keeps every line for a step's or an error card's
  * full message.
  */
-import { renderAnsi } from '~/utils';
-import { stripAnsi } from '~/utils/text-format';
+import { stripAnsi } from '@piwitests/core/error-parse';
+import { renderAnsi } from '../utils/ansi';
 
 const props = withDefaults(defineProps<{ text: string; mode?: 'line' | 'block' }>(), { mode: 'line' });
 

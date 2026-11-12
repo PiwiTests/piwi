@@ -9,9 +9,10 @@ built with the `runner` feature.
 
 ## Rules
 
-- **The window shares, it does not copy.** The connection card, the confirmation and the host's event stream come from
-  `packages/run-ui` by auto-import, and a change both windows need goes there. The window has no router, no store
-  beyond the run list and no network call but the layer's.
+- **The window shares, it does not copy.** The connection card, the confirmation, the host's event stream and the live
+  view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a change both
+  windows need goes there. The window has no router, no store beyond the run list and no network call but the
+  layer's.
 - **The shell runs the tests, the window shows them.** A confirmed request calls `desktop_run_requested_tests` with the
   request id alone, and the shell reads the command and the request token from the host. Output arrives as
   `piwi:local-run` events, and Stop calls `desktop_stop_local_tests`.

@@ -21,13 +21,8 @@
  * nothing; a worker's window holds the stream for its worker itself.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import {
-  desktopRunOf,
-  desktopRunRef,
-  desktopShellIdOf,
-  desktopShownRefs,
-  desktopStopSaid,
-} from '~/utils/desktop-run-view';
+import { desktopRunOf, desktopRunRef, desktopShellIdOf, desktopShownRefs } from '~/utils/desktop-run-view';
+import { desktopStopSaid } from '@piwitests/run-ui/run-view';
 
 /** The channel on which the app's windows say which runs their trays own. */
 const OWNERS_CHANNEL = 'piwi-desktop-run-owners';

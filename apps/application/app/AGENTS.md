@@ -208,9 +208,9 @@ views are exempt only where a rule says so.
   test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled "Interrupted" in every
   legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
 - **Never hardcode a status color** in a bar, chart, legend, dot, history cell, timeline bar or filter chip: use
-  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`app/utils/status-palette.ts`, `flaky` the execution's stored
-  `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML,
-  `var(--color-status-*)` in an SVG `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
+  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`@piwitests/run-ui/status-palette`, `flaky` the execution's
+  stored `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML, `var(--color-status-*)` in an SVG
+  `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
   a registered Nuxt UI color). A view needing another shade adds it to the palette entry, not to the component.
 - **A pass rate takes its band and color from `app/utils/pass-rate.ts`** (`passRateTone`, `passRateTextClass`,
   `PASS_RATE_TONES`, `passRateStep` for heatmap cells), never from a threshold or color written at the call site.

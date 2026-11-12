@@ -18,11 +18,11 @@ keeps no database and serves no dashboard.
 Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
 `Piwi-Runner_…`:
 
-| OS | Installer |
-|----|-----------|
-| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
-| **macOS** 13.5+ (Apple silicon) | `.dmg` |
-| **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
+| OS                              | Installer                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| **Windows**                     | `.exe` (per-user, no admin) or `.msi` (per-machine)                               |
+| **macOS** 13.5+ (Apple silicon) | `.dmg`                                                                            |
+| **Linux** (x86-64)              | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
 The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
 Windows, **More info** then **Run anyway** in SmartScreen.
@@ -49,6 +49,20 @@ Its window connects to an instance the way the desktop app does: enter the insta
 then allow **Piwi Runner** on the instance's page with the code the window shows. Its key stays in the operating
 system's keychain. Each project's folder is linked on the first request for it. The rest, from the confirmation to
 **Stop**, is described in [Run on my machine](./run-on-my-machine#in-the-app).
+
+## Pause and watch a run
+
+Each run Piwi Runner starts shows in its window live, as the desktop app's runs show in its
+[Local runs tray](./desktop-runs): each worker's test and where it stands, **Pause**, **Step**, **Resume** and
+**Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch live**. A `page.pause()`,
+a step or a breakpoint waits in the window until you answer it, and the window comes to the front. **Hold failures**,
+on each running run and off until you turn it on, keeps a failing test at its line too, until you resume it.
+**Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
+writes no file. **Share live** shows the run's stops to your team on the instance it reports to, as in the desktop
+app.
+
+Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an
+editor starts, not Piwi Runner's.
 
 ## In the tray
 

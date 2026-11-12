@@ -13,8 +13,8 @@
  */
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
-import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopImagePoint, desktopSay, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
+import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
+import { desktopImagePoint, desktopSay, type DesktopRunInputTarget } from '../utils/run-view';
 
 const props = defineProps<{
   alt: string;

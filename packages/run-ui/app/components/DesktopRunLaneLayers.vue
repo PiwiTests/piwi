@@ -18,7 +18,8 @@ import {
   type LaneFilmEntry,
 } from '@piwitests/run-model/layers';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { desktopSay } from '~/utils/desktop-run-view';
+import { desktopSay } from '../utils/run-view';
+import { statusPalette } from '../utils/status-palette';
 
 const props = defineProps<{
   session: HubSession;
@@ -82,7 +83,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
             {{ ' ' }}<span class="font-mono text-muted">{{ wait.place }}</span>
           </template>
         </p>
-        <p class="text-xs" :class="getStatusTextClass(wait.tone)" data-testid="desktop-lane-call-state">
+        <p class="text-xs" :class="statusPalette(wait.tone).text" data-testid="desktop-lane-call-state">
           {{ wait.state }}<template v-if="wait.target"> · {{ wait.target }}</template>
         </p>
         <p v-if="wait.error" class="text-xs text-error break-words">{{ wait.error }}</p>

@@ -22,14 +22,14 @@ import { isViewFrameData } from '@piwitests/core/run-view';
 import { driverOf, givesBack } from '@piwitests/run-model/presence';
 import { canOpenTrace, laneFrameNow, stopIntents } from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import type { DesktopLaneFrame, DesktopRunAnswer } from '~/composables/useDesktopRunHub';
+import type { DesktopLaneFrame, DesktopRunAnswer } from '../composables/useDesktopRunHub';
 import {
   desktopLaneKey,
   desktopRunStop,
   desktopSay,
   type DesktopLaneAt,
   type DesktopLiveImageHandle,
-} from '~/utils/desktop-run-view';
+} from '../utils/run-view';
 
 const props = defineProps<{
   session: HubSession;

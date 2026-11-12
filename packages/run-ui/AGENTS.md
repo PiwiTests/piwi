@@ -16,8 +16,12 @@ extends it with its server render, and Piwi Runner's window (`apps/runner`) exte
   single-page app, so browser-only globals are read in `onMounted` or behind `tauriCore()`. `tests/layer.test.ts` loads
   the layer as a host extends it, both ways.
 - **The logic is not here.** The held requests, the reconnect key and the checks live in `@piwitests/editor`
-  (`request-host.ts`, `run-target.ts`), and the layer renders the views it sends and calls the host's
-  `/api/desktop/run-target/*` routes. The layer does not decide the guard.
+  (`request-host.ts`, `run-target.ts`), and the runs' hub in its `shell-runs.ts`; the layer renders the views they
+  send and calls the host's `/api/desktop/run-target/*` and `/api/desktop/runs/*` routes. The layer does not decide the
+  guard.
+- **What only one host can do reaches the live view through `RUN_VIEW_HOST`** (`app/utils/run-view-host.ts`): the
+  dashboard provides a worker's own window and its Open in editor link (`apps/application/app/plugins/run-view-host.ts`),
+  and Piwi Runner provides nothing, so its window offers neither.
 - **Auto-imports are the layer's interface.** A name is unique across the layer, every host and the repository's other
   exports, since a file in `app/components/`, `app/composables/` or `app/utils/` is imported by name. `npm run knip`
   reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere as unused.

@@ -17,7 +17,7 @@ import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
-import { renderAnsi } from '~/utils';
+import { renderAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
 import { stripAnsi } from '~/utils/text-format';

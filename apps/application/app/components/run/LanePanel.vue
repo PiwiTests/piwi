@@ -64,7 +64,7 @@ import {
   type LaneTextTarget,
 } from '~/utils/live-layers';
 import { NO_INSPECT_HEARD, hearInspect, inspectEnd, nextInspectTest, type InspectHeard } from '~/utils/live-inspect';
-import { CURRENT_ITEM_RING_CLASS } from '~/utils';
+import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
 
 const props = defineProps<{
   runId: number;

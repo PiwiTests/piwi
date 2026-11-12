@@ -2,8 +2,8 @@
 import { LIVE_VIEW_END_TEXT, liveWorkerKey, liveWorkerName, type LiveWorkerState } from '#shared/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { LiveTile } from '~/composables/useLiveWatch';
-import { CURRENT_ITEM_RING_CLASS } from '~/utils';
-import { STATUS_PALETTE } from '~/utils/status-palette';
+import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
+import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 import type { AttentionSignal } from '~/utils/live-attention';
 import { liveStepOf, type LiveStepsByWorker } from '~/utils/live-steps';
 import type { LiveWatchState } from '~/utils/live-watch';

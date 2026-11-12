@@ -7,8 +7,8 @@
  * its title.
  */
 import type { HubKeptRequest } from '@piwitests/core/run-hub';
-import { foldText } from '#shared/utils/fold-text';
-import { desktopSay } from '~/utils/desktop-run-view';
+import { foldText } from '@piwitests/run-ui/fold-text';
+import { desktopSay } from '../utils/run-view';
 
 const props = defineProps<{ requests: readonly HubKeptRequest[]; busy: boolean }>();
 const emit = defineEmits<{ mock: [id: number]; close: [] }>();

@@ -11,7 +11,8 @@
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { tabStatus } from '@piwitests/run-model/status';
 import { laneWatchOf, stopPlace, testName } from '@piwitests/run-model/stop';
-import { DESKTOP_RUN_HUB, desktopRunStop, desktopSay, desktopStopLink } from '~/utils/desktop-run-view';
+import { desktopStopLink } from '~/utils/desktop-run-view';
+import { DESKTOP_RUN_HUB, desktopRunStop, desktopSay } from '@piwitests/run-ui/run-view';
 
 const props = defineProps<{
   session: HubSession;

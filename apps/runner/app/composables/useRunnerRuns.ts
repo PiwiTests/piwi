@@ -35,5 +35,11 @@ export function useRunnerRuns() {
     return runBook().stop(run);
   }
 
-  return { runs, listen, startRequest, stopRun };
+  /** Turns a run's Hold failures on or off (`runnerShownRefs` tells the hub). */
+  function setHold(run: RunnerRun, on: boolean) {
+    const kept = runs.value.find((r) => r.key === run.key);
+    if (kept) kept.holdFailures = on;
+  }
+
+  return { runs, listen, startRequest, stopRun, setHold };
 }

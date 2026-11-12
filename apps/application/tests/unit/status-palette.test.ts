@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '../../app/utils/status-palette';
+import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '@piwitests/run-ui/status-palette';
 import { endedAtStopMark, formatExecutionStatus, statusChipLabel } from '../../app/utils/index';
 
 describe('statusPaletteKey', () => {

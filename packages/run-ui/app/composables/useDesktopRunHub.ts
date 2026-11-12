@@ -1,19 +1,20 @@
 /**
- * Desktop shell only: the window's side of the hub the bundled server is for the Playwright runs the shell starts
- * (`server/utils/desktop-runs.ts`). One stream for the whole window (`GET /api/desktop/runs/events`), opened only
- * while the window wants it (`want`, from `plugins/desktop-run-hub.client.ts`): while a run of the Local runs tray
- * runs, or the hub still has a live run. While it is open the window is a surface that answers stops, so a headless
- * stop waits for it: the tray shows every stop it hears (`onStop`), once, a stream that opens again included, and the
- * stop waits there; closed, nobody here answers and such a stop goes on at once, unless Piwi Picker follows the runs.
+ * A shell window's side of the hub its host is for the Playwright runs the shell starts (`ShellRuns` of
+ * `@piwitests/editor`: the dashboard's bundled server, Piwi Runner's host). One stream for the whole window
+ * (`GET /api/desktop/runs/events`), opened only while the window wants it (`want`): the dashboard while a run of its
+ * Local runs tray runs or the hub still has a live run, Piwi Runner while a requested run runs. While it is open the
+ * window is a surface that answers stops, so a headless stop waits for it: the window shows every stop it hears
+ * (`onStop`), once, a stream that opens again included, and the stop waits there; closed, nobody here answers and such
+ * a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, how many tests of each run that ended were ended at a stop
  * (`endedAtStop`, as its own process counted them), what each code made at a stop came to, the codes and the
  * locators picked, to copy, the workers whose **Watch live** is on, and the lanes the window watches (**Watch**: the
- * page of a worker's running test, and of its stops), which the tray and the run page both turn on. The frames of a
+ * page of a worker's running test, and of its stops). The frames of a
  * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
  * lane (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
  * in memory, until the view ends or the lane is no longer watched. Commands go to `POST /api/desktop/runs/commands`,
- * naming the stream (`viewer`); `show` says which runs hold their failures (the tray's **Hold failures**), so a failure
+ * naming the stream (`viewer`); `show` says which runs hold their failures (**Hold failures**), so a failure
  * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
  * shows now: those watched that a listener shows while the window is not hidden, said again as the stream opens again.
  * Each time the window shows a lane again, its view goes up (`laneView`): a frame of an earlier view, the one kept
@@ -55,7 +56,7 @@ import {
   MAX_KEPT_STOP_CODES,
   type DesktopRunEvent,
   type DesktopRunPick,
-} from '#shared/desktop-runs';
+} from '@piwitests/editor/shell-run-events';
 import { errorMessage } from '@piwitests/run-ui/text';
 import { tabsAdvanced, tabsAfter, tabsChosen, type WorkerTabs } from '@piwitests/run-model/tabs';
 import {
@@ -64,7 +65,7 @@ import {
   desktopShareWarning,
   desktopViewKey,
   desktopWorkerKey,
-} from '~/utils/desktop-run-view';
+} from '../utils/run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -303,7 +304,7 @@ function heard(text: string): void {
       // A sentence about a run (a stop that went on, a code not made): the tray shows it as a toast.
       if (typeof value.message === 'string') {
         toastApi?.add({
-          title: 'Desktop runs',
+          title: 'Runs',
           description: value.message,
           color: value.severity === 'warning' ? 'warning' : 'neutral',
           icon: 'i-lucide-info',
@@ -607,7 +608,7 @@ async function send(body: Record<string, unknown>): Promise<{ answer: DesktopRun
     });
     return { answer, reached: true };
   } catch (error) {
-    return { answer: { ok: false, message: errorMessage(error, 'The desktop app did not answer.') }, reached: false };
+    return { answer: { ok: false, message: errorMessage(error, 'The app did not answer.') }, reached: false };
   }
 }
 
