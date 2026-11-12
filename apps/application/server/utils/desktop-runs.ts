@@ -10,10 +10,15 @@
  *  - the agents' tools for these runs are the editor service's (`RunAgent`), in this app's words, which `/mcp` serves in
  *    the desktop build alone (`server/utils/mcp/run-tools.ts`): an agent follows a run, steers it and acts at a stop as
  *    the window does, within the same limits, never in a run nobody attends, and the code it has made comes to the
- *    window to copy, and back to the agent in the answer: no file is written.
+ *    window to copy, and back to the agent in the answer: no file is written;
+ *  - **Inspect** of a lane (`inspect`, a window command of the app's own) reads the pages of its running test from the
+ *    test's own trace, whose file the lane's worker names to this server alone (`RunSessions.laneTrace`), while a
+ *    window has it open (`desktop-inspect.ts`): the window hears each page's call and moment on its stream, and reads
+ *    the page rendered from a route of its own. Piwi Runner's host has no Inspect.
  */
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
-import type { AgentWords } from '@piwitests/editor/run-host';
+import type { HubAnswer, HubMessage } from '@piwitests/core/run-hub';
+import type { AgentWords, RunSession } from '@piwitests/editor/run-host';
 import {
   ShellRuns,
   clearStaleRunChannels as clearStaleShellRunChannels,
@@ -22,7 +27,9 @@ import {
 } from '@piwitests/editor/shell-runs';
 import { desktopPicksToken } from './desktop-access';
 import { EditorRuns, type EditorRun } from './desktop-editor-runs';
+import { DesktopInspects } from './desktop-inspect';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
+import type { DesktopInspectEvent } from '#shared/desktop-runs';
 
 export { insideFolder, linkHolding, linkedSpelling, type DesktopRunSink } from '@piwitests/editor/shell-runs';
 
@@ -109,11 +116,16 @@ export interface DesktopRunsOptions extends Omit<
   observeEditors?: boolean;
 }
 
-export class DesktopRuns extends ShellRuns {
+/** A run's name on the channel, as the window's commands name it. */
+const REF = /^[\w-]{1,64}$/;
+
+export class DesktopRuns extends ShellRuns<DesktopInspectEvent> {
   declare readonly agent: NonNullable<ShellRuns['agent']>;
   /** The editors' runs, observed for the app's own surfaces and steered by none of them (`EditorRuns`). */
   private editors: EditorRuns | null = null;
   private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
+  /** **Inspect** of the lanes the windows have it open on, read from their tests' own traces. */
+  readonly inspects: DesktopInspects;
 
   private constructor(desktop: DesktopRunsOptions) {
     super({
@@ -124,6 +136,10 @@ export class DesktopRuns extends ShellRuns {
       folderPrefix: RUN_CHANNEL_FOLDER_PREFIX,
       picksToken: desktopPicksToken,
       peers: () => readLiveHubs(desktop.editorsDir ?? editorsDir()),
+    });
+    this.inspects = new DesktopInspects({
+      sessions: this.sessions,
+      send: (viewer, event) => this.sendToWindow(viewer, event),
     });
   }
 
@@ -158,7 +174,46 @@ export class DesktopRuns extends ShellRuns {
   override close(): void {
     this.editors?.close();
     this.editors = null;
+    this.inspects.dispose();
     super.close();
+  }
+
+  /** A run changed: each lane of it with Inspect open follows its running attempt, and its end ends them. */
+  protected override sessionChanged(session: RunSession): void {
+    this.inspects.sessionChanged(session);
+  }
+
+  /** A layer of a lane a window watches: the runner's titles of its calls name Inspect's snapshots of them. */
+  protected override relaying(_viewer: string, message: HubMessage): void {
+    if (message.type !== 'lane-layer') return;
+    if (message.layer === 'calls')
+      this.inspects.titled(message.ref, message.lane, message.log.id, message.log.call.title);
+    else if (message.layer === 'filmstrip')
+      this.inspects.titled(message.ref, message.lane, message.thumb.call, message.thumb.title);
+  }
+
+  /**
+   * `inspect`: **Inspect** of the lane `lane` of the run `ref` opens (`on`) or closes for the window `viewer`. Any other
+   * command is the hub's.
+   */
+  protected override windowCommand(viewer: string, id: number, value: Record<string, unknown>): HubAnswer | null {
+    if (value.type !== 'inspect') return null;
+    const answer = (ok: boolean, message: string): HubAnswer => ({ type: 'answer', id, ok, message });
+    if (!id || typeof value.ref !== 'string' || !REF.test(value.ref)) {
+      return answer(false, 'The command needs the ref of a run.');
+    }
+    if (!Number.isInteger(value.lane) || (value.lane as number) < 0) {
+      return answer(false, 'The command needs the lane to inspect.');
+    }
+    if (typeof value.on !== 'boolean') return answer(false, 'on must be true or false.');
+    const lane = value.lane as number;
+    const said = value.on ? this.inspects.open(viewer, value.ref, lane) : this.inspects.close(viewer, value.ref, lane);
+    return answer(said.ok, said.message);
+  }
+
+  /** A window's stream closed: it has Inspect open on no lane. */
+  protected override windowLeft(viewer: string): void {
+    this.inspects.leave(viewer);
   }
 }
 

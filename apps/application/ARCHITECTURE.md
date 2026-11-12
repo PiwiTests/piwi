@@ -194,7 +194,7 @@ Each entry names folders under `server/api/`.
     one of its calls, rendered from the DOM snapshot the worker sent while a watch had Inspect open, by
     `dom-snapshot-render.ts` and the asset inlining of `dom-snapshot.ts`, kept in memory by
     `server/utils/live-inspect.ts`, and served as the stored trace's snapshot frame is, by `dom-snapshot-frame.ts`;
-    `LaneInspect` shows it in the lane panel) and `[id]/live-view/workers` (its workers and how many watches are open,
+    `LaneInspect` shows it in the lane panel, from the source `teamInspectSource` names) and `[id]/live-view/workers` (its workers and how many watches are open,
     which `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
     (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
     attention** moves the lane panel by `app/utils/live-attention.ts`. All of it is relayed in memory by
@@ -293,13 +293,22 @@ Each entry names folders under `server/api/`.
   test, a status card in its tone, its controls, and its page in a card (`DesktopRunPageCard`, who drives the stop at
   its foot, `DesktopRunDriver`). A run of several workers shows one at a time behind its worker tabs, which
   `useDesktopRunHub` follows by run as it hears it (`desktopTabsAfter`, `shownLaneOf`; `chooseTab`, `advanceTab`), the
-  workers not shown kept drawn and hidden. `DesktopRunShare` shows a run's Share live,
+  workers not shown kept drawn and hidden. A watched lane's **Inspect** (`DesktopRunLaneInspect`, the run page's
+  `LaneInspect` from the source `desktopInspectSource` names) is read by the server from the test's own trace, whose
+  checked file the lane's worker names to it alone (`RunSessions.laneTrace`), into the run page's store and renderer
+  (`server/utils/desktop-inspect.ts`, `RunInspect` in the app's words) while a view of it shows and the window is not
+  hidden: the window hears each page's call on its stream (`inspect`), lists them each time it opens it
+  (`runs/inspect/calls`), keeps them in the order the pages were taken on the attempt the stream follows
+  (`useDesktopLaneInspects`: `hearDesktopInspect`, `hearDesktopCalls`), and reads each page rendered
+  (`runs/inspect/page`). The layer's lane view opens and closes it, and shows the view the app gives it
+  (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
+  `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
   `BroadcastChannel`, `app/utils/run-output-channel.ts`). The live view (`useDesktopRunHub`, the `DesktopRun*`
   components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
   window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
-  layer a worker's own window and the Open in editor link (`RUN_VIEW_HOST`). On the run
+  layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run
   page, a running row of a run the shell started offers Pause and watch (`TestRowDesktopWorker`), its worker found
   among the live runs that report the run (`useDesktopRunSessions`, `desktopSessionsOfRun`, `desktopRowWorker`).
   Agents reach the same runs through `/mcp` (the run tools, below).

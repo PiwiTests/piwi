@@ -23,7 +23,12 @@
  * again as the lane's next test begins); the layers that come are kept by lane for the test it runs (`laneLayers`, each
  * replaced as one comes), in memory alone, until the lane is no longer watched. A run the stream does not list as it
  * opens (`listed`) ended meanwhile: what the window kept of it goes. **Share live** asks what it sends the first time in
- * this session of the app (`shareAsks`).
+ * this session of the app (`shareAsks`). **Inspect** of a lane, for a host that has it (`RunViewInspect`: `setInspect`,
+ * on until it is turned off, the lane is no longer watched, its run ends or the server refuses it, `inspectRefusalOf`)
+ * has the server read the pages of its running test while a view of it shows (`showInspect`) and the window is not
+ * hidden, told once the tick ends, so a view that comes back changes nothing, and told again as the stream opens
+ * again: each `inspect` its stream says of the lane goes to the host (`heard`), which keeps what it heard, and reads
+ * what the server read so far each time the server took it (`taken`); the pages stay on the server.
  *
  * A live run of several workers shows one at a time behind its worker tabs, kept here by run (`tabs`) and followed as
  * each of its sessions is heard (`tabsAfter`, `@piwitests/run-model/tabs`): the worker shown stays while it stands at a
@@ -66,6 +71,7 @@ import {
   desktopViewKey,
   desktopWorkerKey,
 } from '../utils/run-view';
+import type { RunViewInspect } from '../utils/run-view-host';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -85,6 +91,8 @@ export type DesktopLaneFrame = Omit<HubLaneFrameMessage, 'type'> | Omit<HubLaneF
 interface HubState {
   /** The stream is open and the server named it (`hello`). */
   connected: boolean;
+  /** The id the server named the stream by, which the window's commands and Inspect's pages carry; null while closed. */
+  viewer: string | null;
   /** The stream has sent every run live as it opened (`listed`): a run it does not hold now has ended. */
   listed: boolean;
   /** Each live run, by ref. */
@@ -132,6 +140,16 @@ interface HubState {
   laneTextAsking: Record<string, boolean>;
   /** The worker tabs of each live run of several workers, by run (ref). A stream that opens again keeps them. */
   tabs: Record<string, WorkerTabs>;
+  /**
+   * The lanes the window has Inspect open on, by `desktopLaneKey`. A stream that opens again keeps them, and opens them
+   * again.
+   */
+  inspecting: Record<string, true>;
+  /**
+   * Why the server last refused to open Inspect of a lane, by `desktopLaneKey`: each refusal a new one (`serial`), shown
+   * as a click's answer is, whether a click, a view that showed or a stream that opened again asked.
+   */
+  inspectRefusals: Record<string, { message: string; serial: number }>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
@@ -139,6 +157,7 @@ const REOPEN_MS = 5000;
 
 const state = reactive<HubState>({
   connected: false,
+  viewer: null,
   listed: false,
   sessions: {},
   roots: {},
@@ -155,6 +174,8 @@ const state = reactive<HubState>({
   laneTexts: {},
   laneTextAsking: {},
   tabs: {},
+  inspecting: {},
+  inspectRefusals: {},
 });
 
 let source: EventSource | null = null;
@@ -199,6 +220,14 @@ let toastApi: ReturnType<typeof useToast> | null = null;
 let shareWarned = false;
 /** Who hears that another tool asked to stop a run (`stop-run`): the window's hub plugin. */
 const stopRunListeners = new Set<(ref: string) => void>();
+/** The lanes the window has Inspect open on, by `desktopLaneKey`, each with the host that keeps what it heard. */
+const inspectLanes = new Map<string, { ref: string; lane: number; host: RunViewInspect }>();
+/** How many views show each lane's Inspect, by `desktopLaneKey`: the server reads a lane's pages while one does. */
+const inspectViews = new Map<string, number>();
+/** The lanes the server was told the window has Inspect open on, on this stream, by `desktopLaneKey`. */
+let inspectsTold = new Map<string, { ref: string; lane: number }>();
+/** A change of the Inspects the window shows waits for the end of the tick: a view that comes back changes none. */
+let inspectsQueued: Promise<Map<string, DesktopRunAnswer>> | null = null;
 
 function heard(text: string): void {
   let value: Record<string, unknown>;
@@ -212,6 +241,7 @@ function heard(text: string): void {
       if (!isDesktopRunViewer(value.viewer)) return;
       // A stream of its own: the runs, the codes and the picks come again on it.
       viewer = value.viewer;
+      state.viewer = value.viewer;
       state.connected = true;
       state.listed = false;
       state.sessions = {};
@@ -224,6 +254,8 @@ function heard(text: string): void {
       lanesTold = new Map();
       void tellShown();
       void tellLanesSoon();
+      inspectsTold = new Map();
+      void tellInspectsSoon();
       if (present) void command({ type: 'follow', on: true });
       return;
     case 'stop-code':
@@ -300,6 +332,9 @@ function heard(text: string): void {
         });
       }
       return;
+    case 'inspect':
+      heardInspect(value);
+      return;
     case 'notice':
       // A sentence about a run (a stop that went on, a code not made): the tray shows it as a toast.
       if (typeof value.message === 'string') {
@@ -345,6 +380,86 @@ function heard(text: string): void {
     if (layer.layer === 'text') endTextWait(key);
     if (again) void askText(ref, lane, true);
   }
+}
+
+/** What the server read of a lane the window has Inspect open on: its host hears it. */
+function heardInspect(value: Record<string, unknown>): void {
+  if (typeof value.ref !== 'string' || !Number.isInteger(value.lane)) return;
+  const key = desktopLaneKey(value.ref, value.lane as number);
+  inspectLanes.get(key)?.host.heard(key, value);
+}
+
+/**
+ * Tells the server which lanes' Inspect the window shows, what changed since it was told last, once this tick ends;
+ * answers what it said of each lane it was told of.
+ */
+function tellInspectsSoon(): Promise<Map<string, DesktopRunAnswer>> {
+  inspectsQueued ??= Promise.resolve().then(() => {
+    inspectsQueued = null;
+    return tellInspects();
+  });
+  return inspectsQueued;
+}
+
+async function tellInspects(): Promise<Map<string, DesktopRunAnswer>> {
+  const answers = new Map<string, DesktopRunAnswer>();
+  if (!viewer) return answers;
+  const hidden = typeof document !== 'undefined' && document.hidden;
+  const shown = hidden ? [] : [...inspectLanes].filter(([key]) => (inspectViews.get(key) ?? 0) > 0);
+  const changes = [
+    ...shown
+      .filter(([key]) => !inspectsTold.has(key))
+      .map(([key, at]) => ({ key, ref: at.ref, lane: at.lane, on: true })),
+    ...[...inspectsTold]
+      .filter(([key]) => !shown.some(([one]) => one === key))
+      .map(([key, at]) => ({ key, ...at, on: false })),
+  ];
+  for (const { key, ref, lane, on } of changes) {
+    if (on) inspectsTold.set(key, { ref, lane });
+    else inspectsTold.delete(key);
+  }
+  await Promise.all(
+    changes.map(async ({ key, ref, lane, on }) => {
+      answers.set(key, on ? await openInspect(key, ref, lane) : await command({ type: 'inspect', ref, lane, on }));
+    }),
+  );
+  return answers;
+}
+
+/**
+ * Has the server read the lane's pages for the window's Inspect, then has its host take what it read so far, the view
+ * keeping what it holds of the same test; a refusal closes it, saying why (`inspectRefusals`). Answers what the server
+ * said.
+ */
+async function openInspect(key: string, ref: string, lane: number): Promise<DesktopRunAnswer> {
+  const stream = viewer;
+  const answer = await command({ type: 'inspect', ref, lane, on: true });
+  const open = inspectLanes.get(key);
+  if (!open || viewer !== stream || !stream) return answer;
+  if (!answer.ok) {
+    forgetInspect(key);
+    inspectsTold.delete(key);
+    state.inspectRefusals[key] = { message: answer.message, serial: ++serial };
+    return answer;
+  }
+  await open.host.taken(key, { viewer: stream, ref, lane, current: () => viewer === stream });
+  return answer;
+}
+
+/** The window has Inspect of a lane open no more: what its host heard of it goes. */
+function forgetInspect(key: string): boolean {
+  const open = inspectLanes.get(key);
+  if (!open) return false;
+  inspectLanes.delete(key);
+  delete state.inspecting[key];
+  open.host.closed(key);
+  return true;
+}
+
+/** The window has Inspect of a lane open no more: the server is told once the tick ends. */
+function closeInspect(key: string): Promise<Map<string, DesktopRunAnswer>> | null {
+  if (!forgetInspect(key)) return null;
+  return tellInspectsSoon();
 }
 
 function heardSession(session: HubSession): void {
@@ -394,6 +509,11 @@ function forgetRun(ref: string): void {
   for (const key of Object.keys(state.laneRefusals)) if (desktopLaneRun(key) === ref) delete state.laneRefusals[key];
   for (const key of Object.keys(state.laneViews)) if (desktopLaneRun(key) === ref) delete state.laneViews[key];
   for (const key of [...lanesTold.keys()]) if (desktopLaneRun(key) === ref) lanesTold.delete(key);
+  for (const [key, at] of inspectLanes) if (at.ref === ref) forgetInspect(key);
+  for (const key of Object.keys(state.inspectRefusals)) {
+    if (desktopLaneRun(key) === ref) delete state.inspectRefusals[key];
+  }
+  for (const key of inspectsTold.keys()) if (desktopLaneRun(key) === ref) inspectsTold.delete(key);
 }
 
 function keep(item: Extract<DesktopRunEvent, { type: 'stop-code' | 'pick' }>): void {
@@ -405,7 +525,10 @@ function open(): void {
   if (source || typeof EventSource === 'undefined') return;
   if (!hearsVisibility && typeof document !== 'undefined') {
     hearsVisibility = true;
-    document.addEventListener('visibilitychange', () => void tellLanesSoon());
+    document.addEventListener('visibilitychange', () => {
+      void tellLanesSoon();
+      void tellInspectsSoon();
+    });
   }
   const opened = new EventSource('/api/desktop/runs/events');
   source = opened;
@@ -416,6 +539,7 @@ function open(): void {
     state.connected = false;
     state.listed = false;
     viewer = null;
+    state.viewer = null;
     // A stream the server refused does not come back by itself: asked again a while later, while it is wanted.
     if (opened.readyState === EventSource.CLOSED) {
       source = null;
@@ -436,6 +560,8 @@ function close(): void {
   source = null;
   viewer = null;
   told = new Set();
+  for (const key of inspectLanes.keys()) forgetInspect(key);
+  inspectsTold = new Map();
   lanesTold = new Map();
   latestFrames.clear();
   latestLaneFrames.clear();
@@ -444,6 +570,7 @@ function close(): void {
   laneTextTimers.clear();
   Object.assign(state, {
     connected: false,
+    viewer: null,
     listed: false,
     sessions: {},
     outcomes: {},
@@ -457,6 +584,8 @@ function close(): void {
     laneTexts: {},
     laneTextAsking: {},
     tabs: {},
+    inspecting: {},
+    inspectRefusals: {},
   });
 }
 
@@ -525,13 +654,16 @@ async function askText(ref: string, lane: number, on: boolean): Promise<DesktopR
   return answer;
 }
 
-/** Watches a lane, or stops, for the window. */
+/** Watches a lane, or stops, for the window: Inspect of a lane no longer watched closes. */
 function setLane(ref: string, lane: number, on: boolean): void {
   const others = (state.lanes[ref] ?? []).filter((l) => l !== lane);
   if (on) state.lanes[ref] = [...others, lane];
   else if (others.length) state.lanes[ref] = others;
   else delete state.lanes[ref];
-  if (!on) forgetLane(ref, lane);
+  if (!on) {
+    forgetLane(ref, lane);
+    void closeInspect(desktopLaneKey(ref, lane));
+  }
 }
 
 /** The lanes the window shows now: those it watches that a listener shows, none while the window is hidden. */
@@ -724,6 +856,47 @@ export function useDesktopRunHub() {
         listeners.delete(listener);
         if (listeners.size === 0) laneListeners.delete(key);
         void tellLanesSoon();
+      };
+    },
+    /** Whether the window has Inspect of a lane of a run open. */
+    inspecting(ref: string, lane: number): boolean {
+      return !!state.inspecting[desktopLaneKey(ref, lane)];
+    },
+    /** Why the server last refused to open Inspect of a lane of a run, each refusal a new one; null for none. */
+    inspectRefusalOf(ref: string, lane: number): { message: string; serial: number } | null {
+      return state.inspectRefusals[desktopLaneKey(ref, lane)] ?? null;
+    },
+    /**
+     * Opens Inspect of a lane of a run for the window, its host keeping what it hears (`host`), or closes it (null):
+     * the server reads the pages of the lane's running test while a view of it shows (`showInspect`), and lets them go
+     * as it closes. Answers what the server said, once it was told.
+     */
+    async setInspect(ref: string, lane: number, host: RunViewInspect | null): Promise<DesktopRunAnswer> {
+      const key = desktopLaneKey(ref, lane);
+      if (!host) return (await closeInspect(key))?.get(key) ?? { ok: true, message: '' };
+      if (!inspectLanes.has(key)) {
+        inspectLanes.set(key, { ref, lane, host });
+        state.inspecting[key] = true;
+        host.opened(key);
+      }
+      return (await tellInspectsSoon()).get(key) ?? { ok: true, message: '' };
+    },
+    /**
+     * A view shows Inspect of a lane: while one does, the server reads its pages, once the tick ends; returns what
+     * stops showing it.
+     */
+    showInspect(ref: string, lane: number): () => void {
+      const key = desktopLaneKey(ref, lane);
+      inspectViews.set(key, (inspectViews.get(key) ?? 0) + 1);
+      void tellInspectsSoon();
+      let shown = true;
+      return () => {
+        if (!shown) return;
+        shown = false;
+        const left = (inspectViews.get(key) ?? 1) - 1;
+        if (left > 0) inspectViews.set(key, left);
+        else inspectViews.delete(key);
+        void tellInspectsSoon();
       };
     },
     /** The worker tabs of a live run of several workers; null for a run that shows none. */

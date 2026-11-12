@@ -8,9 +8,9 @@
  * locator (a failure that was not about one) it is an inspector: any element's
  * locators, to copy. `at` names the trace action snapshot to open on, so the
  * picker shows the same page as the view it was opened from. `livePage` opens
- * it as an inspector on a page of a running test the live view's Inspect shows
- * (its address on the instance, its viewport, its call's title) in place of an
- * execution's.
+ * it as an inspector on a page of a running test Inspect shows (its address on
+ * the instance or the desktop app's server, its viewport, its call's title) in
+ * place of an execution's.
  */
 import {
   generateAlternatives,
@@ -28,8 +28,11 @@ import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 const props = defineProps<{
   /** The execution whose stored snapshot the picker shows; none with `livePage`. */
   testRunsCaseId?: number;
-  /** A page of a running test, from the live view's Inspect: the picker's address (`mode` left out), its viewport. */
-  livePage?: { src: string; viewport: { width: number; height: number } | null; title: string } | null;
+  /**
+   * A page of a running test, from Inspect: the picker's address (`mode` left out), its viewport, its call's title, and
+   * where it came from (`from`: `the worker sent` unless it says).
+   */
+  livePage?: { src: string; viewport: { width: number; height: number } | null; title: string; from?: string } | null;
   /** The locator that failed; null opens the picker as an inspector. */
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   /** The healing result — its candidate names pre-highlight the likely element. */
@@ -586,7 +589,8 @@ onBeforeUnmount(() => {
               Accessibility tree from the failure-time ARIA snapshot — element styles are approximate
             </template>
             <template v-else-if="livePage">
-              Rendered from the page the worker sent at <span class="font-mono">{{ livePage.title }}</span>
+              Rendered from the page {{ livePage.from ?? 'the worker sent' }} at
+              <span class="font-mono">{{ livePage.title }}</span>
             </template>
             <template v-else> Rendered from the failure-time DOM snapshot </template>
           </div>

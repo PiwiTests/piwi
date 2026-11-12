@@ -1033,6 +1033,253 @@ test.describe('Desktop run live view', () => {
     await expect(trace).toHaveCount(0);
   });
 
+  test('inspects a watched lane’s running test from its own trace, as the run page’s lane panel does, and lets it go', async ({
+    page,
+  }, testInfo) => {
+    await installBridge(page);
+    const untraced = 'This test’s attempt is not traced: its project’s trace option records none of it.';
+    let inspectAnswer = { ok: true, message: 'Inspect shows the test’s pages from its own trace, on this machine.' };
+    const commands = await playHub(page, (command) => (command.type === 'inspect' ? inspectAnswer : {}));
+    const notice = (call: string, phase: string, title: string) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title,
+      phase,
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: true,
+      index: 0,
+      at: Date.now(),
+      test: 'checkout › pays',
+    });
+    // The server's routes of Inspect: what it read so far, and each page rendered, by its call.
+    const listed: string[] = [];
+    await page.route('**/api/desktop/runs/inspect/calls?**', async (route) => {
+      listed.push(route.request().url());
+      await route.fulfill({
+        json: {
+          attempt: 't1#0',
+          heard: [notice('call@1', 'after', 'Navigate to "/cart"')],
+          refused: null,
+        },
+      });
+    });
+    const pages: URL[] = [];
+    await page.route('**/api/desktop/runs/inspect/page?**', async (route) => {
+      const url = new URL(route.request().url());
+      pages.push(url);
+      if (url.searchParams.get('format') === 'json') {
+        return route.fulfill({ json: { viewport: { width: 800, height: 500 } } });
+      }
+      const heading = url.searchParams.get('call') === 'call@2' ? 'Checkout' : 'Cart';
+      await route.fulfill({
+        contentType: 'text/html',
+        headers: { 'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'" },
+        body: `<!doctype html><html><body><h1>${heading}</h1><button>Pay</button></body></html>`,
+      });
+    });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const inspectButton = worker.getByRole('button', { name: 'Inspect', exact: true });
+    await expect(inspectButton).toHaveCount(0);
+
+    // The lane watched, its reporter answering where its trace grows: Inspect beside Open the trace so far.
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect(inspectButton).toBeVisible();
+    await expect(inspectButton).toHaveAttribute('aria-pressed', 'false');
+    await inspectButton.click();
+    await expect(inspectButton).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'inspect'))
+      .toEqual([{ type: 'inspect', id: expect.any(Number), viewer: VIEWER, ref: REF, lane: 0, on: true }]);
+    // What the server read so far, by the window's stream, the run and the lane: the page at its latest call shows.
+    await expect.poll(() => listed.length).toBe(1);
+    expect(new URL(listed[0]!).searchParams.toString()).toBe(`viewer=${VIEWER}&ref=${REF}&lane=0`);
+    const inspect = lane.getByTestId('live-inspect');
+    const frame = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+    await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible();
+    await expect(inspect.getByTestId('live-inspect-at')).toContainText('Navigate to "/cart"');
+    expect(pages.at(-1)!.searchParams.get('mode')).toBe('readonly');
+    expect(Object.fromEntries(pages.at(-1)!.searchParams)).toMatchObject({
+      viewer: VIEWER,
+      ref: REF,
+      lane: '0',
+      call: 'call@1',
+      phase: 'after',
+    });
+    await expect(inspect).toContainText('reads these pages from the test’s own trace on this machine');
+
+    // Each page read after comes on the stream: the view follows it.
+    const said = (event: Record<string, unknown>) =>
+      page.evaluate((e) => window.__hub.send(e), { type: 'inspect', ref: REF, lane: 0, attempt: 't1#0', ...event });
+    await said({ snapshot: notice('call@2', 'before', "Click getByRole('button', { name: 'Checkout' })") });
+    await expect(frame.getByRole('heading', { name: 'Checkout' })).toBeVisible();
+    await expect(inspect.getByTestId('live-inspect-call')).toHaveCount(2);
+    await lane.screenshot({ path: testInfo.outputPath('tray-lane-inspect.png') });
+
+    // Pick a locator opens the picker on the page shown, saying where it came from.
+    await inspect.getByTestId('live-inspect-pick').click();
+    const picker = page.getByRole('dialog').filter({ hasText: 'Find a locator on the page at this call' });
+    await expect(picker).toContainText('Rendered from the page its trace took at');
+    await picker.getByRole('button', { name: 'Cancel' }).click();
+
+    // Between two tests, the server let the test's pages go: Inspect says so, then follows the next test afresh.
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session({ ...WATCHABLE, traces: true, state: 'between', test: null }),
+    );
+    await said({ attempt: null });
+    await expect(inspect.getByTestId('live-inspect-waiting')).toHaveText(
+      'The test ended: the desktop app let its pages go. The next test’s come as it runs.',
+    );
+    const next = { ...TEST, id: 't2', title: ['checkout', 'refunds'] };
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true, test: next }));
+    await said({ attempt: 't2#0', refused: untraced });
+    await expect(inspect.getByTestId('live-inspect-waiting')).toHaveText(untraced);
+
+    // Turned off: the server hears it, and Inspect goes.
+    await inspectButton.click();
+    await expect(inspect).toHaveCount(0);
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'inspect').at(-1))
+      .toMatchObject({ ref: REF, lane: 0, on: false });
+
+    // A server that refuses to open it says why, as the worker's other answers do.
+    inspectAnswer = { ok: false, message: 'Inspect is open on 16 lanes already: close one first.' };
+    await inspectButton.click();
+    await expect(worker.getByText(inspectAnswer.message)).toBeVisible();
+    await expect(inspectButton).toHaveAttribute('aria-pressed', 'false');
+    await expect(inspect).toHaveCount(0);
+
+    // Open again, the lane's watch turned off closes it.
+    inspectAnswer = { ok: true, message: '' };
+    await inspectButton.click();
+    await expect(inspect).toBeVisible();
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'inspect').at(-1))
+      .toMatchObject({ ref: REF, lane: 0, on: false });
+    await expect(inspectButton).toHaveCount(0);
+  });
+
+  test('keeps the tray’s Inspect on the latest call taken, the keyboard as it closes, and says why a new stream refuses it', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    let inspectAnswer: { ok: boolean; message: string } = { ok: true, message: '' };
+    const commands = await playHub(page, (command) => (command.type === 'inspect' ? inspectAnswer : {}));
+    const notice = (call: string, at: number) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title: `Click ${call}`,
+      phase: 'after',
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: false,
+      index: at,
+      at: 1_800_000_000_000 + at,
+      test: 'checkout › pays',
+    });
+    // The listing of what the server read so far waits until the spec lets it go.
+    let release = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let asked = false;
+    await page.route('**/api/desktop/runs/inspect/calls?**', async (route) => {
+      asked = true;
+      await released;
+      await route.fulfill({
+        json: {
+          attempt: 't1#0',
+          heard: [notice('call@1', 1), notice('call@2', 2), notice('call@3', 3)],
+          refused: null,
+        },
+      });
+    });
+    await page.route('**/api/desktop/runs/inspect/page?**', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('format') === 'json') {
+        return route.fulfill({ json: { viewport: { width: 800, height: 500 } } });
+      }
+      await route.fulfill({
+        contentType: 'text/html',
+        headers: { 'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'" },
+        body: `<!doctype html><html><body><h1>Page at ${url.searchParams.get('call')}</h1></body></html>`,
+      });
+    });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const inspectButton = worker.getByRole('button', { name: 'Inspect', exact: true });
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await inspectButton.click();
+
+    // The stream says the latest page before the listing of the earlier ones comes back: the view stays on the latest.
+    await expect.poll(() => asked).toBe(true);
+    await page.evaluate((event) => window.__hub.send(event), {
+      type: 'inspect',
+      ref: REF,
+      lane: 0,
+      attempt: 't1#0',
+      snapshot: notice('call@3', 3),
+    });
+    release();
+    const inspect = lane.getByTestId('live-inspect');
+    const list = inspect.getByRole('list', {
+      name: 'The calls whose page the desktop app read from the test’s trace, the latest last',
+    });
+    await expect(list.getByTestId('live-inspect-call')).toHaveText(['Click call@1', 'Click call@2', 'Click call@3']);
+    const frame = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+    await expect(frame.getByRole('heading', { name: 'Page at call@3' })).toBeVisible();
+    await expect(inspect.getByTestId('live-inspect-at')).toContainText('Click call@3');
+
+    // Between two tests, Inspect turned off from the keyboard: its button goes, and the keyboard stays on the worker.
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session({ ...WATCHABLE, traces: true, state: 'between', test: null }),
+    );
+    await inspectButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(inspect).toHaveCount(0);
+    await expect(inspectButton).toHaveCount(0);
+    await expect(worker.getByRole('button', { name: 'Pause', exact: true })).toBeFocused();
+
+    // Open again on the next test; the stream opens again and the server refuses it there: it closes, saying why.
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
+    await inspectButton.click();
+    await expect(inspect).toBeVisible();
+    inspectAnswer = { ok: false, message: 'Inspect is open on 16 lanes already: close one first.' };
+    await page.evaluate(
+      ([viewer, event]) => {
+        window.__hub.send({ type: 'hello', viewer });
+        window.__hub.send(event);
+      },
+      ['e'.repeat(32), session({ ...WATCHABLE, traces: true })] as const,
+    );
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'inspect').at(-1))
+      .toMatchObject({ viewer: 'e'.repeat(32), ref: REF, lane: 0, on: true });
+    await expect(worker.getByText(inspectAnswer.message)).toBeVisible();
+    await expect(inspect).toHaveCount(0);
+    await expect(inspectButton).toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('shows a watched lane’s layers under its page: why its call waits, its events, its text as asked and its filmstrip', async ({
     page,
   }) => {

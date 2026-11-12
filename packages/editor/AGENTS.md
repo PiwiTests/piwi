@@ -162,9 +162,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A trace's path never leaves the hub, and the viewer opens only a file that passed `checkTraceFile` as the person
   asked, from the run's folder its host knows (`session.root`), on a machine with a display, never for a hub
-  connection through a forwarded port.** The viewer reads the trace folder on its own afterwards; `startTraceViewer`
-  runs the project's own Playwright with an argument array, no shell, and the host's variables it needs alone
-  (`viewerEnv`: no `PIWI_*`, no `NODE_*`). Checked by `tests/run-trace.test.ts`.
+  connection through a forwarded port.** `startTraceViewer` runs the project's own Playwright with an argument array,
+  no shell, and the host's variables it needs alone (`viewerEnv`: no `PIWI_*`, no `NODE_*`); only the host hears the
+  checked file (`laneTrace`, the desktop's Inspect). Checked by `tests/run-trace.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-trace-so-far))
 - **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
   and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included

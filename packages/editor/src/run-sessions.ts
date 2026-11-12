@@ -28,7 +28,8 @@
  * live**, never an agent): each worker that takes it opens its live view stream there, a worker that connects later
  * too, and says how it stands (`live`), which the session sums up (`RunSession.live`). Any surface opens a lane's
  * running test's trace so far in Playwright's trace viewer on this machine (`openTrace`): its worker names the file to
- * the sessions alone, which check it and answer in a sentence.
+ * the sessions alone, which check it and answer in a sentence; the host alone hears the checked file (`laneTrace`),
+ * which the desktop app's server reads for its window's **Inspect**.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -225,6 +226,26 @@ export interface LaneParams {
   lane: number;
   on: boolean;
   layers?: readonly LaneLayer[];
+}
+
+/**
+ * A lane's running attempt's trace, as its worker named it to the host and `checkTraceFile` passed it (`laneTrace`),
+ * for the host to read itself: no surface hears it.
+ */
+export interface LaneTrace {
+  ok: true;
+  /** The run's folder, as the host knows it (`rootOf`). */
+  root: string;
+  /** The runner's trace folder of the lane's worker, as the file system spells it: the attempt's files are in it. */
+  traces: string;
+  /** The name the attempt's files start with: `<testId>[-retry<k>]` (`attemptName`). */
+  base: string;
+  /** The trace file the worker named, which passed the checks. */
+  file: string;
+  /** The lane's worker's index. */
+  worker: number;
+  /** The attempt: Playwright's id of its test, and its retry. */
+  test: { id: string; retry: number };
 }
 
 /** A stop as a client names it: the run, the one stopped worker or `worker`, and the stop it showed (`since`). */
@@ -1698,19 +1719,54 @@ export class RunSessions {
   }
 
   /**
-   * **Open the trace so far** of the lane `lane` of the run `ref`: its worker names where its running test's trace
-   * grows, to this host alone; the file passes `checkTraceFile`, and Playwright's trace viewer starts on it from the
-   * run's folder as this host knows it (`session.root`, never the folder the worker names; a run without one opens
-   * none), one for each attempt at a time (`traceViewer`). Answered in a sentence that never names the file, which no
-   * message, log or answer of the host carries.
+   * **Open the trace so far** of the lane `lane` of the run `ref`: the trace this host reads (`laneTrace`), and
+   * Playwright's trace viewer started on it from the run's folder as this host knows it, one for each attempt at a time
+   * (`traceViewer`). Answered in a sentence that never names the file, which no message, log or answer of the host
+   * carries.
    */
   async openTrace(params: OpenTraceParams): Promise<RunControlResult> {
     const launch = this.options.traceViewer;
-    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     const lane = params?.lane;
     if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
     if (!launch) return { ok: false, message: `${capitalized(this.host)} cannot open a trace.` };
     if (!this.showsTraceViewer()) return { ok: false, message: NO_DISPLAY };
+    const found = await this.laneTrace(params);
+    if (!found.ok) return found;
+    const live = path.join(found.traces, `${found.base}.json`);
+    if (this.traceViewers.has(live)) {
+      return {
+        ok: false,
+        message:
+          "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+      };
+    }
+    this.traceViewers.add(live);
+    const started = await launch({ folder: found.root, trace: live }).catch(
+      (error: unknown): { ok: false; reason: string } => ({
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    if (!started.ok) {
+      this.traceViewers.delete(live);
+      const reason = withoutPaths(started.reason, [found.file, path.dirname(found.file), found.traces]);
+      return { ok: false, message: `Playwright's trace viewer could not start: ${reason}.` };
+    }
+    void started.closed.finally(() => this.traceViewers.delete(live));
+    return { ok: true, message: "Playwright's trace viewer opened on the trace so far." };
+  }
+
+  /**
+   * The trace of the running attempt of the lane `lane` of the run `ref`, for this host to read itself: its worker names
+   * where it grows, to this host alone, and the file passes `checkTraceFile` from the run's folder as this host knows
+   * it (`session.root`, never the folder the worker names; a run without one has none); else why not, in a sentence
+   * that never names the file. No hub command, client request nor agent's tool answers with it: `openTrace` starts the
+   * viewer on it, and the desktop app's server reads its snapshots for its own window's **Inspect**.
+   */
+  async laneTrace(params: OpenTraceParams): Promise<LaneTrace | { ok: false; message: string }> {
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const lane = params?.lane;
+    if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
     if (!session || session.ended) return { ok: false, message: this.noWorker(session) };
     const root = session.root;
     if (root === null) return { ok: false, message: NO_ROOT };
@@ -1732,31 +1788,15 @@ export class RunSessions {
       retry: test.retry,
     });
     if (!checked.ok) return { ok: false, message: checked.message };
-    if (this.traceViewers.has(checked.trace)) {
-      return {
-        ok: false,
-        message:
-          "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
-      };
-    }
-    this.traceViewers.add(checked.trace);
-    const started = await launch({ folder: root, trace: checked.trace }).catch(
-      (error: unknown): { ok: false; reason: string } => ({
-        ok: false,
-        reason: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    if (!started.ok) {
-      this.traceViewers.delete(checked.trace);
-      const reason = withoutPaths(started.reason, [
-        answer.file,
-        path.dirname(answer.file),
-        path.dirname(checked.trace),
-      ]);
-      return { ok: false, message: `Playwright's trace viewer could not start: ${reason}.` };
-    }
-    void started.closed.finally(() => this.traceViewers.delete(checked.trace));
-    return { ok: true, message: "Playwright's trace viewer opened on the trace so far." };
+    return {
+      ok: true,
+      root,
+      traces: checked.traces,
+      base: checked.base,
+      file: answer.file,
+      worker: worker.index,
+      test: { id: test.id, retry: test.retry },
+    };
   }
 
   /** Whether `viewer` watches the lane `lane` of the run `ref`, which ends with the run. */

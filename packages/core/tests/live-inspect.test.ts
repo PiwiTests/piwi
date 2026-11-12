@@ -17,6 +17,7 @@ import {
   readLiveResource,
   readLiveSnapshot,
   resolveResourceUrl,
+  snapshotFieldSecrets,
   snapshotNodes,
   snapshotPhase,
   snapshotResourceUrls,
@@ -499,6 +500,27 @@ describe('the secrets a snapshot shows', () => {
     ]);
     expect(snapshotNodes(hidden)!.length).toBe(snapshotNodes(html)!.length);
     expect(JSON.stringify(hidden)).not.toContain(SECRET);
+  });
+
+  test('are the values of the fields it hides, read from the snapshot alone, its labels followed', () => {
+    const resolve: SnapshotResolver = (back, index) =>
+      back === 1 && index === 0 ? { node: 'Verification code', resolve: () => null } : null;
+    const html = [
+      'BODY',
+      {},
+      field({ type: 'password', value: SECRET, __playwright_value_: SECRET }),
+      ['LABEL', {}, [[1, 0]], field({ __playwright_value_: '842113' })],
+      ['TEXTAREA', { autocomplete: 'new-password' }, 'long secret text'],
+      field({ type: 'password', __playwright_value_: '' }),
+      field({ id: 'name', __playwright_value_: 'Ada' }),
+      ['P', {}, SECRET],
+    ];
+    expect(snapshotFieldSecrets(html, resolve)).toEqual([SECRET, '842113', 'long secret text']);
+    // What it found hides the same values wherever else they show.
+    const hidden = hideSnapshotSecrets(html, { secrets: snapshotFieldSecrets(html, resolve)!, resolve });
+    expect(JSON.stringify(hidden)).not.toContain(SECRET);
+    expect(snapshotFieldSecrets(['BODY', {}, [[1, 0]]], () => null)).toBeNull();
+    expect(snapshotFieldSecrets(['BODY', {}, [[1, 0]]])).toEqual([]);
   });
 });
 

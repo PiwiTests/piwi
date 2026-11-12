@@ -63,7 +63,14 @@ import {
   type LaneEvents,
   type LaneTextTarget,
 } from '~/utils/live-layers';
-import { NO_INSPECT_HEARD, hearInspect, inspectEnd, nextInspectTest, type InspectHeard } from '~/utils/live-inspect';
+import {
+  NO_INSPECT_HEARD,
+  hearInspect,
+  inspectEnd,
+  nextInspectTest,
+  teamInspectSource,
+  type InspectHeard,
+} from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
 
 const props = defineProps<{
@@ -161,6 +168,9 @@ const inspectHeard = shallowRef<InspectHeard>(NO_INSPECT_HEARD);
 const inspectTurn = ref(0);
 /** The test Inspect shows ended, the view waiting for the lane's next: the instance lets its pages go. */
 const inspectTestEnded = ref(false);
+/** Where Inspect reads each page: the instance, through the watch, while it is open. */
+const inspectBase = (useRuntimeConfig().app.baseURL || '/').replace(/\/$/, '');
+const inspectSource = computed(() => teamInspectSource(inspectBase, props.runId, props.live.watchId.value));
 
 /**
  * Let go of the layers of the test the view showed: the next one's come afresh, but for what Inspect heard of the
@@ -1007,10 +1017,9 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         <template #content>
           <LaneInspect
             class="pt-1"
-            :run-id="runId"
+            :source="inspectSource"
             :heard="inspectHeard.shown"
             :refused="inspectHeard.refused"
-            :watch-id="live.watchId.value"
             :turn="inspectTurn"
             :test-ended="inspectTestEnded"
             :ended="ended ? inspectEnd(endReason) : null"

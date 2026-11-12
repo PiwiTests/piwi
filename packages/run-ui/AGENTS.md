@@ -20,8 +20,10 @@ extends it with its server render, and Piwi Runner's window (`apps/runner`) exte
   send and calls the host's `/api/desktop/run-target/*` and `/api/desktop/runs/*` routes. The layer does not decide the
   guard.
 - **What only one host can do reaches the live view through `RUN_VIEW_HOST`** (`app/utils/run-view-host.ts`): the
-  dashboard provides a worker's own window and its Open in editor link (`apps/application/app/plugins/run-view-host.ts`),
-  and Piwi Runner provides nothing, so its window offers neither.
+  dashboard provides a worker's own window, its Open in editor link and a lane's **Inspect** (its view and what it
+  heard, `apps/application/app/plugins/run-view-host.ts`), and Piwi Runner provides nothing, so its window offers none.
+  `useDesktopRunHub` carries only Inspect's open lanes, the `inspect` command and its refusals; what is heard is the
+  host's.
 - **Auto-imports are the layer's interface.** A name is unique across the layer, every host and the repository's other
   exports, since a file in `app/components/`, `app/composables/` or `app/utils/` is imported by name. `npm run knip`
   reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere as unused.

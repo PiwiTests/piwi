@@ -26,6 +26,10 @@
  * (`declined`), and a pick on an image of the stop (`pick-at`) answers with the locator it found. The runs name the
  * host as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`, with a token for that route alone): a locator
  * the pause bar's **Pick a locator** or a pick on the image picked comes to the window, to copy (`pick`).
+ * A host that does more for its windows extends the class: it hears each run that changed (`sessionChanged`), each hub
+ * message on its way to a window (`relaying`), each window command of a type the hub does not know (`windowCommand`)
+ * and each window that left (`windowLeft`), sends a window events of its own (`HostEvent`, `sendToWindow`), and closes
+ * what it opened as it overrides `close`.
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -42,6 +46,7 @@ import {
   type HubMessage,
   type LiveHub,
 } from '@piwitests/core/run-hub';
+import type { RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import {
   MAX_HUB_BUFFERED,
@@ -124,9 +129,12 @@ export interface ShellAgentWords {
   noWindow: string;
 }
 
-/** What a window's stream takes: the events, what it holds unsent in bytes, and its end. */
-export interface DesktopRunSink {
-  send(event: DesktopRunEvent): void;
+/**
+ * What a window's stream takes: the events (the hub's, and those of a host that extends `ShellRuns`), what it holds
+ * unsent in bytes, and its end.
+ */
+export interface DesktopRunSink<Event extends { type: string } = DesktopRunEvent> {
+  send(event: Event): void;
   buffered(): number;
   close(): void;
 }
@@ -215,9 +223,9 @@ export async function clearStaleRunChannels(prefix: string, dir = os.tmpdir()): 
   return removed;
 }
 
-interface RunWindow {
+interface RunWindow<HostEvent extends { type: string }> {
   peer: HubPeer;
-  sink: DesktopRunSink;
+  sink: DesktopRunSink<DesktopRunEvent | HostEvent>;
   /**
    * The runs whose Hold failures it turned on, each with the Hold failures it set: the last window showing a run turns
    * it off as it stops showing it, unless someone set it since.
@@ -312,8 +320,9 @@ function newPicksToken(): string {
   return `pdp_${randomBytes(32).toString('hex')}`;
 }
 
-export class ShellRuns {
-  private readonly windows = new Map<string, RunWindow>();
+/** The hub; `HostEvent`, the events a host that extends it sends its windows besides the hub's (`sendToWindow`). */
+export class ShellRuns<HostEvent extends { type: string } = never> {
+  private readonly windows = new Map<string, RunWindow<HostEvent>>();
   private readonly kept: Kept[] = [];
   /** The project of each folder a run ran in, by project id and folder: null while its name is being read. */
   private readonly projects = new Map<string, string | null>();
@@ -340,6 +349,7 @@ export class ShellRuns {
         notify: (session) => {
           this.hub?.push(session);
           this.liveCountChanged();
+          this.sessionChanged(session);
         },
         presenceChanged: (session) => this.hub?.push(session),
         // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
@@ -555,14 +565,16 @@ export class ShellRuns {
    * it by, then the codes and the picks kept, then each run, then that every run live was listed (`listed`). Null while
    * the hub does not listen, or past `MAX_WINDOWS`.
    */
-  async openWindow(sink: DesktopRunSink): Promise<{ viewer: string; close(): void } | null> {
+  async openWindow(
+    sink: DesktopRunSink<DesktopRunEvent | HostEvent>,
+  ): Promise<{ viewer: string; close(): void } | null> {
     if (!this.hub || this.windows.size >= MAX_WINDOWS) return null;
     const viewer = randomBytes(16).toString('hex');
     const close = () => {
       this.closeWindow(viewer);
       sink.close();
     };
-    const window: RunWindow = {
+    const window: RunWindow<HostEvent> = {
       sink,
       shows: new Map(),
       peer: this.hub.join(
@@ -570,7 +582,9 @@ export class ShellRuns {
           send: (message) => {
             // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
             if (sink.buffered() > MAX_HUB_BUFFERED) return close();
-            if (relayed(message)) sink.send(message);
+            if (!relayed(message)) return;
+            this.relaying(viewer, message);
+            sink.send(message);
           },
           buffered: () => sink.buffered(),
           close,
@@ -587,8 +601,9 @@ export class ShellRuns {
   }
 
   /**
-   * A command of a window's, as the hub answers it, or `show`; null for a stream that is not open. Each field is
-   * checked as the hub checks a WebSocket's (`parseHubCommand`).
+   * A command of a window's, as the hub answers it, or `show`, or one the host that extends the hub answers
+   * (`windowCommand`); null for a stream that is not open. Each field is checked as the hub checks a WebSocket's
+   * (`parseHubCommand`).
    */
   async command(body: unknown): Promise<HubAnswer | null> {
     const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
@@ -625,6 +640,8 @@ export class ShellRuns {
       const said = this.sessions.answerAsk({ ref: value.ref, id: value.ask, answer: 'not-now' });
       return answer(said.ok, said.message);
     }
+    const own = this.windowCommand(value.viewer as string, id, value);
+    if (own) return own;
     const parsed = parseHubCommand(JSON.stringify(value));
     if (!parsed) return answer(false, 'Not a command.');
     return window.peer.command(parsed);
@@ -646,15 +663,38 @@ export class ShellRuns {
     const window = this.windows.get(viewer);
     if (!window) return;
     this.windows.delete(viewer);
+    this.windowLeft(viewer);
     window.peer.leave();
     for (const ref of [...window.shows.keys()]) this.stopShowing(window, ref);
+  }
+
+  /** A run changed, or ended, as the hub tells its peers: for a host that follows the runs further. */
+  protected sessionChanged(_session: RunSession): void {}
+
+  /** A message of the hub's on its way to the window `viewer`'s stream. */
+  protected relaying(_viewer: string, _message: Extract<HubMessage, DesktopRunEvent>): void {}
+
+  /**
+   * A command of the window `viewer` (`value`, its `id` 0 when it names none) of a type the hub does not know: the
+   * answer of a host that takes it, or null, and the hub reads it as one of its own.
+   */
+  protected windowCommand(_viewer: string, _id: number, _value: Record<string, unknown>): HubAnswer | null {
+    return null;
+  }
+
+  /** The window `viewer`'s stream closed. */
+  protected windowLeft(_viewer: string): void {}
+
+  /** Sends the window `viewer` an event of the host's own; nothing once its stream closed. */
+  protected sendToWindow(viewer: string, event: HostEvent): void {
+    this.windows.get(viewer)?.sink.send(event);
   }
 
   /**
    * The window shows the run no more: the last window showing it turns its Hold failures off, unless someone set it
    * since the window did.
    */
-  private stopShowing(window: RunWindow, ref: string): void {
+  private stopShowing(window: RunWindow<HostEvent>, ref: string): void {
     const set = window.shows.get(ref);
     if (!set) return;
     window.shows.delete(ref);

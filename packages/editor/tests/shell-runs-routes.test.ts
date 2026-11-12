@@ -6,8 +6,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { lineReader } from '@piwitests/core/ide-recorder';
-import type { HubSessionMessage } from '@piwitests/core/run-hub';
-import { linkedSpelling, ShellRuns, type ShellRunsWords } from '../src/shell-runs';
+import type { HubAnswer, HubSessionMessage } from '@piwitests/core/run-hub';
+import { linkedSpelling, ShellRuns, type ShellRunsOptions, type ShellRunsWords } from '../src/shell-runs';
 import { serveShellRuns } from '../src/shell-runs-http';
 import {
   DESKTOP_PICKS_PATH,
@@ -314,5 +314,58 @@ describe('the hub', () => {
     fs.mkdirSync(below);
     expect(linkedSpelling([{ id: 1, path: folder }], below)).toBe(below);
     expect(linkedSpelling([{ id: 1, path: folder }], os.tmpdir())).toBeNull();
+  });
+});
+
+/** The events a host that extends the hub sends its windows itself. */
+type Peek = { type: 'peek'; seen: string };
+
+/** A host that extends the hub: a window command of its own (`peek`), answered with an event of its own. */
+class PeekingRuns extends ShellRuns<Peek> {
+  readonly left: string[] = [];
+
+  static async open(options: ShellRunsOptions): Promise<PeekingRuns> {
+    const runs = new PeekingRuns(options);
+    await runs.open();
+    return runs;
+  }
+
+  protected override windowCommand(viewer: string, id: number, value: Record<string, unknown>): HubAnswer | null {
+    if (value.type !== 'peek') return null;
+    this.sendToWindow(viewer, { type: 'peek', seen: String(value.what) });
+    return { type: 'answer', id, ok: true, message: 'Peeked.' };
+  }
+
+  protected override windowLeft(viewer: string): void {
+    this.left.push(viewer);
+  }
+}
+
+describe('a host that extends the hub', () => {
+  test('answers a window command of its own and sends that window events of its own; the hub alone does not', async () => {
+    const options = { token: TOKEN, version: '1.2.3', folders: () => [], words: WORDS, folderPrefix: PREFIX };
+    const peeking = await PeekingRuns.open(options);
+    const heard: Array<DesktopRunEvent | Peek> = [];
+    const sink = { send: (event: DesktopRunEvent | Peek) => heard.push(event), buffered: () => 0, close() {} };
+    const window = (await peeking.openWindow(sink))!;
+    expect(await peeking.command({ type: 'peek', id: 2, what: 'lane 0', viewer: window.viewer })).toEqual({
+      type: 'answer',
+      id: 2,
+      ok: true,
+      message: 'Peeked.',
+    });
+    expect(heard).toContainEqual({ type: 'peek', seen: 'lane 0' });
+    window.close();
+    expect(peeking.left).toEqual([window.viewer]);
+    peeking.close();
+
+    // A hub no host extends reads it as one of its own, and knows none of that name.
+    const plain = (await runs!.openWindow({ send() {}, buffered: () => 0, close() {} }))!;
+    expect(await runs!.command({ type: 'peek', id: 3, what: 'lane 0', viewer: plain.viewer })).toMatchObject({
+      id: 3,
+      ok: false,
+      message: 'Piwi does not know the command "peek".',
+    });
+    plain.close();
   });
 });

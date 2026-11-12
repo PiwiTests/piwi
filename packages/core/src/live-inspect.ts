@@ -545,6 +545,9 @@ function stringHider(secrets: readonly string[]): StringHider {
   };
 }
 
+/** The hider of a walk that reads what fields hold alone (`snapshotFieldSecrets`): each string left as it is. */
+const KEEP_STRINGS: StringHider = { text: (value) => value, url: (value) => value, srcset: (value) => value };
+
 /** Whether a label's text, as `labelText` read it, names a secret: one it could not read whole does. */
 function namesSecret(text: string | null): boolean {
   return text === null || isSecretFieldName(text);
@@ -690,7 +693,20 @@ export function hideSnapshotSecrets(html: unknown, options: SnapshotSecretOption
   return hideHtml(html, options, stringHider(options.secrets));
 }
 
-function hideHtml(html: unknown, options: SnapshotSecretOptions, hide: StringHider): unknown {
+/**
+ * The values of the fields of a snapshot's `html` that hold a secret, as `hideSnapshotSecrets` finds them (their
+ * value, Playwright's live value, a textarea's text), each once, its labels' references followed with `resolve`: what a
+ * reader of the trace, without the page, learns of the values the attempt's secret fields held. Null when it cannot be
+ * read whole. Pure.
+ */
+export function snapshotFieldSecrets(html: unknown, resolve?: SnapshotResolver): string[] | null {
+  const held = new Set<string>();
+  const read = hideHtml(html, { secrets: [], ...(resolve ? { resolve } : {}) }, KEEP_STRINGS, held);
+  return read === null ? null : [...held];
+}
+
+/** `html` hidden as `hideSnapshotSecrets` says, each value removed from a field that holds a secret added to `held`. */
+function hideHtml(html: unknown, options: SnapshotSecretOptions, hide: StringHider, held?: Set<string>): unknown {
   const wanted = labelledByIds(html);
   const labels = wanted && secretLabels(html, options.resolve, wanted);
   if (!labels) return null;
@@ -731,7 +747,10 @@ function hideHtml(html: unknown, options: SnapshotSecretOptions, hide: StringHid
       upper === 'META' && META_NAMES.some((key) => typeof own[key] === 'string' && isSecretName(own[key] as string));
     const attrs: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(own)) {
-      if (secret && VALUE_ATTRIBUTES.includes(key)) continue;
+      if (secret && VALUE_ATTRIBUTES.includes(key)) {
+        if (typeof value === 'string' && value.trim()) held?.add(value);
+        continue;
+      }
       if (typeof value !== 'string') {
         attrs[key] = value;
         continue;
@@ -751,11 +770,13 @@ function hideHtml(html: unknown, options: SnapshotSecretOptions, hide: StringHid
         attrs[key] = hide.text(value);
       }
     }
-    const kids = children.map((child) =>
-      secret && upper === 'TEXTAREA' && typeof child === 'string' && child.trim()
-        ? HIDDEN_VALUE
-        : visit(child, inSecretLabel || label, depth + 1),
-    );
+    const kids = children.map((child) => {
+      if (!(secret && upper === 'TEXTAREA' && typeof child === 'string' && child.trim())) {
+        return visit(child, inSecretLabel || label, depth + 1);
+      }
+      held?.add(child);
+      return HIDDEN_VALUE;
+    });
     return node.length < 2 && !Object.keys(attrs).length ? [name] : [name, attrs, ...kids];
   };
   const out = visit(html, false, 0);

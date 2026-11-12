@@ -430,7 +430,10 @@ function restoreFocus(): void {
   lending = false;
 }
 
-watch([controls, laneShown, runningWatch, driverShown, drivesIt], restoreFocus, { flush: 'post' });
+/** Inspect is open on the worker's lane: turned off between two tests, its button goes with the lane card's tools. */
+const inspecting = computed(() => hub.inspecting(props.session.ref, props.worker.parallelIndex));
+
+watch([controls, laneShown, runningWatch, driverShown, drivesIt, inspecting], restoreFocus, { flush: 'post' });
 onMounted(() => {
   document.addEventListener('focusin', heardFocus);
   document.addEventListener('pointerdown', heardPress, true);

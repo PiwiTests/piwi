@@ -66,7 +66,7 @@ it; a run in UI mode, or one that repeats its tests past a failure, offers none.
 reloads shows again, with **Stop**.
 **Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
 writes no file. **Share live** shows the run's stops to your team on the instance it reports to, as in the desktop
-app.
+app. **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.
 
 Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an
 editor starts, not Piwi Runner's.

@@ -127,8 +127,12 @@ export interface TraceAttempt {
   retry: number;
 }
 
-/** A trace file that passed the checks: what the viewer opens. Else why it is not opened, in a sentence. */
-export type CheckedTrace = { ok: true; trace: string } | { ok: false; message: string };
+/**
+ * A trace file that passed the checks: what the viewer opens (`trace`), the runner's trace folder it is in as the file
+ * system spells it (`traces`), and the name the attempt's files start with (`base`). Else why it is not opened, in a
+ * sentence.
+ */
+export type CheckedTrace = { ok: true; trace: string; traces: string; base: string } | { ok: false; message: string };
 
 /** The name an attempt's trace files start with, as the runner writes them. */
 export function attemptName(attempt: Pick<TraceAttempt, 'testId' | 'retry'>): string {
@@ -242,7 +246,7 @@ export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrac
   }
   const refused = unreadable(traces, base);
   if (refused) return { ok: false, message: refused };
-  return { ok: true, trace: path.join(traces, `${base}.json`) };
+  return { ok: true, trace: path.join(traces, `${base}.json`), traces, base };
 }
 
 /**

@@ -19,7 +19,7 @@ material: open it when you need to understand the code.
 | `app/composables/useDesktopRunHub.ts`                        | The window's side of the runs' hub: the stream of `/api/desktop/runs/events` and the commands                               |
 | `app/components/DesktopRun*.vue`                             | The live view of a run: its workers (`DesktopRunSession`, `DesktopRunWorker`), a stop's and a lane's page, the code to copy |
 | `app/utils/run-view.ts` (`@piwitests/run-ui/run-view`)       | The live view's pure half: keys, the run model's English words and icons, Share live, the items to copy                     |
-| `app/utils/run-view-host.ts`                                 | What a host adds to the live view (`RUN_VIEW_HOST`): a worker's own window, the link to a stop's file                       |
+| `app/utils/run-view-host.ts`                                 | What a host adds to the live view (`RUN_VIEW_HOST`): a worker's own window, the link to a stop's file, a lane's Inspect     |
 | `app/components/ErrorText.vue`, `LocatorCode.vue`            | An error with its ANSI colors (`@piwitests/run-ui/ansi`), a locator highlighted                                             |
 | `app/utils/status-palette.ts`, `ui-classes.ts`               | The outcome colors (`STATUS_PALETTE`) and the neutral classes the shared marks take                                         |
 | `src/fold-text.ts` (`@piwitests/run-ui/fold-text`)           | The search fold every list compares with, accents and case ignored                                                          |

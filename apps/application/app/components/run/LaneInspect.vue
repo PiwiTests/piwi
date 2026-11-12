@@ -1,45 +1,44 @@
 <script setup lang="ts">
 /**
- * **Inspect** in the lane panel: the page of the worker's test at each of its calls, as a document. The worker sends
- * the DOM snapshot Playwright's trace takes before each call, at its action and after it while Inspect is open, and
- * the instance keeps them in memory and serves each page rendered, without a script (`app/utils/live-inspect.ts`).
+ * **Inspect**: the page of a lane's running test at each of its calls, as a document, in the run page's lane panel
+ * (the worker sends the DOM snapshot Playwright's trace takes before each call, at its action and after it while
+ * Inspect is open, and the instance keeps them in memory) and in the desktop app's Local runs tray (its server reads
+ * them from the test's own trace on this machine). Each surface hands it the snapshots it heard (`heard`) and where it
+ * reads each page, rendered without a script, with its own words (`source`, `app/utils/live-inspect.ts`).
  * The view opens on the latest call and follows each new one (**Follow the latest call**), moving to the latest at most
  * once in `FOLLOW_EVERY_MS` while they keep coming, until the reader chooses an older call in the list or picks a
- * locator; **Before**, **Action** and **After** show the call's page at that moment when the worker sent it. **Pick a
+ * locator; **Before**, **Action** and **After** show the call's page at that moment when it was taken. **Pick a
  * locator** opens the snapshot picker on the page shown, as for a stored trace. Each next test of the lane (`turn`)
- * starts the view afresh, following its latest call. Nothing is kept here but what the panel heard of each snapshot.
+ * starts the view afresh, following its latest call. Nothing is kept here but what the surface heard of each snapshot.
  */
 import type { SnapshotPhase } from '@piwitests/core/live-inspect';
 import {
-  INSPECT_ENDED_TEXT,
-  INSPECT_TEST_ENDED,
   SNAPSHOT_PHASES,
   inspectCalls,
-  inspectPageUrl,
   shownMoment,
   type HeardSnapshot,
   type InspectEnd,
   type InspectMoment,
+  type InspectSource,
 } from '~/utils/live-inspect';
 import { SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
 
 const props = defineProps<{
-  runId: number;
-  /** The snapshots of the worker's page the watch heard of, of the test the panel shows. */
+  /** Where each page is read, null while the connection it is read through is not open, and what the view says. */
+  source: InspectSource;
+  /** The snapshots of the worker's page heard of, of the test the view shows. */
   heard: readonly HeardSnapshot[];
-  /** Why the worker sends no page of the test the panel shows, when it said so. */
+  /** Why no page of the test the view shows comes, when that was said. */
   refused: string | null;
-  /** The id of the page's watch, which the address of each page carries; null while the watch is not open. */
-  watchId: string | null;
-  /** Which test the panel shows, counted: another starts the view afresh. */
+  /** Which test the view shows, counted: another starts the view afresh. */
   turn: number;
-  /** The test the panel shows ended, the panel waiting for the lane's next: the instance lets its pages go. */
+  /** The test the view shows ended, the view waiting for the lane's next: its pages were let go. */
   testEnded: boolean;
-  /** Why the panel's view ended, null while it is open: no page shows after it, and none comes. */
+  /** Why the view ended, null while it is open: no page shows after it, and none comes. */
   ended: InspectEnd | null;
 }>();
 
-const baseURL = (useRuntimeConfig().app.baseURL || '/').replace(/\/$/, '');
+const words = computed(() => props.source.words);
 
 /** **Follow the latest call**: on by default, off once the reader chooses an older call or picks. */
 const follow = ref(true);
@@ -136,24 +135,22 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  [loading, () => props.watchId],
-  async ([moment, watchId]) => {
+  [loading, () => props.source.pageUrl],
+  async ([moment, pageUrl]) => {
     if (!moment) {
       asked++;
       page.value = null;
       pageError.value = null;
       return;
     }
-    if (!watchId) return;
+    if (!pageUrl) return;
     const token = ++asked;
     try {
-      const meta = await $fetch<{ viewport: { width: number; height: number } | null }>(
-        inspectPageUrl(baseURL, props.runId, watchId, moment, 'json'),
-      );
+      const meta = await $fetch<{ viewport: { width: number; height: number } | null }>(pageUrl(moment, 'json'));
       if (token !== asked) return;
       page.value = {
         moment,
-        src: inspectPageUrl(baseURL, props.runId, watchId, moment, 'readonly'),
+        src: pageUrl(moment, 'readonly'),
         viewport: meta.viewport,
       };
       pageError.value = null;
@@ -174,27 +171,29 @@ const pickerPage = shallowRef<{
   src: string;
   viewport: { width: number; height: number } | null;
   title: string;
+  from: string;
 } | null>(null);
 /** Why **Pick a locator** is off, as its title says; null while it is on. */
 const pickOff = computed(() => {
   if (props.ended) return 'The view ended: no page to pick on.';
-  if (props.testEnded) return INSPECT_TEST_ENDED;
-  if (!props.watchId) return 'The view’s connection is opening again: pick a locator once it is open.';
+  if (props.testEnded) return words.value.testEnded;
+  if (!props.source.pageUrl) return words.value.pickConnecting;
   if (!page.value) return 'No page of this test shows yet.';
   return null;
 });
 function pick(): void {
   const shownPage = page.value;
-  const watchId = props.watchId;
-  if (!shownPage || !watchId || pickOff.value) return;
+  const pageUrl = props.source.pageUrl;
+  if (!shownPage || !pageUrl || pickOff.value) return;
   pinned.value =
     calls.value.find((call) => call.call === shownPage.moment.call && sameWorker(call, shownPage.moment))?.key ?? null;
   follow.value = false;
   phase.value = shownPage.moment.phase;
   pickerPage.value = {
-    src: inspectPageUrl(baseURL, props.runId, watchId, shownPage.moment, 'picker'),
+    src: pageUrl(shownPage.moment, 'picker'),
     viewport: shownPage.viewport,
     title: shownPage.moment.title,
+    from: words.value.from,
   };
   picking.value = true;
 }
@@ -212,11 +211,11 @@ watch(
 
 /** What the view says while it shows no page. */
 const waiting = computed(() => {
-  if (props.ended) return INSPECT_ENDED_TEXT[props.ended];
+  if (props.ended) return words.value.ended[props.ended];
   if (props.refused) return props.refused;
-  if (props.testEnded) return INSPECT_TEST_ENDED;
-  if (!props.watchId) return 'Waiting for the view’s connection…';
-  return 'Waiting for the page at the test’s next call. The worker sends one before each call, at its action and after it.';
+  if (props.testEnded) return words.value.testEnded;
+  if (!props.source.pageUrl) return words.value.connecting;
+  return words.value.waiting;
 });
 </script>
 
@@ -261,7 +260,7 @@ const waiting = computed(() => {
     <template v-else>
       <p v-if="refused" class="text-xs text-muted" role="status" data-testid="live-inspect-refused">{{ refused }}</p>
       <p v-else-if="testEnded" class="text-xs text-muted" role="status" data-testid="live-inspect-test-ended">
-        {{ INSPECT_TEST_ENDED }}
+        {{ words.testEnded }}
       </p>
       <p v-if="page" class="text-xs text-muted" data-testid="live-inspect-at">
         The page {{ phaseWords }}: <span class="font-mono">{{ page.moment.title }}</span>
@@ -279,7 +278,7 @@ const waiting = computed(() => {
       <ol
         ref="list"
         class="max-h-40 divide-y divide-default overflow-y-auto rounded-md border border-default"
-        aria-label="The calls whose page the worker sent, the latest last"
+        :aria-label="words.calls"
         data-testid="live-inspect-calls"
       >
         <li v-for="call in calls" :key="call.key">
@@ -297,10 +296,7 @@ const waiting = computed(() => {
         </li>
       </ol>
     </template>
-    <p class="text-xs text-muted">
-      The worker sends these pages only while Inspect is open, without their scripts and with the values of their secret
-      fields removed. The instance keeps them in memory until the run ends.
-    </p>
+    <p class="text-xs text-muted">{{ words.note }}</p>
     <SnapshotLocatorPicker v-if="pickerPage" v-model:open="picking" :failing-locator="null" :live-page="pickerPage" />
   </div>
 </template>

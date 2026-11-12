@@ -7795,6 +7795,108 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-desktop-inspect',
+    description:
+      'Local runs tray in the desktop app: a watched lane’s card with Inspect open beside Open the trace so far, the page of the running test at its latest call as its own trace on this machine took it, Before, Action and After, the calls read, and Pick a locator, also at 390 px',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1800 },
+    outputs: ['run-live-desktop-inspect.png', 'run-live-desktop-inspect-narrow.png'],
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, () => ({}));
+      // The server's routes of Inspect: the calls it read of the test's trace, and each page rendered.
+      const notice = (call, phase, title, at) => ({
+        type: 'snapshot',
+        shard: null,
+        worker: 0,
+        call,
+        title,
+        phase,
+        page: 'page@1',
+        frame: 'frame@1',
+        main: true,
+        full: true,
+        index: 0,
+        at,
+        test: 'checkout › pays with a saved card',
+      });
+      const now = Date.now();
+      const heard = [
+        notice('call@1', 'after', 'Navigate to "/cart"', now - 4000),
+        notice('call@2', 'before', "Click getByRole('link', { name: 'Checkout' })", now - 3000),
+        notice('call@2', 'after', "Click getByRole('link', { name: 'Checkout' })", now - 2900),
+        notice('call@3', 'before', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 2000),
+        notice('call@3', 'action', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 1990),
+        notice('call@3', 'after', 'Fill "<hidden>" getByLabel(\'Card number\')', now - 1980),
+        notice('call@4', 'before', "Click getByRole('button', { name: 'Pay now' })", now - 1000),
+      ];
+      await page.route('**/api/desktop/runs/inspect/calls?**', (route) =>
+        route.fulfill({ json: { attempt: 't1#0', heard, refused: null } }),
+      );
+      await page.route('**/api/desktop/runs/inspect/page?**', (route) => {
+        if (new URL(route.request().url()).searchParams.get('format') === 'json') {
+          return route.fulfill({ json: { viewport: { width: 1280, height: 800 } } });
+        }
+        return route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          headers: {
+            'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'",
+          },
+          body: `<!doctype html><html><head><meta charset="utf-8"><style>
+    body { margin: 0; font: 22px system-ui, sans-serif; color: #1f2937; background: #f9fafb }
+    header { background: #4c1d95; color: #fff; padding: 22px 40px; font-weight: 700; font-size: 28px; text-align: center }
+    main { padding: 40px; display: grid; grid-template-columns: 1fr 380px; gap: 40px }
+    label { display: block; margin-top: 18px } input { display: block; width: 100%; margin-top: 8px; padding: 14px; font: inherit; border: 1px solid #d1d5db; border-radius: 10px; background: #fff }
+    aside { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 28px }
+    button { margin-top: 24px; width: 100%; padding: 18px; font: inherit; font-weight: 600; color: #fff; background: #6d28d9; border: 0; border-radius: 10px }
+  </style></head><body><header>Acme shop</header><main><section><h1>Payment</h1>
+    <label>Name on card<input value="Ada Lovelace"></label>
+    <label>Card number<input value="&lt;hidden&gt;"></label></section>
+    <aside><h2>Total</h2><p>€36.00</p><button>Pay now</button></aside></main></body></html>`,
+        });
+      });
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at', 'watch'];
+      const { tray, running, session, finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      const send = (event) => page.evaluate((e) => window.__hub.send(e), event);
+      try {
+        const watch = page.getByRole('button', { name: 'Watch: checkout › pays with a saved card', exact: true });
+        await watch.waitFor({ timeout: 60_000 });
+        await watch.click();
+        const worker = tray.locator('[data-shot="desktop-run-worker"]');
+        await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
+        await send(session({ ...running, traces: true }));
+        await send({
+          type: 'lane-frame',
+          ref: 'desktop-41',
+          lane: 0,
+          worker: 0,
+          test: 't1',
+          since: null,
+          width: 1280,
+          height: 800,
+          data: image,
+        });
+        await worker.getByRole('img', { name: 'Live view of the test’s page', exact: true }).waitFor();
+        // Inspect opened: the page at the latest call, as the test's own trace took it.
+        await worker.getByRole('button', { name: 'Inspect', exact: true }).click();
+        const inspect = worker.locator('[data-shot="desktop-run-inspect"]');
+        await inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame().getByText('Payment').waitFor();
+        await settle();
+        await shoot(undefined, { of: '[data-shot="desktop-run-lane"]', pad: 8 });
+        // At 390 px, Inspect alone under the page, scrolled into the tray's view.
+        await page.setViewportSize({ width: 390, height: 1400 });
+        await inspect.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('narrow', { of: '[data-shot="desktop-run-inspect"]', pad: 0 });
+      } finally {
+        await finish();
+      }
+    },
+  },
+  {
     name: 'run-live-desktop',
     description:
       'Run page in the desktop app while live: a running row of a run it did not start says where its test’s page shows, and its help lists where',

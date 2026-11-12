@@ -238,10 +238,11 @@ runs (`@piwitests/editor/run-host`), plus these:
 
 - **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
   are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by the editor's `ShellRuns`, which
-  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs and the agents' tools,
+  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs, the agents' tools and
+  Inspect, through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`, `sendToWindow`),
   and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call `@piwitests/editor/shell-runs-routes`.
-  What the desktop needs that they lack is an option of theirs (`declines`, `host`, `token`, `words`, `RunHub.join`),
-  added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
+  What the desktop needs that they lack is an option or a hook of theirs that names no app feature (`declines`,
+  `host`, `token`, `words`, `RunHub.join`), added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
   (a real run through the built reporter) drive the wiring.
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
   `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
@@ -265,6 +266,13 @@ runs (`@piwitests/editor/run-host`), plus these:
   **Hold failures** switch is on) or whose Hold failures Piwi Picker or an agent turned on, and never in a run nobody
   attends: its ref ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a
   bisect, a lab job, a run with `--ui`, and one with `--repeat-each` above 1 unless it stops at its first failure.
+- **Inspect reads a lane's trace from the file its worker named to the hub alone, checked (`RunSessions.laneTrace`),
+  and no path reaches a window.** `desktop-inspect.ts` reads that folder's attempt files and `resources/`, never through
+  a link (each folder's real path checked again as each file opens, which opens without waiting on a pipe), into
+  `RunInspect` with the reporter's secret removal (what every frame's secret fields held, learned from each snapshot as
+  it is read, before any is let go) and resource allow list, served by `snapshotFrameDocument`; nothing is kept past
+  the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`). Its event and command are the app's
+  (`shared/desktop-runs.ts`); Piwi Runner's host has no Inspect.
 - **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
   editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
   it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)

@@ -2,10 +2,16 @@
  * Desktop build: what the app's window reads and sends to follow the Playwright runs the desktop shell starts, which
  * the bundled server is the hub of (`server/utils/desktop-runs.ts`). The stream, the commands and the picks are the
  * editor service's (`@piwitests/editor/shell-run-events`), which Piwi Runner's host serves too; this file adds what
- * the app alone shows: the editors' runs it observes, and the runs nobody attends.
+ * the app alone shows: the editors' runs it observes, the runs nobody attends, and **Inspect** of a lane, an event and a
+ * command of the app's own that Piwi Runner's host neither sends nor takes.
  */
 import { UNATTENDED_REF_SUFFIX, isUnattendedRef } from '@piwitests/core/run-channel';
+import type { LiveSnapshotNotice, LiveWorkerId } from '@piwitests/core/live-view';
 import type { HubSession } from '@piwitests/core/run-hub';
+import type {
+  DesktopRunCommand as ShellRunCommand,
+  DesktopRunEvent as ShellRunEvent,
+} from '@piwitests/editor/shell-run-events';
 
 /**
  * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
@@ -42,4 +48,47 @@ export function isUnattendedDesktopRun(ref: string): boolean {
   return isUnattendedRef(ref);
 }
 
-export { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '@piwitests/editor/shell-run-events';
+export { DESKTOP_PICKS_PATH, isDesktopRunViewer } from '@piwitests/editor/shell-run-events';
+
+/**
+ * A snapshot of a lane's page **Inspect** read from its test's trace, as the window hears of it: its call, title and
+ * moment, its page and frame, the lane's worker (no shard), and the test it is of; never its JSON nor a path. The window
+ * reads the page rendered (`GET /api/desktop/runs/inspect/page`).
+ */
+export type DesktopInspectNotice = LiveWorkerId & LiveSnapshotNotice & { type: 'snapshot'; test: string | null };
+
+/**
+ * What a window with **Inspect** open on the lane `lane` of the run `ref` hears: the attempt Inspect follows now
+ * (`attempt`: Playwright's id of the lane's running test and its retry, `<id>#<retry>`; null between tests), each
+ * snapshot read of it (`snapshot`), and why no page of it shows (`refused`).
+ */
+export type DesktopInspectEvent = { type: 'inspect'; ref: string; lane: number; attempt: string | null } & (
+  | { snapshot?: undefined; refused?: undefined }
+  | { snapshot: DesktopInspectNotice }
+  | { refused: string }
+);
+
+/**
+ * What a window hears as it opens Inspect on a lane (`GET /api/desktop/runs/inspect/calls`): the attempt Inspect follows,
+ * the snapshots read of it so far, the latest `MAX_DESKTOP_INSPECT_LISTED`, and why no page of it shows, if it said.
+ */
+export interface DesktopInspectCalls {
+  attempt: string | null;
+  heard: DesktopInspectNotice[];
+  refused: string | null;
+}
+
+/** The most snapshots a window hears of a lane as it opens Inspect: the latest. */
+export const MAX_DESKTOP_INSPECT_LISTED = 600;
+
+/** What the window's stream sends: the hub's events, and what **Inspect** read of a lane the window has it open on. */
+export type DesktopRunEvent = ShellRunEvent | DesktopInspectEvent;
+
+/**
+ * A command of the window: the hub's (`ShellRunCommand`), or `inspect`, which the app's server alone answers:
+ * **Inspect** of the lane `lane` of the run `ref` opens (`on`) or closes for the window, and the server reads the pages
+ * of the lane's running test from its own trace while a window has it open, and tells it (`DesktopInspectEvent`).
+ */
+export type DesktopRunCommand =
+  | ShellRunCommand
+  | { type: 'inspect'; id: number; ref: string; lane: number; on: boolean; viewer: string };

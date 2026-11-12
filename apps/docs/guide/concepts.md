@@ -303,6 +303,15 @@ from your project's own Playwright. The trace's path never leaves that service: 
 saying why when the viewer does not start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it
 opened: close it, then choose the button again, for what came since.
 
+**Inspect** on a lane watched in the desktop app's tray reads the same checked file on the app's server, while the
+tray shows it and the window is not hidden; the window hears each page's call and reads the page rendered, never the
+file's path. Each page is cleaned as a worker cleans it for the run page, the values any frame's secret fields held
+hidden in every page kept, iframes included, and stays in memory until the test ends. As Inspect opens, it reads a
+page's snapshots since its navigation, 8,192 or 16 MB at most; every lane's pages, with the snapshots read to build
+them, share 256 MB, past which it keeps no more. A page with a frame it cannot read whole shows again from its next
+navigation, and the reading stops when the trace folder, a folder above it or its `resources` folder becomes a link
+or no longer a folder: Inspect says why each time.
+
 ### Verification
 
 **A test run several times without retries and without the breakpoints, to see how often it passes** (**Verify ×3**

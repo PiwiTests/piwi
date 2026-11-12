@@ -1071,6 +1071,61 @@ describe('the trace so far of a desktop run', () => {
     worker.socket.destroy();
   });
 
+  it('is read for the window’s Inspect from the lane’s checked trace, its path in no message, until the window closes', async () => {
+    const ref = 'desktop-trace-5';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    const traces = path.join(folder, 'test-results', '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 'id-pays.trace');
+    const page = ['HTML', {}, ['BODY', {}, 'Cart']];
+    fs.writeFileSync(
+      file,
+      `${JSON.stringify({ type: 'before', callId: 'c@1', method: 'goto', params: {} })}\n${JSON.stringify({
+        type: 'frame-snapshot',
+        snapshot: {
+          callId: 'c@1',
+          phase: 'after',
+          pageId: 'page@1',
+          frameId: 'frame@1',
+          html: page,
+          isMainFrame: true,
+        },
+      })}\n`,
+    );
+    // A command that does not name a lane, or names no run, is refused.
+    expect(await window.command({ type: 'inspect', id: 20, ref, on: true })).toMatchObject({ ok: false });
+    expect(await window.command({ type: 'inspect', id: 21, ref: 'a b', lane: 0, on: true })).toMatchObject({
+      ok: false,
+    });
+    expect(await window.command({ type: 'inspect', id: 22, ref, lane: 0, on: true })).toMatchObject({ ok: true });
+    await worker.answer('trace', { ok: true, message: "The attempt's trace grows there.", file });
+    const kept = await waitFor(() =>
+      window.events.find(
+        (e): e is Extract<DesktopRunEvent, { type: 'inspect' }> =>
+          e.type === 'inspect' && 'snapshot' in e && !!e.snapshot,
+      ),
+    );
+    expect(kept).toMatchObject({
+      ref,
+      lane: 0,
+      attempt: 'id-pays#0',
+      snapshot: { call: 'c@1', phase: 'after', title: 'goto' },
+    });
+    const rendered = await runs.inspects.page(window.viewer, ref, 0, 'c@1', 'after');
+    expect('html' in rendered && rendered.html).toContain('Cart');
+    for (const said of window.events.map((m) => JSON.stringify(m))) {
+      expect(said).not.toContain(traces);
+      expect(said).not.toContain('.playwright-artifacts');
+    }
+    // The window closes: its Inspect goes with it.
+    window.close();
+    expect(runs.inspects.calls(window.viewer, ref, 0)).toBeNull();
+    worker.socket.destroy();
+  });
+
   it('starts the viewer with none of the server’s own settings and secrets', async () => {
     // The launcher the server wires, on a linked folder whose stand-in Playwright writes the environment it got.
     const linked = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-viewer-')));
@@ -1526,6 +1581,8 @@ describe('the routes', () => {
       ['GET', '/api/desktop/runs/events'],
       ['POST', '/api/desktop/runs/commands'],
       ['POST', '/api/desktop/runs/picks'],
+      ['GET', '/api/desktop/runs/inspect/calls'],
+      ['GET', '/api/desktop/runs/inspect/page'],
     ] as const) {
       expect(isOpenDesktopRoute(route[0], route[1])).toBe(false);
     }

@@ -59,7 +59,8 @@ for their files alone. The window reaches the hub through `GET /api/desktop/runs
 `POST /api/desktop/runs/commands` (`useDesktopRunHub` of the layer, held by `plugins/runner-run-hub.client.ts`) and
 shows each running run's workers live (`DesktopRunSession`); a run's picks come back on `POST /api/desktop/runs/picks` with a token for that
 route alone. The hub's WebSocket listens behind the access token, but nothing names it to another tool: Runner writes no
-discovery file, observes no editor's runs and serves no agent tools.
+discovery file, observes no editor's runs, serves no agent tools and reads no lane's trace for **Inspect**: its window
+provides no `RUN_VIEW_HOST`, so a lane offers no Inspect there.
 
 ## Quitting
 

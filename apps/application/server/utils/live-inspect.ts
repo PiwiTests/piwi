@@ -13,14 +13,16 @@ import { inlineSnapshotAssets, type SnapshotAssets } from './dom-snapshot';
 import type { TraceFrameSnapshot, TraceResource } from './trace-events';
 
 /**
- * What the run page's live view keeps for **Inspect** (`@piwitests/core/live-inspect`), in memory alone, for one run:
+ * What the run page's live view keeps for **Inspect** (`@piwitests/core/live-inspect`), in memory alone, for one run;
+ * and what the desktop app's server keeps for its window's Inspect of a lane, read from the test's own trace on this
+ * machine (`desktop-inspect.ts`), saying why a page does not show in its own words (`InspectWords`):
  * each worker's snapshots of its running test's pages' main frames as they came, and the resources they name. Each
  * snapshot counts its JSON and its header (`heldBytes`). A worker's are bounded by `MAX_WORKER_SNAPSHOTS` bytes and
  * `MAX_WORKER_SNAPSHOT_COUNT` snapshots, the run's by `MAX_RUN_SNAPSHOTS` and `MAX_RUN_SNAPSHOT_COUNT`, the oldest going
  * first; the resources by `MAX_RUN_RESOURCES` bytes and `MAX_RUN_RESOURCE_COUNT`, the least recently used first; and
  * every run's store together by the instance's `InspectBudget`, past which a new one is refused (`full`). Nothing is
- * written anywhere: the run's live view drops it with the run, a worker's snapshots go as its test ends, and every
- * snapshot and resource as the project starts masking elements. A snapshot of a frame other than a page's main one is
+ * written anywhere: the run's live view drops it with the run (`clear`, after which it keeps nothing), a worker's
+ * snapshots go as its test ends, and every snapshot and resource as the project starts masking elements. A snapshot of a frame other than a page's main one is
  * not kept: the snapshot view renders a page's main frame alone. Every lookup and change takes a constant time, but
  * what goes, each once.
  *
@@ -80,14 +82,42 @@ export const SNAPSHOT_UNREADABLE = 'The worker sent the page at this call in a f
 /** What it says of a page that costs more to render than a render may (`MAX_RENDER_NODES` and the others). */
 export const SNAPSHOT_TOO_LARGE = 'The page at this call is too large to show: rendering it would take too long.';
 
+/**
+ * What a snapshot view says of a page it does not show, by why: let go at the store's bounds (`gone`), built on a
+ * page never stored (`unsent`), of a test that ended (`testEnded`), let go as the project began masking elements
+ * (`maskedGone`), of a moment no page came of (`missing`), not read whole (`unreadable`), or too large to render
+ * (`tooLarge`). A store says its host's: the instance's (`INSTANCE_INSPECT_WORDS`), or the desktop app's, which reads
+ * the pages from the test's own trace.
+ */
+export interface InspectWords {
+  gone: string;
+  unsent: string;
+  testEnded: string;
+  maskedGone: string;
+  missing: string;
+  unreadable: string;
+  tooLarge: string;
+}
+
+/** What the instance's store says: the worker sends the pages, and the instance keeps them. */
+export const INSTANCE_INSPECT_WORDS: InspectWords = {
+  gone: SNAPSHOT_GONE,
+  unsent: SNAPSHOT_UNSENT,
+  testEnded: SNAPSHOT_TEST_ENDED,
+  maskedGone: SNAPSHOT_MASKED_GONE,
+  missing: SNAPSHOT_MISSING,
+  unreadable: SNAPSHOT_UNREADABLE,
+  tooLarge: SNAPSHOT_TOO_LARGE,
+};
+
 /** Why a snapshot went: the store's bounds, its chain's start never sent, its test's end, or the project's masks. */
 type LetGo = 'bounds' | 'unsent' | 'test-ended' | 'masked';
 
-const LET_GO_SAYS: Record<LetGo, string> = {
-  bounds: SNAPSHOT_GONE,
-  unsent: SNAPSHOT_UNSENT,
-  'test-ended': SNAPSHOT_TEST_ENDED,
-  masked: SNAPSHOT_MASKED_GONE,
+const LET_GO_WORD: Record<LetGo, keyof InspectWords> = {
+  bounds: 'gone',
+  unsent: 'unsent',
+  'test-ended': 'testEnded',
+  masked: 'maskedGone',
 };
 
 /**
@@ -142,8 +172,8 @@ export type LiveSnapshotRefusal = { status: 404 | 410; message: string };
 
 /**
  * What `addSnapshot` and `addResource` did: kept it (`kept`), held it already (`held`), passed it over (`ignored`: a
- * frame other than a page's main one, or one past a worker's bound alone), or refused it, the instance's Inspect full
- * (`full`).
+ * frame other than a page's main one, one past a worker's bound alone, or any once the run's view ended), or refused
+ * it, the instance's Inspect full (`full`).
  */
 export type InspectAdded = 'kept' | 'held' | 'ignored' | 'full';
 
@@ -288,15 +318,20 @@ export class RunInspect {
   /** The pages kept rendered, by worker, call and moment, the least recently read first. */
   private readonly pages = new Map<string, CachedPage>();
   private pageBytes = 0;
+  /** Whether its run's view ended (`clear`): it keeps nothing more. */
+  private ended = false;
 
-  constructor(private readonly budget: InspectBudget = new InspectBudget()) {}
+  constructor(
+    private readonly budget: InspectBudget = new InspectBudget(),
+    private readonly words: InspectWords = INSTANCE_INSPECT_WORDS,
+  ) {}
 
   /**
    * Keep a worker's snapshot (`worker`, its `liveWorkerKey`), within the bounds: `kept` when it is one the store did
    * not hold, of a page's main frame, which its watches then hear of.
    */
   addSnapshot(worker: string, snapshot: LiveSnapshot & { data: Uint8Array; test: string | null }): InspectAdded {
-    if (!snapshot.main) return 'ignored';
+    if (this.ended || !snapshot.main) return 'ignored';
     const store = this.workers.get(worker) ?? new WorkerSnapshots();
     this.workers.set(worker, store);
     const moment = momentKey(snapshot.call, snapshot.phase);
@@ -333,6 +368,7 @@ export class RunInspect {
 
   /** Keep a resource, within the bounds; one the store holds already is used again. */
   addResource(resource: LiveResource & { data: Uint8Array }): InspectAdded {
+    if (this.ended) return 'ignored';
     const known = this.resources.get(resource.sha1);
     if (known) {
       this.touch(resource.sha1, known);
@@ -445,8 +481,12 @@ export class RunInspect {
     this.dropPages(null);
   }
 
-  /** The run's view ended: everything goes, its bytes given back to the instance's budget. */
+  /**
+   * The run's view ended: everything goes, its bytes given back to the instance's budget, and nothing more is kept, a
+   * page that renders as it ends included.
+   */
   clear(): void {
+    this.ended = true;
     for (const held of [...this.order.values()]) this.remove(held, 'bounds');
     this.dropResources();
     this.dropPages(null);
@@ -520,7 +560,7 @@ export class RunInspect {
 
   /** Keep a page rendered, within the run's bounds and the instance's budget; the least recently read go first. */
   private keepPage(key: string, cached: CachedPage): void {
-    if (cached.bytes > 2 * MAX_CACHED_CHARS || !this.budget.fits(cached.bytes)) return;
+    if (this.ended || cached.bytes > 2 * MAX_CACHED_CHARS || !this.budget.fits(cached.bytes)) return;
     const before = this.pages.get(key);
     if (before) {
       this.pages.delete(key);
@@ -551,14 +591,14 @@ export class RunInspect {
       parsed.push({ frameId: target.frame, isMainFrame: true, html: undefined });
     }
     const rendered = parsedSnapshot(target);
-    if (!rendered?.snapshotName) return { status: 410, message: SNAPSHOT_UNREADABLE };
+    if (!rendered?.snapshotName) return { status: 410, message: this.words.unreadable };
     const named: HeldSnapshot[] = [];
     for (const held of chain.snapshots.values()) {
       if (held.index < first || held.index > target.index) continue;
       named.push(held);
       parsed[held.index - first] = held === target ? rendered : lazySnapshot(held);
     }
-    const gap = { status: 410 as const, message: chain.start === 'let-go' ? SNAPSHOT_GONE : SNAPSHOT_UNSENT };
+    const gap = { status: 410 as const, message: chain.start === 'let-go' ? this.words.gone : this.words.unsent };
     let unresolved = false;
     let tooLarge = false;
     const sanitized = renderSanitizedSnapshot(
@@ -569,7 +609,7 @@ export class RunInspect {
       () => (unresolved = true),
       () => (tooLarge = true),
     );
-    if (!sanitized && tooLarge) return { status: 410, message: SNAPSHOT_TOO_LARGE };
+    if (!sanitized && tooLarge) return { status: 410, message: this.words.tooLarge };
     if (!sanitized || unresolved) return gap;
     const viewport = viewportOf(rendered.viewport);
     target.viewport = viewport;
@@ -584,7 +624,7 @@ export class RunInspect {
   /** Why the store holds no snapshot of a call's moment of a worker: it let it go, saying why, or never had it. */
   private missing(store: WorkerSnapshots | undefined, call: string, phase: SnapshotPhase): LiveSnapshotRefusal {
     const why = store?.letGo.get(momentKey(call, phase));
-    return why ? { status: 410, message: LET_GO_SAYS[why] } : { status: 404, message: SNAPSHOT_MISSING };
+    return why ? { status: 410, message: this.words[LET_GO_WORD[why]] } : { status: 404, message: this.words.missing };
   }
 
   /**

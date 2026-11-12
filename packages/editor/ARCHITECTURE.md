@@ -1106,6 +1106,11 @@ would open on the machine the run runs on, not this one.").
 - **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its
   folders taken out (`withoutPaths`), then is cut to 300 characters, so no part of a path is left where the cut falls.
   No session, notice, hub message or answer carries it (`tests/run-trace.test.ts`).
+- **The host reads it too** (`RunSessions.laneTrace`): the same ask and checks, without a launcher or a display,
+  answer the host alone with the checked file, the runner's trace folder it is in as the file system spells it, the
+  name the attempt's files start with and the attempt (`LaneTrace`); a refusal is the same sentence. `openTrace` is
+  that, then the viewer. The desktop app's server reads the attempt's files from that folder for its window's
+  **Inspect**; no hub command, client request nor agent's tool reaches it.
 
 ### Share live
 
@@ -1357,7 +1362,13 @@ Each gives it its words (`ShellRunsWords`), the folders its runs run in, and the
 Its routes (`src/shell-runs-routes.ts`) are the run channel the shell reads (`GET /api/desktop/run-channel`, refused
 to a browser), the window's stream and commands (`/api/desktop/runs/events`, `/api/desktop/runs/commands`) and the
 runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone); `tests/shell-runs-routes.test.ts` holds
-them on a bare `node:http` host (`src/shell-runs-http.ts`), and the app's Nitro routes call the same functions. The
+them on a bare `node:http` host (`src/shell-runs-http.ts`), and the app's Nitro routes call the same functions. A host
+that does more for its window extends `ShellRuns` through hooks that name no feature of its: `sessionChanged` (a run
+changed, as the hub tells its peers), `relaying` (a hub message on its way to a window's stream), `windowCommand` (a
+window command of a type the hub does not know, answered before `parseHubCommand` reads it), `windowLeft` (a window's
+stream closed) and `sendToWindow` (an event of the host's own, `HostEvent`, to one window), with `close` overridden
+for what it opened. The desktop app's server reads a lane's trace for its window's **Inspect** through them
+(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. The
 pieces it wires:
 
 - `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
@@ -1369,7 +1380,8 @@ pieces it wires:
 - `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
   the folders a process of its own that was killed left behind.
 - `RunSessions` takes `traceViewer` and `traceDisplay` too: the server starts Playwright's trace viewer from the linked
-  folder's own Playwright, where the machine shows its window ([The trace so far](#the-trace-so-far)).
+  folder's own Playwright, where the machine shows its window, and reads a lane's checked trace itself for its window's
+  **Inspect** (`laneTrace`) ([The trace so far](#the-trace-so-far)).
 - `RunHub` takes the `token` `hello` carries (the desktop token), the sentence its connections close with
   (`closing`), and `stopRun`, which sends `stop-run` to the app's windows on the hub's `stop`. `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket

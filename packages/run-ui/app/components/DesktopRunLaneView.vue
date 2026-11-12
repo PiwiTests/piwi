@@ -15,7 +15,11 @@
  * far**, in the card's head while the lane is watched and its worker runs a test whose reporter answers the ask
  * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer
  * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
- * do (`said`).
+ * do (`said`). **Inspect**, beside it, for a host that has it (`RUN_VIEW_HOST`'s `inspect`: the dashboard's desktop
+ * build, not Piwi Runner), shows the page of that test at each of its calls under the image (the host's `view`), which
+ * the host's server reads while it shows (`setInspect`), following the lane's next tests, until it is turned off or the
+ * lane is no longer watched; why the server refused to open it shows under the test, whoever asked
+ * (`inspectRefusalOf`).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -30,6 +34,7 @@ import {
   type DesktopLaneAt,
   type DesktopLiveImageHandle,
 } from '../utils/run-view';
+import { PLAIN_RUN_VIEW_HOST, RUN_VIEW_HOST } from '../utils/run-view-host';
 
 const props = defineProps<{
   session: HubSession;
@@ -258,6 +263,30 @@ async function openTrace(): Promise<void> {
   emit('said', answer, {});
 }
 
+// ── Inspect ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The host's Inspect, null for a host that has none: the lane then offers none. */
+const inspect = inject(RUN_VIEW_HOST, PLAIN_RUN_VIEW_HOST).inspect;
+
+/** Inspect is open on the lane: the host's server reads its running test's pages. */
+const inspecting = computed(() => hub.inspecting(runRef.value, lane.value));
+
+/** Opens Inspect on the lane, or closes it. It closes with the lane's watch too (`useDesktopRunHub`). */
+async function toggleInspect(): Promise<void> {
+  const on = !inspecting.value;
+  if (on && (!inspect || !traceable.value)) return;
+  await hub.setInspect(runRef.value, lane.value, on ? inspect : null);
+}
+
+// Why the server refused to open Inspect, asked by a click, a view that showed or a stream that opened again: it shows
+// under the test as the worker's other answers do.
+watch(
+  () => hub.inspectRefusalOf(runRef.value, lane.value),
+  (refusal) => {
+    if (refusal) emit('said', { ok: false, message: refusal.message }, {});
+  },
+);
+
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
   void interactOff();
@@ -292,7 +321,7 @@ const note = computed((): { icon?: string; text: string } | null => {
     :data-watching="watched || undefined"
     data-shot="desktop-run-lane"
   >
-    <template v-if="stop || traceable" #tools>
+    <template v-if="stop || traceable || inspecting" #tools>
       <template v-if="stop">
         <UButton
           data-focus="page:watch"
@@ -352,6 +381,20 @@ const note = computed((): { icon?: string; text: string } | null => {
       >
         {{ desktopSay('runs_openTrace') }}
       </UButton>
+      <UButton
+        v-if="inspect && (traceable || inspecting)"
+        data-focus="page:inspect"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-scan-search"
+        :aria-pressed="inspecting"
+        :class="inspecting ? PRESSED_TOGGLE_CLASS : ''"
+        :title="inspect?.title"
+        @click="toggleInspect"
+      >
+        Inspect
+      </UButton>
     </template>
     <DesktopRunLiveImage
       ref="liveImage"
@@ -379,6 +422,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" aria-hidden="true" />
       {{ note.text }}
     </p>
+    <component :is="inspect.view" v-if="inspect && inspecting && watched" :session="session" :worker="worker" />
     <template v-if="$slots.foot" #foot>
       <slot name="foot" />
     </template>

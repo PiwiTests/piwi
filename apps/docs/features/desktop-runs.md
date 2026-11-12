@@ -78,6 +78,10 @@ an image, with its call), kept in memory alone. **Open the trace so far**, in a 
 trace viewer on the running test's trace up to now, on your machine, with a reporter newer than 0.68.0: [Watch a
 running test](./watch-running-test#open-the-trace-so-far).
 
+**Inspect**, beside it, shows that test's page at each call as [on the run page](./live-inspect), with the locator
+picker, read from the test's own trace on your machine while open and the window shows, and let go as the test ends
+([what it reads](/guide/concepts#trace-so-far)).
+
 ## Code to copy
 
 The app holds no editor, so the code a stop makes comes to the tray, under **Code from the runs**, rather than into
@@ -100,10 +104,8 @@ on disk in the folder linked to the project.
 
 ## Share live
 
-A run that reports to your team's Piwi instance, as a **Re-run** in a folder whose `.env` or Playwright config
-names it does, can be shared there for a teammate to watch: **Share live**, above the run's workers, asks first the
-first time since the app started. Who sees what, and why a run cannot be shared: [Share a
-run live](./share-live#from-the-desktop-app).
+A run that reports to your team's Piwi instance can be [shared live](./share-live#from-the-desktop-app) there for a
+teammate to watch: who sees what, and why a run cannot be.
 
 ## For agents
 
