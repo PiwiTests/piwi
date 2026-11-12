@@ -92,13 +92,14 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
 
     /**
      * The service's process, which [PiwiProjectService.watchServer] starts again when it ends while starting, and whose
-     * end ends the sessions of its runs ([PiwiRunSessions.watch]).
+     * end ends the sessions of its runs ([PiwiRunSessions.watch]) and of the CI runs it told ([PiwiCiRuns.watch]).
      */
     override fun startServerProcess(): OSProcessHandler =
         logged { super.startServerProcess() }.also {
             project.service<PiwiLog>().watch(it)
             project.service<PiwiProjectService>().watchServer(it)
             project.service<PiwiRunSessions>().watch(it)
+            project.service<PiwiCiRuns>().watch(it)
         }
 
     /** `start`'s result; a start that fails, its command line included (`createCommandLine`), says why in the log first. */
@@ -261,6 +262,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/runSessionChanged")
     fun runSessionChanged(session: RunSession) {
         project.service<PiwiRunSessions>().heard(session)
+    }
+
+    /** A CI run of the branch moved, read-only: the CI Runs tab and the CI positions. */
+    @JsonNotification("piwi/ciSessionChanged")
+    fun ciSessionChanged(session: CiSession) {
+        project.service<PiwiCiRuns>().heard(session)
     }
 
     @JsonNotification("piwi/shareWindowChanged")

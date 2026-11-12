@@ -802,6 +802,105 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 
 /**
+ * `piwi/ciSessionChanged` (notification, server to client): a CI run of the branch a context reads, or of the
+ * checked-out branch, while it runs, as the instance tells it: read-only, so no control, share or hold reaches it, and
+ * its tests never stop. Sent when the service starts to follow it, when its progress, its tests or the calls they are
+ * at change (a burst at most every 500 ms), and last with `ended`. A client keeps the latest of each `root` and
+ * `runId` until one says `ended`.
+ */
+export interface CiSession {
+  /** The run's number on the instance (`#78`). */
+  runId: number;
+  /** The folder of the Playwright config whose project and branch it runs, as `piwi/status` names it. */
+  root: string;
+  /** Its page on the instance, which **Open** opens. */
+  url: string;
+  /** `CI run #78`: how the clients name it. */
+  name: string;
+  /** The branch it runs on; null for a run that names none. */
+  branch: string | null;
+  /** ISO 8601. */
+  startedAt: string;
+  /** How far it is, from the instance's tally. */
+  progress: CiProgress;
+  /** `12 of 40 tests · 1 failed`: its progress in words. */
+  summary: string;
+  /**
+   * Its tests: those running now, by shard and worker, then the latest that ended, newest first; at most
+   * `MAX_CI_TESTS` of them, a failure kept before a pass. The progress counts every test.
+   */
+  tests: CiTest[];
+  /**
+   * The project's live view is on and the run holds a key: a running test can be watched on the dashboard, from its
+   * `watch` address. False until the run's stream says so.
+   */
+  watchable: boolean;
+  /**
+   * The run ended, or the service follows it no more (the context reads another branch, project or instance, or a
+   * newer CI run of the branch took its place). Its last notification.
+   */
+  ended: boolean;
+}
+
+/** The most tests a `CiSession` lists. */
+export const MAX_CI_TESTS = 60;
+
+/**
+ * How far a CI run is: how many tests it holds (`total`), how many ended (`done`, retries counted as the instance counts
+ * them, never past `total`), and of them `failed`, `flaky` and `skipped`; `running`, `finalizing`, or how it ended.
+ */
+export interface CiProgress {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  status: string;
+}
+
+/** A test of a CI run: running now, or its result. */
+export interface CiTest {
+  /** Its `test.describe` blocks' titles, then its own. */
+  title: string[];
+  /** Its spec in the workspace and the 0-based line of its `test(…)` call; null when the workspace holds no such spec. */
+  uri: string | null;
+  line: number | null;
+  /** Its Playwright project's name; empty when the run names none. */
+  project: string;
+  status: LiveTestStatus;
+  /** 0 on its first attempt, 1 on its first retry. */
+  retry: number;
+  /** Its worker's lane, from 1 in each shard (`worker 2`), and its shard, from 1; null when the run names none. */
+  lane: number | null;
+  shard: number | null;
+  /**
+   * While it runs: the call it is at, as the CI run's reporter streams its steps while someone follows the run, in a
+   * file of the workspace. A CI position, never a stop: nothing waits there. Null when the run sent no step yet or
+   * named a file the workspace does not hold.
+   */
+  at: CiPosition | null;
+  /**
+   * While it runs and the run is `watchable`: the dashboard's view of its lane (the run's page with `?watch=`), where
+   * it can be watched; null otherwise.
+   */
+  watch: string | null;
+}
+
+/** Where a running test of a CI run is: the call it runs, in a file of the workspace. */
+export interface CiPosition {
+  /** The call as the run's reporter titled it: `Click getByRole('button', { name: 'Pay' })`. */
+  title: string;
+  /** The file of its line, as the workspace names it, and its 0-based line and character (null when unknown). */
+  uri: string;
+  line: number;
+  character: number | null;
+  /** `CI run #78 · worker 2: Click getByRole('button', { name: 'Pay' })`: the words the clients show at the line. */
+  text: string;
+}
+
+export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
+
+/**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
  * `ref` to a terminal or a task. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
  * carries instead: the service does not look for `ref`, and recognizes the run by `terminalRef`.

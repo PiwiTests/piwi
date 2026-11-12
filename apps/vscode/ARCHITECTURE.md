@@ -22,6 +22,7 @@ extension does with it. It is reference material: open the section for the area 
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
   - [Code from a stop](#code-from-a-stop)
+  - [CI runs of the branch](#ci-runs-of-the-branch)
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
 - [Open in IDE](#open-in-ide)
@@ -547,6 +548,23 @@ line in the stopped file says how many elements the locator there matches on the
 (`piwi/locatorAtCaret`, `CaretCounts`): asked 200 ms after the cursor settles, one request at a time, an answer the
 cursor left dropped, asked again when the cursor comes back; `3 matches`, `no match`, a refusal for three seconds,
 nothing on a line holding no locator. The cursor leaving the file takes the page's outline down.
+
+### CI runs of the branch
+
+`src/ci-view.ts` shows the CI runs of the branch while they run, read-only, as the service tells them
+(`piwi/ciSessionChanged`; the service's side: [CI runs of the
+branch](../../packages/editor/ARCHITECTURE.md#ci-runs-of-the-branch)). The extension keeps the latest of each run
+until one says `ended`, or the service stops (`withCiSession`).
+
+- **The CI Runs view** (`piwi.ciRuns`, in the Piwi panel while `piwi.ciRuns` holds) lists each run as `CI run #78`,
+  its branch and progress beside it, then **Open run #78**, its running tests and the latest that ended (`ciNodes`). A
+  running test opens the call it is at, else its spec; one whose run can be watched holds **Watch on the dashboard**,
+  which opens its lane's view on the run's page (`piwi.openInDashboard`). No node pauses, steers, shares or holds.
+- **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
+  with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
+  runs on one line share one mark.
+
+The pure half is `src/run-control.ts` (`tests/run-control.test.ts`, "the CI runs of the branch").
 
 ## Status bar
 

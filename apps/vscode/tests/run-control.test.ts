@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import type {
+  CiSession,
   LocatorAtCaretResult,
   RunPresence,
   RunSession,
@@ -10,6 +11,11 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  ciNodes,
+  ciPositionFiles,
+  ciPositionsIn,
+  withCiSession,
+  type CiSessions,
   stopRunAnswer,
   CARET_REFUSAL_MS,
   CARET_WAIT_MS,
@@ -1990,5 +1996,115 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('names who asks and the run', () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
+  });
+});
+
+describe('the CI runs of the branch', () => {
+  const spec = 'file:///work/shop/tests/checkout.spec.ts';
+  const page = 'file:///work/shop/tests/pages/checkout.page.ts';
+  const ci = (runId: number, over: Partial<CiSession> = {}): CiSession => ({
+    runId,
+    root: '/work/shop',
+    url: `https://piwi.example/test-runs/${runId}`,
+    name: `CI run #${runId}`,
+    branch: 'feature/pay',
+    startedAt: '2026-11-12T10:00:00.000Z',
+    progress: { total: 4, done: 1, failed: 1, flaky: 0, skipped: 0, status: 'running' },
+    summary: '1 of 4 tests · 1 failed',
+    tests: [
+      {
+        title: ['checkout', 'pays'],
+        uri: spec,
+        line: 2,
+        project: 'chromium',
+        status: 'running',
+        retry: 0,
+        lane: 2,
+        shard: null,
+        at: {
+          title: "Click getByRole('button')",
+          uri: page,
+          line: 8,
+          character: 21,
+          text: `CI run #${runId} · worker 2: Click getByRole('button')`,
+        },
+        watch: `https://piwi.example/test-runs/${runId}?watch=2`,
+      },
+      {
+        title: ['refunds'],
+        uri: spec,
+        line: 10,
+        project: 'chromium',
+        status: 'failed',
+        retry: 1,
+        lane: 1,
+        shard: null,
+        at: null,
+        watch: null,
+      },
+    ],
+    watchable: true,
+    ended: false,
+    ...over,
+  });
+
+  test('are kept, the latest of each run, until one says it ended', () => {
+    let kept: CiSessions = new Map();
+    kept = withCiSession(kept, ci(78));
+    kept = withCiSession(kept, ci(79));
+    kept = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect([...kept.values()].map((s) => [s.runId, s.summary])).toEqual([
+      [78, '2 of 4 tests · 1 failed'],
+      [79, '1 of 4 tests · 1 failed'],
+    ]);
+    kept = withCiSession(kept, ci(78, { ended: true }));
+    expect([...kept.values()].map((s) => s.runId)).toEqual([79]);
+  });
+
+  test('mark the line each running test is at, never a test that ended', () => {
+    const kept = withCiSession(withCiSession(new Map(), ci(78)), ci(79));
+    expect(ciPositionFiles(kept)).toEqual(new Set([page]));
+    expect(ciPositionsIn(kept, page)).toEqual([
+      {
+        line: 8,
+        text: "CI run #78 · worker 2: Click getByRole('button') · CI run #79 · worker 2: Click getByRole('button')",
+      },
+    ]);
+    expect(ciPositionsIn(kept, spec)).toEqual([]);
+  });
+
+  test('list each run named as other runs are, with its progress, Open, its tests and Watch, read-only', () => {
+    const [run] = ciNodes(withCiSession(new Map(), ci(78)));
+    expect(run).toMatchObject({
+      label: 'CI run #78',
+      description: 'feature/pay · 1 of 4 tests · 1 failed',
+      icon: 'cloud',
+      open: null,
+    });
+    expect(run!.tooltip).toContain('Read-only');
+    const [open, running, failed] = run!.children;
+    expect(open).toMatchObject({ label: 'Open run #78', open: { url: 'https://piwi.example/test-runs/78' } });
+    expect(running).toMatchObject({
+      label: 'checkout › pays',
+      description: "chromium · worker 2 · Click getByRole('button')",
+      icon: 'sync~spin',
+      open: { uri: page, line: 8, character: 21 },
+    });
+    expect(running!.children).toEqual([
+      expect.objectContaining({
+        label: 'Watch on the dashboard',
+        open: { url: 'https://piwi.example/test-runs/78?watch=2' },
+      }),
+    ]);
+    expect(failed).toMatchObject({
+      label: 'refunds',
+      description: 'chromium · retry 1 · failed',
+      icon: 'error',
+      open: { uri: spec, line: 10, character: 0 },
+      children: [],
+    });
+    // Each node keeps its key as the list moves.
+    const again = ciNodes(withCiSession(new Map(), ci(78, { tests: [...ci(78).tests].reverse() })));
+    expect(new Set(again[0]!.children.map((n) => n.key))).toEqual(new Set(run!.children.map((n) => n.key)));
   });
 });

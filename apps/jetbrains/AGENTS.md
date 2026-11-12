@@ -201,7 +201,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
   page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
-  `CaretCountInlay`).
+  `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI Run tab, the CI positions).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.

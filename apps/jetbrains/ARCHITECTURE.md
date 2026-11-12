@@ -30,6 +30,7 @@ does with it. It is reference material: open the section for the area you change
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
   - [Code from a stop](#code-from-a-stop)
+  - [CI runs of the branch](#ci-runs-of-the-branch)
 - [Finding Playwright configs](#finding-playwright-configs)
   - [First-run notification](#first-run-notification)
 - [Recording](#recording)
@@ -646,6 +647,24 @@ the caret's line in the stopped file say how many elements the locator there mat
 `Alarm`), one request at a time, an answer the caret left dropped, asked again when the caret comes back
 (`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
 (`Glue.caretText`). The caret leaving the file takes the page's outline down.
+
+### CI runs of the branch
+
+`PiwiCiRuns.kt` shows the CI runs of the branch while they run, read-only, as the service tells them
+(`piwi/ciSessionChanged`, `PiwiLsp4jClient.ciSessionChanged`; the service's side: [CI runs of the
+branch](../../packages/editor/ARCHITECTURE.md#ci-runs-of-the-branch)). The plugin keeps the latest of each run until
+one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRuns.watch`).
+
+- **The CI Run tab** of the Piwi tool window (**CI Runs (2)** for several) is added, not selected, while one runs, and
+  removed once none does; closed, it opens again for a run it did not list. It lists each run as `CI run #78`, its
+  branch and progress beside it, then **Open run #78**, its tests, and under a running test of a run that can be
+  watched, **Watch on the dashboard** (`Glue.ciRows`). A double click or Enter opens a test at the call it is at, else
+  its spec, and a link in the browser. No row pauses, steers, shares or holds the run.
+- **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no
+  gutter icon, highlight or link (`CiMarkInlay`, `Glue.ciMarksIn`), in each editor of its file, drawn again as the
+  sessions change and as an editor opens. The tests of several runs on one line share one inlay.
+
+`GlueTest` checks the rows and the marks, and that a session reads as the service sends it.
 
 ## Finding Playwright configs
 

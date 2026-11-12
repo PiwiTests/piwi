@@ -340,6 +340,65 @@ data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
 /**
+ * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
+ * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
+ * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
+ * ended; `watchable` says a running test can be watched on the dashboard, from its `watch` address. The last of a run
+ * says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
+ */
+data class CiSession(
+    val runId: Int = 0,
+    val root: String? = null,
+    val url: String = "",
+    val name: String = "",
+    val branch: String? = null,
+    val startedAt: String? = null,
+    val progress: CiProgress? = null,
+    val summary: String = "",
+    val tests: List<CiTest>? = null,
+    val watchable: Boolean = false,
+    val ended: Boolean = false,
+)
+
+/** How far a CI run is: its tests (`total`), those that ended (`done`) and of them `failed`, `flaky` and `skipped`. */
+data class CiProgress(
+    val total: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val status: String = "running",
+)
+
+/**
+ * A test of a CI run: its describe blocks' titles then its own, its spec in the project and the 0-based line of its
+ * `test(…)` call (null when the project holds no such spec), its Playwright project, `running` or its result, its
+ * attempt, its worker's lane from 1 and its shard (null when the run names none); while it runs, the call it is at (`at`,
+ * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched).
+ */
+data class CiTest(
+    val title: List<String>? = null,
+    val uri: String? = null,
+    val line: Int? = null,
+    val project: String = "",
+    val status: String = "running",
+    val retry: Int = 0,
+    val lane: Int? = null,
+    val shard: Int? = null,
+    val at: CiPosition? = null,
+    val watch: String? = null,
+)
+
+/** Where a running test of a CI run is: the call it runs (`title`), its file and 0-based line, and the words to show there. */
+data class CiPosition(
+    val title: String = "",
+    val uri: String = "",
+    val line: Int = 0,
+    val character: Int? = null,
+    val text: String = "",
+)
+
+/**
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for

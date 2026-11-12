@@ -155,6 +155,8 @@ import { DesktopJobs } from './desktop-jobs.js';
 import { statusWords } from './status-words.js';
 import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
+import { RunStreams } from './run-stream.js';
+import { CiSessions } from './ci-sessions.js';
 import { specPattern } from '@piwitests/core/spec-filter';
 import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
@@ -215,6 +217,7 @@ import {
   STOP_RECORDING_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_STATUS_NOTIFICATION,
+  CI_SESSION_NOTIFICATION,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
   RUN_ID_REQUEST,
@@ -860,6 +863,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let lastRunStatus = '';
   /** Whether the client previews an edit whose change annotation asks for confirmation. */
   let previewsEdits = false;
+  /** The runs' streams: the contexts' runs in progress and the CI sessions read one connection per run. */
+  const runStreams = new RunStreams();
+  /** The CI runs of the contexts' branches while they run, read-only. */
+  const ciSessions = new CiSessions({
+    contexts: () => contexts,
+    streams: runStreams,
+    changed: (session) => void connection.sendNotification(CI_SESSION_NOTIFICATION, session),
+  });
 
   const publish = (uri: string) =>
     connection.sendDiagnostics({
@@ -1600,8 +1611,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }),
   });
 
-  /** Tell the client when the run status changed. */
+  /** Tell the client when the run status changed; a CI run a context reads in progress is followed. */
   const sendRunStatus = () => {
+    ciSessions.sync();
     const status = runStatus();
     const serialized = JSON.stringify(status);
     if (serialized !== lastRunStatus) {
@@ -1690,6 +1702,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
     ownRunPollMs: options.ownRunPollMs,
     commandEndWaitMs: options.commandEndWaitMs,
+    runStreams,
+    runStarted: (context, run) => ciSessions.offer(context, run),
+    instanceEvent: (context, event) => ciSessions.instanceEvent(context, event),
   });
 
   /**
@@ -4337,6 +4352,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   return () => {
     stopped = true;
     runWatch.dispose();
+    ciSessions.dispose();
+    runStreams.dispose();
     recordings.dispose();
     closeRecordChannel();
     desktopJobs.dispose();

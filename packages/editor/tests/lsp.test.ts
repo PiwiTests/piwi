@@ -6,7 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
   createMessageConnection,
@@ -37,6 +37,7 @@ import type {
   NewTestFileResult,
   RunCommand,
   RunEnded,
+  CiSession,
   RunStatusResult,
   RunTestsArgs,
   ScreenshotResult,
@@ -2378,6 +2379,7 @@ describe('runs as they happen', () => {
   const statuses: RunStatusResult[] = [];
   const notices: Notice[] = [];
   const verdicts: RunEnded[] = [];
+  const ciHeard: CiSession[] = [];
   const published = new Map<string, Array<{ message: string; code?: string }>>();
 
   beforeAll(async () => {
@@ -2406,6 +2408,9 @@ describe('runs as they happen', () => {
     });
     runsClient.onNotification('piwi/runEnded', (v: RunEnded) => {
       verdicts.push(v);
+    });
+    runsClient.onNotification('piwi/ciSessionChanged', (session: CiSession) => {
+      ciHeard.push(session);
     });
     runsClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
       published.set(p.uri, p.diagnostics);
@@ -2758,6 +2763,81 @@ describe('runs as they happen', () => {
     const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
     expect(ended.contexts[0]!.liveTests).toBeUndefined();
     expect((await testLine())?.status).not.toBe('flaky');
+  });
+
+  test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
+    const startTime = '2026-09-27T12:00:00.000Z';
+    runDetails.set(60, {
+      id: 60,
+      status: 'running',
+      branch: 'main',
+      startTime,
+      metadata: { piwiOrigin: { kind: 'ci' } },
+      totalTests: 3,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    });
+    pushInstanceEvent({ type: 'run-started', runId: 60, projectId: 7 });
+    const first = await waitFor(() => ciHeard.find((s) => s.runId === 60));
+    expect(first).toMatchObject({
+      name: 'CI run #60',
+      branch: 'main',
+      url: expect.stringMatching(/\/test-runs\/60$/),
+      summary: '0 of 3 tests',
+      tests: [],
+      ended: false,
+    });
+    // The context follows it as its run in progress too: one connection to the run's stream serves both.
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 60));
+    await waitFor(() => (runStreams.get(60)?.size === 1 ? true : undefined));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runStreams.get(60)?.size).toBe(1);
+
+    pushRunEvent(60, 'live-view', { enabled: true, keyed: true });
+    pushRunEvent(60, 'test-begin', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 0,
+      parallelIndex: 0,
+      shardIndex: null,
+      retries: 0,
+      browser: { projectName: 'chromium' },
+    });
+    pushRunEvent(60, 'step-begin', {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Pay now' })",
+      location: '/ci/work/shop/tests/checkout.spec.ts:5:20',
+      workerIndex: 0,
+      shardIndex: null,
+      stepCategory: 'pw:api',
+    });
+    const running = await waitFor(() => [...ciHeard].reverse().find((s) => s.runId === 60 && s.tests[0]?.at)?.tests[0]);
+    expect(running).toMatchObject({
+      title: ['pays'],
+      line: 2,
+      status: 'running',
+      lane: 1,
+      at: {
+        line: 4,
+        character: 19,
+        text: "CI run #60 · worker 1: Click getByRole('button', { name: 'Pay now' })",
+      },
+      watch: expect.stringMatching(/\/test-runs\/60\?watch=1$/),
+    });
+    expect(fileURLToPath(running.uri!)).toBe(fs.realpathSync(path.join(dir, 'tests/checkout.spec.ts')));
+    expect(running.at!.uri).toBe(running.uri);
+
+    // The run ends: the session's last notification.
+    runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 3 });
+    pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 3, passedTests: 3, failedTests: 0 });
+    pushInstanceEvent({ type: 'run-finished', runId: 60, projectId: 7, status: 'passed' });
+    const ended = await waitFor(() => ciHeard.find((s) => s.runId === 60 && s.ended));
+    expect(ended).toMatchObject({ progress: { status: 'passed' }, watchable: false });
+    expect(ended.tests[0]).toMatchObject({ at: null, watch: null });
+    await waitFor(() => (statuses.at(-1)?.contexts[0]?.live === null ? true : undefined));
   });
 
   test('a run started here says what it changed once it ended and was read', async () => {

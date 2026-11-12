@@ -24,6 +24,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Failure lines and Flake Lab lines](#failure-lines-and-flake-lab-lines)
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
+  - [CI runs of the branch](#ci-runs-of-the-branch)
   - [The editor's own run](#the-editors-own-run)
 - [Breakpoints and picked locators](#breakpoints-and-picked-locators)
   - [Breakpoints](#breakpoints)
@@ -130,6 +131,7 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/coverage.ts`: coverage marks and uncovered changes.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
+- `src/ci-sessions.ts`: the CI runs of the branch while they run, as read-only sessions (`piwi/ciSessionChanged`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
@@ -210,8 +212,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`,
-  `piwi/shareWindowChanged`, `piwi/askToWatch`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`,
+  `piwi/laneFrame`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -467,6 +469,11 @@ project starts or ends. The contexts that read the instance with that key share 
 
 A connection that brings nothing for 45 s is opened again: the instance sends a heartbeat every 15 s.
 
+One run's stream (`GET /api/test-runs/:id/stream`) is one connection per instance, key and run, whoever follows the run
+(`RunStreams`): a context's run in progress, another context's, a CI session. A follower that joins a stream already
+open has it opened again, so its catch-up reaches every follower, which reads it again as after a dropped connection;
+the stream closes with its last follower.
+
 Half a second after a run ends, the context reads its latest run again; runs that end together are read once. The poll
 reads it besides:
 
@@ -508,6 +515,35 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
   (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+
+### CI runs of the branch
+
+A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs
+(`src/ci-sessions.ts`, `piwi/ciSessionChanged`): the clients list it beside their own runs, and mark the call each of
+its running tests is at as a CI position, never as a stop. No request acts on it: no control, share or hold.
+
+- **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
+  progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
+  origin, else by the CI it names (`isCiRun`). A run whose session ended is not followed again, whatever a read from
+  before its end says.
+- **Bounded**: at most `MAX_CI_RUNS` (2) runs of one instance, project and branch, the newest; a newer run takes the
+  oldest's place, which ends. A session lists at most `MAX_CI_TESTS` tests (the running ones, then the latest that
+  ended, a failure before a pass), and the service keeps at most 1,000 tests of a run. It is pushed at most every
+  500 ms, only when it differs from the last one sent.
+- **Read** from the run's stream, shared with the context's run in progress: `test-begin` and `test-completed` (a
+  time-out as `timedOut` live and `timedout` from the catch-up), `live-view` (`watchable`: the project's live view is
+  on and the run holds a key), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
+  the stream needs what opening the run needs (`project:read`, a run that is not another person's private one).
+- **Positions** come from the steps the run's reporter streams while someone has the run's stream open, the service
+  among them (`step-begin`, `step-end`): each worker's innermost open step, a fixture's left out. A step names its file
+  as the CI machine does; the service learns where the run's Playwright config sits there from a step in the running
+  test's own spec (`ciBaseOf`), and places a file under it in the context's folder (`workspaceFile`), never one in
+  `node_modules`, above the folder or missing. The line is the run's commit's.
+- **Watch** is the dashboard's for now: a running test of a `watchable` run carries its lane's view on the run's page
+  (`watch`, `?watch=<shard>.<lane>`), which the clients open.
+- **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
+  `run-cancelled`), when its context reads another instance, project or branch, or when a newer run takes its place:
+  the last notification says `ended`, and the run's stream is let go.
 
 ### The editor's own run
 
@@ -1642,6 +1678,8 @@ A change is pushed against what the client holds:
   last one sent, or answered to `piwi/status`, `piwi/runStatus` or `piwi/failures`;
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it;
+- `piwi/ciSessionChanged` is sent when a CI run's session differs from the last one sent for it, at most every
+  500 ms ([CI runs of the branch](#ci-runs-of-the-branch));
 - `piwi/runSessionChanged` is sent when a run's session differs from the last one sent for it, at the pace
   [Run sessions](#run-sessions) gives.
 

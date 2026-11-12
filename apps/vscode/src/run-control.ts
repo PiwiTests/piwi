@@ -7,9 +7,12 @@
  * the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
  * (Share live: what it sends, how it stands), the workers a panel can watch while their test runs and what the panel
  * says of one, and the edits of the documents since a run started, which map a line of the run's code to the document
- * as it stands and back.
+ * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
+ * nodes and the CI positions marked at a line.
  */
 import type {
+  CiSession,
+  CiTest,
   DriveStopParams,
   EditorBreakpoint,
   LocatorAtCaretParams,
@@ -1928,4 +1931,157 @@ export function accessibleLabel(item: ControlItem): string {
 /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
 export function askToWatchText(ask: Pick<AskToWatchParams, 'by' | 'run'>): string {
   return `${ask.by} asks to watch ${ask.run === null ? 'this run' : `run #${ask.run}`} live.`;
+}
+
+/** The CI runs of the branch kept from `piwi/ciSessionChanged`, by `ciKey`: the latest of each, one that ended dropped. */
+export type CiSessions = Map<string, CiSession>;
+
+/** A CI session's key: its context's folder and its run. */
+export function ciKey(session: Pick<CiSession, 'root' | 'runId'>): string {
+  return `${session.root}\n${session.runId}`;
+}
+
+/** The sessions with `session` heard: kept as the latest of its run, or dropped once it ended. */
+export function withCiSession(sessions: CiSessions, session: CiSession): CiSessions {
+  const next = new Map(sessions);
+  if (session.ended) next.delete(ciKey(session));
+  else next.set(ciKey(session), session);
+  return next;
+}
+
+/**
+ * The CI positions of a file, as the editor marks them at the end of a line: the call each running test of a CI run
+ * is at in it, one mark per line, the words of several tests on one line joined. Never a stop: nothing waits there.
+ */
+export function ciPositionsIn(sessions: CiSessions, uri: string): Array<{ line: number; text: string }> {
+  const lines = new Map<number, string[]>();
+  for (const session of sessions.values()) {
+    for (const test of session.tests) {
+      if (test.status !== 'running' || test.at?.uri !== uri) continue;
+      const texts = lines.get(test.at.line) ?? [];
+      if (!texts.includes(test.at.text)) texts.push(test.at.text);
+      lines.set(test.at.line, texts);
+    }
+  }
+  return [...lines].sort(([a], [b]) => a - b).map(([line, texts]) => ({ line, text: texts.join(' · ') }));
+}
+
+/** The files a CI position is in now, to draw again as they change. */
+export function ciPositionFiles(sessions: CiSessions): Set<string> {
+  return new Set([...sessions.values()].flatMap((s) => s.tests.flatMap((t) => (t.at ? [t.at.uri] : []))));
+}
+
+/** What a node of the **CI Runs** view opens: a file at a line, or a page of the instance; nothing for none. */
+export type CiOpen = { uri: string; line: number; character: number } | { url: string } | null;
+
+/** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
+export interface CiNode {
+  key: string;
+  label: string;
+  description: string;
+  tooltip: string;
+  /** A codicon id. */
+  icon: string;
+  open: CiOpen;
+  children: CiNode[];
+}
+
+const CI_TEST_ICONS: Record<CiTest['status'], string> = {
+  running: 'sync~spin',
+  passed: 'pass',
+  failed: 'error',
+  flaky: 'warning',
+  skipped: 'debug-step-over',
+};
+
+/** A test's name in the view: its describe blocks, then its title, a title's own line breaks as spaces. */
+function ciTestName(test: CiTest): string {
+  return test.title.join(' › ').replace(/\s+/g, ' ');
+}
+
+/** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
+function ciLane(test: CiTest): string {
+  if (test.lane === null) return '';
+  return test.shard !== null ? `shard ${test.shard}, worker ${test.lane}` : `worker ${test.lane}`;
+}
+
+/** A CI test's words beside its name: its Playwright project and attempt, then where it runs and its call, or its result. */
+function ciTestDescription(test: CiTest): string {
+  const running = test.status === 'running';
+  const parts = [
+    test.project,
+    test.retry ? `retry ${test.retry}` : '',
+    running ? ciLane(test) : test.status,
+    running ? (test.at?.title ?? '') : '',
+  ];
+  return parts.filter(Boolean).join(' · ');
+}
+
+/**
+ * The **CI Runs** view: each CI run of the branch in progress, named as other runs are (`CI run #78`) with its
+ * progress, then **Open** on its page and its tests: a running one opens the call it is at, else its spec, and offers
+ * **Watch** on the dashboard while its run can be watched; one that ended opens its spec. Read-only: nothing here
+ * steers the run.
+ */
+export function ciNodes(sessions: CiSessions): CiNode[] {
+  return [...sessions.values()]
+    .sort((a, b) => b.runId - a.runId)
+    .map((session) => {
+      const key = ciKey(session);
+      const open: CiNode = {
+        key: `${key}\nopen`,
+        label: `Open run #${session.runId}`,
+        description: 'on the dashboard',
+        tooltip: `Open CI run #${session.runId} on the dashboard: ${session.url}`,
+        icon: 'link-external',
+        open: { url: session.url },
+        children: [],
+      };
+      // A test's node keeps its key as the list moves, so the view keeps what the person expanded.
+      const keys = new Set<string>();
+      const tests = session.tests.map((test, index): CiNode => {
+        let testKey = `${key}\n${test.uri ?? ''}\n${test.title.join('\x1f')}\n${test.project}`;
+        if (keys.has(testKey)) testKey = `${testKey}\n${index}`;
+        keys.add(testKey);
+        const spec = test.uri && test.line !== null ? { uri: test.uri, line: test.line, character: 0 } : null;
+        const place = test.at ? { uri: test.at.uri, line: test.at.line, character: test.at.character ?? 0 } : spec;
+        const watch: CiNode[] = test.watch
+          ? [
+              {
+                key: `${testKey}\nwatch`,
+                label: 'Watch on the dashboard',
+                description: '',
+                tooltip: `Watch this test’s page live on the dashboard, read-only: ${test.watch}`,
+                icon: 'eye',
+                open: { url: test.watch },
+                children: [],
+              },
+            ]
+          : [];
+        const where = test.at ? `\n\nAt ${test.at.title}, line ${test.at.line + 1} as the run’s commit has it.` : '';
+        return {
+          key: testKey,
+          label: ciTestName(test),
+          description: ciTestDescription(test),
+          tooltip:
+            `${ciTestName(test)}${test.project ? ` (${test.project})` : ''}: ` +
+            `${test.status === 'running' ? 'running on CI, read-only' : test.status}.${where}`,
+          icon: CI_TEST_ICONS[test.status],
+          open: place,
+          children: watch,
+        };
+      });
+      return {
+        key,
+        label: session.name,
+        description: `${session.branch ? `${session.branch} · ` : ''}${session.summary}`,
+        tooltip:
+          `${session.name}${session.branch ? ` on ${session.branch}` : ''}: ${session.summary}. ` +
+          'Read-only: it runs on CI, so nothing here pauses or steers it.' +
+          (session.watchable ? ' Its running tests can be watched on the dashboard.' : ''),
+        icon: 'cloud',
+        open: null,
+        children: [open, ...tests],
+      };
+    });
 }

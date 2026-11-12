@@ -25,8 +25,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   worker's `run-attach` does not list in `takes` is refused. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
   `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered,
-  `piwi/runSessionChanged` with the last session sent, and each carries the whole new answer, so a client can keep it
-  without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  `piwi/runSessionChanged` and `piwi/ciSessionChanged` with the last session sent, and each carries the whole new
+  answer, so a client can keep it without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))
@@ -93,6 +93,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
+- **A CI session is read-only.** No request acts on a `CiSession`, and its position is never a stop and names a file
+  of the context's folder alone (`workspaceFile`). Checked by `tests/ci-sessions.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").

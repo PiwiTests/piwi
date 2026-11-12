@@ -3250,4 +3250,79 @@ class GlueTest {
         assertTrue(Glue.SERVICE_NOT_RUNNING.endsWith("Tools → Piwi → ${Glue.EmptyLink.RESTART_SERVICE.label}."))
         assertTrue(Glue.SERVICE_NO_ANSWER.contains("Tools → Piwi → ${Glue.EmptyLink.OPEN_LOG.label}"))
     }
+
+    private val spec = "file:///work/shop/tests/checkout.spec.ts"
+    private val page = "file:///work/shop/tests/pages/checkout.page.ts"
+
+    private fun ci(runId: Int, ended: Boolean = false, summary: String = "1 of 4 tests · 1 failed") = CiSession(
+        runId = runId,
+        root = "/work/shop",
+        url = "https://piwi.example/test-runs/$runId",
+        name = "CI run #$runId",
+        branch = "feature/pay",
+        progress = CiProgress(total = 4, done = 1, failed = 1),
+        summary = summary,
+        tests = listOf(
+            CiTest(
+                title = listOf("checkout", "pays"), uri = spec, line = 2, project = "chromium", status = "running", lane = 2,
+                at = CiPosition("Click getByRole('button')", page, 8, 21, "CI run #$runId · worker 2: Click getByRole('button')"),
+                watch = "https://piwi.example/test-runs/$runId?watch=2",
+            ),
+            CiTest(title = listOf("refunds"), uri = spec, line = 10, project = "chromium", status = "failed", retry = 1, lane = 1),
+        ),
+        watchable = true,
+        ended = ended,
+    )
+
+    @Test
+    fun theCiRunsOfTheBranchAreKeptTheLatestOfEachUntilOneEnded() {
+        var kept = Glue.withCiSession(emptyMap(), ci(78))
+        kept = Glue.withCiSession(kept, ci(79))
+        kept = Glue.withCiSession(kept, ci(78, summary = "2 of 4 tests · 1 failed"))
+        assertEquals(listOf(78 to "2 of 4 tests · 1 failed", 79 to "1 of 4 tests · 1 failed"), kept.values.map { it.runId to it.summary })
+        kept = Glue.withCiSession(kept, ci(78, ended = true))
+        assertEquals(listOf(79), kept.values.map { it.runId })
+    }
+
+    @Test
+    fun aCiPositionIsAPlainMarkAtTheLineOfEachRunningTestNeverOneThatEnded() {
+        val sessions = listOf(ci(78), ci(79))
+        assertEquals(setOf(page), Glue.ciMarkedFiles(sessions))
+        assertEquals(
+            listOf(Glue.CiMark(8, "CI run #78 · worker 2: Click getByRole('button') · CI run #79 · worker 2: Click getByRole('button')")),
+            Glue.ciMarksIn(sessions, page),
+        )
+        assertEquals(emptyList<Glue.CiMark>(), Glue.ciMarksIn(sessions, spec))
+    }
+
+    @Test
+    fun theCiRunsTabNamesEachRunAsOtherRunsAreWithItsProgressOpenItsTestsAndWatchReadOnly() {
+        val rows = Glue.ciRows(listOf(ci(78)))
+        assertEquals(
+            listOf(
+                Glue.CiRow("run", "CI run #78", "feature/pay · 1 of 4 tests · 1 failed"),
+                Glue.CiRow("open", "Open run #78", "on the dashboard", url = "https://piwi.example/test-runs/78"),
+                Glue.CiRow("test", "checkout › pays", "chromium · worker 2 · Click getByRole('button')", "running", page, 8, 21),
+                Glue.CiRow("watch", "Watch on the dashboard", "read-only", url = "https://piwi.example/test-runs/78?watch=2"),
+                Glue.CiRow("test", "refunds", "chromium · retry 1 · failed", "failed", spec, 10),
+            ),
+            rows,
+        )
+        // The newest run first.
+        assertEquals(listOf("CI run #79", "CI run #78"), Glue.ciRows(listOf(ci(78), ci(79))).filter { it.kind == "run" }.map { it.text })
+    }
+
+    @Test
+    fun aCiSessionReadsAsTheServiceSendsIt() {
+        val json = """{"runId":78,"root":"/work/shop","url":"https://piwi.example/test-runs/78","name":"CI run #78",
+            "branch":"feature/pay","startedAt":"2026-11-12T10:00:00.000Z",
+            "progress":{"total":4,"done":1,"failed":1,"flaky":0,"skipped":0,"status":"running"},
+            "summary":"1 of 4 tests · 1 failed","watchable":true,"ended":false,
+            "tests":[{"title":["pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,"lane":null,
+            "shard":null,"at":{"title":"Click","uri":"$page","line":8,"character":null,"text":"CI run #78: Click"},
+            "watch":null}]}"""
+        val session = Gson().fromJson(json, CiSession::class.java)
+        assertEquals(listOf(Glue.CiMark(8, "CI run #78: Click")), Glue.ciMarksIn(listOf(session), page))
+        assertEquals(Glue.CiRow("test", "pays", "Click", "running", page, 8, 0), Glue.ciRows(listOf(session))[2])
+    }
 }

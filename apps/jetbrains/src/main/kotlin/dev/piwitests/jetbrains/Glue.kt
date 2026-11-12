@@ -3263,4 +3263,93 @@ object Glue {
 
     /** A test file's suffix, `.spec` or `.test` and its script extension (`.test.js` of `cart.test.js`); null for another file. */
     fun testFileSuffix(name: String): String? = SPEC_FILE.find(name)?.value
+
+    /** A CI session's key: its context's folder and its run. */
+    fun ciKey(session: CiSession): String = "${session.root.orEmpty()}\n${session.runId}"
+
+    /** The CI sessions kept, by `ciKey`, once `session` is heard: the latest of each run, one that ended dropped. */
+    fun withCiSession(sessions: Map<String, CiSession>, session: CiSession): Map<String, CiSession> {
+        val key = ciKey(session)
+        return if (session.ended) sessions - key else sessions + (key to session)
+    }
+
+    /** A CI position at a line, as the editor marks it after the line's text: the words of each test there, joined. */
+    data class CiMark(val line: Int, val text: String)
+
+    /**
+     * The CI positions in the file `uri` (as `Glue.sameFile` compares files): the call each running test of a CI run is
+     * at there, one mark per line. Never a stop: nothing waits there.
+     */
+    fun ciMarksIn(sessions: Collection<CiSession>, uri: String): List<CiMark> {
+        val lines = sortedMapOf<Int, MutableList<String>>()
+        for (session in sessions) {
+            for (test in session.tests.orEmpty()) {
+                val at = test.at ?: continue
+                if (test.status != "running" || !sameFile(at.uri, uri)) continue
+                val texts = lines.getOrPut(at.line) { mutableListOf() }
+                if (at.text !in texts) texts += at.text
+            }
+        }
+        return lines.map { (line, texts) -> CiMark(line, texts.joinToString(" · ")) }
+    }
+
+    /** The files a CI position is in now. */
+    fun ciMarkedFiles(sessions: Collection<CiSession>): Set<String> =
+        sessions.flatMap { s -> s.tests.orEmpty().mapNotNull { it.at?.uri } }.toSet()
+
+    /**
+     * A row of the CI Runs tab: a run (`CI run #78`, its branch and progress), its **Open** on the dashboard, a test (its
+     * name, then its project, attempt, worker and call, or its result), or a running test's **Watch** on the dashboard.
+     * What a row opens: a file at a line (`uri`, `line`, `character`), else a page (`url`), else nothing.
+     */
+    data class CiRow(
+        val kind: String,
+        val text: String,
+        val detail: String,
+        val status: String? = null,
+        val uri: String? = null,
+        val line: Int = 0,
+        val character: Int = 0,
+        val url: String? = null,
+    )
+
+    /** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
+    private fun ciLane(test: CiTest): String = when {
+        test.lane == null -> ""
+        test.shard != null -> "shard ${test.shard}, worker ${test.lane}"
+        else -> "worker ${test.lane}"
+    }
+
+    /**
+     * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
+     * progress, then **Open run #78**, its tests and, under a running test of a run that can be watched, **Watch on the
+     * dashboard**. Read-only: no row pauses, steers, shares or holds the run.
+     */
+    fun ciRows(sessions: Collection<CiSession>): List<CiRow> = sessions.sortedByDescending { it.runId }.flatMap { session ->
+        val head = CiRow(
+            "run",
+            session.name.ifEmpty { "CI run #${session.runId}" },
+            listOfNotNull(session.branch, session.summary.ifEmpty { null }).joinToString(" · "),
+        )
+        val open = CiRow("open", "Open run #${session.runId}", "on the dashboard", url = session.url)
+        val tests = session.tests.orEmpty().flatMap { test ->
+            val running = test.status == "running"
+            val detail = listOf(
+                test.project,
+                if (test.retry > 0) "retry ${test.retry}" else "",
+                if (running) ciLane(test) else test.status,
+                if (running) test.at?.title.orEmpty() else "",
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+            val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+            val at = test.at
+            val row = when {
+                at != null -> CiRow("test", name, detail, test.status, at.uri, at.line, at.character ?: 0)
+                test.uri != null && test.line != null -> CiRow("test", name, detail, test.status, test.uri, test.line)
+                else -> CiRow("test", name, detail, test.status)
+            }
+            val watch = test.watch?.let { CiRow("watch", "Watch on the dashboard", "read-only", url = it) }
+            listOfNotNull(row, watch)
+        }
+        listOf(head, open) + tests
+    }
 }
