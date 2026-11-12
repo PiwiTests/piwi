@@ -914,9 +914,9 @@ the connection closes (4001, 4002). The token is random per start, compared in c
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
 `keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, `stop`
 where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer on
-a machine that shows its window, `RunSessions.opensTraces`, for a connection not through a forwarded port;
-`hubFeatures`). A reader keeps the features it knows; a
-hub that predates the list reads as having none.
+a machine that shows its window, `RunSessions.opensTraces`, for a connection not through a forwarded port, and
+`share-window` where its host is an editor window, `RunHubOptions.sharesWindow`; `hubFeatures`). A reader keeps the
+features it knows; a hub that predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -942,7 +942,12 @@ not a boundary.
 - `watch` (`lane`, `on`, `layers`): a lane while its tests run, with no stop, and the layers it takes beside its frames
   ([The live view](#the-live-view));
 - `openTrace` (`ref`, `lane`): the lane's running test's trace so far in Playwright's trace viewer, on this machine,
-  the hub's feature `trace` ([The trace so far](#the-trace-so-far)).
+  the hub's feature `trace` ([The trace so far](#the-trace-so-far));
+- `share` (`ref`, `on`): the run shared live on the team instance, or no more; with `scope: 'window'`, at a hub whose
+  features list `share-window`, each run of the editor window until the person stops (`piwi/shareRun`'s window scope,
+  the `ref` optional), refused elsewhere with a sentence. Each subscribed connection hears the window's state after
+  the runs `subscribe` answers with, then as it changes from any surface (`{ type: 'share-window', on }`,
+  `RunHub.shareWindowChanged`).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
