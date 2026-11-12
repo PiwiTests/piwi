@@ -4,6 +4,7 @@ import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import type { TestCaseResult } from '~~/types/api';
+import { isStuckAttempt } from './test-attempts';
 
 /**
  * One badge on a test row. `BadgeGroup` shows the first three and folds the
@@ -214,7 +215,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
 /** Whether a badge is one of the exceptional signals (shown even when others hide). */
 export function badgesFromTestCase(tc: TestCaseResult, opts?: { quarantined?: boolean }): TestRowBadge[] {
   return buildTestRowBadges({
-    stuck: tc.status === 'running' && tc.stuck != null,
+    stuck: isStuckAttempt(tc),
     looksFixed: isExpectedFailurePassed(tc.status, tc.expectedStatus),
     isNewRegression: tc.isNewRegression,
     isNewFlaky: tc.isNewFlaky,

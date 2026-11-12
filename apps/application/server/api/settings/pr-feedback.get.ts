@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
-import { getPrFeedbackSettings } from '../../utils/scm/pr-feedback';
+import { getPrFeedbackSettings } from '../../utils/scm/pr-feedback-settings';
 import { DEFAULT_PR_FEEDBACK } from '#shared/pr-feedback';
 
 defineRouteMeta({

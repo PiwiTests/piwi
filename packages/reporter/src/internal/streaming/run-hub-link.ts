@@ -32,7 +32,23 @@ import { runChannelRef, startedByTestRunner } from '../config/hub.js';
  */
 
 /** A test's outcome as counted: one of the counts, or `passed` for one that counts as done alone. */
-type Counted = 'failed' | 'flaky' | 'skipped' | 'passed';
+export type Counted = 'failed' | 'flaky' | 'skipped' | 'passed';
+
+/**
+ * How an attempt's test counts once it ended for good, by the outcome of its latest attempt; null while a failed
+ * attempt has a retry to come.
+ */
+export function countedOutcome(test: TestCase, result: TestResult): Counted | null {
+  const outcome = test.outcome();
+  if (outcome === 'unexpected' && result.retry < test.retries && result.status !== 'interrupted') return null;
+  return outcome === 'unexpected'
+    ? 'failed'
+    : outcome === 'flaky'
+      ? 'flaky'
+      : outcome === 'skipped'
+        ? 'skipped'
+        : 'passed';
+}
 
 /** The least time between two `run-progress` lines. */
 const PROGRESS_MS = 250;
@@ -106,16 +122,8 @@ export class RunHubLink {
    * outcome it was counted with before (a serial group that runs again).
    */
   testEnded(test: TestCase, result: TestResult): void {
-    const outcome = test.outcome();
-    if (outcome === 'unexpected' && result.retry < test.retries && result.status !== 'interrupted') return;
-    const as: Counted =
-      outcome === 'unexpected'
-        ? 'failed'
-        : outcome === 'flaky'
-          ? 'flaky'
-          : outcome === 'skipped'
-            ? 'skipped'
-            : 'passed';
+    const as = countedOutcome(test, result);
+    if (!as) return;
     const ended = as === 'skipped' && endedAtStopIn(result.annotations);
     const before = this.counted.get(test.id);
     if (before) {

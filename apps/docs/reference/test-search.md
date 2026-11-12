@@ -33,6 +33,9 @@ term: `"guest checkout"`.
 | `priority:` | | The `piwi:priority` annotation | Run and project |
 | `feature:` | | The `piwi:feature` annotation | Run and project |
 | `id:` | | The test's [external ID](/reference/test-metadata#external-test-ids) | Run and project |
+| `is:` | | `is:stuck`: a running test marked [Stuck?](/features/stuck-tests), while the run is live | Run |
+| `worker:` | | The [worker lane](/reference/test-metadata#worker-lanes) the execution ran on, from 1 in each shard; a result from a reporter that sends no lane matches none | Run |
+| `shard:` | | The shard the execution ran in, from 1 | Run |
 
 How the terms combine:
 
@@ -40,7 +43,10 @@ How the terms combine:
   `file:checkout/*.spec.ts`. The other qualifiers match a whole value.
 - Case and accents never matter: `resume` finds `Résumé`, and `CAFÉ` finds `cafe`.
 - Every term must match. The exception is a qualifier of which a test has only one value (`file:`, `browser:`, `owner:`,
-  `priority:`, `feature:`, `id:`): repeated, it matches any of the values, so `file:cart file:checkout` lists both files.
+  `priority:`, `feature:`, `id:`, `worker:`, `shard:`): repeated, it matches any of the values, so
+  `file:cart file:checkout` lists both files and `shard:1 shard:2` the first two shards.
+- `is:stuck` reads what the dashboard knows of a running test while the run is live: on a run that has ended, it finds
+  nothing.
 - A leading `-` excludes: `-tag:slow`, `-describe:legacy`, `-flaky`.
 - A qualifier the tab does not have, such as `error:` on a project, is read as a word.
 
@@ -53,6 +59,8 @@ How the terms combine:
 | `timeout browser:webkit` | On a run: the WebKit executions whose title, blocks, path or error mention `timeout` |
 | `owner:@team/payments priority:critical` | The critical tests the payments team owns |
 | `title:"refund*email"` | The tests whose title has `refund`, then `email` further on |
+| `is:stuck shard:2` | On a live run: the running tests of shard 2 that have run far longer than they usually do |
+| `worker:3 -tag:slow` | On a run: what worker 3 ran, its `@slow` tests left out |
 
 ## Completion
 

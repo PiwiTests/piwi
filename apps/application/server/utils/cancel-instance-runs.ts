@@ -1,3 +1,4 @@
+import { closePendingStatus } from './scm/pending-status';
 import { and, eq, inArray } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import { runEventBus } from './run-events';
@@ -24,7 +25,13 @@ export async function cancelInstanceRuns(
   for (const run of cancelledRuns) {
     runEventBus.cleanup(run.id);
     runEventBus.publishGlobal({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    closeCancelledPendingStatus(run.id);
   }
+}
+
+/** A cancelled run's pending commit status is closed. */
+function closeCancelledPendingStatus(runId: number): void {
+  closePendingStatus(runId, 'cancelled').catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
 }
 
 /** The run a batch delivery names in `replacesRun`, or null when the field is missing or of another shape. */
@@ -66,4 +73,5 @@ export async function cancelReplacedRun(db: DB, projectId: number, replacesRun: 
   if (cancelled.length === 0) return;
   runEventBus.cleanup(named.runId);
   runEventBus.publishGlobal({ type: 'run-cancelled', runId: named.runId, projectId, status: 'cancelled' });
+  closeCancelledPendingStatus(named.runId);
 }

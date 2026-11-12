@@ -39,6 +39,11 @@ The reporter's own process tells the editor or the desktop app how many tests th
 and how the run ended with its first failure. The editors' status bars and the Runs window count it the same way: each
 test once, by its last attempt. The desktop tray counts the lines of the run's output instead, a retry again.
 
+On the dashboard, Home's **Recent activity**, a project's runs list and the **Projects** page show a running run with
+the count bar and how many results are in: `120 of 400 · 2 failed`. Its row moves on by itself as results reach the
+instance, at most every 2 seconds, without the page reading the list again. Until the run ends these count each result
+as the reporter sends it, a retry again; the run's page counts each test once.
+
 The status bar item's tooltip also says what each worker runs now (`Worker 2 · cart › adds a mug · stopped`). In VS
 Code, the Testing view's test run of your run writes in its output each test a worker starts, each stop and why, with
 the line it stands at, and each stop answered.
@@ -88,6 +93,11 @@ says so:
 
 The other lines of a run's start (its project and Playwright version, its shard, the stream opening on time) are
 printed with `PIWI_VERBOSE=true` alone. A stream that opens late, a failure link and a warning are always printed.
+
+In a terminal outside CI, the run's page is a link. Windows Terminal and ConEmu show how far the run is in the tab and
+the taskbar, and Ghostty 1.2 or later atop the terminal, red once a test failed. `PIWI_TERMINAL_PROGRESS=off` turns
+both off, and `PIWI_TERMINAL_PROGRESS=on` sends the progress to any terminal: one that reads it as a notification
+shows one at each step.
 
 ## When the run does not reach the instance
 
