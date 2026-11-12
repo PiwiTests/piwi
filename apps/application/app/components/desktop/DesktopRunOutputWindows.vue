@@ -28,7 +28,7 @@ function kept(key: number): boolean {
   return store.keptWindows.value.includes(key);
 }
 
-// A window brought back to the tray is no longer the page before's: opened again, it is a new one.
+// A kept window counts once: brought back to the tray and opened again, it is a new window.
 watch(
   () => store.separate.value,
   (separate) => {

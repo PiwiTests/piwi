@@ -650,7 +650,7 @@ export function useDesktopLocalRuns() {
    * Drive a run to its end. `resumed`, for a run a reload took back, is the end of the step its process ran as the page
    * reloaded: the run goes on from there.
    */
-  /** A start, or a reload's take-back, no longer waits for its process's id: the buffer goes once none waits. */
+  /** A start, or a reload's take-back, has its process's id: the buffer goes once none waits for one. */
   function releaseBuffer() {
     startingSteps -= 1;
     if (startingSteps === 0) pendingEvents = [];
