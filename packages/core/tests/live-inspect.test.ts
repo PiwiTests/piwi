@@ -6,9 +6,13 @@ import {
   MAX_SNAPSHOT_BYTES,
   MAX_SNAPSHOT_RESOURCES,
   cssReferences,
+  MAX_SNAPSHOT_NODES,
+  hideFrameSnapshotSecrets,
+  hideResourceUrl,
   hideSnapshotSecrets,
   inspectResourceType,
   isFullSnapshot,
+  isInspectResourceBytes,
   isResourceSha1,
   readLiveResource,
   readLiveSnapshot,
@@ -63,9 +67,11 @@ function snapshotJson(length: number, frame = SNAPSHOT.frame): Uint8Array {
   return new TextEncoder().encode(head + 'x'.repeat(length - head.length - tail.length) + tail);
 }
 
-/** Bytes of a resource, `length` long. */
-function bytes(length: number): Uint8Array {
-  return new Uint8Array(length).fill(9);
+/** Bytes of a resource, `length` long: a stylesheet's spaces, or `head` then filler. */
+function bytes(length: number, head = ''): Uint8Array {
+  const data = new Uint8Array(length).fill(9);
+  data.set(new TextEncoder().encode(head));
+  return data;
 }
 
 /** Every message a reader of what a worker posts completes as `chunks` arrive. */
@@ -81,8 +87,13 @@ describe('the resources Inspect sends', () => {
       ['text/css; charset=utf-8', 'text/css'],
       ['TEXT/CSS', 'text/css'],
       ['font/woff2', 'font/woff2'],
+      ['font/woff', 'font/woff'],
       ['font/ttf', 'font/ttf'],
+      ['font/otf', 'font/otf'],
+      ['font/sfnt', 'font/sfnt'],
+      ['font/collection', 'font/collection'],
       ['application/font-woff', 'application/font-woff'],
+      ['application/x-font-ttf', 'application/x-font-ttf'],
       ['application/vnd.ms-fontobject', 'application/vnd.ms-fontobject'],
       ['image/png', 'image/png'],
       ['image/jpeg', 'image/jpeg'],
@@ -105,6 +116,9 @@ describe('the resources Inspect sends', () => {
       'text/html',
       'application/xhtml+xml',
       'image/svg+xml',
+      'font/svg+xml',
+      'application/font-sfnt',
+      'font/x-unknown',
       'application/json',
       'application/octet-stream',
       'text/plain',
@@ -119,6 +133,56 @@ describe('the resources Inspect sends', () => {
       42,
     ]) {
       expect(inspectResourceType(type), String(type)).toBeNull();
+    }
+  });
+
+  test('are the kind of bytes their content type says, never a document nor an SVG', () => {
+    const at34 = (data: number[]) => {
+      const eot = new Uint8Array(40);
+      eot.set(data, 34);
+      return eot;
+    };
+    const of = (...values: Array<number | string>) =>
+      new Uint8Array(
+        values.flatMap((value) => (typeof value === 'string' ? [...value].map((c) => c.charCodeAt(0)) : [value])),
+      );
+    for (const [type, data] of [
+      ['image/png', of(0x89, 'PNG', 0x0d, 0x0a, 0x1a, 0x0a, 0)],
+      ['image/jpeg', of(0xff, 0xd8, 0xff, 0xe0)],
+      ['image/gif', of('GIF89a', 1)],
+      ['image/gif', of('GIF87a', 1)],
+      ['image/webp', of('RIFF', 0, 0, 0, 0, 'WEBPVP8 ')],
+      ['image/avif', of(0, 0, 0, 0x20, 'ftypavif', 0)],
+      ['image/x-icon', of(0, 0, 1, 0, 1)],
+      ['image/x-icon', of(0x89, 'PNG', 0x0d, 0x0a, 0x1a, 0x0a)],
+      ['image/bmp', of('BM', 0, 0)],
+      ['font/woff', of('wOFF', 0)],
+      ['font/woff2', of('wOF2', 0)],
+      ['font/ttf', of(0, 1, 0, 0, 0)],
+      ['application/x-font-ttf', of('true', 0)],
+      ['font/otf', of('OTTO', 0)],
+      ['font/collection', of('ttcf', 0)],
+      ['application/vnd.ms-fontobject', at34([0x4c, 0x50])],
+      ['text/css', of('body { color: red }')],
+      ['text/css', of(0xef, 0xbb, 0xbf, ' \n\t@import "a.css";')],
+    ] as const) {
+      expect(isInspectResourceBytes(type, data), `${type} ${String(data.slice(0, 12))}`).toBe(true);
+    }
+    for (const [type, data] of [
+      ['image/png', of('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')],
+      ['image/jpeg', of('<!doctype html><script>alert(1)</script>')],
+      ['image/webp', of('RIFF', 0, 0, 0, 0, 'WAVE')],
+      ['image/avif', of(0, 0, 0, 0x20, 'ftypisom')],
+      ['font/woff2', of('<?xml version="1.0"?><svg><font/></svg>')],
+      ['font/ttf', of('wOF')],
+      ['application/vnd.ms-fontobject', at34([0x50, 0x4c])],
+      ['text/css', of('<!doctype html><script>alert(1)</script>')],
+      ['text/css', of(0xef, 0xbb, 0xbf, '  \r\n<html>')],
+      ['text/css', of(0xff, 0xfe, '<', 0, 'h', 0)],
+      ['text/css', new Uint8Array(0)],
+      ['application/javascript', of('alert(1)')],
+    ] as const) {
+      expect(isInspectResourceBytes(type, data), `${type} ${String(data.slice(0, 12))}`).toBe(false);
     }
   });
 
@@ -197,6 +261,10 @@ describe('a resource’s header', () => {
   test('is read field by field: its name, a content type Inspect sends, and its bytes', () => {
     const header = liveResourceHeader(ID, { sha1: SHA1, contentType: 'text/css; charset=utf-8' });
     expect(readLiveResource(header, bytes(10))).toEqual({ sha1: SHA1, contentType: 'text/css', data: bytes(10) });
+    expect(readLiveResource(header, bytes(10, '<html>'))).toBe('A resource’s bytes are what its content type says.');
+    expect(readLiveResource({ ...header, contentType: 'image/png' }, bytes(10))).toBe(
+      'A resource’s bytes are what its content type says.',
+    );
     expect(typeof readLiveResource({ ...header, contentType: 'application/javascript' }, bytes(10))).toBe('string');
     expect(typeof readLiveResource({ ...header, contentType: 'image/svg+xml' }, bytes(10))).toBe('string');
     expect(typeof readLiveResource({ ...header, sha1: 'resources/x.css' }, bytes(10))).toBe('string');
@@ -210,7 +278,7 @@ describe('the Inspect messages a worker posts', () => {
     const snapshot = encodeLiveMessage(liveSnapshotHeader(ID, SNAPSHOT, 'pays'), snapshotJson(MAX_SNAPSHOT_BYTES));
     const resource = encodeLiveMessage(
       liveResourceHeader(ID, { sha1: SHA1, contentType: 'font/woff2' }),
-      bytes(MAX_RESOURCE_BYTES),
+      bytes(MAX_RESOURCE_BYTES, 'wOF2'),
     );
     const frame = encodeLiveMessage(liveFrameHeader(ID, { call: null, test: 'pays' }), jpegBytes(MAX_LIVE_FRAME));
     expect(snapshot.length).toBeLessThanOrEqual(MAX_LIVE_INSPECT_MESSAGE);
@@ -429,8 +497,244 @@ describe('the secrets a snapshot shows', () => {
       ['SPAN', {}, '<hidden>'],
       ['SPAN', {}, 'Ada'],
     ]);
-    expect(snapshotNodes(hidden).length).toBe(snapshotNodes(html).length);
+    expect(snapshotNodes(hidden)!.length).toBe(snapshotNodes(html)!.length);
     expect(JSON.stringify(hidden)).not.toContain(SECRET);
+  });
+});
+
+describe('the credentials a snapshot holds', () => {
+  const PNG_DATA = `data:image/png;base64,${'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'.repeat(4)}`;
+  const FONT_DATA = `data:font/woff2;base64,${'d09GMgABAAAAAAhEAA0AAAAAEGAAAAfuAAEAAAAA'.repeat(4)}`;
+
+  test('go from every address, text and attribute, and from a meta named for a secret, the images and fonts kept', () => {
+    const html = [
+      'HTML',
+      {},
+      [
+        'HEAD',
+        {},
+        ['META', { name: 'csrf-token', content: 'q8Zt3kPLm2' }],
+        ['META', { 'http-equiv': 'X-Api-Key', content: 'k-123' }],
+        ['META', { property: 'og:url', content: 'https://app.test/share?token=q8Zt3kPLm2' }],
+        ['META', { name: 'viewport', content: 'width=device-width' }],
+        ['LINK', { rel: 'stylesheet', href: 'https://cdn.test/app.css?sig=abc123' }],
+        ['STYLE', {}, `@font-face { src: url(${FONT_DATA}) } .a { background: url(/bg.png?token=css1) }`],
+      ],
+      [
+        'BODY',
+        {},
+        ['A', { href: 'https://app.test/reset?token=q8Zt3kPLm2' }, 'Reset'],
+        ['A', { href: '/reset?access_token=q8Zt3kPLm2#top' }, 'Reset'],
+        [
+          'IMG',
+          {
+            src: '/img.png?token=img1',
+            srcset: '/a.png?token=set1 1x, /b.png?sig=set2 2x',
+            __playwright_current_src__: 'https://app.test/img.png?token=img1',
+          },
+        ],
+        ['IMG', { src: PNG_DATA, srcset: `${PNG_DATA} 1x, /c.png?token=set3 2x` }],
+        ['FORM', { action: '/login?session=form1' }, ['BUTTON', { formaction: '/go?key=form2' }, 'Go']],
+        ['VIDEO', { poster: '/p.jpg?token=poster1' }],
+        ['OBJECT', { data: '/o.pdf?token=object1' }],
+        ['svg', {}, ['use', { 'xlink:href': '/s.svg?token=use1#i' }]],
+        [
+          'DIV',
+          { style: `background: url(${PNG_DATA})`, title: 'see https://x.test/?token=title1' },
+          'Your link: https://x.test/a?token=text1 expires',
+        ],
+        ['P', {}, 'Your order 12345 ships soon'],
+      ],
+    ];
+    const before = JSON.stringify(html);
+    const hidden = hideSnapshotSecrets(html, { secrets: [] }) as unknown[];
+    expect(JSON.stringify(html)).toBe(before);
+    const [, , head, body] = hidden as [string, object, unknown[], unknown[]];
+    expect(head.slice(2)).toEqual([
+      ['META', { name: 'csrf-token', content: '<hidden>' }],
+      ['META', { 'http-equiv': 'X-Api-Key', content: '<hidden>' }],
+      ['META', { property: 'og:url', content: 'https://app.test/share?token=<hidden>' }],
+      ['META', { name: 'viewport', content: 'width=device-width' }],
+      ['LINK', { rel: 'stylesheet', href: 'https://cdn.test/app.css?sig=<hidden>' }],
+      ['STYLE', {}, `@font-face { src: url(${FONT_DATA}) } .a { background: url(/bg.png?token=<hidden>) }`],
+    ]);
+    expect(body.slice(2)).toEqual([
+      ['A', { href: 'https://app.test/reset?token=<hidden>' }, 'Reset'],
+      ['A', { href: '/reset?access_token=<hidden>#top' }, 'Reset'],
+      [
+        'IMG',
+        {
+          src: '/img.png?token=<hidden>',
+          srcset: '/a.png?token=<hidden> 1x, /b.png?sig=<hidden> 2x',
+          __playwright_current_src__: 'https://app.test/img.png?token=<hidden>',
+        },
+      ],
+      ['IMG', { src: PNG_DATA, srcset: `${PNG_DATA} 1x, /c.png?token=<hidden> 2x` }],
+      ['FORM', { action: '/login?session=<hidden>' }, ['BUTTON', { formaction: '/go?key=<hidden>' }, 'Go']],
+      ['VIDEO', { poster: '/p.jpg?token=<hidden>' }],
+      ['OBJECT', { data: '/o.pdf?token=<hidden>' }],
+      ['svg', {}, ['use', { 'xlink:href': '/s.svg?token=<hidden>#i' }]],
+      [
+        'DIV',
+        { style: `background: url(${PNG_DATA})`, title: 'see https://x.test/?token=<hidden>' },
+        'Your link: https://x.test/a?token=<hidden> expires',
+      ],
+      ['P', {}, 'Your order 12345 ships soon'],
+    ]);
+  });
+
+  test('go from its frame’s address and its stylesheets’, and the resources’ addresses read as the page’s read', () => {
+    const SECRET = 'S3cr3t!Pw';
+    const snapshot = {
+      callId: 'call@8',
+      frameUrl: `https://app.test/u/${SECRET}/cart?session=f1`,
+      resourceOverrides: [{ url: 'https://app.test/app.css?token=o1', sha1: SHA1 }, { ref: 2 }],
+      viewport: { width: 1280, height: 720 },
+      html: ['HTML', {}, ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: 'theme.css?token=r1' }]]],
+    };
+    const before = JSON.stringify(snapshot);
+    const shown = hideFrameSnapshotSecrets(snapshot, { secrets: [SECRET] })!;
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(shown).toEqual({
+      ...snapshot,
+      frameUrl: 'https://app.test/u/<hidden>/cart?session=<hidden>',
+      resourceOverrides: [{ url: 'https://app.test/app.css?token=<hidden>', sha1: SHA1 }, { ref: 2 }],
+      html: ['HTML', {}, ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: 'theme.css?token=<hidden>' }]]],
+    });
+    // The instance resolves the hidden link against the hidden frame's address: the header names it so.
+    const real = new URL('theme.css?token=r1', snapshot.frameUrl).href;
+    const read = new URL('theme.css?token=<hidden>', shown.frameUrl as string).href;
+    expect(hideResourceUrl(real, [SECRET])).toBe(read);
+    expect(read).not.toContain(SECRET);
+    expect(hideResourceUrl('https://app.test/a.css?v=3')).toBe('https://app.test/a.css?v=3');
+    expect(hideResourceUrl('javascript:alert(1)')).toBeNull();
+  });
+
+  test('go from the header’s resources the instance reads again', () => {
+    const header = {
+      ...liveSnapshotHeader(ID, SNAPSHOT, null),
+      resources: [{ url: 'https://app.test/app.css?token=h1', sha1: SHA1 }],
+    };
+    expect(readLiveSnapshot(header, snapshotJson(200))).toMatchObject({
+      resources: [{ url: 'https://app.test/app.css?token=%3Chidden%3E', sha1: SHA1 }],
+    });
+  });
+
+  test('never run: a script Playwright keeps is emptied in place, an address that runs one is left out', () => {
+    const html = [
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['svg', {}, ['script', { href: '/evil.js' }, 'alert(document.cookie)'], ['circle', { r: '1' }]],
+        ['html:script', {}, 'alert(2)', ['b', {}, 'x']],
+        ['A', { href: 'javascript:alert(1)', title: 'a' }, 'one'],
+        ['A', { href: ' JaVa\tScRiPt:alert(1)' }, 'two'],
+        ['BUTTON', { formaction: 'vbscript:msgbox(1)' }, 'three'],
+        ['a', { 'xlink:href': 'javascript:alert(1)' }, 'four'],
+        ['A', { href: '/javascript:not-a-scheme' }, 'five'],
+      ],
+    ];
+    const hidden = hideSnapshotSecrets(html, { secrets: [] });
+    expect(hidden).toEqual([
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['svg', {}, ['template', {}, ''], ['circle', { r: '1' }]],
+        ['template', {}, '', ['template', {}, '']],
+        ['A', { title: 'a' }, 'one'],
+        ['A', {}, 'two'],
+        ['BUTTON', {}, 'three'],
+        ['a', {}, 'four'],
+        ['A', { href: '/javascript:not-a-scheme' }, 'five'],
+      ],
+    ]);
+    expect(snapshotNodes(hidden)!.length).toBe(snapshotNodes(html)!.length);
+  });
+});
+
+describe('a snapshot that cannot be read whole', () => {
+  /** `node` inside `levels` elements. */
+  const nested = (node: unknown, levels: number): unknown => {
+    let out = node;
+    for (let i = 0; i < levels; i++) out = ['DIV', {}, out];
+    return out;
+  };
+
+  test('does not go: a node deeper than the walk goes, past the nodes it visits, or of an unknown shape', () => {
+    const password = ['INPUT', { type: 'password', __playwright_value_: 'hunter2-deep' }];
+    expect(hideSnapshotSecrets(['HTML', {}, nested(password, 520)], { secrets: [] })).toBeNull();
+    expect(hideSnapshotSecrets(['HTML', {}, nested(password, 500)], { secrets: [] })).not.toBeNull();
+    const wide = ['BODY', {}, ...Array.from({ length: MAX_SNAPSHOT_NODES / 2 }, (_, i) => ['SPAN', {}, `x${i}`])];
+    expect(hideSnapshotSecrets(['HTML', {}, wide], { secrets: [] })).toBeNull();
+    expect(snapshotNodes(['HTML', {}, wide])).toBeNull();
+    expect(snapshotNodes(['HTML', {}, nested('x', 520)])).toBeNull();
+    expect(hideSnapshotSecrets(['HTML', 'not attributes', ['BODY', {}]], { secrets: [] })).toBeNull();
+    expect(hideFrameSnapshotSecrets({ html: ['HTML', {}, nested(password, 520)] }, { secrets: [] })).toBeNull();
+  });
+
+  test('is not read as full: a reference deeper than the walk goes, or past the nodes it visits', () => {
+    expect(isFullSnapshot(['HTML', {}, nested([[1, 3]], 520)])).toBe(false);
+    expect(isFullSnapshot(['HTML', {}, nested('x', 520)])).toBe(false);
+    const wide = ['BODY', {}, ...Array.from({ length: MAX_SNAPSHOT_NODES / 2 }, (_, i) => ['SPAN', {}, `x${i}`])];
+    expect(isFullSnapshot(['HTML', {}, wide])).toBe(false);
+  });
+
+  test('does not go with a reference its resolver does not know; without one, its references are not followed', () => {
+    const html = ['HTML', {}, ['BODY', {}, [[1, 4]], ['INPUT', { id: 'nick', __playwright_value_: '9182' }]]];
+    expect(hideSnapshotSecrets(html, { secrets: [], resolve: () => null })).toBeNull();
+    expect(JSON.stringify(hideSnapshotSecrets(html, { secrets: [] }))).toContain('9182');
+  });
+});
+
+describe('the labels of a snapshot’s fields', () => {
+  const field = (attributes: Record<string, unknown>) => ['INPUT', { __playwright_value_: '9182', ...attributes }];
+  const valueOf = (hidden: unknown, at: number[]): unknown => {
+    let node = hidden as unknown[];
+    for (const i of at) node = node[i] as unknown[];
+    return (node[1] as Record<string, unknown>).__playwright_value_;
+  };
+
+  test('hide a field named by a label far into a large page', () => {
+    const rows = Array.from({ length: 60_000 }, (_, i) => ['SPAN', {}, `x${i}`]);
+    const html = ['BODY', {}, ...rows, ['LABEL', { for: 'f' }, 'PIN'], field({ id: 'f' })];
+    expect(valueOf(hideSnapshotSecrets(html, { secrets: [] }), [rows.length + 3])).toBeUndefined();
+  });
+
+  test('hide a field its aria-labelledby names a secret by, in this snapshot or an earlier one', () => {
+    const earlier = ['SPAN', { id: 'old' }, 'Security code'];
+    const resolve: SnapshotResolver = (back, index) =>
+      back === 1 && index === 3 ? { node: earlier, resolve: () => null } : null;
+    const html = [
+      'BODY',
+      {},
+      ['SPAN', { id: 'l' }, 'Password'],
+      field({ 'aria-labelledby': 'l' }),
+      [[1, 3]],
+      field({ 'aria-labelledby': 'nick old' }),
+      ['SPAN', { id: 'nick' }, 'Nickname'],
+      field({ 'aria-labelledby': 'nick' }),
+      field({ 'aria-labelledby': 'missing' }),
+    ];
+    const hidden = hideSnapshotSecrets(html, { secrets: [], resolve });
+    expect([3, 5, 7, 8].map((at) => valueOf(hidden, [at]))).toEqual([undefined, undefined, '9182', '9182']);
+  });
+
+  test('hide a field whose label cannot be read whole', () => {
+    const long = ['SPAN', {}, ...Array.from({ length: 1200 }, () => ['B', {}])];
+    const html = [
+      'BODY',
+      {},
+      ['LABEL', {}, 'Nick', long, field({})],
+      ['LABEL', { for: 'n' }, long, 'Nick'],
+      field({ id: 'n' }),
+    ];
+    const hidden = hideSnapshotSecrets(html, { secrets: [] });
+    expect(valueOf(hidden, [2, 4])).toBeUndefined();
+    expect(valueOf(hidden, [4])).toBeUndefined();
   });
 });
 

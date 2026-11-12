@@ -10,9 +10,11 @@ import {
   MAX_SNAPSHOT_RESOURCES,
   SNAPSHOTS_PER_SECOND,
   cssReferences,
-  hideSnapshotSecrets,
+  hideFrameSnapshotSecrets,
+  hideResourceUrl,
   inspectResourceType,
   isFullSnapshot,
+  isInspectResourceBytes,
   isResourceSha1,
   resolveResourceUrl,
   snapshotNodes,
@@ -52,16 +54,18 @@ import { callMethod, internalCall } from './quiet-capture.js';
  *   each numbered in its frame as Playwright numbers it (a reference names the snapshot `back` places before).
  *   `SNAPSHOTS_PER_SECOND` at most, one post in flight, after the bytes the live view's frames and Inspect's own posts
  *   took (`LiveByteBudget`, a wait of a second at most): a frame never waits on one. Each snapshot has what the page's
- *   secrets show removed before it goes (`hideSnapshotSecrets`, with the attempt's secrets `lane-layers.ts` keeps: the
- *   values its secret fields held, read through internal calls, and those its calls typed into one); its title is
- *   the runner's, the text it types and its credentials hidden. A snapshot past `MAX_SNAPSHOT_BYTES`, or one that does
- *   not read, does not go. A project that masks elements gets no snapshot, and the viewers hear why: its masks are
- *   locators, which a snapshot cannot find.
+ *   secrets show and the credentials its addresses and texts hold removed before it goes, its scripts emptied
+ *   (`hideFrameSnapshotSecrets`, with the attempt's secrets `lane-layers.ts` keeps: the values its secret fields held,
+ *   read through internal calls, and those its calls typed into one); its title is the runner's, the text it types and
+ *   its credentials hidden. A snapshot past `MAX_SNAPSHOT_BYTES`, or one that cannot be read whole, does not go. A
+ *   project that masks elements gets no snapshot, and the viewers hear why: its masks are locators, which a snapshot
+ *   cannot find.
  * - **Resources.** Before a snapshot, each resource it names (`snapshotResourceUrls`, and what a stylesheet among them
  *   names, `cssReferences`, two imports deep) that the trace recorded (`resource-snapshot` of the `.network` file: its
  *   address, its file under `resources/`, its content type) and `inspectResourceType` allows: a stylesheet, a font, an
- *   image other than SVG, `MAX_RESOURCE_BYTES` at most, once per run. Never a script, a document nor an SVG. Read
- *   from the trace folder's `resources/` alone.
+ *   image other than SVG, its bytes of that kind (`isInspectResourceBytes`), `MAX_RESOURCE_BYTES` at most, once per
+ *   run. Never a script, a document nor an SVG. Read from the trace folder's `resources/` alone. The header names each
+ *   by its address hidden as the snapshot's are (`hideResourceUrl`).
  */
 
 /** How often the trace is read for new snapshots while Inspect is open. */
@@ -507,7 +511,7 @@ export class LiveInspect {
   /** The nodes the references of the frame's snapshot at `index` name, from its chain kept. */
   private resolver(frame: string, index: number): SnapshotResolver {
     const chain = this.chains.get(frame);
-    const nodes = new Map<number, unknown[]>();
+    const nodes = new Map<number, unknown[] | null>();
     const at =
       (from: number): SnapshotResolver =>
       (back, node) => {
@@ -515,11 +519,11 @@ export class LiveInspect {
         const snapshot = back > 0 ? chain?.get(target) : undefined;
         if (!snapshot) return null;
         let list = nodes.get(target);
-        if (!list) {
+        if (list === undefined) {
           list = snapshotNodes(snapshot.html);
           nodes.set(target, list);
         }
-        return node >= 0 && node < list.length ? { node: list[node], resolve: at(target) } : null;
+        return list && node >= 0 && node < list.length ? { node: list[node], resolve: at(target) } : null;
       };
     return at(index);
   }
@@ -558,28 +562,30 @@ export class LiveInspect {
       });
   }
 
-  /** Post a snapshot, what the page's secrets show removed, after the resources it names that did not go yet. */
+  /**
+   * Post a snapshot, what the page's secrets show and its credentials removed, after the resources it names that did not
+   * go yet; none it cannot read whole.
+   */
   private async send(waiting: Waiting): Promise<void> {
     const { fields, snapshot } = waiting;
     const secrets = await this.readSecrets();
     if (this.closed) return;
-    const html = hideSnapshotSecrets(snapshot.html, { secrets, resolve: this.resolver(fields.frame, fields.index) });
-    const shown = { ...snapshot, html };
+    const shown = hideFrameSnapshotSecrets(snapshot, { secrets, resolve: this.resolver(fields.frame, fields.index) });
+    if (!shown) return;
     const data = Buffer.from(JSON.stringify(shown));
     if (data.length > MAX_SNAPSHOT_BYTES) return;
-    const resources = await this.resourcesOf(shown);
+    const resources = await this.resourcesOf(snapshot);
     for (const resource of resources) {
       if (this.closed) return;
       if (!this.link.sent.has(resource.sha1)) await this.sendResource(resource);
     }
     if (this.closed) return;
-    const named = this.link.sent;
-    const title = this.titleOf(fields.call, snapshot.callId);
-    const live: LiveSnapshot = {
-      ...fields,
-      title,
-      resources: resources.filter((one) => named.has(one.sha1)).map(({ url, sha1 }) => ({ url, sha1 })),
-    };
+    const named: LiveSnapshotResource[] = [];
+    for (const { url, sha1 } of resources) {
+      const shownUrl = this.link.sent.has(sha1) ? hideResourceUrl(url, secrets) : null;
+      if (shownUrl) named.push({ url: shownUrl, sha1 });
+    }
+    const live: LiveSnapshot = { ...fields, title: this.titleOf(fields.call, snapshot.callId), resources: named };
     const body = encodeLiveMessage(liveSnapshotHeader(this.link.id, live, this.link.test()), data);
     this.link.budget.spend(body.length);
     await this.link.post(body);
@@ -593,10 +599,13 @@ export class LiveInspect {
     return hideSecretsInText(hideTypedText(own ?? 'Call')).slice(0, 300);
   }
 
-  /** Post a resource from the trace folder's `resources/`, once per run, `MAX_RESOURCE_BYTES` at most. */
+  /**
+   * Post a resource from the trace folder's `resources/`, its bytes of the kind its content type says, once per run,
+   * `MAX_RESOURCE_BYTES` at most.
+   */
   private async sendResource(resource: LiveSnapshotResource & Recorded): Promise<void> {
     const bytes = await this.resourceBytes(resource.sha1);
-    if (!bytes || this.closed) return;
+    if (!bytes || this.closed || !isInspectResourceBytes(resource.contentType, bytes)) return;
     const wait = this.link.budget.wait();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait).unref?.());
     const body = encodeLiveMessage(
@@ -623,8 +632,8 @@ export class LiveInspect {
   }
 
   /**
-   * The resources a snapshot names that the trace recorded and Inspect may send, with those its stylesheets name,
-   * `MAX_SNAPSHOT_RESOURCES` at most and `MAX_RESOURCE_LIST` bytes of header.
+   * The resources a snapshot names that the trace recorded and Inspect may send, by their addresses as the page asked
+   * for them, with those its stylesheets name, `MAX_SNAPSHOT_RESOURCES` at most and `MAX_RESOURCE_LIST` bytes of header.
    */
   private async resourcesOf(snapshot: Record<string, unknown>): Promise<Array<LiveSnapshotResource & Recorded>> {
     const found = new Map<string, LiveSnapshotResource & Recorded>();
@@ -654,7 +663,7 @@ export class LiveInspect {
     let names = this.cssNames.get(sha1);
     if (!names) {
       const bytes = await this.resourceBytes(sha1);
-      names = bytes ? cssReferences(bytes.toString('utf8')) : [];
+      names = bytes && isInspectResourceBytes('text/css', bytes) ? cssReferences(bytes.toString('utf8')) : [];
       this.cssNames.set(sha1, names);
     }
     return names;

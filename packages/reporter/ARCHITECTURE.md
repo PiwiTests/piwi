@@ -583,11 +583,13 @@ What the package does to a user's run, process by process.
   labels a later one's references name, and queues the page's snapshots since its main
   frame's last full one, 16 MB at most. Each goes `SNAPSHOTS_PER_SECOND` at most, one post in
   flight, after the bytes the frames and its own posts took (`LiveByteBudget`, which the
-  frames feed and never wait on, a second's wait at most), through `hideSnapshotSecrets` with
-  `attemptSecrets` (read from the pages once a second at most, else `knownSecrets`), its
-  title the runner's step's. Before it, each resource it and its stylesheets name that the
-  `.network` file recorded with a content type `inspectResourceType` allows, read from the
-  trace folder's `resources/` (a regular file, 2 MB at most), once per run. A project with
+  frames feed and never wait on, a second's wait at most), through `hideFrameSnapshotSecrets`
+  with `attemptSecrets` (read from the pages once a second at most, else `knownSecrets`), not
+  at all when it cannot be read whole, its title the runner's step's. Before it, each resource
+  it and its stylesheets name that the `.network` file recorded with a content type
+  `inspectResourceType` allows, read from the trace folder's `resources/` (a regular file,
+  2 MB at most, its bytes of that kind: `isInspectResourceBytes`), once per run; the header
+  names each by its address hidden as the snapshot's are (`hideResourceUrl`). A project with
   masks, or a runner's trace without snapshots, gets a `snapshot` that says why instead.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`

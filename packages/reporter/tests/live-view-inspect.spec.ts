@@ -30,13 +30,17 @@ const RUN = 46;
 const KEY = `pdl_${'i'.repeat(43)}`;
 const SECRET = 'S3cr3t!Pw-9x';
 const CARD = '4111111111111111';
+const CSRF = 'q8Zt3kPLm2xR';
+const LINK_TOKEN = 'rT5vB2nQ9wLk';
 const requireHere = createRequire(import.meta.url);
 
 const SHOP = `<!doctype html><html><head><meta charset="utf-8"><title>shop</title>
+<meta name="csrf-token" content="${CSRF}">
 <link rel="stylesheet" href="/app.css">
 <script src="/app.js"></script>
 </head><body>
-<img src="/logo.png" alt="logo"><img src="/icon.svg" alt="icon">
+<img src="/logo.png" alt="logo"><img src="/icon.svg" alt="icon"><img src="/fake.png" alt="fake">
+<a id="reset" href="/reset?token=${LINK_TOKEN}">Reset</a>
 <label>Password <input type="password" id="pw"></label>
 <label>Card <input autocomplete="cc-number" id="cc"></label>
 <button id="go" onclick="document.getElementById('out').textContent = document.getElementById('pw').value">Go</button>
@@ -63,6 +67,7 @@ const ASSETS: Record<string, { type: string; body: string | Buffer }> = {
   '/bg.png': { type: 'image/png', body: BG },
   '/icon.svg': { type: 'image/svg+xml', body: SVG },
   '/font.woff2': { type: 'font/woff2', body: Buffer.from('wOF2 not really a font') },
+  '/fake.png': { type: 'image/png', body: SVG },
 };
 
 const TRACED = (base: string) => `const { test } = require('../fixture.cjs');
@@ -317,7 +322,7 @@ describe('Inspect on the team’s live view, of a project the runner traces', ()
     expect(snapshots.every(({ message }) => message.test === 'traced')).toBe(true);
   });
 
-  it('sends each stylesheet, font and image a snapshot names once, never a script nor an SVG', () => {
+  it('sends each stylesheet, font and image a snapshot names once, never a script, an SVG nor bytes of another kind', () => {
     const resources = of('traced', 'resource').map(({ message }) => message.resource);
     const types = resources.map((resource) => resource.contentType).sort();
     expect(types).toEqual(['font/woff2', 'image/png', 'image/png', 'text/css', 'text/css']);
@@ -332,13 +337,17 @@ describe('Inspect on the team’s live view, of a project the runner traces', ()
       expect(one, asset).toBeDefined();
       expect(sent.has(one!.sha1), asset).toBe(true);
     }
-    expect(named.some((resource) => /\.(?:js|svg)$/.test(resource.url))).toBe(false);
+    expect(named.some((resource) => /\.(?:js|svg)$|\/fake\.png$/.test(resource.url))).toBe(false);
+    for (const data of sent.values())
+      expect(Buffer.from(data).toString('utf8').trimStart().startsWith('<')).toBe(false);
   });
 
-  it('never sends a secret the test typed or the page showed', () => {
+  it('never sends a secret the test typed or the page showed, nor a credential its markup holds', () => {
     const all = Buffer.concat(bodies);
     expect(all.includes(SECRET)).toBe(false);
     expect(all.includes(CARD)).toBe(false);
+    expect(all.includes(CSRF)).toBe(false);
+    expect(all.includes(LINK_TOKEN)).toBe(false);
     const out = snapshotsOf('traced').map(({ message }) => Buffer.from(message.data).toString('utf8'));
     expect(out.some((json) => json.includes('"id":"out"},"<hidden>"'))).toBe(true);
   });
