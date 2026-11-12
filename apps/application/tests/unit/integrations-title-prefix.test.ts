@@ -82,6 +82,12 @@ describe('prefixedTitle', () => {
     expect(over.endsWith('…')).toBe(true);
   });
 
+  test('a title that only begins with the same letters is still prefixed', () => {
+    expect(prefixedTitle('QA', 'QAuth fails')).toBe('QA QAuth fails');
+    expect(prefixedTitle('QA', 'QA fails')).toBe('QA fails');
+    expect(prefixedTitle('QA', 'QA')).toBe('QA');
+  });
+
   test('collapses the whitespace of the title it prefixes', () => {
     expect(prefixedTitle('QA:', 'Checkout\n  fails')).toBe('QA: Checkout fails');
   });
@@ -313,7 +319,7 @@ beforeAll(async () => {
   await db.insert(schema.users).values({ id: 7, username: 'robin', password: '', role: 'member', name: 'Robin Shaw' });
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
-  for (const id of [1, 2, 3, 4, 5, 6]) {
+  for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
     await db.insert(schema.testCases).values({ id, projectId: 1, title: `test ${id}`, filePath: 'tests/a.spec.ts' });
     await db.insert(schema.failureClusters).values({
       id,
@@ -484,5 +490,54 @@ describe('a description update of an issue a rule filed', () => {
     const after = sent.length;
     await enqueueDescriptionUpdate(dbc, { clusterId: 6, projectId: 1, reason: 'day:2026-11-05' });
     expect(updates(after).filter((f) => f.summary !== undefined)).toEqual([]);
+  });
+});
+
+describe('a description update of an issue filed before the filer was stored', () => {
+  /** Files a cluster's issue by a person, then makes its link read as an earlier version wrote it. */
+  async function fileAsBefore(clusterId: number, extra: Record<string, unknown>, keep: (meta: object) => object) {
+    await bind('[Piwi]');
+    expect((await file(clusterId, { filedBy: 'Robin Shaw', ...extra }))?.status).toBe('done');
+    const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, clusterId));
+    const { filedBy: _filedBy, ...rest } = link!.metadata as Record<string, unknown>;
+    await db
+      .update(schema.entityLinks)
+      .set({ metadata: keep(rest) as never })
+      .where(eq(schema.entityLinks.id, link!.id));
+    await db.update(schema.failureClusters).set({ occurrences: 9 }).where(eq(schema.failureClusters.id, clusterId));
+  }
+
+  const updatedBody = async (clusterId: number, reason: string): Promise<string> => {
+    const from = sent.length;
+    await enqueueDescriptionUpdate(dbc, { clusterId, projectId: 1, reason });
+    const put = sent.slice(from).find((s) => s.method === 'PUT');
+    expect(put).toBeTruthy();
+    return put!.body;
+  };
+
+  test('keeps the name of the author of the comment', async () => {
+    await fileAsBefore(7, { comment: 'It broke after the deploy' }, (meta) => meta);
+    const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, 7));
+    expect(link?.metadata).toMatchObject({ comment: { author: 'Robin Shaw' } });
+    expect(link?.metadata).not.toHaveProperty('filedBy');
+
+    const body = await updatedBody(7, 'day:2026-11-06');
+    expect(occurrences(body, 'Filed by Robin Shaw from Piwi.')).toBe(1);
+    expect(body).not.toContain('Filed from Piwi.');
+    expect(body).toContain('It broke after the deploy');
+  });
+
+  test('names the user the link was created by when there is no comment', async () => {
+    await fileAsBefore(8, {}, (meta) => meta);
+    const body = await updatedBody(8, 'day:2026-11-06');
+    expect(occurrences(body, 'Filed by Robin Shaw from Piwi.')).toBe(1);
+  });
+
+  test('names nobody when the filer cannot be found', async () => {
+    await fileAsBefore(9, {}, (meta) => meta);
+    await db.update(schema.entityLinks).set({ createdBy: null }).where(eq(schema.entityLinks.failureClusterId, 9));
+    const body = await updatedBody(9, 'day:2026-11-06');
+    expect(body).toContain('Filed from Piwi.');
+    expect(body).not.toContain('Robin Shaw');
   });
 });

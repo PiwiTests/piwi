@@ -33,8 +33,8 @@ export function resolveTitlePrefix(bindingPrefix: string | null | undefined, con
 
 /**
  * `title` behind `prefix`, within `max` characters: the title is cut, never the
- * prefix. A title that already starts with the prefix, and any title when there
- * is no prefix, comes back as it is.
+ * prefix. A title that is the prefix or starts with it and a space, and any
+ * title when there is no prefix, comes back as it is.
  */
 export function prefixedTitle(
   prefix: string | null | undefined,
@@ -42,7 +42,7 @@ export function prefixedTitle(
   max: number = TICKET_TITLE_MAX_LENGTH,
 ): string {
   const lead = normalizeTitlePrefix(prefix);
-  if (!lead || title.startsWith(lead)) return title;
+  if (!lead || title === lead || title.startsWith(`${lead} `)) return title;
   const line = title.replace(/\s+/g, ' ').trim();
   return `${lead} ${cutLine(line, max - lead.length - 1)}`;
 }
