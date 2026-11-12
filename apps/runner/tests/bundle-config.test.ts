@@ -39,6 +39,19 @@ describe("Piwi Runner's merged bundle config", () => {
     expect(runner.bundle.windows.nsis.installMode).toBe('currentUser');
   });
 
+  test("keeps none of the desktop app's upgrade ties: its MSI upgrade code and the packages it replaces", () => {
+    expect(desktop.bundle.windows.wix.upgradeCode).toBeTruthy();
+    expect(runner.bundle.windows.wix).not.toHaveProperty('upgradeCode');
+    expect(desktop.bundle.linux.deb.replaces).toEqual(['piwi-dashboard']);
+    for (const [format, keys] of [
+      ['deb', ['conflicts', 'replaces']],
+      ['rpm', ['conflicts', 'obsoletes']],
+    ] as const) {
+      expect(desktop.bundle.linux[format]).toMatchObject(Object.fromEntries(keys.map((k) => [k, ['piwi-dashboard']])));
+      for (const key of keys) expect(runner.bundle.linux?.[format] ?? {}).not.toHaveProperty(key);
+    }
+  });
+
   test('answers piwi-runner links alone, and the desktop app keeps piwi', () => {
     expect(desktop.plugins['deep-link'].desktop.schemes).toEqual(['piwi']);
     expect(runner.plugins['deep-link'].desktop.schemes).toEqual(['piwi-runner']);
@@ -47,5 +60,31 @@ describe("Piwi Runner's merged bundle config", () => {
   test('bundles the host and no file associations', () => {
     expect(runner.bundle.resources).toEqual(['resources/runner-host']);
     expect(runner.bundle).not.toHaveProperty('fileAssociations');
+  });
+});
+
+describe("Piwi Runner's own files", () => {
+  const libRs = fs.readFileSync(path.join(shell, 'src', 'lib.rs'), 'utf8');
+  const sidecar = /const NODE_SIDECAR: &str = if cfg!\(feature = "runner"\) \{ "([^"]+)" \} else \{ "([^"]+)" \};/.exec(
+    libRs,
+  );
+  const name = (bin: string) => path.posix.basename(bin);
+
+  test('bundles Node under a name of its own, the one the shell spawns', () => {
+    expect(sidecar).not.toBeNull();
+    const [, runnerName, desktopName] = sidecar!;
+    expect(runner.bundle.externalBin.map(name)).toEqual([runnerName]);
+    expect(desktop.bundle.externalBin.map(name)).toEqual([desktopName]);
+    // The Linux packages install each sidecar in /usr/bin, so the two apps' must differ.
+    expect(runnerName).not.toBe(desktopName);
+  });
+
+  test('takes its own icons, in the app and on the installers', () => {
+    const own = (file: string) => file.startsWith('icons-runner/');
+    expect(runner.bundle.icon.length).toBeGreaterThan(0);
+    expect(runner.bundle.icon.every(own)).toBe(true);
+    expect(desktop.bundle.icon.some(own)).toBe(false);
+    expect(own(runner.bundle.windows.nsis.installerIcon)).toBe(true);
+    expect(own(runner.bundle.windows.nsis.uninstallerIcon)).toBe(true);
   });
 });

@@ -24,13 +24,13 @@
 !define MUI_CUSTOMFUNCTION_GUIINIT PiwiReadSavedPort
 
 ; Taken by the welcome page, the first page the template declares.
-!define MUI_WELCOMEPAGE_TITLE "Welcome to Piwi Dashboard"
-!define MUI_WELCOMEPAGE_TEXT "Setup will install Piwi Dashboard for your account. It needs no administrator rights.$\r$\n$\r$\nThe dashboard runs on this computer and keeps your Playwright results here. It listens on 127.0.0.1 only, so nothing is exposed to your network.$\r$\n$\r$\nChange the port below only if another program already uses it. You can change it later on the app's Setup page."
+!define MUI_WELCOMEPAGE_TITLE "Welcome to Piwi Desktop"
+!define MUI_WELCOMEPAGE_TEXT "Setup will install Piwi Desktop for your account. It needs no administrator rights.$\r$\n$\r$\nThe dashboard runs on this computer and keeps your Playwright results here. It listens on 127.0.0.1 only, so nothing is exposed to your network.$\r$\n$\r$\nChange the port below only if another program already uses it. You can change it later on the app's Setup page."
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW PiwiWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE PiwiWelcomeLeave
 
 ; Taken by the finish page.
-!define MUI_FINISHPAGE_TITLE "Piwi Dashboard is installed"
+!define MUI_FINISHPAGE_TITLE "Piwi Desktop is installed"
 !define MUI_FINISHPAGE_TEXT "Open it to connect your first Playwright project: its Setup page walks you through it."
 !define MUI_FINISHPAGE_LINK "Read the desktop app guide"
 !define MUI_FINISHPAGE_LINK_LOCATION "https://piwitests.dev/features/desktop"
@@ -186,7 +186,7 @@ FunctionEnd
       ${IfNot} ${Errors}
         FileWrite $0 '{ "serverPort": $PiwiPort }$\r$\n'
         FileClose $0
-        DetailPrint "Piwi Dashboard will listen on port $PiwiPort."
+        DetailPrint "Piwi Desktop will listen on port $PiwiPort."
       ${EndIf}
       Pop $0
     ${EndIf}
@@ -196,22 +196,24 @@ FunctionEnd
 ; ---------------------------------------------------------------------------
 ; The server sidecar.
 ;
-; The app runs its server as a Node sidecar (`node.exe` beside the main binary)
-; that keeps the bundled native modules loaded — sharp's libvips DLLs among them.
-; Tauri's installer only stops the main binary, so a sidecar still running holds
-; those files locked and the copy fails with "Error opening file for writing".
-; That happens whenever the app stops without its quit cleanup: an update
-; started by a build whose updater leaves the sidecar running (0.37 and earlier,
-; see src/updates.rs), a kill from Task Manager, or the installer's own "close
-; the app" step.
+; The app runs its server as a Node sidecar (`piwi-desktop-node.exe` beside the
+; main binary, `node.exe` in the installs of the former product name) that keeps
+; the bundled native modules loaded — sharp's libvips DLLs among them. Tauri's
+; installer only stops the main binary, so a sidecar still running holds those
+; files locked and the copy fails with "Error opening file for writing". That
+; happens whenever the app stops without its quit cleanup: an update started by
+; a build whose updater leaves the sidecar running (0.37 and earlier, see
+; src/updates.rs), a kill from Task Manager, or the installer's own "close the
+; app" step.
 ;
 ; So before any file is written or removed: run that app check first (a stopped
 ; app cannot restart the sidecar behind us; the template's own check then finds
-; nothing), then stop the node.exe running from this install folder. Matched on
+; nothing), then stop the sidecar running from the install folder. Matched on
 ; its full path, never on the name alone, which would also kill the user's own
 ; Node processes.
 
-!macro PIWI_STOP_SIDECAR
+; Stops the sidecar `name`.exe running from `folder`.
+!macro PIWI_STOP_SIDECAR folder name
   Push $0
   ; The 64-bit PowerShell where there is one: the installer is a 32-bit process,
   ; and a 32-bit PowerShell cannot read the path of the 64-bit sidecar.
@@ -221,10 +223,90 @@ FunctionEnd
   ${EndIf}
   ; The folder travels in the environment rather than inside the command, so no
   ; install path (spaces, apostrophes, brackets) can break the quoting.
-  System::Call 'kernel32::SetEnvironmentVariable(t "PIWI_INSTDIR", t "$INSTDIR")'
-  nsExec::Exec `"$0" -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -eq ($$env:PIWI_INSTDIR + '\node.exe') } | Stop-Process -Force -PassThru | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue"`
+  System::Call 'kernel32::SetEnvironmentVariable(t "PIWI_INSTDIR", t "${folder}")'
+  nsExec::Exec `"$0" -NoProfile -NonInteractive -Command "Get-Process -Name ${name} -ErrorAction SilentlyContinue | Where-Object { $$_.Path -eq ($$env:PIWI_INSTDIR + '\${name}.exe') } | Stop-Process -Force -PassThru | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue"`
   Pop $0 ; nsExec's exit code — best-effort, a failure leaves the install as before
   Pop $0
+!macroend
+
+; ---------------------------------------------------------------------------
+; The install of the former product name.
+;
+; The app's earlier releases were installed as Piwi Dashboard: per user, in
+; their own folder (%LOCALAPPDATA%\Piwi Dashboard by default) and under their
+; own uninstall key, which this installer, named after the current product,
+; would leave beside the new install. So once the new files are in, the
+; install, by hand or by the updater, removes that one: its files, its
+; uninstall key, its own values in its registry key and its shortcuts. A failed
+; install therefore leaves it in place.
+;
+; Its uninstaller is not run: it would delete the file associations the new
+; install has just written and the start-on-login entry. That entry stays for
+; the app to move under the current name at its next start (`login_item.rs`).
+; The app's data lives under the `identifier`, which both names share, and is
+; left alone. The shortcuts the former install had are made again under the
+; current name when the updater runs the install, which makes none.
+
+!define PIWI_FORMER_NAME "Piwi Dashboard"
+!define PIWI_FORMER_UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PIWI_FORMER_NAME}"
+!define PIWI_FORMER_DIRKEY "Software\${MANUFACTURER}\${PIWI_FORMER_NAME}"
+
+; Tauri's app check and shortcut macros write $0 to $5 and $R0 to $R3, so what
+; the removal keeps across them is in variables of its own.
+Var PiwiFormerDir ; the folder the former install went in
+Var PiwiFormerStartMenu
+Var PiwiFormerDesktop
+
+!macro PIWI_REMOVE_FORMER_INSTALL
+  Push $0
+  ReadRegStr $PiwiFormerDir HKCU "${PIWI_FORMER_DIRKEY}" ""
+  ReadRegStr $0 HKCU "${PIWI_FORMER_UNINSTKEY}" "UninstallString"
+  ${If} $PiwiFormerDir != ""
+  ${AndIf} $0 != ""
+    DetailPrint "Removing ${PIWI_FORMER_NAME} from $PiwiFormerDir, keeping its data."
+    ${If} $PiwiFormerDir != $INSTDIR
+      !insertmacro CheckIfAppIsRunning "$PiwiFormerDir\${MAINBINARYNAME}.exe" "${PIWI_FORMER_NAME}"
+      !insertmacro PIWI_STOP_SIDECAR "$PiwiFormerDir" "node"
+      ; Only the files its installer wrote, so a folder of the user's choice
+      ; keeps everything else.
+      Delete "$PiwiFormerDir\${MAINBINARYNAME}.exe"
+      Delete "$PiwiFormerDir\node.exe"
+      Delete "$PiwiFormerDir\uninstall.exe"
+      RMDir /r "$PiwiFormerDir\resources\app-server"
+      RMDir "$PiwiFormerDir\resources"
+      RMDir "$PiwiFormerDir"
+    ${EndIf}
+    ${If} ${FileExists} "$SMPROGRAMS\${PIWI_FORMER_NAME}.lnk"
+      StrCpy $PiwiFormerStartMenu 1
+      Delete "$SMPROGRAMS\${PIWI_FORMER_NAME}.lnk"
+    ${EndIf}
+    ${If} ${FileExists} "$DESKTOP\${PIWI_FORMER_NAME}.lnk"
+      StrCpy $PiwiFormerDesktop 1
+      Delete "$DESKTOP\${PIWI_FORMER_NAME}.lnk"
+    ${EndIf}
+    DeleteRegKey HKCU "${PIWI_FORMER_UNINSTKEY}"
+    ; The key may also hold the values of a per-machine install of the former
+    ; name (the .msi), which stay.
+    DeleteRegValue HKCU "${PIWI_FORMER_DIRKEY}" ""
+    DeleteRegValue HKCU "${PIWI_FORMER_DIRKEY}" "Installer Language"
+    DeleteRegKey /ifempty HKCU "${PIWI_FORMER_DIRKEY}"
+  ${EndIf}
+  Pop $0
+!macroend
+
+!macro PIWI_RESTORE_FORMER_SHORTCUTS
+  ${If} $UpdateMode = 1
+    ${If} $PiwiFormerStartMenu == 1
+    ${AndIfNot} ${FileExists} "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+      CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+    ${EndIf}
+    ${If} $PiwiFormerDesktop == 1
+    ${AndIfNot} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
+      CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 ; ---------------------------------------------------------------------------
@@ -232,14 +314,16 @@ FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-  !insertmacro PIWI_STOP_SIDECAR
+  !insertmacro PIWI_STOP_SIDECAR "$INSTDIR" "piwi-desktop-node"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro PIWI_SAVE_PORT
+  !insertmacro PIWI_REMOVE_FORMER_INSTALL
+  !insertmacro PIWI_RESTORE_FORMER_SHORTCUTS
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-  !insertmacro PIWI_STOP_SIDECAR
+  !insertmacro PIWI_STOP_SIDECAR "$INSTDIR" "piwi-desktop-node"
 !macroend

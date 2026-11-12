@@ -720,6 +720,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-on-my-machine',
       },
       {
+        title: 'Piwi Runner',
+        summary:
+          'A small app that takes Run on my machine requests without the dashboard: it asks before every run, runs it in your folder and stays in the tray.',
+        needs: ['admin'],
+        where: 'Piwi Runner',
+        doc: 'features/piwi-runner',
+      },
+      {
         title: 'Browser extension',
         summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],

@@ -26,6 +26,12 @@ on:
 permissions:
   contents: read
 
+# The release's file names: "Piwi-Desktop_<version>_<arch>[-setup].<ext>", the name the app goes by, beside Piwi
+# Runner's "Piwi-Runner_…". Only the uploaded assets take it: the install folders and the macOS app bundle follow
+# tauri.conf.json's productName, and the MSI's upgrade code is pinned there (wix.upgradeCode). latest.json follows it.
+env:
+  ASSET_NAME_PATTERN: 'Piwi-Desktop_[version]_[arch][setup][ext]'
+
 jobs:
   desktop:
     name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
@@ -192,6 +198,7 @@ jobs:
           # it must NOT write the shared latest.json, the step near the end
           # publishes its manifest instead. Every other leg keeps the default.
           uploadUpdaterJson: ${{ matrix.bundles == 'nsis' && 'false' || 'true' }}
+          releaseAssetNamePattern: ${{ env.ASSET_NAME_PATTERN }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
           # Attach to the release release-please already made for this tag. Off a
           # tag releaseId is empty, so tauri-action just builds.
@@ -205,16 +212,16 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos
         run: |
-          app="Piwi Dashboard.app"
+          app="Piwi Desktop.app"
           codesign --verify --strict --verbose=2 "$app"
-          codesign --display --entitlements - "$app/Contents/MacOS/node"
+          codesign --display --entitlements - "$app/Contents/MacOS/piwi-desktop-node"
           data="$(mktemp -d)"
           mkdir -p "$data/storage"
           NODE_ENV=production NITRO_HOST=127.0.0.1 NITRO_PORT=3917 \
             PIWI_DATABASE_PATH="$data/piwi.db" PIWI_STORAGE_PATH="$data/storage" \
             PIWI_SECRET_KEY="$(openssl rand -hex 32)" PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" \
             NUXT_PUBLIC_DESKTOP=true \
-            "$app/Contents/MacOS/node" "$app/Contents/Resources/resources/app-server/.output/server/index.mjs" \
+            "$app/Contents/MacOS/piwi-desktop-node" "$app/Contents/Resources/resources/app-server/.output/server/index.mjs" \
             > "$data/server.log" 2>&1 &
           server=$!
           for _ in $(seq 1 120); do
@@ -257,18 +264,18 @@ jobs:
               return;
             }
             const signature = fs.readFileSync(path.join(bundleDir, sig), 'utf8');
-            // A release can carry another app's -setup.exe (Piwi Runner's, once it is published), so the installer
-            // is the asset named as the one this leg built: tauri-action's name for an upload, with every character
-            // outside [a-zA-Z0-9_-] a dot (ghAssetName in its utils.ts), or its label, which keeps the file's own name.
-            function findSetup(assets, built) {
-              const name = built.replace(/[^a-zA-Z0-9_-]/g, '.').replace(/\.\./g, '.');
-              return assets.find((a) => a.label === built || a.name === name);
-            }
+            // The installer is the asset the pattern names for this leg's file, as tauri-action renders it
+            // (getAssetName in its utils.ts): it uploads under that name and keeps it as the label.
             const { owner, repo } = context.repo;
             const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
             const built = sig.slice(0, -'.sig'.length);
-            const setup = findSetup(release.data.assets, built);
-            if (!setup) throw new Error(`tauri-action did not upload the NSIS installer ${built}`);
+            const expected = process.env.ASSET_NAME_PATTERN
+              .replace('[version]', tag.replace(/^v/, ''))
+              .replace('[arch]', 'x64')
+              .replace('[setup]', '-setup')
+              .replace('[ext]', '.exe');
+            const setup = release.data.assets.find((a) => a.label === expected || a.name === expected);
+            if (!setup) throw new Error(`tauri-action did not upload the NSIS installer ${built} as ${expected}`);
             const manifest = {
               version: tag.replace(/^v/, ''),
               pub_date: new Date().toISOString(),

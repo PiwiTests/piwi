@@ -275,7 +275,7 @@ pub async fn desktop_run_repro(
 
     let listed = app
         .shell()
-        .sidecar("node")
+        .sidecar(crate::NODE_SIDECAR)
         .map_err(|e| e.to_string())?
         .args([
             node_path(&cli),
@@ -316,7 +316,7 @@ pub async fn desktop_run_repro(
         repro_file_filter(&request_id),
     ];
     cmd_args.extend(args);
-    let sidecar = app.shell().sidecar("node").map_err(|e| e.to_string())?;
+    let sidecar = app.shell().sidecar(crate::NODE_SIDECAR).map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();

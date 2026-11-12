@@ -1,0 +1,61 @@
+---
+title: Piwi Runner
+description: 'Piwi Runner takes Run on my machine requests from a team instance without the dashboard: where to get it, how it installs beside the desktop app, and how it stays in the tray.'
+lang: en-US
+---
+
+# Piwi Runner
+
+<Needs admin />
+
+Piwi Runner takes [Run on my machine](./run-on-my-machine) requests from one team instance, without the dashboard:
+one window for the connection, the confirmation of each request and the runs it started. It is for a machine that only
+runs what the instance asks, where the [desktop app](./desktop) and its local dashboard are more than needed. It
+keeps no database and serves no dashboard.
+
+## Where it is
+
+Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
+`Piwi-Runner_…`:
+
+| OS | Installer |
+|----|-----------|
+| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
+| **macOS** 13.5+ (Apple silicon) | `.dmg` |
+| **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
+
+The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
+Windows, **More info** then **Run anyway** in SmartScreen. Piwi Runner has no in-app updates yet: install a new version
+over the old one, which keeps your connection and linked folders.
+
+## Beside the desktop app
+
+Piwi Runner and the desktop app install side by side, and neither installer replaces the other: each has its own
+name, install folder, Linux package, settings, linked folders and keychain entry. Connected to the same instance, both
+are listed in **Connected apps**, and a request goes to the one you pick on the page.
+
+## Connect it
+
+Its window connects to an instance the way the desktop app does: enter the instance's address and click **Connect**,
+then allow **Piwi Runner** on the instance's page with the code the window shows. Its key stays in the operating
+system's keychain. Each project's folder is linked on the first request for it. The rest, from the confirmation to
+**Stop**, is described in [Run on my machine](./run-on-my-machine#in-the-app).
+
+## In the tray
+
+Closing the window leaves Piwi Runner in the tray, still connected, so the instance can reach it; a request brings the
+window forward. The tray menu has:
+
+- **Open Piwi Runner** (a click on the icon does the same) and **Show logs**;
+- **Run in background**, on by default: turned off, closing the window quits the app, once you agree to stop the runs
+  still going;
+- **Start on login**, which launches it in the tray when you sign in;
+- **Quit Piwi Runner**, which stops its runs, after asking.
+
+Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
+taskbar.
+
+## Related
+
+- [Run on my machine](./run-on-my-machine): who may ask, how an administrator turns it on, and what a request holds
+- [Desktop app](./desktop): the other app that takes requests, with a local dashboard

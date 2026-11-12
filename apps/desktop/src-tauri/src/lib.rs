@@ -1,4 +1,4 @@
-// Piwi Dashboard desktop shell.
+// Piwi Desktop shell.
 //
 // This wraps the *same* Nuxt/Nitro server that ships as the Docker image and the
 // `@piwitests/server` npm package. On launch it:
@@ -13,6 +13,7 @@
 mod hub_env;
 mod ide_launcher;
 mod inspect;
+mod login_item;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
@@ -167,7 +168,77 @@ struct ShuttingDown(Arc<AtomicBool>);
 pub(crate) struct ServerGaveUp(AtomicBool);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
-struct RunInBackground(Arc<AtomicBool>);
+pub(crate) struct RunInBackground(Arc<AtomicBool>);
+
+impl RunInBackground {
+    /// The flag as last saved, or `default` until the person chose.
+    pub(crate) fn from_saved(app: &AppHandle, default: bool) -> Self {
+        let saved = app
+            .store(STORE_FILE)
+            .ok()
+            .and_then(|s| s.get(RUN_BG_KEY))
+            .and_then(|v| v.as_bool());
+        RunInBackground(Arc::new(AtomicBool::new(saved.unwrap_or(default))))
+    }
+
+    pub(crate) fn is_on(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// Turn Run in background on or off, and save the choice.
+pub(crate) fn set_run_in_background(app: &AppHandle, enabled: bool) {
+    if let Some(state) = app.try_state::<RunInBackground>() {
+        state.0.store(enabled, Ordering::SeqCst);
+    }
+    if let Ok(store) = app.store(STORE_FILE) {
+        store.set(RUN_BG_KEY, json!(enabled));
+        let _ = store.save();
+    }
+}
+
+/// The tray's Run in background and Start on login, checked as they stand.
+pub(crate) fn background_menu_items(
+    app: &tauri::App,
+) -> tauri::Result<(tauri::menu::CheckMenuItem<tauri::Wry>, tauri::menu::CheckMenuItem<tauri::Wry>)> {
+    let run_bg = app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
+    let run_bg_item = CheckMenuItemBuilder::with_id(TRAY_RUN_BG_ID, "Run in background")
+        .checked(run_bg)
+        .build(app)?;
+    let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, "Start on login")
+        .checked(app.autolaunch().is_enabled().unwrap_or(false))
+        .build(app)?;
+    Ok((run_bg_item, login_item))
+}
+
+/// Ids of the tray's Run in background and Start on login (`background_menu_items`).
+pub(crate) const TRAY_RUN_BG_ID: &str = "run_bg";
+pub(crate) const TRAY_START_ON_LOGIN_ID: &str = "autostart";
+
+/// Flip Run in background from the tray, and its check.
+pub(crate) fn toggle_run_in_background(app: &AppHandle, item: &tauri::menu::CheckMenuItem<tauri::Wry>) {
+    let next = !app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
+    set_run_in_background(app, next);
+    let _ = item.set_checked(next);
+}
+
+/// Flip Start on login from the tray, and check it as the system now holds it.
+pub(crate) fn toggle_start_on_login(app: &AppHandle, item: &tauri::menu::CheckMenuItem<tauri::Wry>) {
+    let mgr = app.autolaunch();
+    let enabled = mgr.is_enabled().unwrap_or(false);
+    let _ = if enabled { mgr.disable() } else { mgr.enable() };
+    let _ = item.set_checked(mgr.is_enabled().unwrap_or(!enabled));
+}
+
+/// Hide the main window instead of closing it while Run in background is on: the app stays in the tray. Returns
+/// whether it hid the window.
+pub(crate) fn hide_to_tray(window: &tauri::Window) -> bool {
+    let keep = window.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
+    if keep {
+        let _ = window.hide();
+    }
+    keep
+}
 
 /// Set once the user agrees to quit with local test runs still going. The
 /// confirmed close reaches the close handler as a fresh request, and this is
@@ -417,8 +488,8 @@ struct TrayStatusInner {
 }
 
 /// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
-/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
-/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`), and the installed product's
+/// (`productName` in `tauri.conf.json`), which the Start menu, the Dock and the app list show.
 pub(crate) const APP_NAME: &str = "Piwi Desktop";
 const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
@@ -1251,6 +1322,10 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
+/// The bundled Node's name (`externalBin`): `piwi-desktop-node` for the desktop app, `piwi-runner-node` for Piwi Runner
+/// (`runner.conf.json`). The Linux packages install it in `/usr/bin` under this name, so each app's has its own.
+pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "piwi-desktop-node" };
+
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
 /// Windows, Tauri's resource + app-data paths come back with the `\\?\` verbatim
 /// prefix, which Node's module resolver mishandles (it splits `\\?\C:\...` wrong
@@ -1386,10 +1461,10 @@ fn remove_other_versions(root: &Path, version: &str) {
 /// stream and child handle, or `None` when the sidecar is missing or the spawn
 /// fails (both logged to the server log; the readiness probe then times out).
 fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver<CommandEvent>, CommandChild)> {
-    let cmd = match app.shell().sidecar("node") {
+    let cmd = match app.shell().sidecar(NODE_SIDECAR) {
         Ok(cmd) => cmd,
         Err(e) => {
-            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            append_log(&cfg.log_path, &format!("sidecar '{NODE_SIDECAR}' not found: {e}"));
             return None;
         }
     };
@@ -1926,10 +2001,7 @@ struct ServiceSettings {
 
 #[tauri::command]
 fn desktop_get_service_settings(app: tauri::AppHandle) -> ServiceSettings {
-    let run_in_background = app
-        .try_state::<RunInBackground>()
-        .map(|s| s.0.load(Ordering::SeqCst))
-        .unwrap_or(false);
+    let run_in_background = app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
     let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
     ServiceSettings {
         run_in_background,
@@ -1966,13 +2038,7 @@ fn desktop_set_server_port(app: tauri::AppHandle, port: u16) -> Result<(), Strin
 
 #[tauri::command]
 fn desktop_set_run_in_background(app: tauri::AppHandle, enabled: bool) {
-    if let Some(state) = app.try_state::<RunInBackground>() {
-        state.0.store(enabled, Ordering::SeqCst);
-    }
-    if let Ok(store) = app.store(STORE_FILE) {
-        store.set(RUN_BG_KEY, json!(enabled));
-        let _ = store.save();
-    }
+    set_run_in_background(&app, enabled);
 }
 
 #[tauri::command]
@@ -2925,7 +2991,7 @@ fn quit_question(app_name: &str) -> String {
 
 /// Quit the app called `app_name`, asking first while local test runs are going:
 /// the tray's Quit and, on macOS, the app menu's.
-fn quit_after_confirming(app: &AppHandle, app_name: &str) {
+pub(crate) fn quit_after_confirming(app: &AppHandle, app_name: &str) {
     let handle = app.clone();
     confirm_stopping_local_runs(
         app,
@@ -3011,7 +3077,7 @@ fn run_app_menu_action(app: &AppHandle, app_name: &str, action: AppMenuAction) {
 
 /// Reveal the server log in the file manager, off the main thread: on Linux
 /// the reveal waits on the file manager over D-Bus.
-fn reveal_log(app: &AppHandle) {
+pub(crate) fn reveal_log(app: &AppHandle) {
     let Some(log) = app.try_state::<LogFile>().map(|l| l.0.clone()) else {
         return;
     };
@@ -3425,6 +3491,9 @@ pub fn run() {
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
             adopt_installer_choices(app.handle(), &app_data_dir, &log_path);
+            if let Some(line) = login_item::move_former_entry(app.handle()) {
+                append_log(&log_path, &line);
+            }
             let preferred_port = configured_port(app.handle());
             let port = pick_port(preferred_port);
             if port != preferred_port {
@@ -3460,14 +3529,7 @@ pub fn run() {
             }
 
             // --- run-in-background flag (persisted across launches) ---
-            let run_bg_initial = app
-                .store(STORE_FILE)
-                .ok()
-                .and_then(|s| s.get(RUN_BG_KEY))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let run_bg = Arc::new(AtomicBool::new(run_bg_initial));
-            app.manage(RunInBackground(run_bg.clone()));
+            app.manage(RunInBackground::from_saved(app.handle(), false));
 
             // Flipped on a deliberate quit so the server supervisor tells an
             // intentional shutdown apart from a crash worth restarting.
@@ -3618,13 +3680,7 @@ pub fn run() {
             let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
             let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
             let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
-            let bg_i = CheckMenuItemBuilder::with_id("run_bg", "Run in background")
-                .checked(run_bg_initial)
-                .build(app)?;
-            let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
-            let login_i = CheckMenuItemBuilder::with_id("autostart", "Start on login")
-                .checked(autostart_enabled)
-                .build(app)?;
+            let (bg_i, login_i) = background_menu_items(app)?;
             let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
 
             let menu = MenuBuilder::new(app)
@@ -3640,7 +3696,6 @@ pub fn run() {
             app.manage(TrayMenu(menu.clone()));
             app.manage(TrayRunItems::default());
 
-            let menu_run_bg = run_bg.clone();
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip(TRAY_TOOLTIP_IDLE)
@@ -3672,21 +3727,8 @@ pub fn run() {
                             .opener()
                             .open_path(dir.to_string_lossy().to_string(), None::<&str>);
                     }
-                    "run_bg" => {
-                        let next = !menu_run_bg.load(Ordering::SeqCst);
-                        menu_run_bg.store(next, Ordering::SeqCst);
-                        let _ = bg_i.set_checked(next);
-                        if let Ok(store) = app.store(STORE_FILE) {
-                            store.set(RUN_BG_KEY, json!(next));
-                            let _ = store.save();
-                        }
-                    }
-                    "autostart" => {
-                        let mgr = app.autolaunch();
-                        let enabled = mgr.is_enabled().unwrap_or(false);
-                        let _ = if enabled { mgr.disable() } else { mgr.enable() };
-                        let _ = login_i.set_checked(!enabled);
-                    }
+                    TRAY_RUN_BG_ID => toggle_run_in_background(app, &bg_i),
+                    TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app, &login_i),
                     "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
                     TRAY_SHOW_STOP_ID => {
                         if let Some(w) = app.get_webview_window("main") {
@@ -3826,13 +3868,8 @@ pub fn run() {
                 if window.label() != "main" {
                     return;
                 }
-                let keep = window
-                    .try_state::<RunInBackground>()
-                    .map(|s| s.0.load(Ordering::SeqCst))
-                    .unwrap_or(false);
-                if keep {
-                    // Hide to tray and keep the server running.
-                    let _ = window.hide();
+                // Hide to tray and keep the server running.
+                if hide_to_tray(window) {
                     api.prevent_close();
                     return;
                 }
@@ -3842,7 +3879,7 @@ pub fn run() {
             }
         })
         .build(context)
-        .expect("error while building the Piwi Dashboard app")
+        .expect("error while building the Piwi Desktop app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
             // Some ways out end the app with `Exit` alone: the Dock's Quit on

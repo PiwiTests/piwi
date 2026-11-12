@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Piwi Dashboard",
+  "productName": "Piwi Desktop",
   "version": "0.68.0",
   "identifier": "io.piwitests.dashboard",
   "build": {
@@ -44,7 +44,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/node"
+      "binaries/piwi-desktop-node"
     ],
     "fileAssociations": [
       {
@@ -83,7 +83,17 @@
     "category": "DeveloperTool",
     "copyright": "Copyright © 2025-present Fabien Ménager",
     "shortDescription": "A permanent home for your Playwright test results.",
-    "longDescription": "Piwi Dashboard keeps every Playwright run — traces, reports, flaky-test scoring, failure clustering, and locator healing — in a local dashboard that runs entirely on your machine. No server to set up, no data leaving your computer.",
+    "longDescription": "Piwi Desktop keeps every Playwright run — traces, reports, flaky-test scoring, failure clustering, and locator healing — in a local dashboard that runs entirely on your machine. No server to set up, no data leaving your computer.",
+    "linux": {
+      "deb": {
+        "conflicts": ["piwi-dashboard"],
+        "replaces": ["piwi-dashboard"]
+      },
+      "rpm": {
+        "conflicts": ["piwi-dashboard"],
+        "obsoletes": ["piwi-dashboard"]
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "13.5",
       "signingIdentity": "-",
@@ -91,6 +101,7 @@
     },
     "windows": {
       "wix": {
+        "upgradeCode": "33b25564-afa3-51ae-b5f2-bdd786914192",
         "language": "en-US",
         "bannerPath": "windows/msi-banner.bmp",
         "dialogImagePath": "windows/msi-dialog.bmp"

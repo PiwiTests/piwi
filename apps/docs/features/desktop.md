@@ -23,7 +23,8 @@ Everything binds to `127.0.0.1`.
 
 ## Where it is
 
-Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest):
+Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
+`Piwi-Desktop_…` (the `Piwi-Runner_…` files are [Piwi Runner](./piwi-runner)):
 
 | OS | Installer |
 |----|-----------|
@@ -127,7 +128,7 @@ gets the verdict and can share it on the team instance with its own key, which t
 
 ## Importing local files
 
-Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Dashboard**, and
+Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Desktop**, and
 pick the project: it imports as on the [import page](/guide/importing-runs), several traces forming one run. A
 [`.piwibug`](/reference/bug-report-file) becomes a [bug report](./bug-reports).
 
