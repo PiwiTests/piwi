@@ -230,8 +230,15 @@ lists the CI runs in progress of the projects it maps; in the editors, a running
 VS Code's worker panel and the JetBrains **Worker** tab, read-only (Watch alone: no Interact, input or pick), through
 one watch of the run the editor service opens on the instance with the editor's key (`piwi/ciWatch`, `piwi/ciFrame`),
 the live stream read with core's one reader, another lane of the run shown by a POST on the same watch, and its end
-said in the view (the run's end, the instance's, an error), with **Watch on the dashboard** beside it. The later
-phases are proposed. The bugs the analysis
+said in the view (the run's end, the instance's, an error), with **Watch on the dashboard** beside it. Built from
+P11's first wave, the protocol and its producers, the surfaces' rendering being its second: a lane view's layers beside
+its images (`@piwitests/core/live-layers`), each made only while a viewer asks and bounded, on the run channel and the
+hub (`layers`, `lane-layer`, `watch`'s `layers`) and on the live view (`view`'s `layers`, `page-event`, `text`, `thumb`,
+relayed to the watches that asked alone), carrying the call's log in a run Piwi may pause from Playwright's in-process
+instrumentation (open question 4), the page's events with its long-pending requests and the backend's logged errors,
+its text from the trace's ARIA files or a snapshot taken as asked, masked by `maskAriaSnapshot`, and the test's
+filmstrip, from the trace's images locally and from the view's own masked images, kept in the worker's memory, for the
+team. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -900,7 +907,9 @@ runs the performance check.
    developer opts in?
 3. Should piped runs attach unattended by default, or only with `PIWI_EDITOR=on`?
 4. Is the in-process instrumentation listener, Playwright's deepest internal, acceptable for the call log of pausable
-   runs, or should those show the call and the element's state only?
+   runs, or should those show the call and the element's state only? Answered: the listener, feature-checked,
+   synchronous and removed with its context, the call and the element's state alone where it is missing (a connected
+   browser); `_enable()` stays CI-only (built in P11).
 5. Should "this window's runs until I stop" expire after a time, or with a branch change? Answered: neither, it ends
    with the window (built in P9).
 6. **Ask to watch**: who may ask (any reader, or members only), is each side named to the other, and can a project
