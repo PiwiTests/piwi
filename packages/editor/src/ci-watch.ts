@@ -4,9 +4,10 @@
  * full at `CI_WATCH_SIZE`, its live messages read with `@piwitests/core/live-view`'s reader. Another lane of the same
  * run is shown on the same watch (`PiwiClient.changeLiveWatch`); a lane of another run, or of another instance or key,
  * is a new watch in its place. Each image goes to the client as it comes, one at a time, the newest alone waiting
- * (`FrameSender`), and nothing is kept. The watch ends as the client asks, as the run's session ends, as the instance
- * ends it, once it brings nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. Nothing
- * here reaches the run's workers: no control, input or pick.
+ * (`FrameSender`), and nothing is kept. An instance that has not answered the watch within `OPEN_MS` is refused, its
+ * request let go. The watch ends as the client asks, as the run's session ends, as the instance ends it, once it brings
+ * nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. Nothing here reaches the run's
+ * workers: no control, input or pick.
  */
 import {
   LIVE_STREAM_TYPE,
@@ -26,6 +27,8 @@ import type { CiFrame, CiSession, CiWatchParams, RunControlResult } from './prot
 export const CI_WATCH_SIZE = { width: 960, height: 600 };
 /** A watch that brings nothing for this long has lost the instance, which sends a heartbeat every 15 s. */
 const IDLE_MS = 45_000;
+/** How long the instance may take to answer a new watch: within the 20 s the JetBrains plugin waits for an answer. */
+const OPEN_MS = 15_000;
 /** The longest refusal of the instance passed on in its own words. */
 const MAX_REFUSAL = 300;
 /** The statuses of a run whose session the service still follows. */
@@ -56,6 +59,8 @@ export interface CiWatchOptions {
   send: (frame: CiFrame) => Promise<void>;
   /** How long a watch may bring nothing, the instance's heartbeat included, before it ends. */
   idleMs?: number;
+  /** How long the instance may take to answer a new watch before it is refused. */
+  openMs?: number;
 }
 
 /** A lane of a CI run, as the client names it (`lane` from 1, as `CiTest.lane`), and the worker that ran there last. */
@@ -140,6 +145,7 @@ async function refusal(response: Response): Promise<string> {
 }
 
 const SUPERSEDED: RunControlResult = { ok: false, message: 'Another CI watch took the place of this one.' };
+const LATE = 'The instance did not open the watch in time: try again in a moment.';
 
 /** One per service: the client's one watch of a CI lane. */
 export class CiWatch {
@@ -246,34 +252,44 @@ export class CiWatch {
       height: String(CI_WATCH_SIZE.height),
     });
     if (lane.shard !== null) query.set('shard', String(lane.shard));
-    let response: Response;
+    let late = false;
+    const wait = setTimeout(() => {
+      late = true;
+      watch.abort.abort();
+    }, this.options.openMs ?? OPEN_MS);
+    wait.unref?.();
     try {
-      response = await client.liveWatch(lane.runId, query, watch.abort.signal);
-    } catch {
-      if (this.current !== watch) return SUPERSEDED;
-      this.stop();
-      return { ok: false, message: 'The instance did not answer.' };
+      let response: Response;
+      try {
+        response = await client.liveWatch(lane.runId, query, watch.abort.signal);
+      } catch {
+        if (this.current !== watch) return SUPERSEDED;
+        this.stop();
+        return { ok: false, message: late ? LATE : 'The instance did not answer.' };
+      }
+      if (this.current !== watch) {
+        await response.body?.cancel().catch(() => {});
+        return SUPERSEDED;
+      }
+      if (!response.ok || !response.body) {
+        // Read before the watch's signal aborts the body.
+        const message = await refusal(response);
+        if (this.current !== watch) return SUPERSEDED;
+        this.stop();
+        return { ok: false, message };
+      }
+      if (!response.headers.get('content-type')?.startsWith(LIVE_STREAM_TYPE)) {
+        this.stop();
+        return {
+          ok: false,
+          message: 'This instance’s live view is not one the editor reads: watch the test on the dashboard.',
+        };
+      }
+      void this.read(watch, response.body);
+      return { ok: true, message: `You watch ${laneName(lane)} of CI run #${lane.runId}.` };
+    } finally {
+      clearTimeout(wait);
     }
-    if (this.current !== watch) {
-      await response.body?.cancel().catch(() => {});
-      return SUPERSEDED;
-    }
-    if (!response.ok || !response.body) {
-      // Read before the watch's signal aborts the body.
-      const message = await refusal(response);
-      if (this.current !== watch) return SUPERSEDED;
-      this.stop();
-      return { ok: false, message };
-    }
-    if (!response.headers.get('content-type')?.startsWith(LIVE_STREAM_TYPE)) {
-      this.stop();
-      return {
-        ok: false,
-        message: 'This instance’s live view is not one the editor reads: watch the test on the dashboard.',
-      };
-    }
-    void this.read(watch, response.body);
-    return { ok: true, message: `You watch ${laneName(lane)} of CI run #${lane.runId}.` };
   }
 
   /** Show another lane of the run on the watch open: its images go from now on, the lane before's no more. */

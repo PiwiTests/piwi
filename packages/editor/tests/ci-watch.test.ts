@@ -40,8 +40,12 @@ interface Opened {
 function stubInstance() {
   const opened: Opened[] = [];
   const posts: Array<{ headers: http.IncomingHttpHeaders; body: Record<string, unknown> }> = [];
+  /** The watches the stub held without answering, and whether each request closed. */
+  const held: Array<{ closed: boolean }> = [];
   const state = {
     refuse: null as { status: number; body: unknown; type?: string } | null,
+    /** The next watches get no answer, not even their headers. */
+    hold: false,
     changeStatus: 200,
   };
   const server = http.createServer((req, res) => {
@@ -60,6 +64,12 @@ function stubInstance() {
           JSON.stringify(state.changeStatus === 200 ? { success: true } : { message: 'No such watch of this run' }),
         );
       });
+      return;
+    }
+    if (state.hold) {
+      const entry = { closed: false };
+      req.on('close', () => (entry.closed = true));
+      held.push(entry);
       return;
     }
     if (state.refuse) {
@@ -83,7 +93,7 @@ function stubInstance() {
     res.write(encodeLiveMessage({ type: 'hello', watch: WATCH_ID }));
     opened.push(entry);
   });
-  return { server, opened, posts, state };
+  return { server, opened, posts, held, state };
 }
 
 describe('watching a CI run’s lane on the instance', () => {
@@ -101,7 +111,9 @@ describe('watching a CI run’s lane on the instance', () => {
   });
 
   /** A watch of the stub's run 78 through the CI sessions' target, with its lanes' workers (`lane` → worker). */
-  async function start(options: { watchable?: boolean; idleMs?: number; workers?: Record<number, number> } = {}) {
+  async function start(
+    options: { watchable?: boolean; idleMs?: number; openMs?: number; workers?: Record<number, number> } = {},
+  ) {
     stub = stubInstance();
     await new Promise<void>((r) => stub!.server.listen(0, '127.0.0.1', r));
     const port = (stub.server.address() as AddressInfo).port;
@@ -124,6 +136,7 @@ describe('watching a CI run’s lane on the instance', () => {
         frames.push(frame);
       },
       idleMs: options.idleMs,
+      openMs: options.openMs,
     });
     return { frames, ended, asked, stub: stub!, watch: watch! };
   }
@@ -269,6 +282,25 @@ describe('watching a CI run’s lane on the instance', () => {
       ok: false,
       message: 'This instance’s live view is not one the editor reads: watch the test on the dashboard.',
     });
+  });
+
+  test('refuses a watch the instance does not answer in time, and lets its request go', async () => {
+    const { stub, watch } = await start({ openMs: 150 });
+    stub.state.hold = true;
+    const asked = Date.now();
+    expect(await watch.watch({ ...lane2, on: true })).toEqual({
+      ok: false,
+      message: 'The instance did not open the watch in time: try again in a moment.',
+    });
+    expect(Date.now() - asked).toBeLessThan(1_000);
+    await waitFor(() => stub.held[0]?.closed);
+
+    // Off while the instance has not answered lets the request go at once.
+    const late = watch.watch({ ...lane2, on: true });
+    await waitFor(() => stub.held[1]);
+    await watch.watch({ ...lane2, on: false });
+    expect(await late).toEqual({ ok: false, message: 'Another CI watch took the place of this one.' });
+    await waitFor(() => stub.held[1]!.closed);
   });
 
   test('ends saying why: the session ends, the instance closes it, ends its view or stops answering', async () => {

@@ -567,7 +567,9 @@ watches per person).
   the instance, for a run no session follows, one that is not `watchable`, and a lane no test ran in yet; then with the
   instance's own words (a project with the live view off, a worker not in it, a run no longer live, too many watches),
   and for an answer that is not `application/vnd.piwi.live-stream` (an older instance: the clients offer the
-  dashboard). The answer comes once the instance opened the stream.
+  dashboard). The answer comes once the instance opened the stream; an instance that has not within 15 s
+  (`OPEN_MS`, under the 20 s the JetBrains plugin waits) is refused, its request let go. A client that gives up on
+  an unanswered `on: true` sends `on: false`.
 - **One at a time.** Another lane of the same run, instance and key is shown on the open watch by a POST naming it
   (`PiwiClient.changeLiveWatch`: `watch`, `focus`, the size); any other lane is a new watch in its place. A refused
   change ends the watch.
