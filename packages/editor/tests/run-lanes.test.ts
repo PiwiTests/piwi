@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import type * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import type { LaneLayer } from '@piwitests/core/live-layers';
@@ -19,7 +20,7 @@ import {
   type HubSession,
 } from '@piwitests/core/run-hub';
 import { ClientLaneView } from '../src/client-page-view';
-import type { LaneFrame, RunSession } from '../src/protocol';
+import type { LaneFrame, RunningLine, RunSession } from '../src/protocol';
 import { RunSessions, type LaneViewFrame, type LaneViewLayer, type Viewer } from '../src/run-sessions';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
@@ -154,6 +155,26 @@ const laneFrame = (test: string, stop: number | null, data = '/9j/AA=='): RunToH
   width: 800,
   height: 600,
   data,
+});
+
+/** A call log of the lane's test: the call `title` at line `line` of its spec, running unless said. */
+const callLogOf = (title: string, line: number, status: 'running' | 'passed' | 'failed' = 'running') => ({
+  id: `call@${line}`,
+  call: { title, file: 'tests/a.spec.ts', line },
+  status,
+  lines: [],
+  point: null,
+  target: null,
+  viewport: null,
+  ms: 10,
+  error: null,
+});
+
+const callLog = (test: string, title: string, line: number, status?: 'running' | 'passed' | 'failed'): RunToHub => ({
+  type: 'lane-layer',
+  test,
+  layer: 'calls',
+  log: callLogOf(title, line, status),
 });
 
 /** The worker stops at `stop`, headless, before a click of its test. */
@@ -607,6 +628,100 @@ describe('a lane the editor client watches', () => {
     expect(texts()).toHaveLength(1);
   });
 
+  test('tells the running call’s line to a client that marks it, and that it goes at a stop, the test’s end and the run’s', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const lines: RunningLine[] = [];
+    const told: LaneViewLayer[] = [];
+    const client = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async (layer) => void told.push(layer),
+      async (line) => void lines.push(line),
+      () => true,
+    );
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    await watch(w, client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }));
+    // The call log is asked for the line, though the client shows no call log.
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+    w.read(callLog('t0', "Click getByRole('button')", 7));
+    w.read(callLog('t0', "Click getByRole('button')", 7, 'passed'));
+    const at = { ref: 'ed-1', lane: 0, worker: 0 };
+    const uri = 'file:///work/shop/tests/a.spec.ts';
+    expect(lines).toEqual([{ ...at, call: { test: 't0', title: "Click getByRole('button')", uri, line: 6 } }]);
+    expect(told).toEqual([]);
+    w.read(callLog('t0', "Fill getByLabel('Name')", 9));
+    expect(last(lines)).toEqual({ ...at, call: { test: 't0', title: "Fill getByLabel('Name')", uri, line: 8 } });
+    // A stop has a mark of its own: the line goes, and a call log heard at the stop brings none back.
+    stopAt(w, 1);
+    client.changed();
+    expect(last(lines)).toEqual({ ...at, call: null });
+    w.read(callLog('t0', 'Click', 4));
+    expect(last(lines)).toEqual({ ...at, call: null });
+    w.read({ type: 'running', stop: 1 });
+    w.read(callLog('t0', 'Click', 5));
+    expect(last(lines)).toMatchObject({ call: { line: 4 } });
+    // A call with no place in the user's code names no line.
+    w.read({
+      type: 'lane-layer',
+      test: 't0',
+      layer: 'calls',
+      log: { ...callLogOf('Expect', 5), call: { title: 'Expect', file: null, line: null } },
+    });
+    expect(last(lines)).toEqual({ ...at, call: null });
+    w.read(callLog('t0', 'Click', 6));
+    // The test's end takes it, and a late call log of that test brings none back.
+    w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+    client.changed();
+    expect(last(lines)).toEqual({ ...at, call: null });
+    const count = lines.length;
+    w.read(callLog('t0', 'Click', 6));
+    expect(lines).toHaveLength(count);
+    // The next test's call, then the run's end.
+    w.begin();
+    w.read(callLog('t0', 'Goto', 2));
+    expect(last(lines)).toMatchObject({ call: { line: 1 } });
+    sessions.commandEnded('ed-1');
+    client.changed();
+    expect(last(lines)).toEqual({ ...at, call: null });
+  });
+
+  test('tells no running line to a client that does not mark it, and none once it stops watching', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const lines: RunningLine[] = [];
+    const plain = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async () => {},
+      async (line) => void lines.push(line),
+    );
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    await watch(w, plain.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }));
+    expect(last(layersHeard())).toEqual(['events']);
+    w.read(callLog('t0', 'Click', 7));
+    expect(lines).toEqual([]);
+    plain.dispose();
+
+    const marks = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async () => {},
+      async (line) => void lines.push(line),
+      () => true,
+    );
+    await watch(w, marks.watch({ ref: 'ed-1', lane: 0, on: true }));
+    w.read(callLog('t0', 'Click', 7));
+    expect(lines).toHaveLength(1);
+    marks.dispose();
+    expect(last(lines)).toEqual({ ref: 'ed-1', lane: 0, worker: 0, call: null });
+    w.read(callLog('t0', 'Click', 8));
+    expect(lines).toHaveLength(2);
+  });
+
   test('watches one lane at a time, and ends with the run', async () => {
     const { sessions, join } = harness();
     const first = join(0, 0);
@@ -752,6 +867,83 @@ describe('a lane’s layers the editor client asks for, through the language ser
       expect(layers).toHaveLength(1);
     } finally {
       worker.socket.destroy();
+    }
+  });
+});
+
+describe('the running line, through the language server', () => {
+  let dir = '';
+  let marks: Service;
+  let plain: Service;
+
+  beforeAll(async () => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-running-line-lsp-')));
+    writeRunWorkspace(dir);
+    marks = await service(dir, true, {}, { runningLine: true });
+    plain = await service(dir, true);
+  });
+
+  afterAll(() => {
+    marks?.stop();
+    plain?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function watched(svc: Service, lines: RunningLine[]) {
+    svc.client.onNotification('piwi/runningLine', (line: RunningLine) => void lines.push(line));
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane', 'layers'],
+    });
+    worker.begin();
+    await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
+    const watching = svc.client.sendRequest('piwi/laneView', { ref, lane: 0, on: true, layers: ['events'] });
+    const asked = await worker.next('request');
+    worker.send({ type: 'answer', request: asked.request, what: 'view-lane', value: { ok: true, message: 'On.' } });
+    await watching;
+    const layers = await worker.next('layers');
+    return { ref, worker, layers };
+  }
+
+  test('goes to a client that marks it, as `piwi/runningLine`, and to no other', async () => {
+    const lines: RunningLine[] = [];
+    const { ref, worker, layers } = await watched(marks, lines);
+    try {
+      expect(layers).toEqual({ type: 'layers', layers: ['calls', 'events'] });
+      const test = marks.latest(ref)!.workers[0]!.test!.id;
+      worker.send(callLog(test, 'Click', 4));
+      expect(await waitFor(() => last(lines))).toEqual({
+        ref,
+        lane: 0,
+        worker: 0,
+        call: { test, title: 'Click', uri: pathToFileURL(path.join(dir, 'tests/a.spec.ts')).href, line: 3 },
+      });
+      await marks.client.sendRequest('piwi/laneView', { ref, lane: 0, on: false });
+      expect(await waitFor(() => (last(lines)?.call === null ? last(lines) : undefined))).toMatchObject({ ref });
+    } finally {
+      worker.socket.destroy();
+    }
+
+    const none: RunningLine[] = [];
+    const other = await watched(plain, none);
+    try {
+      expect(other.layers).toEqual({ type: 'layers', layers: ['events'] });
+      other.worker.send(callLog(plain.latest(other.ref)!.workers[0]!.test!.id, 'Click', 4));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(none).toEqual([]);
+    } finally {
+      other.worker.socket.destroy();
     }
   });
 });

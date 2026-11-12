@@ -222,13 +222,16 @@ the custom messages of `src/protocol.ts`:
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
-  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
+  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
+  `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
 another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
-agent (`piwi/startRun`), and `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
+agent (`piwi/startRun`), `runningLine` when it marks the line of the call the lane it watches is in
+(`piwi/runningLine`, [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)), and
+`agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
 requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
 (`RunControlResult`) refuses a run the client did not start; and `piwi/startRun`, whose answer says whether the client
 started the run.
@@ -817,6 +820,18 @@ worker's last one waits for its answer, or within `1000 / LANE_TEXTS_PER_SECOND`
 was: the worker hears no request of it. `layers` that list `text` anew count as an ask, which the worker takes as it
 hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
 send them.
+
+**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), the lane view asks the
+lane's call log (`calls`) beside the layers the client names, and tells the call the lane's running test is in as
+`piwi/runningLine` (`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and
+its place as a file URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits
+since the run started). It goes (`call: null`) as the test ends or stops (a stop has a mark of its own), for a call
+that names no place in the user's code, as the watch ends and as the run does; a call log of a test the lane no
+longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, one lane at a
+time: the line of the lane watched before goes first. The call log reaches the client as `piwi/laneLayer` only when
+its layers name it. A client without the option hears none, and a service that predates it sends none: the client
+then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
+`events` layer of the same lane.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
