@@ -380,6 +380,31 @@ function shrink(image: Image, width: number, height: number): Image {
   return { width, height, data };
 }
 
+/**
+ * A small image of `data`, a JPEG the view already masked, within `width` by `height` at `quality`, for a filmstrip:
+ * scaled down with the `jpeg-js` of Playwright, else the image as it is; null when it is no JPEG, or none smaller than
+ * `maxBytes` comes of it.
+ */
+export function thumbnailOf(
+  data: Buffer,
+  fit: { width: number; height: number; quality: number; maxBytes: number },
+): { data: Buffer; width: number; height: number } | null {
+  const size = jpegSize(data);
+  if (!size) return null;
+  const jpeg = jpegCodec();
+  const scale = Math.min(1, fit.width / size.width, fit.height / size.height);
+  if (!jpeg || scale === 1) return data.length <= fit.maxBytes ? { data, ...size } : null;
+  try {
+    const image = jpeg.decode(data, { useTArray: true, formatAsRGBA: true });
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const small = jpeg.encode(shrink(image, width, height), fit.quality).data;
+    return small.length <= fit.maxBytes ? { data: small, width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `frame` with `boxes` painted over, at most `size` and at `quality`. */
 function paintBoxes(
   jpeg: JpegJs,

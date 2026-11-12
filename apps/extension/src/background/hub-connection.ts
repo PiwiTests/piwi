@@ -1,7 +1,8 @@
 /**
  * One connection to an editor service's hub (`@piwitests/core/run-hub`), from the background worker alone: the
  * WebSocket the editor's live endpoint named, `hello` with its token, `subscribe` once welcomed, then each run as the
- * hub pushes it, what each code written at a stop came to, and the frames of the live views and lanes it watches.
+ * hub pushes it, what each code written at a stop came to, the frames of the live views and lanes it watches, and the
+ * layers of those lanes it asked for.
  * Every message is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a newer hub's
  * would be. A command waits for the answer of its `id`, and is answered by the worker itself when the connection
  * closes or the hub stays silent. The hub sends `keepalive` every
@@ -17,6 +18,7 @@ import {
   type HubFrameRefusal,
   type HubLaneFrameMessage,
   type HubLaneFrameRefusal,
+  type HubLaneLayerMessage,
   type HubSession,
   type HubWelcome,
   type LiveHub,
@@ -76,6 +78,8 @@ export interface HubConnectionEvents {
   frame(frame: HubFrameMessage | HubFrameRefusal): void;
   /** A frame of a lane the connection watches (`watch`), or why none comes. */
   laneFrame(frame: HubLaneFrameMessage | HubLaneFrameRefusal): void;
+  /** A layer of a lane the connection watches and asked for (`watch`'s `layers`). */
+  laneLayer(layer: HubLaneLayerMessage): void;
   /** The other live hubs of the machine, as the hub names them each time they change: no token. */
   peers(hubs: PeerHub[]): void;
   /** The connection closed by itself; `sessions` still holds the runs it had. */
@@ -206,6 +210,8 @@ export class HubConnection {
         return this.events.frame(message);
       case 'lane-frame':
         return this.events.laneFrame(message);
+      case 'lane-layer':
+        return this.events.laneLayer(message);
       case 'peers':
         return this.events.peers(message.hubs);
       case 'session': {

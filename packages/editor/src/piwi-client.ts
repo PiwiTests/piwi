@@ -15,6 +15,7 @@ import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locato
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
+import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
 import type { TimeoutAdvice } from './analysis.js';
 import { instanceFetch } from './http.js';
 
@@ -611,6 +612,33 @@ export class PiwiClient {
   /** One run's events (`GET /api/test-runs/:id/stream`), until it ends. */
   runEvents(runId: number, signal: AbortSignal): Promise<Response> {
     return this.stream(`/api/test-runs/${runId}/stream`, signal);
+  }
+
+  /**
+   * A watch of a live run (`GET /api/test-runs/:id/live-view/watch`), showing what `query` asks: a response whose body
+   * is a stream of live messages, open until the instance ends it or `signal` aborts.
+   */
+  liveWatch(runId: number, query: URLSearchParams, signal: AbortSignal): Promise<Response> {
+    return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/watch?${query}`, {
+      headers: {
+        Accept: LIVE_STREAM_TYPE,
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      signal,
+    });
+  }
+
+  /** Change what a watch of a live run shows (`POST /api/test-runs/:id/live-view/watch`): the instance's answer. */
+  changeLiveWatch(runId: number, body: Record<string, unknown>): Promise<Response> {
+    return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/watch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
   }
 
   /** A server-sent events stream, open until it ends or `signal` aborts. */

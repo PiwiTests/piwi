@@ -27,6 +27,33 @@ stops it before its next call too. It needs `@piwitests/reporter` newer than 0.6
 Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
 workers to choose from, the editor asks which.
 
+## A CI run of your branch
+
+A CI run of the branch your workspace reads or has checked out shows beside your own runs while it runs, read-only:
+nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
+
+- **VS Code**: the **CI Runs** view of the Piwi panel lists it as `CI run #78`, its branch and progress beside it,
+  then **Open run #78** and its tests: those running, then the latest that ended, failures first. A running test
+  opens the call it is at, else its spec.
+- **JetBrains IDEs**: the **CI Run** tab of the Piwi tool window, added while one runs, lists the same rows; a double
+  click opens one.
+- **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
+  Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
+- **Piwi Picker's Runs window** lists the CI runs in progress of the projects your
+  [connection](./extension-connection) maps, through that instance, with **Open**.
+- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane in the
+  editor, read-only: the VS Code worker panel or the JetBrains **Worker** tab, named `CI run #78 · worker 2`, with
+  **Watch** alone, no **Interact** and no pick. It follows the lane through its next tests, and ends with the run, as
+  you hide or close the view, or as the instance closes it, saying why.
+- **Watch on the dashboard**, beside it, opens the lane's view on the run's page: the choice where the editor cannot
+  show it (an older instance, a refused **Watch**, which offers it).
+
+The editor follows the two newest CI runs of a branch through the connection to the instance it already holds, and
+Piwi Picker reads the list every 15 seconds while its Runs window is open. While the editor follows a run, the run's
+reporter streams the call each test is at. A CI lane's images come from the team instance, read with your editor's
+key: the CI worker paints over the same fields before they leave it, the editor service keeps none, and the watch
+counts among the instance's watches of the run for the key's owner, as a dashboard tab does.
+
 ## What you see
 
 Each view names the worker by its slot in the run (`Worker 2`) and says what it does: its running test, the call a Pause waits in, where it
@@ -36,6 +63,20 @@ page that does not change sends no new image.
 
 Watching pauses while the view is out of sight (another tab in front of an editor's panel or tab, a minimized Runs
 window) and starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
+
+## Beside the image
+
+Under the image, the editor's view shows what the pixels cannot, a CI run's lane included:
+
+- **Why it waits**: the call the test is in, how long it has run, how many elements its locator matches and whether
+  the first is enabled, and the last lines of Playwright's log.
+- **Events**: console and uncaught errors, failed requests, requests pending long (`POST /api/checkout pending 17 s`)
+  and the errors the backend logged, newest first.
+- **Text**: the page as roles and names, its secret fields hidden. Find searches it.
+- **Filmstrip**: one image per call the test finished; click one to see it larger.
+
+The text and the filmstrip are read only while open. The view says when an older reporter, or team instance, may send
+none of them.
 
 ## Interact
 
@@ -58,7 +99,8 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 
 ## Limits
 
-- **One worker per editor.** The panel or tab watches one worker: watching another moves it there.
+- **One worker per editor.** The panel or tab watches one worker, a CI run's lane included: watching another moves it
+  there.
 - **The test's `page`.** A popup or a second page the test opens is not shown. A download a click on the view starts
   and a dialog the page opens go to the test as its own would: Playwright deletes the download with the test's
   context, and dismisses the dialog unless the test handles it.
@@ -75,3 +117,4 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 - [Pause and step from the editor](./editor-run-control): the controls and the paused page, in the editor.
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts, and its tray.
 - [Live view of a run](./live-view): a CI run's or a shared run's page, on the team instance.
+- [Runs from the editor](./editor-runs): your own runs, and the status bar that counts a CI run of your branch.

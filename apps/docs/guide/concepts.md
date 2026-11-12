@@ -244,6 +244,12 @@ the `afterEach` hooks. The test's duration leaves the time paused out, and every
 dashboard's timelines draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it
 out.
 
+### CI position
+
+**The call a running test of a CI run is at, in your code:** a plain mark at the end of its line in the editors,
+read-only. Never a stop: nothing waits there, and no tool answers it
+([A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch)).
+
 ### Hold failures
 
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
@@ -271,7 +277,9 @@ person's Resume, Step and Finish always answer the stop, and the stop a person's
 tools that watch that page (an editor's view, the desktop app's window, Piwi Picker's Runs window), and to the team
 instance while the run is shared live; nothing on your machine keeps them. **Share live** lets a teammate watch a run on
 your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
-being shared ([Live view of a run](/features/live-view)).
+being shared ([Live view of a run](/features/live-view)). **Watch all** shows every worker of such a run at once, a
+tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped
+([Watch all workers](/features/watch-all)).
 
 ### Verification
 

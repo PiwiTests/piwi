@@ -316,6 +316,19 @@
         font-weight: 600;
         margin-right: 4px;
       }
+      /* The CI runs in progress, under the runs the hubs follow: read-only, a heading above them and a note below. */
+      .ci-heading {
+        margin: 4px 0 8px;
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: none;
+      }
+      .ci-run .run-progress {
+        border-bottom: 0;
+      }
+      .ci-note {
+        margin: 0 0 12px;
+      }
       /* Hold failures, and Pause all or Resume all, on one row under the run's name. */
       .run-bar {
         display: flex;
@@ -595,6 +608,155 @@
         padding-left: 6px;
         background: #374151;
       }
+      /*
+       * A watched lane's layers, under its page: why its call waits, its page's events, the page's text and the
+       * test's filmstrip, each a section with its heading.
+       */
+      .layers {
+        display: grid;
+        gap: 10px;
+      }
+      .layer {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .layer-title {
+        margin: 0;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .layer p,
+      .layer ul {
+        margin: 0;
+      }
+      .layer-empty {
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .layer-call {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .layer-call .place {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .layer-state {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--running);
+      }
+      .layer-state[data-tone='passed'] {
+        color: var(--ok);
+      }
+      .layer-state[data-tone='failed'],
+      .layer-error {
+        color: var(--error);
+      }
+      .layer-error {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      /* The call's log and the page's text: their own lines, scrolled within the window's width. */
+      .layer-log,
+      .layer-text {
+        margin: 0;
+        max-height: 160px;
+        overflow: auto;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 15px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .layer-text {
+        max-height: 240px;
+      }
+      .layer-text:focus {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: -2px;
+      }
+      /* The page's events, newest first: what each is in its tone, then what it says. */
+      .layer-events {
+        display: grid;
+        gap: 2px;
+        padding: 0;
+        list-style: none;
+        max-height: 180px;
+        overflow: auto;
+        font-size: 11.5px;
+      }
+      .layer-event {
+        overflow-wrap: anywhere;
+      }
+      .layer-event .event-label {
+        font-weight: 600;
+        color: var(--running);
+      }
+      .layer-event[data-tone='error'] .event-label {
+        color: var(--error);
+      }
+      .layer-event[data-tone='warning'] .event-label,
+      .layer-event[data-tone='waiting'] .event-label {
+        color: var(--warn);
+      }
+      .layer-event .event-text {
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      /* The filmstrip: a row of small images that scrolls sideways, and the one chosen shown larger above it. */
+      .film-strip {
+        display: flex;
+        gap: 4px;
+        padding: 0 0 4px;
+        overflow-x: auto;
+        list-style: none;
+      }
+      .film-thumb {
+        display: block;
+        flex: 0 0 auto;
+        padding: 0;
+        border: 2px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg);
+        cursor: pointer;
+      }
+      .film-thumb[aria-pressed='true'] {
+        border-color: var(--accent-fg);
+      }
+      .film-thumb:focus-visible {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: 1px;
+      }
+      .film-thumb img {
+        display: block;
+        width: 80px;
+        height: auto;
+      }
+      .film-shown {
+        margin: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      .film-shown img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .film-shown figcaption {
+        padding: 4px 8px;
+        font-size: 11.5px;
+        overflow-wrap: anywhere;
+      }
       /* The controls that steer the test, then the code a stop can write, on a row of their own. */
       .controls {
         display: grid;
@@ -839,6 +1001,8 @@
         <div id="empty-actions" class="piwi-actions"></div>
       </div>
       <div id="runs"></div>
+      <!-- The CI runs in progress the connected instance lists, read-only. -->
+      <div id="ci" class="ci" hidden></div>
       <footer>
         <div id="shortcut" class="shortcut" hidden>
           <p id="shortcut-text" class="note"></p>

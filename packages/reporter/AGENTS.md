@@ -46,6 +46,14 @@ responsibilities.
      wrappers on the browser types and on the `sendMessageToServer` of the worker's connection and of each browser it
      connects to while that browser is connected, which only read each call (`internal/capture/resource-ledger.ts`),
      and the `clear_refs` writes and DevTools sessions of `internal/capture/worker-metrics.ts`;
+   - in a worker of a run Piwi may pause that can show a view (a run connection, or a live view key outside CI), the
+     listener `live-call-log.ts` adds to each context's in-process server instrumentation as it opens
+     (`context._connection.toImpl(context).instrumentation`, feature-checked, absent for a connected browser), which
+     only reads each call, never throws into it, and goes as the context closes (`listenCalls`); and
+     while a viewer asks for the page's text, the reads of the ARIA snapshots in the runner's growing trace of the test
+     (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`; never its screencast images), of
+     the page's ARIA snapshot through `internalCall` when asked where the trace writes none, and of the secret fields of
+     every page of its context through `internalCall`;
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
@@ -82,7 +90,12 @@ responsibilities.
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
      viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
      `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
-     view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
+     view of the lane's page (`lane-feed.ts`, the instance's live view a third), with `layers` in `features` the lane
+     view's layers as asked (`layers`, `lane-layers.ts`: the call's log from the in-process listener above, the page's
+     events, its text from its growing trace, and the test's filmstrip from the lane view's own masked frames, one a
+     call outside the fixtures, taken only while the lane view is on and kept in the worker's memory for the test
+     (`LaneFilmstrip`, as the instance's is), none past the lane view, `tests/run-channel-layers.spec.ts`,
+     `tests/run-channel-filmstrip.spec.ts`), plays trusted input only while that
      stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, no press on the pause
      bar's band nor a key press the bar was not held inert for, a release always played and activating nothing on the
      bar, `tests/page-view-bar.spec.ts`, `tests/run-channel-lane.spec.ts`), runs the bar's actions in a headless page through
@@ -109,10 +122,17 @@ responsibilities.
      `live`), or from the start of a run no run channel follows with `PIWI_SHARE_LIVE=1`, an environment variable
      alone, never an option, given up after the quick retries or a 401 or 404 until shared again: only while the
      instance says someone watches does it post frames of the test's page, through
-     the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
-     its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
-     `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
-     listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
+     the lane's one view, which the editor's views share (`lane-feed.ts`), at the size and pace the instance says its
+     viewers ask (`view`, within 1280 by 800, a recording's size kept), as live messages (`LIVE_FRAME_TYPE`) to an
+     instance that says `view` and in base64 JSON to an older one (`tests/live-view-binary.spec.ts`), each with its
+     call (through `hideSecretsInText`), its test and when its page looked so, and the call's log and the test's end
+     while a viewer shows the worker in full (`view`'s `full`, as an instance that does not say it does), in a CI run
+     nothing may pause (`mayPause`) from the context's call stream turned on through `context.debugger._enable()`,
+     which stays on, and a listener on the worker's Playwright instrumentation, in any other from the in-process
+     listener above (`live-call-log.ts`), and the layers a full view asks (`view`'s `layers`: `page-event`, `text`, the
+     filmstrip's `thumb`, the view's own masked images kept in the worker's memory for its test until the project's masks
+     change, `lane-layers.ts`,
+     `tests/live-view-layers.spec.ts`); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
      feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a
@@ -133,7 +153,12 @@ responsibilities.
    hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
    holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
-   (`tests/run-channel-code.spec.ts`); for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
+   (`tests/run-channel-code.spec.ts`); the page's text, on either wire, has the value of a field named for a secret
+   (on its `- text:` line under a placeholder too, its key quoted or not), of a card's number, of what the attempt's
+   secret fields held and its calls typed into one, and the name and value of the project's masked elements hidden
+   (`maskAriaSnapshot`, a line it cannot read hidden whole), and no text goes for a mask it cannot find (by name or
+   placeholder: never `getByTitle`) nor when a page's secret fields could not be read (`tests/lane-layers.spec.ts`); for
+   an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
    `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
    (`withoutFieldSecrets`), painted over in the image as the live view's are, over the boxes Playwright measures too
    (`maskedImage`), in every frame, none of a page zoomed in, and never sent as an element's

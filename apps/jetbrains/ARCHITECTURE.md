@@ -30,6 +30,7 @@ does with it. It is reference material: open the section for the area you change
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
   - [Code from a stop](#code-from-a-stop)
+  - [CI runs of the branch](#ci-runs-of-the-branch)
 - [Finding Playwright configs](#finding-playwright-configs)
   - [First-run notification](#first-run-notification)
 - [Recording](#recording)
@@ -646,6 +647,54 @@ the caret's line in the stopped file say how many elements the locator there mat
 `Alarm`), one request at a time, an answer the caret left dropped, asked again when the caret comes back
 (`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
 (`Glue.caretText`). The caret leaving the file takes the page's outline down.
+
+### CI runs of the branch
+
+`PiwiCiRuns.kt` shows the CI runs of the branch while they run, read-only, as the service tells them
+(`piwi/ciSessionChanged`, `PiwiLsp4jClient.ciSessionChanged`; the service's side: [CI runs of the
+branch](../../packages/editor/ARCHITECTURE.md#ci-runs-of-the-branch)). The plugin keeps the latest of each run until
+one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRuns.watch`).
+
+- **The CI Run tab** of the Piwi tool window (**CI Runs (2)** for several) is added, not selected, while one runs, and
+  removed once none does; closed, it opens again for a run it did not list. It lists each run as `CI run #78`, its
+  branch and progress beside it, then **Open run #78**, its tests, and under a running test of a run that can be
+  watched, **Watch** and **Watch on the dashboard** (`Glue.ciRows`). A double click or Enter opens a test at the call
+  it is at, else its spec, **Watch** the lane in the Worker tab, and a link in the browser. Each tab has a list model
+  of its own, let go with the tab; a push that changes no row draws nothing, and one that does keeps the selected row
+  selected by its key (`CiRow.key`). No row pauses, steers, shares or holds the run.
+- **A CI lane in the Worker tab** (`PiwiRunSessions.showCiWorker`, in place of the slot it watched) is watched with
+  `piwi/ciWatch` through `RunRemote.ciWatch` and drawn from `piwi/ciFrame` (`PiwiLsp4jClient.ciFrame`, decoded off the
+  event thread, the newest alone waiting), named `CI run #78 · worker 2` (`Glue.ciLaneTitle`) and captioned from the
+  CI sessions (`Glue.ciLaneCaption`, which `PiwiCiRuns` hands on as they change). It has Watch alone: no Interact, no
+  pick, no input. Why the watch ended (`ended`) or was refused shows under the caption, Watch then off, and a refusal
+  offers **Watch on the Dashboard** in a notification. Another CI lane takes the watch's place on the service's side
+  without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
+  within 20 s end it.
+- **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
+  `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
+  (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
+  `Glue.findIn` for the Text tab's search). `Glue.withLaneLayer` keeps one image per call as the worker sends the strip
+  again, and starts the call log and the strip anew for another test, another worker (a retry's), or an image placed at
+  or before the strip's last of a call it does not hold. The watch asks for the call log and the events, and for the text or the
+  filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
+  (`relayer`), a change the service refused not held as asked (`Glue.layersAfterAnswer`); **Take the Text Again**
+  sends `text: true`, and is off until the service answers (`LaneLayersPanel.textAsking`). A CI lane, whose instance and
+  reporter say nothing of it, says until its first layer but the call log comes that an older one of either sends the
+  images alone (`Glue.ciLaneLayersNote`). The layers reach the tab in the order they came, one pooled thread at a time
+  (`drawLayers`), each filmstrip image decoded and scaled off the event thread, and only once its JPEG header names a
+  size within twice the thumbnail's (`Glue.stripImageBytes`, `Glue.jpegSize`): the image kept for the enlarged view is
+  640 by 400 pixels at most. New text keeps the Text tab's caret and scroll where the person left them; only the search
+  moves them. Every text from the run goes into a `JBTextArea`, an `html.disable` label or a
+  `ColoredListCellRenderer`, never HTML, and each tooltip of it (an event's address, an image's number and title)
+  through `Glue.htmlTooltip`, which escapes it: the platform renders a component's tooltip as HTML whatever
+  `html.disable` says.
+- **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no
+  gutter icon, highlight or link (`CiMarkInlay`, `Glue.ciMarksIn`), in each open editor of its file, drawn again as
+  the sessions change and as an editor opens. The editors open are read, never a file from disk. The tests of several
+  runs on one line share one inlay.
+
+`GlueTest` checks the rows and their keys, the marks, the CI lane's title and caption, and that a session and a CI
+frame read as the service sends them.
 
 ## Finding Playwright configs
 

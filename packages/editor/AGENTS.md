@@ -25,8 +25,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   worker's `run-attach` does not list in `takes` is refused. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
   `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered,
-  `piwi/runSessionChanged` with the last session sent, and each carries the whole new answer, so a client can keep it
-  without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  `piwi/runSessionChanged` and `piwi/ciSessionChanged` with the last session sent, and each carries the whole new
+  answer. Checked by `tests/lsp.test.ts` ("a change pushed to the client", "a CI run of the branch in progress …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))
@@ -93,6 +93,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
+- **A CI session is read-only.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a lane), and its
+  position is never a stop and names a file of the context's folder alone (`workspaceFile`). Checked by
+  `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").
@@ -171,10 +174,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
-- **A live view's frames go only to viewers of that stop, and never outlive it; a lane's only to that lane's
-  viewers.** The editor client opts in through `ClientPageView` and `ClientLaneView`; hub connections opt in through
-  `RunHub`. No frame goes to an instance or a file, none of a stop that ended, and neither transport keeps a history:
-  a viewer that comes to a view on has the worker send its latest frame again (`RunSessions.watch`, `watchLane`,
+- **A live view's frames go only to viewers of that stop, and never outlive it; a lane's frames and layers only to
+  its viewers, each layer to those that asked for it.** The editor client opts in through `ClientPageView` and
+  `ClientLaneView`, hub connections through `RunHub`. Nothing goes to an instance or a file, none of a stop that ended,
+  and neither transport keeps a history: a viewer that comes later has the worker send it again (`watchLane`,
   `RunHub.frame`). Checked by `tests/run-view.test.ts` and `tests/run-lanes.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
@@ -301,12 +304,12 @@ npm run editor:test         # the Vitest suites of tests/
   [what each source file holds](ARCHITECTURE.md#source-files).
 - [Protocol](ARCHITECTURE.md#protocol): before adding or changing a request, a notification, a field or a command id.
 - [Runs and failures](ARCHITECTURE.md#runs-and-failures): the latest run and the baseline, failure diagnostics, the file
-  summary, test items, run streams, runs in progress and the editor's own run.
+  summary, test items, run streams, runs in progress, CI runs and the editor's own run.
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the agents' MCP
-  server and its tools, the desktop app's server as another host, and the discovery file.
+  pause bar shows, the hub, the live view, the code from a stop, the agents' MCP server, the desktop app's server as
+  another host, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

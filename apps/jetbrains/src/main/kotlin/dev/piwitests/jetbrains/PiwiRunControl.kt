@@ -75,11 +75,17 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.platform.lsp.api.LspServerManager
 import com.intellij.ui.ColoredListCellRenderer
+import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTabbedPane
+import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.Alarm
@@ -93,6 +99,9 @@ import com.intellij.xdebugger.breakpoints.XBreakpointListener
 import com.intellij.xdebugger.ui.DebuggerColors
 import java.awt.BorderLayout
 import java.awt.Cursor
+import java.awt.FlowLayout
+import java.awt.Font
+import java.awt.RenderingHints
 import java.awt.Graphics
 import java.awt.Rectangle
 import java.awt.datatransfer.StringSelection
@@ -111,6 +120,7 @@ import java.nio.file.Path
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CompletableFuture
@@ -119,13 +129,18 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.imageio.ImageIO
 import javax.imageio.ImageReader
 import javax.swing.BoxLayout
+import javax.swing.DefaultListModel
 import javax.swing.ImageIcon
+import javax.swing.JButton
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JViewport
 import javax.swing.JCheckBox
 import javax.swing.KeyStroke
 import javax.swing.SwingConstants
+import javax.swing.ScrollPaneConstants
 import javax.swing.SwingUtilities
+import javax.swing.text.DefaultHighlighter
 
 /**
  * The runs the IDE started, as their workers tell them (`piwi/runSessionChanged`), shown and steered with Piwi's own
@@ -236,6 +251,18 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     @Volatile private var watchingLane: LaneViewParams? = null
     private val pendingLaneFrame = AtomicReference<LaneFrame?>(null)
     private val drawingLaneFrame = AtomicBoolean(false)
+    /** The CI run's lane the Worker tab shows in place of a slot (on the event thread), and its watch. */
+    private var ciTarget: Glue.CiLane? = null
+    @Volatile private var watchingCi: CiWatchParams? = null
+    /** The Worker tab's watch the service accepted, of a slot or a CI lane: a change of its layers goes on it then. */
+    @Volatile private var acceptedLane: Any? = null
+    /** The layers the Worker tab's watch asked last: selecting Text or Filmstrip asks again when they differ. */
+    @Volatile private var layersSent: List<String> = emptyList()
+    private val pendingCiFrame = AtomicReference<CiFrame?>(null)
+    private val drawingCiFrame = AtomicBoolean(false)
+    /** The layers of the Worker tab's lane heard and not handed to it yet, in the order they came. */
+    private val pendingLayers = ConcurrentLinkedQueue<Pair<LaneLayerFields, () -> Boolean>>()
+    private val drawingLayers = AtomicBoolean(false)
 
     private val breakpointsQueued = AtomicBoolean()
 
@@ -275,6 +302,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         override fun driveStop(params: DriveStopParams) = existingServer()?.driveStop(params)?.orNull()
 
         override fun laneView(params: LaneViewParams) = existingServer()?.laneView(params)?.orNull()
+
+        override fun ciWatch(params: CiWatchParams) = existingServer()?.ciWatch(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -639,7 +668,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val worker = liveWorkerTab()?.component as? PausedPagePanel
         val target = laneTarget
         if (worker != null && target != null) {
-            worker.caption(Glue.laneShown(sessions[target.first], target.second, stops).caption)
+            val lane = Glue.laneShown(sessions[target.first], target.second, stops)
+            worker.caption(lane.caption)
+            worker.layers?.note(Glue.laneLayersNote(lane.worker))
             // The service ends the view with the run, and Watch is off for the next.
             if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
                 watchingLane = null
@@ -959,31 +990,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun showWorker(ref: String, lane: Int) {
         val window = toolWindow() ?: return
-        val content = liveWorkerTab() ?: ContentFactory.getInstance()
-            .createContent(PausedPagePanel(), Glue.workerName(lane), false)
-            .apply {
-                isCloseable = true
-                // Closed, the tab stops watching its worker; Watch a Worker's Test opens it again.
-                setDisposer {
-                    if (workerTab === this) {
-                        stopLaneView()
-                        laneTarget = null
-                    }
-                }
-            }
-            .also {
-                window.contentManager.addContent(it)
-                workerTab = it
-                laneTarget = null
-            }
-        content.displayName = Glue.workerName(lane)
-        window.contentManager.setSelectedContent(content)
-        window.show(null)
+        val content = workerTabIn(window, Glue.workerName(lane))
         val panel = content.component as PausedPagePanel
         if (laneTarget != ref to lane) {
             stopLaneView()
+            stopCiView()
+            ciTarget = null
             laneTarget = ref to lane
             panel.forWorker()
+            layersFor(panel).note(Glue.laneLayersNote(Glue.laneShown(sessions[ref], lane, stops()).worker))
             panel.configureLive(true, false, false) { on -> watchLane(on) }
             panel.visibilityChanged = { visible ->
                 if (!visible) {
@@ -995,6 +1010,189 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
         panel.liveWanted = true
         if (watchingLane == null) watchLane(true)
+    }
+
+    /**
+     * The Worker tab's layers, started anew for another slot or CI lane (`ci`, whose note says why none may come until
+     * one does), its tabs asking the watch for theirs.
+     */
+    private fun layersFor(panel: PausedPagePanel, ci: Boolean = false): LaneLayersPanel = panel.withLayers().apply {
+        ciLane = ci
+        reset()
+        sectionsChanged = { relayer() }
+        textAsked = { askText(this) }
+    }
+
+    /** The layers the Worker tab shows now: the call log and the events, and the text or the filmstrip while selected. */
+    private fun layersAsked(): List<String> {
+        val layers = (liveWorkerTab()?.component as? PausedPagePanel)?.layers
+        return Glue.laneLayersAsked(layers?.textOpen == true, layers?.filmstripOpen == true)
+    }
+
+    /**
+     * Text or Filmstrip was selected or left, or a watch was accepted: an accepted watch asks for the layers the tab
+     * shows when they differ from those it asked last, its view kept on. On the event thread.
+     */
+    private fun relayer() {
+        val asked = layersAsked()
+        if (asked == layersSent) return
+        val lane = watchingLane
+        val ci = watchingCi
+        // A refused change leaves the service's layers as they were: the next change of the tabs asks again.
+        if (lane != null && acceptedLane === lane) {
+            layersSent = asked
+            queueWorkerCall({ if (watchingLane === lane) remote.laneView(lane.copy(layers = asked)) else null }) { result ->
+                if (watchingLane === lane) layersSent = Glue.layersAfterAnswer(layersSent, asked, result?.ok == true)
+            }
+        } else if (ci != null && acceptedLane === ci) {
+            layersSent = asked
+            queueWorkerCall({ if (watchingCi === ci) remote.ciWatch(ci.copy(layers = asked)) else null }) { result ->
+                if (watchingCi === ci) layersSent = Glue.layersAfterAnswer(layersSent, asked, result?.ok == true)
+            }
+        }
+    }
+
+    /**
+     * Take the Text Again: the watched lane's worker reads its page's text now, one ask at a time, the button off until
+     * it is answered; why not shows over the text.
+     */
+    private fun askText(layers: LaneLayersPanel) {
+        if (!layers.textOpen || layers.textAsking) return
+        val lane = watchingLane
+        val ci = watchingCi
+        val answered = { result: RunControlResult? ->
+            layers.textAsking = false
+            if (result != null && !result.ok) layers.textRefused(result.message ?: NOT_RUNNING)
+        }
+        val asked = layersAsked()
+        if (lane != null && acceptedLane === lane) {
+            layers.textAsking = true
+            queueWorkerCall({ if (watchingLane === lane) remote.laneView(lane.copy(layers = asked, text = true)) else null }, answered)
+        } else if (ci != null && acceptedLane === ci) {
+            layers.textAsking = true
+            queueWorkerCall({ if (watchingCi === ci) remote.ciWatch(ci.copy(layers = asked, text = true)) else null }, answered)
+        }
+    }
+
+    /** A layer of the slot the Worker tab watches, one it asked for. */
+    fun laneLayer(layer: LaneViewLayer) {
+        val own = watchingLane ?: return
+        if (own.ref != layer.ref || own.lane != layer.lane) return
+        hearLayer(layer) { watchingLane?.let { it.ref == layer.ref && it.lane == layer.lane } == true }
+    }
+
+    /** A layer of the CI lane the Worker tab watches, one it asked for. */
+    fun ciLayer(layer: CiLayer) {
+        val own = watchingCi ?: return
+        if (!Glue.sameCiLane(own, CiFrame(layer.root, layer.runId, layer.shard, layer.lane))) return
+        hearLayer(layer) { watchingCi?.let { Glue.sameCiLane(it, CiFrame(layer.root, layer.runId, layer.shard, layer.lane)) } == true }
+    }
+
+    /** A layer heard, handed to the Worker tab in the order the layers came (`drawLayers`). */
+    private fun hearLayer(layer: LaneLayerFields, current: () -> Boolean) {
+        pendingLayers.add(layer to current)
+        drawLayers()
+    }
+
+    /**
+     * Hand the layers heard to the Worker tab on the event thread in the order they came, one pooled thread at a time,
+     * each filmstrip image decoded and scaled off the event thread first: an image of a test is never shown after a
+     * layer of the next. An image larger than twice a thumbnail's size is let go of before it is decoded.
+     */
+    private fun drawLayers() {
+        if (pendingLayers.isEmpty() || !drawingLayers.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                while (true) {
+                    val (layer, current) = pendingLayers.poll() ?: break
+                    val image = if (layer.layer == "filmstrip") Glue.stripImageBytes(layer.data)?.let(::decode) else null
+                    val shown = image?.let { it to stripIcon(it, JBUI.scale(60)) }
+                    ApplicationManager.getApplication().invokeLater({
+                        if (current()) (liveWorkerTab()?.component as? PausedPagePanel)?.layers?.heard(layer, shown)
+                    }, gone)
+                }
+            } finally {
+                drawingLayers.set(false)
+            }
+            drawLayers()
+        }
+    }
+
+    /** The Worker tab named `name`, added to the tool window when it holds none, selected and in sight. */
+    private fun workerTabIn(window: com.intellij.openapi.wm.ToolWindow, name: String): Content {
+        val content = liveWorkerTab() ?: ContentFactory.getInstance()
+            .createContent(PausedPagePanel(), name, false)
+            .apply {
+                isCloseable = true
+                // Closed, the tab stops watching its worker; Watch a Worker's Test, or a CI run's Watch, opens it again.
+                setDisposer {
+                    if (workerTab === this) {
+                        stopLaneView()
+                        stopCiView()
+                        laneTarget = null
+                        ciTarget = null
+                    }
+                }
+            }
+            .also {
+                window.contentManager.addContent(it)
+                workerTab = it
+                laneTarget = null
+                ciTarget = null
+            }
+        content.displayName = name
+        window.contentManager.setSelectedContent(content)
+        window.show(null)
+        return content
+    }
+
+    /**
+     * Watch a CI run's lane in the Worker tab (`piwi/ciWatch`), read-only, in place of the slot it watched: Watch alone,
+     * no Interact and no pick, its caption from the CI sessions (`Glue.ciLaneCaption`), and why the watch ended or was
+     * refused said under it, a refusal offering the lane's view on the dashboard. On the event thread.
+     */
+    fun showCiWorker(lane: Glue.CiLane) {
+        val window = toolWindow() ?: return
+        val content = workerTabIn(window, Glue.ciLaneTitle(lane))
+        val panel = content.component as PausedPagePanel
+        if (ciTarget != lane) {
+            stopLaneView()
+            // Another CI lane takes the place of the one watched on the service's side: no word of the one before.
+            if (ciTarget != null) {
+                watchingCi = null
+                pendingCiFrame.set(null)
+            } else stopCiView()
+            laneTarget = null
+            ciTarget = lane
+            panel.forCiWorker()
+            layersFor(panel, ci = true)
+            panel.configureLive(true, false, false) { on -> watchCi(on) }
+            panel.visibilityChanged = { visible ->
+                if (!visible) {
+                    stopCiView()
+                    panel.watching(false)
+                } else if (panel.liveWanted && watchingCi == null) watchCi(true)
+            }
+            panel.show(Glue.ciLaneCaption(ciSessions(), lane), null)
+        }
+        panel.liveWanted = true
+        if (watchingCi == null) watchCi(true)
+    }
+
+    private fun ciSessions(): Map<String, CiSession> = project.getServiceIfCreated(PiwiCiRuns::class.java)?.sessions.orEmpty()
+
+    /** The CI sessions changed: what the Worker tab says of the CI lane it shows follows. On the event thread. */
+    fun ciChanged(sessions: Map<String, CiSession>) {
+        val lane = ciTarget ?: return
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        panel.caption(Glue.ciLaneCaption(sessions, lane))
+        // The service ends the watch with the run's session, and Watch is off for the next.
+        if (sessions[Glue.ciKey(lane.root, lane.runId)] == null && watchingCi != null) {
+            watchingCi = null
+            pendingCiFrame.set(null)
+            panel.watching(false)
+            panel.liveWanted = false
+        }
     }
 
     /** Whether a new page selects the Paused Page tab (`Glue.selectsPausedPage`). On the event thread. */
@@ -1015,17 +1213,107 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         control(RunControlParams(target.ref, target.worker, "pause"))
     }
 
-    @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
+    @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) =
+        queueWorkerCall({ remote.laneView(params) }, answered)
+
+    @Synchronized private fun requestCiWatch(params: CiWatchParams, answered: ((RunControlResult?) -> Unit)? = null) =
+        queueWorkerCall({ remote.ciWatch(params) }, answered)
+
+    /** A call of the Worker tab, sent once the one before was answered, its answer handed on the event thread. */
+    @Synchronized private fun queueWorkerCall(call: () -> RunControlResult?, answered: ((RunControlResult?) -> Unit)?) {
         laneCalls = laneCalls.handle { _, _ -> Unit }.thenApplyAsync({
-            val result = runCatching { remote.laneView(params) }.getOrNull()
+            val result = runCatching { call() }.getOrNull()
             if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
             Unit
         }, AppExecutorUtil.getAppExecutorService())
     }
 
+    private fun stopCiView() {
+        val previous = watchingCi
+        watchingCi = null
+        if (acceptedLane === previous) acceptedLane = null
+        pendingCiFrame.set(null)
+        if (previous != null) requestCiWatch(previous.copy(on = false))
+    }
+
+    private fun watchCi(on: Boolean) {
+        stopCiView()
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        panel.watching(false)
+        val lane = ciTarget ?: return
+        if (!on || !panel.isShowing) return
+        val asked = layersAsked()
+        val params = CiWatchParams(lane.root, lane.runId, lane.shard, lane.lane, true, asked)
+        watchingCi = params
+        layersSent = asked
+        panel.note(null)
+        requestCiWatch(params) { result ->
+            if (watchingCi !== params) return@requestCiWatch
+            if (result?.ok == true) {
+                acceptedLane = params
+                panel.watching(true)
+                // A tab selected while the watch opened asks for its layer now.
+                return@requestCiWatch relayer()
+            }
+            watchingCi = null
+            // A request the service did not answer in time may have opened the watch: it is let go.
+            if (result == null) requestCiWatch(params.copy(on = false))
+            val why = result?.message ?: "The editor service did not answer."
+            panel.note(why)
+            panel.liveWanted = false
+            val dashboard = lane.dashboard ?: return@requestCiWatch
+            PiwiNotifier.create(PiwiNotice.PROBLEM, StringUtil.escapeXmlEntities(why), NotificationType.WARNING)
+                .addAction(NotificationAction.createSimpleExpiring("Watch on the Dashboard") { BrowserUtil.browse(dashboard) })
+                .notify(project)
+        }
+    }
+
+    /**
+     * An image of the CI lane the Worker tab watches, why none shows, or why its watch ended: one image is decoded off
+     * the event thread, the newest alone waiting behind it.
+     */
+    fun ciFrame(frame: CiFrame) {
+        val own = watchingCi ?: return
+        if (!Glue.sameCiLane(own, frame)) return
+        pendingCiFrame.set(frame)
+        drawCiFrame()
+    }
+
+    private fun drawCiFrame() {
+        if (pendingCiFrame.get() == null || !drawingCiFrame.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val frame = pendingCiFrame.getAndSet(null)
+            val picture = frame?.takeIf { it.refused == null && it.ended == null && (it.data?.length ?: Int.MAX_VALUE) <= 524288 }
+                ?.let { Glue.pausedImageBytes(PausedImage("image/jpeg", it.data, null, null)) }
+                ?.let(::decode)
+            ApplicationManager.getApplication().invokeLater({
+                val own = watchingCi
+                val panel = liveWorkerTab()?.component as? PausedPagePanel
+                if (frame != null && own != null && panel?.isShowing == true && Glue.sameCiLane(own, frame)) {
+                    when {
+                        frame.ended != null -> {
+                            watchingCi = null
+                            panel.watching(false)
+                            panel.liveWanted = false
+                            panel.note(frame.ended)
+                        }
+                        frame.refused != null -> panel.note(frame.refused)
+                        picture != null -> {
+                            panel.note(null)
+                            panel.frame(picture)
+                        }
+                    }
+                }
+                drawingCiFrame.set(false)
+                drawCiFrame()
+            }, gone)
+        }
+    }
+
     private fun stopLaneView() {
         val previous = watchingLane
         watchingLane = null
+        if (acceptedLane === previous) acceptedLane = null
         pendingLaneFrame.set(null)
         if (previous != null) requestLaneView(previous.copy(on = false))
     }
@@ -1036,12 +1324,18 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         panel.watching(false)
         val (ref, lane) = laneTarget ?: return
         if (!on || !panel.isShowing) return
-        val params = LaneViewParams(ref, lane, true)
+        val asked = layersAsked()
+        val params = LaneViewParams(ref, lane, true, asked)
         watchingLane = params
+        layersSent = asked
         requestLaneView(params) { result ->
             if (watchingLane !== params) return@requestLaneView
-            if (result?.ok == true) panel.watching(true)
-            else {
+            if (result?.ok == true) {
+                acceptedLane = params
+                panel.watching(true)
+                // A tab selected while the watch started asks for its layer now.
+                relayer()
+            } else {
                 stopLaneView()
                 panel.note(result?.message ?: "The editor service did not answer.")
                 panel.liveWanted = false
@@ -1645,6 +1939,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         watchingLane = null
         pendingLaneFrame.set(null)
         if (lane != null) requestLaneView(lane.copy(on = false))
+        val ci = watchingCi
+        watchingCi = null
+        pendingCiFrame.set(null)
+        if (ci != null) requestCiWatch(ci.copy(on = false))
         disposed = true
         listeners.clear()
         processes.clear()
@@ -1735,6 +2033,9 @@ internal interface RunRemote {
     fun driveStop(params: DriveStopParams): RunControlResult?
 
     fun laneView(params: LaneViewParams): RunControlResult?
+
+    /** The Worker tab watches a CI run's lane (`on`), or stops. */
+    fun ciWatch(params: CiWatchParams): RunControlResult?
 
     fun pickAt(params: PickAtParams): PickAtResult?
 
@@ -1869,6 +2170,12 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         live.toolTipText = "Show the page of the test this worker runs, a few images a second, through its tests and stops. Nothing is stored or shared."
     }
 
+    /** The panel of the Worker tab on a CI run's lane: Watch alone, read-only. */
+    fun forCiWorker() {
+        live.text = "Watch"
+        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Read-only: nothing here acts on CI. Nothing is stored."
+    }
+
     /** The live view of a stop: Interact stays selected only with `keepInteract`, for a stop that takes input. */
     fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, keepInteract: Boolean = false, changed: (Boolean) -> Unit) {
         live.isVisible = available
@@ -1963,7 +2270,11 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         modifiers = emptyList()
         if (releaseFocus) captured = false
     }
-    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8, 0, 8) }
+    // The caption and the note are plain text: a test's title or an instance's refusal never renders as HTML.
+    private val label = JBLabel().apply {
+        border = JBUI.Borders.empty(4, 8, 0, 8)
+        putClientProperty("html.disable", true)
+    }
     private val hint = JBLabel(Glue.PICK_HINT).apply {
         border = JBUI.Borders.empty(2, 8, 0, 8)
         foreground = UIUtil.getContextHelpForeground()
@@ -1972,10 +2283,24 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private val noteLabel = JBLabel().apply {
         border = JBUI.Borders.empty(2, 8, 0, 8)
         isVisible = false
+        putClientProperty("html.disable", true)
     }
     private val picture = JBLabel().apply {
         horizontalAlignment = SwingConstants.LEFT
         verticalAlignment = SwingConstants.TOP
+    }
+    private val scroll = JBScrollPane(picture)
+
+    /** The lane's layers under the image, in the Worker tab; null in the Paused Page tab. */
+    var layers: LaneLayersPanel? = null
+        private set
+
+    /** The Worker tab's panel: the lane's layers under the image, the two in a splitter. */
+    fun withLayers(): LaneLayersPanel = layers ?: LaneLayersPanel().also { made ->
+        remove(scroll)
+        add(OnePixelSplitter(true, 0.6f).apply { firstComponent = scroll; secondComponent = made }, BorderLayout.CENTER)
+        layers = made
+        revalidate()
     }
 
     var caption: String? = null
@@ -2013,7 +2338,6 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             add(noteLabel)
         }
         add(header, BorderLayout.NORTH)
-        val scroll = JBScrollPane(picture)
         add(scroll, BorderLayout.CENTER)
         picture.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
@@ -2171,6 +2495,290 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         val shown = image ?: return
         if (x < 0 || y < 0 || x >= shown.width || y >= shown.height) return
         pick?.invoke(x, y)
+    }
+}
+
+/** A label that shows its text as it is: a text from the run never renders as HTML. */
+private fun plainLabel(text: String = "") = JBLabel(text).apply { putClientProperty("html.disable", true) }
+
+/** A text that wraps, read-only, for words from the run. */
+private fun plainArea() = JBTextArea().apply {
+    isEditable = false
+    lineWrap = true
+    wrapStyleWord = true
+    isOpaque = false
+    border = JBUI.Borders.empty()
+}
+
+/** An image of the filmstrip `height` pixels high, scaled off the event thread. */
+internal fun stripIcon(image: BufferedImage, height: Int): BufferedImage {
+    val width = maxOf(1, image.width * height / maxOf(1, image.height))
+    return BufferedImage(width, height, BufferedImage.TYPE_INT_RGB).also { small ->
+        val g = small.createGraphics()
+        try {
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+            g.drawImage(image, 0, 0, width, height, null)
+        } finally {
+            g.dispose()
+        }
+    }
+}
+
+/** An event line of the Worker tab: its words as plain text, its level as an icon. */
+private class EventLineRenderer : ColoredListCellRenderer<Glue.EventLine>() {
+    override fun customizeCellRenderer(list: JList<out Glue.EventLine>, value: Glue.EventLine?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        val line = value ?: return
+        icon = when (line.level) {
+            "error" -> AllIcons.General.Error
+            "warning" -> AllIcons.General.Warning
+            else -> AllIcons.General.Information
+        }
+        append(line.text, if (line.level == "error") SimpleTextAttributes.ERROR_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        // The platform renders a tooltip as HTML: the address is escaped first.
+        toolTipText = line.url?.let { Glue.htmlTooltip(it) }
+    }
+}
+
+/**
+ * What the Worker tab shows of its lane under the image (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits (the call
+ * log's last lines, what its locator matches), then the Events, Text and Filmstrip tabs. The call log and the events
+ * are asked for while the tab watches, the page's text and the filmstrip while their tab is selected
+ * (`sectionsChanged`). Every text from the run goes into a plain text component or an `html.disable` label. On the
+ * event thread.
+ */
+internal class LaneLayersPanel : JPanel(BorderLayout()) {
+    /** The Text or Filmstrip tab was selected or left: the watch asks for the layers the tab shows. */
+    var sectionsChanged: (() -> Unit)? = null
+    /** Take the Text Again: the lane's worker reads its page's text now. */
+    var textAsked: (() -> Unit)? = null
+    var shown: Glue.LaneLayersShown = Glue.NO_LANE_LAYERS
+        private set
+    /** The lane is a CI run's: the note says why none of its layers may come until the first does. */
+    var ciLane = false
+    /** Why the page's text asked again did not come, until the next text. */
+    private var textRefusal: String? = null
+    /** The filmstrip's images, by call: as they came, and small for the strip. */
+    private val images = HashMap<String, Pair<BufferedImage, BufferedImage>>()
+    private var enlarged: String? = null
+    private var found = 0
+
+    private val note = plainLabel().apply {
+        foreground = UIUtil.getContextHelpForeground()
+        border = JBUI.Borders.empty(2, 8)
+        isVisible = false
+    }
+    private val waitsHead = plainLabel()
+    private val waitsTarget = plainLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val waitsLines = plainArea().apply { font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().size) }
+    private val waits = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        border = JBUI.Borders.compound(JBUI.Borders.empty(2, 8), JBUI.Borders.customLine(JBColor.border(), 1), JBUI.Borders.empty(2, 6))
+        isVisible = false
+        add(JBLabel("Why it waits").apply { font = font.deriveFont(Font.BOLD) })
+        add(waitsHead)
+        add(waitsTarget)
+        add(waitsLines)
+    }
+    private val events = DefaultListModel<Glue.EventLine>()
+    private val eventList = JBList(events).apply {
+        cellRenderer = EventLineRenderer()
+        emptyText.text = "Nothing yet: console errors, failed and slow requests and the backend's errors show here."
+        accessibleContext.accessibleName = "The page's events, the newest first"
+    }
+    private val textNote = plainLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val text = plainArea().apply {
+        lineWrap = false
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().size)
+        accessibleContext.accessibleName = "The page as roles and names"
+    }
+    private val search = SearchTextField(false).apply { toolTipText = "Find in the page's text" }
+    private val textAgain = JButton("Take the Text Again").apply {
+        toolTipText = "Read the page's text now, its secret fields hidden"
+        addActionListener { textAsked?.invoke() }
+    }
+
+    /** The page's text asked again waits for its answer: Take the Text Again is off meanwhile. */
+    var textAsking: Boolean = false
+        set(value) {
+            field = value
+            textAgain.isEnabled = !value
+        }
+    private val strip = JPanel(FlowLayout(FlowLayout.LEFT, 4, 4))
+    private val stripEmpty = plainLabel("One image for each call of the test that ended: click one to see it larger.").apply {
+        foreground = UIUtil.getContextHelpForeground()
+    }
+    private val large = JBLabel().apply { verticalAlignment = SwingConstants.TOP }
+    private val largeTitle = plainLabel()
+    private val tabs = JBTabbedPane()
+
+    /** The Text tab is selected: the watch asks for the page's text. */
+    val textOpen: Boolean get() = tabs.selectedIndex == 1
+    /** The Filmstrip tab is selected: the watch asks for the filmstrip. */
+    val filmstripOpen: Boolean get() = tabs.selectedIndex == 2
+
+    init {
+        add(JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            add(note)
+            add(waits)
+        }, BorderLayout.NORTH)
+        val textTab = JPanel(BorderLayout()).apply {
+            add(JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                add(JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+                    add(search)
+                    add(textAgain)
+                })
+                add(textNote)
+            }, BorderLayout.NORTH)
+            add(JBScrollPane(text), BorderLayout.CENTER)
+        }
+        val stripTab = JPanel(BorderLayout()).apply {
+            add(JPanel(BorderLayout()).apply {
+                add(stripEmpty, BorderLayout.NORTH)
+                add(JBScrollPane(strip, ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED), BorderLayout.CENTER)
+            }, BorderLayout.NORTH)
+            add(JBScrollPane(JPanel(BorderLayout()).apply {
+                add(largeTitle, BorderLayout.NORTH)
+                add(large, BorderLayout.CENTER)
+            }), BorderLayout.CENTER)
+        }
+        tabs.addTab("Events", JBScrollPane(eventList))
+        tabs.addTab("Text", textTab)
+        tabs.addTab("Filmstrip", stripTab)
+        tabs.addChangeListener { sectionsChanged?.invoke() }
+        add(tabs, BorderLayout.CENTER)
+        search.textEditor.addActionListener { find(found + 1) }
+        search.addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
+            override fun textChanged(e: javax.swing.event.DocumentEvent) = find(0)
+        })
+    }
+
+    /**
+     * Find the search's words in the page's text from `from`, marked, and the caret moved there unless `moves` is false;
+     * the start again past the last.
+     */
+    private fun find(from: Int, moves: Boolean = true) {
+        text.highlighter.removeAllHighlights()
+        val query = search.text
+        val at = Glue.findIn(text.text, query, from)
+        if (at < 0) return
+        found = at
+        text.highlighter.addHighlight(at, at + query.length, DefaultHighlighter.DefaultHighlightPainter(UIUtil.getListSelectionBackground(true)))
+        if (moves) text.caretPosition = at
+    }
+
+    /** Why the lane shows no layers (a reporter that sends its images alone); null hides it. */
+    fun note(words: String?) {
+        note.text = words.orEmpty()
+        note.isVisible = words != null
+    }
+
+    /** The layers start anew: another slot or CI lane. */
+    fun reset() {
+        shown = Glue.NO_LANE_LAYERS
+        images.clear()
+        enlarged = null
+        textRefusal = null
+        found = 0
+        drawWaits()
+        drawEvents()
+        drawText()
+        drawStrip()
+        if (ciLane) note(Glue.ciLaneLayersNote(shown))
+    }
+
+    /** A layer of the lane the tab watches: `image` is the filmstrip's, decoded off the event thread. */
+    fun heard(layer: LaneLayerFields, image: Pair<BufferedImage, BufferedImage>?) {
+        val (next, changed) = Glue.withLaneLayer(shown, layer)
+        shown = next
+        // The images of calls the strip no longer holds go first: a later test's call of the same id is another image.
+        images.keys.retainAll(next.strip.map { it.call }.toSet())
+        val call = layer.thumb?.call
+        if (image != null && call != null && "strip" in changed && next.strip.any { it.call == call }) images[call] = image
+        if ("waits" in changed) drawWaits()
+        if ("events" in changed) drawEvents()
+        if ("text" in changed) {
+            textRefusal = null
+            drawText()
+        }
+        if ("strip" in changed) drawStrip()
+        if (ciLane) note(Glue.ciLaneLayersNote(shown))
+    }
+
+    /** Why the page's text asked again did not come, said over the text. */
+    fun textRefused(why: String) {
+        textRefusal = why
+        textNote.text = why
+    }
+
+    private fun drawWaits() {
+        val view = shown.waits
+        waits.isVisible = view != null
+        waitsHead.text = view?.head.orEmpty()
+        waitsHead.foreground = if (view?.failed == true) JBColor.RED else JBUI.CurrentTheme.Label.foreground()
+        waitsTarget.text = view?.target.orEmpty()
+        waitsTarget.isVisible = view?.target != null
+        waitsLines.text = view?.lines.orEmpty().joinToString("\n")
+    }
+
+    private fun drawEvents() {
+        events.clear()
+        events.addAll(shown.events)
+        tabs.setTitleAt(0, if (shown.events.isEmpty()) "Events" else "Events (${shown.events.size})")
+    }
+
+    /** The page's text as it came: the caret and the scroll stay where the person left them, the search's mark again. */
+    private fun drawText() {
+        val now = shown.text?.text.orEmpty()
+        if (text.text != now) {
+            val viewport = text.parent as? JViewport
+            val place = viewport?.viewPosition
+            val caret = text.caretPosition
+            text.text = now
+            text.caretPosition = minOf(caret, now.length)
+            find(found, moves = false)
+            // The caret set again scrolls to it once the event thread is free: the view goes back to where it was after.
+            if (viewport != null && place != null) SwingUtilities.invokeLater { viewport.viewPosition = place }
+        }
+        textNote.text = textRefusal ?: Glue.laneTextNote(shown.text)
+    }
+
+    private fun drawStrip() {
+        val calls = shown.strip.map { it.call }.toSet()
+        images.keys.retainAll(calls)
+        strip.removeAll()
+        for (image in shown.strip) {
+            val (_, small) = images[image.call] ?: continue
+            val name = "${image.index}. ${image.title}"
+            strip.add(JButton(ImageIcon(small)).apply {
+                putClientProperty("html.disable", true)
+                isContentAreaFilled = false
+                border = JBUI.Borders.customLine(if (enlarged == image.call) JBUI.CurrentTheme.Focus.focusColor() else JBColor.border(), 1)
+                // The platform renders a tooltip as HTML: the title, from the run, is escaped first.
+                toolTipText = Glue.htmlTooltip(name)
+                accessibleContext.accessibleName = name
+                addActionListener { enlarge(if (enlarged == image.call) null else image.call) }
+            })
+        }
+        stripEmpty.isVisible = shown.strip.isEmpty()
+        if (enlarged != null && enlarged !in images) enlarge(null) else showEnlarged()
+        strip.revalidate()
+        strip.repaint()
+    }
+
+    /** Show the filmstrip's image of `call` larger, with its call's title; null shows none. */
+    private fun enlarge(call: String?) {
+        val changed = enlarged != call
+        enlarged = call?.takeIf { it in images }
+        if (changed) drawStrip() else showEnlarged()
+    }
+
+    private fun showEnlarged() {
+        val call = enlarged
+        val image = shown.strip.firstOrNull { it.call == call }
+        large.icon = call?.let { images[it] }?.first?.let { ImageIcon(it) }
+        largeTitle.text = image?.let { "${it.index}. ${it.title}" }.orEmpty()
     }
 }
 

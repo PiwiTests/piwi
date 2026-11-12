@@ -2280,6 +2280,163 @@ test.describe('watching a running test', () => {
     }
   });
 
+  test('Watch shows the lane’s layers under its page: why its call waits, its events, its text as asked and its filmstrip', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before, after } = await shopFrames(context);
+      const { ref, channel } = await editor.svc.command();
+      const worker = laneWorker(editor, channel, ref, 0, ['view-lane', 'give-up', 'layers']);
+      worker.begin('pays');
+      const run = { ref, worker, channel };
+      try {
+        const card = liveRun(runs);
+        await card.getByRole('button', { name: 'Watch', exact: true }).click();
+        await answerLane(worker);
+        // The window takes every layer but the page's text, which it asks for as the person does.
+        const asked = () => worker.heard.flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+        await expect.poll(asked).toContainEqual(['calls', 'events', 'filmstrip']);
+        sendLaneFrame(worker, 'pays', null, before);
+        await expect(card.locator('img.live')).toBeVisible();
+        // Nothing shows under the page until the lane sends a layer.
+        await expect(card.locator('.layers')).toHaveCount(0);
+        const at = Date.now();
+        const layer = (data: Record<string, unknown>) =>
+          worker.send({ type: 'lane-layer', test: 'id-pays', ...data } as Parameters<typeof worker.send>[0]);
+        layer({
+          layer: 'calls',
+          log: {
+            id: 'call@7',
+            call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 12 },
+            status: 'running',
+            lines: ["waiting for getByRole('button', { name: 'Pay' })", '  - element is not enabled'],
+            point: null,
+            target: { count: 1, box: null, enabled: false },
+            viewport: null,
+            ms: 3400,
+            error: null,
+          },
+        });
+        const layers = card.locator('.layers');
+        await expect(layers.getByRole('heading')).toHaveText(['Why it waits', 'Events', 'Text', 'Filmstrip']);
+        expect(
+          await card.locator('.worker').evaluate((item) => [...item.children].map((child) => child.className)),
+        ).toEqual(['test-head', 'status', 'controls', 'page', 'layers']);
+        await expect(layers.locator('.layer-call')).toContainText('tests/checkout.spec.ts:12');
+        await expect(layers.locator('.layer-state')).toHaveText(
+          'Running for 3.4s · 1 element matches its locator · Its element is not enabled',
+        );
+        await expect(layers.locator('.layer-log')).toContainText('element is not enabled');
+
+        // The page's events, newest first, a pending request one line whose time grows.
+        const pending = { kind: 'request-pending', id: 3, method: 'POST', url: 'http://shop.test/api/checkout' };
+        layer({ layer: 'events', at, event: { ...pending, ms: 5000, done: false } });
+        layer({ layer: 'events', at, event: { kind: 'console', text: 'cart broke' } });
+        layer({ layer: 'events', at, event: { ...pending, ms: 10_000, done: false } });
+        await expect(layers.locator('.layer-event')).toHaveText([
+          'Console error cart broke',
+          'Pending request POST http://shop.test/api/checkout pending for 10s',
+        ]);
+
+        // The page's text, as asked: taken now, its secret fields hidden, then followed.
+        await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+        await expect.poll(asked).toContainEqual(['calls', 'events', 'text', 'filmstrip']);
+        await expect(layers.getByText('Reading the page…')).toBeVisible();
+        layer({
+          layer: 'text',
+          test: null,
+          text: {
+            call: null,
+            source: 'snapshot',
+            text: '- textbox "Password": S3cr3t\n- button "Pay"',
+            cut: false,
+            at,
+          },
+        });
+        const text = layers
+          .getByRole('region', { name: 'Text' })
+          .getByLabel('The page’s text, its secret fields hidden');
+        await expect(text).toContainText('textbox "Password": <hidden>');
+        await expect(text).not.toContainText('S3cr3t');
+        await expect(layers.getByText('Taken as you asked')).toBeVisible();
+        await expect(layers.getByText('Reading the page…')).toHaveCount(0);
+
+        // The filmstrip: one image a call, chosen to show larger with its call's title.
+        const thumb = (call: string, index: number, title: string) => ({
+          call,
+          title,
+          index,
+          width: 320,
+          height: 200,
+          at,
+        });
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@2', 1, "Click getByRole('button', { name: 'Check' })"),
+          data: before,
+        });
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@5', 2, 'Fill "<hidden>" getByLabel(\'Card number\')'),
+          data: after,
+        });
+        // Sent again for a window that came later: shown once.
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@2', 1, "Click getByRole('button', { name: 'Check' })"),
+          data: before,
+        });
+        const thumbs = layers.locator('.film-thumb');
+        await expect(thumbs).toHaveCount(2);
+        await thumbs.nth(1).click();
+        await expect(thumbs.nth(1)).toHaveAttribute('aria-pressed', 'true');
+        await expect(layers.locator('.film-shown img')).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
+        await expect(layers.locator('.film-shown figcaption')).toContainText("getByLabel('Card number')");
+        await layers.getByRole('button', { name: 'Close' }).click();
+        await expect(layers.locator('.film-shown')).toHaveCount(0);
+
+        // Kept in memory alone, never stored.
+        const stored = await runs.evaluate(async () =>
+          JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]),
+        );
+        expect(stored).not.toContain('cart broke');
+        expect(stored).not.toContain(after.slice(0, 200));
+
+        // Hide the text: the worker hears the layers without it.
+        const sent = asked().length;
+        await layers.getByRole('button', { name: 'Hide the text' }).click();
+        await expect.poll(() => asked().slice(sent)).toContainEqual(['calls', 'events', 'filmstrip']);
+        await expect(text).toHaveCount(0);
+        await expect(layers.getByRole('button', { name: 'Show the page’s text' })).toBeVisible();
+
+        // Shown again, then the next test starts its layers afresh, and asks the worker for its page's text: a second
+        // later, as the hub takes an ask within a second of the one before as that one.
+        await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+        await expect.poll(() => asked().slice(-1)).toEqual([['calls', 'events', 'text', 'filmstrip']]);
+        const textAsks = () => heardRequests(worker, 'text').length;
+        const shown = textAsks();
+        await runs.waitForTimeout(1100);
+        worker.send({ type: 'test-end', testId: 'id-pays', status: 'passed', pausedMs: 0 });
+        worker.begin('pays again');
+        worker.send({
+          type: 'lane-layer',
+          test: 'id-pays again',
+          layer: 'events',
+          at,
+          event: { kind: 'console', text: 'fresh' },
+        });
+        await expect(layers.locator('.layer-event')).toHaveText(['Console error fresh']);
+        await expect(layers.locator('.film-thumb')).toHaveCount(0);
+        await expect.poll(textAsks).toBeGreaterThan(shown);
+        await expect(layers.getByText('Reading the page…')).toBeVisible();
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('Watch follows the lane to the worker Playwright starts in its place, and as the extension’s worker restarts', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {

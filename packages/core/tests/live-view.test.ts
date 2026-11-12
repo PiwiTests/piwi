@@ -209,6 +209,10 @@ describe('the messages', () => {
     expect(typeof readWorkerToInstance({ type: 'frame', worker: 1, data: 'A'.repeat(MAX_LIVE_FRAME_BASE64 + 4) })).toBe(
       'string',
     );
+    // Base64 of something other than a JPEG is no frame, as a frame posted as bytes.
+    for (const data of ['iVBORw0KGgo=', 'AAAA', '/9j']) {
+      expect(readWorkerToInstance({ type: 'frame', worker: 1, data }), data).toMatch(/JPEG/);
+    }
   });
 
   test('a stop names its call, an unknown reason read as other; its end is null', () => {

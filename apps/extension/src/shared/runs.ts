@@ -1,12 +1,14 @@
 /**
  * The Runs window: the runs the paired editor started, as the background worker hears them from each editor
  * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
- * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
+ * server is, the CI runs in progress the connected instance lists (`background/ci-runs.ts`), read-only, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
  * frame of a live view or of a watched lane as an image, never as markup. A frame is kept in memory, the latest one
- * alone, never stored.
+ * alone, never stored; so are a watched lane's layers (its call's log, its page's events, its text, its filmstrip).
  */
+import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import {
   type HubCodeAction,
   type HubCodeIntent,
@@ -20,6 +22,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
+import type { CiRun } from '@piwitests/run-model/ci';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
@@ -72,6 +75,8 @@ export interface RunsHub {
   desktop: boolean;
   /** It shows a lane of a run while it runs (`lanes` among the features it welcomed the worker with). */
   lanes: boolean;
+  /** It sends a watched lane's layers beside its frames, as `watch` asks them (`layers` among its features). */
+  layers: boolean;
   /** It says who is present on each run, lane and stop, and takes `drive` (`presence` among its features). */
   presence: boolean;
   /** It keeps a Hold failures for each run a person attends (`hold` among its features): a run without one is unattended. */
@@ -95,6 +100,11 @@ export interface RunsState {
   hubs: RunsHub[];
   /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
   runs: RunsRun[];
+  /**
+   * The CI runs in progress of the projects this browser maps, read-only, from the instance the extension is
+   * connected to (`background/ci-runs.ts`); none without connected mode.
+   */
+  ci?: CiRun[];
 }
 
 /**
@@ -177,6 +187,12 @@ export type RunsRequest =
       on?: boolean;
       /** For `watch` alone: the lane, Playwright's `parallelIndex`. */
       lane?: number;
+      /**
+       * For `watch` alone, at a hub that sends layers: the layers of the lane the window takes beside its frames
+       * (`@piwitests/core/live-layers`); asked again for a lane it watches, they change, and `text` takes the page's
+       * text now.
+       */
+      layers?: LaneLayer[];
       /** For `input` alone: the events to play on the page, in CSS pixels of its viewport. */
       events?: ViewInput[];
       /** For `pick-at` alone: the point of an image of the page, in CSS pixels of its viewport. */
@@ -254,6 +270,12 @@ export type RunsLaneFrame = RunsLane & { worker: number; since: string | null } 
     | { test: string | null; refused: string }
   );
 
+/**
+ * A layer of a lane the window watches and asked for (`watch`'s `layers`): of the worker `worker` and the test `test`
+ * (Playwright's id; null for the text of a page no test shows), as the hub sent it, read by `parseHubMessage`.
+ */
+export type RunsLaneLayer = RunsLane & { worker: number; test: string | null } & LaneLayerData;
+
 /** What the worker sends the window. */
 export type RunsEvent =
   | { type: 'state'; state: RunsState }
@@ -265,6 +287,7 @@ export type RunsEvent =
   | ({ type: 'lane-frame' } & RunsLaneFrame)
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
   | ({ type: 'lane-ended' } & RunsLane)
+  | ({ type: 'lane-layer' } & RunsLaneLayer)
   /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
   | { type: 'found' };
 
@@ -309,14 +332,13 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         share: ['on'],
         hold: ['on'],
         drive: ['on'],
-        watch: ['lane', 'on'],
+        watch: ['lane', 'on', 'layers'],
         input: ['events'],
         'pick-at': ['x', 'y'],
       };
       const fields = own[what] ?? [];
-      if (['request', 'on', 'lane', 'events', 'x', 'y'].some((f) => !fields.includes(f) && value[f] !== undefined)) {
-        return null;
-      }
+      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y'];
+      if (named.some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
       switch (what) {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
@@ -325,10 +347,12 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         case 'hold':
         case 'drive':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
-        case 'watch':
-          return typeof value.on === 'boolean' && isIndex(value.lane)
-            ? { ...command, lane: value.lane, on: value.on }
-            : null;
+        case 'watch': {
+          if (typeof value.on !== 'boolean' || !isIndex(value.lane)) return null;
+          if (value.layers === undefined) return { ...command, lane: value.lane, on: value.on };
+          const layers = readLaneLayers(value.layers);
+          return layers ? { ...command, lane: value.lane, on: value.on, layers } : null;
+        }
         case 'input': {
           const events = readViewInput(value.events);
           return typeof events === 'string' ? null : { ...command, events };

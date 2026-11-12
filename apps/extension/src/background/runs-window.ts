@@ -1,8 +1,10 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
- * desktop app, the secret area and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html`
- * alone), which gets the state at each change, what each code written at a stop came to and the frames of the live
- * views and lanes it watches, and passes the window's commands on, its views and lanes stopped as it closes; the
+ * desktop app, the secret area and the browser's WebSocket; the CI runs in progress the connected instance lists,
+ * read while a window is open (`ciRuns`); the window's port (`RUNS_PORT`, taken from `runs.html`
+ * alone), which gets the state at each change, what each code written at a stop came to, the frames of the live
+ * views and lanes it watches and the layers of those lanes it asked for, and passes the window's commands on, its
+ * views and lanes stopped as it closes; the
  * popup's Runs tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
@@ -13,7 +15,10 @@ import {
   parseEditorPairing,
 } from '../shared/editor-pairing.js';
 import { DESKTOP_PAIRED_AT_KEY, getDesktopSettings } from '../shared/desktop-settings.js';
-import { fetchDesktopHubs } from '../shared/piwi-client.js';
+import { fetchActiveRuns, fetchDesktopHubs, fetchRunMetadata } from '../shared/piwi-client.js';
+import { getConnectionSettings } from '../shared/connection-settings.js';
+import { withConnectionHealth } from '../shared/connection-health.js';
+import { normalizeBaseUrl } from '../shared/instance-links.js';
 import { secretArea } from '../shared/secret-store.js';
 import { hostPattern } from '../shared/web-origin.js';
 import {
@@ -26,6 +31,7 @@ import {
   readRunsBounds,
   type RunsEvent,
 } from '../shared/runs.js';
+import { CiRunsWatch } from './ci-runs.js';
 import { browserSocket } from './hub-connection.js';
 import { RunHubs, type RunsViewer } from './run-hubs.js';
 
@@ -56,6 +62,14 @@ export const runHubs = new RunHubs({
     return 'hubs' in answer ? { discovery: 'found', hubs: answer.hubs } : { discovery: answer.failure, hubs: [] };
   },
   looking: () => lookedAt(),
+});
+
+/** The CI runs in progress of the mapped projects, read from the connected instance while a Runs window is open. */
+export const ciRuns = new CiRunsWatch({
+  settings: getConnectionSettings,
+  activeRuns: (settings) => withConnectionHealth(settings.instanceUrl, () => fetchActiveRuns(settings)),
+  metadata: (settings, runId) => withConnectionHealth(settings.instanceUrl, () => fetchRunMetadata(settings, runId)),
+  runUrl: (settings, runId) => `${normalizeBaseUrl(settings.instanceUrl)}/test-runs/${runId}`,
 });
 
 /** The browser windows of the Runs windows connected now, by their port. */
@@ -109,12 +123,12 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     ended: (view) => post({ type: 'view-ended', ...view }),
     laneFrame: (frame) => post({ type: 'lane-frame', ...frame }),
     laneEnded: (lane) => post({ type: 'lane-ended', ...lane }),
+    laneLayer: (layer) => post({ type: 'lane-layer', ...layer }),
   };
-  const unlisten = runHubs.listen(
-    () => post({ type: 'state', state: runHubs.state(viewer) }),
-    (code) => post({ type: 'code', ...code }),
-  );
-  post({ type: 'state', state: runHubs.state(viewer) });
+  const postState = () => post({ type: 'state', state: { ...runHubs.state(viewer), ci: ciRuns.state() } });
+  const unlisten = runHubs.listen(postState, (code) => post({ type: 'code', ...code }));
+  const unlistenCi = ciRuns.listen(postState);
+  postState();
   if (!runHubs.connected()) void runHubs.find();
   port.onMessage.addListener((raw: unknown) => {
     const request = parseRunsRequest(raw);
@@ -130,6 +144,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
   });
   port.onDisconnect.addListener(() => {
     unlisten();
+    unlistenCi();
     runHubs.unwatchAll(viewer);
     runsWindows.delete(port);
   });

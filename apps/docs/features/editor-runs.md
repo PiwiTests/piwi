@@ -102,7 +102,7 @@ setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 ## The status bar
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
-local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or another run of the branch,
+local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or [another run of the branch](./watch-running-test#a-ci-run-of-your-branch),
 is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends.
 
 With several Playwright configs, the item speaks for the config of the file you are editing, the deepest config folder

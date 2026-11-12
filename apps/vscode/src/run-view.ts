@@ -13,7 +13,8 @@
  * of its page in a webview beside the editor, which keeps the stop it shows while that stop is held, and where a click
  * picks the element under it (`piwi/pickAt`) when its worker takes it, unless the worker panel ("Piwi: worker N",
  * `worker-panel.ts`) watches that worker's slot: **Watch a worker** and **Pause and watch** open it on a worker whose
- * reporter shows its running test, as does the run's progress in the status bar. The code a stop makes
+ * reporter shows its running test, as does the run's progress in the status bar, and **Watch a worker** on a CI run's
+ * lane the **CI Runs** view names, read-only. The code a stop makes
  * (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a test is stopped,
  * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
  * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change (`piwi/setRunBreakpoints`), and
@@ -111,6 +112,7 @@ import {
   remember,
   requestPicks,
   runStarted,
+  ciLaneArg,
   runTargetArg,
   shareLiveWarning,
   askToWatchText,
@@ -135,6 +137,7 @@ import {
   workerName,
   writtenLines,
   type CaretShown,
+  type CiSessions,
   type PausedPageView,
   type RunBreakpoint,
   type RunBreakpoints,
@@ -191,6 +194,8 @@ export interface RunControl extends vscode.Disposable {
   pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
   write(code: StopCode): Promise<void>;
+  /** The CI sessions changed (`piwi/ciSessionChanged`): what the worker panel says of a CI lane follows. */
+  ciChanged(sessions: CiSessions): void;
   /** What the end of the cursor's line says of the locator there; null while it says nothing. */
   caretCount(): CaretShown | null;
 }
@@ -1228,6 +1233,16 @@ export function registerRunControl(
    * chosen; `pause` pauses it there too (Pause and watch).
    */
   const watchWorker = async (arg: unknown, pause: boolean) => {
+    // A CI run's lane, from the CI Runs view: read-only, and on the dashboard where the editor cannot show it.
+    const ci = pause ? null : ciLaneArg(arg);
+    if (ci) {
+      const answer = await workerPanel.openCi(ci);
+      if (answer.ok) return;
+      if (!ci.dashboard) return say(answer.message);
+      const choice = await vscode.window.showWarningMessage(`Piwi: ${answer.message}`, 'Watch on the dashboard');
+      if (choice) await vscode.commands.executeCommand('piwi.openInDashboard', ci.dashboard);
+      return;
+    }
     const targets = watchTargetsFor(watchableWorkers(sessions, pause), runTargetArg(arg));
     if (!targets.length) {
       say(
@@ -1437,6 +1452,7 @@ export function registerRunControl(
     pickOnPage,
     write,
     caretCount: () => caretShown,
+    ciChanged: (now) => workerPanel.ciChanged(now),
     dispose: () => disposables.forEach((d) => d.dispose()),
   };
 }

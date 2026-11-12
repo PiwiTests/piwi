@@ -1,5 +1,5 @@
 import type { Browser, ElementHandle, Locator, Page } from '@playwright/test';
-import { HIDDEN_VALUE, SECRET_FIELD_SELECTOR, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
+import { SECRET_FIELD_SELECTOR, hideSecretsInText, hideSecretsInUrl, withoutFieldSecrets } from '@piwitests/core/mask';
 import {
   MAX_ACT_VALUE,
   MAX_AGENT_SNAPSHOT,
@@ -52,66 +52,30 @@ function failed(prefix: string, error: unknown): string {
 const MAX_FRAMES = 32;
 
 /** The values of the page's secret fields (a password, a card's number), in each of its frames: none goes in a snapshot. */
-async function fieldSecrets(page: Page): Promise<string[]> {
-  const values = await Promise.all(
-    page
-      .frames()
-      .slice(0, MAX_FRAMES)
-      .map((frame) =>
-        frame
-          .locator(SECRET_FIELDS)
-          .evaluateAll((fields) => fields.map((field) => (field as unknown as { value?: unknown }).value))
-          .catch(() => [] as unknown[]),
-      ),
-  );
-  return [...new Set(values.flat().filter((v): v is string => typeof v === 'string' && v.length > 0))];
-}
-
-/** A node of an ARIA snapshot with a value: its role, name and flags, then the value after the colon. */
-const VALUED_NODE = /^(\s*- [\w-]+(?: "(?:[^"\\]|\\.)*")?(?: \[[^\]]*\])*): (.+)$/;
-
-const ESCAPES: Record<string, string> = {
-  '\\': '\\\\',
-  '"': '\\"',
-  '\b': '\\b',
-  '\f': '\\f',
-  '\n': '\\n',
-  '\r': '\\r',
-  '\t': '\\t',
-};
-
-/** A value as a quoted value of an ARIA snapshot escapes it, quotes aside, as Playwright writes it. */
-function escapedInQuotes(value: string): string {
-  let out = '';
-  for (const c of value) {
-    const code = c.charCodeAt(0);
-    const control = code < 0x20 || (code >= 0x7f && code <= 0x9f);
-    out += ESCAPES[c] ?? (control ? `\\x${code.toString(16).padStart(2, '0')}` : c);
-  }
-  return out;
+export async function fieldSecrets(page: Page): Promise<string[]> {
+  return (await readFieldSecrets(page)).values;
 }
 
 /**
- * A snapshot with the values of the page's secret fields written as `<hidden>`: where a node's line shows one as its
- * value, plain or quoted (`- textbox "PIN" [ref=e8]: "123456"`), and anywhere else for a value of 8 characters or more,
- * as written and as a quoted value escapes it (`\"`, `\\`).
+ * The values of the page's secret fields in each of its frames, `MAX_FRAMES` at most, and whether every frame was read
+ * (`complete`: none failed, and none was past them).
  */
-export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]): string {
-  const values = [...new Set(secrets.filter(Boolean))];
-  if (!values.length) return snapshot;
-  const shown = new Set(values.flatMap((value) => [value, `"${escapedInQuotes(value)}"`]));
-  let out = snapshot
-    .split('\n')
-    .map((line) => {
-      const node = VALUED_NODE.exec(line);
-      return node && shown.has(node[2]!.trim()) ? `${node[1]}: ${HIDDEN_VALUE}` : line;
-    })
-    .join('\n');
-  for (const value of values) {
-    if (value.length < 8) continue;
-    for (const written of new Set([value, escapedInQuotes(value)])) out = out.split(written).join(HIDDEN_VALUE);
-  }
-  return out;
+export async function readFieldSecrets(page: Page): Promise<{ values: string[]; complete: boolean }> {
+  const frames = page.frames();
+  let complete = frames.length <= MAX_FRAMES;
+  const values = await Promise.all(
+    frames.slice(0, MAX_FRAMES).map((frame) =>
+      frame
+        .locator(SECRET_FIELDS)
+        .evaluateAll((fields) => fields.map((field) => (field as unknown as { value?: unknown }).value))
+        .catch(() => {
+          complete = false;
+          return [] as unknown[];
+        }),
+    ),
+  );
+  const read = values.flat().filter((v): v is string => typeof v === 'string' && v.length > 0);
+  return { values: [...new Set(read)], complete };
 }
 
 /**
