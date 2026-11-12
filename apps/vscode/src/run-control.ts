@@ -1149,6 +1149,11 @@ export class RunningLines {
     return any;
   }
 
+  /** Whether a line told is in the document `uri`, drawn or not (past its end now): an edit there draws them again. */
+  tells(uri: string): boolean {
+    return [...this.lines.values()].some((told) => told.call?.uri === uri);
+  }
+
   /**
    * The marks in the document `uri` of `lineCount` lines, each at its line now (`forward` maps a line of the run `ref`'s
    * code through the edits since it started), by lane: `Worker 1 · Click getByRole('button')`.

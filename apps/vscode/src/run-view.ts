@@ -360,7 +360,7 @@ export function registerRunControl(
       if (edit) edits.add(uri, edit);
     }
     if (stopsOf(sessions).some((s) => s.stop.uri === uri)) drawStops();
-    if (runningDrawn.has(uri)) drawRunning();
+    if (running.tells(uri)) drawRunning();
   };
 
   const item = (key: string) => {

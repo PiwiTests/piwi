@@ -855,6 +855,9 @@ describe('the running line', () => {
     ]);
     expect(lines.marks(spec, 4, same)).toEqual([]);
     expect(lines.marks(pageObject, 20, same)).toEqual([]);
+    // A line pushed past the document's end is still told there, so an edit that brings it back draws it again.
+    expect(lines.tells(spec)).toBe(true);
+    expect(lines.tells(pageObject)).toBe(false);
     // One per worker: the lane's next call moves it, another lane's stands beside it.
     lines.heard(told('ed-1', 0, 7, "Fill getByLabel('Name')"));
     lines.heard(told('ed-1', 1, 9));
@@ -881,6 +884,7 @@ describe('the running line', () => {
     // A service started again holds no line.
     expect(lines.clear()).toBe(true);
     expect(lines.marks(spec, 20, same)).toEqual([]);
+    expect(lines.tells(spec)).toBe(false);
     expect(lines.clear()).toBe(false);
   });
 });
