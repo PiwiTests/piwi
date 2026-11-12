@@ -20,7 +20,11 @@
   },
   "bundle": {
     "fileAssociations": null,
+    "linux": null,
     "windows": {
+      "wix": {
+        "upgradeCode": null
+      },
       "nsis": {
         "installerHooks": null,
         "installerIcon": "icons-runner/icon.ico",

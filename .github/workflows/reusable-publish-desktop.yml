@@ -212,16 +212,16 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos
         run: |
-          app="Piwi Dashboard.app"
+          app="Piwi Desktop.app"
           codesign --verify --strict --verbose=2 "$app"
-          codesign --display --entitlements - "$app/Contents/MacOS/node"
+          codesign --display --entitlements - "$app/Contents/MacOS/piwi-desktop-node"
           data="$(mktemp -d)"
           mkdir -p "$data/storage"
           NODE_ENV=production NITRO_HOST=127.0.0.1 NITRO_PORT=3917 \
             PIWI_DATABASE_PATH="$data/piwi.db" PIWI_STORAGE_PATH="$data/storage" \
             PIWI_SECRET_KEY="$(openssl rand -hex 32)" PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" \
             NUXT_PUBLIC_DESKTOP=true \
-            "$app/Contents/MacOS/node" "$app/Contents/Resources/resources/app-server/.output/server/index.mjs" \
+            "$app/Contents/MacOS/piwi-desktop-node" "$app/Contents/Resources/resources/app-server/.output/server/index.mjs" \
             > "$data/server.log" 2>&1 &
           server=$!
           for _ in $(seq 1 120); do

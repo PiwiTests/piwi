@@ -1,4 +1,4 @@
-// Piwi Dashboard desktop shell.
+// Piwi Desktop shell.
 //
 // This wraps the *same* Nuxt/Nitro server that ships as the Docker image and the
 // `@piwitests/server` npm package. On launch it:
@@ -13,6 +13,7 @@
 mod hub_env;
 mod ide_launcher;
 mod inspect;
+mod login_item;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
@@ -1323,7 +1324,7 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
 
 /// The bundled Node's name (`externalBin`): `node` for the desktop app, `piwi-runner-node` for Piwi Runner
 /// (`runner.conf.json`). The Linux packages install it in `/usr/bin` under this name, so each app's has its own.
-pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "node" };
+pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "piwi-desktop-node" };
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
 /// Windows, Tauri's resource + app-data paths come back with the `\\?\` verbatim
@@ -3490,6 +3491,9 @@ pub fn run() {
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
             adopt_installer_choices(app.handle(), &app_data_dir, &log_path);
+            if let Some(line) = login_item::move_former_entry(app.handle()) {
+                append_log(&log_path, &line);
+            }
             let preferred_port = configured_port(app.handle());
             let port = pick_port(preferred_port);
             if port != preferred_port {
@@ -3875,7 +3879,7 @@ pub fn run() {
             }
         })
         .build(context)
-        .expect("error while building the Piwi Dashboard app")
+        .expect("error while building the Piwi Desktop app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
             // Some ways out end the app with `Exit` alone: the Dock's Quit on

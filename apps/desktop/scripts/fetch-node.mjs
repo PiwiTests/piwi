@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Download the official Node.js runtime for a Tauri target triple and place it
 // as the sidecar binary at desktop/src-tauri/binaries/<name>-<triple>[.exe].
-// Tauri resolves `externalBin: ["binaries/node"]` to node-<current-triple>. Piwi
-// Runner's is `piwi-runner-node` (runner.conf.json): the Linux packages install
-// a sidecar in /usr/bin under its name, so each app's needs one of its own.
+// Tauri resolves `externalBin: ["binaries/piwi-desktop-node"]` to
+// piwi-desktop-node-<current-triple>, the default name here. Piwi Runner's is
+// `piwi-runner-node` (runner.conf.json): the Linux packages install a sidecar in
+// /usr/bin under its name, so each app needs one of its own, apart from the
+// distribution's `node`.
 // Every download is checked against the release's SHASUMS256.txt, and the
 // script fails on a file the list does not name or whose SHA-256 differs.
 //
@@ -39,7 +41,7 @@ function defaultHostTriple() {
 
 const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || bundledNodeVersion()).replace(/^v/, '');
 const target = arg('target', defaultHostTriple());
-const name = arg('name', 'node');
+const name = arg('name', 'piwi-desktop-node');
 if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`not a sidecar name: ${name}`);
 const base = `https://nodejs.org/dist/v${NODE_VERSION}`;
 

@@ -39,6 +39,13 @@ describe("Piwi Runner's merged bundle config", () => {
     expect(runner.bundle.windows.nsis.installMode).toBe('currentUser');
   });
 
+  test("keeps none of the desktop app's upgrade ties: its MSI upgrade code and the packages it replaces", () => {
+    expect(desktop.bundle.windows.wix.upgradeCode).toBeTruthy();
+    expect(runner.bundle.windows.wix).not.toHaveProperty('upgradeCode');
+    expect(desktop.bundle.linux.deb.replaces).toEqual(['piwi-dashboard']);
+    expect(runner.bundle).not.toHaveProperty('linux');
+  });
+
   test('answers piwi-runner links alone, and the desktop app keeps piwi', () => {
     expect(desktop.plugins['deep-link'].desktop.schemes).toEqual(['piwi']);
     expect(runner.plugins['deep-link'].desktop.schemes).toEqual(['piwi-runner']);

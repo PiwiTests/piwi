@@ -144,9 +144,14 @@ shell and are feature-equivalent.
   `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
   `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
   keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
-- **The app calls itself Piwi Desktop (`APP_NAME` in `lib.rs`, `DESKTOP_APP_NAME` in `shared/piwi-ecosystem.ts`) in its
-  windows, splash, tray, taskbar, questions and notifications**; `productName` keeps Piwi Dashboard, which the OS lists,
-  until the installers' upgrade path is checked. Checked by `apps/application/tests/unit/desktop-app-name.test.ts`.
+- **The app is Piwi Desktop everywhere**: `productName`, `APP_NAME` in `lib.rs` and `DESKTOP_APP_NAME` in
+  `shared/piwi-ecosystem.ts` (`apps/application/tests/unit/desktop-app-name.test.ts`). The `identifier` stays
+  `io.piwitests.dashboard`: the app data folder, the settings, the keychain service and the installer's `PIWI_APP_DATA`
+  derive from it.
+- **Every installer upgrades an install of the former product name, Piwi Dashboard** ([how](README.md#from-piwi-dashboard-to-piwi-desktop)):
+  the pinned `wix.upgradeCode`, the `.exe`'s `PIWI_REMOVE_FORMER_INSTALL` hook, the packages' `piwi-dashboard`
+  relations, and the start-on-login move (`login_item.rs`, whose test holds the three to `FORMER_PRODUCT_NAME`). Never
+  change `upgradeCode`; `runner.conf.json` drops all of these (`apps/runner/tests/bundle-config.test.ts`).
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
@@ -157,8 +162,9 @@ shell and are feature-equivalent.
   `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
   Its tray shares the desktop app's Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
   with Run in background on until the person turns it off.
-- **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config): the `.deb`
-  and the `.rpm` install the sidecar in `/usr/bin`, so the two apps' packages would otherwise clash.
+- **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config:
+  `piwi-desktop-node`, `piwi-runner-node`): the `.deb` and the `.rpm` install the sidecar in `/usr/bin`, so a plain
+  `node` would clash with the other app's package and the distribution's `nodejs`.
   `apps/runner/tests/bundle-config.test.ts` holds the constant and both configs together.
 - **The release's file names come from `ASSET_NAME_PATTERN`** in `reusable-publish-desktop.yml` (`Piwi-Desktop_…`) and
   `reusable-publish-runner.yml` (`Piwi-Runner_…`), never from `productName`; the step that writes `latest-nsis.json`
@@ -166,7 +172,7 @@ shell and are feature-equivalent.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
-- **The sidecar layout** (`src-tauri/binaries/node-<triple>`, Runner's `piwi-runner-node-<triple>`,
+- **The sidecar layout** (`src-tauri/binaries/piwi-desktop-node-<triple>`, Runner's `piwi-runner-node-<triple>`,
   `src-tauri/resources/app-server/.output/`) is what the packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means
   updating both.
 - **Commit scope**: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where

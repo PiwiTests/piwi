@@ -23,7 +23,7 @@ const INSTALLED_OUTPUT = [
   'u'.repeat(20),
   'AppData',
   'Local',
-  'Piwi Dashboard',
+  'Piwi Desktop',
   'resources',
   'app-server',
   '.output',
