@@ -246,6 +246,24 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
     own.reader.close();
   });
 
+  it('names a call’s pages by the runner’s title of its step, as the trace’s call names it', async () => {
+    const traces = path.join(root, 'steps', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    fs.writeFileSync(
+      path.join(traces, 't1.trace'),
+      [
+        JSON.stringify({ type: 'before', callId: 'call@5', stepId: 'step@9', method: 'click' }),
+        snapshotLine('call@5', 'after', ['HTML', {}, ['BODY', {}, 'Paid']]),
+        '',
+      ].join('\n'),
+    );
+    const runner = new Map([['step@9', "Click getByRole('button', { name: 'Pay' })"]]);
+    const own = readerOf(traces, 't1', (call) => runner.get(call) ?? null);
+    await own.reader.turn();
+    expect(own.kept.map((n) => [n.call, n.title])).toEqual([['step@9', "Click getByRole('button', { name: 'Pay' })"]]);
+    own.reader.close();
+  });
+
   it('says a trace takes no DOM snapshots once its calls came with none, and keeps nothing of another frame', async () => {
     const traces = path.join(root, 'none', 'traces');
     fs.mkdirSync(traces, { recursive: true });

@@ -18,9 +18,10 @@
  *   the trace's order. Before one is kept, what its page's secrets show is removed (`hideFrameSnapshotSecrets`) with
  *   the attempt's secrets as the trace tells them: the values its secret fields held in the snapshots read so far, this
  *   one included (`snapshotFieldSecrets`), and each value its calls typed into a field their locator names for a secret
- *   or with no locator; its call's title is the runner's as the lane's layers named it (`titled`), else the trace's
- *   own, the text it types and its credentials hidden. A snapshot that cannot be read whole, or past
- *   `MAX_SNAPSHOT_BYTES` once hidden, stops its frame's chain until its next full snapshot, saying why.
+ *   or with no locator; its call's title is the runner's of its step as the lane's layers named it (`titled`; the
+ *   step is the call's `stepId` in the trace, else its id), else the trace's own, the text it types and its credentials
+ *   hidden. A snapshot that cannot be read whole, or past `MAX_SNAPSHOT_BYTES` once hidden, stops its frame's chain
+ *   until its next full snapshot, saying why.
  * - **Resources.** Before a snapshot, each resource it names (`snapshotResourceUrls`, and what a stylesheet among them
  *   names, `cssReferences`, `CSS_DEPTH` imports deep) that its page loaded, from the trace folder's `resources/` alone,
  *   `MAX_RESOURCE_BYTES` at most and its bytes of the kind its content type says (`isInspectResourceBytes`): a
@@ -285,7 +286,7 @@ export interface DesktopTraceReaderOptions {
   worker: number;
   /** The running test's title, which each notice names. */
   test: string | null;
-  /** The runner's title of a call by Playwright's id of it, as the lane's layers named it; null when not heard. */
+  /** The runner's title of a call by the id of its step, as the lane's layers named it; null when not heard. */
   titleOf?(call: string): string | null;
   /** A snapshot was kept: the windows with Inspect open hear of it. */
   kept(notice: DesktopInspectNotice): void;
@@ -655,7 +656,7 @@ export class DesktopTraceReader {
       if (url) named.push({ url, sha1: resource.sha1 });
     }
     if (this.closed) return;
-    const title = this.titleOf(waiting.callId);
+    const title = this.titleOf(fields.call, waiting.callId);
     const added = this.options.store.addSnapshot(this.options.key, {
       ...fields,
       title,
@@ -675,9 +676,12 @@ export class DesktopTraceReader {
     });
   }
 
-  /** A call's title: the runner's, as the lane's layers named it, else the trace's own; what it types hidden. */
-  private titleOf(callId: string): string {
-    const title = this.options.titleOf?.(callId) ?? this.calls.get(callId)?.title ?? 'Call';
+  /**
+   * A call's title: the runner's of its step (`step`, the trace's `stepId` of the call, else its id), as the lane's
+   * layers named it, else the trace's own of the call (`callId`); what it types hidden.
+   */
+  private titleOf(step: string, callId: string): string {
+    const title = this.options.titleOf?.(step) ?? this.calls.get(callId)?.title ?? 'Call';
     return hideSecretsInText(hideTypedText(title)).slice(0, 300);
   }
 
@@ -787,7 +791,7 @@ interface InspectedLane {
   asking: boolean;
   /** When the worker is asked again for its attempt's trace. */
   timer: ReturnType<typeof setTimeout> | null;
-  /** The runner's title of each of the lane's calls, as its layers named them, by Playwright's id of the call. */
+  /** The runner's title of each of the lane's calls, as its layers named them, by the id of the call's step. */
   titles: Map<string, string>;
   closed: boolean;
 }
