@@ -35,17 +35,24 @@ import { timingSafeEqualStr } from './timing-safe';
  * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose project
  * turned it on (a CI run's, or one a developer shares from their machine) and the people watching them. Each worker
  * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
- * it hears how many people watch it, what they ask of its images (`view`: the largest size one of them shows it at, and
- * the pace), and which elements its project masks beside the secret fields (`setMasks` tells the open workers each
- * change). A viewer's page holds one watch of the run (`openWatch`), a stream of live messages: the frames of the
- * worker it shows in full (its focus: one worker's test, or the worker of a lane, `liveLaneKey`, which it follows
- * through the lane's next tests and the worker started in it again, waiting `LANE_WAIT_MS` for it, each test's end told
+ * it hears how many people watch it, what they ask of its images (`view`: the largest size one of them shows it at,
+ * the pace, and whether one shows it in full, `full`, `TELL_MS` apart at most, what changed in between told
+ * together; `resend` when a watch that showed it as a tile shows it in full), and which elements its project masks
+ * beside the secret fields (`setMasks` tells the open workers each change). A viewer's page holds one watch of the run
+ * (`openWatch`), a stream of live messages: the frames of the worker it shows in full (its focus: one worker's test, or
+ * the worker of a lane, `liveLaneKey`, which it follows through the lane's next tests and the worker started in it
+ * again, waiting `LANE_WAIT_MS` for it, a watch that asks for a lane while it waits included, each test's end told
  * with how it ended, `test-ended`), and while it shows tiles (**Watch all**) each other worker's latest frame,
- * `LIVE_TILE_FPS` a second at most. The page changes what its watch shows without opening another (`changeWatch`), by
- * the id the watch's stream said as it opened. The frames a worker posts go to its viewers and nowhere else: none is
- * kept, written to the database, logged or exported, and a viewer whose stream is backed up gets the latest frame alone
- * once it drains. A CI run's worker posts the call its test is in as Playwright logs it (`call-log`), which goes to the
- * watches that show it in full the same way, the latest kept apart from the frame. The worker's stops go to everyone
+ * `LIVE_TILE_FPS` a second at most, `MAX_LIVE_TILE_FRAME` bytes at most (a larger one says why in its place). The
+ * page changes what its watch shows without opening another (`changeWatch`), by the id the watch's stream said as it
+ * opened, `MAX_WATCH_CHANGES_PER_SECOND` times a second at most, and hears what the watch shows then (`LiveWatchShown`),
+ * a full view refused included. The frames a worker posts go to its viewers and nowhere else: none is kept, written to
+ * the database, logged or exported. A viewer whose stream is backed up, or that was sent `MAX_WATCH_BYTES_PER_SECOND`
+ * of images in the last second, gets the latest frame alone once it may, and one whose stream stays backed up
+ * `WATCH_STALL_MS` ends. A frame of a worker no watch shows in full, past a tile's pace or size, or that nobody
+ * watches, goes nowhere and is not charged to the run. A CI run's worker posts the call its test is in as Playwright
+ * logs it (`call-log`), which goes to the watches that show it in full the same way, the latest kept apart from the
+ * frame. A run that ended takes no watch any more. The worker's stops go to everyone
  * with the run page open, through the run's event stream (`live-worker`), and so does each worker's leaving, whatever
  * ends it; a developer who stops sharing their run has each worker's full views hear so (`unshared`) before its stream
  * closes. A run's keys, workers and watches end with the run (its finish or cancel), with the project's setting turned
@@ -87,6 +94,24 @@ export const MAX_LIVE_KEYS_PER_PROJECT = 500;
 const MAX_KEYS_PER_RUN = 64;
 /** The runs whose counts are kept after they ended, the latest. */
 const MAX_COUNTED_RUNS = 512;
+/** The runs that ended remembered, the latest, so a watch opened as one ends is refused. */
+const MAX_ENDED_RUNS = 512;
+/** The most changes of one watch a second: a further one is refused. */
+export const MAX_WATCH_CHANGES_PER_SECOND = 5;
+/** The least time between two tellings of what a worker's viewers ask: the changes in between go as one. */
+export const TELL_MS = 250;
+/** The largest image a tile carries, in bytes: a tile-sized frame is a fraction of it. */
+export const MAX_LIVE_TILE_FRAME = 48 * 1024;
+/** What a tile says in place of an image larger than a tile carries: someone shows its worker in full, large. */
+export const TILE_TOO_LARGE = 'Shown in full elsewhere, at a size too large for a tile: open it to watch.';
+/** The most frames a second relayed of a worker no watch shows in full: twice a tile's pace, for the jitter. */
+export const MAX_RELAYED_TILE_FPS = LIVE_TILE_FPS * 2;
+/** The most bytes of images one watch is sent a second, its full view and its tiles together: the rest waits. */
+export const MAX_WATCH_BYTES_PER_SECOND = 1024 * 1024;
+/** How long a watch's stream may stay backed up before the watch ends: its page reads no more. */
+export const WATCH_STALL_MS = 5000;
+/** How soon a watch past its bytes a second tries again to send what waits. */
+const BYTES_RETRY_MS = 250;
 /** The size a watch shows its focused worker at, in device pixels, until it says another. */
 const DEFAULT_SIZE = { width: LIVE_FRAME_WIDTH, height: LIVE_FRAME_HEIGHT };
 
@@ -126,14 +151,16 @@ interface Viewer {
   id: string;
   sink: EventStreamSink;
   /**
-   * The latest message of each kind of its focused worker waiting while its stream is backed up, so the one never
-   * pushes the other out: an image or why none shows (`frame`, `refused`), and a call log.
+   * The latest message of each kind of its focused worker waiting while its stream is backed up or its bytes a second
+   * are spent, so the one never pushes the other out: an image or why none shows (`frame`, `refused`), and a call log.
    */
   pending: Map<'image' | 'call-log', LiveViewerMessage>;
   /** The signed-in person watching, null when the instance knows nobody (authentication off). */
   person: number | null;
   /** When it came, in the order of all viewers. */
   since: number;
+  /** What it shows in full, as its page asked it: a worker, or a lane's (with its `slot`); null for none. */
+  focus: LiveWorkerId | null;
   /** The lane its full view follows (`liveLaneKey`); null for one worker's test, or no full view. */
   lane: string | null;
   /** The worker it shows in full now: null with no full view, or while it waits for its lane's next worker. */
@@ -142,6 +169,14 @@ interface Viewer {
   size: { width: number; height: number };
   /** Each other worker's tile, at its pace, by `liveWorkerKey`: the latest alone waits. */
   tilePacers: Map<string, LatestPacer<LiveViewerMessage>>;
+  /** Its page's changes of what it shows in the last second. */
+  changes: RateWindow;
+  /** The bytes of images it was sent in the last second. */
+  bytes: RateWindow;
+  /** Ends it once its stream stayed backed up `WATCH_STALL_MS`. */
+  stall: ReturnType<typeof setTimeout> | null;
+  /** Sends what waits once its bytes a second allow. */
+  retry: ReturnType<typeof setTimeout> | null;
 }
 
 interface WorkerLink {
@@ -151,18 +186,31 @@ interface WorkerLink {
   viewers: Set<Viewer>;
   paused: LiveStop | null;
   rate: RateWindow;
+  /** Its frames relayed in the last second while no watch showed it in full. */
+  tileRate: RateWindow;
   /** The call logs it posted in the last second. */
   logRate: RateWindow;
   /** How many watch it, and what they ask, as it last heard: each is said again when it changes alone. */
   told: { count: number; view: string } | null;
+  /** Tells it how many watch and what they ask, `TELL_MS` apart at most. */
+  teller: LatestPacer<true>;
+  /** A watch began to show it in full since it was last told. */
+  attached: boolean;
 }
 
+/** What a full view asked shows: a worker, or the lane's (`lane`), or a lane that waits for its next worker. */
+type FocusTarget = { link: WorkerLink; lane: string | null } | { waiting: string };
+
 interface RunLive {
+  id: number;
   projectId: number;
   workers: Map<string, WorkerLink>;
   /** The worker that holds each lane now, by `liveLaneKey`. */
   lanes: Map<string, WorkerLink>;
-  /** The watches whose lane's worker left, waiting `LANE_WAIT_MS` for one to start in it again, and that worker. */
+  /**
+   * The lanes whose worker left, `LANE_WAIT_MS` each, for one to start in it again: that worker, and the watches that
+   * wait for the lane's next.
+   */
   waiting: Map<string, { id: LiveWorkerId; viewers: Set<Viewer>; timer: ReturnType<typeof setTimeout> }>;
   /** Every watch of the run, by its id. */
   viewers: Map<string, Viewer>;
@@ -170,7 +218,10 @@ interface RunLive {
   bytes: RateWindow;
 }
 
-/** What a run's workers sent, the posts refused included: the run page's and the tests' check that nothing went. */
+/**
+ * What a run's workers sent, the posts refused included, and the frames taken whether or not anyone received them:
+ * the run page's and the tests' check that nothing went.
+ */
 export interface LiveViewCounts {
   requests: number;
   frames: number;
@@ -178,7 +229,28 @@ export interface LiveViewCounts {
 }
 
 /** Why a relay refused. */
-export type LiveViewRefusal = { status: 404 | 409 | 429; message: string };
+export type LiveViewRefusal = { status: 404 | 409 | 410 | 429; message: string };
+
+/**
+ * What a watch shows, as its page hears it after a change: the full view as the page asked it (null for none, or once
+ * it ended), its tiles, and the size of its full view, in device pixels.
+ */
+export interface LiveWatchShown {
+  focus: LiveWorkerId | null;
+  tiles: boolean;
+  width: number;
+  height: number;
+}
+
+/**
+ * How a change of a watch went: refused or not, and what the watch shows then. A full view refused leaves the watch
+ * showing none, the change's other fields applied, and says what it shows; any other refusal changes nothing and says
+ * nothing of it.
+ */
+export interface LiveWatchChange {
+  refused: LiveViewRefusal | null;
+  shown: LiveWatchShown | null;
+}
 
 /** What a worker posts, as the relay takes it: a frame with its image as bytes, from either form it came in. */
 export type LiveRelayMessage = Exclude<WorkerToInstance, { type: 'frame'; data: string }> | LiveWorkerFrame;
@@ -225,6 +297,8 @@ export class LiveViewRelay {
   private readonly ended = new Map<string, { runId: number; why: LiveKeyEnd; expiresAt: number }>();
   private readonly runs = new Map<number, RunLive>();
   private readonly counts = new Map<number, LiveViewCounts>();
+  /** The runs that ended, oldest first: none of them takes a watch. */
+  private readonly endedRuns = new Set<number>();
   /** How many viewers came so far, which orders them. */
   private viewersCame = 0;
   /** The elements each project masks, as a project admin last set them on this server. */
@@ -324,6 +398,7 @@ export class LiveViewRelay {
     const known = this.runs.get(runId);
     if (known) return known;
     const run: RunLive = {
+      id: runId,
       projectId,
       workers: new Map(),
       lanes: new Map(),
@@ -361,14 +436,18 @@ export class LiveViewRelay {
       viewers: new Set(),
       paused: before?.paused ?? null,
       rate: new RateWindow(MAX_RELAYED_FPS, this.now),
+      tileRate: new RateWindow(MAX_RELAYED_TILE_FPS, this.now),
       logRate: new RateWindow(MAX_RELAYED_CALL_LOGS, this.now),
       told: null,
+      teller: new LatestPacer<true>({ intervalMs: TELL_MS, send: () => this.tellNow(run, link) }),
+      attached: false,
     };
     run.workers.set(key, link);
     if (before) {
       // The worker opened its stream again: its viewers stay with it.
       for (const viewer of before.viewers) this.attach(viewer, link);
       before.viewers.clear();
+      before.teller.close();
       before.sink.close();
     }
     // A new worker in a lane takes it; a worker that opens its stream again keeps the lane only if it still held it.
@@ -378,7 +457,7 @@ export class LiveViewRelay {
     // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
     const locators = this.projectMasks.get(entry.projectId) ?? masks;
     sink.send({ type: 'masks', locators: [...locators] } satisfies InstanceToWorker);
-    this.tell(run, link);
+    this.tell(link);
     this.publish(entry.runId, { ...id, connected: true, paused: link.paused });
     return null;
   }
@@ -395,11 +474,23 @@ export class LiveViewRelay {
           this.deliver(run, link, { type: 'refused', ...idOf(link.id), message: message.refused }, 'image');
           return null;
         }
+        const counts = this.countsOf(runId);
+        // A frame no watch shows in full goes to the tiles alone, at their pace and within their size, or nowhere:
+        // either way, what nobody receives is not charged to the run.
+        if (!link.viewers.size) {
+          const tiled = [...run.viewers.values()].some((viewer) => viewer.tiles);
+          const fits = message.image.length <= MAX_LIVE_TILE_FRAME;
+          if (!tiled || !fits || !link.tileRate.take(1)) {
+            counts.frames++;
+            counts.bytes += message.image.length;
+            if (tiled && !fits) this.offerTiles(run, link, this.tooLarge(link));
+            return null;
+          }
+        }
         if (!run.bytes.take(message.image.length)) {
           const most = MAX_LIVE_BYTES_PER_RUN / (1024 * 1024);
           return { status: 429, message: `The workers of a run send ${most} MB of images a second at most.` };
         }
-        const counts = this.countsOf(runId);
         counts.frames++;
         counts.bytes += message.image.length;
         const frame: LiveViewerMessage = {
@@ -440,9 +531,9 @@ export class LiveViewRelay {
   /**
    * Someone's page watches the run on the stream `open` opens, as `ask` says, until it closes; refused, the stream is
    * left unopened. The stream opens with the watch's id (`hello`), which `changeWatch` takes. A full view names a
-   * connected worker, or a lane a connected worker holds; tiles need none. `person`, the signed-in user, holds
-   * `MAX_LIVE_VIEWERS_PER_PERSON` watches of the run at most: one more replaces their oldest, which hears why it
-   * ended.
+   * connected worker, or a lane a connected worker holds or that waits for its next one; tiles need none. `person`,
+   * the signed-in user, holds `MAX_LIVE_VIEWERS_PER_PERSON` watches of the run at most: one more replaces their oldest,
+   * which hears why it ended. A run that ended takes none (410), as it ends while its route opened the watch.
    */
   openWatch(
     runId: number,
@@ -451,6 +542,7 @@ export class LiveViewRelay {
     open: () => EventStreamSink,
     person: number | null = null,
   ): LiveViewRefusal | null {
+    if (this.endedRuns.has(runId)) return { status: 410, message: 'The run is no longer live.' };
     const known = this.runs.get(runId);
     const target = ask.focus ? this.focusOf(known, ask.focus) : null;
     if (ask.focus && !target) return { status: 404, message: 'This worker is not in the live view of the run.' };
@@ -470,53 +562,64 @@ export class LiveViewRelay {
       pending: new Map(),
       person,
       since: this.viewersCame++,
+      focus: null,
       lane: null,
       link: null,
       tiles: ask.tiles === true,
       size: ask.size ?? DEFAULT_SIZE,
       tilePacers: new Map(),
+      changes: new RateWindow(MAX_WATCH_CHANGES_PER_SECOND, this.now),
+      bytes: new RateWindow(MAX_WATCH_BYTES_PER_SECOND, this.now),
+      stall: null,
+      retry: null,
     };
     run.viewers.set(viewer.id, viewer);
-    if (target) {
-      viewer.lane = target.lane;
-      this.attach(viewer, target.link);
-    }
-    sink.send({ type: 'hello', watch: viewer.id } satisfies LiveViewerMessage);
+    this.send(viewer, { type: 'hello', watch: viewer.id });
+    if (ask.focus && target) this.focusOn(run, viewer, ask.focus, target);
     sink.onDrain(() => {
-      for (const [type, waiting] of viewer.pending) {
-        if (sink.backedUp()) return;
-        viewer.pending.delete(type);
-        sink.send(waiting);
+      if (!sink.backedUp() && viewer.stall) {
+        clearTimeout(viewer.stall);
+        viewer.stall = null;
       }
+      this.flush(viewer);
     });
     // A page that left while the route awaited its checks closes its watch at once, which tells its workers.
     sink.onClose(() => this.closeWatch(runId, viewer));
     if (run.viewers.get(viewer.id) !== viewer) return null;
-    if (viewer.tiles) for (const link of run.workers.values()) this.tell(run, link);
-    else if (viewer.link) this.tell(run, viewer.link);
+    if (viewer.tiles) for (const link of run.workers.values()) this.tell(link);
+    else if (viewer.link) this.tell(viewer.link);
     return null;
   }
 
   /**
    * The page changes what its watch `watchId` of the run shows, as `ask` says: a full view of another worker or lane,
-   * or none (`focus: null`), tiles on or off, the full view's size. Refused (404) for a watch of another run or another
-   * person, and for a full view of a worker that is not in the live view, the watch then left as it was.
+   * or none (`focus: null`), tiles on or off, the full view's size; and hears what the watch shows then. Refused (404)
+   * for a watch of another run or another person, and past `MAX_WATCH_CHANGES_PER_SECOND` (429), the watch then left
+   * as it was; a full view of a worker that is not in the live view, nor of a lane that waits for its next worker, is
+   * refused (404) with the change's other fields applied and no full view shown.
    */
-  changeWatch(runId: number, watchId: string, person: number | null, ask: LiveWatchAsk): LiveViewRefusal | null {
+  changeWatch(runId: number, watchId: string, person: number | null, ask: LiveWatchAsk): LiveWatchChange {
     const run = this.runs.get(runId);
     const viewer = run?.viewers.get(watchId);
-    if (!run || !viewer || viewer.person !== person) return { status: 404, message: 'No such watch of this run.' };
-    const target = ask.focus ? this.focusOf(run, ask.focus) : null;
-    if (ask.focus && !target) return { status: 404, message: 'This worker is not in the live view of the run.' };
+    if (!run || !viewer || viewer.person !== person) {
+      return { refused: { status: 404, message: 'No such watch of this run.' }, shown: null };
+    }
+    if (!viewer.changes.take(1)) {
+      const message = `A watch changes what it shows ${MAX_WATCH_CHANGES_PER_SECOND} times a second at most.`;
+      return { refused: { status: 429, message }, shown: null };
+    }
+    let refused: LiveViewRefusal | null = null;
     const told = new Set<WorkerLink>();
     if (ask.focus !== undefined) {
+      const target = ask.focus ? this.focusOf(run, ask.focus) : null;
       const before = viewer.link;
       this.leaveFocus(run, viewer);
       if (before) told.add(before);
-      if (target) {
-        viewer.lane = target.lane;
-        this.attach(viewer, target.link);
-        told.add(target.link);
+      if (ask.focus && target) {
+        this.focusOn(run, viewer, ask.focus, target);
+        if ('link' in target) told.add(target.link);
+      } else if (ask.focus) {
+        refused = { status: 404, message: 'This worker is not in the live view of the run.' };
       }
     }
     if (ask.size) {
@@ -528,8 +631,9 @@ export class LiveViewRelay {
       if (!viewer.tiles) this.closeTiles(viewer);
       for (const link of run.workers.values()) told.add(link);
     }
-    for (const link of told) if (run.workers.get(liveWorkerKey(link.id)) === link) this.tell(run, link);
-    return null;
+    for (const link of told) if (run.workers.get(liveWorkerKey(link.id)) === link) this.tell(link);
+    const { width, height } = viewer.size;
+    return { refused, shown: { focus: viewer.focus, tiles: viewer.tiles, width, height } };
   }
 
   /**
@@ -567,10 +671,18 @@ export class LiveViewRelay {
     }
   }
 
-  /** The run's live view ends: its keys open nothing more, its workers' and watches' streams close. */
+  /**
+   * The run's live view ends: its keys open nothing more, its workers' and watches' streams close. A run that ended
+   * (not one whose project turned its live view off, which may turn it on again) takes no watch any more.
+   */
   endRun(runId: number, reason: LiveViewEnd = 'run-ended'): void {
     const why: LiveKeyEnd = reason === 'off' ? 'off' : 'run-ended';
     for (const [id, entry] of this.keys) if (entry.runId === runId) this.endKey(id, entry, why);
+    if (why === 'run-ended') {
+      this.endedRuns.delete(runId);
+      while (this.endedRuns.size >= MAX_ENDED_RUNS) this.endedRuns.delete(this.endedRuns.values().next().value!);
+      this.endedRuns.add(runId);
+    }
     this.closeRun(runId, reason);
   }
 
@@ -613,6 +725,7 @@ export class LiveViewRelay {
     run.waiting.clear();
     for (const viewer of [...run.viewers.values()]) this.endWatch(run, viewer, reason);
     for (const link of run.workers.values()) {
+      link.teller.close();
       link.sink.close();
       this.publish(runId, { ...link.id, connected: false, paused: null });
     }
@@ -660,19 +773,38 @@ export class LiveViewRelay {
   }
 
   /**
-   * The worker a full view of `focus` shows, and the lane it follows: the lane's worker when it names its lane, else
-   * that worker; null when none is in the run's live view.
+   * What a full view of `focus` shows, and the lane it follows: the lane's worker when it names its lane, or the lane
+   * itself while it waits for its next worker, else that worker; null when none is in the run's live view.
    */
-  private focusOf(run: RunLive | undefined, focus: LiveWorkerId): { link: WorkerLink; lane: string | null } | null {
+  private focusOf(run: RunLive | undefined, focus: LiveWorkerId): FocusTarget | null {
     const lane = laneOf(focus);
     const link = lane !== null ? run?.lanes.get(lane) : run?.workers.get(liveWorkerKey(focus));
-    return link ? { link, lane } : null;
+    if (link) return { link, lane };
+    return lane !== null && run?.waiting.has(lane) ? { waiting: lane } : null;
+  }
+
+  /**
+   * The watch shows `focus` in full from now on (`target`): its worker, or the lane's next worker, which it waits for
+   * as the lane's followers do, hearing why no image shows meanwhile.
+   */
+  private focusOn(run: RunLive, viewer: Viewer, focus: LiveWorkerId, target: FocusTarget): void {
+    viewer.focus = idOf(focus);
+    if ('link' in target) {
+      viewer.lane = target.lane;
+      this.attach(viewer, target.link);
+      return;
+    }
+    const waiting = run.waiting.get(target.waiting)!;
+    viewer.lane = target.waiting;
+    waiting.viewers.add(viewer);
+    this.send(viewer, { type: 'refused', ...waiting.id, message: LANE_RESTARTING });
   }
 
   /** The watch shows `link` in full from now on: its tile of that worker gives way to the full view. */
   private attach(viewer: Viewer, link: WorkerLink): void {
     viewer.link = link;
     link.viewers.add(viewer);
+    link.attached = true;
     viewer.tilePacers.get(liveWorkerKey(link.id))?.close();
     viewer.tilePacers.delete(liveWorkerKey(link.id));
   }
@@ -682,6 +814,7 @@ export class LiveViewRelay {
     viewer.link?.viewers.delete(viewer);
     viewer.link = null;
     viewer.lane = null;
+    viewer.focus = null;
     viewer.pending.clear();
     for (const { viewers } of run.waiting.values()) viewers.delete(viewer);
   }
@@ -692,12 +825,19 @@ export class LiveViewRelay {
     viewer.tilePacers.clear();
   }
 
+  /** Tell a worker how many watches take its images and what they ask, at once or `TELL_MS` after it was last told. */
+  private tell(link: WorkerLink): void {
+    link.teller.offer(true);
+  }
+
   /**
    * Tell a worker how many watches take its images, as it changes, and before it what they ask of them, as it
-   * changes: the largest full view's size and `LIVE_FRAME_FPS`, else a tile's size and pace; what an older reporter
-   * ignores.
+   * changes: the largest full view's size, `LIVE_FRAME_FPS` and `full`, else a tile's size and pace; what an older
+   * reporter ignores. A worker a further watch shows in full, the count the same, is asked for its latest image and
+   * call log again (`resend`). Nothing for a worker that left, or of a run that ended.
    */
-  private tell(run: RunLive, link: WorkerLink): void {
+  private tellNow(run: RunLive, link: WorkerLink): void {
+    if (this.runs.get(run.id) !== run || run.workers.get(liveWorkerKey(link.id)) !== link) return;
     let count = link.viewers.size;
     let tiles = false;
     for (const viewer of run.viewers.values()) {
@@ -717,38 +857,114 @@ export class LiveViewRelay {
       view.height = Math.max(view.height, LIVE_TILE_HEIGHT);
       view.fps = Math.max(view.fps, LIVE_TILE_FPS);
     }
-    const asked = view.fps ? view : { ...DEFAULT_SIZE, fps: LIVE_FRAME_FPS };
-    const key = `${asked.width}x${asked.height}@${asked.fps}`;
+    const full = link.viewers.size > 0;
+    const asked = view.fps ? { ...view, full } : { ...DEFAULT_SIZE, fps: LIVE_FRAME_FPS, full };
+    const key = `${asked.width}x${asked.height}@${asked.fps}${full ? ' full' : ''}`;
+    const resend = link.attached && full && link.told !== null && count <= link.told.count;
+    link.attached = false;
     if (link.told?.view !== key) link.sink.send({ type: 'view', ...asked } satisfies InstanceToWorker);
     if (link.told?.count !== count) link.sink.send({ type: 'viewers', count } satisfies InstanceToWorker);
+    if (resend) link.sink.send({ type: 'resend' } satisfies InstanceToWorker);
     link.told = { count, view: key };
   }
 
   /**
-   * Send a message of a worker to the watches that show it: in full, at once (one whose stream is backed up, or still
-   * has messages waiting, gets the latest of each kind alone, once it drains, so a newer message never goes before an
-   * older one); as a tile, an image or why none shows alone, at a tile's pace.
+   * Send a message of a worker to the watches that show it: in full, at once (`offer`); as a tile, an image within
+   * `MAX_LIVE_TILE_FRAME` bytes, else why none shows, at a tile's pace.
    */
   private deliver(run: RunLive, link: WorkerLink, message: LiveViewerMessage, kind: 'image' | 'call-log'): void {
-    for (const viewer of link.viewers) {
-      if (viewer.sink.backedUp() || viewer.pending.size) viewer.pending.set(kind, message);
-      else viewer.sink.send(message);
-    }
+    for (const viewer of link.viewers) this.offer(viewer, kind, message);
     if (kind !== 'image') return;
+    const fits = message.type !== 'frame' || message.image.length <= MAX_LIVE_TILE_FRAME;
+    this.offerTiles(run, link, fits ? message : this.tooLarge(link));
+  }
+
+  /** What a tile of `link` shows in place of an image larger than a tile carries. */
+  private tooLarge(link: WorkerLink): LiveViewerMessage {
+    return { type: 'refused', ...idOf(link.id), message: TILE_TOO_LARGE };
+  }
+
+  /** Offer `tile` to every watch that shows `link` as a tile, each at a tile's pace, the latest alone waiting. */
+  private offerTiles(run: RunLive, link: WorkerLink, tile: LiveViewerMessage): void {
     const key = liveWorkerKey(link.id);
     for (const viewer of run.viewers.values()) {
       if (!viewer.tiles || link.viewers.has(viewer)) continue;
       let pacer = viewer.tilePacers.get(key);
       if (!pacer) {
-        pacer = new LatestPacer<LiveViewerMessage>({
+        const paced: LatestPacer<LiveViewerMessage> = new LatestPacer<LiveViewerMessage>({
           intervalMs: 1000 / LIVE_TILE_FPS,
-          busy: () => viewer.sink.backedUp(),
-          send: (tile) => viewer.sink.send(tile),
+          busy: () => this.backedUp(viewer),
+          send: (next) => {
+            // Past the watch's bytes a second, the tile waits its next turn, unless a newer one takes its place.
+            if (this.affords(viewer, next)) this.send(viewer, next);
+            else paced.offer(next);
+          },
         });
+        pacer = paced;
         viewer.tilePacers.set(key, pacer);
       }
-      pacer.offer(message);
+      pacer.offer(tile);
     }
+  }
+
+  /**
+   * Send a message of the worker the watch shows in full: at once, or, while its stream is backed up, its bytes a
+   * second are spent or older messages still wait, the latest of each kind alone once it may, so a newer message
+   * never goes before an older one.
+   */
+  private offer(viewer: Viewer, kind: 'image' | 'call-log', message: LiveViewerMessage): void {
+    if (!viewer.pending.size && !this.backedUp(viewer) && this.affords(viewer, message)) {
+      return this.send(viewer, message);
+    }
+    viewer.pending.set(kind, message);
+    this.flushSoon(viewer);
+  }
+
+  /** Send what waits for the watch, oldest first, while its stream takes it and its bytes a second allow. */
+  private flush(viewer: Viewer): void {
+    for (const [kind, waiting] of viewer.pending) {
+      if (this.backedUp(viewer)) return;
+      if (!this.affords(viewer, waiting)) return this.flushSoon(viewer);
+      viewer.pending.delete(kind);
+      this.send(viewer, waiting);
+    }
+  }
+
+  /** Try again soon to send what waits for the watch past its bytes a second; a backed up stream's drain does it. */
+  private flushSoon(viewer: Viewer): void {
+    if (viewer.retry || viewer.sink.backedUp()) return;
+    viewer.retry = setTimeout(() => {
+      viewer.retry = null;
+      this.flush(viewer);
+    }, BYTES_RETRY_MS);
+    viewer.retry.unref?.();
+  }
+
+  /** Whether the watch may be sent `message` within its bytes a second, which it then spends: an image's bytes. */
+  private affords(viewer: Viewer, message: LiveViewerMessage): boolean {
+    return message.type !== 'frame' || viewer.bytes.take(message.image.length);
+  }
+
+  /** Send the watch a message, the stream then watched for staying backed up. */
+  private send(viewer: Viewer, message: LiveViewerMessage): void {
+    viewer.sink.send(message);
+    this.backedUp(viewer);
+  }
+
+  /**
+   * Whether the watch's stream is backed up: while it stays so `WATCH_STALL_MS`, its page reads nothing, and its stream
+   * closes, which ends the watch; the page opens another.
+   */
+  private backedUp(viewer: Viewer): boolean {
+    if (!viewer.sink.backedUp()) return false;
+    if (!viewer.stall) {
+      viewer.stall = setTimeout(() => {
+        viewer.stall = null;
+        if (viewer.sink.backedUp()) viewer.sink.close();
+      }, WATCH_STALL_MS);
+      viewer.stall.unref?.();
+    }
+    return true;
   }
 
   /** The watch ends, hearing why, and its stream closes; the workers it took images of hear how many are left. */
@@ -763,11 +979,15 @@ export class LiveViewRelay {
     const run = known ?? (runId === null ? undefined : this.runs.get(runId));
     if (!run || run.viewers.get(viewer.id) !== viewer) return;
     run.viewers.delete(viewer.id);
+    if (viewer.stall) clearTimeout(viewer.stall);
+    if (viewer.retry) clearTimeout(viewer.retry);
+    viewer.stall = null;
+    viewer.retry = null;
     const link = viewer.link;
     this.leaveFocus(run, viewer);
     this.closeTiles(viewer);
-    if (viewer.tiles) for (const worker of run.workers.values()) this.tell(run, worker);
-    else if (link && run.workers.get(liveWorkerKey(link.id)) === link) this.tell(run, link);
+    if (viewer.tiles) for (const worker of run.workers.values()) this.tell(worker);
+    else if (link && run.workers.get(liveWorkerKey(link.id)) === link) this.tell(link);
     if (runId !== null) this.forgetIfIdle(runId, run);
   }
 
@@ -789,13 +1009,13 @@ export class LiveViewRelay {
       // What the viewer has waiting is of the test that ended: it goes no later than its end.
       viewer.pending.clear();
       if (viewer.lane !== null) {
-        viewer.sink.send({ type: 'test-ended', ...id, outcome } satisfies LiveViewerMessage);
+        this.send(viewer, { type: 'test-ended', ...id, outcome } satisfies LiveViewerMessage);
         continue;
       }
       this.leaveFocus(run, viewer);
-      viewer.sink.send({ type: 'end', ...id, reason: 'test-ended', ...(outcome ? { outcome } : {}) });
+      this.send(viewer, { type: 'end', ...id, reason: 'test-ended', ...(outcome ? { outcome } : {}) });
     }
-    this.tell(run, link);
+    this.tell(link);
   }
 
   /** The worker's full views end, each hearing `reason`; the watches stay, and the worker hears how many are left. */
@@ -803,9 +1023,9 @@ export class LiveViewRelay {
     if (!link.viewers.size) return;
     for (const viewer of [...link.viewers]) {
       this.leaveFocus(run, viewer);
-      viewer.sink.send({ type: 'end', ...idOf(link.id), reason } satisfies LiveViewerMessage);
+      this.send(viewer, { type: 'end', ...idOf(link.id), reason } satisfies LiveViewerMessage);
     }
-    this.tell(run, link);
+    this.tell(link);
   }
 
   /**
@@ -821,7 +1041,7 @@ export class LiveViewRelay {
         before.viewers.delete(viewer);
         this.attach(viewer, link);
       }
-      if (run.workers.get(liveWorkerKey(before.id)) === before) this.tell(run, before);
+      if (run.workers.get(liveWorkerKey(before.id)) === before) this.tell(before);
     }
     const waiting = run.waiting.get(lane);
     if (waiting) {
@@ -839,7 +1059,8 @@ export class LiveViewRelay {
     run.waiting.delete(lane);
     for (const viewer of waiting.viewers) {
       viewer.lane = null;
-      viewer.sink.send({ type: 'end', ...idOf(waiting.id), reason } satisfies LiveViewerMessage);
+      viewer.focus = null;
+      this.send(viewer, { type: 'end', ...idOf(waiting.id), reason } satisfies LiveViewerMessage);
     }
     this.forgetIfIdle(runId, run);
   }
@@ -848,6 +1069,7 @@ export class LiveViewRelay {
     const run = this.runs.get(runId);
     if (run?.workers.get(key) !== link) return;
     run.workers.delete(key);
+    link.teller.close();
     const id = idOf(link.id);
     // Its tiles waiting go nowhere: the run page hears the worker left.
     for (const viewer of run.viewers.values()) {
@@ -857,24 +1079,23 @@ export class LiveViewRelay {
     const lane = laneOf(link.id);
     if (lane !== null && run.lanes.get(lane) === link) {
       run.lanes.delete(lane);
-      // The full views that follow the lane wait for the worker Playwright starts in it again.
+      // The full views that follow the lane, and those that ask for it meanwhile, wait for the worker Playwright
+      // starts in it again.
       const followers = [...link.viewers].filter((viewer) => viewer.lane === lane);
-      if (followers.length) {
-        for (const viewer of followers) {
-          link.viewers.delete(viewer);
-          viewer.link = null;
-          // What the viewer has waiting is of the worker that left: it goes no later than the wait.
-          viewer.pending.clear();
-          viewer.sink.send({ type: 'refused', ...id, message: LANE_RESTARTING } satisfies LiveViewerMessage);
-        }
-        const timer = setTimeout(() => this.stopWaiting(runId, run, lane, 'worker-left'), LANE_WAIT_MS);
-        timer.unref?.();
-        run.waiting.set(lane, { id, viewers: new Set(followers), timer });
+      for (const viewer of followers) {
+        link.viewers.delete(viewer);
+        viewer.link = null;
+        // What the viewer has waiting is of the worker that left: it goes no later than the wait.
+        viewer.pending.clear();
+        this.send(viewer, { type: 'refused', ...id, message: LANE_RESTARTING } satisfies LiveViewerMessage);
       }
+      const timer = setTimeout(() => this.stopWaiting(runId, run, lane, 'worker-left'), LANE_WAIT_MS);
+      timer.unref?.();
+      run.waiting.set(lane, { id, viewers: new Set(followers), timer });
     }
     for (const viewer of [...link.viewers]) {
       this.leaveFocus(run, viewer);
-      viewer.sink.send({ type: 'end', ...id, reason: 'worker-left' } satisfies LiveViewerMessage);
+      this.send(viewer, { type: 'end', ...id, reason: 'worker-left' } satisfies LiveViewerMessage);
     }
     this.publish(runId, { ...link.id, connected: false, paused: null });
     this.forgetIfIdle(runId, run);

@@ -18,8 +18,44 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Post to the live view of a run',
     description:
-      "What a test worker sends the run page's live view while its run executes. A frame of its test's page goes as one live message (`Content-Type: application/vnd.piwi.live-frame`: the header's length as a 32-bit big-endian number, the header as JSON `{ type: 'frame', worker, shard, slot, call, test, at }`, the data's length the same way, then the JPEG's bytes, 192 KB at most), to an instance that says what its viewers ask on the worker's stream; a reporter that predates it posts the frame as JSON (`{ type: 'frame', worker, shard, data, call, test }`, the JPEG in base64). Every other message is JSON: why no frame shows (`{ type: 'frame', refused }`), that its test stopped or went on (`{ type: 'stop', stop }`), the call its test is in as Playwright logs it, in a CI run while someone watches (`{ type: 'call-log', log, test }`: the call, its status, the call log's last lines as Playwright folds a failed call's, the point an input action acts on, the elements its locator matches while it waits, the viewport, how long it has run and its error's first line, with the test's title), that the test watched ended (`{ type: 'ended' }`), or that the developer stopped sharing the run (`{ type: 'unshared' }`): the worker's viewers hear why their view ended. A frame or a call log goes to the people watching that worker and is kept nowhere: not in the database, the logs or any export. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`). 401 without a key of this run, 404 while the project has its live view off, 410 for one that ended with its run, 409 for a worker that holds no stream, 413 for a message over its size, 429 past 8 frames or 8 call logs a second of one worker, or past 4 MB of images a second of the run's workers together.",
+      "What a test worker sends the run page's live view while its run executes. A frame of its test's page goes as one live message (`Content-Type: application/vnd.piwi.live-frame`: the header's length as a 32-bit big-endian number, the header as JSON `{ type: 'frame', worker, shard, slot, call, test, at }`, the data's length the same way, then the JPEG's bytes, 192 KB at most), to an instance that says what its viewers ask on the worker's stream; a reporter that predates it posts the frame as JSON (`{ type: 'frame', worker, shard, data, call, test }`, the JPEG in base64). Either form's image starts as a JPEG does (`FF D8 FF`). Every other message is JSON: why no frame shows (`{ type: 'frame', refused }`), that its test stopped or went on (`{ type: 'stop', stop }`), the call its test is in as Playwright logs it, in a CI run while someone watches it in full (`{ type: 'call-log', log, test }`: the call, its status, the call log's last lines as Playwright folds a failed call's, the point an input action acts on, the elements its locator matches while it waits, the viewport, how long it has run and its error's first line, with the test's title), that the test watched ended (`{ type: 'ended' }`), or that the developer stopped sharing the run (`{ type: 'unshared' }`): the worker's viewers hear why their view ended. A frame or a call log goes to the people watching that worker and is kept nowhere: not in the database, the logs or any export. A frame of a worker nobody watches, or that only tiles show past 2 a second or past 48 KB, goes to nobody and counts against no rate of the run. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`). 401 without a key of this run, 404 while the project has its live view off, 410 for one that ended with its run, 409 for a worker that holds no stream, 413 for a message over its size, 429 past 8 frames or 8 call logs a second of one worker, or past 4 MB of images a second of the run's workers together.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      required: true,
+      content: {
+        'application/vnd.piwi.live-frame': {
+          schema: {
+            type: 'string',
+            format: 'binary',
+            description:
+              "One live message: the header's length (32-bit big-endian), the header as JSON, the JPEG's length the same way, then the JPEG.",
+          },
+        },
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['type', 'worker'],
+            properties: {
+              type: { type: 'string', enum: ['frame', 'stop', 'call-log', 'ended', 'unshared'] },
+              worker: { type: 'integer', minimum: 0 },
+              shard: { type: 'integer', minimum: 1, nullable: true },
+              slot: { type: 'integer', minimum: 0 },
+              data: {
+                type: 'string',
+                description: "A frame's JPEG in base64, from a reporter that predates live messages.",
+              },
+              refused: { type: 'string' },
+              call: { type: 'object', nullable: true },
+              test: { type: 'string', nullable: true },
+              at: { type: 'number' },
+              stop: { type: 'object', nullable: true },
+              log: { type: 'object' },
+              outcome: { type: 'object', nullable: true },
+            },
+          },
+        },
+      },
+    },
   },
 });
 

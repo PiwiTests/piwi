@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
@@ -22,7 +22,14 @@ import {
   MAX_LIVE_VIEWERS_PER_PERSON,
   MAX_LIVE_VIEWERS_PER_RUN,
   MAX_LIVE_WORKERS_PER_RUN,
+  MAX_LIVE_TILE_FRAME,
   MAX_RELAYED_FPS,
+  MAX_RELAYED_TILE_FPS,
+  MAX_WATCH_BYTES_PER_SECOND,
+  MAX_WATCH_CHANGES_PER_SECOND,
+  TELL_MS,
+  TILE_TOO_LARGE,
+  WATCH_STALL_MS,
   type LiveRelayMessage,
   type LiveWatchAsk,
 } from '../../server/utils/live-view';
@@ -36,9 +43,31 @@ import { runEventBus } from '../../server/utils/run-events';
  * slowly; a watch shows one worker in full and every worker as a tile, one a second, and changes what it shows on its
  * own stream, each worker hearing how many watch it and what they ask of its images; a key whose digest its run stores
  * is taken back by a relay that does not hold it, as one started again; workers, watches (per run and per person),
- * frames a second and the run's bytes of images a second are bounded; a stop reaches the run page and survives the
- * worker's new stream; and the run page hears each worker leave, whatever ends it.
+ * frames a second and the run's bytes of images a second are bounded, frames nobody receives charged to nothing; a
+ * watch's changes a second, its bytes of images a second and how long its stream stays backed up are bounded, a tile
+ * carries a small image alone, and a worker hears what its watches ask `TELL_MS` apart at most; a stop reaches the run
+ * page and survives the worker's new stream; and the run page hears each worker leave, whatever ends it.
  */
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Let the tellings of what each worker's watches ask go: they go `TELL_MS` apart at most. */
+const told = () => vi.advanceTimersByTime(TELL_MS);
+
+/** What the instance asks of a worker's images. */
+const view = (width: number, height: number, fps: number, full: boolean) => ({
+  type: 'view',
+  width,
+  height,
+  fps,
+  full,
+});
 
 /** A stream as a test reads it: what was sent, whether it is backed up, and its close. */
 class FakeSink implements EventStreamSink {
@@ -331,7 +360,7 @@ describe('the relay', () => {
     expect(live.connectWorker(entry, { shard: null, worker: 1 }, () => workers[1]!)).toBeNull();
     expect(workers[0]!.sent).toEqual([
       { type: 'masks', locators: [] },
-      { type: 'view', width: LIVE_FRAME_WIDTH, height: LIVE_FRAME_HEIGHT, fps: LIVE_FRAME_FPS },
+      view(LIVE_FRAME_WIDTH, LIVE_FRAME_HEIGHT, LIVE_FRAME_FPS, false),
       { type: 'viewers', count: 0 },
     ]);
     expect(published.map((p) => p.state)).toEqual([
@@ -344,10 +373,8 @@ describe('the relay', () => {
     const viewer = new FakeSink();
     expect(watch(live, 7, { shard: null, worker: 0 }, viewer, null, { size: { width: 1000, height: 640 } })).toBeNull();
     expect(viewer.sent[0]).toEqual({ type: 'hello', watch: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/) });
-    expect(workers[0]!.sent.slice(-2)).toEqual([
-      { type: 'view', width: 1000, height: 640, fps: LIVE_FRAME_FPS },
-      { type: 'viewers', count: 1 },
-    ]);
+    told();
+    expect(workers[0]!.sent.slice(-2)).toEqual([view(1000, 640, LIVE_FRAME_FPS, true), { type: 'viewers', count: 1 }]);
     expect(got(viewer)).toEqual([]);
 
     live.receive(7, frame(0, image(2)));
@@ -375,8 +402,33 @@ describe('the relay', () => {
     expect(live.countsFor(7)).toMatchObject({ frames: 4, bytes: 4 * image(1).length });
 
     viewer.close();
+    told();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     expect(live.viewersOf(7)).toBe(0);
+  });
+
+  test('tells a worker what its watches ask once for the changes that come together', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    told();
+    const before = worker.sent.length;
+    // Several watches open, one changes its size and another leaves: the worker hears what they ask now, once.
+    const sinks = [new FakeSink(), new FakeSink(), new FakeSink()];
+    for (const sink of sinks) watch(live, 7, { shard: null, worker: 0 }, sink);
+    const id = (sinks[0]!.sent[0] as { watch: string }).watch;
+    live.changeWatch(7, id, null, { size: { width: 900, height: 600 } });
+    sinks[2]!.close();
+    // The first change goes at once.
+    expect(worker.sent.slice(before)).toEqual([view(640, 400, LIVE_FRAME_FPS, true), { type: 'viewers', count: 1 }]);
+    told();
+    expect(worker.sent.slice(before + 2)).toEqual([
+      view(900, 600, LIVE_FRAME_FPS, true),
+      { type: 'viewers', count: 2 },
+    ]);
+    told();
+    expect(worker.sent).toHaveLength(before + 4);
   });
 
   test('gives a viewer that reads slowly the latest frame alone, once it drains', () => {
@@ -494,7 +546,10 @@ describe('the relay', () => {
     let now = 1_000_000;
     const { live } = relay(() => now);
     const entry = live.authorize(7, live.mintKey(7, 1))!;
-    for (let worker = 0; worker < 4; worker++) live.connectWorker(entry, { shard: null, worker }, () => new FakeSink());
+    for (let worker = 0; worker < 4; worker++) {
+      live.connectWorker(entry, { shard: null, worker }, () => new FakeSink());
+      watch(live, 7, { shard: null, worker }, new FakeSink());
+    }
     const heavy = new Uint8Array(MAX_LIVE_BYTES_PER_RUN / 4).fill(1);
     for (let worker = 0; worker < 4; worker++) expect(live.receive(7, frame(worker, heavy))).toBeNull();
     expect(live.receive(7, frame(0, image(1)))).toMatchObject({ status: 429, message: expect.stringMatching(/MB/) });
@@ -502,6 +557,37 @@ describe('the relay', () => {
     expect(live.receive(7, { type: 'frame', shard: null, worker: 1, refused: 'No page yet.' })).toBeNull();
     now += 1000;
     expect(live.receive(7, frame(0, image(1)))).toBeNull();
+  });
+
+  test('charges the run nothing for a frame nobody receives: of a worker nobody watches, or past a tile’s pace or size', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    for (let worker = 0; worker < 3; worker++) live.connectWorker(entry, { shard: null, worker }, () => new FakeSink());
+    // Nobody watches worker 0: a frame of the run's whole rate goes nowhere, and takes none of it.
+    expect(live.receive(7, frame(0, new Uint8Array(MAX_LIVE_BYTES_PER_RUN).fill(1)))).toBeNull();
+    expect(live.receive(7, frame(0, new Uint8Array(MAX_LIVE_BYTES_PER_RUN).fill(1)))).toBeNull();
+    const page = new FakeSink();
+    watch(live, 7, null, page, null, { tiles: true });
+    // A worker only tiles show: frames past a tile's pace, as an older reporter sends four a second, go nowhere.
+    const tile = new Uint8Array(MAX_LIVE_TILE_FRAME).fill(2);
+    tile.set([0xff, 0xd8, 0xff]);
+    for (let i = 0; i < MAX_RELAYED_FPS; i++) expect(live.receive(7, frame(1, tile))).toBeNull();
+    // A frame larger than a tile carries goes nowhere either: the tile says why.
+    expect(live.receive(7, frame(2, new Uint8Array(MAX_LIVE_TILE_FRAME + 1).fill(3)))).toBeNull();
+    const shown = got(page) as Array<{ type: string; worker: number; message?: string }>;
+    expect(shown.filter((m) => m.worker === 1 && m.type === 'frame')).toHaveLength(1);
+    expect(shown.filter((m) => m.worker === 2)).toEqual([
+      { type: 'refused', shard: null, worker: 2, message: TILE_TOO_LARGE },
+    ]);
+    // What the run was charged: the tiles taken at their pace alone.
+    const viewer = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 3 }, () => new FakeSink());
+    watch(live, 7, { shard: null, worker: 3 }, viewer);
+    const rest = MAX_LIVE_BYTES_PER_RUN - MAX_RELAYED_TILE_FPS * tile.length;
+    expect(live.receive(7, frame(3, new Uint8Array(rest).fill(4)))).toBeNull();
+    expect(live.receive(7, frame(3, image(1)))).toMatchObject({ status: 429 });
+    // Every frame taken is counted, whoever received it.
+    expect(live.countsFor(7).frames).toBe(2 + MAX_RELAYED_FPS + 1 + 1);
   });
 
   test('tells a worker the elements its project masks as it connects, and each change, to that project’s workers alone', () => {
@@ -540,7 +626,7 @@ describe('the relay', () => {
     expect(first.closed).toBe(true);
     expect(second.sent).toEqual([
       { type: 'masks', locators: [] },
-      { type: 'view', width: LIVE_FRAME_WIDTH, height: LIVE_FRAME_HEIGHT, fps: LIVE_FRAME_FPS },
+      view(LIVE_FRAME_WIDTH, LIVE_FRAME_HEIGHT, LIVE_FRAME_FPS, true),
       { type: 'viewers', count: 1 },
     ]);
     expect(live.workersOf(7)).toEqual([{ shard: null, worker: 0, connected: true, paused: STOP }]);
@@ -568,6 +654,7 @@ describe('the relay', () => {
     expect(watch(live, 7, { shard: null, worker: 1 }, fifth, 3)).toBeNull();
     expect(got(mine[0]!)).toEqual([{ type: 'end', reason: 'replaced' }]);
     expect(mine[0]!.closed).toBe(true);
+    told();
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     expect(mine.slice(1).every((sink) => !sink.closed)).toBe(true);
 
@@ -610,8 +697,11 @@ describe('the relay', () => {
     live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
     const watching = new FakeSink();
     watch(live, 7, { shard: null, worker: 0 }, watching);
+    told();
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     live.receive(7, { type: 'ended', shard: null, worker: 0 });
     expect(got(watching)).toEqual([{ type: 'end', shard: null, worker: 0, reason: 'test-ended' }]);
+    told();
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
 
     const later = new FakeSink();
@@ -641,6 +731,7 @@ describe('the relay', () => {
     expect(got(lane)).toEqual([{ type: 'test-ended', shard: null, worker: 0, slot: 0, outcome }]);
     expect(lane.closed).toBe(false);
     expect(got(test)).toEqual([{ type: 'end', shard: null, worker: 0, slot: 0, reason: 'test-ended', outcome }]);
+    told();
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     // The lane's next test: its frames reach the view that stayed.
     live.receive(7, { ...frame(0, image(1)), slot: 0, test: 'searches' });
@@ -682,8 +773,11 @@ describe('the relay', () => {
     live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
     const lane = new FakeSink();
     watch(live, 7, { shard: null, worker: 0, slot: 0 }, lane);
+    told();
+    expect(first.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     const second = new FakeSink();
     live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    told();
     expect(first.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     first.close();
@@ -761,9 +855,12 @@ describe('the relay', () => {
     live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
     const watching = new FakeSink();
     watch(live, 8, { shard: null, worker: 0 }, watching);
+    told();
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     live.receive(8, { type: 'stop', shard: null, worker: 0, stop: STOP });
     expect(live.receive(8, { type: 'unshared', shard: null, worker: 0 })).toBeNull();
     expect(got(watching)).toEqual([{ type: 'end', shard: null, worker: 0, reason: 'unshared' }]);
+    told();
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     // The worker closes its stream: the run page hears it left, no Paused left on its row.
     worker.close();
@@ -791,12 +888,13 @@ describe('watch all', () => {
         }),
       ).toBeNull();
       // Every worker takes its images to the watch: the one in full at the page's size, the others as tiles.
+      told();
       expect(workers[0]!.sent.slice(-2)).toEqual([
-        { type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS },
+        view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false),
         { type: 'viewers', count: 1 },
       ]);
       expect(workers[1]!.sent.slice(-2)).toEqual([
-        { type: 'view', width: 1280, height: 800, fps: LIVE_FRAME_FPS },
+        view(1280, 800, LIVE_FRAME_FPS, true),
         { type: 'viewers', count: 1 },
       ]);
 
@@ -804,13 +902,14 @@ describe('watch all', () => {
         live.receive(7, { ...frame(0, image(n)), slot: 0 });
         live.receive(7, { ...frame(1, image(n)), slot: 1 });
       }
-      // The worker in full: each frame. A tile: its first at once, the latest of the rest a second later.
+      // The worker in full: each frame. A tile: its first at once, the latest of the rest a second later; a frame of
+      // a worker only tiles show, past a tile's pace, goes nowhere.
       const frames = (worker: number) =>
         got(page).filter((m) => (m as { worker?: number }).worker === worker) as Array<{ image: Uint8Array }>;
       expect(frames(1).map((m) => m.image)).toEqual([image(1), image(2), image(3)]);
       expect(frames(0).map((m) => m.image)).toEqual([image(1)]);
       vi.advanceTimersByTime(1000);
-      expect(frames(0).map((m) => m.image)).toEqual([image(1), image(3)]);
+      expect(frames(0).map((m) => m.image)).toEqual([image(1), image(2)]);
       // No call log of a tile goes: the full view's alone.
       live.receive(7, {
         type: 'call-log',
@@ -854,10 +953,15 @@ describe('watch all', () => {
     const page = new FakeSink();
     watch(live, 7, { shard: null, worker: 0, slot: 0 }, page, 3);
     const id = (page.sent[0] as { watch: string }).watch;
+    told();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
 
     // Another lane in full: the first hears nobody watches, the second that it is watched.
-    expect(live.changeWatch(7, id, 3, { focus: { shard: null, worker: 1, slot: 1 } })).toBeNull();
+    expect(live.changeWatch(7, id, 3, { focus: { shard: null, worker: 1, slot: 1 } })).toEqual({
+      refused: null,
+      shown: { focus: { shard: null, worker: 1, slot: 1 }, tiles: false, width: 640, height: 400 },
+    });
+    told();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     expect(workers[1]!.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
     live.receive(7, { ...frame(0, image(1)), slot: 0 });
@@ -865,37 +969,239 @@ describe('watch all', () => {
     expect(got(page)).toEqual([expect.objectContaining({ worker: 1, image: image(2) })]);
 
     // A larger view: the worker hears the size, and nothing else changes.
+    told();
     live.changeWatch(7, id, 3, { size: { width: 900, height: 600 } });
-    expect(workers[1]!.sent.at(-1)).toEqual({ type: 'view', width: 900, height: 600, fps: LIVE_FRAME_FPS });
+    expect(workers[1]!.sent.at(-1)).toEqual(view(900, 600, LIVE_FRAME_FPS, true));
 
     // Tiles on, then the full view off: every worker takes tiles alone.
+    told();
     live.changeWatch(7, id, 3, { tiles: true });
+    told();
     expect(workers[0]!.sent.slice(-2)).toEqual([
-      { type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS },
+      view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false),
       { type: 'viewers', count: 1 },
     ]);
-    live.changeWatch(7, id, 3, { focus: null });
-    expect(workers[1]!.sent.at(-1)).toEqual({
-      type: 'view',
-      width: LIVE_TILE_WIDTH,
-      height: LIVE_TILE_HEIGHT,
-      fps: LIVE_TILE_FPS,
+    told();
+    expect(live.changeWatch(7, id, 3, { focus: null }).shown).toEqual({
+      focus: null,
+      tiles: true,
+      width: 900,
+      height: 600,
     });
+    told();
+    expect(workers[1]!.sent.at(-1)).toEqual(view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false));
+    told();
     live.changeWatch(7, id, 3, { tiles: false });
+    told();
     expect(workers.map((sink) => sink.sent.at(-1))).toEqual([
       { type: 'viewers', count: 0 },
       { type: 'viewers', count: 0 },
     ]);
 
-    // Refused, the watch stays as it was: another person's, another run's, a worker not in the live view.
-    expect(live.changeWatch(7, id, 4, { tiles: true })).toMatchObject({ status: 404 });
-    expect(live.changeWatch(8, id, 3, { tiles: true })).toMatchObject({ status: 404 });
-    expect(live.changeWatch(7, 'unknown', 3, { tiles: true })).toMatchObject({ status: 404 });
-    expect(live.changeWatch(7, id, 3, { focus: { shard: null, worker: 9 } })).toMatchObject({ status: 404 });
+    // Refused, the watch stays as it was and says nothing of it: another person's, another run's, an unknown one.
+    told();
+    for (const [runId, watchId, person] of [
+      [7, id, 4],
+      [8, id, 3],
+      [7, 'unknown', 3],
+    ] as const) {
+      expect(live.changeWatch(runId, watchId, person, { tiles: true })).toEqual({
+        refused: { status: 404, message: 'No such watch of this run.' },
+        shown: null,
+      });
+    }
+    told();
     expect(workers.map((sink) => sink.sent.at(-1))).toEqual([
       { type: 'viewers', count: 0 },
       { type: 'viewers', count: 0 },
     ]);
+  });
+
+  test('refuses a full view of a worker not in the live view, applying the rest and saying what the watch shows', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => worker);
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0, slot: 0 }, page);
+    const id = (page.sent[0] as { watch: string }).watch;
+    told();
+    expect(
+      live.changeWatch(7, id, null, {
+        focus: { shard: null, worker: 9 },
+        tiles: true,
+        size: { width: 800, height: 500 },
+      }),
+    ).toEqual({
+      refused: { status: 404, message: 'This worker is not in the live view of the run.' },
+      shown: { focus: null, tiles: true, width: 800, height: 500 },
+    });
+    // The worker shown before takes a tile now, for the same watch.
+    told();
+    expect(worker.sent.at(-1)).toEqual(view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false));
+    expect(worker.sent.filter((m) => (m as { type: string }).type === 'viewers').at(-1)).toEqual({
+      type: 'viewers',
+      count: 1,
+    });
+  });
+
+  test('takes a watch’s changes a few times a second at most', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, null, page, null, { tiles: true });
+    const id = (page.sent[0] as { watch: string }).watch;
+    for (let i = 0; i < MAX_WATCH_CHANGES_PER_SECOND; i++) {
+      expect(live.changeWatch(7, id, null, { tiles: i % 2 === 1 }).refused).toBeNull();
+    }
+    expect(live.changeWatch(7, id, null, { tiles: true })).toEqual({
+      refused: { status: 429, message: expect.stringMatching(/a second at most/) },
+      shown: null,
+    });
+    now += 1000;
+    expect(live.changeWatch(7, id, null, { tiles: true }).refused).toBeNull();
+  });
+
+  test('asks a worker for its latest image and call log again as a watch that showed it as a tile shows it in full', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => worker);
+    // Someone watches the worker in full; another page shows it as a tile.
+    watch(live, 7, { shard: null, worker: 0, slot: 0 }, new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, null, page, null, { tiles: true });
+    const id = (page.sent[0] as { watch: string }).watch;
+    told();
+    expect(worker.sent.slice(-2)).toEqual([view(640, 400, LIVE_FRAME_FPS, true), { type: 'viewers', count: 2 }]);
+    // The tile becomes a full view: neither the count nor what they ask changes, so the worker is asked again.
+    told();
+    const before = worker.sent.length;
+    live.changeWatch(7, id, null, { focus: { shard: null, worker: 0, slot: 0 } });
+    told();
+    expect(worker.sent.slice(before)).toEqual([{ type: 'resend' }]);
+    // A watch that comes changes the count, which the worker hears as a further viewer: nothing more is asked.
+    told();
+    const more = worker.sent.length;
+    watch(live, 7, { shard: null, worker: 0, slot: 0 }, new FakeSink());
+    told();
+    expect(worker.sent.slice(more)).toEqual([{ type: 'viewers', count: 3 }]);
+  });
+
+  test('waits for a lane whose worker starts again as a watch asks for it, as the lane’s followers do', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const page = new FakeSink();
+    watch(live, 7, null, page, null, { tiles: true });
+    const id = (page.sent[0] as { watch: string }).watch;
+    // Nobody followed the lane as its worker left: a watch that asks for it now waits too.
+    first.close();
+    const waiting = {
+      refused: null,
+      shown: { focus: { shard: null, worker: 0, slot: 0 }, tiles: true, width: 640, height: 400 },
+    };
+    expect(live.changeWatch(7, id, null, { focus: { shard: null, worker: 0, slot: 0 } })).toEqual(waiting);
+    const opened = new FakeSink();
+    expect(watch(live, 7, { shard: null, worker: 0, slot: 0 }, opened)).toBeNull();
+    const restarting = { type: 'refused', shard: null, worker: 0, slot: 0, message: LANE_RESTARTING };
+    expect(got(page).at(-1)).toEqual(restarting);
+    expect(got(opened)).toEqual([restarting]);
+    // The worker Playwright starts in the lane takes both, and hears it is watched.
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 4, slot: 0 }, () => second);
+    expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 2 });
+    live.receive(7, { ...frame(4, image(1)), slot: 0 });
+    expect(got(opened).at(-1)).toMatchObject({ type: 'frame', worker: 4 });
+    expect(got(page).at(-1)).toMatchObject({ type: 'frame', worker: 4 });
+    // A worker of no lane, or a lane nobody held, is not waited for.
+    expect(watch(live, 7, { shard: null, worker: 0 }, new FakeSink())).toMatchObject({ status: 404 });
+    expect(watch(live, 7, { shard: null, worker: 0, slot: 5 }, new FakeSink())).toMatchObject({ status: 404 });
+  });
+
+  test('refuses a watch of a run that ended, as the run ends while its route opens the watch', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    live.endRun(7);
+    let opened = false;
+    const open = () => {
+      opened = true;
+      return new FakeSink();
+    };
+    expect(live.openWatch(7, 1, { focus: null, tiles: true }, open)).toEqual({
+      status: 410,
+      message: 'The run is no longer live.',
+    });
+    expect(opened).toBe(false);
+    expect(live.viewersOf(7)).toBe(0);
+    // A project that turned its live view off may turn it on again: its runs take watches then.
+    live.endProject(1);
+    expect(live.openWatch(9, 1, { focus: null, tiles: true }, open)).toBeNull();
+  });
+
+  test('sends a watch its bytes of images a second at most, the latest waiting for the next second', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page);
+    const heavy = (n: number) => {
+      const bytes = new Uint8Array(MAX_WATCH_BYTES_PER_SECOND / 2).fill(n);
+      bytes.set([0xff, 0xd8, 0xff]);
+      return bytes;
+    };
+    for (const n of [1, 2, 3, 4]) live.receive(7, frame(0, heavy(n)));
+    const images = () => got(page).map((m) => (m as { image: Uint8Array }).image[3]);
+    expect(images()).toEqual([1, 2]);
+    now += 1000;
+    vi.advanceTimersByTime(250);
+    expect(images()).toEqual([1, 2, 4]);
+  });
+
+  test('a tile carries an image of a tile’s size alone, saying why a larger one does not show', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    watch(live, 7, { shard: null, worker: 0 }, new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, null, page, null, { tiles: true });
+    const large = new Uint8Array(MAX_LIVE_TILE_FRAME + 1).fill(1);
+    large.set([0xff, 0xd8, 0xff]);
+    expect(live.receive(7, frame(0, large))).toBeNull();
+    expect(got(page)).toEqual([{ type: 'refused', shard: null, worker: 0, message: TILE_TOO_LARGE }]);
+    vi.advanceTimersByTime(1000);
+    live.receive(7, frame(0, image(1)));
+    expect(got(page).at(-1)).toMatchObject({ type: 'frame', image: image(1) });
+  });
+
+  test('ends a watch whose stream stays backed up, which its page reads no more', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    const slow = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, slow);
+    slow.full = true;
+    live.receive(7, frame(0, image(1)));
+    vi.advanceTimersByTime(WATCH_STALL_MS - 1);
+    expect(slow.closed).toBe(false);
+    // One that reads again in time stays.
+    slow.drain();
+    expect(got(slow)).toEqual([expect.objectContaining({ image: image(1) })]);
+    vi.advanceTimersByTime(WATCH_STALL_MS);
+    expect(slow.closed).toBe(false);
+    slow.full = true;
+    live.receive(7, frame(0, image(2)));
+    vi.advanceTimersByTime(WATCH_STALL_MS);
+    expect(slow.closed).toBe(true);
+    expect(live.viewersOf(7)).toBe(0);
+    told();
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
   });
 
   test('leaves a worker unwatched by a page that left before its watch opened', () => {
@@ -920,10 +1226,11 @@ describe('watch all', () => {
     const worker = new FakeSink();
     live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => worker);
     expect(worker.sent.slice(-2)).toEqual([
-      { type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS },
+      view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false),
       { type: 'viewers', count: 1 },
     ]);
     page.close();
+    told();
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     live.endRun(7);
     expect(live.viewersOf(7)).toBe(0);

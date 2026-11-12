@@ -7,6 +7,7 @@ import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { LIVE_FRAME_TYPE, MAX_LIVE_FRAME_MESSAGE, encodeLiveMessage, liveFrameHeader } from '@piwitests/core/live-view';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
+import type { EventStreamSink } from '../../server/utils/event-stream';
 
 /**
  * Who reaches a run's live view: watching it needs what opening the run needs, in a project with the live view on and
@@ -115,9 +116,32 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  for (const runId of [10, 11, 12, 20, 30]) liveViewRelay.endRun(runId);
+  // The projects' live view ends, which, unlike a run that ended, lets the next test watch the same runs.
+  for (const projectId of [1, 2, 3]) liveViewRelay.endProject(projectId);
   await close();
 });
+
+/** A watch's stream as a route test holds it: what it was sent. */
+function heldStream(): EventStreamSink & { sent: unknown[] } {
+  const closers: Array<() => void> = [];
+  let closed = false;
+  return {
+    sent: [],
+    send(message) {
+      if (!closed) this.sent.push(message);
+    },
+    backedUp: () => false,
+    onDrain: () => {},
+    onClose: (listener) => void closers.push(listener),
+    close() {
+      closed = true;
+      for (const close of closers.splice(0)) close();
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
 
 /** A key this instance never held, as a worker presents it after the instance started again. */
 const KEY_BEFORE_RESTART = `pdl_${'r'.repeat(43)}`;
@@ -152,6 +176,10 @@ describe('watching a worker', () => {
     // Neither a worker nor tiles: nothing to show.
     expect(await refusal(watch, event(10))).toBe(400);
     expect(await refusal(watch, event(10, { tiles: '1', width: 'wide', height: '600' }))).toBe(400);
+    // A size names both its sides, each a whole number from 1.
+    expect(await refusal(watch, event(10, { tiles: '1', height: '600' }))).toBe(400);
+    expect(await refusal(watch, event(10, { tiles: '1', width: '900' }))).toBe(400);
+    expect(await refusal(watch, event(10, { tiles: '1', width: '0', height: '600' }))).toBe(400);
     expect(await refusal(watch, event(11, { tiles: '1' }))).toBe(410);
     expect(await refusal(watch, event(12, { tiles: '1' }))).toBe(410);
     state.caller = viewerOf(3);
@@ -169,8 +197,28 @@ describe('watching a worker', () => {
     expect(await refusal(change, at(10, { watch: 'w'.repeat(22), width: 900 }))).toBe(400);
     // A watch the relay does not hold for this person.
     expect(await refusal(change, at(10, { watch: 'w'.repeat(22), focus: null, width: 900, height: 600 }))).toBe(404);
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), width: -5, height: 600 }))).toBe(400);
     state.caller = null;
     expect(await refusal(change, at(10, { watch: 'w'.repeat(22), tiles: true }))).toBe(401);
+  });
+
+  test('answers what the watch shows after a change, and after a full view refused, the rest applied', async () => {
+    const sink = heldStream();
+    expect(liveViewRelay.openWatch(10, 1, { focus: null, tiles: true }, () => sink, 3)).toBeNull();
+    const id = (sink.sent[0] as { watch: string }).watch;
+    const at = (body: unknown) => ({ ...event(10), body });
+    expect(await change(at({ watch: id, width: 900, height: 600 }))).toEqual({
+      success: true,
+      watch: { focus: null, tiles: true, width: 900, height: 600 },
+    });
+    let refused: { statusCode?: number; data?: Record<string, unknown> } | null = null;
+    try {
+      await change(at({ watch: id, focus: { worker: 4 }, tiles: false }));
+    } catch (error) {
+      refused = error as typeof refused;
+    }
+    expect(refused?.statusCode).toBe(404);
+    expect(refused?.data?.watch).toEqual({ focus: null, tiles: false, width: 900, height: 600 });
   });
 });
 
@@ -231,6 +279,13 @@ describe("a worker's stream and posts", () => {
     const stop = encodeLiveMessage({ type: 'stop', shard: null, worker: 0, stop: null });
     expect(await refusal(post, posting(stop, LIVE_FRAME_TYPE))).toBe(400);
     expect(await refusal(post, posting(new TextEncoder().encode('{'), 'application/json'))).toBe(400);
+    // Either form's image is a JPEG.
+    const png = new TextEncoder().encode(
+      JSON.stringify({ type: 'frame', worker: 0, data: 'iVBORw0KGgoAAAANSUhEUg==' }),
+    );
+    expect(await refusal(post, posting(png, 'application/json'))).toBe(400);
+    const notJpeg = encodeLiveMessage(liveFrameHeader({ shard: null, worker: 0 }, { call: null, test: null }), png);
+    expect(await refusal(post, posting(notJpeg, LIVE_FRAME_TYPE))).toBe(400);
     // Bounded: a frame's message by its own size, larger than a JSON message's.
     const over = { ...posting(frame, LIVE_FRAME_TYPE) };
     over.headers['content-length'] = String(MAX_LIVE_FRAME_MESSAGE + 1);
