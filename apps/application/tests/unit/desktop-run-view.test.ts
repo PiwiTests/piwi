@@ -726,7 +726,7 @@ describe('the window’s stream of its runs', () => {
     expect(runs.watchesLane('desktop-7', 0)).toBe(false);
   });
 
-  test('has the server read a lane’s pages for Inspect while a view shows it, afresh on each stream, until the lane’s watch ends', async () => {
+  test('has the server read a lane’s pages for Inspect while a view shows it, again on each stream, until the lane’s watch ends', async () => {
     const notice = (call: string) => ({
       type: 'snapshot',
       shard: null,
@@ -782,20 +782,97 @@ describe('the window’s stream of its runs', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(said()).toHaveLength(1);
 
-    // A new stream: the server is told again on it, the view starting afresh.
+    // A new stream: the server is told again on it, and what it reads again replaces what the view held of the test,
+    // the view staying on it.
     const turn = runs.inspectOf('desktop-7', 0)!.turn;
     const other = 'b'.repeat(32);
     source.send({ type: 'hello', viewer: other });
     await vi.waitFor(() => expect(said()).toHaveLength(2));
     expect(said()[1]).toEqual({ ref: 'desktop-7', lane: 0, on: true, viewer: other });
-    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn: turn + 1, attempt: 't#0' }));
-    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1']);
+    await vi.waitFor(() => expect(listed).toHaveLength(2));
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1']));
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn, attempt: 't#0' });
 
     // The lane's watch off closes it.
     await runs.setLaneWatch('desktop-7', 0, false);
     await vi.waitFor(() => expect(said()).toHaveLength(3));
     expect(said()[2]).toMatchObject({ ref: 'desktop-7', lane: 0, on: false });
     expect(runs.inspectOf('desktop-7', 0)).toBeNull();
+    runs.want(false);
+  });
+
+  test('tells the server Inspect is off while the window is hidden, the view kept, and says why a new stream refuses it', async () => {
+    const changed: Array<() => void> = [];
+    const page = {
+      hidden: false,
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'visibilitychange') changed.push(listener);
+      },
+    };
+    vi.stubGlobal('document', page);
+    const notice = (call: string, at: number) => ({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      call,
+      title: `Click ${call}`,
+      phase: 'after',
+      page: 'page@1',
+      frame: 'frame@1',
+      main: true,
+      full: false,
+      index: at,
+      at: 1_800_000_000_000 + at,
+      test: 'checkout › pays',
+    });
+    let listing = { attempt: 't#0', heard: [notice('call@1', 1)], refused: null as string | null };
+    let refusal: string | null = null;
+    vi.stubGlobal('markRaw', markRaw);
+    vi.stubGlobal('$fetch', async (url: string, init: { body?: Record<string, unknown> }) => {
+      if (url === '/api/desktop/runs/inspect/calls') return listing;
+      posted.push(init.body!);
+      const refused = init.body!.type === 'inspect' && init.body!.on && refusal;
+      return { type: 'answer', ok: !refused, message: refused || '', id: init.body!.id };
+    });
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const said = () => posted.filter((body) => body.type === 'inspect').map(({ on }) => on);
+    await runs.setInspect('desktop-7', 0, true);
+    runs.showInspect('desktop-7', 0);
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)?.heard).toHaveLength(1));
+    source.send({ type: 'inspect', ref: 'desktop-7', lane: 0, attempt: 't#0', snapshot: notice('call@2', 2) });
+    const turn = runs.inspectOf('desktop-7', 0)!.turn;
+
+    // Hidden: the server reads no page meanwhile, and the view keeps what it heard.
+    page.hidden = true;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(said()).toEqual([true, false]));
+    expect(runs.inspectOf('desktop-7', 0)).toMatchObject({ turn, attempt: 't#0' });
+    expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@1', 'call@2']);
+    // Shown again: the server reads again, and what it read since joins the view, which stays on the test.
+    listing = { ...listing, heard: [notice('call@2', 2), notice('call@3', 3)] };
+    page.hidden = false;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(said()).toEqual([true, false, true]));
+    await vi.waitFor(() =>
+      expect(runs.inspectOf('desktop-7', 0)!.heard.map((h) => h.call)).toEqual(['call@2', 'call@3']),
+    );
+    expect(runs.inspectOf('desktop-7', 0)!.turn).toBe(turn);
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toBeNull();
+
+    // A new stream the server refuses Inspect on: it closes, saying why, as a refused click does.
+    refusal = 'Inspect is open on 16 lanes already: close one first.';
+    source.send({ type: 'hello', viewer: 'b'.repeat(32) });
+    await vi.waitFor(() => expect(runs.inspectOf('desktop-7', 0)).toBeNull());
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toMatchObject({ message: refusal });
+    // A click refused the same way says it again.
+    const first = runs.inspectRefusalOf('desktop-7', 0);
+    expect(await runs.setInspect('desktop-7', 0, true)).toMatchObject({ ok: false, message: refusal });
+    expect(runs.inspectRefusalOf('desktop-7', 0)).toMatchObject({ message: refusal });
+    expect(runs.inspectRefusalOf('desktop-7', 0)).not.toBe(first);
     runs.want(false);
   });
 

@@ -296,9 +296,11 @@ Each entry names folders under `server/api/`.
   workers not shown kept drawn and hidden. A watched lane's **Inspect** (`DesktopRunLaneInspect`, the run page's
   `LaneInspect` from the source `desktopInspectSource` names) is read by the server from the test's own trace, whose
   checked file the lane's worker names to it alone (`RunSessions.laneTrace`), into the run page's store and renderer
-  (`server/utils/desktop-inspect.ts`, `RunInspect` in the app's words): the window hears each page's call on its
-  stream (`inspect`), lists them as it opens it (`runs/inspect/calls`) and reads each page rendered
-  (`runs/inspect/page`). `DesktopRunShare` shows a run's Share live,
+  (`server/utils/desktop-inspect.ts`, `RunInspect` in the app's words) while a view of it shows and the window is not
+  hidden: the window hears each page's call on its stream (`inspect`), lists them each time it opens it
+  (`runs/inspect/calls`), keeps them in the order the pages were taken on the attempt the stream follows
+  (`hearDesktopInspect`, `hearDesktopCalls`), and reads each page rendered (`runs/inspect/page`).
+  `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
   `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run

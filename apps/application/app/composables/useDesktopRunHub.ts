@@ -23,11 +23,11 @@
  * replaced as one comes), in memory alone, until the lane is no longer watched. A run the stream does not list as it
  * opens (`listed`) ended meanwhile: what the window kept of it goes. **Share live** asks what it sends the first time in
  * this session of the app (`shareAsks`). **Inspect** of a lane (`setInspect`, on until it is turned off, the lane is
- * no longer watched or its run ends) has the server read the pages of its running test from the test's own trace while
- * a view of it shows (`showInspect`), told once the tick ends, so a view that comes back changes nothing: the window
- * keeps what it heard of each by lane (`inspectOf`, `hearDesktopInspect`), what the server listed as it opened and
- * each `inspect` its stream says, afresh each time the server is told, and tells it again as the stream opens again;
- * the pages stay on the server.
+ * no longer watched, its run ends or the server refuses it, `inspectRefusalOf`) has the server read the pages of its
+ * running test from the test's own trace while a view of it shows (`showInspect`) and the window is not hidden, told
+ * once the tick ends, so a view that comes back changes nothing: the window keeps what it heard of each by lane
+ * (`inspectOf`), each `inspect` its stream says (`hearDesktopInspect`) and what the server listed each time it was told
+ * (`hearDesktopCalls`), and tells it again as the stream opens again; the pages stay on the server.
  *
  * A live run of several workers shows one at a time behind its worker tabs, kept here by run (`tabs`) and followed as
  * each of its sessions is heard (`tabsAfter`, `@piwitests/run-model/tabs`): the worker shown stays while it stands at a
@@ -64,6 +64,7 @@ import {
 } from '#shared/desktop-runs';
 import {
   NO_DESKTOP_INSPECT,
+  hearDesktopCalls,
   hearDesktopInspect,
   type DesktopLaneInspect,
   type HeardSnapshot,
@@ -150,6 +151,11 @@ interface HubState {
    * comes. A stream that opens again keeps them, and opens them again.
    */
   inspects: Record<string, DesktopLaneInspect>;
+  /**
+   * Why the server last refused to open Inspect of a lane, by `desktopLaneKey`: each refusal a new one (`serial`), shown
+   * as a click's answer is, whether a click, a view that showed or a stream that opened again asked.
+   */
+  inspectRefusals: Record<string, { message: string; serial: number }>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
@@ -175,6 +181,7 @@ const state = reactive<HubState>({
   laneTextAsking: {},
   tabs: {},
   inspects: {},
+  inspectRefusals: {},
 });
 
 let source: EventSource | null = null;
@@ -412,7 +419,8 @@ function tellInspectsSoon(): Promise<Map<string, DesktopRunAnswer>> {
 async function tellInspects(): Promise<Map<string, DesktopRunAnswer>> {
   const answers = new Map<string, DesktopRunAnswer>();
   if (!viewer) return answers;
-  const shown = [...inspectLanes].filter(([key]) => (inspectViews.get(key) ?? 0) > 0);
+  const hidden = typeof document !== 'undefined' && document.hidden;
+  const shown = hidden ? [] : [...inspectLanes].filter(([key]) => (inspectViews.get(key) ?? 0) > 0);
   const changes = [
     ...shown.filter(([key]) => !inspectsTold.has(key)).map(([key, at]) => ({ key, ...at, on: true })),
     ...[...inspectsTold]
@@ -432,27 +440,27 @@ async function tellInspects(): Promise<Map<string, DesktopRunAnswer>> {
 }
 
 /**
- * Has the server read the lane's pages for the window's Inspect, the view starting afresh, then takes what it read so
- * far; a refusal closes it. Answers what the server said.
+ * Has the server read the lane's pages for the window's Inspect, then takes what it read so far, the view keeping what
+ * it holds of the same test; a refusal closes it, saying why (`inspectRefusals`). Answers what the server said.
  */
 async function openInspect(key: string, ref: string, lane: number): Promise<DesktopRunAnswer> {
   const stream = viewer;
-  const before = state.inspects[key];
-  if (before) state.inspects[key] = markRaw({ ...NO_DESKTOP_INSPECT, attempt: before.attempt, turn: before.turn + 1 });
   const answer = await command({ type: 'inspect', ref, lane, on: true });
   if (!state.inspects[key] || viewer !== stream || !stream) return answer;
   if (!answer.ok) {
     inspectLanes.delete(key);
     inspectsTold.delete(key);
     delete state.inspects[key];
+    state.inspectRefusals[key] = { message: answer.message, serial: ++serial };
     return answer;
   }
+  const asked = state.inspects[key].said;
   try {
     const calls = await $fetch<DesktopInspectCalls>('/api/desktop/runs/inspect/calls', {
       query: { viewer: stream, ref, lane },
     });
     const kept = state.inspects[key];
-    if (kept && viewer === stream) state.inspects[key] = markRaw(hearDesktopInspect(kept, calls));
+    if (kept && viewer === stream) state.inspects[key] = markRaw(hearDesktopCalls(kept, calls, asked));
   } catch {
     // What the server read so far comes again as it reads more.
   }
@@ -518,6 +526,9 @@ function forgetRun(ref: string): void {
     inspectLanes.delete(key);
     delete state.inspects[key];
   }
+  for (const key of Object.keys(state.inspectRefusals)) {
+    if (desktopLaneRun(key) === ref) delete state.inspectRefusals[key];
+  }
   for (const key of [...inspectsTold.keys()]) if (desktopLaneRun(key) === ref) inspectsTold.delete(key);
 }
 
@@ -530,7 +541,10 @@ function open(): void {
   if (source || typeof EventSource === 'undefined') return;
   if (!hearsVisibility && typeof document !== 'undefined') {
     hearsVisibility = true;
-    document.addEventListener('visibilitychange', () => void tellLanesSoon());
+    document.addEventListener('visibilitychange', () => {
+      void tellLanesSoon();
+      void tellInspectsSoon();
+    });
   }
   const opened = new EventSource('/api/desktop/runs/events');
   source = opened;
@@ -587,6 +601,7 @@ function close(): void {
     laneTextAsking: {},
     tabs: {},
     inspects: {},
+    inspectRefusals: {},
   });
 }
 
@@ -862,6 +877,10 @@ export function useDesktopRunHub() {
     /** What the window heard for Inspect of a lane of a run; null while it does not have it open. */
     inspectOf(ref: string, lane: number): DesktopLaneInspect | null {
       return state.inspects[desktopLaneKey(ref, lane)] ?? null;
+    },
+    /** Why the server last refused to open Inspect of a lane of a run, each refusal a new one; null for none. */
+    inspectRefusalOf(ref: string, lane: number): { message: string; serial: number } | null {
+      return state.inspectRefusals[desktopLaneKey(ref, lane)] ?? null;
     },
     /**
      * Opens Inspect of a lane of a run for the window, or closes it: the server reads the pages of the lane's running

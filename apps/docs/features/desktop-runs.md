@@ -79,7 +79,7 @@ trace viewer on the running test's trace up to now, on your machine, with a repo
 running test](./watch-running-test#open-the-trace-so-far).
 
 **Inspect**, beside it, shows that test's page at each call as [on the run page](./live-inspect), with the locator
-picker, read from the test's own trace on your machine while open, and let go as the test ends.
+picker, read from the test's own trace on your machine while open and the window shows, and let go as the test ends.
 
 ## Code to copy
 

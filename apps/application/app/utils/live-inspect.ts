@@ -301,36 +301,102 @@ export function desktopInspectSource(
 /**
  * What the tray heard for Inspect of a lane: the attempt its server follows (`attempt`, the lane's running test and
  * its retry, null between tests), counted as it changes (`turn`, which starts the view afresh), the snapshots read of
- * it, and why no page of it shows, the latest of the two winning.
+ * it in the order they were taken, and why no page of it shows, the latest of the two winning. The attempts it
+ * followed, the latest last (`followed`): what is said of one before the latest is late, and changes nothing. How many
+ * times the stream said something of the lane (`said`): a listing asked before the latest may be older than it.
  */
 export interface DesktopLaneInspect {
   attempt: string | null;
   turn: number;
   heard: HeardSnapshot[];
   refused: string | null;
+  followed: string[];
+  said: number;
 }
 
 /** Nothing heard yet: Inspect just opened on the lane. */
-export const NO_DESKTOP_INSPECT: DesktopLaneInspect = { attempt: null, turn: 0, heard: [], refused: null };
+export const NO_DESKTOP_INSPECT: DesktopLaneInspect = {
+  attempt: null,
+  turn: 0,
+  heard: [],
+  refused: null,
+  followed: [],
+  said: 0,
+};
+
+/** The most attempts the tray remembers it followed: past them, the oldest are forgotten. */
+const MAX_FOLLOWED_ATTEMPTS = 64;
+
+/** Whether `attempt` is one the view followed before the latest it followed: what is said of it is late. */
+function attemptLeft(inspect: DesktopLaneInspect, attempt: string | null): boolean {
+  return attempt !== null && attempt !== inspect.followed.at(-1) && inspect.followed.includes(attempt);
+}
+
+/** The view on `attempt`: another one starts it afresh. */
+function followAttempt(inspect: DesktopLaneInspect, attempt: string | null): DesktopLaneInspect {
+  if (attempt === inspect.attempt) return inspect;
+  const followed =
+    attempt === null || attempt === inspect.followed.at(-1)
+      ? inspect.followed
+      : [...inspect.followed, attempt].slice(-MAX_FOLLOWED_ATTEMPTS);
+  return { ...inspect, attempt, turn: inspect.turn + 1, heard: [], refused: null, followed };
+}
+
+/** The order snapshots were taken in: by when, and in one frame by their place in its chain. */
+function takenBefore(a: HeardSnapshot, b: HeardSnapshot): number {
+  return a.at - b.at || (a.frame === b.frame ? a.index - b.index : 0);
+}
 
 /**
- * `inspect` with what the server said of the lane (`event`, or what it listed as the window opened Inspect, `calls`): of
- * another attempt, the view starts afresh; a snapshot of it is heard once; why none shows replaces what showed, until a
- * snapshot comes; the attempt alone, said again, clears why none showed.
+ * `heard` with `more`, each moment of a call once, in the order they were taken, whichever came first; past
+ * `MAX_HEARD_SNAPSHOTS`, the earliest taken go.
+ */
+function addDesktopSnapshots(heard: readonly HeardSnapshot[], more: readonly HeardSnapshot[]): HeardSnapshot[] {
+  const momentKey = (message: HeardSnapshot) => `${inspectCallKey(workerOf(message), message.call)}\n${message.phase}`;
+  const keys = new Set(heard.map(momentKey));
+  const all = [...heard];
+  for (const message of more) {
+    const key = momentKey(message);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    all.push(message);
+  }
+  return all.length === heard.length ? (heard as HeardSnapshot[]) : all.sort(takenBefore).slice(-MAX_HEARD_SNAPSHOTS);
+}
+
+/**
+ * `inspect` with what the stream said of the lane (`event`): of another attempt, the view starts afresh, but of one it
+ * followed before the latest, nothing changes; a snapshot of it is heard once, where it was taken; why none shows
+ * replaces what showed, until a snapshot comes; the attempt alone, said again, clears why none showed.
  */
 export function hearDesktopInspect(
   inspect: DesktopLaneInspect,
-  event: { attempt: string | null; snapshot?: HeardSnapshot; refused?: string } | DesktopInspectCalls,
+  event: { attempt: string | null; snapshot?: HeardSnapshot; refused?: string },
 ): DesktopLaneInspect {
-  let next =
-    event.attempt === inspect.attempt
-      ? inspect
-      : { attempt: event.attempt, turn: inspect.turn + 1, heard: [], refused: null };
-  if ('heard' in event) {
-    for (const snapshot of event.heard) next = { ...next, heard: addHeardSnapshot(next.heard, snapshot) };
-    return event.refused === null ? next : { ...next, refused: event.refused };
-  }
-  if (event.snapshot) return { ...next, heard: addHeardSnapshot(next.heard, event.snapshot), refused: null };
+  if (attemptLeft(inspect, event.attempt)) return inspect;
+  const next = followAttempt({ ...inspect, said: inspect.said + 1 }, event.attempt);
+  if (event.snapshot) return { ...next, heard: addDesktopSnapshots(next.heard, [event.snapshot]), refused: null };
   if (event.refused) return { ...next, refused: event.refused };
-  return next === inspect ? { ...inspect, refused: null } : next;
+  return next.turn === inspect.turn ? { ...next, refused: null } : next;
+}
+
+/**
+ * `inspect` with what the server listed as the window opened Inspect (`calls`), asked when the stream had said `asked`
+ * things of the lane. Of an attempt the view followed before the latest, nothing changes. When the stream said nothing
+ * since, the listing is all the server keeps of the lane: its attempt (another one starting the view afresh), its
+ * snapshots and why none shows replace what the view held. Otherwise the stream may have said more since: the
+ * listing's snapshots of the attempt the view follows join those it holds, and the rest of it is older than the stream.
+ */
+export function hearDesktopCalls(
+  inspect: DesktopLaneInspect,
+  calls: DesktopInspectCalls,
+  asked: number,
+): DesktopLaneInspect {
+  if (attemptLeft(inspect, calls.attempt)) return inspect;
+  if (inspect.said === asked) {
+    const next = followAttempt(inspect, calls.attempt);
+    return { ...next, heard: addDesktopSnapshots([], calls.heard), refused: calls.refused };
+  }
+  if (calls.attempt !== inspect.attempt) return inspect;
+  return { ...inspect, heard: addDesktopSnapshots(inspect.heard, calls.heard) };
 }
