@@ -262,10 +262,11 @@ export type FocusMode = 'test' | 'file' | 'worker';
 
 /**
  * Why a reel of the file or the worker cannot be built around an execution: `earlier-attempt` when the run's final
- * attempt of the test is another execution (only final attempts are on those reels), `not-listed` when the run's list
- * holds neither (it was cut at `MAX_LISTED_EXECUTIONS`). Null when both can be built.
+ * attempt of the test is another execution (only final attempts are on those reels), `did-not-run` when the execution
+ * is its test's final attempt but the test was skipped or did not run (those reels list only tests that ran),
+ * `not-listed` when the run's list holds neither (it was cut at `MAX_LISTED_EXECUTIONS`). Null when both can be built.
  */
-export type FocusLimit = 'earlier-attempt' | 'not-listed';
+export type FocusLimit = 'earlier-attempt' | 'did-not-run' | 'not-listed';
 
 /** The execution on show, as `GET /api/test-run-cases/:id` returns it: what a reel entry needs of it. */
 export interface FocusDetail {
@@ -274,8 +275,12 @@ export interface FocusDetail {
   title: string;
   filePath: string | null;
   line: number | null;
+  column?: number | null;
   status: string;
   retries: number | null;
+  /** The Playwright project and repetition of the attempt: with `testCaseId`, they name the result it belongs to. */
+  browserName?: string | null;
+  repeatEachIndex?: number | null;
   passedAfterFailure: boolean;
   shardIndex: number | null;
   parallelIndex: number | null;
@@ -283,15 +288,14 @@ export interface FocusDetail {
   startedAt: number | null;
   duration: number | null;
   steps: readonly TimingStep[] | null;
-  /** Every attempt of the result, each its own execution. */
-  attempts: ReadonlyArray<{ retry: number; executionId: number | null }> | null;
 }
 
 /**
  * The execution on show as a reel execution. The run's video list holds the final attempts, so the execution itself
  * is taken from it when it is there, with the server's choice of video. An earlier attempt is not, nor is a test the
- * list was cut before: it is built from the detail and its own `video`, with the browser, repetition and column
- * of the final attempt of its result, which the list holds unless it was cut.
+ * list was cut before: it is built from the detail and its own `video`. Its project, repetition and column are its
+ * own, read from the detail: an earlier attempt's list of attempts ends at itself, so the final attempt cannot be
+ * found through it, and the result key (`resultKey`) must match the final attempt's in a run of named projects.
  */
 export function focusExecution(
   detail: FocusDetail,
@@ -300,22 +304,17 @@ export function focusExecution(
 ): ReelExecution {
   const listed = executions.find((e) => e.executionId === detail.id);
   if (listed) return listed;
-  const finalId = (detail.attempts ?? []).reduce<{ retry: number; id: number | null }>(
-    (best, a) => (a.retry > best.retry ? { retry: a.retry, id: a.executionId } : best),
-    { retry: -1, id: null },
-  ).id;
-  const sibling = executions.find((e) => e.executionId === finalId);
   return {
     executionId: detail.id,
     testCaseId: detail.testCaseId,
     title: detail.title,
     filePath: detail.filePath ?? '',
     line: detail.line,
-    column: sibling?.column ?? null,
+    column: detail.column ?? null,
     status: detail.status,
     retries: detail.retries ?? 0,
-    repeatEachIndex: sibling?.repeatEachIndex ?? 0,
-    browserName: sibling?.browserName ?? null,
+    repeatEachIndex: detail.repeatEachIndex ?? 0,
+    browserName: detail.browserName ?? null,
     passedAfterFailure: detail.passedAfterFailure,
     shardIndex: detail.shardIndex,
     parallelIndex: detail.parallelIndex,
@@ -328,12 +327,29 @@ export function focusExecution(
 }
 
 /**
- * Whether `focus` is on the run's final-attempt reels. `executions` is `GET /api/test-runs/:id/videos`; `focus` is the
- * execution on show, which that list lacks when it is an earlier attempt or when the list was cut.
+ * A `focusExecution` that hands back the same object for the same execution and video, however often the page
+ * re-reads the detail: a new object makes a new reel, and a new reel starts the player over.
+ */
+export function createFocusMemo(): typeof focusExecution {
+  let last: { id: number; videoPath: string; built: ReelExecution } | null = null;
+  return (detail, video, executions) => {
+    const listed = executions.find((e) => e.executionId === detail.id);
+    if (listed) return listed;
+    if (last?.id === detail.id && last.videoPath === video.path) return last.built;
+    const built = focusExecution(detail, video, executions);
+    last = { id: detail.id, videoPath: video.path, built };
+    return built;
+  };
+}
+
+/**
+ * Whether `focus` is on the run's final-attempt reels, which hold the tests that ran. `executions` is
+ * `GET /api/test-runs/:id/videos`; `focus` is the execution on show, which that list lacks when it is an earlier
+ * attempt or when the list was cut.
  */
 export function focusLimit(executions: readonly ReelExecution[], focus: ReelExecution): FocusLimit | null {
   const final = finalAttempts(executions).find((e) => e.executionId === focus.executionId);
-  if (final) return null;
+  if (final) return ran(final) ? null : 'did-not-run';
   const key = resultKey(focus);
   return executions.some((e) => resultKey(e) === key && e.retries > focus.retries) ? 'earlier-attempt' : 'not-listed';
 }
@@ -388,14 +404,15 @@ export interface ReelCursor {
 }
 
 /**
- * Whether each entry is ticked at the cursor: every entry before the playing one, and the playing one once its video
- * passes the end of the test. An entry with no video takes no playing time, so it ticks with the entry before it.
- * Null before playback has begun: nothing is ticked.
+ * Whether each entry is ticked at the cursor: every entry from `from` up to the playing one, and the playing one once
+ * its video passes the end of the test. An entry with no video takes no playing time, so it ticks with the entry
+ * before it. Null before playback has begun: nothing is ticked. `from` is the first entry the playback has been at: a
+ * reel that starts at one of its tests has not played the ones before it, so they do not tick.
  */
-export function tickedEntries(reel: Reel, cursor: ReelCursor | null): boolean[] {
+export function tickedEntries(reel: Reel, cursor: ReelCursor | null, from = 0): boolean[] {
   const ticked: boolean[] = [];
   reel.entries.forEach((entry, i) => {
-    if (cursor == null || entry.context) ticked.push(false);
+    if (cursor == null || entry.context || i < from) ticked.push(false);
     else if (i < cursor.index) ticked.push(true);
     else if (entry.execution.video == null) ticked.push(i === 0 || ticked[i - 1]!);
     else {

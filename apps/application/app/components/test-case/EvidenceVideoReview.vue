@@ -6,14 +6,15 @@
  * Its worker plays the run's reel of the test's parallel slot. Both of those start at the test.
  *
  * An earlier attempt has its own video and no place on a reel of final attempts, so it can only be played alone; a
- * test the run's video list was cut before is the same. The list is fetched when the modal opens, from
- * `GET /api/test-runs/:id/videos`. Closing the modal unmounts the reel, which stops both `<video>` elements and
- * takes their sources off.
+ * test the run's video list was cut before, and a test that did not run, are the same. The list is read when the modal
+ * opens, from `GET /api/test-runs/:id/videos`, and kept per run while the page lives (`readRunVideos`): the modal opens
+ * only for a finished run, whose list does not change. Closing the modal unmounts the reel, which stops both `<video>`
+ * elements and takes their sources off.
  */
 import type { RunVideos } from '#shared/handlers/run-videos';
 import {
   MAX_LISTED_EXECUTIONS as LISTED_LIMIT,
-  focusExecution,
+  createFocusMemo,
   focusLimit,
   focusReel,
   type FocusDetail,
@@ -39,7 +40,7 @@ async function load() {
   loading.value = true;
   error.value = null;
   try {
-    data.value = await $fetch<RunVideos>(`/api/test-runs/${runId.value}/videos`);
+    data.value = await readRunVideos(runId.value);
   } catch (e: any) {
     error.value = e?.data?.message || e?.message || 'Failed to load videos';
   } finally {
@@ -47,7 +48,6 @@ async function load() {
   }
 }
 
-// Fetched each time the modal opens, so a run that finished meanwhile is read again.
 watch(open, (isOpen) => {
   if (isOpen) {
     mode.value = 'test';
@@ -58,17 +58,24 @@ watch(open, (isOpen) => {
 const mode = ref<FocusMode>('test');
 
 const executions = computed(() => data.value?.executions ?? []);
-const focus = computed(() => focusExecution(props.testCase as FocusDetail, props.video, executions.value));
+// The execution on show is built once per execution: the page re-reads its detail (a refresh, new attachments), and a
+// new object would give the player a new reel, which starts playback over.
+const focusOf = createFocusMemo();
+const focus = computed(() => focusOf(props.testCase as FocusDetail, props.video, executions.value));
 const limit = computed(() => focusLimit(executions.value, focus.value));
 
 const LIMIT_TITLE = {
   'earlier-attempt': 'Only final attempts are in the file and worker reels',
+  'did-not-run': 'This test did not run, so it is not in the file and worker reels',
   'not-listed': `This test is not on the run's video list, which holds at most ${LISTED_LIMIT.toLocaleString()} tests with a video`,
 } as const;
 
+/** Why Whole file and Its worker are off; a native `title` alone never shows on a touch screen. */
+const limitTitle = computed(() => (limit.value ? LIMIT_TITLE[limit.value] : undefined));
+
 const modeItems = computed(() => {
   const off = limit.value != null;
-  const title = off ? LIMIT_TITLE[limit.value!] : undefined;
+  const title = limitTitle.value;
   return [
     { key: 'test' as const, label: 'This test' },
     { key: 'file' as const, label: 'Whole file', disabled: off, title },
@@ -94,7 +101,12 @@ const group = computed(() => (mode.value === 'file' && !limit.value ? 'file' : '
     }"
   >
     <template #actions>
-      <SegmentedSwitch v-model="mode" :items="modeItems" aria-label="Show" />
+      <div class="min-w-0 space-y-1">
+        <SegmentedSwitch v-model="mode" :items="modeItems" aria-label="Show" />
+        <p v-if="limitTitle" data-shot="mode-off-reason" class="text-xs text-muted">
+          {{ limitTitle }}
+        </p>
+      </div>
     </template>
     <template #body>
       <div data-shot="video-review">
@@ -115,6 +127,9 @@ const group = computed(() => (mode.value === 'file' && !limit.value ? 'file' : '
           </p>
           <p v-else-if="limit === 'earlier-attempt'" class="text-xs text-muted">
             This is an earlier attempt: its own video plays here.
+          </p>
+          <p v-else-if="limit === 'did-not-run'" class="text-xs text-muted">
+            This test did not run: its own video plays here.
           </p>
           <p v-if="data.truncated" class="text-xs text-muted">
             This run has more tests than the list holds: the first {{ LISTED_LIMIT.toLocaleString() }} with a video and

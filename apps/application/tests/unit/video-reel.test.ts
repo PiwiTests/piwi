@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   VIDEO_TIMING_TOLERANCE_MS,
   buildReel,
+  createFocusMemo,
   createPageEndMs,
   entryEndMs,
   focusExecution,
@@ -285,6 +286,40 @@ describe('tickedEntries', () => {
   it('ticks at the end the cursor names, a video shorter than its test', () => {
     expect(tickedEntries(reel, { index: 0, videoMs: 600, endMs: 600 })).toEqual([true, true, false]);
   });
+
+  describe('on a reel that starts at one of its tests', () => {
+    // Four tests, each with a video, played from the third.
+    const four = buildReel(
+      [1, 2, 3, 4].map((id) => execution({ executionId: id, startedAt: T0 + id * 2000 })),
+      'worker',
+    )[0]!;
+
+    it('does not tick the tests before the one it started at', () => {
+      expect(tickedEntries(four, { index: 2, videoMs: 10 }, 2)).toEqual([false, false, false, false]);
+      expect(tickedEntries(four, { index: 2, videoMs: 1000 }, 2)).toEqual([false, false, true, false]);
+    });
+
+    it('ticks the tests that were played, from the one it started at', () => {
+      expect(tickedEntries(four, { index: 3, videoMs: 10 }, 2)).toEqual([false, false, true, false]);
+      expect(tickedEntries(four, { index: 3, videoMs: 1000 }, 2)).toEqual([false, false, true, true]);
+    });
+
+    it('ticks from the first test by default, as the run page does', () => {
+      expect(tickedEntries(four, { index: 2, videoMs: 10 })).toEqual([true, true, false, false]);
+    });
+
+    it('does not tick a test with no video that sits before the one it started at', () => {
+      const withStub = buildReel(
+        [
+          execution({ executionId: 1, startedAt: T0 + 2000, video: null }),
+          execution({ executionId: 2, startedAt: T0 + 4000 }),
+          execution({ executionId: 3, startedAt: T0 + 6000 }),
+        ],
+        'worker',
+      )[0]!;
+      expect(tickedEntries(withStub, { index: 2, videoMs: 10 }, 1)).toEqual([false, true, false]);
+    });
+  });
 });
 
 describe('focusReel', () => {
@@ -426,6 +461,18 @@ describe('focusReel', () => {
     it('names a test the list does not hold: the list was cut', () => {
       expect(focusLimit(run, execution({ executionId: 99, testCaseId: 99 }))).toBe('not-listed');
     });
+
+    it('names a final attempt that did not run, which the file and worker reels leave out', () => {
+      const skipped = execution({ executionId: 5, filePath: 'tests/a.spec.ts', line: 40, status: 'skipped' });
+      const list = [...run, skipped];
+      expect(focusLimit(list, skipped)).toBe('did-not-run');
+      expect(focusLimit(list, { ...skipped, status: 'didnotrun' })).toBe('did-not-run');
+      // Neither reel holds it, so a limit that stays off would open them on an empty state.
+      expect(focusReel(list, skipped, 'file')).toBeNull();
+      expect(focusReel(list, skipped, 'worker')).toBeNull();
+      // Its own video still plays on the This test reel.
+      expect(ids(focusReel(list, skipped, 'test'))).toEqual([3, 1, 2, 5]);
+    });
   });
 
   it('ticks only the test in focus on a This test reel', () => {
@@ -444,8 +491,11 @@ describe('focusExecution', () => {
     title: 'checkout',
     filePath: 'tests/a.spec.ts',
     line: 20,
+    column: 9,
     status: 'failed',
     retries: 0,
+    browserName: 'firefox',
+    repeatEachIndex: 2,
     passedAfterFailure: false,
     shardIndex: null,
     parallelIndex: 1,
@@ -453,10 +503,6 @@ describe('focusExecution', () => {
     startedAt: T0,
     duration: 900,
     steps: [{ title: 'Create page', startTime: T0 + 100, duration: 30 }],
-    attempts: [
-      { retry: 0, executionId: 22 },
-      { retry: 1, executionId: 12 },
-    ],
   };
 
   it('takes the execution from the run list when the list holds it', () => {
@@ -464,7 +510,7 @@ describe('focusExecution', () => {
     expect(focusExecution(detail, video, [listed])).toBe(listed);
   });
 
-  it('builds an earlier attempt from the detail, with the browser and repetition of the final attempt', () => {
+  it('builds an earlier attempt from the detail, with its own project, repetition and column', () => {
     const final = execution({
       executionId: 12,
       testCaseId: 2,
@@ -491,8 +537,116 @@ describe('focusExecution', () => {
   });
 
   it('builds a test the list was cut before from the detail alone', () => {
-    const built = focusExecution({ ...detail, attempts: null, filePath: null }, video, []);
-    expect(built).toMatchObject({ filePath: '', browserName: null, repeatEachIndex: 0, column: null });
+    const built = focusExecution({ ...detail, filePath: null }, video, []);
+    expect(built).toMatchObject({ filePath: '', browserName: 'firefox', repeatEachIndex: 2, column: 9 });
     expect(focusLimit([], built)).toBe('not-listed');
+  });
+
+  it('reads a detail that names no project or repetition as the first repetition of no project', () => {
+    const bare: FocusDetail = { ...detail, browserName: undefined, repeatEachIndex: undefined, column: undefined };
+    expect(focusExecution(bare, video, [])).toMatchObject({ browserName: null, repeatEachIndex: 0, column: null });
+  });
+
+  describe('a run of named projects, with retries and a video kept on failure', () => {
+    // Retain-on-failure: the first attempt failed and kept its video, the retry passed and kept none. Both results
+    // are in the project `chromium`; `firefox` ran the same test once.
+    const first = execution({
+      executionId: 30,
+      testCaseId: 5,
+      line: 5,
+      status: 'failed',
+      retries: 0,
+      browserName: 'chromium',
+      video: { id: 30, path: 'p/30.webm', contentType: 'video/webm', size: 10 },
+    });
+    const retry = execution({
+      executionId: 31,
+      testCaseId: 5,
+      line: 5,
+      retries: 1,
+      passedAfterFailure: true,
+      browserName: 'chromium',
+      video: null,
+    });
+    const firefox = execution({ executionId: 32, testCaseId: 5, line: 5, retries: 0, browserName: 'firefox' });
+    const list = [retry, firefox];
+    // The detail of the first attempt: its attempts end at itself, so the final attempt is not found through them.
+    const firstDetail: FocusDetail = {
+      id: 30,
+      testCaseId: 5,
+      title: 'test 5',
+      filePath: 'tests/a.spec.ts',
+      line: 5,
+      column: 1,
+      status: 'failed',
+      retries: 0,
+      browserName: 'chromium',
+      repeatEachIndex: 0,
+      passedAfterFailure: false,
+      shardIndex: null,
+      parallelIndex: 0,
+      workerIndex: 0,
+      startedAt: T0,
+      duration: 1000,
+      steps: null,
+    };
+    const focus = focusExecution(firstDetail, first.video!, list);
+
+    it('keeps the project of the earlier attempt, so it is told from its own final attempt', () => {
+      expect(focus).toMatchObject({ browserName: 'chromium', repeatEachIndex: 0, column: 1, retries: 0 });
+      expect(focusLimit(list, focus)).toBe('earlier-attempt');
+    });
+
+    it('lists no second row for the test: the earlier attempt stands in for its final attempt', () => {
+      const { reel, focusIndex } = focusReel(list, focus, 'test')!;
+      const rows = reel.entries.map((e) => e.execution.executionId);
+      expect([...rows].sort()).toEqual([30, 32]);
+      expect(rows).not.toContain(31);
+      expect(reel.entries[focusIndex]!.execution.video!.path).toBe('p/30.webm');
+      // The other project's result of the test stays as context.
+      expect(reel.entries.filter((e) => e.context).map((e) => e.execution.executionId)).toEqual([32]);
+    });
+  });
+});
+
+describe('createFocusMemo', () => {
+  const video = { id: 7, path: 'p/own.webm', contentType: 'video/webm', size: 5 };
+  const detail: FocusDetail = {
+    id: 22,
+    testCaseId: 2,
+    title: 'checkout',
+    filePath: 'tests/a.spec.ts',
+    line: 20,
+    status: 'failed',
+    retries: 0,
+    passedAfterFailure: false,
+    shardIndex: null,
+    parallelIndex: 1,
+    workerIndex: 3,
+    startedAt: T0,
+    duration: 900,
+    steps: null,
+  };
+
+  it('hands back the same execution when the detail is read again', () => {
+    const focusOf = createFocusMemo();
+    const first = focusOf(detail, video, []);
+    expect(focusOf({ ...detail }, { ...video }, [])).toBe(first);
+    expect(focusOf({ ...detail }, video, [execution({ executionId: 1 })])).toBe(first);
+  });
+
+  it('builds another for another execution or another video', () => {
+    const focusOf = createFocusMemo();
+    const first = focusOf(detail, video, []);
+    expect(focusOf({ ...detail, id: 23 }, video, [])).not.toBe(first);
+    expect(focusOf(detail, { ...video, path: 'p/other.webm' }, [])).not.toBe(first);
+  });
+
+  it('takes the execution from the list once the list holds it', () => {
+    const focusOf = createFocusMemo();
+    const built = focusOf(detail, video, []);
+    const listed = execution({ executionId: 22 });
+    expect(focusOf(detail, video, [listed])).toBe(listed);
+    expect(built).not.toBe(listed);
   });
 });
