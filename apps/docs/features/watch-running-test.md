@@ -41,11 +41,12 @@ nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
 - **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
   Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
 - **Piwi Picker's Runs window** lists the CI runs in progress of the projects your
-  [connection](./extension-connection) maps, through that instance, with **Open**.
-- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane in the
-  editor, read-only: the VS Code worker panel or the JetBrains **Worker** tab, named `CI run #78 · worker 2`, with
-  **Watch** alone, no **Interact** and no pick. It follows the lane through its next tests, and ends with the run, as
-  you hide or close the view, or as the instance closes it, saying why.
+  [connection](./extension-connection) maps, through that instance, with **Open** and their running tests.
+- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane
+  read-only (the VS Code worker panel, the JetBrains **Worker** tab, named `CI run #78 · worker 2`, or under the run in
+  the Runs window): **Watch** alone, no **Interact** and no pick. It follows the lane
+  through its next tests, and ends with the run, as you hide or close the view, or as the instance closes it, saying
+  why.
 - **Watch on the dashboard**, beside it, opens the lane's view on the run's page: the choice where the editor cannot
   show it (an older instance, a refused **Watch**, which offers it).
 

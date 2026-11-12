@@ -23,6 +23,8 @@ import {
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
 import type { CiRun } from '@piwitests/run-model/ci';
+import type { LaneState } from '@piwitests/core/live-lane';
+import type { LiveViewEnd } from '@piwitests/core/live-view';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
@@ -109,8 +111,60 @@ export interface RunsState {
    * The CI runs in progress of the projects this browser maps, read-only, from the instance the extension is
    * connected to (`background/ci-runs.ts`); none without connected mode.
    */
-  ci?: CiRun[];
+  ci?: RunsCiRun[];
 }
+
+/**
+ * A test a CI run runs now, as its lane on the instance stands (`lane` of the run's stream): its shard (null for a run
+ * not sharded), its lane (Playwright's `parallelIndex`), the worker in it, where it stands and the test's title.
+ */
+export interface RunsCiTest {
+  shard: number | null;
+  lane: number;
+  worker: number | null;
+  state: LaneState;
+  title: string;
+  retry: number;
+}
+
+/**
+ * A CI run in progress as the window lists it: the instance's list, then, for a run whose own stream the worker reads
+ * (`MAX_CI_STREAMS`, the newest), the tests it runs now and whether its lanes can be watched (its project's live view
+ * on and the run holding a key).
+ */
+export interface RunsCiRun extends CiRun {
+  tests: RunsCiTest[];
+  watchable: boolean;
+}
+
+/** A lane of a CI run, as the window and the worker name it: the run on the instance, its shard and its lane. */
+export interface RunsCiLane {
+  runId: number;
+  shard: number | null;
+  lane: number;
+}
+
+/**
+ * An image of a CI lane the window watches: a JPEG as the instance sent it, base64, with the test and the call it was
+ * taken at; or the instance's sentence saying why the lane sends none now (`refused`), until an image comes again.
+ */
+export type RunsCiFrame = RunsCiLane &
+  ({ data: string; test: string | null; call: string | null } | { refused: string });
+
+/**
+ * Why a CI lane the window watched ended without its asking: as the instance said it (`LiveViewEnd`), or it stopped
+ * answering (`silent`), closed the watch (`closed`), its stream broke (`broken`), or another Runs window took the one
+ * watch to another lane (`moved`).
+ */
+export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
+
+/**
+ * Why a CI lane was not watched: the run is no longer listed (`unlisted`), its lanes cannot be watched
+ * (`unwatchable`), no test ran in the lane yet (`no-test`), the instance did not answer (`offline`) or not in time
+ * (`late`), its live view is not one the extension reads (`older`), or it refused (`refused`, its sentence the
+ * answer's `message`, else its `status`).
+ */
+export type CiWatchFailure = 'unlisted' | 'unwatchable' | 'no-test' | 'offline' | 'late' | 'older' | 'refused';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
@@ -177,6 +231,11 @@ export type RunsRequest =
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }
+  /**
+   * Watch a running test's lane of a CI run (`on`), read-only, or stop: answered with `answer` of the same `id`, then
+   * its images as `ci-frame` and its end as `ci-ended`.
+   */
+  | ({ type: 'ci-watch'; id: number; on: boolean } & RunsCiLane)
   /** A command for a run, answered with `answer` of the same `id`. */
   | {
       type: 'command';
@@ -227,6 +286,10 @@ export interface RunsAnswer {
   locator?: string | null;
   /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
   taken?: boolean;
+  /** For `ci-watch`: why the lane was not watched; the instance's own sentence in `message` when it gave one. */
+  ci?: CiWatchFailure;
+  /** For `ci-watch` refused by the instance with no sentence: its status. */
+  status?: number;
 }
 
 /**
@@ -296,6 +359,9 @@ export type RunsEvent =
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
   | ({ type: 'lane-ended' } & RunsLane)
   | ({ type: 'lane-layer' } & RunsLaneLayer)
+  | ({ type: 'ci-frame' } & RunsCiFrame)
+  /** A CI lane the window watched ended without the window asking, and why. */
+  | ({ type: 'ci-ended'; why: CiWatchEnd } & RunsCiLane)
   /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
   | { type: 'found' };
 
@@ -316,6 +382,12 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
     case 'find':
     case 'ping':
       return { type: value.type };
+    case 'ci-watch': {
+      const { id, runId, shard, lane, on } = value;
+      if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
+      if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
+      return typeof on === 'boolean' ? { type: 'ci-watch', id, runId, shard, lane, on } : null;
+    }
     case 'command': {
       const { id, hub, ref, worker, since, what } = value;
       if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
@@ -596,6 +668,19 @@ export function keyTargetOf(
  */
 export function slotKey(hub: string, ref: string, parallelIndex: number): string {
   return `${hub}|${ref}|slot-${parallelIndex}`;
+}
+
+/** Names a lane of a CI run, for the worker's watch and the window's rows. */
+export function ciLaneKey(lane: RunsCiLane): string {
+  return `${lane.runId}|${lane.shard ?? ''}|${lane.lane}`;
+}
+
+/**
+ * A CI lane's view on the run's page (`?watch=`, the shard and the worker's number from 1, `2` or `1.2`): **Watch on
+ * the dashboard**.
+ */
+export function ciDashboardWatch(run: Pick<RunsCiRun, 'url'>, lane: Pick<RunsCiLane, 'shard' | 'lane'>): string {
+  return `${run.url}?watch=${lane.shard !== null ? `${lane.shard}.` : ''}${lane.lane + 1}`;
 }
 
 /** Names a worker within the state, for the window's focus and its images. */

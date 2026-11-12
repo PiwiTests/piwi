@@ -8865,6 +8865,132 @@
     "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
     "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
   },
+  "runs_ciTests": {
+    "message": "Tests running now",
+    "description": "Runs window, the accessible name of the list of the tests a CI run runs now, under its tally."
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "description": "Runs window, a test a CI run runs now: the worker it runs in, counted from 1 ($worker$ is a number). Short.",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, worker $worker$",
+    "description": "Runs window, a test a sharded CI run runs now: its shard and the worker it runs in, both numbers counted from 1. Short.",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Show this test’s page as it runs on CI, through its worker’s next tests: read-only, nothing here reaches it",
+    "description": "Runs window, the tooltip of Watch (runs_watch) on a test a CI run runs now: it shows the page here, read-only."
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Watch on the dashboard",
+    "description": "Runs window, the button beside Watch on a test a CI run runs now, and under a watch that ended: opens the worker’s view on the run’s page on the dashboard. A button: keep it short."
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Open this worker’s view on the run’s page",
+    "description": "Runs window, the tooltip of Watch on the dashboard (runs_ciWatchDashboard)."
+  },
+  "runs_ciWatching": {
+    "message": "Watching CI run #$id$: $worker$.",
+    "description": "Runs window, read out once a CI run’s worker is watched. $id$ is the run’s number on the instance; $worker$ is runs_ciWorker or runs_ciShardWorker.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Live view of the CI test’s page, read-only",
+    "description": "Runs window, the name of the watched image of a CI run’s test page, read-only."
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "This CI run is no longer in progress.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the run is no longer listed in progress."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "This run’s tests cannot be watched: its project’s live view is off, or the run holds no key.",
+    "description": "Runs window, under a CI run’s running tests, and why one could not be watched: the project’s live view is off on the instance, or the run holds no live view key."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "No test ran in this worker’s lane yet.",
+    "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "The instance did not answer.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the Piwi instance did not answer."
+  },
+  "runs_ciRefusedLate": {
+    "message": "The instance did not open the watch in time: try again in a moment.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance did not open the watch in time."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "This instance’s live view is not one Piwi Picker reads: watch the test on the dashboard.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance is older and its live view is read only by the dashboard."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "The instance answered $status$.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance refused with this HTTP status and no sentence. $status$ is a number such as 503.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "The CI run ended.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the run ended."
+  },
+  "runs_ciEndOff": {
+    "message": "The project’s live view was turned off.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the project’s live view was turned off on the instance."
+  },
+  "runs_ciEndReplaced": {
+    "message": "The instance closed this watch: you opened more watches of this run elsewhere than it keeps for one person.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the person opened more watches of the run elsewhere (the dashboard, an editor) than the instance keeps for one person (four)."
+  },
+  "runs_ciEndTest": {
+    "message": "The test ended.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: its test ended."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "No worker runs in this lane any more.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: no worker runs in its lane any more."
+  },
+  "runs_ciEndUnshared": {
+    "message": "The run is no longer shared.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the run is no longer shared."
+  },
+  "runs_ciEndSilent": {
+    "message": "The instance stopped answering.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the instance sent nothing, not even its heartbeat, for 45 seconds."
+  },
+  "runs_ciEndClosed": {
+    "message": "The instance closed the watch.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the instance closed it without saying why."
+  },
+  "runs_ciEndBroken": {
+    "message": "The connection to the instance dropped.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the connection to the instance dropped."
+  },
+  "runs_ciEndMoved": {
+    "message": "Another Runs window watches another worker now: Piwi Picker watches one CI worker at a time.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: another Runs window watches another CI worker now, and Piwi Picker watches one at a time."
+  },
   "runs_pageAtStop": {
     "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
     "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."

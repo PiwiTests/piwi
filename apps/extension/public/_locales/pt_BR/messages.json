@@ -7463,6 +7463,107 @@
   "runs_ciReadOnly": {
     "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Abra a página de uma execução para assistir a um teste em execução."
   },
+  "runs_ciTests": {
+    "message": "Testes em execução agora"
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, worker $worker$",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Mostrar a página deste teste enquanto ele roda na CI, também nos próximos testes do worker: somente leitura, nada daqui chega até ele"
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Assistir no painel"
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Abrir a visualização deste worker na página da execução"
+  },
+  "runs_ciWatching": {
+    "message": "Assistindo à execução de CI #$id$: $worker$.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Visualização ao vivo da página do teste de CI, somente leitura"
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "Esta execução de CI não está mais em andamento."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "Os testes desta execução não podem ser assistidos: a visualização ao vivo do projeto está desligada, ou a execução não tem chave."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "Nenhum teste rodou ainda na raia deste worker."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "A instância não respondeu."
+  },
+  "runs_ciRefusedLate": {
+    "message": "A instância não abriu a visualização a tempo: tente de novo em instantes."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "O Piwi Picker não lê a visualização ao vivo desta instância: assista ao teste no painel."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "A instância respondeu $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "A execução de CI terminou."
+  },
+  "runs_ciEndOff": {
+    "message": "A visualização ao vivo do projeto foi desligada."
+  },
+  "runs_ciEndReplaced": {
+    "message": "A instância fechou esta visualização: você abriu em outros lugares mais visualizações desta execução do que ela mantém para uma pessoa."
+  },
+  "runs_ciEndTest": {
+    "message": "O teste terminou."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "Nenhum worker roda mais nesta raia."
+  },
+  "runs_ciEndUnshared": {
+    "message": "A execução não é mais compartilhada."
+  },
+  "runs_ciEndSilent": {
+    "message": "A instância parou de responder."
+  },
+  "runs_ciEndClosed": {
+    "message": "A instância fechou a visualização."
+  },
+  "runs_ciEndBroken": {
+    "message": "A conexão com a instância caiu."
+  },
+  "runs_ciEndMoved": {
+    "message": "Outra janela Execuções assiste agora a outro worker: o Piwi Picker mostra um worker de CI por vez."
+  },
   "runs_pageAtStop": {
     "message": "A página de um teste aparece aqui quando ele para: em um ponto de interrupção, em page.pause() ou quando você o pausa. Ver ao vivo a mostra então enquanto ela é desenhada."
   },

@@ -4,6 +4,7 @@ import type { HubProgress, HubSession, HubWorker } from '@piwitests/core/run-hub
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
   attentionOf,
+  ciDashboardWatch,
   pageHintOf,
   parseRunsRequest,
   shareRefusalOf,
@@ -365,6 +366,34 @@ describe('Share live, as the worker reads it', () => {
     expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
     expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();
     expect(shareRefusalOf(`${LIVE_SHARE_MISSING.local} `)).toBeNull();
+  });
+});
+
+describe('Watch on a CI run, as the worker reads it', () => {
+  const lane = { type: 'ci-watch', id: 4, runId: 78, shard: null, lane: 1 };
+
+  it('names the run on the instance, its shard and its lane, and whether to watch it', () => {
+    expect(parseRunsRequest({ ...lane, on: true })).toEqual({ ...lane, on: true });
+    expect(parseRunsRequest({ ...lane, shard: 2, on: false })).toEqual({ ...lane, shard: 2, on: false });
+    for (const bad of [
+      { ...lane },
+      { ...lane, on: 'yes' },
+      { ...lane, id: 0, on: true },
+      { ...lane, runId: 0, on: true },
+      { ...lane, runId: '78', on: true },
+      { ...lane, shard: 0, on: true },
+      { ...lane, shard: undefined, on: true },
+      { ...lane, lane: -1, on: true },
+      { ...lane, lane: 1.5, on: true },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('opens the lane’s view on the run’s page, the worker counted from 1', () => {
+    const run = { url: 'https://piwi.example/test-runs/78' };
+    expect(ciDashboardWatch(run, { shard: null, lane: 1 })).toBe('https://piwi.example/test-runs/78?watch=2');
+    expect(ciDashboardWatch(run, { shard: 3, lane: 0 })).toBe('https://piwi.example/test-runs/78?watch=3.1');
   });
 });
 

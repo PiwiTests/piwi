@@ -23,7 +23,7 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
-import { CI_READ_ONLY, ciRunName, ciRunWhere, type CiRun } from '@piwitests/run-model/ci';
+import { CI_READ_ONLY, ciRunName, ciRunWhere } from '@piwitests/run-model/ci';
 import {
   asksLaneTextAgain,
   callWait,
@@ -64,6 +64,8 @@ import {
   RUNS_PORT,
   RUN_COMMAND,
   attentionOf,
+  ciDashboardWatch,
+  ciLaneKey,
   pageHintOf,
   shareRefusalOf,
   readRunsBounds,
@@ -73,7 +75,12 @@ import {
   STOP_KEYS,
   slotKey,
   workerKey,
+  type CiWatchEnd,
   type RunsAnswer,
+  type RunsCiFrame,
+  type RunsCiLane,
+  type RunsCiRun,
+  type RunsCiTest,
   type RunsCode,
   type RunsEvent,
   type RunsFrame,
@@ -251,6 +258,10 @@ function connect(): void {
       heardLaneEnded(event);
     } else if (event?.type === 'lane-layer') {
       heardLaneLayer(event);
+    } else if (event?.type === 'ci-frame') {
+      heardCiFrame(event);
+    } else if (event?.type === 'ci-ended') {
+      heardCiEnded(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -265,6 +276,7 @@ function connect(): void {
     // Watch left on.
     for (const [key, view] of views) if (isLive(view)) endView(key, false);
     for (const lane of lanes.values()) if (isLive(lane)) idleLane(lane, false);
+    idleCi(false);
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -1157,6 +1169,194 @@ function heardLaneEnded(ended: RunsLane): void {
   render();
 }
 
+// ── A CI lane watched ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The CI lane this window watches, read-only, one at a time: asked of the worker (`asking`), watched (`on`), let go
+ * while the window hides or its port is down (`idle`, asked again as it shows), ended without its asking or refused,
+ * with why (`note`). Its images are decoded aside first, the latest waiting, and kept in memory alone.
+ */
+interface CiView extends RunsCiLane {
+  status: 'asking' | 'on' | 'idle' | 'ended' | 'refused';
+  note: string;
+  /** Each ask counted: an answer to an earlier one changes nothing. */
+  asks: number;
+  img: HTMLImageElement;
+  /** An image was drawn. */
+  shown: boolean;
+  next: Extract<RunsCiFrame, { data: string }> | null;
+  decoding: boolean;
+  /** Why the lane sends no image now, until one comes. */
+  refused: string;
+  test: string | null;
+  call: string | null;
+}
+
+let ciView: CiView | null = null;
+
+function isCiLive(view: CiView | null): view is CiView {
+  return !!view && (view.status === 'asking' || view.status === 'on');
+}
+
+/** Ask the worker to watch a CI lane, or stop, answered as a command is. */
+function ciCommand(lane: RunsCiLane, on: boolean): Promise<RunsAnswer> {
+  const id = nextId++;
+  return new Promise((resolve) => {
+    if (!port) {
+      resolve({ ok: false, message: '', ci: 'offline' });
+      return;
+    }
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      resolve({ ok: false, message: '', ci: 'late' });
+    }, COMMAND_TIMEOUT_MS);
+    waiting.set(id, (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    });
+    post({ type: 'ci-watch', id, ...lane, on });
+  });
+}
+
+/** **Watch** on a CI run's running test: watch its lane, or stop watching it. */
+function toggleCi(lane: RunsCiLane): void {
+  if (ciView && ciLaneKey(ciView) === ciLaneKey(lane) && ciView.status !== 'ended' && ciView.status !== 'refused') {
+    const was = ciView;
+    ciView = null;
+    if (was.status !== 'idle') void ciCommand(lane, false);
+    render();
+    return;
+  }
+  const img = new Image();
+  img.className = 'live';
+  ciView = {
+    ...lane,
+    status: 'asking',
+    note: '',
+    asks: 0,
+    img,
+    shown: false,
+    next: null,
+    decoding: false,
+    refused: '',
+    test: null,
+    call: null,
+  };
+  askCi(ciView);
+  render();
+}
+
+async function askCi(view: CiView): Promise<void> {
+  view.status = 'asking';
+  const ask = ++view.asks;
+  const answer = await ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, true);
+  if (ciView !== view || view.asks !== ask || view.status !== 'asking') return;
+  if (answer.ok) {
+    view.status = 'on';
+    announce(t('runs_ciWatching', { worker: ciLaneName(view), id: String(view.runId) }));
+  } else {
+    view.status = 'refused';
+    view.note = ciRefusalText(answer);
+    announce(view.note);
+  }
+  render();
+}
+
+/** Why a CI lane was not watched, in the window's words, or the instance's own sentence. */
+function ciRefusalText(answer: RunsAnswer): string {
+  if (answer.message) return answer.message;
+  switch (answer.ci) {
+    case 'unlisted':
+      return t('runs_ciRefusedUnlisted');
+    case 'unwatchable':
+      return t('runs_ciRefusedUnwatchable');
+    case 'no-test':
+      return t('runs_ciRefusedNoTest');
+    case 'late':
+      return t('runs_ciRefusedLate');
+    case 'older':
+      return t('runs_ciRefusedOlder');
+    case 'refused':
+      return t('runs_ciRefusedStatus', { status: String(answer.status ?? 0) });
+    default:
+      return t('runs_ciRefusedOffline');
+  }
+}
+
+/** Why a CI lane watched ended, in the window's words. */
+const CI_ENDS: Record<CiWatchEnd, Parameters<typeof t>[0]> = {
+  'run-ended': 'runs_ciEndRun',
+  off: 'runs_ciEndOff',
+  replaced: 'runs_ciEndReplaced',
+  'test-ended': 'runs_ciEndTest',
+  'worker-left': 'runs_ciEndWorkerLeft',
+  unshared: 'runs_ciEndUnshared',
+  silent: 'runs_ciEndSilent',
+  closed: 'runs_ciEndClosed',
+  broken: 'runs_ciEndBroken',
+  moved: 'runs_ciEndMoved',
+};
+
+function heardCiFrame(frame: RunsCiFrame): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(frame)) return;
+  if ('refused' in frame) {
+    view.next = null;
+    if (view.refused === frame.refused) return;
+    view.refused = frame.refused;
+    announce(view.refused);
+    render();
+    return;
+  }
+  if (!isViewFrameData(frame.data)) return;
+  view.next = frame;
+  if (!view.decoding) void drawCi(view);
+}
+
+async function drawCi(view: CiView): Promise<void> {
+  view.decoding = true;
+  while (view.next && ciView === view) {
+    const frame = view.next;
+    view.next = null;
+    const src = `data:image/jpeg;base64,${frame.data}`;
+    // Decoded aside first: the view shows the image before until this one is whole.
+    const decoded = new Image();
+    decoded.src = src;
+    try {
+      await decoded.decode();
+    } catch {
+      continue;
+    }
+    if (ciView !== view || !isCiLive(view)) break;
+    const moved = !view.shown || !!view.refused || view.test !== frame.test || view.call !== frame.call;
+    view.img.src = src;
+    view.shown = true;
+    view.refused = '';
+    view.test = frame.test;
+    view.call = frame.call;
+    if (moved) render();
+  }
+  view.decoding = false;
+}
+
+function heardCiEnded(ended: RunsCiLane & { why: CiWatchEnd }): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(ended)) return;
+  view.status = 'ended';
+  view.note = t(CI_ENDS[ended.why] ?? 'runs_ciEndClosed');
+  announce(view.note);
+  render();
+}
+
+/** The CI lane is let go while the window hides or its port is down, and asked again as it shows. */
+function idleCi(tell: boolean): void {
+  if (!isCiLive(ciView)) return;
+  const view = ciView;
+  view.status = 'idle';
+  view.asks++;
+  if (tell) void ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, false);
+}
+
 // ── A watched lane's layers ─────────────────────────────────────────────────────────────────────────────────────────
 
 /** The layers a lane's watch takes, at a hub that sends them: every one, the page's text once the person asked. */
@@ -1626,6 +1826,7 @@ document.addEventListener('visibilitychange', () => {
   }
   for (const [key, view] of views) if (isLive(view)) endView(key, true);
   for (const lane of lanes.values()) if (isLive(lane)) idleLane(lane, true);
+  idleCi(true);
   render();
 });
 
@@ -2243,11 +2444,15 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
 
 /**
  * The CI runs in progress the connected instance lists, under the runs the hubs follow, read-only: each named as other
- * runs are, where it runs, its page (`Run #78`, **Open** and **Copy**) and its tally, then one line saying nothing
- * here steers them and where to watch one. None without connected mode.
+ * runs are, where it runs, its page (`Run #78`, **Open** and **Copy**), its tally and the tests it runs now, each with
+ * **Watch** where its lanes can be watched and **Watch on the dashboard**, then one line saying nothing here steers
+ * them. None without connected mode.
  */
 function renderCi(current: RunsState): void {
   const runs = current.ci ?? [];
+  // A watch of a run no longer listed ends: the worker said why, or the run ended.
+  if (ciView && !runs.some((run) => run.id === ciView!.runId)) ciView = null;
+  if (ciView?.status === 'idle' && !document.hidden && port) askCi(ciView);
   ciBox.hidden = runs.length === 0;
   if (!runs.length) {
     place(ciBox, []);
@@ -2256,34 +2461,158 @@ function renderCi(current: RunsState): void {
   const several = new Set(runs.map((run) => run.projectId)).size > 1;
   place(ciBox, [
     part('ci|heading', null, () => element('h2', 'ci-heading', runsSpeaker.say('runs_ciHeading'))),
-    ...runs.map((run) => part(`ci|${run.url}`, [run, several], () => renderCiRun(run, several))),
+    ...runs.map((run) => renderCiRun(run, several)),
     part('ci|note', null, () => iconText(element('p', 'note ci-note'), 'info', runsSpeaker.say(CI_READ_ONLY.key))),
   ]);
 }
 
-/** A CI run in progress: its name, where it runs, its page and its tally; no control, since it runs on CI. */
-function renderCiRun(run: CiRun, several: boolean): HTMLElement {
-  const section = element('section', 'run ci-run');
-  const name = element('h2', undefined, ciRunName(run, runsSpeaker));
-  name.id = domId('ci', run.url);
-  section.setAttribute('aria-labelledby', name.id);
-  const title = element('div', 'run-title', name);
+/**
+ * A CI run in progress: its name, where it runs, its page, its tally, and the tests it runs now with **Watch** and
+ * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI.
+ */
+function renderCiRun(run: RunsCiRun, several: boolean): HTMLElement {
+  const key = `ci|${run.url}`;
+  const section = part(key, null, () => {
+    const made = element('section', 'run ci-run');
+    made.setAttribute('aria-labelledby', domId('ci', run.url));
+    return made;
+  });
   const where = ciRunWhere(run, several);
-  if (where) title.append(element('span', 'client', runsSpeaker.say(where.key, where.args)));
-  section.append(
-    element('div', 'run-head', title),
-    renderRunPage({ id: run.id, url: run.url }),
-    renderProgress({
-      total: run.total,
-      done: run.done,
-      failed: run.failed,
-      flaky: run.flaky,
-      skipped: 0,
-      status: 'running',
-      failure: null,
+  const children = [
+    part(`${key}|head`, [run.id, where], () => {
+      const name = element('h2', undefined, ciRunName(run, runsSpeaker));
+      name.id = domId('ci', run.url);
+      const title = element('div', 'run-title', name);
+      if (where) title.append(element('span', 'client', runsSpeaker.say(where.key, where.args)));
+      return element('div', 'run-head', title);
     }),
-  );
+    part(`${key}|page`, [run.id, run.url], () => renderRunPage({ id: run.id, url: run.url })),
+    part(`${key}|progress`, [run.total, run.done, run.failed, run.flaky], () =>
+      renderProgress({
+        total: run.total,
+        done: run.done,
+        failed: run.failed,
+        flaky: run.flaky,
+        skipped: 0,
+        status: 'running',
+        failure: null,
+      }),
+    ),
+  ];
+  if (run.tests.length) {
+    const list = part(`${key}|tests`, null, () => {
+      const made = element('ul', 'ci-tests');
+      made.setAttribute('aria-label', t('runs_ciTests'));
+      return made;
+    });
+    place(
+      list,
+      run.tests.map((test) => {
+        const lane: RunsCiLane = { runId: run.id, shard: test.shard, lane: test.lane };
+        const watched = !!ciView && ciLaneKey(ciView) === ciLaneKey(lane) && ciView.status !== 'ended';
+        return part(`${key}|test|${ciLaneKey(lane)}`, [test, run.watchable, watched], () =>
+          renderCiTest(run, test, lane, watched),
+        );
+      }),
+    );
+    children.push(list);
+  }
+  if (!run.watchable && run.tests.length) {
+    children.push(
+      part(`${key}|unwatchable`, null, () =>
+        iconText(element('p', 'note run-note'), 'info', t('runs_ciRefusedUnwatchable')),
+      ),
+    );
+  }
+  if (ciView?.runId === run.id) children.push(renderCiView(run, ciView));
+  place(section, children);
   return section;
+}
+
+/** `Worker 2`, or `Shard 1, worker 2`: a CI lane as the window names it, its worker counted from 1. */
+function ciLaneName(lane: Pick<RunsCiLane, 'shard' | 'lane'>): string {
+  const worker = String(lane.lane + 1);
+  return lane.shard !== null
+    ? t('runs_ciShardWorker', { shard: String(lane.shard), worker })
+    : t('runs_ciWorker', { worker });
+}
+
+/** A test a CI run runs now: its lane, its title, **Watch** where the run's lanes can be watched, and the dashboard's. */
+function renderCiTest(run: RunsCiRun, test: RunsCiTest, lane: RunsCiLane, watched: boolean): HTMLElement {
+  const item = element(
+    'li',
+    'ci-test',
+    element('span', 'ci-lane', ciLaneName(test)),
+    element('span', 'ci-title', test.title),
+  );
+  const actions = element('div', 'piwi-actions');
+  const focus = `ci|${ciLaneKey(lane)}`;
+  if (run.watchable) {
+    const watch = makeButton(t('runs_watch'), () => toggleCi(lane), {
+      icon: 'eye',
+      small: true,
+      title: t('runs_ciWatchTitle'),
+    });
+    watch.setAttribute('aria-pressed', String(watched));
+    watch.dataset.focus = `${focus}|watch`;
+    actions.append(watch);
+  }
+  const dashboard = makeButton(
+    t('runs_ciWatchDashboard'),
+    () => void chrome.tabs.create({ url: ciDashboardWatch(run, lane) }),
+    { icon: 'external', small: true, tone: 'ghost', title: t('runs_ciWatchDashboardTitle') },
+  );
+  dashboard.dataset.focus = `${focus}|dashboard`;
+  actions.append(dashboard);
+  item.append(actions);
+  return item;
+}
+
+/** The CI lane watched: its images, read-only, under a **Live** badge; why it ended or sends none, with the dashboard's. */
+function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
+  const key = `ci|${ciLaneKey(view)}|view`;
+  const figure = part(key, null, () => element('figure', 'page ci-view'));
+  const caption = part(`${key}|caption`, [view.test, view.call, view.lane, view.shard], () => {
+    const made = element('figcaption', 'page-head', element('span', 'ci-lane', ciLaneName(view)));
+    if (view.test) made.append(element('span', 'ci-title', view.test));
+    if (view.call) made.append(element('span', 'ci-call', ...richText(view.call)));
+    return made;
+  });
+  const children: HTMLElement[] = [caption];
+  const live = view.status === 'on' && !view.refused && view.shown;
+  if (view.shown) {
+    view.img.classList.toggle('stale', !live);
+    view.img.alt = t('runs_ciLiveAlt');
+    const box = part(`${key}|frame`, null, () => element('div', 'page-frame'));
+    place(box, live ? [view.img, part(`${key}|badge`, null, liveBadge)] : [view.img]);
+    children.push(box);
+  }
+  const note =
+    view.status === 'ended' || view.status === 'refused'
+      ? { icon: 'alert' as const, text: view.note }
+      : view.refused
+        ? { icon: 'alert' as const, text: view.refused }
+        : !view.shown
+          ? { icon: 'clock' as const, text: t('runs_liveStarting') }
+          : null;
+  if (note) children.push(pageNotePart(key, note, !view.shown));
+  if (view.status === 'ended' || view.status === 'refused') {
+    children.push(
+      part(`${key}|again`, [view.status, view.note], () => {
+        const line = element('div', 'piwi-actions');
+        const dashboard = makeButton(
+          t('runs_ciWatchDashboard'),
+          () => void chrome.tabs.create({ url: ciDashboardWatch(run, view) }),
+          { icon: 'external', small: true, title: t('runs_ciWatchDashboardTitle') },
+        );
+        dashboard.dataset.focus = `ci|${ciLaneKey(view)}|ended-dashboard`;
+        line.append(dashboard);
+        return line;
+      }),
+    );
+  }
+  place(figure, children);
+  return figure;
 }
 
 /** The run's page on the instance, as its own process named it: `Run #77`, **Open** and **Copy**, ended or not. */

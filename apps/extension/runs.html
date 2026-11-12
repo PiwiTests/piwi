@@ -329,6 +329,47 @@
       .ci-note {
         margin: 0 0 12px;
       }
+      /* The tests a CI run runs now: the worker, the test's title, then Watch and Watch on the dashboard. */
+      .ci-tests {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        border-top: 1px solid var(--border);
+      }
+      .ci-test {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 8px;
+        padding: 6px 12px;
+        font-size: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .ci-test .piwi-actions {
+        margin-left: auto;
+      }
+      .ci-lane {
+        flex-shrink: 0;
+        font-weight: 600;
+      }
+      .ci-title {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .ci-call {
+        flex-basis: 100%;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .ci-view {
+        margin: 8px 12px 12px;
+      }
+      .ci-view .page-head {
+        font-size: 12px;
+      }
+      .ci-view > .piwi-actions {
+        padding: 0 10px 8px;
+      }
       /* Hold failures, and Pause all or Resume all, on one row under the run's name. */
       .run-bar {
         display: flex;

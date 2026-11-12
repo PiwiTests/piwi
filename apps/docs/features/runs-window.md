@@ -26,7 +26,7 @@ then each worker's test and whether it runs or where it stopped (the file and li
 the page). A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. A run
 without [**Watch**](#watch-live) and no test stopped says how one stops: a breakpoint, a `page.pause()` or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
-[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only.
+[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only, a running test's **Watch** showing its page.
 
 ## The controls
 
