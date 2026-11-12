@@ -90,7 +90,7 @@ import {
   apiStopRunRequest,
   demoReadRunRequestBody,
 } from './run-requests';
-import { publishDemoNotificationEvent } from '../run-events';
+import { demoLanesOf, publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
   getExecutionCoverage,
@@ -2209,7 +2209,7 @@ const routes: RouteEntry[] = [
 
   // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
   // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution,
-  // each test still running and the step each worker is in.
+  // each test still running, the step each worker is in and each lane as it stands.
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
@@ -2229,6 +2229,7 @@ const routes: RouteEntry[] = [
           ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
           ...demoRunningCases(id).map((data) => event('test-begin', data)),
           ...demoLiveSteps(id).map((step) => event(step.type, step.data)),
+          ...demoLanesOf(id).map((lane) => event('lane', { ...lane })),
         ],
       };
     },
