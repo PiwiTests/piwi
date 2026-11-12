@@ -4,8 +4,9 @@ import { PROJECT } from '#shared/test-project-names';
 /**
  * Stuck? on the run page: a test of a live run that has run far longer than its passing runs took (`#shared/stuck-
  * tests`) is marked on its row, with how long it has run against the longest of its passes, within the server's next
- * check; a page opened later shows it too, the Timeline draws its bar amber over the pale bar of its usual time,
- * `is:stuck` finds it, and the mark leaves as the attempt completes. A test of a run outside CI that its reporter says
+ * check; a page opened later shows it too, the Timeline draws its bar amber over the pale bar of its usual time (and
+ * any running test's bar, growing with the run's clock, over the usual time its project's passes give), `is:stuck`
+ * finds it, and the mark leaves as the attempt completes. A test of a run outside CI that its reporter says
  * stands stopped shows where, as text, in place of the mark, which the server's check never gives it while it stands
  * stopped.
  */
@@ -13,8 +14,10 @@ import { PROJECT } from '#shared/test-project-names';
 const TITLE = 'pays with PayPal';
 const LOCATION = 'tests/checkout.spec.ts:12:3';
 const BROWSER = { projectName: 'chromium' };
+/** A test that passed in 3 s at most, which the Timeline finds in the project's usual durations. */
+const TRANSFER = { title: 'pays by bank transfer', location: 'tests/checkout.spec.ts:40:3' };
 
-/** Two runs where the test passed in 6 s at most. */
+/** Two runs where the test passed in 6 s at most, and the bank transfer in 3 s. */
 async function passedTwice(request: APIRequestContext): Promise<void> {
   for (const duration of [5000, 6000]) {
     const submitted = await request.post('/api/test-runs/submit', {
@@ -23,11 +26,14 @@ async function passedTwice(request: APIRequestContext): Promise<void> {
         status: 'passed',
         startTime: new Date(Date.now() - 86_400_000).toISOString(),
         duration,
-        totalTests: 1,
-        passedTests: 1,
+        totalTests: 2,
+        passedTests: 2,
         failedTests: 0,
         skippedTests: 0,
-        testCases: [{ title: TITLE, status: 'passed', duration, location: LOCATION, browser: BROWSER }],
+        testCases: [
+          { title: TITLE, status: 'passed', duration, location: LOCATION, browser: BROWSER },
+          { ...TRANSFER, status: 'passed', duration: duration - 3000, browser: BROWSER },
+        ],
       },
     });
     expect(submitted.ok()).toBeTruthy();
@@ -42,9 +48,10 @@ test.describe('Stuck tests', () => {
     test.setTimeout(120_000);
     await passedTwice(request);
 
-    // A live run whose test began five minutes ago, beside a test with no passing runs that began just now.
+    // A live run whose test began five minutes ago, beside two that began just now: one with no passing runs, and the
+    // bank transfer.
     const started = await request.post('/api/test-runs/start', {
-      data: { projectName: PROJECT.STUCK_TESTS, startTime: new Date().toISOString(), totalTests: 2 },
+      data: { projectName: PROJECT.STUCK_TESTS, startTime: new Date().toISOString(), totalTests: 3 },
     });
     expect(started.ok()).toBeTruthy();
     const { runId, streamToken } = (await started.json()) as { runId: number; streamToken: string };
@@ -71,6 +78,7 @@ test.describe('Stuck tests', () => {
             startedAt: Date.now(),
             browser: BROWSER,
           },
+          { type: 'begin', ...TRANSFER, workerIndex: 2, parallelIndex: 2, startedAt: Date.now(), browser: BROWSER },
         ],
       },
     });
@@ -93,15 +101,29 @@ test.describe('Stuck tests', () => {
       await page.reload();
       await expect(page.locator('[data-testid="stuck-time"]:visible').first()).toBeVisible({ timeout: 30_000 });
 
-      // The Timeline draws each running test as a bar to now: the stuck one amber, over the pale bar of its usual time;
-      // the other, with no passing runs, without one.
+      // The Timeline draws each running test as a bar to now: the stuck one amber, over the pale bar of the usual time
+      // its mark carries; the bank transfer over the one the project's usual durations give; the one with no passing
+      // runs without one.
       await page.goto(`/test-runs/${runId}?tab=workers`);
       const timeline = page.locator('[data-shot="run-timeline"]');
       const stuckBar = timeline.locator('[data-timeline-running][data-stuck]');
       await expect(stuckBar).toHaveCount(1, { timeout: 30_000 });
-      await expect(timeline.locator('[data-timeline-running]')).toHaveCount(2);
-      await expect(timeline.locator('[data-timeline-ghost]')).toHaveCount(1);
+      await expect(timeline.locator('[data-timeline-running]')).toHaveCount(3);
+      await expect(timeline.locator('[data-timeline-ghost]')).toHaveCount(2);
       await expect(page.getByTestId('timeline-stuck')).toHaveText('1 stuck');
+      const transferBar = timeline
+        .locator('g', { has: page.locator('[data-timeline-ghost]') })
+        .filter({ hasNot: page.locator('[data-stuck]') })
+        .locator('[data-timeline-running]');
+      // It grows with the run's clock.
+      const width = Number(await transferBar.getAttribute('width'));
+      await expect
+        .poll(async () => Number(await transferBar.getAttribute('width')), { timeout: 10_000 })
+        .toBeGreaterThan(width);
+      await transferBar.hover();
+      await expect(page.getByTestId('timeline-tooltip')).toContainText(
+        'Its last passing runs took 3.0s at most: the pale bar behind it.',
+      );
       await stuckBar.hover();
       await expect(page.getByTestId('timeline-tooltip')).toContainText(
         'Stuck?: it has run far longer than its last passing runs, which took 6.0s at most.',
@@ -140,7 +162,7 @@ test.describe('Stuck tests', () => {
       await expect(page.locator('[data-testid="stuck-time"]:visible')).toHaveCount(0, { timeout: 15_000 });
       await expect(page.getByText('Stuck?', { exact: true })).toHaveCount(0);
     } finally {
-      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 2 } });
+      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 3 } });
     }
   });
 

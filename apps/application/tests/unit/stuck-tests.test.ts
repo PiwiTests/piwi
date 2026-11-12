@@ -12,6 +12,9 @@ import {
   usualDurationKey,
   usualDurationMs,
 } from '../../shared/stuck-tests';
+import { joinSuitePath } from '../../shared/utils/suites';
+import { useTimelineModel } from '../../app/composables/useTimelineModel';
+import type { TestCaseResult } from '../../types/api';
 
 delete process.env.PIWI_DATABASE_URL;
 /** What each `test.stuck` notification the check sent says. */
@@ -24,7 +27,7 @@ vi.mock('../../server/utils/notifications/emit', async (importOriginal) => ({
 }));
 const { checkStuckTests } = await import('../../server/utils/stuck-tests');
 const { runEventBus } = await import('../../server/utils/run-events');
-const { testStopRunEvent } = await import('../../server/utils/live-case-events');
+const { testBeginData, testStopRunEvent } = await import('../../server/utils/live-case-events');
 const { runningTestHistory, runUsualDurations } = await import('../../shared/handlers/stuck-tests');
 
 describe('when a running test is stuck', () => {
@@ -313,5 +316,57 @@ describe('the usual durations of a run’s project', () => {
     const { tests } = await runUsualDurations(db as never, LIVE_RUN);
     expect(tests).toEqual([{ ...PAYPAL, browser: 'chromium', usualMs: 31_000 }]);
     expect(await runUsualDurations(db as never, 999)).toEqual({ tests: [] });
+  });
+
+  test('are found on the Timeline by the running test its begin event names', async () => {
+    // A test two describe blocks deep, on another Playwright project, beside the PayPal test.
+    await db.insert(schema.testCases).values({
+      id: 3,
+      projectId: 1,
+      filePath: 'tests/checkout.spec.ts',
+      suitePath: joinSuitePath(['Checkout', 'Gift cards']),
+      title: 'pays by gift card',
+    });
+    for (const [i, duration] of [3000, 3500].entries()) {
+      await db.insert(schema.testRunsCases).values({
+        testRunId: i + 1,
+        testCaseId: 3,
+        status: 'passed',
+        duration,
+        browserName: 'Mobile Safari',
+      });
+    }
+    // The Timeline keeps them by `usualDurationKey`, and each running test's bar reads its own, from the test its
+    // `begin` names as the run's stream publishes it (`testBeginData`: the file from its location).
+    const { tests } = await runUsualDurations(db as never, LIVE_RUN);
+    const usualDurations = new Map(tests.map((test) => [usualDurationKey(test), test.usualMs]));
+    const paypal = begin();
+    const running = [
+      paypal,
+      {
+        ...paypal,
+        title: 'pays by gift card',
+        suitePath: ['Checkout', 'Gift cards'],
+        workerIndex: 2,
+        browser: { projectName: 'Mobile Safari' },
+      },
+      { ...paypal, workerIndex: 3, browser: { projectName: 'firefox' } },
+    ].map((event, i) => ({
+      ...testBeginData({ type: 'begin', ...event } as never, now),
+      executionId: -1 - i,
+      testCaseId: 0,
+      status: 'running',
+    }));
+    const { timelineData } = useTimelineModel({
+      testCases: running as unknown as TestCaseResult[],
+      live: true,
+      now,
+      usualDurations,
+    });
+    const usualOf = (workerIndex: number) => timelineData.value.find((bar) => bar.workerIndex === workerIndex)?.usualMs;
+    expect(usualOf(1)).toBe(8000);
+    expect(usualOf(2)).toBe(3500);
+    // No pass on firefox: no ghost.
+    expect(usualOf(3)).toBeNull();
   });
 });

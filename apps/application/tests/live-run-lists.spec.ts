@@ -4,9 +4,9 @@ import { PROJECT } from '#shared/test-project-names';
 import { waitForHydration } from './utils';
 
 /**
- * Home and a project's runs list show a running run's progress, "4 of 6 · 2 failed", and move its row on as results
- * come in, from the instance stream's `run-progress`: with every read of the list held, the row still moves on. The
- * run's end still reads the list.
+ * Home, the Projects page and a project's runs list show a running run's progress, "4 of 6 · 2 failed", and move its
+ * row on as results come in, from the instance stream's `run-progress`: with every read of the list held, the row
+ * still moves on. The run's end still reads the list.
  */
 
 const TOTAL = 6;
@@ -103,6 +103,25 @@ test.describe.serial('Running runs in the lists', () => {
       await run.finish();
       await expect(row.locator('[data-live-progress]')).toHaveCount(0, { timeout: 15_000 });
       await expect(row).toContainText('50%');
+    } finally {
+      await run.finish();
+    }
+  });
+
+  test('the Projects page moves the row of a project whose latest run runs on, from the stream', async ({
+    page,
+    request,
+  }) => {
+    const run = await startRun(request);
+    try {
+      await run.report(1);
+      await openListening(page, '/projects');
+      const row = page.locator('tr', { has: page.getByRole('link', { name: PROJECT.LIVE_RUN_LISTS, exact: true }) });
+      await expectProgress(row, `1 of ${TOTAL}`);
+
+      await holdReads(page, '/api/projects');
+      await run.report(4);
+      await expectProgress(row, `5 of ${TOTAL} · 2 failed`);
     } finally {
       await run.finish();
     }
