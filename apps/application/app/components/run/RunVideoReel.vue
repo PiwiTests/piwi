@@ -119,14 +119,14 @@ function blockLabel(entry: ReelEntry): string {
         </div>
       </div>
 
-      <div ref="bar" class="flex h-6 items-stretch gap-px overflow-x-auto" role="group" aria-label="Tests in this reel">
+      <div ref="bar" class="flex items-stretch gap-px overflow-x-auto p-1" role="group" aria-label="Tests in this reel">
         <template v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
           <button
             v-if="!entry.context"
             ref="blocks"
             :data-index="i"
             type="button"
-            class="relative overflow-hidden rounded-sm transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1"
+            class="relative h-6 rounded-sm transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1"
             :class="[
               palette(entry).bg,
               entry.execution.video
@@ -148,9 +148,16 @@ function blockLabel(entry: ReelEntry): string {
             <span
               v-if="current === i && entry.execution.video"
               class="absolute inset-y-0 w-0.5 bg-white mix-blend-difference"
-              :style="{ left: `${player.progress.value * 100}%` }"
+              :style="{
+                left: `${player.progress.value * 100}%`,
+                transform: `translateX(-${player.progress.value * 100}%)`,
+              }"
             />
-            <span v-if="isFocus(entry)" class="absolute inset-x-0 bottom-0 h-1 bg-inverted" title="This test" />
+            <span
+              v-if="isFocus(entry)"
+              class="absolute inset-x-0 bottom-0 h-1 rounded-b-sm bg-inverted"
+              title="This test"
+            />
           </button>
         </template>
       </div>
