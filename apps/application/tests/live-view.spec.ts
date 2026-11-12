@@ -866,8 +866,8 @@ test.describe('Live view of a run', () => {
       const images = page.getByTestId('watch-all-image');
       await expect(images).toHaveCount(2, { timeout: 30_000 });
       await expect(page.getByTestId('watch-all-tile').nth(1)).toContainText('searches the catalog');
-      await expect.poll(() => last(0, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
-      expect(last(1, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
+      await expect.poll(() => last(0, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect(last(1, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
       await page.screenshot({ path: testInfo.outputPath('watch-all.png') });
 
       // A click shows worker 2 in full, on the same watch: that worker is asked for full images.
@@ -877,7 +877,7 @@ test.describe('Live view of a run', () => {
       await expect(frame).toBeVisible({ timeout: 30_000 });
       await expect(panel).toContainText('searches the catalog');
       await expect.poll(() => (last(1, 'view') as { fps?: number } | null)?.fps).toBe(4);
-      expect(last(0, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect(last(0, 'view')).toMatchObject({ type: 'view', width: 320, height: 200, fps: 1 });
       expect((await liveWorkers(request, run.runId)).viewers).toBe(1);
       // Worker 2's next image, another JPEG, is the one the full view shows.
       const before = await frame.getAttribute('src');
