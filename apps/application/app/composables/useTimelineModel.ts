@@ -625,6 +625,8 @@ export function useTimelineModel(props: TimelineModelInput): {
    * arrays as the clock ticks.
    */
   barLockColors: ComputedRef<Map<string, string[]>>;
+  /** Where the usual duration of the running attempt that would end last ends, in ms from the timeline's zero; 0 with none. */
+  usualUntil: ComputedRef<number>;
   lockSummary: ComputedRef<LockSummary[]>;
 } {
   /** Effective wasted-wait patterns (falls back to the built-in default). */
@@ -970,6 +972,16 @@ export function useTimelineModel(props: TimelineModelInput): {
     return map;
   });
 
+  const usualUntil = computed(() => {
+    let end = 0;
+    for (const item of baseData.value) {
+      if (item.kind === 'test' && item.status === 'running' && item.usualMs != null) {
+        end = Math.max(end, item.start + item.usualMs);
+      }
+    }
+    return end;
+  });
+
   const lockSummary = computed(() => computeLockSummary(baseData.value, maxTime.value));
 
   const origin = computed(() => (hasStartedAt.value ? minStartedAt.value : null));
@@ -987,6 +999,7 @@ export function useTimelineModel(props: TimelineModelInput): {
     runLocks,
     lockColorMap,
     barLockColors,
+    usualUntil,
     lockSummary,
   };
 }

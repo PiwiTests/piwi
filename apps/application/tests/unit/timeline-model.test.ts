@@ -889,6 +889,21 @@ describe('a live run’s lanes', () => {
     expect(hooksByTest.value.get(1)!.map((item) => item.title)).toEqual(['Paused', 'After Hooks']);
   });
 
+  test('says where the usual time of the running attempt that would end last ends', () => {
+    const input = reactive({
+      testCases: [done, running] as unknown as TestCaseResult[],
+      live: true,
+      now: 7000 as number | null,
+      usualDurations: usual as ReadonlyMap<string, number> | null,
+    });
+    const { usualUntil } = useTimelineModel(input);
+    // It began 2 s after the timeline's zero and usually takes 8 s.
+    expect(usualUntil.value).toBe(10_000);
+    input.usualDurations = null;
+    expect(usualUntil.value).toBe(0);
+    expect(model([done]).usualUntil.value).toBe(0);
+  });
+
   test('takes the usual duration a Stuck? mark carries, marks the bar stuck, and draws no ghost on a finished bar', () => {
     const stuck = { ...running, stuck: { elapsedMs: 200_000, usualMs: 9000 } };
     const { timelineData, knownUntil } = model([done, stuck], { live: true, now: 10_000, usualDurations: usual });

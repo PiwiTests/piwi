@@ -155,6 +155,7 @@ const {
   runLocks,
   lockColorMap,
   barLockColors,
+  usualUntil,
 } = useTimelineModel(modelInput);
 
 // The latest moment the results tell, and when this page heard it: the run's clock goes on from there.
@@ -166,15 +167,16 @@ watch(
   { immediate: true },
 );
 
-// Where a live run's plot ends: some way past now on its clock, moved on once now reaches it.
+// Where a live run's plot ends: some way past now on its clock and past where each running test usually ends, moved
+// on once either reaches it.
 const liveEnd = ref(0);
-watch([runNow, origin], ([now, zero]) => {
+watch([runNow, origin, usualUntil], ([now, zero, usualEnd]) => {
   if (now === null || zero === null) {
     liveEnd.value = 0;
     return;
   }
-  const elapsed = now - zero;
-  if (elapsed > liveEnd.value) liveEnd.value = livePlotEnd(elapsed);
+  const reach = Math.max(now - zero, usualEnd);
+  if (reach > liveEnd.value) liveEnd.value = livePlotEnd(reach);
 });
 
 // The resources each reporter measured over time, and what each execution
@@ -267,8 +269,8 @@ function leftOpenFor(band: ResourceBand): SeriesPoint[] | null {
 
 /**
  * Where the plot ends: the last test's end, and while the run is live, past
- * now on its clock and the last resource point read, so the running tests and
- * what they use show too.
+ * now on its clock, where the running tests usually end and the last resource
+ * point read, so the running tests, their usual time and what they use show too.
  */
 const plotEnd = computed(() => {
   let end = maxTime.value;
