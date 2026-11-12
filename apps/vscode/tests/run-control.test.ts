@@ -70,6 +70,11 @@ import {
   liveMenu,
   testsBegun,
   PageLog,
+  PageOutputLines,
+  MAX_PAGE_LINES,
+  MAX_PAGE_PENDING,
+  pageText,
+  type PageLine,
   RunningLines,
   stopSharingQuestion,
   STOP_SHARING,
@@ -939,6 +944,48 @@ describe('the Piwi: Page output', () => {
     ]);
     // Between tests, nothing is named.
     expect(log.lane(sessionsOf(session('ed-1', [worker(0, 'between')])), 'ed-1', 0)).toEqual([]);
+  });
+
+  test('forgets a request said pending once its test ends, and the oldest past a cap', () => {
+    const pending = (id: number): PageEvent => ({
+      kind: 'request-pending',
+      id,
+      method: 'GET',
+      url: 'https://shop.example/api/items',
+      ms: 5000,
+      done: false,
+    });
+    const log = new PageLog();
+    log.event(eventOf(pending(1)), running);
+    expect(log.waiting).toBe(1);
+    // The test ended: the worker is between tests, then in the next one.
+    log.lane(sessionsOf(session('ed-1', [worker(0, 'between')])), 'ed-1', 0);
+    expect(log.waiting).toBe(0);
+    log.event(eventOf(pending(1)), running);
+    const next = sessionsOf(session('ed-1', [worker(0, 'running', { test: { ...runTest(), id: 't2' } })]));
+    log.lane(next, 'ed-1', 0);
+    expect(log.waiting).toBe(0);
+    // Past the cap, the oldest go: said again as they are told pending.
+    for (let id = 0; id < MAX_PAGE_PENDING + 5; id++) log.event(eventOf(pending(id), 't2'), next);
+    expect(log.waiting).toBe(MAX_PAGE_PENDING);
+    expect(log.event(eventOf(pending(0), 't2'), next)).toEqual([
+      { text: 'GET /api/items pending 5.0 s', level: 'warning' },
+    ]);
+  });
+
+  test('keeps its last lines, the level before a warning’s or an error’s, the oldest going past half again as many', () => {
+    expect(pageText({ text: '── Worker 1 · checkout › pays', level: 'info' })).toBe('── Worker 1 · checkout › pays');
+    expect(pageText({ text: 'Console error: boom', level: 'error' })).toBe('[error] Console error: boom');
+    expect(pageText({ text: 'GET /api/items pending 5.0 s', level: 'warning' })).toBe(
+      '[warning] GET /api/items pending 5.0 s',
+    );
+    const output = new PageOutputLines(4);
+    const info = (text: string): PageLine => ({ text, level: 'info' });
+    expect(output.add([info('1'), info('2'), info('3')])).toEqual({ append: ['1', '2', '3'] });
+    expect(output.add([info('4'), info('5'), info('6')])).toEqual({ append: ['4', '5', '6'] });
+    expect(output.add([info('7')])).toEqual({ replace: '4\n5\n6\n7\n' });
+    expect(output.add([info('8')])).toEqual({ append: ['8'] });
+    expect(MAX_PAGE_LINES).toBe(2000);
   });
 });
 

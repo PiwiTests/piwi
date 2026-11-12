@@ -1175,20 +1175,32 @@ export interface PageLine {
   level: 'error' | 'warning' | 'info';
 }
 
+/** The most requests **Piwi: Page** keeps as said pending: past them, the oldest go. */
+export const MAX_PAGE_PENDING = 200;
+
 /**
  * What **Piwi: Page** writes of the lane the worker panel watches: the test its worker begins, named once per attempt
  * (`── Worker 1 · checkout › pays`), then each thing its page says, one line each, in the worker panel's words
- * (`eventLine`), a request pending said once until it is answered.
+ * (`eventLine`), a request pending said once until it is answered, its test ends, or `MAX_PAGE_PENDING` newer ones are
+ * said.
  */
 export class PageLog {
   /** The test last named: its run, worker, id and attempt. */
   private named: string | null = null;
-  /** The requests said pending, by the worker's number for each, until they are answered. */
+  /** The requests said pending, by their run, worker, test and id, until they are answered or their test ends. */
   private readonly pending = new Set<string>();
+
+  /** How many requests are kept as said pending. */
+  get waiting(): number {
+    return this.pending.size;
+  }
 
   /** The watched lane `lane` of the run `ref` as the sessions hold it: the test its worker began, named once. */
   lane(sessions: Sessions, ref: string, lane: number): PageLine[] {
     const worker = sessions.get(ref)?.workers.find((w) => w.parallelIndex === lane);
+    // A request of a test the watched lane no longer runs goes: nobody tells it answered.
+    const current = worker?.test ? `${ref}:${worker.worker}:${worker.test.id}:` : null;
+    for (const key of this.pending) if (!current || !key.startsWith(current)) this.pending.delete(key);
     return worker?.test ? this.name(ref, worker, worker.test) : [];
   }
 
@@ -1199,10 +1211,14 @@ export class PageLog {
     const header = worker && test ? this.name(layer.ref, worker, test) : [];
     const { event } = layer;
     if (event.kind === 'request-pending') {
-      const key = `${layer.ref}:${layer.worker}:${event.id}`;
+      const key = `${layer.ref}:${layer.worker}:${layer.test ?? ''}:${event.id}`;
       if (!event.done && this.pending.has(key)) return header;
       if (event.done) this.pending.delete(key);
       else this.pending.add(key);
+      for (const oldest of this.pending) {
+        if (this.pending.size <= MAX_PAGE_PENDING) break;
+        this.pending.delete(oldest);
+      }
     }
     const said = eventLine(event, layer.at, layer.worker, 0);
     return [...header, { text: said.text, level: said.level }];
@@ -1214,6 +1230,33 @@ export class PageLog {
     this.named = key;
     const attempt = test.retry > 0 ? ` (attempt ${test.retry + 1})` : '';
     return [{ text: `── ${workerName(worker.parallelIndex)} · ${testTitle(test)}${attempt}`, level: 'info' }];
+  }
+}
+
+/** How a line of **Piwi: Page** reads in the output: a warning's and an error's level before it. */
+export function pageText(line: PageLine): string {
+  return line.level === 'info' ? line.text : `[${line.level}] ${line.text}`;
+}
+
+/** The most lines **Piwi: Page** keeps. */
+export const MAX_PAGE_LINES = 2000;
+
+/**
+ * The lines **Piwi: Page** holds: each one written is appended, until they are half again as many as it keeps
+ * (`max`); then the output is replaced by the last `max`.
+ */
+export class PageOutputLines {
+  private kept: string[] = [];
+
+  constructor(private readonly max = MAX_PAGE_LINES) {}
+
+  /** `lines` written: what to append, or the whole text to replace the output with. */
+  add(lines: PageLine[]): { append: string[] } | { replace: string } {
+    const texts = lines.map(pageText);
+    this.kept.push(...texts);
+    if (this.kept.length <= this.max + Math.floor(this.max / 2)) return { append: texts };
+    this.kept = this.kept.slice(-this.max);
+    return { replace: `${this.kept.join('\n')}\n` };
   }
 }
 

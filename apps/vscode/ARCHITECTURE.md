@@ -491,8 +491,10 @@ slot, at the line it stands on now through `EditLog`, as a stop's, drawn again o
 one pushed past the document's end and back included: `tells`). It goes as the service says (the test ended or
 stopped, the watch ended), as its run ends, and as the service starts again; the API `activate` returns gives the lines
 (`runningLines`). The slot's `events` layer also goes, one line each in the worker panel's words, to the **Piwi: Page**
-log output channel, made as its first line comes, the test the slot's worker begins named once per attempt
-(`PageLog`): only while the panel watches, as the layers do.
+output channel, made as its first line comes, the test the slot's worker begins named once per attempt
+(`PageLog`): only while the panel watches, as the layers do. It is a plain channel, never a log one, so no file of the
+extension's log folder keeps it, and holds its last `MAX_PAGE_LINES` (`PageOutputLines`); a request said pending is
+kept until it is answered, its test ends or `MAX_PAGE_PENDING` newer ones are.
 
 **Open the trace so far.** Beside Watch and Interact, while the slot's worker runs a test whose reporter answers trace
 asks (`canOpenTrace` of `@piwitests/run-model/stop`, the view's `trace`), the button posts `trace`; it and

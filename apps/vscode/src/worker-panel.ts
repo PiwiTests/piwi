@@ -71,6 +71,8 @@ import {
   openTraceOffered,
   openTraceParams,
   PageLog,
+  PageOutputLines,
+  type PageLine,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
@@ -174,15 +176,15 @@ export function createWorkerPanel(
   let traceOffered = false;
   /** **Piwi: Page**: what the watched slot's page says, one line each, its tests named as they begin. */
   const pageLog = new PageLog();
-  let pageOutput: vscode.LogOutputChannel | null = null;
-  const writePage = (lines: ReturnType<PageLog['lane']>) => {
+  /** A plain output channel, which no log file keeps, holding its last `MAX_PAGE_LINES` (`PageOutputLines`). */
+  let pageOutput: vscode.OutputChannel | null = null;
+  const pageLines = new PageOutputLines();
+  const writePage = (lines: PageLine[]) => {
     if (!lines.length) return;
-    pageOutput ??= vscode.window.createOutputChannel('Piwi: Page', { log: true });
-    for (const line of lines) {
-      if (line.level === 'error') pageOutput.error(line.text);
-      else if (line.level === 'warning') pageOutput.warn(line.text);
-      else pageOutput.info(line.text);
-    }
+    pageOutput ??= vscode.window.createOutputChannel('Piwi: Page');
+    const written = pageLines.add(lines);
+    if ('replace' in written) pageOutput.replace(written.replace);
+    else for (const line of written.append) pageOutput.appendLine(line);
   };
 
   const script = () =>
