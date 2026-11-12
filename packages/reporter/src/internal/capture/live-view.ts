@@ -7,12 +7,15 @@ import {
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
   LIVE_FRAME_QUALITY,
+  LIVE_FRAME_TYPE,
   LIVE_FRAME_WIDTH,
   LIVE_SHARE_MISSING,
   LIVE_SHARE_UNKNOWN,
   LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_ENV,
   MAX_LIVE_FRAME,
+  encodeLiveMessage,
+  liveFrameHeader,
   liveRunPage,
   liveShareRefusal,
   parseInstanceToWorker,
@@ -25,6 +28,7 @@ import {
   type LiveWorkerId,
   type WorkerToInstance,
   type LiveTestOutcome,
+  type InstanceToWorker,
 } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
@@ -45,10 +49,13 @@ import type { PageFrame } from './page-view.js';
  * closes the stream as they stop sharing it, the viewers hearing why (`unshared`); `liveViewState` says how it stands,
  * and why a run without a key cannot be shared (`none:<why>` in place of the address), for the run channel to tell.
  * Nothing goes to the instance while the run is not shared. While someone watches, the running test's page goes out as
- * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at most
- * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
- * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
- * alone waiting. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
+ * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at the size and pace
+ * the instance says its viewers ask (`view`: the largest image one of them shows, within 1280 by 800 device pixels,
+ * and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles alone), else at most `LIVE_FRAME_WIDTH` by
+ * `LIVE_FRAME_HEIGHT` and `LIVE_FRAME_FPS` frames a second, at `LIVE_FRAME_QUALITY` and `LIVE_FRAME_BYTE_RATE` bytes a
+ * second at most; a page whose video records keeps the video's size, its screencast's first client. Each frame is
+ * posted with the call it was taken at, one post in flight, the latest frame alone waiting: as its JPEG's bytes behind
+ * a JSON header (`LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside JSON to an older one. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
  * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and a headed stop's pause
  * bar in the same pass (`page-view.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
@@ -153,6 +160,11 @@ interface Link {
    * named some this reporter cannot read, and no image goes.
    */
   masks: string[] | null;
+  /**
+   * What the viewers ask of the images, as the stream open now last said (`view`): null from an instance that never
+   * says it, which takes frames in base64 inside JSON alone.
+   */
+  asked: Extract<InstanceToWorker, { type: 'view' }> | null;
 }
 
 let link: Link | null = null;
@@ -309,6 +321,7 @@ export function openLiveView(
     logTimer: null,
     logRefused: false,
     masks: [],
+    asked: null,
   };
   if (link.sharing) connect(link);
   changed();
@@ -482,6 +495,8 @@ function connect(own: Link): void {
     }
     openedAt = Date.now();
     own.answered = null;
+    // The form this stream's instance takes frames in, and what its viewers ask, it says on this stream.
+    own.asked = null;
     if (own.dark) {
       own.backTimer = setTimeout(() => {
         own.backTimer = null;
@@ -509,6 +524,7 @@ function connect(own: Link): void {
           .join('\n');
         const message = data ? parseInstanceToWorker(data) : null;
         if (message?.type === 'masks') setMasks(own, message.locators);
+        else if (message?.type === 'view') setAsked(own, message);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -643,6 +659,16 @@ function setMasks(own: Link, locators: string[] | null): void {
   if (own === link) view?.frames.refresh();
 }
 
+/**
+ * The viewers ask `asked` of the images from now on (null: what an older instance takes): the view takes them at
+ * that size and pace.
+ */
+function setAsked(own: Link, asked: Link['asked']): void {
+  if (JSON.stringify(asked) === JSON.stringify(own.asked)) return;
+  own.asked = asked;
+  if (own === link) view?.frames.asked();
+}
+
 /** Start the view of the running test's page; say why there is none while it has no page. */
 function startView(): void {
   const own = link;
@@ -655,10 +681,16 @@ function startView(): void {
   const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
   // The lane's frames, masked with the project's masks and the page's secret fields.
   const frames = subscribeLane({
-    maxWidth: LIVE_FRAME_WIDTH,
-    maxHeight: LIVE_FRAME_HEIGHT,
+    get maxWidth() {
+      return own.asked?.width ?? LIVE_FRAME_WIDTH;
+    },
+    get maxHeight() {
+      return own.asked?.height ?? LIVE_FRAME_HEIGHT;
+    },
     quality: LIVE_FRAME_QUALITY,
-    fps: LIVE_FRAME_FPS,
+    get fps() {
+      return own.asked?.fps ?? LIVE_FRAME_FPS;
+    },
     spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
@@ -716,15 +748,12 @@ function postFrame(own: Link, frame: PageFrame): void {
   if (!active(own)) return;
   own.posting = true;
   const call = running?.call() ?? null;
-  const data = frame.data.toString('base64');
-  own.framePost = post(own, {
-    type: 'frame',
-    ...own.id,
-    data,
-    call: call && hideCallSecrets(call),
-    test: running?.title ?? null,
-    ...(Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {}),
-  })
+  const shown = { call: call && hideCallSecrets(call), test: running?.title ?? null };
+  const at = Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {};
+  const posted = own.asked
+    ? postBody(own, encodeLiveMessage(liveFrameHeader(own.id, { ...shown, ...at }), frame.data), LIVE_FRAME_TYPE)
+    : post(own, { type: 'frame', ...own.id, data: frame.data.toString('base64'), ...shown, ...at });
+  own.framePost = posted
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
@@ -776,13 +805,22 @@ function post(own: Link, message: WorkerToInstance): Promise<number | null> {
   return active(own) ? send(own, message) : Promise.resolve(null);
 }
 
-/**
- * Post a message to the run's endpoint, with a key the instance takes; resolves with the answer's status, or null
- * when none came. Never throws.
- */
+/** Post a body of the media type `type` to the run's endpoint while the run is shared. */
+function postBody(own: Link, body: Uint8Array, type: string): Promise<number | null> {
+  return active(own) ? sendBody(own, body, type) : Promise.resolve(null);
+}
+
+/** Post a message to the run's endpoint as JSON (`sendBody`). */
 function send(own: Link, message: WorkerToInstance): Promise<number | null> {
+  return sendBody(own, JSON.stringify(message), 'application/json');
+}
+
+/**
+ * Post a body of the media type `type` to the run's endpoint, with a key the instance takes; resolves with the
+ * answer's status, or null when none came. Never throws.
+ */
+function sendBody(own: Link, body: string | Uint8Array, type: string): Promise<number | null> {
   if (own.ended || own.refused !== null) return Promise.resolve(null);
-  const body = JSON.stringify(message);
   return new Promise<number | null>((resolve) => {
     let settled = false;
     const settle = (status: number | null): void => {
@@ -797,8 +835,8 @@ function send(own: Link, message: WorkerToInstance): Promise<number | null> {
       method: 'POST',
       agent: own.agent,
       headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
+        'Content-Type': type,
+        'Content-Length': typeof body === 'string' ? Buffer.byteLength(body) : body.length,
         Authorization: `Bearer ${own.address.key}`,
       },
     });
