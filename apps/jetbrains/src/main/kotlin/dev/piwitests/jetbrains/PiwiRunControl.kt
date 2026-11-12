@@ -120,6 +120,7 @@ import java.nio.file.Path
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CompletableFuture
@@ -133,6 +134,7 @@ import javax.swing.ImageIcon
 import javax.swing.JButton
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JViewport
 import javax.swing.JCheckBox
 import javax.swing.KeyStroke
 import javax.swing.SwingConstants
@@ -258,6 +260,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     @Volatile private var layersSent: List<String> = emptyList()
     private val pendingCiFrame = AtomicReference<CiFrame?>(null)
     private val drawingCiFrame = AtomicBoolean(false)
+    /** The layers of the Worker tab's lane heard and not handed to it yet, in the order they came. */
+    private val pendingLayers = ConcurrentLinkedQueue<Pair<LaneLayerFields, () -> Boolean>>()
+    private val drawingLayers = AtomicBoolean(false)
 
     private val breakpointsQueued = AtomicBoolean()
 
@@ -1074,19 +1079,33 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         hearLayer(layer) { watchingCi?.let { Glue.sameCiLane(it, CiFrame(layer.root, layer.runId, layer.shard, layer.lane)) } == true }
     }
 
-    /** A layer handed to the Worker tab on the event thread, a filmstrip image decoded and scaled off it first. */
+    /** A layer heard, handed to the Worker tab in the order the layers came (`drawLayers`). */
     private fun hearLayer(layer: LaneLayerFields, current: () -> Boolean) {
-        val show = { image: Pair<BufferedImage, BufferedImage>? ->
-            ApplicationManager.getApplication().invokeLater({
-                if (current()) (liveWorkerTab()?.component as? PausedPagePanel)?.layers?.heard(layer, image)
-            }, gone)
-        }
-        if (layer.layer != "filmstrip") return show(null)
+        pendingLayers.add(layer to current)
+        drawLayers()
+    }
+
+    /**
+     * Hand the layers heard to the Worker tab on the event thread in the order they came, one pooled thread at a time,
+     * each filmstrip image decoded and scaled off the event thread first: an image of a test is never shown after a
+     * layer of the next. An image larger than twice a thumbnail's size is let go of before it is decoded.
+     */
+    private fun drawLayers() {
+        if (pendingLayers.isEmpty() || !drawingLayers.compareAndSet(false, true)) return
         ApplicationManager.getApplication().executeOnPooledThread {
-            val image = layer.data?.takeIf { it.length <= 200_000 }
-                ?.let { Glue.pausedImageBytes(PausedImage("image/jpeg", it, null, null)) }
-                ?.let(::decode)
-            show(image?.let { it to stripIcon(it, JBUI.scale(60)) })
+            try {
+                while (true) {
+                    val (layer, current) = pendingLayers.poll() ?: break
+                    val image = if (layer.layer == "filmstrip") Glue.stripImageBytes(layer.data)?.let(::decode) else null
+                    val shown = image?.let { it to stripIcon(it, JBUI.scale(60)) }
+                    ApplicationManager.getApplication().invokeLater({
+                        if (current()) (liveWorkerTab()?.component as? PausedPagePanel)?.layers?.heard(layer, shown)
+                    }, gone)
+                }
+            } finally {
+                drawingLayers.set(false)
+            }
+            drawLayers()
         }
     }
 
@@ -2506,8 +2525,8 @@ private class EventLineRenderer : ColoredListCellRenderer<Glue.EventLine>() {
             else -> AllIcons.General.Information
         }
         append(line.text, if (line.level == "error") SimpleTextAttributes.ERROR_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES)
-        // A web address alone, which never reads as HTML.
-        toolTipText = line.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        // The platform renders a tooltip as HTML: the address is escaped first.
+        toolTipText = line.url?.let { Glue.htmlTooltip(it) }
     }
 }
 
@@ -2624,15 +2643,18 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
         })
     }
 
-    /** Find the search's words in the page's text from `from`, marked and scrolled to; the start again past the last. */
-    private fun find(from: Int) {
+    /**
+     * Find the search's words in the page's text from `from`, marked, and the caret moved there unless `moves` is false;
+     * the start again past the last.
+     */
+    private fun find(from: Int, moves: Boolean = true) {
         text.highlighter.removeAllHighlights()
         val query = search.text
         val at = Glue.findIn(text.text, query, from)
         if (at < 0) return
         found = at
         text.highlighter.addHighlight(at, at + query.length, DefaultHighlighter.DefaultHighlightPainter(UIUtil.getListSelectionBackground(true)))
-        text.caretPosition = at
+        if (moves) text.caretPosition = at
     }
 
     /** Why the lane shows no layers (a reporter that sends its images alone); null hides it. */
@@ -2647,6 +2669,7 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
         images.clear()
         enlarged = null
         textRefusal = null
+        found = 0
         drawWaits()
         drawEvents()
         drawText()
@@ -2692,12 +2715,18 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
         tabs.setTitleAt(0, if (shown.events.isEmpty()) "Events" else "Events (${shown.events.size})")
     }
 
+    /** The page's text as it came: the caret and the scroll stay where the person left them, the search's mark again. */
     private fun drawText() {
         val now = shown.text?.text.orEmpty()
         if (text.text != now) {
+            val viewport = text.parent as? JViewport
+            val place = viewport?.viewPosition
+            val caret = text.caretPosition
             text.text = now
-            text.caretPosition = 0
-            find(0)
+            text.caretPosition = minOf(caret, now.length)
+            find(found, moves = false)
+            // The caret set again scrolls to it once the event thread is free: the view goes back to where it was after.
+            if (viewport != null && place != null) SwingUtilities.invokeLater { viewport.viewPosition = place }
         }
         textNote.text = textRefusal ?: Glue.laneTextNote(shown.text)
     }
@@ -2713,7 +2742,8 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
                 putClientProperty("html.disable", true)
                 isContentAreaFilled = false
                 border = JBUI.Borders.customLine(if (enlarged == image.call) JBUI.CurrentTheme.Focus.focusColor() else JBColor.border(), 1)
-                toolTipText = name
+                // The platform renders a tooltip as HTML: the title, from the run, is escaped first.
+                toolTipText = Glue.htmlTooltip(name)
                 accessibleContext.accessibleName = name
                 addActionListener { enlarge(if (enlarged == image.call) null else image.call) }
             })

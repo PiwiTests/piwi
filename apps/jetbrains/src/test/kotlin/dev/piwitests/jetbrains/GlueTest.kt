@@ -3525,6 +3525,39 @@ class GlueTest {
     }
 
     @Test
+    fun aFilmstripImageIsSizedFromItsJpegHeaderAndOneLargerThanTwiceAThumbnailIsLetGoBeforeItIsDecoded() {
+        fun jpeg(width: Int, height: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            javax.imageio.ImageIO.write(java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB), "jpg", out)
+            return out.toByteArray()
+        }
+        fun base64(bytes: ByteArray) = java.util.Base64.getEncoder().encodeToString(bytes)
+        val thumb = jpeg(320, 180)
+        assertEquals(320 to 180, Glue.jpegSize(thumb))
+        assertTrue(Glue.stripImageBytes(base64(thumb))!!.contentEquals(thumb))
+        assertEquals(640 to 400, Glue.jpegSize(jpeg(640, 400)))
+        assertTrue(Glue.stripImageBytes(base64(jpeg(640, 400))) != null)
+        assertNull(Glue.stripImageBytes(base64(jpeg(641, 100))))
+        assertNull(Glue.stripImageBytes(base64(jpeg(100, 401))))
+        // A progressive JPEG of a few bytes naming 4000 by 4000 pixels: refused from its header, never decoded.
+        fun u16(n: Int) = byteArrayOf((n shr 8).toByte(), n.toByte())
+        val huge = byteArrayOf(0xFF.toByte(), 0xD8.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xE0.toByte()) + u16(16) + "JFIF".toByteArray() + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xFF.toByte()) +
+            byteArrayOf(0xFF.toByte(), 0xC2.toByte()) + u16(17) + byteArrayOf(8) + u16(4000) + u16(4000) + ByteArray(10) +
+            byteArrayOf(0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertEquals(4000 to 4000, Glue.jpegSize(huge))
+        assertNull(Glue.stripImageBytes(base64(huge)))
+        // No size before the scan, no JPEG, nothing past the thumbnail's bound in base64.
+        val scanFirst = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xDA.toByte()) + u16(8) + ByteArray(6)
+        assertNull(Glue.jpegSize(scanFirst))
+        assertNull(Glue.jpegSize("iVBORw0KGgo".toByteArray()))
+        assertNull(Glue.stripImageBytes("iVBORw0KGgo="))
+        assertNull(Glue.stripImageBytes("/9j/" + "A".repeat(180_000)))
+        assertNull(Glue.stripImageBytes(null))
+    }
+
+    @Test
     fun aCiLayerReadsAsTheServiceSendsItAndAnOlderReporterIsNamed() {
         val ci = Gson().fromJson(
             """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays","layer":"events","event":{"kind":"console","text":"Oops"},"at":1800000000000}""",

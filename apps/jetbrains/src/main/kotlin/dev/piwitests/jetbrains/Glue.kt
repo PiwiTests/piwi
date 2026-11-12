@@ -3417,6 +3417,58 @@ object Glue {
     /** The longest page's text a layer carries, in characters (`MAX_LANE_TEXT` of `@piwitests/core/live-layers`). */
     const val MAX_LANE_TEXT = 96 * 1024
 
+    /** The size an image of a filmstrip is made at most (`LANE_THUMB_WIDTH`, `LANE_THUMB_HEIGHT` of the same). */
+    const val LANE_THUMB_WIDTH = 320
+    const val LANE_THUMB_HEIGHT = 200
+
+    /** The longest image of a filmstrip, in characters of base64 (`MAX_LANE_THUMB_BASE64` of the same). */
+    private const val MAX_LANE_THUMB_BASE64 = 4 * ((128 * 1024 + 2) / 3)
+
+    /**
+     * A JPEG's width and height as its frame header (`SOF0` to `SOF15`) says, read from its markers without decoding
+     * it; null for anything that is not a JPEG naming its size before its scan.
+     */
+    fun jpegSize(bytes: ByteArray): Pair<Int, Int>? {
+        fun at(i: Int) = bytes[i].toInt() and 0xFF
+        if (bytes.size < 4 || at(0) != 0xFF || at(1) != 0xD8) return null
+        var i = 2
+        while (i + 3 < bytes.size) {
+            if (at(i) != 0xFF) return null
+            val marker = at(i + 1)
+            when {
+                // Fill bytes before a marker.
+                marker == 0xFF -> i++
+                // A marker with no length: TEM, RSTn.
+                marker == 0x01 || marker in 0xD0..0xD7 -> i += 2
+                // The image ends, or its scan starts, before any frame header.
+                marker == 0xD9 || marker == 0xDA -> return null
+                else -> {
+                    val length = (at(i + 2) shl 8) or at(i + 3)
+                    if (length < 2) return null
+                    // A frame header, all but DHT (C4), JPG (C8) and DAC (CC): precision, height, width.
+                    if (marker in 0xC0..0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                        if (length < 7 || i + 8 >= bytes.size) return null
+                        return ((at(i + 7) shl 8) or at(i + 8)) to ((at(i + 5) shl 8) or at(i + 6))
+                    }
+                    i += 2 + length
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The bytes of a filmstrip image as the Worker tab may decode them: a JPEG in base64 of the thumbnail's bound, whose
+     * header names a size within twice `LANE_THUMB_WIDTH` by `LANE_THUMB_HEIGHT`, read before anything is decoded;
+     * null for anything else.
+     */
+    fun stripImageBytes(data: String?): ByteArray? {
+        if (data == null || data.length > MAX_LANE_THUMB_BASE64) return null
+        val bytes = pausedImageBytes(PausedImage("image/jpeg", data, null, null)) ?: return null
+        val (width, height) = jpegSize(bytes) ?: return null
+        return bytes.takeIf { width in 1..2 * LANE_THUMB_WIDTH && height in 1..2 * LANE_THUMB_HEIGHT }
+    }
+
     /**
      * The layers the Worker tab asks for (`piwi/laneView`'s and `piwi/ciWatch`'s `layers`): the call log and the page's
      * events always, the page's text and the filmstrip while their tab is selected.
