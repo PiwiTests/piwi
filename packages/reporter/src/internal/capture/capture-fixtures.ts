@@ -2517,15 +2517,21 @@ export function runnerTraces(testInfo: TestInfo): boolean | null {
 }
 
 /**
- * Whether the runner's trace of the attempt takes DOM snapshots, as its tracing's options say (`snapshots`, Playwright
- * internal, feature-checked); null where it does not trace the attempt or its shape is not known.
+ * Whether the runner's trace of the attempt takes DOM snapshots, as its tracing's options say (Playwright internal,
+ * feature-checked): `snapshots`, or its `dom` where it names each kind (1.64, `{ aria: true }` taking none); null where
+ * it does not trace the attempt or its shape is not known.
  */
-function runnerTraceSnapshots(testInfo: TestInfo): boolean | null {
+export function runnerTraceSnapshots(testInfo: TestInfo): boolean | null {
   const tracing = (testInfo as unknown as { _tracing?: { traceOptions?: unknown } })._tracing;
   if (typeof tracing?.traceOptions !== 'function') return null;
   try {
     const options = (tracing.traceOptions as () => unknown).call(tracing) as { snapshots?: unknown } | undefined;
-    return typeof options?.snapshots === 'boolean' ? options.snapshots : null;
+    const snapshots = options?.snapshots;
+    if (typeof snapshots === 'boolean') return snapshots;
+    if (typeof snapshots === 'object' && snapshots !== null && !Array.isArray(snapshots)) {
+      return (snapshots as { dom?: unknown }).dom === true;
+    }
+    return null;
   } catch {
     return null;
   }
