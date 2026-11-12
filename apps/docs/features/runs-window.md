@@ -26,7 +26,7 @@ then each worker's test and whether it runs or where it stopped (the file and li
 the page). A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. A run
 without [**Watch**](#watch-live) and no test stopped says how one stops: a breakpoint, a `page.pause()` or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
-[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only, a running test's **Watch** showing its page.
+[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only, with **Watch** on a running test.
 
 ## The controls
 
@@ -94,6 +94,11 @@ view, answered there as in a headed browser; their code reaches the editor the s
 <figure>
   <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch and Interact pressed in the page card's head, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
   <figcaption>A headless test's page watched live, with Pick started in it.</figcaption>
+</figure>
+
+<figure>
+  <img src="/screenshots/picker-runs-ci.png" width="488" alt="The Runs window listing CI run #78 on main with its two running tests, each with Watch and Watch on the dashboard, the second watched: its page live under a Live badge, with the call it is at">
+  <figcaption>A CI run's test, watched read-only.</figcaption>
 </figure>
 
 ## Click and type on the view

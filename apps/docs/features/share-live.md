@@ -61,7 +61,14 @@ $env:PIWI_SHARE_LIVE='1'; npx playwright test
 Until I Stop** in a JetBrains IDE, and **Share this editor window's runs** under an editor's run in Piwi Picker's Runs
 window share each run the window starts from then on, each one said as it is shared, until you stop (**…Stop sharing
 this window's runs live**, the menu of the status bar's **Live · this window**, or **Stop sharing this window's runs**
-in the Runs window, which says the window shares its runs under its heading) or close the window. On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who
+in the Runs window, which says the window shares its runs under its heading) or close the window.
+
+<figure>
+  <img src="/screenshots/picker-runs-share-window.png" width="488" alt="The Runs window under its heading saying Visual Studio Code's window shares its runs live until you stop, and a run shared as one of them, with Stop sharing this window's runs">
+  <figcaption>An editor window's runs, shared from the Runs window.</figcaption>
+</figure>
+
+On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who
 has it open is taken to the new run, on the worker they were watching.
 
 ## Ask to watch
