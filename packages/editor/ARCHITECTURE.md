@@ -661,11 +661,13 @@ those in files under the context's folder:
 
 - they go in the command's environment as `PIWI_PAUSE_AT`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
   relative to that folder, 1-based, separated by semicolons (`pauseAtValue` in `src/analysis.ts`);
-- `--headed` is appended to the arguments and to the command, unless it carries `--headed`, `--ui` or `--debug`
-  (`headedCommand`), and the run is started to be watched.
+- the run is started to be watched (its Hold failures on), and stays headless: a stop at a breakpoint is watched in
+  the worker view as any headless stop is.
 
 The person's start options (`RunStartOptions`, the clients' settings, sent with every test run the editor starts) go
-over that: `headed` appends `--headed` (a repeated run takes it too), and `holdFailures` turns the run's Hold failures on
+over that: `headed` appends `--headed` unless the command carries `--headed`, `--ui` or `--debug` (`headedCommand`;
+a repeated run takes it too), the only way a test run the editor starts runs headed but for a `page.pause()` and a
+debug run, and `holdFailures` turns the run's Hold failures on
 or off from its start for a run with a run channel that holds failures (`withStartOptions`). A debug run, and a
 command the service names (`piwi.runCommand`: a Flake Lab line, a fix plan's verification), take none.
 
@@ -866,7 +868,7 @@ clients answer stops, so a plain Run would hold every failure. One no pause bar 
 run's **Hold failures** is on (`RunHoldFailures`, `RunSession.hold` and the hub's `HubSession.hold`, with who set it):
 
 - on from its start in a run started to be watched (`watched`: the service built it with the editor's breakpoints or
-  for a `page.pause()`, both headed, or the person's start options ask it), `by: 'start'`, off from its start
+  for a `page.pause()`, headed, or the person's start options ask it), `by: 'start'`, off from its start
   otherwise;
 - as a person turns it on or off (`piwi/holdRun`, the hub's `hold`: an editor, Piwi Picker, the desktop app's window),
   `by: 'person'`, or an agent does (`run_follow`'s `hold`), `by: 'agent'`, kept by ref (`RunSessions.hold`, the latest
@@ -1247,8 +1249,8 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
   text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
   the one of the spec as saved whose describe blocks' titles and its own, joined by `›`, are the title, else the
   only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
-  `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
-  be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
+  `--workers=1`, headed (`headedCommand`), with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a
+  run started to be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
 - **The one-shot stop.** The failing line is a breakpoint of that run alone: `piwi/setRunBreakpoints` for the run
   carries it beside the client's places until a worker stops there (heard through `RunSessions`' `heard`), and then
   the run's breakpoints become the client's own, for its workers and those that connect later. The client never

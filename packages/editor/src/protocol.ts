@@ -290,8 +290,8 @@ export interface EditorBreakpoint {
 /**
  * How a run starts, as the person chose it for every test run the editor starts (kept, so a rerun starts the same
  * way): headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
- * decides: headed, with Hold failures on, for a run with the editor's breakpoints or a `page.pause()`; headless and off
- * otherwise.
+ * decides: Hold failures on for a run with the editor's breakpoints or a `page.pause()`, off otherwise; headless but
+ * for a `page.pause()`, a breakpoint never running a test headed.
  */
 export interface RunStartOptions {
   headed?: boolean;

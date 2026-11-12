@@ -33,15 +33,15 @@ folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task
 window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwright runner (test tree, Debug, **Rerun
 Failed Tests**), a choice of **Settings → Tools → Piwi** that keeps every control of a Piwi run, through the runner's
 Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
-([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it in the
-browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints); the editor pauses,
+([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it:
+[Breakpoints in the browser](./editor-breakpoints); the editor pauses,
 steps and resumes it too: [Pause and step from the editor](./editor-run-control).
 
 ## How a run starts
 
 Two choices apply to every test run you start: **Run headed** (`--headed`, a verification included) and
 [**Hold failures**](/guide/concepts#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
-decide: on, and headed, with your breakpoints or a `page.pause()`. In VS Code,
+decide: on with your breakpoints or a `page.pause()`, headed for the latter alone. In VS Code,
 **Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
 in a JetBrains IDE, **Tools → Piwi → Run Headed** and **Hold Failures from Each Run's Start…**. A
 [debug run](./debug-in-editor), a Flake Lab line and a fix plan's check leave them out.

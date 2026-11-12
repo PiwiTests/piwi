@@ -348,7 +348,9 @@ Every test run passes the editor's breakpoints to the service (`breakpoints`), a
 (on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
 **Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
 tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
-a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`).
+a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). They never make a run headed: a run with
+breakpoints stays headless unless **Run headed** is on ([How a run starts](#how-a-run-starts)), and its stops show in
+the editor as any headless stop does.
 
 When the answer's environment carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the editor or Piwi Picker can
 pause), or the command says the run pauses at a `page.pause()` (`RunCommand.pauses`), `startRun` adds the pairing

@@ -3434,8 +3434,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
-   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`), and a
+   * notice when the project's reporter does not pause at them. Headless still: a breakpoint never runs a test headed,
+   * its stop watched in the worker view. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
@@ -3456,7 +3457,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const notice = breakpointsNotice(context.reporterVersion);
     return {
       ...command,
-      ...headedCommand(command.command, command.args),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };
@@ -3600,7 +3600,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const borrowed = !!debug.ref && !runCommands.has(debug.ref);
     const ref = borrowed ? debug.ref! : newRunRef();
     runWatch.watch(context, ref, null, borrowed);
-    const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      ...headedCommand(command, args),
+      env: editorRunEnv(ref),
+      ref,
+    };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
     const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
     const execution = debug.execution;

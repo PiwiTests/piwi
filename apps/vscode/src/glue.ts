@@ -1822,7 +1822,7 @@ export function runOptionPicks(
       description: choices.headed ? 'On' : 'Off',
       detail: choices.headed
         ? 'Every test runs with its browser window shown. Pick to turn it off.'
-        : 'Runs are headed only with a breakpoint or a page.pause(). Pick to run every test headed.',
+        : 'Runs are headed only for a page.pause(); a breakpoint never makes one headed. Pick to run every test headed.',
       option: 'headed',
     },
     { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },

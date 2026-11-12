@@ -56,7 +56,7 @@ async function holdOf(run: RunCommand) {
 }
 
 describe('a run started as the person chose', () => {
-  test('runs headed and holds its failures when asked, and lets them go when asked though a breakpoint would hold them', async () => {
+  test('runs headed and holds its failures when asked, and lets them go when asked though a breakpoint would hold them; a breakpoint never runs it headed', async () => {
     const plain = await runOf();
     expect(plain.args).not.toContain('--headed');
     expect(await holdOf(plain)).toEqual({ on: false, by: 'start' });
@@ -67,10 +67,12 @@ describe('a run started as the person chose', () => {
 
     const breakpoint = { uri: uri('tests/cart.spec.ts'), line: 2 };
     const held = await runOf({ breakpoints: [breakpoint] });
-    expect(held.args).toContain('--headed');
+    expect(held.args).not.toContain('--headed');
     expect(await holdOf(held)).toEqual({ on: true, by: 'start' });
     const letGo = await runOf({ breakpoints: [breakpoint], holdFailures: false });
-    expect(letGo.args).toContain('--headed');
+    expect(letGo.args).not.toContain('--headed');
+    const shown = await runOf({ breakpoints: [breakpoint], headed: true });
+    expect(shown.args).toContain('--headed');
     expect(await holdOf(letGo)).toEqual({ on: false, by: 'start' });
   });
 

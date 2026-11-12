@@ -2150,6 +2150,10 @@ describe('how every run of the window starts', () => {
       ['headed', 'Run headed', 'Off'],
       ['holdFailures', 'Hold failures', 'On'],
     ]);
+    // A breakpoint never runs a test headed: Run headed off leaves the run headless.
+    expect(picks[0]!.detail).toBe(
+      'Runs are headed only for a page.pause(); a breakpoint never makes one headed. Pick to run every test headed.',
+    );
   });
 
   test('Run options… writes to the workspace’s settings only when they hold a value', () => {
