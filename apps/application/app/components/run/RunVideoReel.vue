@@ -33,6 +33,14 @@ function palette(entry: ReelEntry) {
   return statusPalette(entry.execution.status, entry.execution.passedAfterFailure);
 }
 const playingEntry = computed(() => (current.value == null ? null : props.reel.entries[current.value]!));
+/** The test the player moves on to: the next one of the reel with a video. */
+const nextEntry = computed(() =>
+  current.value == null
+    ? null
+    : (props.reel.entries.find(
+        (entry, i) => i > current.value! && !entry.context && entry.execution.video && !failed.has(i),
+      ) ?? null),
+);
 const tickedCount = computed(() => ticked.value.filter(Boolean).length);
 const hasContext = computed(() => props.reel.entries.some((e) => e.context));
 /** The tests the reel plays; the others of a file are listed beside the one in focus. */
@@ -146,6 +154,14 @@ function blockLabel(entry: ReelEntry): string {
           </button>
         </template>
       </div>
+
+      <RunVideoActionMarks
+        v-if="playingEntry"
+        :execution-id="playingEntry.execution.executionId"
+        :next-execution-id="nextEntry?.execution.executionId ?? null"
+        :span-ms="player.endMs.value"
+        @seek="(ms) => current != null && player.seekTo(current, ms)"
+      />
     </div>
 
     <div class="min-w-0">
