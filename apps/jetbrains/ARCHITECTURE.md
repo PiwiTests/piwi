@@ -441,8 +441,9 @@ and verifies the test the same way.
 
 Every test run takes the person's start options (`Glue.withRunStart`, `RunStartOptions` in the protocol), kept in
 `PiwiLocalSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run Headed**
-is on, nothing otherwise (the service runs it headless, a run with breakpoints included, but for a spec with a
-`page.pause()`), `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
+is on, nothing otherwise (the service runs it headless but for a spec with a `page.pause()`, and for a run with
+breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
+`holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
 `PiwiCommands.runTests`, a verification included, and **Run Selection…**; a debug run (`RunTestsArgs.debug`) is sent as
 built. **Tools → Piwi → Run Headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold Failures from Each Run's Start…**
 (`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.

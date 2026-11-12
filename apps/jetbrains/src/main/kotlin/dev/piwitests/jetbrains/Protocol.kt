@@ -134,8 +134,9 @@ data class EditorBreakpoint(val uri: String, val line: Int)
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
  * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion) when their file is
- * under the Playwright config's folder; they never run it headed. `root` names the Playwright config's folder to
- * run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
+ * under the Playwright config's folder; they run it headed only when the project's reporter stops at none headless
+ * (older than 0.62.0, or of a version unknown) or the run has no run channel. `root` names the Playwright config's
+ * folder to run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
@@ -144,8 +145,8 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * names, headed, with one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds
  * no such test. `headed` and `holdFailures` start the run as the person chose for every run of the project
  * (`RunStartOptions`): headed (`--headed`), and with **Hold failures** on or off from its start, over what its
- * breakpoints decided; left out, the service decides: headless but for a `page.pause()`, and Hold failures on with a
- * breakpoint or a `page.pause()`. A repeated run takes `headed` alone.
+ * breakpoints decided; left out, the service decides: headless but for a `page.pause()` and the breakpoints above,
+ * and Hold failures on with a breakpoint or a `page.pause()`. A repeated run takes `headed` alone.
  */
 data class RunTestsArgs(
     val uri: String,
