@@ -1,6 +1,6 @@
 import { getVideoActions } from '#shared/handlers/video-actions';
 import { actionsFromTrace } from '#shared/video-actions';
-import { loadStoredTraceEvents, resolveCaseTraceBlobPath } from '../../../utils/trace-evidence';
+import { loadStoredTraceActionEvents, resolveCaseTraceBlobPath } from '../../../utils/trace-evidence';
 import {
   requireResolvedProjectAccess,
   requireRouteId,
@@ -26,7 +26,8 @@ export default eventHandler(async (event) => {
   const { db } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
   return getVideoActions(db, id, async () => {
     const blobPath = await resolveCaseTraceBlobPath(db, id);
-    const trace = blobPath ? await loadStoredTraceEvents(blobPath) : null;
-    return trace ? actionsFromTrace(trace.parsed.actions, trace.parsed.contexts) : null;
+    // Only the `.trace` entries are inflated, and the shared trace cache is left as it is.
+    const parsed = blobPath ? await loadStoredTraceActionEvents(blobPath) : null;
+    return parsed ? actionsFromTrace(parsed.actions, parsed.contexts) : null;
   });
 });
