@@ -25,9 +25,9 @@
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
  * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection
  * opens a lane's running test's trace so far in Playwright's trace viewer on this machine (`openTrace`), its answer a
- * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection. A connection the
- * hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
+ * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection; one that came
+ * through a port the client forwards is on another machine, and opens none. A connection the hub closes is cut a
+ * second later when the other side does not answer the close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
  * live hubs of the machine (`peers`, from the host's `peers`: their addresses, never their tokens) after the runs, and
  * again each time the list changes, read every `PEERS_MS` while one is subscribed. A host may join a peer of its own transport (`join`:
  * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
@@ -54,8 +54,8 @@ import {
   MAX_HUB_ROOTS,
   MAX_HUB_WARNINGS,
   hubPeersOf,
+  hubHostPort,
   isExtensionOrigin,
-  isHubHost,
   parseHubCommand,
   parseHubHello,
   type HubAnswer,
@@ -96,13 +96,18 @@ export interface HubRunInfo {
 
 /**
  * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
- * run sessions start Playwright's trace viewer (`opensTraces`).
+ * run sessions start Playwright's trace viewer (`opensTraces`) and the connection is on this machine, not `forwarded`.
  */
-export function hubFeatures(options: Pick<RunHubOptions, 'stopRun' | 'sessions'>): HubFeature[] {
+export function hubFeatures(options: Pick<RunHubOptions, 'stopRun' | 'sessions'>, forwarded = false): HubFeature[] {
   return HUB_FEATURES.filter(
-    (feature) => (feature !== 'stop' || !!options.stopRun) && (feature !== 'trace' || options.sessions.opensTraces),
+    (feature) =>
+      (feature !== 'stop' || !!options.stopRun) &&
+      (feature !== 'trace' || (options.sessions.opensTraces && !forwarded)),
   );
 }
+
+/** Why `openTrace` is refused to a connection that came through a port the client forwards. */
+const TRACE_ELSEWHERE = "Playwright's trace viewer would open on the machine the run runs on, not this one.";
 
 export interface RunHubOptions {
   sessions: RunSessions;
@@ -179,6 +184,11 @@ interface Connection {
   transport: HubTransport;
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
+  /**
+   * Its handshake named a port the client forwards to the hub (`forwarded`): it comes from another machine, the
+   * browser's, where no trace viewer of this one shows.
+   */
+  forwarded: boolean;
   subscribed: boolean;
   /** It subscribed only to observe (`observe`): it answers no stop. */
   observes: boolean;
@@ -468,10 +478,11 @@ export class RunHub {
     };
   }
 
-  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who']): Connection {
+  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who'], forwarded = false): Connection {
     const connection: Connection = {
       transport,
       ws,
+      forwarded,
       subscribed: false,
       observes: false,
       pending: 0,
@@ -508,7 +519,8 @@ export class RunHub {
     // this machine sends none (the desktop app's server): its `hello` holds the token as an extension's does.
     const forwarded = this.options.forwarded?.() ?? [];
     const origin = req.headers.origin;
-    if (!isHubHost(req.headers.host, this.port, forwarded) || (origin !== undefined && !isExtensionOrigin(origin))) {
+    const port = hubHostPort(req.headers.host, this.port, forwarded);
+    if (port === null || (origin !== undefined && !isExtensionOrigin(origin))) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no
@@ -523,12 +535,13 @@ export class RunHub {
     if (open.length >= MAX_CONNECTIONS || unauthenticated >= MAX_UNAUTHENTICATED) {
       return refuse(socket, 503, 'Service Unavailable');
     }
-    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws));
+    // A port the client forwards is the browser's machine's, even one of the same number as the hub's own.
+    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws, forwarded.includes(port)));
   }
 
-  private accept(socket: WebSocket): void {
+  private accept(socket: WebSocket, forwarded: boolean): void {
     const ws: Socket = { socket, authenticated: false, alive: true, cutting: false };
-    const connection = this.connection(socketTransport(socket), ws, PICKER);
+    const connection = this.connection(socketTransport(socket), ws, PICKER, forwarded);
     this.connections.add(connection);
     const hello = setTimeout(
       () => closeWith(ws, HUB_CLOSE.helloTimeout, 'No hello in time.'),
@@ -554,7 +567,7 @@ export class RunHub {
           client: cut(client, MAX_HUB_CLIENT),
           roots: roots.slice(0, MAX_HUB_ROOTS),
           keepaliveMs: this.options.keepaliveMs ?? HUB_KEEPALIVE_MS,
-          features: hubFeatures(this.options),
+          features: hubFeatures(this.options, connection.forwarded),
         });
         return;
       }
@@ -697,6 +710,7 @@ export class RunHub {
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
         }
         case 'openTrace':
+          if (connection.forwarded) return reply({ ok: false, message: TRACE_ELSEWHERE });
           // The answer is a sentence: the trace's path stays with the hub.
           return reply(await sessions.openTrace({ ref: command.ref, lane: command.lane }));
         case 'watch': {

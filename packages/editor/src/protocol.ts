@@ -1822,7 +1822,8 @@ export interface RunWorker {
   showsWindow: boolean;
   /**
    * Its reporter says where its running test's trace grows: `piwi/openTrace` opens it (**Open the trace so far**).
-   * Absent for a reporter that does not.
+   * Absent for a reporter that does not, in a run whose folder the service does not know, and on a machine without a
+   * display.
    */
   traces?: boolean;
   /** The tools that watch its page now, its slot's view or its stop's, each viewer once; absent while none does. */
@@ -2266,8 +2267,8 @@ export const PICK_AT_REQUEST = 'piwi/pickAt';
  * service asks the lane's worker where its running test's trace grows, checks the file (a regular `.trace` file in the
  * runner's trace folder, inside the run's folder) and starts Playwright's trace viewer on it, from the project's own
  * Playwright, on this machine. Answered with `RunControlResult`, whose sentence never names the file. Refused for a
- * worker whose reporter does not say where its trace grows (`RunWorker.traces`), with no test running, or for an
- * attempt the runner does not trace.
+ * worker whose reporter does not say where its trace grows (`RunWorker.traces`), with no test running, for an attempt
+ * the runner does not trace, in a run whose folder the service does not know, and on a machine without a display.
  */
 export interface OpenTraceParams {
   ref: string;

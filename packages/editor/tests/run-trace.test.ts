@@ -177,6 +177,40 @@ function harness(
 /** A worker's answer naming `file`. */
 const named = (file: string): TraceAnswer => ({ ok: true, message: "The attempt's trace grows there.", file });
 
+/** A hub on `sessions`, its client forwarding it the ports `forwarded` names. */
+async function hubOf(sessions: RunSessions, forwarded: () => readonly number[] = () => []): Promise<RunHub> {
+  return (await RunHub.open({
+    sessions,
+    actions: {
+      action: async () => ({ ok: false, message: 'No action here.' }),
+      requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
+    },
+    runInfo: () => ({ command: null, label: 'shop', project: null }),
+    welcome: () => ({ pid: process.pid, version: '0.0.0', client: 'Test Editor', roots: [run] }),
+    surfacesChanged: () => {},
+    forwarded,
+  }))!;
+}
+
+/** A connection to `hub` as Piwi Picker opens one (its `Host` `host` when named), paired: what it heard, as sent. */
+async function pairedTo(hub: RunHub, host?: string) {
+  const socket = new WebSocket(hub.url, { headers: host ? { host } : {}, origin: ORIGIN });
+  const raw: string[] = [];
+  socket.on('message', (data) => void raw.push(String(data)));
+  const messages = () => raw.map((text) => parseHubMessage(text)).filter((m): m is HubMessage => !!m);
+  await new Promise((resolve) => socket.on('open', resolve));
+  socket.send(JSON.stringify({ type: 'hello', token: hub.token }));
+  const welcome = await waitFor(() => messages().find((m) => m.type === 'welcome'));
+  return {
+    socket,
+    raw,
+    messages,
+    welcome,
+    send: (message: unknown) => socket.send(JSON.stringify(message)),
+    answer: (id: number) => waitFor(() => messages().find((m): m is HubAnswer => m.type === 'answer' && m.id === id)),
+  };
+}
+
 describe('opening a lane’s running test’s trace', () => {
   test('starts the viewer from the run’s folder on the attempt’s live trace, and says so in a sentence', async () => {
     const own = harness();
@@ -312,37 +346,14 @@ describe('opening a lane’s running test’s trace', () => {
     await waitFor(() => last(own.sent)?.workers[0]?.test ?? undefined);
     expect(last(own.sent)!.workers[0]).not.toHaveProperty('traces');
     // The hub leaves `trace` out of its features, and answers its `openTrace` so.
-    const hub = (await RunHub.open({
-      sessions: own.sessions,
-      actions: {
-        action: async () => ({ ok: false, message: 'No action here.' }),
-        requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
-      },
-      runInfo: () => ({ command: null, label: 'shop', project: null }),
-      welcome: () => ({ pid: process.pid, version: '0.0.0', client: 'Test Editor', roots: [run] }),
-      surfacesChanged: () => {},
-    }))!;
-    const socket = new WebSocket(hub.url, { origin: ORIGIN });
-    const messages: HubMessage[] = [];
-    socket.on('message', (data) => {
-      const message = parseHubMessage(String(data));
-      if (message) messages.push(message);
-    });
+    const hub = await hubOf(own.sessions);
     try {
-      await new Promise((resolve) => socket.on('open', resolve));
-      socket.send(JSON.stringify({ type: 'hello', token: hub.token }));
-      const welcome = await waitFor(() => messages.find((m) => m.type === 'welcome'));
-      expect(welcome).toMatchObject({ features: expect.not.arrayContaining(['trace']) });
-      socket.send(JSON.stringify({ type: 'openTrace', id: 1, ref: 'ed-1', lane: 0 }));
-      expect(await waitFor(() => messages.find((m): m is HubAnswer => m.type === 'answer' && m.id === 1))).toEqual({
-        type: 'answer',
-        id: 1,
-        ok: false,
-        message: noDisplay,
-      });
+      const picker = await pairedTo(hub);
+      expect(picker.welcome).toMatchObject({ features: expect.not.arrayContaining(['trace']) });
+      picker.send({ type: 'openTrace', id: 1, ref: 'ed-1', lane: 0 });
+      expect(await picker.answer(1)).toEqual({ type: 'answer', id: 1, ok: false, message: noDisplay });
       expect(own.asked).toEqual([]);
     } finally {
-      socket.close();
       hub.close();
     }
   });
@@ -579,58 +590,66 @@ describe('the trace’s path', () => {
 
   test('goes to no hub connection: it hears the worker opens its trace, and the answer, alone', async () => {
     const own = harness();
-    const hub = (await RunHub.open({
-      sessions: own.sessions,
-      actions: {
-        action: async () => ({ ok: false, message: 'No action here.' }),
-        requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
-      },
-      runInfo: () => ({ command: null, label: 'shop', project: null }),
-      welcome: () => ({ pid: process.pid, version: '0.0.0', client: 'Test Editor', roots: [run] }),
-      surfacesChanged: () => {},
-    }))!;
-    const socket = new WebSocket(hub.url, { origin: ORIGIN });
-    const raw: string[] = [];
-    socket.on('message', (data) => void raw.push(String(data)));
-    const messages = () => raw.map((text) => parseHubMessage(text)).filter((m): m is HubMessage => !!m);
+    const hub = await hubOf(own.sessions);
     try {
-      await new Promise((resolve) => socket.on('open', resolve));
-      socket.send(JSON.stringify({ type: 'hello', token: hub.token }));
-      expect(await waitFor(() => messages().find((m) => m.type === 'welcome'))).toMatchObject({
-        features: expect.arrayContaining(['trace']),
-      });
+      const picker = await pairedTo(hub);
+      expect(picker.welcome).toMatchObject({ features: expect.arrayContaining(['trace']) });
       own.begin();
       await waitFor(() => last(own.sent)?.workers[0]?.test ?? undefined);
-      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      picker.send({ type: 'subscribe', id: 1 });
       const traced = await waitFor(() =>
-        messages().find((m) => m.type === 'session' && m.session.workers[0]?.test && m.session.workers[0].traces),
+        picker
+          .messages()
+          .find((m) => m.type === 'session' && m.session.workers[0]?.test && m.session.workers[0].traces),
       );
       expect(traced).toBeDefined();
       own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
       // A path the connection names is never read: the worker names the file.
-      socket.send(JSON.stringify({ type: 'openTrace', id: 2, ref: 'ed-1', lane: 0, file: '/etc/passwd' }));
-      expect(await waitFor(() => messages().find((m): m is HubAnswer => m.type === 'answer' && m.id === 2))).toEqual({
-        type: 'answer',
-        id: 2,
-        ok: true,
-        message: OPENED,
-      });
+      picker.send({ type: 'openTrace', id: 2, ref: 'ed-1', lane: 0, file: '/etc/passwd' });
+      expect(await picker.answer(2)).toEqual({ type: 'answer', id: 2, ok: true, message: OPENED });
       expect(own.launches).toEqual([{ folder: run, trace: path.join(traces, `${TEST_ID}.json`) }]);
-      socket.send(JSON.stringify({ type: 'openTrace', id: 3, ref: 'ed-1', lane: 0 }));
-      expect(await waitFor(() => messages().find((m): m is HubAnswer => m.type === 'answer' && m.id === 3))).toEqual({
-        type: 'answer',
-        id: 3,
-        ok: false,
-        message: ALREADY,
-      });
-      for (const text of raw) {
+      picker.send({ type: 'openTrace', id: 3, ref: 'ed-1', lane: 0 });
+      expect(await picker.answer(3)).toEqual({ type: 'answer', id: 3, ok: false, message: ALREADY });
+      for (const text of picker.raw) {
         expect(text).not.toContain(traces);
         expect(text).not.toContain('.playwright-artifacts');
         expect(text).not.toContain(`${TEST_ID}.trace`);
       }
     } finally {
       own.closeAll();
-      socket.close();
+      hub.close();
+    }
+  });
+
+  test('opens none for a connection that came through a port the client forwards: it is on another machine', async () => {
+    const own = harness();
+    own.begin();
+    own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
+    const ports = { forwarded: [] as number[] };
+    const hub = await hubOf(own.sessions, () => ports.forwarded);
+    const port = Number(new URL(hub.url).port);
+    ports.forwarded = [port === 65_535 ? port - 1 : port + 1];
+    try {
+      // The browser's machine, through the port the client forwards.
+      const remote = await pairedTo(hub, `127.0.0.1:${ports.forwarded[0]}`);
+      expect(remote.welcome).toMatchObject({ features: expect.not.arrayContaining(['trace']) });
+      expect(remote.welcome).toMatchObject({ features: expect.arrayContaining(['lanes']) });
+      remote.send({ type: 'openTrace', id: 1, ref: 'ed-1', lane: 0 });
+      expect(await remote.answer(1)).toEqual({
+        type: 'answer',
+        id: 1,
+        ok: false,
+        message: "Playwright's trace viewer would open on the machine the run runs on, not this one.",
+      });
+      expect(own.asked).toEqual([]);
+      expect(own.launches).toEqual([]);
+      // This machine, at the hub's own port.
+      const local = await pairedTo(hub);
+      expect(local.welcome).toMatchObject({ features: expect.arrayContaining(['trace']) });
+      local.send({ type: 'openTrace', id: 2, ref: 'ed-1', lane: 0 });
+      expect(await local.answer(2)).toEqual({ type: 'answer', id: 2, ok: true, message: OPENED });
+    } finally {
+      own.closeAll();
       hub.close();
     }
   });

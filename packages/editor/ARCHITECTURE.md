@@ -868,12 +868,13 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 - Any other path is a 404, and a plain HTTP request a 426.
 - A handshake whose `Host` is not `127.0.0.1` or `localhost` at its port, or at one the client forwards to it from the
   browser's machine (`piwi/hub` with `forwarded`, a remote window's; 8 at most, `forwardedPorts`), is refused with a
-  403 before any WebSocket opens (`isHubHost`: a page reached under another name, DNS rebinding). So is one whose
+  403 before any WebSocket opens (`hubHostPort`: a page reached under another name, DNS rebinding). So is one whose
   `Origin` is not a browser extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`,
   `moz-extension://` and a UUID; never `http(s)`, `null` or `file`). One with no `Origin` opens: a browser always sends
   one, so it is a process of this machine (the desktop app's server, which observes the editors' runs), and its
-  `hello` needs the token as an extension's does. `piwi/hub` answers the hub's address and
-  the forwarded ports it takes, once it takes them, so a client lists a forwarded address only after.
+  `hello` needs the token as an extension's does. `piwi/hub` answers the hub's address and the forwarded ports it
+  takes, once it takes them, so a client lists a forwarded address only after. A connection whose `Host` names a
+  forwarded port, even one of the hub's own number, is the browser's machine's: it opens no trace on this one.
 - Past 16 open connections, or 8 open that did not say hello, a handshake gets a 503.
 - A handshake's headers must arrive within 5 s and fit in 8 KiB.
 
@@ -882,7 +883,8 @@ the connection closes (4001, 4002). The token is random per start, compared in c
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
 `keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, `stop`
 where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer on
-a machine that shows its window, `RunSessions.opensTraces`; `hubFeatures`). A reader keeps the features it knows; a
+a machine that shows its window, `RunSessions.opensTraces`, for a connection not through a forwarded port;
+`hubFeatures`). A reader keeps the features it knows; a
 hub that predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
@@ -1055,7 +1057,10 @@ which a host gives a launcher (`RunSessionsOptions.traceViewer`: `startTraceView
 app's server). It is offered and opened only on a machine that shows the viewer's window (`traceDisplay`, `hasDisplay`
 by default: macOS and Windows always, Linux and the BSDs with `DISPLAY` or `WAYLAND_DISPLAY` set). Without a launcher
 or a display, no worker carries `traces`, the hub leaves `trace` out of its features, and the request is refused
-without asking the worker ("This machine has no display for Playwright's trace viewer.").
+without asking the worker ("This machine has no display for Playwright's trace viewer."). A hub connection that came
+through a port the client forwards (`piwi/hub`'s `forwarded`: a remote window's Piwi Picker) is on the browser's
+machine, not the run's: its `welcome` leaves `trace` out and its `openTrace` is refused ("Playwright's trace viewer
+would open on the machine the run runs on, not this one.").
 
 - **The worker names the file to the hub alone.** A worker whose `run-attach` lists `trace` in `features`
   (`RunWorker.traces`, the hub session's worker `traces`) answers the request `trace` with the running attempt's own
