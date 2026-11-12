@@ -7167,6 +7167,52 @@
   "runs_copyRunPageShort": {
     "message": "Link kopieren"
   },
+  "runs_ciHeading": {
+    "message": "Laufende CI-Läufe"
+  },
+  "runs_ciRun": {
+    "message": "CI-Lauf #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "auf $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, auf $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. Öffnen Sie die Seite eines Laufs, um einen laufenden Test anzusehen."
+  },
   "runs_pageAtStop": {
     "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },

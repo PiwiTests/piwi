@@ -1,7 +1,7 @@
 /**
  * The Runs window: the runs the paired editor started, as the background worker hears them from each editor
  * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
- * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
+ * server is, the CI runs in progress the connected instance lists (`background/ci-runs.ts`), read-only, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
  * frame of a live view or of a watched lane as an image, never as markup. A frame is kept in memory, the latest one
  * alone, never stored.
@@ -20,6 +20,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
+import type { CiRun } from '@piwitests/run-model/ci';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
@@ -95,6 +96,11 @@ export interface RunsState {
   hubs: RunsHub[];
   /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
   runs: RunsRun[];
+  /**
+   * The CI runs in progress of the projects this browser maps, read-only, from the instance the extension is
+   * connected to (`background/ci-runs.ts`); none without connected mode.
+   */
+  ci?: CiRun[];
 }
 
 /**

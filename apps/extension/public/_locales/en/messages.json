@@ -8519,6 +8519,58 @@
     "message": "Copy link",
     "description": "Runs window, button beside the run's number: copies the address of its page on the instance."
   },
+  "runs_ciHeading": {
+    "message": "CI runs in progress",
+    "description": "Runs window, heading of the list of the CI runs in progress of the projects the extension maps, read from the connected instance."
+  },
+  "runs_ciRun": {
+    "message": "CI run #$id$",
+    "description": "Runs window, a CI run’s name in the list of CI runs in progress: its number on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "on $branch$",
+    "description": "Runs window, under a CI run’s name: the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, on $branch$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed: its project, then the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed and the run names no branch: its project.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
+    "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
+  },
   "runs_pageAtStop": {
     "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
     "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."

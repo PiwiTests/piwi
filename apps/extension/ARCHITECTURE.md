@@ -693,7 +693,9 @@ Only `piwi-client.ts` makes requests to the instance, the desktop app and Send t
   - `piwi-replay-step-view`, for the stored replay's report (`step-views.ts`);
   - the desktop app's messages: `piwi-desktop-repro`, `piwi-desktop-repro-status` (`desktop-repro.ts`);
   - `piwi-send-to-editor`, which posts to the paired editor (`postToEditor`) once it proved it holds the token (see
-    "Finding the hubs").
+    "Finding the hubs");
+  - the CI runs the Runs window lists while one is open (`ci-runs.ts`: `fetchActiveRuns`, `fetchRunMetadata`; see
+    "The CI runs in progress").
 
 The editor's runs are the one exception to `piwi-client.ts`, in the worker too: `run-hubs.ts` asks the editor's
 `…/live` (through `proveEditor`), and `hub-connection.ts` keeps a WebSocket to each hub (see "The editor's runs").
@@ -1054,6 +1056,22 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   says what the app answered.
 - The window pings the worker every 20 s (`RUNS_PING_MS`), which keeps the worker alive while the window is open.
 
+### The CI runs in progress
+
+Under the runs the hubs follow, the window lists the CI runs in progress of the projects this browser maps
+(`projectMappings` and `serverMappings`; every project the key reads when it maps none), from the instance the
+extension is connected to, read-only: no control, share or hold, since they run on CI.
+
+- **Read** by the worker (`src/background/ci-runs.ts`, `CiRunsWatch`) only while a Runs window is open: as the first
+  opens, then every 15 s (`CI_RUNS_POLL_MS`), until the last closes. A read is one list (`GET /api/test-runs/recent`,
+  its runs in progress) and, for each run it lists first, its details once (`GET /api/test-runs/:id`, four at most a
+  read), which tell a CI run's by its origin, else by the CI it names (`isCiMetadata`). Each request goes through
+  `withConnectionHealth`. A read that fails keeps the runs last read; nothing is read without connected mode.
+- **Shown** as `RunsState.ci`, the newest five (`ciRunsListed`): each run's name (`CI run #78`), its branch and, when
+  the runs of several projects are listed, its project (`ciRunWhere`), its page (`Run #78`, **Open** and **Copy**) and
+  its tally, then one line saying nothing here steers them and that a running test is watched from the run's page.
+  The words are the run model's (`@piwitests/run-model/ci`), through `runsSpeaker`.
+
 ### Run-level controls, keys and the window's place
 
 - A live run of several workers shows one at a time, behind a tab each (`role="tablist"`), marked with its state
@@ -1112,6 +1130,9 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   `pagePoint`, `shownLaneOf`, a worker's status and controls, a run's Pause all and Resume all, and who is present,
   in English. `run-words.test.ts`
   holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
+- `ci-runs.test.ts` checks the CI runs: those of the mapped projects, the CI runs alone, read only while a window
+  listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance
+  does not answer; `packages/run-model/tests/ci.test.ts` their tally, name, place and order.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
 - `piwi-client.test.ts` checks `fetchDesktopHubs`: the proof first, the token on `/api/desktop/live` alone, a hub

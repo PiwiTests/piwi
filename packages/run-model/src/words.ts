@@ -118,6 +118,14 @@ export const RUN_WORDS_EN = {
   // How a run came out, beyond its status: one key per plural form, said through `RunSpeaker.count`.
   runs_progressEndedAtStop_one: '$count$ ended at a stop',
   runs_progressEndedAtStop_other: '$count$ ended at a stop',
+  // The CI runs of a project in progress, listed read-only.
+  runs_ciHeading: 'CI runs in progress',
+  runs_ciRun: 'CI run #$id$',
+  runs_ciWhere: 'on $branch$',
+  runs_ciWhereProject: '$project$, on $branch$',
+  runs_ciProject: '$project$',
+  runs_ciReadOnly:
+    'Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',

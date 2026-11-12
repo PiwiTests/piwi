@@ -7167,6 +7167,52 @@
   "runs_copyRunPageShort": {
     "message": "Copier le lien"
   },
+  "runs_ciHeading": {
+    "message": "Exécutions de CI en cours"
+  },
+  "runs_ciRun": {
+    "message": "Exécution de CI #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "sur $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, sur $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Lecture seule : elles tournent en CI, rien ici ne les met en pause ni ne les pilote. Ouvrez la page d’une exécution pour regarder un test en cours."
+  },
   "runs_pageAtStop": {
     "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
   },

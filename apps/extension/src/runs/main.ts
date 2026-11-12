@@ -22,6 +22,7 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
+import { CI_READ_ONLY, ciRunName, ciRunWhere, type CiRun } from '@piwitests/run-model/ci';
 import { endedAtStopOf, endedAtStopWords } from '@piwitests/run-model/outcome';
 import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
 import { tabStatus, workerStatus, type WorkerStatus } from '@piwitests/run-model/status';
@@ -126,6 +127,7 @@ const empty = document.getElementById('empty') as HTMLElement;
 const emptyText = document.getElementById('empty-text') as HTMLElement;
 const emptyActions = document.getElementById('empty-actions') as HTMLElement;
 const runsList = document.getElementById('runs') as HTMLElement;
+const ciBox = document.getElementById('ci') as HTMLElement;
 const shortcutBox = document.getElementById('shortcut') as HTMLElement;
 const shortcutText = document.getElementById('shortcut-text') as HTMLElement;
 const shortcutActions = document.getElementById('shortcut-actions') as HTMLElement;
@@ -1518,6 +1520,7 @@ function render(): void {
     runsList,
     current.runs.map((run) => renderRun(current, run)),
   );
+  renderCi(current);
   for (const key of drawn.keys()) if (!used.has(key)) drawn.delete(key);
   forgetGone(current);
   restoreFocus();
@@ -1942,6 +1945,51 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     );
   }
   place(section, children);
+  return section;
+}
+
+/**
+ * The CI runs in progress the connected instance lists, under the runs the hubs follow, read-only: each named as other
+ * runs are, where it runs, its page (`Run #78`, **Open** and **Copy**) and its tally, then one line saying nothing
+ * here steers them and where to watch one. None without connected mode.
+ */
+function renderCi(current: RunsState): void {
+  const runs = current.ci ?? [];
+  ciBox.hidden = runs.length === 0;
+  if (!runs.length) {
+    place(ciBox, []);
+    return;
+  }
+  const several = new Set(runs.map((run) => run.projectId)).size > 1;
+  place(ciBox, [
+    part('ci|heading', null, () => element('h2', 'ci-heading', runsSpeaker.say('runs_ciHeading'))),
+    ...runs.map((run) => part(`ci|${run.url}`, [run, several], () => renderCiRun(run, several))),
+    part('ci|note', null, () => iconText(element('p', 'note ci-note'), 'info', runsSpeaker.say(CI_READ_ONLY.key))),
+  ]);
+}
+
+/** A CI run in progress: its name, where it runs, its page and its tally; no control, since it runs on CI. */
+function renderCiRun(run: CiRun, several: boolean): HTMLElement {
+  const section = element('section', 'run ci-run');
+  const name = element('h2', undefined, ciRunName(run, runsSpeaker));
+  name.id = domId('ci', run.url);
+  section.setAttribute('aria-labelledby', name.id);
+  const title = element('div', 'run-title', name);
+  const where = ciRunWhere(run, several);
+  if (where) title.append(element('span', 'client', runsSpeaker.say(where.key, where.args)));
+  section.append(
+    element('div', 'run-head', title),
+    renderRunPage({ id: run.id, url: run.url }),
+    renderProgress({
+      total: run.total,
+      done: run.done,
+      failed: run.failed,
+      flaky: run.flaky,
+      skipped: 0,
+      status: 'running',
+      failure: null,
+    }),
+  );
   return section;
 }
 

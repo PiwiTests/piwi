@@ -316,6 +316,19 @@
         font-weight: 600;
         margin-right: 4px;
       }
+      /* The CI runs in progress, under the runs the hubs follow: read-only, a heading above them and a note below. */
+      .ci-heading {
+        margin: 4px 0 8px;
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: none;
+      }
+      .ci-run .run-progress {
+        border-bottom: 0;
+      }
+      .ci-note {
+        margin: 0 0 12px;
+      }
       /* Hold failures, and Pause all or Resume all, on one row under the run's name. */
       .run-bar {
         display: flex;
@@ -839,6 +852,8 @@
         <div id="empty-actions" class="piwi-actions"></div>
       </div>
       <div id="runs"></div>
+      <!-- The CI runs in progress the connected instance lists, read-only. -->
+      <div id="ci" class="ci" hidden></div>
       <footer>
         <div id="shortcut" class="shortcut" hidden>
           <p id="shortcut-text" class="note"></p>
