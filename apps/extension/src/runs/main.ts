@@ -41,6 +41,7 @@ import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-
 import { tabStatus, workerStatus, type WorkerStatus } from '@piwitests/run-model/status';
 import {
   IN_WINDOW,
+  canOpenTrace,
   heldUntilWatched,
   laneFrameNow,
   laneWatchOf,
@@ -192,6 +193,8 @@ const requestLists = new Map<string, RequestList>();
 let listSerial = 0;
 /** The workers a command is on its way for: their buttons wait for it. */
 const busy = new Set<string>();
+/** The lanes (`slotKey`) whose Open the trace so far waits for the hub's answer: that button alone waits for it. */
+const tracing = new Set<string>();
 /** Share live said what it sends in this window: it asks no more. */
 let shareWarned = false;
 /** The runs whose Share live waits for a yes, those a share or its end is on its way for, and what a refusal said. */
@@ -470,6 +473,24 @@ async function mockRequest(run: RunsRun, worker: number, since: string, request:
 }
 
 /** Closes a worker's list of requests; the keyboard, when it was there, goes back to Mock a request. */
+/**
+ * Open the trace so far: the hub opens Playwright's trace viewer on the running test of a lane (Playwright's
+ * `parallelIndex`), on its own machine, and its sentence shows under the test of the lane's worker as it answers, read
+ * out, while that worker stands there. Nothing names the trace's file: the window sends the run and the lane alone.
+ */
+async function openTrace(run: RunsRun, lane: number): Promise<void> {
+  const slot = slotKey(run.hub, run.session.ref, lane);
+  if (tracing.has(slot) || !hubAnswers(run.hub)) return;
+  tracing.add(slot);
+  render();
+  const answer = await command(run.hub, run.session.ref, null, 'trace', null, { lane });
+  tracing.delete(slot);
+  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && !r.session.ended);
+  const worker = shown?.session.workers.find((w) => w.parallelIndex === lane);
+  if (worker) say(workerKey(run.hub, run.session.ref, worker), answer, stopNow(run, worker.worker));
+  render();
+}
+
 function closeRequests(key: string): void {
   requestLists.delete(key);
   if (focusKey?.startsWith(`${key}|request`)) focusKey = `${key}|mock`;
@@ -3221,6 +3242,8 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
     interact: framed && view.status === 'on' && intents.includes('input') ? interact : null,
     pickable,
     picking: picking.has(key),
+    // A stop's own view is no lane's: Open the trace so far shows on a watched lane's page.
+    trace: null,
   };
   const head = pageHead(run, worker, stop, figure, tools, away);
   const children: HTMLElement[] = [head];
@@ -3278,8 +3301,9 @@ interface PageAround {
  * The page card's head, which names the card (`figure`): its caption, who watches the page under it, then the tools
  * the stop takes on its page, each a toggle saying whether it is on: Watch live (`live`, null where the stop takes no
  * view of its own), Watch for a watched lane's stop (`watch`), Interact once a view the hub accepted shows the stop
- * and it takes input (`interact`), and Pick on the image. Who watches and the tools are
- * each drawn again only when they change, so a tool stays the same element as others come to watch.
+ * and it takes input (`interact`), and Pick on the image; then, on a watched lane's page, Open the trace so far, a
+ * button (`trace`, held while its ask waits). Who watches and the tools are each drawn again only when they change, so
+ * a tool stays the same element as others come to watch.
  */
 function pageHead(
   run: RunsRun,
@@ -3294,6 +3318,8 @@ function pageHead(
     interact: boolean | null;
     pickable: boolean;
     picking: boolean;
+    /** Open the trace so far, and whether it waits for the hub's answer; null where the lane opens no trace. */
+    trace: boolean | null;
   },
   away: boolean,
 ): HTMLElement {
@@ -3310,7 +3336,13 @@ function pageHead(
     return made;
   });
   const items = [title];
-  if (tools.live !== null || tools.watch !== null || tools.interact !== null || tools.pickable) {
+  if (
+    tools.live !== null ||
+    tools.watch !== null ||
+    tools.interact !== null ||
+    tools.pickable ||
+    tools.trace !== null
+  ) {
     const row = part(`${key}|page-tools`, tools, () => {
       const made = element('div', 'piwi-actions page-tools');
       if (tools.live !== null && stop) {
@@ -3338,6 +3370,7 @@ function pageHead(
         made.append(interact);
       }
       if (tools.pickable) made.append(pickAtButton(key, tools.picking));
+      if (tools.trace !== null) made.append(traceButton(run, worker.parallelIndex, key));
       return made;
     });
     markTools(row, key, away);
@@ -3375,17 +3408,38 @@ function pickAtButton(key: string, picking: boolean): HTMLButtonElement {
   return pick;
 }
 
-/** The tools above a page are held while its hub is away, and Pick on the image while a command is on its way. */
+/** Open the trace so far, on a watched lane's page: the hub opens Playwright's trace viewer on its machine. */
+function traceButton(run: RunsRun, lane: number, key: string): HTMLButtonElement {
+  const made = makeButton(
+    t('runs_openTrace'),
+    (event) => {
+      // Its ask on its way: the button says so (`aria-disabled`) and waits for the answer.
+      if (!pressedHeld(event)) void openTrace(run, lane);
+    },
+    { icon: 'file', small: true, title: t('runs_openTraceTitle') },
+  );
+  made.dataset.focus = `${key}|trace`;
+  made.dataset.slot = slotKey(run.hub, run.session.ref, lane);
+  return made;
+}
+
+/**
+ * The tools above a page are held while its hub is away, Pick on the image while a command is on its way, and Open the
+ * trace so far while its own ask is.
+ */
 function markTools(row: HTMLElement, key: string, away: boolean): void {
   const pickAt = `[data-focus="${CSS.escape(`${key}|pick-at`)}"]`;
-  for (const button of row.querySelectorAll('button')) {
-    markBusy([button], away || releasing.has(key) || (button.matches(pickAt) && busy.has(key)));
+  const trace = `[data-focus="${CSS.escape(`${key}|trace`)}"]`;
+  for (const button of row.querySelectorAll<HTMLElement>('button')) {
+    const asking = button.matches(trace) && tracing.has(button.dataset.slot ?? '');
+    markBusy([button], away || releasing.has(key) || (button.matches(pickAt) && busy.has(key)) || asking);
   }
 }
 
 /**
- * The page of a worker whose lane can be watched, in a card: its head with who watches it, and at a stop Watch and
- * Pick on the image; then the lane's
+ * The page of a worker whose lane can be watched, in a card: its head with who watches it, at a stop Watch and Pick
+ * on the image, and while the lane is watched at a hub that opens traces, Open the trace so far (`canOpenTrace`); then
+ * the lane's
  * frame of where the worker stands, with the Live badge (at a stop, the stop's live view, which takes Interact's input
  * as Watch live's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
  * Why the lane sends no frame shows in place of its image; under it, why the lane ended or was refused, that it starts,
@@ -3434,6 +3488,9 @@ function renderLanePage(
   const figure = part(`${key}|page`, null, () => element('figure', 'page'));
   figure.toggleAttribute('data-picking', picking.has(key));
   // At a stop, Watch and Pick on the image in its head; while the test runs, Watch stays with the controls.
+  // Open the trace so far, while the lane is watched at a hub that opens a trace, for a worker that runs a test whose
+  // reporter answers the ask.
+  const traceable = isWatched(lane) && !!state?.hubs.find((h) => h.id === run.hub)?.traces && canOpenTrace(worker);
   const tools = {
     since: stop?.since ?? null,
     watchers: around.watchers,
@@ -3442,6 +3499,7 @@ function renderLanePage(
     interact: viewing !== null && lane?.status === 'on' && intents.includes('input') ? interacting.has(slot) : null,
     pickable,
     picking: picking.has(key),
+    trace: traceable ? tracing.has(slot) : null,
   };
   const head = pageHead(run, worker, stop, figure, tools, away);
   const children: HTMLElement[] = [head];

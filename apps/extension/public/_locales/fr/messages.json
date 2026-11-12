@@ -7001,6 +7001,12 @@
   "runs_frontTitle": {
     "message": "Mettre au premier plan la fenêtre du navigateur du test"
   },
+  "runs_openTrace": {
+    "message": "Ouvrir la trace jusqu’ici"
+  },
+  "runs_openTraceTitle": {
+    "message": "Ouvrir la trace de ce test jusqu’ici dans le visualiseur de traces de Playwright, sur cette machine"
+  },
   "runs_runControls": {
     "message": "Commandes de l’exécution"
   },

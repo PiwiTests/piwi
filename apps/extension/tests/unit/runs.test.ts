@@ -161,6 +161,7 @@ describe('the global shortcut’s rule', () => {
       presence: true,
       holds,
       stops: false,
+      traces: false,
     });
     // A run nobody attends is left to run: the shortcut pauses the run a person attends.
     expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
@@ -437,6 +438,7 @@ describe('what a stop takes from the window', () => {
           presence: false,
           holds: false,
           stops: false,
+          traces: false,
         },
       ],
       runs: [
@@ -485,7 +487,7 @@ describe('Watch, as the worker reads it', () => {
       { ...command, what: 'watch', lane: 1, on: true, worker: 1 },
       { ...command, what: 'watch', lane: 1, on: true, since: 's1' },
       { ...command, what: 'watch', lane: 1, on: true, events: [] },
-      // Only Watch names a lane.
+      // Only Watch and Open the trace so far name a lane.
       { ...command, what: 'share', lane: 1, on: true },
       { ...command, worker: 0, since: 's1', what: 'view', lane: 1, on: true },
     ]) {
@@ -507,6 +509,33 @@ describe('Watch, as the worker reads it', () => {
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
+  });
+});
+
+describe('Open the trace so far, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run and its lane alone', () => {
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 2 })).toEqual({ ...command, what: 'trace', lane: 2 });
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 0 })).toMatchObject({ lane: 0 });
+    for (const bad of [
+      { ...command, what: 'trace' },
+      { ...command, what: 'trace', lane: -1 },
+      { ...command, what: 'trace', lane: 1.5 },
+      { ...command, what: 'trace', lane: '1' },
+      { ...command, what: 'trace', lane: 1, on: true },
+      { ...command, what: 'trace', lane: 1, worker: 1 },
+      { ...command, what: 'trace', lane: 1, since: 's1' },
+      { ...command, what: 'trace', lane: 1, layers: ['calls'] },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+    // Nothing else goes to the hub with it: a path the window named is left out.
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 1, file: '/tmp/x.trace' })).toEqual({
+      ...command,
+      what: 'trace',
+      lane: 1,
+    });
   });
 });
 
@@ -536,6 +565,7 @@ describe('a lane watched while it runs', () => {
           presence: false,
           holds: false,
           stops: false,
+          traces: false,
         },
       ],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
@@ -568,6 +598,7 @@ describe('what the runs ask of the person', () => {
       presence: false,
       holds: false,
       stops: false,
+      traces: false,
     },
   ];
   const progress = (status: HubProgress['status'], failed: number): HubProgress => ({

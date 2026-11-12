@@ -7001,6 +7001,12 @@
   "runs_frontTitle": {
     "message": "Trazer para a frente a janela do navegador do teste"
   },
+  "runs_openTrace": {
+    "message": "Abrir o trace até agora"
+  },
+  "runs_openTraceTitle": {
+    "message": "Abrir o trace deste teste até agora no visualizador de traces do Playwright, nesta máquina"
+  },
   "runs_runControls": {
     "message": "Controles da execução"
   },

@@ -1026,6 +1026,12 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   strip, one a call, its base64 checked again (`isLaneThumbData`), each a button (`aria-pressed`) that shows it larger
   with its call's title, **Close** going back to the strip. Words go through the run model and `runsSpeaker`, a time
   through `formatUnit`.
+- **Open the trace so far**, in a watched lane's page head at a hub whose `welcome` lists `trace` (`RunsHub.traces`),
+  for a worker that runs a test whose reporter says where its trace grows (`canOpenTrace`, the worker's `traces`),
+  sends the hub's `openTrace` with the run and the lane (the window's `trace`, which `parseRunsRequest` takes with
+  `lane` alone): the hub asks the worker for the file and starts Playwright's trace viewer on its own machine. The
+  window never sees the file; the hub's sentence shows under the test, read out (`say`), and the button waits for it
+  alone (`tracing`, by `slotKey`).
 - **Interact**, a toggle after Watch live or Watch where a live view shows a stop that takes `input` from the window
   (only while it watches, once the hub accepted the view), sends the person's input to the page, whose first event that
   is not a move drives the stop. It is kept by run and slot (`interacting`, `slotKey`) across the slot's next stops,
@@ -1191,7 +1197,10 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   with Watch live; the desktop app's hub lost, said once; a reporter without `watch`, told to update, its stops
   keeping Watch live; and a reporter that sends layers: nothing under the page until one comes, then why its call
   waits, its events, its text as asked (its password hidden), then hidden again, its filmstrip with an image chosen
-  and closed, none of it stored, and the next test's layers starting afresh.
+  and closed, none of it stored, and the next test's layers starting afresh. Open the trace so far, against a hub the
+  spec plays (`stubEditor`): shown on a watched lane at a hub that lists `trace` for a worker with `traces`, its
+  `openTrace` naming the run and the lane, its answer under the test; none at a hub without `trace` or for a worker
+  without `traces`.
 - `i18n.spec.ts` checks the window in French and German, the list open and the live view on, nothing clipping.
 - `docs-screenshots.spec.ts` captures `picker-runs.png` the same way: the page's image without the pause bar, as the
   reporter takes it; and `picker-runs-live.png`, a headless stop watched live, the picker in its frame.
