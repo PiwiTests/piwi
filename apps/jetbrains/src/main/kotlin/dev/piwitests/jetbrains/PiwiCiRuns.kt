@@ -61,8 +61,10 @@ class PiwiCiRuns(private val project: Project) : Disposable {
 
     /** The marks drawn, by editor. On the event thread. */
     private val drawn = HashMap<Editor, MutableList<Inlay<*>>>()
-    private val rows = DefaultListModel<Glue.CiRow>()
     private var tab: Content? = null
+
+    /** The list of the tab shown, on a model of its own, let go with its tab. On the event thread. */
+    private var rowsList: JBList<Glue.CiRow>? = null
 
     /** The runs listed when the person closed the tab: it opens again for another run only. */
     private var closedWith: Set<String> = emptySet()
@@ -119,22 +121,36 @@ class PiwiCiRuns(private val project: Project) : Disposable {
             closedWith = emptySet()
             return
         }
-        rows.clear()
-        Glue.ciRows(now.values).forEach(rows::addElement)
+        val rows = Glue.ciRows(now.values)
         if (live != null) {
+            rowsList?.let { fill(it, rows) }
             live.displayName = tabName(now)
             return
         }
         // Closed by the person: it opens again for a run not listed then.
         if (tab != null && now.keys.all { it in closedWith }) return
-        val content = ContentFactory.getInstance().createContent(JBScrollPane(list()), tabName(now), false).apply {
+        val shown = list(rows)
+        val content = ContentFactory.getInstance().createContent(JBScrollPane(shown), tabName(now), false).apply {
             isCloseable = true
             setDisposer {
                 if (tab === this) closedWith = sessions.keys
+                if (rowsList === shown) rowsList = null
             }
         }
+        rowsList = shown
         window.contentManager.addContent(content)
         tab = content
+    }
+
+    /** The tab's rows as the sessions stand: none changed, nothing is drawn; else the selected row stays selected by its key. */
+    private fun fill(list: JBList<Glue.CiRow>, rows: List<Glue.CiRow>) {
+        val model = list.model as DefaultListModel<Glue.CiRow>
+        if (model.size() == rows.size && rows.indices.all { model[it] == rows[it] }) return
+        val selected = list.selectedValue?.key
+        model.clear()
+        model.addAll(rows)
+        val index = if (selected == null) -1 else rows.indexOfFirst { it.key == selected }
+        if (index >= 0) list.selectedIndex = index
     }
 
     private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI Run" else "CI Runs (${now.size})"
@@ -143,8 +159,8 @@ class PiwiCiRuns(private val project: Project) : Disposable {
      * The tab's list: a row opens its lane in the Worker tab, its file at its line, or its page on the dashboard, on a
      * double click or Enter.
      */
-    private fun list(): JList<Glue.CiRow> {
-        val list = JBList(rows)
+    private fun list(rows: List<Glue.CiRow>): JBList<Glue.CiRow> {
+        val list = JBList(DefaultListModel<Glue.CiRow>().apply { addAll(rows) })
         list.cellRenderer = CiRowRenderer()
         list.emptyText.text = "No CI run of the branch runs now."
         list.addMouseListener(
@@ -173,19 +189,24 @@ class PiwiCiRuns(private val project: Project) : Disposable {
 
     private fun fileOf(uri: String) = runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(uri))) }.getOrNull()
 
-    /** Each editor of a file a CI position is in shows its marks; the others' go. On the event thread. */
+    /**
+     * Each editor of a file a CI position is in shows its marks; the others' go. On the event thread: the editors open now
+     * are read, never a file from disk.
+     */
     private fun drawMarks(now: Collection<CiSession>) {
         for (inlays in drawn.values) inlays.forEach { if (it.isValid) Disposer.dispose(it) }
         drawn.clear()
-        for (uri in Glue.ciMarkedFiles(now)) {
-            val file = fileOf(uri) ?: continue
-            val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
+        if (Glue.ciMarkedFiles(now).isEmpty()) return
+        for (editor in EditorFactory.getInstance().allEditors) {
+            if (editor.project.let { it != null && it != project }) continue
+            val document = editor.document
+            val file = FileDocumentManager.getInstance().getFile(document) ?: continue
+            val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: continue
             val marks = Glue.ciMarksIn(now, uri).filter { it.line < document.lineCount }
-            for (editor in EditorFactory.getInstance().getEditors(document, project)) {
-                drawn[editor] = marks.mapNotNull { mark ->
-                    editor.inlayModel.addAfterLineEndElement(document.getLineEndOffset(mark.line), false, CiMarkInlay(mark.text))
-                }.toMutableList()
-            }
+            if (marks.isEmpty()) continue
+            drawn[editor] = marks.mapNotNull { mark ->
+                editor.inlayModel.addAfterLineEndElement(document.getLineEndOffset(mark.line), false, CiMarkInlay(mark.text))
+            }.toMutableList()
         }
     }
 

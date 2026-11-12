@@ -1116,6 +1116,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (watchingCi !== params) return@requestCiWatch
             if (result?.ok == true) return@requestCiWatch panel.watching(true)
             watchingCi = null
+            // A request the service did not answer in time may have opened the watch: it is let go.
+            if (result == null) requestCiWatch(params.copy(on = false))
             val why = result?.message ?: "The editor service did not answer."
             panel.note(why)
             panel.liveWanted = false

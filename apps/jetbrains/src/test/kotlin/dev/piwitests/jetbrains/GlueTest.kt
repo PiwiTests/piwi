@@ -3313,10 +3313,31 @@ class GlueTest {
                 Glue.CiRow("watch", "Watch on the dashboard", "read-only", url = "https://piwi.example/test-runs/78?watch=2"),
                 Glue.CiRow("test", "refunds", "chromium · retry 1 · failed", "failed", spec, 10),
             ),
-            rows,
+            rows.map { it.copy(key = "") },
         )
         // The newest run first.
         assertEquals(listOf("CI run #79", "CI run #78"), Glue.ciRows(listOf(ci(78), ci(79))).filter { it.kind == "run" }.map { it.text })
+    }
+
+    @Test
+    fun aCiRowKeepsItsKeyAsTheRunProgressesAndTheRowsMoveSoTheTabKeepsItSelected() {
+        val rows = Glue.ciRows(listOf(ci(78)))
+        assertEquals(rows.size, rows.map { it.key }.toSet().size)
+        assertTrue(rows.none { it.key.isEmpty() })
+        // A newer run listed above it, and its progress and call changed: each row keeps its key.
+        val moved = ci(78, summary = "2 of 4 tests · 1 failed").let { s ->
+            s.copy(tests = s.tests.orEmpty().map { it.copy(at = it.at?.copy(title = "Fill", text = "CI run #78 · worker 2: Fill")) })
+        }
+        val after = Glue.ciRows(listOf(moved, ci(79)))
+        val selected = rows.first { it.kind == "test" && it.status == "running" }
+        val now = after.first { it.key == selected.key }
+        assertEquals("checkout › pays", now.text)
+        assertTrue(after.indexOf(now) > rows.indexOf(selected))
+        assertEquals(rows.map { it.key }, after.filter { it.key.startsWith("/work/shop\n78") }.map { it.key })
+        // Two tests of one name and project in one run keep keys apart.
+        val twice = ci(78).let { s -> s.copy(tests = s.tests.orEmpty() + s.tests.orEmpty().last()) }
+        val keys = Glue.ciRows(listOf(twice)).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
     }
 
     @Test
@@ -3330,7 +3351,7 @@ class GlueTest {
             "watch":null}]}"""
         val session = Gson().fromJson(json, CiSession::class.java)
         assertEquals(listOf(Glue.CiMark(8, "CI run #78: Click")), Glue.ciMarksIn(listOf(session), page))
-        assertEquals(Glue.CiRow("test", "pays", "Click", "running", page, 8, 0), Glue.ciRows(listOf(session))[2])
+        assertEquals(Glue.CiRow("test", "pays", "Click", "running", page, 8, 0), Glue.ciRows(listOf(session))[2].copy(key = ""))
     }
 
     @Test

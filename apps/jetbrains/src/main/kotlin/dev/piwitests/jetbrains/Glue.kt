@@ -3303,7 +3303,8 @@ object Glue {
      * A row of the CI Runs tab: a run (`CI run #78`, its branch and progress), its **Open** on the dashboard, a test (its
      * name, then its project, attempt, worker and call, or its result), or a running test's **Watch** in the Worker tab
      * (`ci-watch`) and on the dashboard (`watch`). What a row opens: a CI lane in the Worker tab (`lane`), else a file at a
-     * line (`uri`, `line`, `character`), else a page (`url`), else nothing.
+     * line (`uri`, `line`, `character`), else a page (`url`), else nothing. Its `key` stays as the rows move and its run
+     * progresses, so the tab keeps it selected.
      */
     data class CiRow(
         val kind: String,
@@ -3315,6 +3316,7 @@ object Glue {
         val character: Int = 0,
         val url: String? = null,
         val lane: CiLane? = null,
+        val key: String = "",
     )
 
     /**
@@ -3360,13 +3362,16 @@ object Glue {
      * Worker tab and **Watch on the dashboard**. Read-only: no row pauses, steers, shares or holds the run.
      */
     fun ciRows(sessions: Collection<CiSession>): List<CiRow> = sessions.sortedByDescending { it.runId }.flatMap { session ->
+        val key = ciKey(session)
         val head = CiRow(
             "run",
             session.name.ifEmpty { "CI run #${session.runId}" },
             listOfNotNull(session.branch, session.summary.ifEmpty { null }).joinToString(" · "),
+            key = key,
         )
-        val open = CiRow("open", "Open run #${session.runId}", "on the dashboard", url = session.url)
-        val tests = session.tests.orEmpty().flatMap { test ->
+        val open = CiRow("open", "Open run #${session.runId}", "on the dashboard", url = session.url, key = "$key\nopen")
+        val keys = HashSet<String>()
+        val tests = session.tests.orEmpty().flatMapIndexed { index, test ->
             val running = test.status == "running"
             val detail = listOf(
                 test.project,
@@ -3375,11 +3380,13 @@ object Glue {
                 if (running) test.at?.title.orEmpty() else "",
             ).filter { it.isNotEmpty() }.joinToString(" · ")
             val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+            var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
+            if (!keys.add(testKey)) testKey = "$testKey\n$index"
             val at = test.at
             val row = when {
-                at != null -> CiRow("test", name, detail, test.status, at.uri, at.line, at.character ?: 0)
-                test.uri != null && test.line != null -> CiRow("test", name, detail, test.status, test.uri, test.line)
-                else -> CiRow("test", name, detail, test.status)
+                at != null -> CiRow("test", name, detail, test.status, at.uri, at.line, at.character ?: 0, key = testKey)
+                test.uri != null && test.line != null -> CiRow("test", name, detail, test.status, test.uri, test.line, key = testKey)
+                else -> CiRow("test", name, detail, test.status, key = testKey)
             }
             val here = test.watch?.let { url ->
                 test.lane?.let { lane ->
@@ -3388,10 +3395,11 @@ object Glue {
                         "Watch",
                         "${ciLane(test)} · read-only",
                         lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
+                        key = "$testKey\nwatch-here",
                     )
                 }
             }
-            val watch = test.watch?.let { CiRow("watch", "Watch on the dashboard", "read-only", url = it) }
+            val watch = test.watch?.let { CiRow("watch", "Watch on the dashboard", "read-only", url = it, key = "$testKey\nwatch") }
             listOfNotNull(row, here, watch)
         }
         listOf(head, open) + tests
