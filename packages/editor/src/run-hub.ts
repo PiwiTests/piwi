@@ -8,7 +8,8 @@
  * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
  * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
- * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
+ * set, checked field by field and answered once; nothing it asks evaluates code or reaches an instance, and none names
+ * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
  * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
  * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
@@ -22,7 +23,9 @@
  * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
  * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
- * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
+ * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection
+ * opens a lane's running test's trace so far in Playwright's trace viewer on this machine (`openTrace`), its answer a
+ * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection. A connection the
  * hub closes is cut a second later when the other side does not answer the
  * close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
  * live hubs of the machine (`peers`, from the host's `peers`: their addresses, never their tokens) after the runs, and
@@ -93,10 +96,12 @@ export interface HubRunInfo {
 
 /**
  * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
- * run sessions start the trace viewer.
+ * run sessions start Playwright's trace viewer (`opensTraces`).
  */
-export function hubFeatures(options: Pick<RunHubOptions, 'stopRun'>): HubFeature[] {
-  return HUB_FEATURES.filter((feature) => (feature !== 'stop' || !!options.stopRun) && feature !== 'trace');
+export function hubFeatures(options: Pick<RunHubOptions, 'stopRun' | 'sessions'>): HubFeature[] {
+  return HUB_FEATURES.filter(
+    (feature) => (feature !== 'stop' || !!options.stopRun) && (feature !== 'trace' || options.sessions.opensTraces),
+  );
 }
 
 export interface RunHubOptions {
@@ -692,7 +697,8 @@ export class RunHub {
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
         }
         case 'openTrace':
-          return reply({ ok: false, message: 'This hub cannot open a trace.' });
+          // The answer is a sentence: the trace's path stays with the hub.
+          return reply(await sessions.openTrace({ ref: command.ref, lane: command.lane }));
         case 'watch': {
           const { ref, lane, on, layers } = command;
           const answer = await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer);

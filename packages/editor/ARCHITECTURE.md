@@ -137,6 +137,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
+- `src/trace-viewer.ts`: **Open the trace so far**: the checks a trace file a worker names passes, and Playwright's trace
+  viewer started on it from the project's own Playwright.
 - `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
   stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
@@ -878,9 +880,10 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
-`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, and
-`stop` where its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
-predates the list reads as having none.
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, `stop`
+where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer,
+`RunSessionsOptions.traceViewer`; `hubFeatures`). A reader keeps the features it knows; a hub that predates the list
+reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -904,7 +907,9 @@ not a boundary.
 - `requests` and `mock` (`request`, a kept response's id), with `since` too;
 - `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view));
 - `watch` (`lane`, `on`, `layers`): a lane while its tests run, with no stop, and the layers it takes beside its frames
-  ([The live view](#the-live-view)).
+  ([The live view](#the-live-view));
+- `openTrace` (`ref`, `lane`): the lane's running test's trace so far in Playwright's trace viewer, on this machine,
+  the hub's feature `trace` ([The trace so far](#the-trace-so-far)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
@@ -914,8 +919,9 @@ for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and
-a frame over 64 KiB (`MAX_HUB_FRAME`, 1009). Nothing a command asks evaluates code, reads a file or reaches an
-instance.
+a frame over 64 KiB (`MAX_HUB_FRAME`, 1009). Nothing a command asks evaluates code or reaches an instance, and no
+command names a file: `openTrace` starts the project's own Playwright on the one file the lane's worker names, once it
+passed the checks.
 
 **Intents.** An intent is asked of the one stopped worker (or the one named), at the stop `since` names. It is refused
 at a stop no pause bar shows (`bar: false`) unless the connection watches that stop's live view, which drives it
@@ -1040,6 +1046,39 @@ above). The hub keeps none of them. The editor client's lane view takes the laye
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.
+
+### The trace so far
+
+**Open the trace so far** opens a lane's running test's trace in Playwright's trace viewer, on the machine the run
+runs on: the client's `piwi/openTrace` and the hub's `openTrace` (`ref`, `lane`) both reach `RunSessions.openTrace`,
+which a host gives a launcher (`RunSessionsOptions.traceViewer`: `startTraceViewer` in the service and in the desktop
+app's server; without one, the hub leaves `trace` out of its features and the request is refused).
+
+- **The worker names the file to the hub alone.** A worker whose `run-attach` lists `trace` in `features`
+  (`RunWorker.traces`, the hub session's worker `traces`) answers the request `trace` with the running attempt's own
+  trace file, the one Playwright's runner writes as the test runs
+  (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`), or why there is
+  none: no test runs, or the attempt is not traced. The service asks only a worker that runs a test, and an answer
+  that comes after the test ended opens nothing.
+- **The checks** (`checkTraceFile`): an absolute path; a name `<testId>[-retry<k>][-recording<N>].trace` of the attempt
+  that runs; a regular file now, no link (`lstat`); its folder, as the file system spells it, named `traces` in the
+  worker's own `.playwright-artifacts-<workerIndex>`; and inside the run's working directory or its config's folder,
+  as the file system spells them. Each refusal is a sentence.
+- **What the viewer opens.** `<traces>/<attempt>.json`, which names no file: Playwright's trace viewer server answers
+  it with every file of the folder whose name starts with the attempt's (the test's own context and the later ones,
+  their network files) and the folder's resources, and reads them as a live trace, an unfinished call shown running.
+  The viewer reads it once, as it stands when it loads: its service worker keeps a trace by its URL, so neither its
+  live poll nor a reload shows what came since (Playwright 1.59 to 1.64; a `.trace` file opened alone does not load,
+  being no archive). One viewer for each attempt at a time: a second ask while it is open says so, and to close it to
+  see the trace as it stands then.
+- **The launcher** (`startTraceViewer`): the Playwright CLI of the run's folder (`resolvePlaywrightCli`) with the
+  project's Node (`projectNode`), `show-trace <traces>/<attempt>.json` as an argument array with no shell, in the run's
+  folder, detached so its window outlives the service. A viewer that stops within 2 s (`TRACE_VIEWER_START_MS`)
+  did not start: its error output's first line says why (Playwright's browser not installed, no display). Once it
+  runs, its error output is read and dropped, and nothing of it holds the service open.
+- **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its
+  folders taken out (`withoutPaths`). No session, notice, hub message or answer carries it
+  (`tests/run-trace.test.ts`).
 
 ### Share live
 
@@ -1295,6 +1334,8 @@ surfaces as `server.ts` wires them to the client:
   nobody attends): their workers hear `attached` without `failure`, and a failure that stops one anyway goes on.
 - `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
   the folders a process of its own that was killed left behind.
+- `RunSessions` takes `traceViewer` too: the server starts Playwright's trace viewer from the linked folder's own
+  Playwright ([The trace so far](#the-trace-so-far)).
 - `RunHub` takes the `token` `hello` carries (the desktop token), the sentence its connections close with
   (`closing`), and `stopRun`, which sends `stop-run` to the app's windows on the hub's `stop`. `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket
@@ -1502,6 +1543,15 @@ branch (`PiwiContext.branch`).
 
 `src/piwi-client.ts` is the only file that talks to an instance; it also opens the event streams `src/run-stream.ts`
 reads. Every request carries the connection's key, when it has one, in `X-API-Key`.
+
+A run target's requests go through `src/request-host.ts` with the target's key. On its first list it ends the requests
+the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being claimed, or a run the
+shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others end, and an instance that
+names none ends nothing. A run that ended while no server held it comes in `PUT /key`'s `ended`: it ends with its own
+outcome, and the answer's `ended` names those reported so the shell forgets them; `/ended` for a request this server
+holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project names the instance gives beside the
+requests and in its describe answer (`projects`) reach the window through `onProjectNames`; a request object never
+carries one, as the parser refuses fields it does not know.
 
 Its requests go through `src/http.ts`. When the service's environment names a proxy (`HTTPS_PROXY`, `HTTP_PROXY`,
 `NO_PROXY`, upper or lower case, which both clients set from the editor's proxy settings):

@@ -177,6 +177,7 @@ import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
+import { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
@@ -297,6 +298,8 @@ import {
   type PageViewParams,
   type LaneViewParams,
   LANE_VIEW_REQUEST,
+  type OpenTraceParams,
+  OPEN_TRACE_REQUEST,
   LANE_FRAME_NOTIFICATION,
   LANE_LAYER_NOTIFICATION,
   type PageInputParams,
@@ -443,6 +446,8 @@ export interface ServerOptions {
   distDir?: string;
   /** Starts a recording's launcher; the bundled one by default. */
   launchRecorder?: LauncherFactory;
+  /** Starts Playwright's trace viewer on a running test's trace (`piwi/openTrace`); the project's own by default. */
+  traceViewer?: TraceViewerLauncher;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
   /**
@@ -1947,6 +1952,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const started = runLines.startedAt(ref);
       return disk && (started === null || disk.mtime <= started) ? disk.text : null;
     },
+    traceViewer: options.traceViewer ?? startTraceViewer,
   });
   clientPageView = new ClientPageView(
     runSessions,
@@ -4143,6 +4149,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     return runSessions.driveStop(at, clientPageView!.viewer, false, [clientLaneView!.viewer]);
   });
+  // The answer is a sentence: the trace's path stays in the service.
+  connection.onRequest(OPEN_TRACE_REQUEST, (params: OpenTraceParams): Promise<RunControlResult> =>
+    runSessions.openTrace(params),
+  );
+
   connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
     answersStops
       ? clientLaneView!.watch(params)
