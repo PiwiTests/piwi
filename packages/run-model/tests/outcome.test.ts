@@ -28,4 +28,9 @@ describe('how a run came out beyond its status', () => {
       '1 ended at a stop',
     ]);
   });
+
+  it('writes how many ended as it writes how many the run holds', () => {
+    const progress = { total: 2000, done: 1500, failed: 0, flaky: 0, skipped: 0 };
+    expect(progressWords(progress, en)).toEqual(['1,500 of 2,000 tests']);
+  });
 });

@@ -208,6 +208,8 @@ export interface RunSpeaker {
    * and its other placeholders the values of `args`.
    */
   count(key: RunCountKey, count: number, args?: RunWordArgs): string;
+  /** A number as the surface's language writes it, as `count` writes `$count$`: `1,500` in English. */
+  number(value: number): string;
   /** `A`, `A and B`, `A, B, and C`, as the surface's language lists names. */
   list(items: readonly string[]): string;
 }
@@ -229,5 +231,6 @@ export const englishRunSpeaker: RunSpeaker = {
     const form = englishPlural.select(count) === 'one' ? 'one' : 'other';
     return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { ...args, count: englishNumber.format(count) });
   },
+  number: (value) => englishNumber.format(value),
   list: (items) => englishList.format(items),
 };

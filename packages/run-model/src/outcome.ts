@@ -24,7 +24,7 @@ export function progressWords(
   progress: Pick<HubProgress, 'total' | 'done' | 'failed' | 'flaky' | 'skipped' | 'endedAtStop'>,
   speaker: RunSpeaker,
 ): string[] {
-  const words = [speaker.count('runs_progress', progress.total, { done: String(progress.done) })];
+  const words = [speaker.count('runs_progress', progress.total, { done: speaker.number(progress.done) })];
   if (progress.failed > 0) words.push(speaker.count('runs_progressFailed', progress.failed));
   if (progress.flaky > 0) words.push(speaker.count('runs_progressFlaky', progress.flaky));
   const ended = endedAtStopWords(endedAtStopOf(progress), speaker);
