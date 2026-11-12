@@ -12,7 +12,8 @@
     "./fold-text": "./src/fold-text.ts",
     "./run-view": "./app/utils/run-view.ts",
     "./status-palette": "./app/utils/status-palette.ts",
-    "./ui-classes": "./app/utils/ui-classes.ts"
+    "./ui-classes": "./app/utils/ui-classes.ts",
+    "./run-ui.css": "./app/assets/css/run-ui.css"
   },
   "scripts": {
     "run-ui:test": "vitest run",

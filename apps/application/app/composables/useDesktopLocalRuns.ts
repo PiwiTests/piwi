@@ -34,7 +34,7 @@ import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwite
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import { desktopRunRef } from '~/utils/desktop-run-view';
-import { stripAnsi } from '~/utils/text-format';
+import { stripAnsi } from '@piwitests/run-ui/ansi';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';

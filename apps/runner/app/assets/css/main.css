@@ -1,5 +1,6 @@
 @import 'tailwindcss' theme(static);
 @import '@nuxt/ui';
+@import '@piwitests/run-ui/run-ui.css';
 
 @theme static {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;

@@ -41,5 +41,14 @@ export function useRunnerRuns() {
     if (kept) kept.holdFailures = on;
   }
 
-  return { runs, listen, startRequest, stopRun, setHold };
+  /**
+   * Stops a run the hub still shows but this window has no entry for (it was reloaded while the run went on), by the
+   * shell's id of it.
+   */
+  function stopShellRun(shellId: number) {
+    const core = tauriCore();
+    return core ? core.invoke('desktop_stop_local_tests', { runId: shellId }).catch(() => {}) : Promise.resolve();
+  }
+
+  return { runs, listen, startRequest, stopRun, setHold, stopShellRun };
 }

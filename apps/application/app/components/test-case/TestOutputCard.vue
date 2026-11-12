@@ -4,7 +4,7 @@
  * its colors rendered, and past the reporter's budget its first and last lines, with the line between them saying
  * how much was cut. Each stream can be copied as plain text.
  */
-import { stripAnsi } from '~/utils/text-format';
+import { stripAnsi } from '@piwitests/run-ui/ansi';
 
 const props = defineProps<{
   stdout?: string | null;

@@ -193,3 +193,9 @@ export function renderAnsi(text: string, { onDark = false }: { onDark?: boolean 
   push(text.slice(last));
   return parts.join('');
 }
+
+/** The text without its ANSI escape sequences (colors, cursor moves), as plain text. */
+export function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+}

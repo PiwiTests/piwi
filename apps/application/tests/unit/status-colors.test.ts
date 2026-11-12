@@ -13,10 +13,10 @@ import {
 import { PASS_RATE_STEPS, PASS_RATE_TONES } from '../../app/utils/pass-rate';
 import { STATUS_PALETTE } from '@piwitests/run-ui/status-palette';
 
-const css = readFileSync(resolve(__dirname, '../../app/assets/css/main.css'), 'utf8');
+const css = readFileSync(resolve(__dirname, '../../../../packages/run-ui/app/assets/css/run-ui.css'), 'utf8');
 
 describe('shared status colors', () => {
-  test('every --color-status-* token in main.css points at the shared palette entry', () => {
+  test('every --color-status-* token in run-ui.css points at the shared palette entry', () => {
     const tokens = new Map<string, string>();
     // The first definition is the light one; `.dark` restates some tokens further down.
     for (const match of css.matchAll(/--color-status-([a-z]+):\s*var\(--color-([a-z]+-\d+)\)/g)) {

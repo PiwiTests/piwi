@@ -1,8 +1,9 @@
 import type { Component, InjectionKey } from 'vue';
 
 /**
- * What a host's window adds to the live view of its runs (`DesktopRunWorker`), provided once by the host
- * (`provideRunViewHost`): what only that host can do. Without it, the view offers neither.
+ * What a host's window adds to the live view of its runs (`DesktopRunWorker`): what only that host can do, which it
+ * provides once to the whole app under `RUN_VIEW_HOST` (the dashboard's `plugins/run-view-host.ts`). Without it, the
+ * view offers neither.
  */
 export interface RunViewHost {
   /** **Open in a window**: the shell opens a worker in a window of its own (`desktop_open_worker_window`). */

@@ -42,11 +42,4 @@ export function isUnattendedDesktopRun(ref: string): boolean {
   return isUnattendedRef(ref);
 }
 
-export {
-  DESKTOP_PICKS_PATH,
-  MAX_KEPT_STOP_CODES,
-  isDesktopRunViewer,
-  type DesktopRunCommand,
-  type DesktopRunEvent,
-  type DesktopRunPick,
-} from '@piwitests/editor/shell-run-events';
+export { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '@piwitests/editor/shell-run-events';
