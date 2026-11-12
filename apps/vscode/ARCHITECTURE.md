@@ -467,9 +467,11 @@ away (`changed`), so a rerun under the ref starts with it off.
 **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
-not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is drawn
-anew (`shown`), so a message of the view before reaches nothing; at a stop, Interact's input and the pick on a click
-name that stop, as on the paused page. Interact is offered, and its input sent, only once the service accepted the
+not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is a
+view of its own (`shown`), so a message of the view before reaches nothing; at a stop, Interact's input and the pick on
+a click name that stop, as on the paused page. The document stays the slot's: its script takes the next view's `shown`
+from the state posted, the input made for the view before naming that one, so it goes nowhere, and keeps the layers
+and the strip's images it holds. A new slot or CI lane draws a new document; closing the panel forgets the layers. Interact is offered, and its input sent, only once the service accepted the
 watch (`accepted`, which the view's `live.input` follows). It stays on through the stops of the slot and the
 stretches between them (`laneKeepsInteract`), and going off gives back the stop it was last on for (`interactAt`), as
 on the paused page. A headless stop of the slot the panel watches, in sight, opens no paused page, and no stop's file
@@ -579,7 +581,8 @@ until one says `ended`, or the service stops (`withCiSession`).
   (`withLaneLayer`, which keeps one image per call as the worker sends the strip again, and starts the call log and
   the strip anew for another test, another worker, a retry's, or an image placed at or before the strip's last of a
   call it does not hold) and posts its script the parts
-  that changed, each JPEG once per document (`laneLayersMessage`); the script sets every run text with `textContent`.
+  that changed, each JPEG once per document, the slot's (`laneLayersMessage`); the script sets every run text with
+  `textContent`.
   A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`).
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several

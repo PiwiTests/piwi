@@ -3,17 +3,18 @@
  * stopped: the page of the test the worker there runs, a few images a second, through its tests and stops and the
  * worker Playwright starts in its place, the last image kept, dimmed, until the next one comes. At a stop of its test,
  * Interact sends clicks and keys to the page (`piwi/pageInput`) and Shift+click picks the element under it
- * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is drawn anew, so a
- * message of the panel names the stop it was drawn for. Interact is offered once the service accepts the watch, and
- * stays on through the slot's next stops while the watch goes on; the person's first click, key, wheel or pick drives
- * the stop, and Interact going off gives it back (`piwi/driveStop`). One slot at a time; a stop elsewhere never takes
- * it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the wheel or a
- * pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the paused page as
- * new ones (`hooks`). It also watches a CI run's lane through the team instance (`piwi/ciWatch`, `piwi/ciFrame`),
- * read-only: Watch alone, no Interact, input or pick, its caption from the CI sessions, and why the watch ended said
- * under it. One slot, local or CI, at a time. Under the image, the lane's layers (`piwi/laneLayer`, `piwi/ciLayer`):
- * Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked for while their section is open,
- * kept for the slot it shows. The pure half is `run-control.ts`.
+ * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is a view of its own
+ * in the slot's document, so a message of the panel names the stop it was drawn for. Interact is offered once the
+ * service accepts the watch, and stays on through the slot's next stops while the watch goes on; the person's first
+ * click, key, wheel or pick drives the stop, and Interact going off gives it back (`piwi/driveStop`). One slot at a
+ * time; a stop elsewhere never takes it over. The view ends while the panel is hidden and starts again as it shows. A
+ * press, a key, text, the wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers
+ * its held stops to the paused page as new ones (`hooks`). It also watches a CI run's lane through the team instance
+ * (`piwi/ciWatch`, `piwi/ciFrame`), read-only: Watch alone, no Interact, input or pick, its caption from the CI
+ * sessions, and why the watch ended said under it. One slot, local or CI, at a time. Under the image, the lane's layers
+ * (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked
+ * for while their section is open, kept for the slot it shows until the panel closes. The pure half is
+ * `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -474,6 +475,7 @@ export function createWorkerPanel(
       target = null;
       ciTarget = null;
       view = null;
+      forgetLayers();
       if (!disposed) hooks.changed();
     });
     return made;
@@ -612,15 +614,17 @@ export function createWorkerPanel(
       if (!laneKeepsInteract(interacting, lane.stop)) interactOff();
       else if (lane.stop) interactAt = lane.stop;
       if ((lane.stop?.stop.since ?? null) === before) return draw();
-      // A new stop, or the worker going on, is drawn anew, Interact kept: no message of the view before reaches it.
+      // A new stop, or the worker going on, is a view of its own, Interact kept: no message of the view before reaches
+      // it. The document stays, with the layers and the strip's images it holds.
       shown++;
       note = null;
-      draw(true);
+      draw();
     },
     dispose() {
       disposed = true;
       for (const subscription of subscriptions) subscription.dispose();
       stopWatching();
+      forgetLayers();
       panel?.dispose();
     },
   };

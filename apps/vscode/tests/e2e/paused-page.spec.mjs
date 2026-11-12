@@ -279,3 +279,60 @@ test('the worker panel watches its slot, dims an image of what the worker left, 
   await page.getByLabel('Watch', { exact: true }).uncheck();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 7, on: false });
 });
+
+test('the worker panel shows its slot’s next stop in its document, the strip’s images kept, its messages naming it', async ({
+  page,
+}) => {
+  const image = "The page of the worker's test";
+  const { view, state } = await preview(
+    page,
+    {
+      caption: 'Worker 2 · Paused · checkout.spec.ts:12',
+      lane: true,
+      stale: false,
+      pick: null,
+      live: { shown: 7, on: true, input: true, interacting: true, clickCounts: true },
+      layers: { text: true, filmstrip: true, note: null },
+    },
+    image,
+  );
+  const strip = [{ call: 'c1', title: 'Click', index: 1 }];
+  await page.evaluate(
+    ([strip, data]) => window.postMessage({ type: 'layers', shown: 7, strip, images: { c1: data } }, '*'),
+    [strip, view.image.data],
+  );
+  await expect(page.getByRole('button', { name: '1. Click' })).toBeVisible();
+  // The next stop: a view of its own in the same document, which keeps the image of the strip it holds.
+  view.caption = 'Worker 2 · Paused · checkout.spec.ts:14';
+  view.live = { ...view.live, shown: 8 };
+  await state();
+  await expect(page.getByText(view.caption, { exact: true })).toBeVisible();
+  await page.evaluate(
+    (strip) =>
+      window.postMessage({ type: 'layers', shown: 8, strip: [...strip, { call: 'c2', title: 'Fill', index: 2 }] }, '*'),
+    strip,
+  );
+  await expect(page.getByRole('button', { name: '1. Click' })).toBeVisible();
+  expect(await page.evaluate(() => window.messages.filter((m) => m.type === 'ready'))).toHaveLength(1);
+  // A state of the view before changes nothing now; the input and the toggles name the new view.
+  await page.evaluate(
+    (view) =>
+      window.postMessage({ type: 'state', view: { ...view, caption: 'Stale', live: { ...view.live, shown: 7 } } }, '*'),
+    view,
+  );
+  await expect(page.getByText(view.caption, { exact: true })).toBeVisible();
+  await page.getByRole('img', { name: image }).click({ position: { x: 100, y: 80 } });
+  await expect
+    .poll(() => page.evaluate(() => window.messages.filter((m) => m.type === 'input').map((m) => m.shown)))
+    .toEqual([8]);
+  // Take the text again is off until the extension says its ask was answered.
+  const again = page.getByRole('button', { name: 'Take the text again' });
+  await again.click();
+  await expect(again).toBeDisabled();
+  expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'text', shown: 8 });
+  view.layers = { ...view.layers, textAsking: false };
+  await state();
+  await expect(again).toBeEnabled();
+  await page.getByLabel('Watch', { exact: true }).uncheck();
+  expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 8, on: false });
+});

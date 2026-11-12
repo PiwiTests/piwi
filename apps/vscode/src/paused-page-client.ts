@@ -8,7 +8,8 @@ const picture = document.getElementById('page') as HTMLImageElement;
 const live = document.getElementById('live') as HTMLInputElement;
 const interact = document.getElementById('interact') as HTMLInputElement;
 const note = document.getElementById('note')!;
-const shown = Number(picture.dataset.shown);
+/** The view drawn, as the extension counts them: the worker panel shows its slot's next stop in the same document. */
+let shown = Number(picture.dataset.shown);
 let view: PausedPageView | null = null;
 let captured = false;
 const post = (message: Record<string, unknown>) => vscode.postMessage({ ...message, shown });
@@ -22,7 +23,9 @@ const finishing = new Set<ViewInputBatcher>();
 let toggled = Promise.resolve();
 /** Toggles changed whose message is not posted yet: the extension's state leaves the checkboxes as they are. */
 let toggling = 0;
+/** The input of the view drawn now, which names that view whenever it goes out: none of it reaches a later one. */
 const createInput = (): ViewInputBatcher => {
+  const at = shown;
   const own: ViewInputBatcher = new ViewInputBatcher({
     clickCounts: picture.dataset.clickCounts === 'true',
     send: async (events) => {
@@ -43,7 +46,7 @@ const createInput = (): ViewInputBatcher => {
             resolve(ok);
           },
         });
-        post({ type: 'input', events, id });
+        vscode.postMessage({ type: 'input', events, id, shown: at });
       });
     },
   });
@@ -62,8 +65,8 @@ function point(e: MouseEvent) {
     y: Math.min(view.image.height - 1, (y * view.image.height) / box.height),
   };
 }
-/** The input waiting is dropped, and what the page holds let go of: the pointer or the focus left the image. */
-function release() {
+/** The input waiting is dropped, its batches unanswered failing, and a new input made for the view drawn now. */
+function dropInput() {
   captured = false;
   const dropped = input;
   dropped.dispose();
@@ -73,6 +76,10 @@ function release() {
     wait.answered(false);
   }
   input = createInput();
+}
+/** The input waiting is dropped, and what the page holds let go of: the pointer or the focus left the image. */
+function release() {
+  dropInput();
   post({ type: 'release' });
 }
 /**
@@ -184,7 +191,14 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     pending.delete(result.id);
     return;
   }
-  if (event.data?.type !== 'state' || event.data.view.live?.shown !== shown) return;
+  if (event.data?.type !== 'state' || !event.data.view.live || event.data.view.live.shown < shown) return;
+  if (event.data.view.live.shown > shown) {
+    // The worker panel's next stop, or its worker going on, in this document: the input held for the view before
+    // goes nowhere, and the messages from now on name this one.
+    shown = event.data.view.live.shown;
+    picture.dataset.clickCounts = String(event.data.view.live.clickCounts);
+    dropInput();
+  }
   if (active() && (!event.data.view.live.on || !event.data.view.live.interacting)) release();
   view = event.data.view;
   if (!toggling) {
