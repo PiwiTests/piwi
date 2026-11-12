@@ -57,7 +57,8 @@ const DEMO_DECLARED_ISSUES = new Map([
 
 /**
  * The issues the demo's Jira answers a lookup of the keys the tests name with, as the bulk lookup returns them. The
- * seed links them as the link step would, and a simulated run that fails into the cluster looks them up here.
+ * seed links them as the link step would, and a simulated run that fails into the cluster looks them up here. The
+ * demo binding's issue type is Bug (id 1), the only type the tag source links.
  */
 export const DEMO_JIRA_ISSUES = [
   {
@@ -67,6 +68,8 @@ export const DEMO_JIRA_ISSUES = [
     status: 'In Progress',
     statusColor: 'warning',
     statusCategory: 'indeterminate',
+    issueType: 'Bug',
+    issueTypeId: '1',
   },
   {
     key: 'DEMO-61',
@@ -75,6 +78,28 @@ export const DEMO_JIRA_ISSUES = [
     status: 'Done',
     statusColor: 'success',
     statusCategory: 'done',
+    issueType: 'Bug',
+    issueTypeId: '1',
+  },
+  {
+    key: 'DEMO-52',
+    id: '10052',
+    title: 'Pay button stays disabled until the PayPal sheet has loaded',
+    status: 'To Do',
+    statusColor: 'info',
+    statusCategory: 'new',
+    issueType: 'Bug',
+    issueTypeId: '1',
+  },
+  {
+    key: 'DEMO-53',
+    id: '10053',
+    title: 'Document the payment timeout in the checkout runbook',
+    status: 'To Do',
+    statusColor: 'info',
+    statusCategory: 'new',
+    issueType: 'Task',
+    issueTypeId: '2',
   },
 ];
 
@@ -100,6 +125,12 @@ export function demoTags(filePath, index) {
   const tags = [];
   if (index === 0) tags.push('smoke');
   if (/\/checkout\//.test(`/${filePath}`)) tags.push('critical');
+  // Issues of the bound DEMO project named in tags, read by the project's issue key pattern: the tag source links
+  // DEMO-52, a Bug, and not DEMO-53, a Task.
+  if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
+    if (index === 0) tags.push('DEMO-53');
+    if (index === 1) tags.push('DEMO-52');
+  }
   if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
     if (index === 1) tags.push('SHOP-1234');
     if (index === 2) tags.push('SHOP-T123');

@@ -44,7 +44,9 @@ stopped test shown: a run's worker tabs show one worker at a time. Step and Fini
 | `Shift` + `F11` | Finish |
 
 While **Interact** is on at a [watched stop](/features/runs-window#click-and-type-on-the-view), the view takes your
-keys: characters are typed, named keys (Enter, the arrows, Backspace, Delete, Home, End) pressed, with Shift, and
+pointer: moves, left and right clicks, double and triple clicks as your system counts them, drags, and the wheel once
+the view has the focus, with `Ctrl`, `Alt` and `⌘` held with a click held in the page too. It takes your keys while it
+has the focus (a focus ring around it), and a paste, which types the clipboard's text: characters are typed, named keys (Enter, the arrows, Backspace, Delete, Home, End) pressed, with Shift, and
 `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the editing keys. The browser's other shortcuts, the function keys and
 `Esc` stay the window's: `Esc` turns **Interact** off, gives
 the stop back and moves the focus to **Interact**. While a pick or a check runs on the page, `Esc` goes to the page

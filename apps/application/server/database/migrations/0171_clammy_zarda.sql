@@ -1,0 +1,1 @@
+ALTER TABLE `project_integrations` ADD `declared_issue_types` text;

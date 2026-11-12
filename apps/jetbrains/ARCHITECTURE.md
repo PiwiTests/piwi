@@ -557,7 +557,13 @@ other worker's is, and while the Worker tab is in sight (the tool window shows, 
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
 The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off. Both tabs close
 (`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
-opens it again, and the Paused Page stops its view and the next stop opens it again.
+opens it again, and the Paused Page stops its view and the next stop opens it again. **Open the Trace So Far**, beside
+Watch while the slot's worker runs a test whose reporter answers trace asks (`Glue.canOpenTrace`, as the run model's
+`canOpenTrace`; never on a CI lane), sends `piwi/openTrace` for the tab's slot (`PiwiRunSessions.openTrace`, through
+`RunRemote`), one ask per slot at a time: the slot's button is off until the service answers its own ask, another
+slot's takes a press. It says each sentence in a balloon, a warning when it is not `ok`, naming the worker it is for
+(`Worker 1: …`, `Glue.traceAnswerText`) when the tab shows another slot by then: the service starts Playwright's trace
+viewer on the machine the run runs on, and the trace's path never reaches the IDE.
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool

@@ -8,7 +8,8 @@
  * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
  * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
- * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
+ * set, checked field by field and answered once; nothing it asks evaluates code or reaches an instance, and none names
+ * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
  * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
  * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
@@ -22,9 +23,11 @@
  * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
  * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
- * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
- * hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
+ * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection
+ * opens a lane's running test's trace so far in Playwright's trace viewer on this machine (`openTrace`), its answer a
+ * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection; one that came
+ * through a port the client forwards is on another machine, and opens none. A connection the hub closes is cut a
+ * second later when the other side does not answer the close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
  * live hubs of the machine (`peers`, from the host's `peers`: their addresses, never their tokens) after the runs, and
  * again each time the list changes, read every `PEERS_MS` while one is subscribed. A host may join a peer of its own transport (`join`:
  * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
@@ -51,8 +54,8 @@ import {
   MAX_HUB_ROOTS,
   MAX_HUB_WARNINGS,
   hubPeersOf,
+  hubHostPort,
   isExtensionOrigin,
-  isHubHost,
   parseHubCommand,
   parseHubHello,
   type HubAnswer,
@@ -91,10 +94,20 @@ export interface HubRunInfo {
   project: string | null;
 }
 
-/** The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`). */
-export function hubFeatures(options: Pick<RunHubOptions, 'stopRun'>): HubFeature[] {
-  return HUB_FEATURES.filter((feature) => feature !== 'stop' || !!options.stopRun);
+/**
+ * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
+ * run sessions start Playwright's trace viewer (`opensTraces`) and the connection is on this machine, not `forwarded`.
+ */
+export function hubFeatures(options: Pick<RunHubOptions, 'stopRun' | 'sessions'>, forwarded = false): HubFeature[] {
+  return HUB_FEATURES.filter(
+    (feature) =>
+      (feature !== 'stop' || !!options.stopRun) &&
+      (feature !== 'trace' || (options.sessions.opensTraces && !forwarded)),
+  );
 }
+
+/** Why `openTrace` is refused to a connection that came through a port the client forwards. */
+const TRACE_ELSEWHERE = "Playwright's trace viewer would open on the machine the run runs on, not this one.";
 
 export interface RunHubOptions {
   sessions: RunSessions;
@@ -171,6 +184,11 @@ interface Connection {
   transport: HubTransport;
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
+  /**
+   * Its handshake named a port the client forwards to the hub (`forwarded`): it comes from another machine, the
+   * browser's, where no trace viewer of this one shows.
+   */
+  forwarded: boolean;
   subscribed: boolean;
   /** It subscribed only to observe (`observe`): it answers no stop. */
   observes: boolean;
@@ -460,10 +478,11 @@ export class RunHub {
     };
   }
 
-  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who']): Connection {
+  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who'], forwarded = false): Connection {
     const connection: Connection = {
       transport,
       ws,
+      forwarded,
       subscribed: false,
       observes: false,
       pending: 0,
@@ -500,7 +519,8 @@ export class RunHub {
     // this machine sends none (the desktop app's server): its `hello` holds the token as an extension's does.
     const forwarded = this.options.forwarded?.() ?? [];
     const origin = req.headers.origin;
-    if (!isHubHost(req.headers.host, this.port, forwarded) || (origin !== undefined && !isExtensionOrigin(origin))) {
+    const port = hubHostPort(req.headers.host, this.port, forwarded);
+    if (port === null || (origin !== undefined && !isExtensionOrigin(origin))) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no
@@ -515,12 +535,13 @@ export class RunHub {
     if (open.length >= MAX_CONNECTIONS || unauthenticated >= MAX_UNAUTHENTICATED) {
       return refuse(socket, 503, 'Service Unavailable');
     }
-    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws));
+    // A port the client forwards is the browser's machine's, even one of the same number as the hub's own.
+    this.sockets.handleUpgrade(req, socket, head, (ws) => this.accept(ws, forwarded.includes(port)));
   }
 
-  private accept(socket: WebSocket): void {
+  private accept(socket: WebSocket, forwarded: boolean): void {
     const ws: Socket = { socket, authenticated: false, alive: true, cutting: false };
-    const connection = this.connection(socketTransport(socket), ws, PICKER);
+    const connection = this.connection(socketTransport(socket), ws, PICKER, forwarded);
     this.connections.add(connection);
     const hello = setTimeout(
       () => closeWith(ws, HUB_CLOSE.helloTimeout, 'No hello in time.'),
@@ -546,7 +567,7 @@ export class RunHub {
           client: cut(client, MAX_HUB_CLIENT),
           roots: roots.slice(0, MAX_HUB_ROOTS),
           keepaliveMs: this.options.keepaliveMs ?? HUB_KEEPALIVE_MS,
-          features: hubFeatures(this.options),
+          features: hubFeatures(this.options, connection.forwarded),
         });
         return;
       }
@@ -688,6 +709,10 @@ export class RunHub {
           const { ref, worker, since, on } = command;
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
         }
+        case 'openTrace':
+          if (connection.forwarded) return reply({ ok: false, message: TRACE_ELSEWHERE });
+          // The answer is a sentence: the trace's path stays with the hub.
+          return reply(await sessions.openTrace({ ref: command.ref, lane: command.lane }));
         case 'watch': {
           const { ref, lane, on, layers } = command;
           const answer = await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer);
@@ -723,8 +748,9 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, traces, ...worker }) => ({
         ...worker,
+        ...(traces ? { traces: true as const } : {}),
         // Each surface names the stop's line where it stands now, as the editor does.
         ...(worker.stop
           ? {

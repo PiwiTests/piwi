@@ -84,7 +84,9 @@ the editor is out of reach.
 Under the page, from a reporter newer than 0.68.0, the window shows what pixels cannot, as the editor does
 ([beside the image](./watch-running-test#beside-the-image)): **Why it waits**, **Events**, **Text** (**Show the
 page's text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click
-enlarges an image, with its call), kept in memory alone.
+enlarges an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens
+Playwright's trace viewer on the running test's trace up to now, on the machine the run runs on, with a reporter
+newer than 0.68.0: [Watch a running test](./watch-running-test#open-the-trace-so-far).
 
 At a headless stop, which nobody sees, the picker, the recorder's panel and the check panel appear in the watched
 view, answered there as in a headed browser; their code reaches the editor the same way.
@@ -96,14 +98,10 @@ view, answered there as in a headed browser; their code reaches the editor the s
 
 ## Click and type on the view
 
-While you watch, [**Interact**](./watch-running-test#interact), beside **Watch live** or **Watch**, sends your input on
-the view to the page as a person's would, the picker and the recorder included:
-
-- **The pointer**: moves, left and right clicks, double and triple clicks as your system counts them, drags, and the
-  wheel once the view has the focus. `Ctrl`, `Alt` and `⌘` held with a click are held in the page too.
-- **The keys**, while the view has the focus (a focus ring around it), and a paste, which types the clipboard's text.
-  Which go to the page and which stay the window's: the
-  [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
+While you watch, [**Interact**](./watch-running-test#interact), beside **Watch live** or **Watch**, sends your
+pointer, wheel and keys on the view to the page as a person's would, the picker and the recorder included. Which
+reach the page, a paste included, and which stay the window's: the
+[keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A hint under the view says so the first time. What you hold down is let go before the test goes on.
 
@@ -137,6 +135,5 @@ and **Mock a request** goes to the app's window to copy, as the window here says
 - [Code from a pause](./editor-stop-code): what each action writes, and where.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
 - [Remote development](/guide/remote-development): the runs of a dev container or a remote window.
-- [A CI run of your branch](./watch-running-test#a-ci-run-of-your-branch): listed here read-only.
 - [Piwi Picker and your editor](./editor-pairing): how the pairing reaches each editor window and the desktop app,
   on your machine alone.

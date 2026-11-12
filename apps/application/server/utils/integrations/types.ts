@@ -56,6 +56,8 @@ export interface TrackerIssue {
   projectKey?: string | null;
   /** The issue type's name, e.g. "Bug"; absent when the tracker did not say. */
   issueType?: string | null;
+  /** The issue type's id, e.g. "10004"; absent when the tracker did not say. */
+  issueTypeId?: string | null;
 }
 
 /** The most keys one bulk lookup takes (Jira Cloud's bulk fetch limit). */

@@ -26,7 +26,9 @@
  * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only once its Hold
  * failures is turned on. A person shares a run live on the team instance its reporter reports to (`share`, **Share
  * live**, never an agent): each worker that takes it opens its live view stream there, a worker that connects later
- * too, and says how it stands (`live`), which the session sums up (`RunSession.live`).
+ * too, and says how it stands (`live`), which the session sums up (`RunSession.live`). Any surface opens a lane's
+ * running test's trace so far in Playwright's trace viewer on this machine (`openTrace`): its worker names the file to
+ * the sessions alone, which check it and answer in a sentence.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -58,6 +60,7 @@ import {
   type RunTake,
   type RunToHub,
   type SnapshotAnswer,
+  type TraceAnswer,
 } from '@piwitests/core/run-channel';
 import { parseLiveAskAnswer } from '@piwitests/core/live-view';
 import { LANE_LAYERS, LANE_TEXTS_PER_SECOND, type LaneLayer } from '@piwitests/core/live-layers';
@@ -86,10 +89,12 @@ import type {
   AskToWatchParams,
   AnswerAskParams,
   LaneViewLayer,
+  OpenTraceParams,
 } from './protocol.js';
 import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
 import { breakpointLines, runToLine } from './recorder/page-candidates.js';
+import { checkTraceFile, hasDisplay, type TraceViewerLauncher } from './trace-viewer.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
@@ -120,6 +125,7 @@ type Answered =
   | SnapshotAnswer
   | RefLocatorAnswer
   | BindAnswer
+  | TraceAnswer
   | null;
 
 /**
@@ -308,6 +314,39 @@ const QUERY_WORDS: Record<Query, string> = {
   bind: 'share its browser with Playwright tools',
 };
 
+/** Why **Open the trace so far** is refused for a worker whose reporter does not say where its trace grows. */
+const CANNOT_TRACE = "This worker's reporter cannot open its trace: update @piwitests/reporter.";
+
+/** Why **Open the trace so far** is refused between two tests. */
+const NO_TEST = 'No test runs on this worker now.';
+
+/** Why **Open the trace so far** is refused on a machine that shows no window (`traceDisplay`). */
+const NO_DISPLAY = "This machine has no display for Playwright's trace viewer.";
+
+/** Why **Open the trace so far** is refused in a run whose folder the host does not know (`rootOf`). */
+const NO_ROOT = "This run's folder is not known here: open its trace from the editor or the app that started it.";
+
+/** `text` with its first letter in capitals. */
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The longest reason a viewer that did not start gives a surface, in characters. */
+const MAX_TRACE_REASON = 300;
+
+/**
+ * A viewer's reason with the trace's path and its folders left out, with either separator, then cut to
+ * `MAX_TRACE_REASON`: the reason goes to every surface, the path to none, whole or in part. Its trailing period is left
+ * out: the sentence ends it.
+ */
+function withoutPaths(reason: string, paths: readonly string[]): string {
+  let said = reason;
+  for (const known of paths.flatMap((p) => [p, p.split(path.sep).join('/')]).sort((a, b) => b.length - a.length)) {
+    if (known) said = said.split(known).join("the test's trace");
+  }
+  return said.slice(0, MAX_TRACE_REASON).replace(/[.\s]+$/, '') || 'it did not say why';
+}
+
 /** Why the input of a viewer that does not watch the stop is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
@@ -418,6 +457,16 @@ export interface RunSessionsOptions {
   requestMs?: number;
   /** How long after a worker was asked for its page's text another ask of it is merged with that one. */
   laneTextMs?: number;
+  /**
+   * Starts Playwright's trace viewer on a lane's running test's trace (`openTrace`, **Open the trace so far**): the
+   * service's and the desktop app's server's `startTraceViewer`. Absent, no trace is opened.
+   */
+  traceViewer?: TraceViewerLauncher;
+  /**
+   * Whether this machine shows the trace viewer's window: `hasDisplay` by default. Without one, no worker says it opens
+   * its trace (`RunWorker.traces`), the hub leaves `trace` out of its features, and `openTrace` is refused.
+   */
+  traceDisplay?(): boolean;
 }
 
 interface Worker {
@@ -532,6 +581,7 @@ type Asked =
   | 'image'
   | 'view-lane'
   | 'text'
+  | 'trace'
   | 'front'
   | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end' | 'share'>
   | AgentQuery;
@@ -541,6 +591,7 @@ function requestOf(request: number, what: Asked, stop: number, extra: RequestExt
   switch (what) {
     case 'image':
     case 'text':
+    case 'trace':
       return { type: 'request', request, what };
     case 'view-lane':
       return { type: 'request', request, what, on: extra.on ?? false };
@@ -643,9 +694,24 @@ export class RunSessions {
   private viewersNamed = 0;
   /** Each run's **Hold failures** as a person or an agent set it, by ref, the latest `MAX_KEPT_RUNS`. */
   private readonly holdsSet = new Map<string, RunHoldFailures>();
+  /** The live traces a trace viewer is open on, or starting on, by what it opens: one viewer for each attempt. */
+  private readonly traceViewers = new Set<string>();
   private lastRequest = 0;
 
   constructor(private readonly options: RunSessionsOptions) {}
+
+  /**
+   * Whether this host opens a lane's running test's trace in Playwright's trace viewer (`openTrace`): it starts one, on
+   * a machine that shows its window.
+   */
+  get opensTraces(): boolean {
+    return !!this.options.traceViewer && this.showsTraceViewer();
+  }
+
+  /** Whether this machine shows the trace viewer's window (`traceDisplay`). */
+  private showsTraceViewer(): boolean {
+    return this.options.traceDisplay ? this.options.traceDisplay() : hasDisplay();
+  }
 
   /** What the sentences call the host the workers connect to. */
   private get host(): string {
@@ -1631,6 +1697,68 @@ export class RunSessions {
     return asked.answer;
   }
 
+  /**
+   * **Open the trace so far** of the lane `lane` of the run `ref`: its worker names where its running test's trace
+   * grows, to this host alone; the file passes `checkTraceFile`, and Playwright's trace viewer starts on it from the
+   * run's folder as this host knows it (`session.root`, never the folder the worker names; a run without one opens
+   * none), one for each attempt at a time (`traceViewer`). Answered in a sentence that never names the file, which no
+   * message, log or answer of the host carries.
+   */
+  async openTrace(params: OpenTraceParams): Promise<RunControlResult> {
+    const launch = this.options.traceViewer;
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const lane = params?.lane;
+    if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
+    if (!launch) return { ok: false, message: `${capitalized(this.host)} cannot open a trace.` };
+    if (!this.showsTraceViewer()) return { ok: false, message: NO_DISPLAY };
+    if (!session || session.ended) return { ok: false, message: this.noWorker(session) };
+    const root = session.root;
+    if (root === null) return { ok: false, message: NO_ROOT };
+    const worker = [...session.workers.values()].find((w) => w.parallelIndex === lane);
+    if (!worker) return { ok: false, message: `This run has no worker ${lane + 1} now.` };
+    if (!worker.features.has('trace')) return { ok: false, message: CANNOT_TRACE };
+    if (!worker.test) return { ok: false, message: NO_TEST };
+    const test = worker.test;
+    const answer = (await this.ask(worker, 'trace')) as TraceAnswer | null;
+    if (!answer) return { ok: false, message: 'The test did not answer.' };
+    if (!answer.ok) return { ok: false, message: answer.message };
+    if (worker.test?.id !== test.id || worker.test.retry !== test.retry) {
+      return { ok: false, message: 'The test ended: open the trace of the one that runs now.' };
+    }
+    const checked = checkTraceFile(answer.file, {
+      folder: root,
+      worker: worker.index,
+      testId: test.id,
+      retry: test.retry,
+    });
+    if (!checked.ok) return { ok: false, message: checked.message };
+    if (this.traceViewers.has(checked.trace)) {
+      return {
+        ok: false,
+        message:
+          "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+      };
+    }
+    this.traceViewers.add(checked.trace);
+    const started = await launch({ folder: root, trace: checked.trace }).catch(
+      (error: unknown): { ok: false; reason: string } => ({
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    if (!started.ok) {
+      this.traceViewers.delete(checked.trace);
+      const reason = withoutPaths(started.reason, [
+        answer.file,
+        path.dirname(answer.file),
+        path.dirname(checked.trace),
+      ]);
+      return { ok: false, message: `Playwright's trace viewer could not start: ${reason}.` };
+    }
+    void started.closed.finally(() => this.traceViewers.delete(checked.trace));
+    return { ok: true, message: "Playwright's trace viewer opened on the trace so far." };
+  }
+
   /** Whether `viewer` watches the lane `lane` of the run `ref`, which ends with the run. */
   watchesLane(viewer: Viewer, ref: string, lane: number): boolean {
     const session = this.sessions.get(ref);
@@ -2447,6 +2575,7 @@ export class RunSessions {
           watchable: worker.features.has('view-lane'),
           layers: worker.features.has('view-lane') && worker.features.has('layers'),
           showsWindow: worker.features.has('front'),
+          ...(worker.features.has('trace') && session.root !== null && this.opensTraces ? { traces: true } : {}),
           ...watchersField(this.watchersOf(session, worker, null)),
         })),
       ended: session.ended,

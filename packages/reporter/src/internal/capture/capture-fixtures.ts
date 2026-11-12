@@ -2497,6 +2497,25 @@ function attemptTrace(testInfo: TestInfo): { dir: string; base: string } | null 
 }
 
 /**
+ * Whether the runner traces the attempt, as its tracing's options say once the attempt began (`_tracing.traceOptions()`,
+ * Playwright internal: the options, with their `mode`, for a traced attempt, none for another); null on a runner of
+ * another shape.
+ */
+export function runnerTraces(testInfo: TestInfo): boolean | null {
+  const tracing = (testInfo as unknown as { _tracing?: { traceOptions?: unknown } })._tracing;
+  if (typeof tracing?.traceOptions !== 'function') return null;
+  let options: unknown;
+  try {
+    options = (tracing.traceOptions as () => unknown).call(tracing);
+  } catch {
+    return null;
+  }
+  if (options === undefined) return false;
+  const mode = (options as { mode?: unknown } | null)?.mode;
+  return typeof mode === 'string' ? mode !== 'off' : null;
+}
+
+/**
  * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
  * failed; any other status as Playwright tells it.
  */
@@ -4163,6 +4182,7 @@ export const piwiFixtures: Fixtures<
         titleOf: (id) => stepTitleOf(testInfo, id),
         fixtureCall: (id) => fixtureStep(testInfo, id),
         trace: attemptTrace(testInfo),
+        traced: () => runnerTraces(testInfo),
       });
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();

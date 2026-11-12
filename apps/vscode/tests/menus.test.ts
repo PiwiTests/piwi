@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { DOCUMENT_PATTERN } from '../src/glue';
-import { STOP_ACTIONS } from '../src/run-control';
+import { RUN_COMMANDS, STOP_ACTIONS } from '../src/run-control';
 
 const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
 const menus = manifest.contributes.menus as Record<
@@ -127,6 +127,18 @@ describe("the commands' glyphs", () => {
 
   test('draws each code action at a stop with its command’s glyph, in the palette and in the choice', () => {
     for (const a of STOP_ACTIONS) expect(commands.find((c) => c.command === a.command)?.icon, a.command).toBe(a.icon);
+  });
+});
+
+describe('Open the trace so far', () => {
+  test('is offered while the worker panel is the active editor and its slot can open its trace, with its glyph', () => {
+    const commands = manifest.contributes.commands as Array<{ command: string; title: string; icon?: string }>;
+    expect(commands.find((c) => c.command === RUN_COMMANDS.openTrace)).toMatchObject({
+      title: 'Open the trace so far',
+      icon: commands.find((c) => c.command === 'piwi.openTrace')!.icon,
+    });
+    const palette = menus['commandPalette']!.find((e) => e.command === RUN_COMMANDS.openTrace);
+    expect(palette?.when).toBe("activeWebviewPanelId == 'piwi.workerView' && piwi.runCanOpenTrace");
   });
 });
 

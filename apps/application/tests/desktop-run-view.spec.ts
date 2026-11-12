@@ -982,6 +982,57 @@ test.describe('Desktop run live view', () => {
     await expect(outdated).toHaveAttribute('title', 'Update the reporter to watch a running test');
   });
 
+  test('opens a watched lane’s trace so far from its page’s head, for a worker whose reporter answers, and says the hub’s answer', async ({
+    page,
+  }, testInfo) => {
+    await installBridge(page);
+    const opened = 'Playwright’s trace viewer opened on the trace so far.';
+    const untraced = 'This test’s attempt is not traced: its project’s trace option records none of it.';
+    let answer = { ok: true, message: opened };
+    const commands = await playHub(page, (command) => (command.type === 'openTrace' ? answer : {}));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const trace = worker.getByRole('button', { name: 'Open the trace so far' });
+
+    // Watched, a worker whose reporter does not say where its trace grows offers none.
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect(lane).toBeVisible();
+    await expect(trace).toHaveCount(0);
+
+    // Its reporter answers the ask: the button shows in the page's head, beside nothing else while the test runs.
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
+    await expect(trace).toBeVisible();
+    await expect(trace).toHaveAttribute(
+      'title',
+      'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
+    );
+    await trace.click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'openTrace'))
+      .toEqual([{ type: 'openTrace', id: expect.any(Number), viewer: VIEWER, ref: REF, lane: 0 }]);
+    await expect(worker.getByText(opened)).toBeVisible();
+    await lane.screenshot({ path: testInfo.outputPath('tray-lane-trace.png') });
+
+    // A refusal says why, as the worker's other answers do.
+    answer = { ok: false, message: untraced };
+    await trace.click();
+    await expect(worker.getByText(untraced)).toBeVisible();
+
+    // Between tests, no test runs: the button goes.
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session({ ...WATCHABLE, traces: true, state: 'between', test: null }),
+    );
+    await expect(worker.getByText('Between tests')).toBeVisible();
+    await expect(trace).toHaveCount(0);
+  });
+
   test('shows a watched lane’s layers under its page: why its call waits, its events, its text as asked and its filmstrip', async ({
     page,
   }) => {

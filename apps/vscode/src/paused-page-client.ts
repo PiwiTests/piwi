@@ -240,6 +240,12 @@ textAgain?.addEventListener('click', () => {
   textAgain.disabled = true;
   post({ type: 'text' });
 });
+/** Open the trace so far, in the worker panel: off from the click until the extension says its ask was answered. */
+const trace = byId<HTMLButtonElement>('trace');
+trace?.addEventListener('click', () => {
+  trace.disabled = true;
+  post({ type: 'trace' });
+});
 
 /** Show the image of the strip `call` larger, with its call's title; null hides it. */
 function enlarge(call: string | null, title = '') {
@@ -333,6 +339,10 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     note.hidden = !event.data.view.layers?.note;
   }
   if (textAgain) textAgain.disabled = !!event.data.view.layers?.textAsking;
+  if (trace) {
+    trace.hidden = !event.data.view.trace;
+    trace.disabled = !!event.data.view.trace?.asking;
+  }
 });
 // The extension ends the watch itself when the panel hides or closes, and keeps Watch live for when it shows again.
 window.addEventListener('pagehide', () => input.dispose());

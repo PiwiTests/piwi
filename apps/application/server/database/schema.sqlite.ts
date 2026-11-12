@@ -1532,6 +1532,7 @@ export const projectIntegrations = sqliteTable(
       .references(() => integrationConnections.id, { onDelete: 'cascade' }),
     projectKey: text('project_key'), // Jira project key (tracker binding)
     issueType: text('issue_type'),
+    declaredIssueTypes: text('declared_issue_types', { mode: 'json' }), // string[] | null — the issue types the tag source links; the binding's issue type when null
     labels: text('labels', { mode: 'json' }), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default

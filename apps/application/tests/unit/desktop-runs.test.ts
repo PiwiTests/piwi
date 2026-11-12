@@ -22,7 +22,7 @@ import {
   type RunToHub,
 } from '@piwitests/core/run-channel';
 import { writeDiscovery } from '@piwitests/editor/discovery';
-import type { ToolResult } from '@piwitests/editor/run-host';
+import { startTraceViewer, type ToolResult, type TraceViewerLauncher } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
   parseLiveAnswer,
@@ -56,6 +56,15 @@ const SPEC =
 
 let folder = '';
 let worktree = '';
+/** What the hub asked the trace viewer to open, and where; each viewer stays open until the test closes them. */
+const traceLaunches: Array<Parameters<TraceViewerLauncher>[0]> = [];
+const traceClosers: Array<() => void> = [];
+const traceViewer: TraceViewerLauncher = async (launch) => {
+  traceLaunches.push(launch);
+  return { ok: true, closed: new Promise<void>((resolve) => traceClosers.push(resolve)) };
+};
+/** Whether the machine the hub runs on shows the trace viewer's window, whatever display the test's machine has. */
+const machine = { display: true };
 /** The editors' discovery folder the hub names its peers from. */
 let editors = '';
 let runs: DesktopRuns;
@@ -278,6 +287,8 @@ beforeAll(async () => {
     agentIdleMs: AGENT_IDLE_MS,
     editorsDir: editors,
     peersMs: 50,
+    traceViewer,
+    traceDisplay: () => machine.display,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -386,7 +397,7 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
+        features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
       },
     ]);
   });
@@ -483,7 +494,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -929,6 +940,175 @@ describe('the window', () => {
     expect(worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane')).toBe(false);
     window.close();
     worker.socket.destroy();
+  });
+});
+
+describe('the trace so far of a desktop run', () => {
+  it('opens from the linked folder’s Playwright as the window or Piwi Picker asks, its path in no message', async () => {
+    const ref = 'desktop-trace-1';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).toMatchObject({ traces: true });
+    const traces = path.join(folder, 'test-results', '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 'id-pays.trace');
+    fs.writeFileSync(file, '{"type":"context-options"}\n');
+    const there = { ok: true, message: "The attempt's trace grows there.", file };
+    // The tray's Open the trace so far: the window's command reaches the viewer, run from the linked folder.
+    const asked = window.command({ type: 'openTrace', id: 7, ref, lane: 0 });
+    await worker.answer('trace', there);
+    expect(await asked).toEqual({
+      type: 'answer',
+      id: 7,
+      ok: true,
+      message: "Playwright's trace viewer opened on the trace so far.",
+    });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(traces, 'id-pays.json') }]);
+    // Piwi Picker's, while that viewer is open: one viewer for the attempt.
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.arrayContaining(['trace']),
+    });
+    picker.send({ type: 'openTrace', id: 8, ref, lane: 0 });
+    await worker.answer('trace', there, 1);
+    expect(await picker.answer(8)).toEqual({
+      type: 'answer',
+      id: 8,
+      ok: false,
+      message:
+        "Playwright's trace viewer is open on this test's trace already: close it to open the trace as it stands now.",
+    });
+    expect(traceLaunches).toHaveLength(1);
+    for (const said of [...window.events, ...picker.messages].map((m) => JSON.stringify(m))) {
+      expect(said).not.toContain(traces);
+      expect(said).not.toContain('.playwright-artifacts');
+    }
+    traceClosers.splice(0).forEach((close) => close());
+    picker.socket.close();
+    window.close();
+    worker.socket.destroy();
+  });
+
+  it('opens a trace only from the linked folder, whatever folder a worker names, and none of a run outside it', async () => {
+    const ref = 'desktop-trace-2';
+    traceLaunches.splice(0);
+    const first = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    first.begin();
+    // A second worker of the run names the worktree as the folder it runs in.
+    const second = new Worker(worktree).attach(ref, channel.token, 1, [], ['view-lane', 'trace']);
+    second.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers.find((w) => w.parallelIndex === 1)?.test);
+    const theirs = path.join(worktree, 'test-results', '.playwright-artifacts-1', 'traces');
+    const ours = path.join(folder, 'test-results', '.playwright-artifacts-1', 'traces');
+    for (const traces of [theirs, ours]) {
+      fs.mkdirSync(traces, { recursive: true });
+      fs.writeFileSync(path.join(traces, 'id-pays.trace'), '{"type":"context-options"}\n');
+    }
+    const answer = (traces: string) => ({
+      ok: true,
+      message: "The attempt's trace grows there.",
+      file: path.join(traces, 'id-pays.trace'),
+    });
+    const outside = window.command({ type: 'openTrace', id: 9, ref, lane: 1 });
+    await second.answer('trace', answer(theirs));
+    expect(await outside).toEqual({
+      type: 'answer',
+      id: 9,
+      ok: false,
+      message: 'The worker named a trace outside the folder the run runs in.',
+    });
+    const inside = window.command({ type: 'openTrace', id: 10, ref, lane: 1 });
+    await second.answer('trace', answer(ours), 1);
+    expect(await inside).toMatchObject({ id: 10, ok: true });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(ours, 'id-pays.json') }]);
+    traceClosers.splice(0).forEach((close) => close());
+    // A run in the worktree, which no project links: no trace is offered, nor opened, nor its worker asked.
+    const repro = new Worker(worktree).attach('desktop-trace-3', channel.token, 0, [], ['view-lane', 'trace']);
+    repro.begin();
+    await waitFor(() => window.session('desktop-trace-3')?.workers[0]?.test);
+    expect(window.session('desktop-trace-3')!.workers[0]).not.toHaveProperty('traces');
+    expect(await window.command({ type: 'openTrace', id: 11, ref: 'desktop-trace-3', lane: 0 })).toEqual({
+      type: 'answer',
+      id: 11,
+      ok: false,
+      message: "This run's folder is not known here: open its trace from the editor or the app that started it.",
+    });
+    expect(repro.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    window.close();
+    for (const worker of [first, second, repro]) worker.socket.destroy();
+  });
+
+  it('offers and opens no trace on a machine without a display, nor asks the worker', async () => {
+    machine.display = false;
+    onTestFinished(() => {
+      machine.display = true;
+    });
+    const ref = 'desktop-trace-4';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).not.toHaveProperty('traces');
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.not.arrayContaining(['trace']),
+    });
+    const noDisplay = "This machine has no display for Playwright's trace viewer.";
+    expect(await window.command({ type: 'openTrace', id: 12, ref, lane: 0 })).toEqual({
+      type: 'answer',
+      id: 12,
+      ok: false,
+      message: noDisplay,
+    });
+    picker.send({ type: 'openTrace', id: 13, ref, lane: 0 });
+    expect(await picker.answer(13)).toMatchObject({ ok: false, message: noDisplay });
+    expect(worker.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    picker.socket.close();
+    window.close();
+    worker.socket.destroy();
+  });
+
+  it('starts the viewer with none of the server’s own settings and secrets', async () => {
+    // The launcher the server wires, on a linked folder whose stand-in Playwright writes the environment it got.
+    const linked = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-viewer-')));
+    onTestFinished(() => fs.rmSync(linked, { recursive: true, force: true }));
+    const pkg = path.join(linked, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1' }));
+    fs.writeFileSync(
+      path.join(pkg, 'cli.js'),
+      "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'env.json'), JSON.stringify(process.env));\n" +
+        'setTimeout(() => {}, 600);\n',
+    );
+    const server: Record<string, string> = {
+      PIWI_SECRET_KEY: 'secret-key',
+      PIWI_DESKTOP_TOKEN: TOKEN,
+      PIWI_DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      PIWI_STORAGE_S3_SECRET_ACCESS_KEY: 'storage-secret',
+      DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      NODE_OPTIONS: '--no-warnings',
+      NODE_COMPILE_CACHE: path.join(linked, 'cache'),
+      NODE_ENV: 'production',
+    };
+    const before = { ...process.env };
+    Object.assign(process.env, server);
+    try {
+      const started = await startTraceViewer({ folder: linked, trace: path.join(linked, 'x.json') }, 300);
+      expect(started.ok).toBe(true);
+      if (started.ok) await started.closed;
+    } finally {
+      for (const name of Object.keys(server)) {
+        if (before[name] === undefined) delete process.env[name];
+        else process.env[name] = before[name];
+      }
+    }
+    const env = JSON.parse(fs.readFileSync(path.join(pkg, 'env.json'), 'utf8')) as Record<string, string>;
+    for (const name of Object.keys(server)) expect(env, name).not.toHaveProperty(name);
+    expect(Object.keys(env).filter((name) => /^(PIWI_|NODE_)/i.test(name))).toEqual([]);
+    expect(env).toMatchObject({ PATH: process.env.PATH, FORCE_COLOR: '0' });
   });
 });
 

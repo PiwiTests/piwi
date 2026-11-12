@@ -76,14 +76,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the instance's 401 for a key it no
   longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance that sends no code): a 403
   or any other 401, a proxy's among them, stops the host and keeps the key (`tests/request-host.test.ts`). The
-  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. On its first list it
-  ends the requests the instance counts as the target's (`held`) that it does not hold (`holds`: asked about, being
-  claimed, or a run the shell still holds, handed in `PUT /key`'s `running`): an unanswered one is refused, the others
-  end, and an instance that names none ends nothing. A run that ended while no server held it comes in `PUT /key`'s
-  `ended`: it ends with its own outcome, and the answer's `ended` names those reported so the shell forgets them;
-  `/ended` for a request this server holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project names the instance gives beside the requests and in
-  its describe answer (`projects`) reach the window through `onProjectNames`; a request object never carries one, as
-  the parser refuses fields it does not know. ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
+  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. What it ends of the
+  requests the instance counts as the target's, and the project names it passes on, are in
+  [ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy) (`tests/run-target-routes.test.ts`).
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
   fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
@@ -157,14 +152,20 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ("refuses a second process …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
 - **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension, or a process of this
   machine (no `Origin`: the desktop app's server), that names it as this machine.** A `Host` other than `127.0.0.1` or
-  `localhost` at its port or at one the client forwards (`piwi/hub`, `isHubHost`), or an `Origin` that is not an
+  `localhost` at its port or at one the client forwards (`piwi/hub`, `hubHostPort`), or an `Origin` that is not an
   extension's (`isExtensionOrigin`), gets a 403 first, and commands are read only after `hello` with the hub's token
   (`sameToken`) within `HUB_HELLO_MS`. A connection that subscribes to observe (`observe`) answers no stop. Checked by
   `tests/run-hub.test.ts` ("the handshake", "takes a loopback Host at a port the client forwards …", "takes a process
   of this machine that sends no Origin …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates
-  code, reads a file or reaches an instance.** Checked by `tests/run-hub.test.ts` ("the commands").
+  code, reaches an instance or names a file.** Checked by `tests/run-hub.test.ts` ("the commands").
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **A trace's path never leaves the hub, and the viewer opens only a file that passed `checkTraceFile` as the person
+  asked, from the run's folder its host knows (`session.root`), on a machine with a display, never for a hub
+  connection through a forwarded port.** The viewer reads the trace folder on its own afterwards; `startTraceViewer`
+  runs the project's own Playwright with an argument array, no shell, and the host's variables it needs alone
+  (`viewerEnv`: no `PIWI_*`, no `NODE_*`). Checked by `tests/run-trace.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-trace-so-far))
 - **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
   and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included
   (`PIWI_EDITOR_SEND`). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
@@ -218,9 +219,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   as a person asks …", "stops sharing a run while no worker of it is connected …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#share-live))
 - **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
-  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines` and the agents' `RunAgent`, which import
-  nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its
-  tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
+  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines`, `startTraceViewer` and the agents'
+  `RunAgent`, which import nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change
+  to their options runs its tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
   imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks

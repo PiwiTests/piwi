@@ -3606,38 +3606,62 @@ const ENTITY_LINKS = [
   },
 ];
 
-// The links the Apple Pay checkout's `piwi:issue` annotation declares (`demoTestMeta`), as the link step writes them
-// when a run fails into its cluster (2): DEMO-57 and DEMO-61 are issues of the bound DEMO project the demo's Jira knows
-// (`DEMO_JIRA_ISSUES`), linked read-only
-// with the test as their source; DEMO-64 is not in Jira, so the cluster's links end with *and 1 more named by its
-// tests*. DEMO-61 is Done, so the known issue is DEMO-57, the oldest one still open. No connection row backs them,
-// like DEMO-42.
+// The links the link step writes when a run fails into a cluster, for the issues its tests name. The Apple Pay
+// checkout's `piwi:issue` annotation (`demoTestMeta`) names DEMO-57 and DEMO-61, issues of the bound DEMO project the
+// demo's Jira knows (`DEMO_JIRA_ISSUES`), linked read-only with the test as their source into cluster 2; DEMO-64 is not
+// in Jira, so the cluster's links end with *and 1 more named by its tests*. DEMO-61 is Done, so the known issue is
+// DEMO-57, the oldest one still open. The PayPal and credit card checkouts name DEMO-52 and DEMO-53 in tags the
+// project's issue key pattern matches (`demoTags`) into cluster 1: DEMO-52 is a Bug, the binding's issue type, so it
+// is linked with the tag as its source, and DEMO-53 is a Task, so cluster 1 neither links nor counts it, since keys the
+// type filter drops stay out of the count. No connection row backs them, like DEMO-42.
 {
-  const cluster = FAILURE_CLUSTERS.find((c) => c.id === 2);
-  const testCaseId = caseIdByKey.get('1\x00tests/checkout/checkout.spec.ts\x00should complete checkout with Apple Pay');
-  // Linked when the test's latest run failed into the cluster finished.
-  const linkedAt = latestTrc(testCaseId, (t) => t.failure_cluster_id === 2)?.started_at ?? cluster.updated_at * 1000;
-  DEMO_JIRA_ISSUES.forEach((issue, i) => {
+  const demoIssue = (key) => DEMO_JIRA_ISSUES.find((issue) => issue.key === key);
+  const seedDeclaredLink = ({ clusterId, key, origin, title, source, offset }) => {
+    const issue = demoIssue(key);
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const testCaseId = caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+    // Linked when the test's latest run failed into the cluster finished.
+    const linkedAt =
+      (latestTrc(testCaseId, (t) => t.failure_cluster_id === clusterId)?.started_at ?? cluster.updated_at * 1000) +
+      offset;
     ENTITY_LINKS.push({
       id: Math.max(...ENTITY_LINKS.map((l) => l.id)) + 1,
-      failure_cluster_id: 2,
+      failure_cluster_id: clusterId,
       url: `https://demo.atlassian.net/browse/${issue.key}`,
       provider: 'jira',
       key: issue.key,
       title: issue.title,
       status_text: issue.status,
       status_color: issue.statusColor,
-      metadata: { statusCategory: issue.statusCategory, source: { testCaseId } },
-      unfurled_at: linkedAt + i,
+      metadata: { statusCategory: issue.statusCategory, source: { testCaseId, ...source } },
+      unfurled_at: linkedAt,
       connection_id: null,
       external_id: issue.id,
-      origin: 'annotation',
+      origin,
       created_by: null,
-      created_at: linkedAt + i,
-      updated_at: linkedAt + i,
+      created_at: linkedAt,
+      updated_at: linkedAt,
     });
+  };
+  ['DEMO-57', 'DEMO-61'].forEach((key, offset) =>
+    seedDeclaredLink({
+      clusterId: 2,
+      key,
+      origin: 'annotation',
+      title: 'should complete checkout with Apple Pay',
+      source: {},
+      offset,
+    }),
+  );
+  FAILURE_CLUSTERS.find((c) => c.id === 2).declared_issues_more = 1;
+  seedDeclaredLink({
+    clusterId: 1,
+    key: 'DEMO-52',
+    origin: 'tag',
+    title: 'should complete checkout with PayPal',
+    source: { tag: '@DEMO-52' },
+    offset: 0,
   });
-  cluster.declared_issues_more = 1;
 }
 
 // ── Users, groups & role bindings ───────────────────────────────────────────

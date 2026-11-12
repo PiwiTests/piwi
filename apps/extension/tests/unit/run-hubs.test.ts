@@ -716,6 +716,26 @@ describe('a hub’s connection', () => {
     expect(await shared).toEqual({ ok: true, message: 'Sharing the run live on piwi.example.com.' });
   });
 
+  it('passes Open the trace so far for the lane it names, says which hubs take it, and hands back the sentence', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([RUNNING])], 20_000, ['lanes', 'trace']);
+    expect(hubs.state().hubs[0]!.traces).toBe(true);
+    const opened = hubs.command({ hub: HUB.url, ref: 'r1', worker: null, since: null, what: 'trace', lane: 0 });
+    expect(socket.sent.slice(2)).toEqual([{ type: 'openTrace', id: 2, ref: 'r1', lane: 0 }]);
+    const said = "Playwright's trace viewer opened on the trace so far.";
+    socket.hear({ type: 'answer', id: 2, ok: true, message: said });
+    expect(await opened).toEqual({ ok: true, message: said });
+  });
+
+  it('says a hub that does not list trace among its features opens no trace', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])], 20_000, ['lanes']);
+    expect(hubs.state().hubs[0]!.traces).toBe(false);
+  });
+
   it('passes the code a stop can write on, each naming its stop, and hands back the requests the test kept', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();
@@ -877,6 +897,7 @@ describe('connections that fail', () => {
         presence: false,
         holds: false,
         stops: false,
+        traces: false,
       },
     ]);
     expect(fetches).toHaveLength(1);

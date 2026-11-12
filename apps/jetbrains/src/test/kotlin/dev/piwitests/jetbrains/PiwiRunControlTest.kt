@@ -65,6 +65,9 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val editorBreakpoints = CopyOnWriteArrayList<SetBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
     private val lanes = CopyOnWriteArrayList<LaneViewParams>()
+    private val traces = CopyOnWriteArrayList<OpenTraceParams>()
+    /** A lane whose trace ask waits here until the test lets it go. */
+    private val traceGates = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CountDownLatch>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
     private val listed = CopyOnWriteArrayList<StopRequestsParams>()
@@ -148,6 +151,12 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             }
 
             override fun ciWatch(params: CiWatchParams): RunControlResult = RunControlResult(true, "Watching.")
+
+            override fun openTrace(params: OpenTraceParams): RunControlResult {
+                traces += params
+                traceGates[params.lane]?.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                return RunControlResult(true, "Playwright's trace viewer opened on the trace so far.")
+            }
 
             override fun pickAt(params: PickAtParams): PickAtResult {
                 picks += params
@@ -853,6 +862,81 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
             assertFalse(sessions.shown().workerWatch)
         } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Open the Trace So Far shows in the Worker tab while its slot's worker runs a test whose reporter answers trace
+     * asks, asks the service for the tab's slot, and goes as the test ends.
+     */
+    fun testOpenTheTraceSoFarAsksForTheWorkerTabsSlot() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true))))
+            sessions.showWorker("ed-7", 1)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            // An older reporter answers no trace ask: the tab offers none.
+            assertNull(sessions.shown().workerTrace)
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true, traces = true))))
+            assertEquals(true, sessions.shown().workerTrace)
+            sessions.openTrace()
+            assertEquals(OpenTraceParams("ed-7", 1), waitFor("the trace asked") { traces.singleOrNull() })
+            waitFor("the button back on") { sessions.shown().workerTrace?.takeIf { it } }
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "between", null, watchable = true, traces = true))))
+            assertNull(sessions.shown().workerTrace)
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Each slot's Open the Trace So Far waits for its own ask alone: while worker 1's ask waits, worker 2's tab offers it
+     * and asks for worker 2, and worker 1's answer, come while worker 2 shows, says which worker it is for.
+     */
+    fun testOpenTheTraceSoFarWaitsForEachSlotsOwnAskAndNamesTheWorkerOfALateAnswer() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        val said = CopyOnWriteArrayList<String>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    said += com.intellij.openapi.util.text.StringUtil.unescapeXmlEntities(notification.content)
+                }
+            },
+        )
+        val gate = java.util.concurrent.CountDownLatch(1)
+        traceGates[0] = gate
+        try {
+            val workers = listOf(
+                RunWorker(0, 0, "running", test(), watchable = true, traces = true),
+                RunWorker(1, 1, "running", test(), watchable = true, traces = true),
+            )
+            hear(RunSession("ed-7", base.path, workers))
+            sessions.showWorker("ed-7", 0)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            sessions.openTrace()
+            assertEquals(OpenTraceParams("ed-7", 0), waitFor("worker 1's ask") { traces.singleOrNull() })
+            assertEquals(false, sessions.shown().workerTrace)
+            // A second press on worker 1 while its ask waits sends nothing.
+            sessions.openTrace()
+            // Worker 2 shown: its button takes a press while worker 1's ask waits, and asks for worker 2.
+            sessions.showWorker("ed-7", 1)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(true, sessions.shown().workerTrace)
+            sessions.openTrace()
+            assertEquals(OpenTraceParams("ed-7", 1), waitFor("worker 2's ask") { traces.getOrNull(1) })
+            val opened = "Playwright's trace viewer opened on the trace so far."
+            assertEquals(opened, waitFor("worker 2's answer") { said.firstOrNull() })
+            assertEquals(true, waitFor("worker 2's button back on") { sessions.shown().workerTrace?.takeIf { it } })
+            // Worker 1's answer comes while worker 2 shows: it names worker 1.
+            gate.countDown()
+            assertEquals("Worker 1: $opened", waitFor("worker 1's answer") { said.getOrNull(1) })
+            assertEquals(2, traces.size)
+            assertEquals(true, sessions.shown().workerTrace)
+        } finally {
+            gate.countDown()
+            traceGates.clear()
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }
     }

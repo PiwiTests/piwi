@@ -12,7 +12,8 @@
  * the input played on it) and the locator of the element under a point of an image of it; for a viewer of the
  * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`),
  * and the layers of that view its viewers ask beside the images (`layers`, `lane-layer`: `@piwitests/core/live-layers`);
- * and, for an agent (the
+ * for the hub alone, where its running attempt's trace grows (`trace`), which the hub opens in Playwright's trace
+ * viewer and names to no one; and, for an agent (the
  * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
  * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
@@ -161,13 +162,23 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
  * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
  * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
  * (`waiting`) and end the test there as asked (`give-up`); bring the test's window to the front at a stop its pause
- * bar shows (`front`, **Show the browser**); and send the layers of its lane view a viewer asks beside the images
- * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages).
+ * bar shows (`front`, **Show the browser**); send the layers of its lane view a viewer asks beside the images
+ * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages); and say where its running attempt's
+ * trace grows (`trace`: the request `trace`).
  */
-export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers';
+export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers' | 'trace';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers', 'trace'];
+
+/**
+ * The answer to `trace`: the absolute path of the running attempt's own trace file as the runner writes it while the
+ * test runs (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`), or
+ * why there is none (no test runs, the runner does not trace this attempt, or it wrote none of it yet). For the hub
+ * alone, which never names it to anyone: it checks that file and its folder, then opens Playwright's trace viewer on
+ * the attempt's trace, which reads every file of the attempt in that folder and in the subfolders its files share.
+ */
+export type TraceAnswer = { ok: true; message: string; file: string } | { ok: false; message: string };
 
 /**
  * A layer of a worker's lane view as it goes to the lane's viewers (`@piwitests/core/live-layers`): the call its test
@@ -549,6 +560,8 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'act'; value: ActAnswer }
   /** The answer to `bind`. */
   | { type: 'answer'; request: number; what: 'bind'; value: BindAnswer }
+  /** The answer to `trace`. */
+  | { type: 'answer'; request: number; what: 'trace'; value: TraceAnswer }
   /** Something the running test did, while the editor asked for its events (`events`). */
   | { type: 'event'; event: RunEvent }
   /**
@@ -682,6 +695,11 @@ export type HubToRun =
    */
   | { type: 'request'; request: number; what: 'text' }
   /**
+   * Where the running attempt's own trace file grows, to a worker that lists `trace` in `features`, at a stop or not;
+   * answered at once (`TraceAnswer`).
+   */
+  | { type: 'request'; request: number; what: 'trace' }
+  /**
    * At the stop `stop`, while its view or the lane view shows its page: play a viewer's input on its page, in order, as trusted input
    * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
    */
@@ -794,6 +812,15 @@ function readHolds(value: unknown): RunHold[] | undefined {
 function readAnswer(value: unknown): IntentAnswer | null {
   if (!isObject(value) || typeof value.ok !== 'boolean' || typeof value.message !== 'string') return null;
   return { ok: value.ok, message: value.message.slice(0, 500) };
+}
+
+/** A `trace` answer: its file only when it says yes, a path of the run; null when it is not one. */
+function readTraceAnswer(value: unknown): TraceAnswer | null {
+  const said = readAnswer(value);
+  if (!said) return null;
+  if (!said.ok) return { ok: false, message: said.message };
+  const file = isObject(value) ? value.file : undefined;
+  return filePath(file) ? { ok: true, message: said.message, file } : null;
 }
 
 /** An HTTP method: letters only, at most 16. */
@@ -1134,6 +1161,10 @@ export function parseRunToHub(line: string): RunToHub | null {
         const read = readBindAnswer(answered);
         return read ? { type: 'answer', request, what, value: read } : null;
       }
+      if (what === 'trace') {
+        const read = readTraceAnswer(answered);
+        return read ? { type: 'answer', request, what, value: read } : null;
+      }
       if (what !== 'image') return null;
       if (answered === null) return { type: 'answer', request, what, value: null };
       const image = readImage(answered);
@@ -1259,7 +1290,7 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       if (what === 'view-lane') {
         return typeof value.on === 'boolean' ? { type: 'request', request, what, on: value.on } : null;
       }
-      if (what === 'text') return { type: 'request', request, what };
+      if (what === 'text' || what === 'trace') return { type: 'request', request, what };
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;

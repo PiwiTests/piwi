@@ -83,6 +83,11 @@ export interface RunsHub {
   holds: boolean;
   /** It stops a whole run as the tool that started it does (`stop` among its features), for a run `canStopRun` names. */
   stops: boolean;
+  /**
+   * It opens Playwright's trace viewer on a lane's running test, on its own machine (`trace` among its features), for a
+   * worker `canOpenTrace` names.
+   */
+  traces: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -114,7 +119,8 @@ export interface RunsState {
  * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
  * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch); or
  * the stop driven from here, an agent's actions there refused, or given back (`drive`, Take control and Give back); or
- * the whole run stopped (`stop`, Stop the run).
+ * the whole run stopped (`stop`, Stop the run); or Playwright's trace viewer opened on a lane's running test, on the
+ * hub's machine (`trace`, Open the trace so far: the hub's `openTrace`).
  */
 export type RunsWhat =
   | HubControlAction
@@ -131,7 +137,8 @@ export type RunsWhat =
   | 'hold'
   | 'watch'
   | 'drive'
-  | 'stop';
+  | 'stop'
+  | 'trace';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -156,6 +163,7 @@ const WHATS: readonly string[] = [
   'give-up',
   'drive',
   'stop',
+  'trace',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -185,7 +193,7 @@ export type RunsRequest =
        * start watching the lane, or stop; for `drive`: drive the stop, or give it back.
        */
       on?: boolean;
-      /** For `watch` alone: the lane, Playwright's `parallelIndex`. */
+      /** For `watch` and `trace`: the lane, Playwright's `parallelIndex`. */
       lane?: number;
       /**
        * For `watch` alone, at a hub that sends layers: the layers of the lane the window takes beside its frames
@@ -316,16 +324,18 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
       if ((what === 'image' || what === 'drive' || VIEW_WHATS.includes(what)) && worker === null) return null;
-      // Share live, Hold failures and Stop the run name the run alone, and Watch the run and its lane.
-      if (['share', 'hold', 'stop', 'watch'].includes(what) && (worker !== null || since !== null)) return null;
+      // Share live, Hold failures and Stop the run name the run alone, and Watch and Open the trace so far the run and
+      // its lane.
+      if (['share', 'hold', 'stop', 'watch', 'trace'].includes(what) && (worker !== null || since !== null))
+        return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
       // test while a Pause waits for a call names none, and its worker.
       if (what === 'give-up' && (since !== null || worker === null)) return null;
-      if (!['pause', 'image', 'share', 'hold', 'stop', 'watch', 'give-up'].includes(what) && since === null)
+      if (!['pause', 'image', 'share', 'hold', 'stop', 'watch', 'trace', 'give-up'].includes(what) && since === null)
         return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
-      // its events, a pick on the image its point, Watch the lane and whether it is on.
+      // its events, a pick on the image its point, Watch the lane and whether it is on, Open the trace so far the lane.
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
@@ -333,6 +343,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         hold: ['on'],
         drive: ['on'],
         watch: ['lane', 'on', 'layers'],
+        trace: ['lane'],
         input: ['events'],
         'pick-at': ['x', 'y'],
       };
@@ -353,6 +364,8 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
           const layers = readLaneLayers(value.layers);
           return layers ? { ...command, lane: value.lane, on: value.on, layers } : null;
         }
+        case 'trace':
+          return isIndex(value.lane) ? { ...command, lane: value.lane } : null;
         case 'input': {
           const events = readViewInput(value.events);
           return typeof events === 'string' ? null : { ...command, events };

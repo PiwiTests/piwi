@@ -326,7 +326,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
     });
     client.socket.close();
   });
