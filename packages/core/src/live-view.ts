@@ -1022,8 +1022,8 @@ export type LiveViewerMessage =
   | (LiveWorkerId & { type: 'thumb'; thumb: LaneThumb; image: Uint8Array; test: string | null })
   /**
    * A DOM snapshot of the focused worker's page came, as the watch has Inspect open: its call, title, moment, page,
-   * frame, whether it is of the main frame and full, and when it was taken, its JSON left with the instance, which serves
-   * it rendered; or why none comes (`refused`).
+   * frame, whether it is of the main frame and full, its place among its frame's, and when it was taken, its JSON left
+   * with the instance, which serves it rendered; or why none comes (`refused`).
    */
   | (LiveWorkerId & LiveSnapshotNotice & { type: 'snapshot'; test: string | null })
   | (LiveWorkerId & { type: 'snapshot'; refused: string; test: string | null })
@@ -1075,8 +1075,8 @@ const WATCH_ID = /^[A-Za-z0-9_-]{16,64}$/;
 function readSnapshotNotice(value: Record<string, unknown>): LiveSnapshotNotice | null {
   const read = readLiveSnapshotFields({ ...value, resources: [] });
   if (typeof read === 'string') return null;
-  const { call, title, phase, page, frame, main, full, at } = read;
-  return { call, title, phase, page, frame, main, full, at };
+  const { call, title, phase, page, frame, main, full, index, at } = read;
+  return { call, title, phase, page, frame, main, full, index, at };
 }
 
 /** A live message of a viewer's watch, checked field by field; null when it is not one this version reads. */

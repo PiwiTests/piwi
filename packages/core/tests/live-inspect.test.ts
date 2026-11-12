@@ -5,11 +5,19 @@ import {
   MAX_RESOURCE_URL,
   MAX_SNAPSHOT_BYTES,
   MAX_SNAPSHOT_RESOURCES,
+  cssReferences,
+  hideSnapshotSecrets,
   inspectResourceType,
+  isFullSnapshot,
   isResourceSha1,
   readLiveResource,
   readLiveSnapshot,
+  resolveResourceUrl,
+  snapshotNodes,
+  snapshotPhase,
+  snapshotResourceUrls,
   type LiveSnapshot,
+  type SnapshotResolver,
 } from '../src/live-inspect';
 import {
   LIVE_WORKER_POST_LIMITS,
@@ -43,6 +51,7 @@ const SNAPSHOT: LiveSnapshot = {
   frame: 'frame@0f4dd28015bb771d37fb46b5eebf911d',
   main: true,
   full: false,
+  index: 7,
   at: AT,
   resources: [{ url: 'http://127.0.0.1:3000/app.css', sha1: SHA1 }],
 };
@@ -156,6 +165,9 @@ describe('a snapshot’s header', () => {
       { frame: 'frame/../x' },
       { main: 'yes' },
       { full: undefined },
+      { index: -1 },
+      { index: 1.5 },
+      { index: '3' },
       { at: 12 },
       { resources: 'all' },
       { resources: Array.from({ length: MAX_SNAPSHOT_RESOURCES + 1 }, () => SNAPSHOT.resources[0]) },
@@ -309,3 +321,179 @@ function jpegBytes(length: number): Uint8Array {
   data.set([0xff, 0xd8, 0xff, 0xe0]);
   return data;
 }
+
+describe('a snapshot as the trace writes it', () => {
+  test('names its moment by its phase, or by its name in an older trace', () => {
+    expect(snapshotPhase({ phase: 'action' })).toBe('action');
+    expect(snapshotPhase({ phase: 'later' })).toBeNull();
+    expect(snapshotPhase({ snapshotName: 'before@call@8' })).toBe('before');
+    expect(snapshotPhase({ snapshotName: 'input@call@10' })).toBe('action');
+    expect(snapshotPhase({ snapshotName: 'after@call@10' })).toBe('after');
+    expect(snapshotPhase({ snapshotName: 'call@10' })).toBeNull();
+    expect(snapshotPhase({})).toBeNull();
+  });
+
+  test('is full when it refers to no earlier snapshot, and numbers its nodes as Playwright does', () => {
+    const title = ['TITLE', {}, 'Shop'];
+    const head = ['HEAD', {}, title];
+    const p = ['P', {}, 'a'];
+    const body = ['BODY', {}, 'hi', p];
+    const full = ['HTML', {}, head, body];
+    expect(isFullSnapshot(full)).toBe(true);
+    expect(isFullSnapshot([[1, 40]])).toBe(false);
+    expect(isFullSnapshot(['HTML', {}, [[2, 11]], ['BODY', {}]])).toBe(false);
+    expect(isFullSnapshot('html')).toBe(false);
+    expect(snapshotNodes(full)).toEqual(['Shop', title, head, 'hi', 'a', p, body, full]);
+    expect(snapshotNodes(['HTML', {}, [[2, 11]], 'x'])).toEqual(['x', ['HTML', {}, [[2, 11]], 'x']]);
+  });
+});
+
+describe('the secrets a snapshot shows', () => {
+  const SECRET = 'S3cr3t!Pw';
+  const field = (attributes: Record<string, unknown>) => [
+    'INPUT',
+    { __playwright_value_: 'v4lue-held', ...attributes },
+  ];
+
+  test('go from a password field, a one-time code and a card number, the rest of the field kept', () => {
+    const html = [
+      'BODY',
+      {},
+      field({ type: 'PASSWORD', value: SECRET, __playwright_value_: SECRET, id: 'pw' }),
+      field({ autocomplete: 'one-time-code', __playwright_value_: '123456' }),
+      field({ autocomplete: 'billing cc-number' }),
+      ['TEXTAREA', { autocomplete: 'new-password', __playwright_value_: 'a b c' }, 'a b c'],
+      field({ name: 'card', __playwright_value_: '4111 1111 1111 1111' }),
+      field({ id: 'name', __playwright_value_: 'Ada' }),
+    ];
+    expect(hideSnapshotSecrets(html, { secrets: [] })).toEqual([
+      'BODY',
+      {},
+      ['INPUT', { type: 'PASSWORD', id: 'pw' }],
+      ['INPUT', { autocomplete: 'one-time-code' }],
+      ['INPUT', { autocomplete: 'billing cc-number' }],
+      ['TEXTAREA', { autocomplete: 'new-password' }, '<hidden>'],
+      ['INPUT', { __playwright_value_: '<hidden>', name: 'card' }],
+      ['INPUT', { __playwright_value_: 'Ada', id: 'name' }],
+    ]);
+  });
+
+  test('go from a field its name, its placeholder or its label names for a secret, a label of an earlier snapshot too', () => {
+    const earlier = ['LABEL', {}, 'Verification code'];
+    const resolve: SnapshotResolver = (back, index) =>
+      back === 1 && index === 0
+        ? { node: 'PIN ', resolve: () => null }
+        : back === 2
+          ? { node: earlier, resolve }
+          : null;
+    const html = [
+      'FORM',
+      {},
+      field({ name: 'api_key' }),
+      field({ placeholder: 'Password' }),
+      ['LABEL', {}, 'PIN ', field({})],
+      ['LABEL', {}, [[1, 0]], field({ id: 'by-reference' })],
+      ['LABEL', { for: 'code' }, 'Verification code'],
+      field({ id: 'code' }),
+      [[2, 5]],
+      field({ id: 'nickname' }),
+    ];
+    const hidden = hideSnapshotSecrets(html, { secrets: [], resolve }) as unknown[];
+    const values = hidden.slice(2).map((node) => (node as [string, Record<string, unknown>])[1]?.__playwright_value_);
+    expect(values).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'v4lue-held']);
+    expect((hidden[4] as unknown[])[3]).toEqual(['INPUT', {}]);
+    expect(hidden[8]).toEqual([[2, 5]]);
+  });
+
+  test('go wherever a value the attempt’s secret fields held shows, as a text or an attribute, the shape kept', () => {
+    const html = [
+      'BODY',
+      {},
+      ['DIV', { id: 'out' }, SECRET],
+      ['P', {}, `Your password is ${SECRET}.`],
+      ['A', { href: `/reset?token=${SECRET}`, title: ` ${SECRET} ` }, 'reset'],
+      ['SPAN', {}, '4111-1111-1111-1111'],
+      ['SPAN', {}, '1234'],
+      ['SPAN', {}, 'Ada'],
+    ];
+    const before = JSON.stringify(html);
+    const hidden = hideSnapshotSecrets(html, { secrets: [SECRET, '1234', ' '] });
+    expect(JSON.stringify(html)).toBe(before);
+    expect(hidden).toEqual([
+      'BODY',
+      {},
+      ['DIV', { id: 'out' }, '<hidden>'],
+      ['P', {}, 'Your password is <hidden>.'],
+      ['A', { href: '/reset?token=<hidden>', title: '<hidden>' }, 'reset'],
+      ['SPAN', {}, '<hidden>'],
+      ['SPAN', {}, '<hidden>'],
+      ['SPAN', {}, 'Ada'],
+    ]);
+    expect(snapshotNodes(hidden).length).toBe(snapshotNodes(html).length);
+    expect(JSON.stringify(hidden)).not.toContain(SECRET);
+  });
+});
+
+describe('the resources a snapshot names', () => {
+  test('are its stylesheets, icons, images and what its styles name, read against its base', () => {
+    const snapshot = {
+      frameUrl: 'http://shop.test/cart/index.html',
+      html: [
+        'HTML',
+        {},
+        [
+          'HEAD',
+          {},
+          ['BASE', { href: 'http://shop.test/cart/' }],
+          ['LINK', { rel: 'stylesheet', href: '/app.css' }],
+          ['LINK', { rel: 'icon', href: 'favicon.ico' }],
+          ['LINK', { rel: 'preload', href: '/app.js' }],
+          ['SCRIPT', { src: '/app.js' }],
+          ['STYLE', {}, '@import url("/extra.css"); @import \'print.css\'; .a { background: url(bg.png) }'],
+        ],
+        [
+          'BODY',
+          { style: 'background-image: url("data:image/png;base64,AAAA")' },
+          ['IMG', { __playwright_current_src__: 'http://cdn.test/logo.png', src: 'logo.png' }],
+          ['IMG', { srcset: 'small.png 1x, big.png 2x' }],
+          ['PICTURE', {}, ['SOURCE', { srcset: '/hero.webp' }]],
+          ['INPUT', { type: 'image', src: 'go.gif' }],
+          ['VIDEO', { poster: 'poster.jpg' }],
+          ['DIV', { __playwright_style_sheet_: '/* url(skip.png) */ .b { background: url(/b.png) }' }],
+          ['A', { href: 'next.html' }, 'next'],
+          ['IMG', { src: 'javascript:alert(1)' }],
+          [[3, 4]],
+        ],
+      ],
+    };
+    expect(snapshotResourceUrls(snapshot).sort()).toEqual(
+      [
+        'http://shop.test/app.css',
+        'http://shop.test/cart/favicon.ico',
+        'http://shop.test/extra.css',
+        'http://shop.test/cart/print.css',
+        'http://shop.test/cart/bg.png',
+        'http://cdn.test/logo.png',
+        'http://shop.test/cart/logo.png',
+        'http://shop.test/cart/small.png',
+        'http://shop.test/cart/big.png',
+        'http://shop.test/hero.webp',
+        'http://shop.test/cart/go.gif',
+        'http://shop.test/cart/poster.jpg',
+        'http://shop.test/b.png',
+      ].sort(),
+    );
+  });
+
+  test('of a stylesheet are its urls and imports, its comments and data addresses left out', () => {
+    expect(
+      cssReferences(
+        '@font-face { src: url("f.woff2") format("woff2"), url( \'f.woff\' ) } /* url(no.png) */ @import "a.css"; .x { background: url(data:image/gif;base64,R0) }',
+      ),
+    ).toEqual(['f.woff2', 'f.woff', 'a.css']);
+    expect(resolveResourceUrl('f.woff2', 'http://shop.test/css/app.css')).toBe('http://shop.test/css/f.woff2');
+    expect(resolveResourceUrl('/a.png#x', 'https://shop.test/')).toBe('https://shop.test/a.png');
+    expect(resolveResourceUrl('file:///etc/passwd', 'http://shop.test/')).toBeNull();
+    expect(resolveResourceUrl('a.png', null)).toBeNull();
+  });
+});
