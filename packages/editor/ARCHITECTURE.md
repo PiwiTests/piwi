@@ -1062,15 +1062,21 @@ app's server; without one, the hub leaves `trace` out of its features and the re
   that comes after the test ended opens nothing.
 - **The checks** (`checkTraceFile`): an absolute path; a name `<testId>[-retry<k>][-recording<N>].trace` of the attempt
   that runs; a regular file now, no link (`lstat`); its folder, as the file system spells it, named `traces` in the
-  worker's own `.playwright-artifacts-<workerIndex>`; and inside the run's folder as its host knows it, as the file
-  system spells it. Each refusal is a sentence.
+  worker's own `.playwright-artifacts-<workerIndex>`, neither of the two a link as the worker named them; inside the
+  run's folder as its host knows it, as the file system spells it; and nothing the viewer reads in that `traces` folder
+  a link or other than a file: no `<attempt>.json` there already (the viewer would read it in place of the folder's
+  listing), no entry whose name starts with the attempt's that is a link or not a regular file, no link to a folder.
+  Each refusal is a sentence. The checks hold as the person asks: the viewer reads the folder afterwards on its own,
+  as it stands then, and nothing checks it again.
 - **The run's folder** is the session's `root` (`RunSessionsOptions.rootOf`: the editor context's config folder, the
   desktop app's linked folder holding the run), never the `cwd` a worker names in `run-attach`: the viewer runs from
   it and the trace must be inside it. A run whose folder the host does not know (a terminal's run outside every
   context, a desktop run in a worktree) opens no trace, and its workers carry no `traces`.
 - **What the viewer opens.** `<traces>/<attempt>.json`, which names no file: Playwright's trace viewer server answers
   it with every file of the folder whose name starts with the attempt's (the test's own context and the later ones,
-  their network files) and the folder's resources, and reads them as a live trace, an unfinished call shown running.
+  their network files) and those of its `resources/`, `screencast/`, `screenshots/`, `aria/`, `attachments/` and
+  `src/` folders, following links, and reads them as a live trace, an unfinished call shown running. An
+  `<attempt>.json` on disk is served in place of that listing.
   The viewer reads it once, as it stands when it loads: its service worker keeps a trace by its URL, so neither its
   live poll nor a reload shows what came since (Playwright 1.59 to 1.64; a `.trace` file opened alone does not load,
   being no archive). One viewer for each attempt at a time: a second ask while it is open says so, and to close it to

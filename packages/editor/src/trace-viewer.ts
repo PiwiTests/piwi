@@ -2,16 +2,17 @@
  * **Open the trace so far**: Playwright's trace viewer on a running test's trace, on this machine. The lane's worker
  * names the attempt's own trace file to the hub alone (`trace` on the run channel); `checkTraceFile` takes it only as a
  * regular file, no link, named `<attempt>[-recording<N>].trace`, in the runner's trace folder of that worker
- * (`.playwright-artifacts-<worker>/traces`) inside the run's folder as its host knows it (`session.root`, never the
- * folder the worker names), as the file system spells each of them. The
- * viewer opens every file of the attempt there as Playwright's live trace (`<traces>/<attempt>.json`, which its server
- * lists from the folder), as it stands when the viewer loads it: Playwright's viewer reads it once.
+ * (`.playwright-artifacts-<worker>/traces`, neither of them a link) inside the run's folder as its host knows it
+ * (`session.root`, never the folder the worker names), as the file system spells each of them, and while nothing the
+ * viewer reads in that folder is a link or other than a file. The viewer opens every file of the attempt there as
+ * Playwright's live trace (`<traces>/<attempt>.json`, which its server lists from the folder): it reads the folder on
+ * its own once the checks passed, as it stands when it loads it, once.
  *
  * `startTraceViewer` runs `show-trace` from the project's own Playwright (`recorder/playwright.ts`), with the project's
  * Node (`recorder/node.ts`) and the variables of the host's environment a window and Playwright need alone
- * (`viewerEnv`), in the run's folder as its host knows it: an argument array and no shell, detached from the service so the viewer's window
- * outlives it, and let go once it started. A viewer that stops within `TRACE_VIEWER_START_MS` did not
- * start, and says why. No path goes into what a surface hears: the run sessions answer with a sentence alone.
+ * (`viewerEnv`), in the run's folder as its host knows it: an argument array and no shell, detached from the service so
+ * the viewer's window outlives it, and let go once it started. A viewer that stops within `TRACE_VIEWER_START_MS` did
+ * not start, and says why. No path goes into what a surface hears: the run sessions answer with a sentence alone.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -138,10 +139,57 @@ function isInside(outer: string, inner: string): boolean {
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Whether `file` is a link itself. */
+function isLink(file: string): boolean {
+  try {
+    return fs.lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `file`, links followed, is a folder. */
+function isFolder(file: string): boolean {
+  try {
+    return fs.statSync(file).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why the trace folder `traces` is not opened for the attempt `base`, from what the viewer reads in it (Playwright's
+ * listing of `<base>.json`): a listing already there, which it would read in place of the folder's; a file whose name
+ * starts with the attempt's that is a link or other than a regular file; a link to a folder (its `resources/`,
+ * `screencast/` and others, whose files it lists). Null when none is there now.
+ */
+function unreadable(traces: string, base: string): string | null {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(traces, { withFileTypes: true });
+  } catch {
+    return "This test's trace is no longer there: its attempt ended.";
+  }
+  for (const entry of entries) {
+    if (entry.name === `${base}.json`) {
+      return "The runner's trace folder already holds a file named as this test's live trace: Piwi opens no trace that reads it.";
+    }
+    if (entry.name.startsWith(base) && !entry.isFile()) {
+      return "A file of this test's trace is a link or a folder: Piwi opens no trace that reads one.";
+    }
+    if (entry.isSymbolicLink() && isFolder(path.join(traces, entry.name))) {
+      return "A folder in the runner's trace folder is a link: Piwi opens no trace that reads one.";
+    }
+  }
+  return null;
+}
+
 /**
  * The checks a trace file a worker named passes before a viewer opens it: an absolute path, a `.trace` file of the
  * attempt that runs, a regular file and no link, in the runner's trace folder of that worker, inside the run's folder
- * as its host knows it, each folder as the file system spells it.
+ * as its host knows it, each folder as the file system spells it; neither the trace folder nor the folder above it a
+ * link, and nothing a link or other than a file that the viewer reads in it (`unreadable`). They hold as the person
+ * asks: the viewer reads the folder afterwards on its own, as it stands then.
  */
 export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrace {
   if (typeof file !== 'string' || !path.isAbsolute(file)) {
@@ -174,6 +222,14 @@ export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrac
   if (!folder || !isInside(folder, traces)) {
     return { ok: false, message: 'The worker named a trace outside the folder the run runs in.' };
   }
+  if (isLink(path.dirname(file)) || isLink(path.dirname(path.dirname(file)))) {
+    return {
+      ok: false,
+      message: "The runner's trace folder, or the folder above it, is a link: Piwi opens no trace there.",
+    };
+  }
+  const refused = unreadable(traces, base);
+  if (refused) return { ok: false, message: refused };
   return { ok: true, trace: path.join(traces, `${base}.json`) };
 }
 

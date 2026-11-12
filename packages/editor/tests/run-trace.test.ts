@@ -356,6 +356,76 @@ describe('the trace file a worker names', () => {
     const folder = path.join(traces, `${TEST_ID}-recording8.trace`);
     fs.mkdirSync(folder, { recursive: true });
     expect(await refusal(folder)).toMatchObject({ ok: false });
+    fs.rmSync(link);
+    fs.rmSync(folder, { recursive: true });
+  });
+
+  test('is opened only while nothing the viewer reads of its folder is a link, or other than a file', async () => {
+    const trace = file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`);
+    const elsewhere = path.join(root, 'elsewhere');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    const secret = file(path.join(root, 'secret.txt'), 'not a trace');
+    /** What the run sessions answer while `made` is in the runner's trace folder; it is removed after. */
+    const whileThere = async (made: string, make: () => void) => {
+      make();
+      try {
+        return await refusal(trace);
+      } finally {
+        fs.rmSync(made, { recursive: true, force: true });
+      }
+    };
+    // Another file of the attempt, which the viewer lists with it: a link, a folder.
+    const fileLink = "A file of this test's trace is a link or a folder: Piwi opens no trace that reads one.";
+    const recording = path.join(traces, `${TEST_ID}-recording2.trace`);
+    expect(await whileThere(recording, () => fs.symlinkSync(secret, recording))).toEqual({
+      ok: false,
+      message: fileLink,
+    });
+    const network = path.join(traces, `${TEST_ID}.network`);
+    expect(await whileThere(network, () => fs.mkdirSync(network))).toEqual({ ok: false, message: fileLink });
+    // A folder of the trace folder, whose files the viewer lists: a link.
+    const resources = path.join(traces, 'resources');
+    expect(await whileThere(resources, () => fs.symlinkSync(elsewhere, resources, 'dir'))).toEqual({
+      ok: false,
+      message: "A folder in the runner's trace folder is a link: Piwi opens no trace that reads one.",
+    });
+    // The live trace's listing already there, which the viewer would read in place of the folder's.
+    const listing = path.join(traces, `${TEST_ID}.json`);
+    expect(await whileThere(listing, () => fs.writeFileSync(listing, '{"entries":[]}'))).toEqual({
+      ok: false,
+      message:
+        "The runner's trace folder already holds a file named as this test's live trace: Piwi opens no trace that reads it.",
+    });
+    // Another test's link, a file, is not read.
+    const other = path.join(traces, 'another-test.network');
+    fs.symlinkSync(secret, other);
+    const own = harness();
+    own.begin();
+    own.answer.value = named(trace);
+    expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: true, message: OPENED });
+    own.closeAll();
+    fs.rmSync(other);
+  });
+
+  test('is in a trace folder, and a folder above it, that are no links', async () => {
+    const folderLink = "The runner's trace folder, or the folder above it, is a link: Piwi opens no trace there.";
+    // The real trace folder of the run, and two names for it through a link.
+    const real = path.join(run, 'real', '.playwright-artifacts-0', 'traces');
+    file(path.join(real, `${TEST_ID}.trace`));
+    const linkedTraces = path.join(run, 'linked-traces', '.playwright-artifacts-0');
+    fs.mkdirSync(linkedTraces, { recursive: true });
+    fs.symlinkSync(real, path.join(linkedTraces, 'traces'), 'dir');
+    expect(await refusal(path.join(linkedTraces, 'traces', `${TEST_ID}.trace`))).toEqual({
+      ok: false,
+      message: folderLink,
+    });
+    const linkedArtifacts = path.join(run, 'linked-artifacts');
+    fs.mkdirSync(linkedArtifacts, { recursive: true });
+    fs.symlinkSync(path.dirname(real), path.join(linkedArtifacts, '.playwright-artifacts-0'), 'dir');
+    expect(await refusal(path.join(linkedArtifacts, '.playwright-artifacts-0', 'traces', `${TEST_ID}.trace`))).toEqual({
+      ok: false,
+      message: folderLink,
+    });
   });
 
   test('is in the runner’s trace folder of that worker', async () => {
