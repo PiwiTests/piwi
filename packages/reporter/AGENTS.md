@@ -135,7 +135,13 @@ responsibilities.
      listener above (`live-call-log.ts`), and the layers a full view asks (`view`'s `layers`: `page-event`, `text`, the
      filmstrip's `thumb`, the view's own masked images kept in the worker's memory for its test until the project's masks
      change, `lane-layers.ts`,
-     `tests/live-view-layers.spec.ts`); it always posts its test's stops (`showStop`). Each frame
+     `tests/live-view-layers.spec.ts`), and while a full view has Inspect open (`view`'s `inspect`) the page's DOM snapshots
+     and the stylesheets, fonts and images they name (`internal/capture/live-inspect.ts`): read from the runner's growing
+     trace and its `resources/` folder where it traces the attempt, else from a live trace of Piwi's own of the context
+     (`tracing.start` through `internalCall`), stopped unsaved and its files deleted as Inspect closes, behind a guard on
+     `context.tracing.start` that stops it first (`guardTracing`); each snapshot through `hideSnapshotSecrets` with the
+     attempt's secrets, none for a project with masks, never a script, a document nor an SVG
+     (`tests/live-view-inspect.spec.ts`); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
      feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a

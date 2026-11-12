@@ -45,6 +45,8 @@ import { internalCall } from './quiet-capture.js';
  *   last read stopped, only the lines of its ARIA snapshots parsed; the ARIA files the lines name, under that folder
  *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read. The
  *   attempt's own file is named to the hub alone as it asks (`attemptTraceFile`), which opens it in the trace viewer.
+ *   Inspect (`live-inspect.ts`) reads the same files with its own tails (`TraceTail`, `attemptFiles`), and hides the
+ *   attempt's secrets kept here (`attemptSecrets`, `knownSecrets`).
  * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the lane's page (by
  *   Playwright's id of the page, its time) when the project's trace writes them, else taken through an internal call
  *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), masked by `maskAriaSnapshot` with the masks the wire
@@ -84,6 +86,8 @@ export interface LayersTest {
   trace: { dir: string; base: string } | null;
   /** Whether the runner traces the attempt; null, or absent, where its shape is not known. */
   traced?: () => boolean | null;
+  /** Whether the runner's trace of the attempt takes DOM snapshots; null, or absent, where its shape is not known. */
+  snapshots?: () => boolean | null;
 }
 
 let current: LayersTest | null = null;
@@ -172,15 +176,27 @@ export function tellPageEvent(event: PageEvent): void {
   }
 }
 
-/** One file of the trace, read from where the last read stopped, its complete lines alone. */
-class TraceTail {
+/** How much of a line passed over for its length is told (`TraceTail`'s `onLong`): where its fields start. */
+const LONG_LINE_HEAD = 1024;
+
+/**
+ * One file of the trace, read from where the last read stopped, its complete lines alone: a line longer than
+ * `maxLine` is passed over, its first `LONG_LINE_HEAD` characters told to `onLong`. `behind` says the file held more
+ * than the last read took.
+ */
+export class TraceTail {
   private offset = 0;
   private rest = '';
-  /** A line longer than `MAX_LINE` is being passed over, to its end. */
+  /** A line longer than `maxLine` is being passed over, to its end. */
   private skipping = false;
   private decoder = new StringDecoder('utf8');
+  behind = false;
 
-  constructor(readonly file: string) {}
+  constructor(
+    readonly file: string,
+    private readonly maxLine = MAX_LINE,
+    private readonly onLong: ((head: string) => void) | null = null,
+  ) {}
 
   /** The lines the file gained since the last read, `MAX_READ` bytes at most; none when it cannot be read. */
   async read(): Promise<string[]> {
@@ -200,6 +216,7 @@ class TraceTail {
         this.decoder = new StringDecoder('utf8');
       }
       const length = Math.min(size - this.offset, MAX_READ);
+      this.behind = size - this.offset > length;
       if (length <= 0) return [];
       const buffer = Buffer.alloc(length);
       const { bytesRead } = await handle.read(buffer, 0, length, this.offset);
@@ -213,7 +230,8 @@ class TraceTail {
       }
       const lines = (this.rest + text).split('\n');
       this.rest = lines.pop() ?? '';
-      if (this.rest.length > MAX_LINE) {
+      if (this.rest.length > this.maxLine) {
+        this.onLong?.(this.rest.slice(0, LONG_LINE_HEAD));
         this.rest = '';
         this.skipping = true;
       }
@@ -286,7 +304,7 @@ function takeLine(trace: AttemptTrace, line: string): void {
  * The trace files of the attempt now, `MAX_TRACE_FILES` at most: its own, and those of the contexts it opened
  * (`-recording<N>`), the newest ones past them.
  */
-async function attemptFiles(dir: string, base: string): Promise<string[]> {
+export async function attemptFiles(dir: string, base: string): Promise<string[]> {
   let names: string[];
   try {
     names = await fs.readdir(dir);
@@ -399,11 +417,21 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * The values the attempt's secret fields held at a read before, and each value its calls typed into a field their
+ * locator names for a secret (`isSecretLocator`) or with no locator: what a page shows hides, read without a page.
+ */
+export function knownSecrets(): string[] {
+  const secrets = new Set(readSecrets);
+  for (const { selector, value } of typed) if (selector === null || isSecretLocator(selector)) secrets.add(value);
+  return [...secrets];
+}
+
+/**
  * The values the page's text hides of `page`'s context, read now: the values the secret fields of each of its pages
  * hold, added to those read before in the attempt, and each value its calls typed into a field their locator names
  * for a secret (`isSecretLocator`) or with no locator; null when a page's fields could not be read.
  */
-async function attemptSecrets(page: Page): Promise<string[] | null> {
+export async function attemptSecrets(page: Page): Promise<string[] | null> {
   const pages = page.context().pages();
   const reads = await Promise.all(
     pages.map((one) =>
@@ -423,9 +451,7 @@ async function attemptSecrets(page: Page): Promise<string[] | null> {
     }
   }
   while (readSecrets.size > MAX_ATTEMPT_SECRETS) readSecrets.delete(readSecrets.values().next().value!);
-  const secrets = new Set(readSecrets);
-  for (const { selector, value } of typed) if (selector === null || isSecretLocator(selector)) secrets.add(value);
-  return [...secrets];
+  return knownSecrets();
 }
 
 /**

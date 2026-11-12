@@ -7,16 +7,16 @@
  * memory for the run, and serves each viewer the page rendered, without a script.
  *
  * - **A snapshot** is the `snapshot` object of a `frame-snapshot` event of the trace, as Playwright wrote it, what the
- *   page's secret fields hold removed by the worker before it leaves: its data, the UTF-8 JSON, `MAX_SNAPSHOT_BYTES` at
- *   most. Its header names the call it is of (Playwright's id, and its title, the
- *   text it types and its credentials hidden), its moment (`before` the call, at its `action`, `after` it), its page and
+ *   page's secrets show removed by the worker before it leaves (`hideSnapshotSecrets`): its data, the UTF-8 JSON,
+ *   `MAX_SNAPSHOT_BYTES` at most. Its header names the call it is of (Playwright's id, and its title, the text it types
+ *   and its credentials hidden), its moment (`before` the call, at its `action`, `after` it), its page and
  *   frame (Playwright's ids), whether it is of the page's main frame (`main`), whether it refers to no earlier snapshot
  *   (`full`), its place among its frame's snapshots in the trace (`index`), when it was taken, and the resources it
  *   names (`resources`: each one's address, as the page asked for it, and its `sha1`), those its stylesheets name
  *   included.
  * - **A frame's chain.** A snapshot that is not full refers to nodes of the snapshots of its frame before it, by how
- *   many snapshots back (`[[back, index]]` in its `html`: the snapshot whose `index` is its own less `back`, and the node
- *   at `index` of that one's, numbered as `snapshotNodes` numbers them), back to its frame's last full snapshot at most.
+ *   many snapshots back (`[[back, node]]` in its `html`: the snapshot whose `index` is its own less `back`, and the node
+ *   `node` of that one's, numbered as `snapshotNodes` numbers them), back to its frame's last full snapshot at most.
  *   A full snapshot starts its frame's chain again, and its `index` may start again from 0 (a new trace of the page):
  *   the instance drops the frame's earlier snapshots then. A snapshot the worker could not send (one past
  *   `MAX_SNAPSHOT_BYTES`, one it could not read, one left out below) leaves a gap a reference may name: the instance
@@ -40,7 +40,7 @@ import {
   looksLikeCardNumber,
 } from './mask';
 
-/** The longest snapshot a worker sends, in bytes of its JSON: a longer one is not sent, nor its frame's chain after it. */
+/** The longest snapshot a worker sends, in bytes of its JSON: a longer one is not sent. */
 export const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 /** The longest resource a worker sends, in bytes: a longer one is not sent. */
 export const MAX_RESOURCE_BYTES = 2 * 1024 * 1024;
@@ -264,7 +264,7 @@ export function snapshotPhase(snapshot: Record<string, unknown>): SnapshotPhase 
   return PHASES.includes(start) ? (start as SnapshotPhase) : null;
 }
 
-/** A node of a snapshot that names a node of an earlier one: `[[back, index]]`. */
+/** A node of a snapshot that names a node of an earlier one: `[[back, node]]`. */
 function isReference(node: unknown): node is [[number, number]] {
   return Array.isArray(node) && Array.isArray(node[0]);
 }
@@ -289,7 +289,7 @@ export function isFullSnapshot(html: unknown): boolean {
 }
 
 /**
- * The node a reference of a snapshot names (`[[back, index]]`), with the resolver of the snapshot it belongs to, for the
+ * The node a reference of a snapshot names (`[[back, node]]`), with the resolver of the snapshot it belongs to, for the
  * references inside it; null when its snapshot is not known.
  */
 export type SnapshotResolver = (back: number, index: number) => { node: unknown; resolve: SnapshotResolver } | null;

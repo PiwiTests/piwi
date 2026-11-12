@@ -569,6 +569,26 @@ What the package does to a user's run, process by process.
   above), forgotten as the next test begins and as the project's masks change, posted
   eight a second at most, one in flight, 40 waiting at most, all of it again on `resend`
   and as the layer is asked anew.
+- While a full view has Inspect open (`view`'s `inspect`), `live-inspect.ts` posts the DOM
+  snapshots of the view's page (`snapshot`) and the resources they name (`resource`), as
+  `@piwitests/core/live-inspect` frames them. Where the runner traces the attempt, it reads the
+  runner's growing files with `lane-layers.ts`' `TraceTail` (`attemptFiles`: each `.trace`
+  and its `.network`), from their start as Inspect opens; where it does not, it starts a live
+  trace of its own (`context.tracing.start({ name: 'piwi-inspect-…', snapshots: true, live:
+  true })` through `internalCall`, in the tracing's `_tracesDir`), stops it unsaved as Inspect
+  closes and deletes its `.trace`, `.network` and `.stacks`. `instrumentContext` hands the test
+  `context.tracing` behind a proxy (`guardTracing`) whose `start` stops Piwi's trace first.
+  It numbers each snapshot of the watched page in its frame as Playwright does (a line passed
+  over for its length still counts), keeps each frame's chain since its full snapshot for the
+  labels a later one's references name, and queues the page's snapshots since its main
+  frame's last full one, 16 MB at most. Each goes `SNAPSHOTS_PER_SECOND` at most, one post in
+  flight, after the bytes the frames and its own posts took (`LiveByteBudget`, which the
+  frames feed and never wait on, a second's wait at most), through `hideSnapshotSecrets` with
+  `attemptSecrets` (read from the pages once a second at most, else `knownSecrets`), its
+  title the runner's step's. Before it, each resource it and its stylesheets name that the
+  `.network` file recorded with a content type `inspectResourceType` allows, read from the
+  trace folder's `resources/` (a regular file, 2 MB at most), once per run. A project with
+  masks, or a runner's trace without snapshots, gets a `snapshot` that says why instead.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
@@ -885,7 +905,8 @@ src/
                 its browser bound for Playwright's tools), run-events (the test's
                 calls and page events, for an agent following the run and a lane
                 view's events), lane-layers (a lane view's layers: page events,
-                the page's text, the filmstrip of the view's own frames), live-call-log (the call
+                the page's text, the filmstrip of the view's own frames), live-inspect
+                (Inspect: the page's DOM snapshots and their resources from its trace), live-call-log (the call
                 a test is in, from the call stream or the in-process listener),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
