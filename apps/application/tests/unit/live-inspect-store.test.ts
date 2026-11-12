@@ -12,6 +12,7 @@ import {
   SNAPSHOT_TOO_LARGE,
   SNAPSHOT_UNREADABLE,
   SNAPSHOT_UNSENT,
+  INSTANCE_INSPECT_WORDS,
   InspectBudget,
   MAX_RUN_RESOURCE_COUNT,
   MAX_RUN_SNAPSHOT_COUNT,
@@ -516,5 +517,19 @@ describe('Inspect’s store of a run', () => {
       snapshot('call@3', 'before', ['HTML', {}, ['BODY', {}, 'x'.repeat(4096)]], { full: false, index: 2 }),
     );
     expect(await kept.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_GONE });
+  });
+
+  test('says why a page does not show in the words its host gives it, the instance’s by default', async () => {
+    expect(INSTANCE_INSPECT_WORDS).toMatchObject({ gone: SNAPSHOT_GONE, missing: SNAPSHOT_MISSING });
+    const words = Object.fromEntries(
+      Object.keys(INSTANCE_INSPECT_WORDS).map((why) => [why, `The app’s ${why}.`]),
+    ) as unknown as typeof INSTANCE_INSPECT_WORDS;
+    const store = new RunInspect(new InspectBudget(), words);
+    expect(await store.render('w', 'call@9', 'after')).toEqual({ status: 404, message: 'The app’s missing.' });
+    store.addSnapshot('w', snapshot('call@2', 'before', ['HTML', {}, [[1, 1]]], { full: false, index: 1 }));
+    expect(await store.render('w', 'call@2', 'before')).toEqual({ status: 410, message: 'The app’s unsent.' });
+    store.addSnapshot('w', snapshot('call@1', 'before', ['HTML', {}, ['BODY', {}, 'Cart']]));
+    store.endTest('w');
+    expect(await store.render('w', 'call@1', 'before')).toEqual({ status: 410, message: 'The app’s testEnded.' });
   });
 });

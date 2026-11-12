@@ -29,6 +29,9 @@
  * the desktop build alone (`server/utils/mcp/run-tools.ts`): an agent follows a run, steers it and acts at a stop as
  * the window does, within the same limits, never in a run nobody attends, and the code it has made comes to the window
  * to copy, as Assert a region's does, and back to the agent in the answer: no file is written.
+ * **Inspect** of a lane (`inspect`) reads the pages of its running test from the test's own trace, whose file the
+ * lane's worker names to this server alone (`RunSessions.laneTrace`), while a window has it open (`desktop-inspect.ts`):
+ * the window hears each page's call and moment on its stream, and reads the page rendered from a route of its own.
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -76,6 +79,7 @@ import {
 } from '#shared/desktop-runs';
 import { desktopPicksToken } from './desktop-access';
 import { EditorRuns, type EditorRun } from './desktop-editor-runs';
+import { DesktopInspects } from './desktop-inspect';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -324,6 +328,8 @@ export class DesktopRuns {
   private liveCount = 0;
   /** The editors' runs, observed for the app's own surfaces and steered by none of them (`EditorRuns`). */
   private editors: EditorRuns | null = null;
+  /** **Inspect** of the lanes the windows have it open on, read from their tests' own traces. */
+  readonly inspects: DesktopInspects;
   private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
 
   private constructor(private readonly options: DesktopRunsOptions) {
@@ -333,6 +339,7 @@ export class DesktopRuns {
       notify: (session) => {
         this.hub?.push(session);
         this.liveCountChanged();
+        this.inspects.sessionChanged(session);
       },
       presenceChanged: (session) => this.hub?.push(session),
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
@@ -373,6 +380,10 @@ export class DesktopRuns {
       // what a window and Playwright need, the trace's path staying in this server.
       traceViewer: options.traceViewer ?? startTraceViewer,
       ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
+    });
+    this.inspects = new DesktopInspects({
+      sessions: this.sessions,
+      send: (viewer, event) => this.windows.get(viewer)?.sink.send(event),
     });
     this.actions = new StopActions({
       sessions: this.sessions,
@@ -564,6 +575,7 @@ export class DesktopRuns {
           send: (message) => {
             // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
             if (sink.buffered() > MAX_HUB_BUFFERED) return close();
+            if (message.type === 'lane-layer') this.titled(message);
             if (relayed(message)) sink.send(message);
           },
           buffered: () => sink.buffered(),
@@ -612,6 +624,20 @@ export class DesktopRuns {
           : 'A failure of this run no pause bar shows goes on at once.',
       );
     }
+    if (value.type === 'inspect') {
+      if (!id || typeof value.ref !== 'string' || !REF.test(value.ref)) {
+        return answer(false, 'The command needs the ref of a run.');
+      }
+      if (!Number.isInteger(value.lane) || (value.lane as number) < 0) {
+        return answer(false, 'The command needs the lane to inspect.');
+      }
+      if (typeof value.on !== 'boolean') return answer(false, 'on must be true or false.');
+      const lane = value.lane as number;
+      const said = value.on
+        ? this.inspects.open(value.viewer as string, value.ref, lane)
+        : this.inspects.close(value.viewer as string, value.ref, lane);
+      return answer(said.ok, said.message);
+    }
     if (value.type === 'answer-ask') {
       if (!id || typeof value.ref !== 'string' || !REF.test(value.ref) || typeof value.ask !== 'string') {
         return answer(false, 'The command needs the ref of a run and the ask it answers.');
@@ -629,6 +655,7 @@ export class DesktopRuns {
     this.editors?.close();
     this.editors = null;
     this.agent.dispose();
+    this.inspects.dispose();
     this.hub?.close();
     this.hub = null;
     this.channel?.close();
@@ -642,6 +669,7 @@ export class DesktopRuns {
     const window = this.windows.get(viewer);
     if (!window) return;
     this.windows.delete(viewer);
+    this.inspects.leave(viewer);
     window.peer.leave();
     for (const ref of [...window.shows.keys()]) this.stopShowing(window, ref);
   }
@@ -656,6 +684,13 @@ export class DesktopRuns {
     window.shows.delete(ref);
     if ([...this.windows.values()].some((other) => other.shows.has(ref))) return;
     if (this.sessions.holdOf(ref) === set) this.sessions.hold({ ref, on: false }, 'person');
+  }
+
+  /** A layer of a lane a window watches: the runner's titles of its calls name Inspect's snapshots of them. */
+  private titled(layer: Extract<HubMessage, { type: 'lane-layer' }>): void {
+    if (layer.layer === 'calls') this.inspects.titled(layer.ref, layer.lane, layer.log.id, layer.log.call.title);
+    else if (layer.layer === 'filmstrip')
+      this.inspects.titled(layer.ref, layer.lane, layer.thumb.call, layer.thumb.title);
   }
 
   private liveCountChanged(): void {

@@ -18,6 +18,7 @@ import type {
   HubSessionMessage,
 } from '@piwitests/core/run-hub';
 import { UNATTENDED_REF_SUFFIX, isUnattendedRef } from '@piwitests/core/run-channel';
+import type { LiveSnapshotNotice, LiveWorkerId } from '@piwitests/core/live-view';
 import type { StopCode } from '@piwitests/editor/run-host';
 
 /**
@@ -75,6 +76,37 @@ export interface DesktopRunPick {
   line: number | null;
 }
 
+/**
+ * A snapshot of a lane's page **Inspect** read from its test's trace, as the window hears of it: its call, title and
+ * moment, its page and frame, the lane's worker (no shard), and the test it is of; never its JSON nor a path. The window
+ * reads the page rendered (`GET /api/desktop/runs/inspect/page`).
+ */
+export type DesktopInspectNotice = LiveWorkerId & LiveSnapshotNotice & { type: 'snapshot'; test: string | null };
+
+/**
+ * What a window with **Inspect** open on the lane `lane` of the run `ref` hears: the attempt Inspect follows now
+ * (`attempt`: Playwright's id of the lane's running test and its retry, `<id>#<retry>`; null between tests), each
+ * snapshot read of it (`snapshot`), and why no page of it shows (`refused`).
+ */
+export type DesktopInspectEvent = { type: 'inspect'; ref: string; lane: number; attempt: string | null } & (
+  | { snapshot?: undefined; refused?: undefined }
+  | { snapshot: DesktopInspectNotice }
+  | { refused: string }
+);
+
+/**
+ * What a window hears as it opens Inspect on a lane (`GET /api/desktop/runs/inspect/calls`): the attempt Inspect follows,
+ * the snapshots read of it so far, the latest `MAX_DESKTOP_INSPECT_LISTED`, and why no page of it shows, if it said.
+ */
+export interface DesktopInspectCalls {
+  attempt: string | null;
+  heard: DesktopInspectNotice[];
+  refused: string | null;
+}
+
+/** The most snapshots a window hears of a lane as it opens Inspect: the latest. */
+export const MAX_DESKTOP_INSPECT_LISTED = 600;
+
 /** What the window's stream sends. */
 export type DesktopRunEvent =
   /** First, once: the id the window's commands name the stream by. */
@@ -103,6 +135,8 @@ export type DesktopRunEvent =
   | { type: 'stop-code'; code: StopCode }
   /** A locator a test of a run picked, for the window to copy; the latest ones again as the stream opens, with the codes. */
   | { type: 'pick'; pick: DesktopRunPick }
+  /** What **Inspect** read of a lane the window has it open on (`inspect`): its attempt, a snapshot, why none shows. */
+  | DesktopInspectEvent
   /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
   | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string }
   /**
@@ -127,6 +161,11 @@ export type DesktopRunCommand = (
   | { type: 'show'; id: number; ref: string; on: boolean }
   /** The person's Not now to a teammate's ask to watch the run `ref` (`ask`, the ask's id). */
   | { type: 'answer-ask'; id: number; ref: string; ask: string }
+  /**
+   * **Inspect** of the lane `lane` of the run `ref` opens (`on`) or closes for the window: the server reads the pages of
+   * the lane's running test from its own trace while a window has it open, and tells it (`DesktopInspectEvent`).
+   */
+  | { type: 'inspect'; id: number; ref: string; lane: number; on: boolean }
 ) & {
   viewer: string;
 };
