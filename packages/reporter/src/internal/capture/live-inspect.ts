@@ -253,8 +253,9 @@ async function namesIn(file: string, names: ReadonlySet<string>, found: Set<stri
 }
 
 /**
- * The resources the server's tracing of the context wrote, by `resources/<name>` (Playwright internal, in-process
- * alone, feature-checked): one taken out of it is written again by a later trace of the context that names it.
+ * The resources the server's tracing of the context wrote, by `resources/<name>` (by `<name>` before Playwright 1.64)
+ * (Playwright internal, in-process alone, feature-checked): one taken out of it is written again by a later trace of
+ * the context that names it.
  */
 function writtenResources(context: BrowserContext): Set<string> | null {
   const connection = (context as unknown as { _connection?: { toImpl?: unknown } })._connection;
@@ -297,6 +298,7 @@ async function removeOwnTrace(context: BrowserContext, dir: string, name: string
       if (named.has(file)) continue;
       await fs.rm(path.join(dir, 'resources', file), { force: true }).catch(() => undefined);
       written?.delete(`resources/${file}`);
+      written?.delete(file);
     }
   };
   const closed = (context as unknown as { _closingStatus?: unknown })._closingStatus === 'closed';
