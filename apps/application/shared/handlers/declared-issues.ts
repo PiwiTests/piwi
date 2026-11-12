@@ -83,6 +83,8 @@ export interface DeclaredIssuesLookup {
  * not return last, leaving out a key a cluster already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
  * the keys it names and does not link, and to 0 for a failing cluster that names none this run.
  *
+ * The links and dismissals of the clusters with a key to link are read again once the lookup returns, so one made during
+ * the lookup is respected and counts toward the cap; one made between that read and an insert is not seen.
  * The writes come after the lookup, each only while the deadline has not fired: once it fires the lookup is aborted
  * and nothing more is written. A lookup that fails links nothing; the next failing run that names the key tries again.
  */
@@ -127,6 +129,13 @@ export async function linkNamedIssues(
   }
 
   const stopped = () => ({ ...result, failed: 'deadline' as const });
+  // The clusters' links and dismissals are read again after the lookup, before the first write.
+  const ready = [...clusters].filter(([, state]) => state.candidates.some((key) => byKey.has(key)));
+  await readLinkState(
+    db,
+    clusters,
+    ready.map(([id]) => id),
+  );
   if (unnamed.length > 0) {
     if (deadline.aborted) return stopped();
     await db
@@ -226,8 +235,23 @@ async function readClusterStates(
     }
   }
   if (clusters.size === 0) return { clusters, failing: [...failing] };
+  await readLinkState(db, clusters, [...clusters.keys()]);
+  return { clusters, failing: [...failing] };
+}
 
-  const ids = [...clusters.keys()];
+/**
+ * Reads what the clusters `ids` hold now (the keys they link or have dismissed, the Jira ids they have dismissed and
+ * their links from the tests) and works out the keys still to link, most-named first. Links and dismissals written
+ * after this read are not seen.
+ */
+async function readLinkState(db: DrizzleDB, clusters: Map<number, ClusterState>, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  for (const id of ids) {
+    const state = clusters.get(id)!;
+    state.taken = new Set();
+    state.dismissedIds = new Set();
+    state.declared = 0;
+  }
   const links = await db
     .select({ clusterId: entityLinks.failureClusterId, key: entityLinks.key, origin: entityLinks.origin })
     .from(entityLinks)
@@ -252,13 +276,13 @@ async function readClusterStates(
     state.taken.add(dismissal.key.toUpperCase());
     if (dismissal.externalId) state.dismissedIds.add(dismissal.externalId);
   }
-  for (const state of clusters.values()) {
+  for (const id of ids) {
+    const state = clusters.get(id)!;
     state.candidates = [...state.named]
       .filter(([key]) => !state.taken.has(key))
       .sort(([a, x], [b, y]) => y.size - x.size || a.localeCompare(b))
       .map(([key]) => key);
   }
-  return { clusters, failing: [...failing] };
 }
 
 /**

@@ -252,6 +252,21 @@ beforeEach(async () => {
   await bind();
 });
 
+/** A Jira issue of the bound project as the lookup returns it. */
+function stubTrackerIssue(key: string) {
+  return {
+    id: String(20000 + Number(key.split('-')[1])),
+    key,
+    url: `${SITE}/browse/${key}`,
+    title: `Issue ${key}`,
+    status: 'To Do',
+    statusCategory: 'new' as const,
+    statusColor: 'info',
+    assignee: null,
+    projectKey: 'PROJ',
+  };
+}
+
 describe('the link step', () => {
   test('links the issue a failing test names, as read through the binding', async () => {
     const cluster = await newCluster();
@@ -544,6 +559,59 @@ describe('the link step', () => {
     expect(result.failed).toBe('deadline');
     expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-17']);
     expect((await clusterRow(cluster)).declaredIssuesMore).toBe(more);
+  });
+
+  test('a dismissal recorded during the lookup is respected', async () => {
+    const cluster = await newCluster();
+    defineIssue('PROJ-71');
+    defineIssue('PROJ-72');
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-71', 'PROJ-72'] }]);
+    const tracker = {
+      parseIssueUrl: () => null,
+      getIssues: async (keys: string[]) => {
+        await db.insert(schema.entityLinkDismissals).values({ failureClusterId: cluster, key: 'PROJ-71' });
+        return { issues: keys.map(stubTrackerIssue) };
+      },
+    };
+
+    const result = await linkNamedIssues(db as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: tracker as never,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    expect(result.linked).toEqual([{ clusterId: cluster, key: 'PROJ-72' }]);
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-72']);
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(0);
+  });
+
+  test('a link from the tests added during the lookup counts toward the cap', async () => {
+    const cluster = await newCluster();
+    const keys = Array.from({ length: 12 }, (_, i) => `PROJ-${i + 1}`);
+    const { runId } = await failRun([
+      { cluster, issues: keys.slice(0, 10) },
+      { cluster, issues: keys.slice(10) },
+    ]);
+    const tracker = {
+      parseIssueUrl: () => null,
+      getIssues: async (asked: string[]) => {
+        // A run finishing at the same time links 5 of the keys before this one writes.
+        for (const key of keys.slice(0, 5)) await pin(cluster, key, 'annotation');
+        return { issues: asked.map(stubTrackerIssue) };
+      },
+    };
+
+    await linkNamedIssues(db as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: tracker as never,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    const declared = (await links(cluster)).filter((l) => l.origin === 'annotation');
+    expect(declared).toHaveLength(10);
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(2);
   });
 
   test('a binding without a project key links nothing', async () => {
