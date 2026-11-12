@@ -80,10 +80,19 @@ function callStreamOf(context: BrowserContext): CallStream | null {
 
 /** A call of the worker's Playwright as its instrumentation heard it begin. */
 interface HeardCall {
-  /** The call's zone, on which the runner writes the id the call stream names it by (`callId`). */
-  zone: { callId?: unknown; apiName?: unknown; title?: unknown };
+  /**
+   * The call's zone, on which the runner writes the id of its step (`callId`, the id the call stream names it by;
+   * `stepId` before Playwright 1.64).
+   */
+  zone: { callId?: unknown; stepId?: unknown; apiName?: unknown; title?: unknown };
   selector: string | null;
   began: number;
+}
+
+/** The id of the runner's step a call's zone names; null before the runner gave it one. */
+function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefined): string | null {
+  if (typeof zone?.callId === 'string' && zone.callId) return zone.callId;
+  return typeof zone?.stepId === 'string' && zone.stepId ? zone.stepId : null;
 }
 
 /** Where a view follows a context's calls from: the call stream, or the in-process instrumentation. */
@@ -167,10 +176,10 @@ export function trackCalls(playwright: unknown): void {
         // A call is heard, or not, but never broken.
       }
     },
-    onApiCallEnd: (zone: { callId?: unknown }) => {
+    onApiCallEnd: (zone: { callId?: unknown; stepId?: unknown }) => {
       try {
         heard.delete(zone);
-        tellAll(endListeners, typeof zone?.callId === 'string' ? zone.callId : null);
+        tellAll(endListeners, zoneStepId(zone));
       } catch {
         // A call is heard, or not, but never broken.
       }
@@ -180,7 +189,7 @@ export function trackCalls(playwright: unknown): void {
 
 /** The call heard under the id the call stream names it by. */
 function heardAs(id: string): HeardCall | null {
-  for (const call of heard.values()) if (call.zone.callId === id) return call;
+  for (const call of heard.values()) if (zoneStepId(call.zone) === id) return call;
   return null;
 }
 
@@ -365,6 +374,8 @@ interface ServerInstrumentation {
 /** A call's metadata, as Playwright's server keeps it while the call runs. */
 interface CallMetadata {
   id: string;
+  /** The id of the runner's step, where it is not `id` (before Playwright 1.64). */
+  stepId?: unknown;
   method: string;
   type?: unknown;
   title?: unknown;
@@ -456,7 +467,7 @@ function listenContext(context: BrowserContext, titleOf: (id: string) => string 
       state.calls.set(
         meta.id,
         heardCall({
-          id: meta.id,
+          id: typeof meta.stepId === 'string' && meta.stepId ? meta.stepId : meta.id,
           named: metadataTitle(meta),
           file: userFile(meta.location?.file),
           line: typeof meta.location?.line === 'number' ? meta.location.line : null,
@@ -536,7 +547,7 @@ function heardCalls(titleOf: (id: string) => string | null): ContextCalls {
 function refreshHeard(state: ContextCalls): void {
   const running = new Set<string>();
   for (const one of heard.values()) {
-    const id = typeof one.zone.callId === 'string' ? one.zone.callId : null;
+    const id = zoneStepId(one.zone);
     if (!id) continue;
     running.add(id);
     if (state.calls.has(id)) continue;
