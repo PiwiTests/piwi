@@ -3,11 +3,11 @@
  * The live view of one worker of a running run, docked beside the run page (a sheet on a phone), from the test of the
  * row it was opened from: the images of its page the worker sends while this view is open, a few a second, each with
  * the call it was taken at, at the size this view shows them in device pixels (1280 by 800 at most), on the page's one
- * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when there is
- * one. In a CI run, the worker also sends the call its test is in as Playwright logs it: the log's last lines beside
- * the image, how long the call has run and the elements its locator matches, and over the
- * image the first one outlined and the point an input action acts on; **Zoom to the element** crops the image around
- * that element, a click on the image zooms where it points. Watching only: nothing here reaches the test.
+ * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when it came
+ * within `TILE_OPEN_MS`. In a CI run, the worker also sends the call its test is in as Playwright logs it: the log's
+ * last lines beside the image, how long the call has run and the elements its locator matches, and over the image the
+ * first one outlined and the point an input action acts on; **Zoom to the element** crops the image around that
+ * element, a click on the image zooms where it points. Watching only: nothing here reaches the test.
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -68,6 +68,8 @@ const open = defineModel<boolean>('open', { required: true });
 const attention = defineModel<boolean>('attention', { default: false });
 
 const WAITING = 'Waiting for the first image of the page…';
+/** The oldest a worker's kept tile may be, in ms, for the view to open on it. */
+const TILE_OPEN_MS = 3_000;
 const STALLED =
   'The view’s connection has not opened: the instance does not answer, or, over HTTP/1.1, other Piwi tabs hold the six connections a browser opens to one address. Close some, or serve Piwi over HTTP/2.';
 
@@ -152,9 +154,15 @@ function connect(): void {
   lastTarget.value = null;
   zoom.value = null;
   const worker = { shard: props.shard, worker: props.worker, ...(follows.value ? { slot: props.slot! } : {}) };
-  // The worker's latest tile shows while its first full image comes.
+  // The worker's latest tile, a few seconds old at most, shows while its first full image comes: of the view's test, or
+  // of the one the view goes on with.
   const tile = props.live.latest(worker);
-  if (tile?.image && (!tile.test || tile.test === watchedTest.value || follows.value)) {
+  if (
+    tile?.image &&
+    tile.receivedAt !== null &&
+    Date.now() - tile.receivedAt <= TILE_OPEN_MS &&
+    (!tile.test || tile.test === watchedTest.value || nextTest(tile.test))
+  ) {
     showImage(tile.image);
     call.value = tile.call;
     notice.value = '';
