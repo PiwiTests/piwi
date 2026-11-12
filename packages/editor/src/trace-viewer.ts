@@ -2,13 +2,14 @@
  * **Open the trace so far**: Playwright's trace viewer on a running test's trace, on this machine. The lane's worker
  * names the attempt's own trace file to the hub alone (`trace` on the run channel); `checkTraceFile` takes it only as a
  * regular file, no link, named `<attempt>[-recording<N>].trace`, in the runner's trace folder of that worker
- * (`.playwright-artifacts-<worker>/traces`) inside a folder the run runs in, as the file system spells each of them. The
+ * (`.playwright-artifacts-<worker>/traces`) inside the run's folder as its host knows it (`session.root`, never the
+ * folder the worker names), as the file system spells each of them. The
  * viewer opens every file of the attempt there as Playwright's live trace (`<traces>/<attempt>.json`, which its server
  * lists from the folder), as it stands when the viewer loads it: Playwright's viewer reads it once.
  *
  * `startTraceViewer` runs `show-trace` from the project's own Playwright (`recorder/playwright.ts`), with the project's
  * Node (`recorder/node.ts`) and the variables of the host's environment a window and Playwright need alone
- * (`viewerEnv`), in the run's folder: an argument array and no shell, detached from the service so the viewer's window
+ * (`viewerEnv`), in the run's folder as its host knows it: an argument array and no shell, detached from the service so the viewer's window
  * outlives it, and let go once it started. A viewer that stops within `TRACE_VIEWER_START_MS` did not
  * start, and says why. No path goes into what a surface hears: the run sessions answer with a sentence alone.
  */
@@ -83,7 +84,7 @@ function viewerEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
 
 /** What a viewer opens, and where it runs. */
 export interface TraceViewerLaunch {
-  /** The folder the run runs in: the viewer is the Playwright installed there, and runs in it. */
+  /** The run's folder, as its host knows it: the viewer is the Playwright installed there, and runs in it. */
   folder: string;
   /** What the viewer opens: the attempt's files in the runner's trace folder, as a live trace (`<traces>/<attempt>.json`). */
   trace: string;
@@ -100,8 +101,11 @@ export type TraceViewerLauncher = (launch: TraceViewerLaunch) => Promise<TraceVi
 
 /** The attempt whose trace a worker named, as its run sessions know it. */
 export interface TraceAttempt {
-  /** The folders the run runs in (its working directory, its config's folder): the trace is in one of them. */
-  folders: readonly string[];
+  /**
+   * The run's folder, as its host knows it (`RunSessionsOptions.rootOf`: the editor's config folder, the desktop app's
+   * linked folder), never one the worker names: the trace is inside it.
+   */
+  folder: string;
   /** The worker's index, which names the runner's folder of its artifacts (`.playwright-artifacts-<worker>`). */
   worker: number;
   /** Playwright's id of the running test. */
@@ -136,8 +140,8 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * The checks a trace file a worker named passes before a viewer opens it: an absolute path, a `.trace` file of the
- * attempt that runs, a regular file and no link, in the runner's trace folder of that worker, inside a folder the run
- * runs in, each folder as the file system spells it.
+ * attempt that runs, a regular file and no link, in the runner's trace folder of that worker, inside the run's folder
+ * as its host knows it, each folder as the file system spells it.
  */
 export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrace {
   if (typeof file !== 'string' || !path.isAbsolute(file)) {
@@ -166,11 +170,10 @@ export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrac
   if (path.basename(artifacts) !== `.playwright-artifacts-${attempt.worker}`) {
     return { ok: false, message: "The worker named a file outside the runner's trace folder." };
   }
-  const inside = attempt.folders.some((folder) => {
-    const real = realPath(folder);
-    return !!real && isInside(real, traces);
-  });
-  if (!inside) return { ok: false, message: 'The worker named a trace outside the folder the run runs in.' };
+  const folder = realPath(attempt.folder);
+  if (!folder || !isInside(folder, traces)) {
+    return { ok: false, message: 'The worker named a trace outside the folder the run runs in.' };
+  }
   return { ok: true, trace: path.join(traces, `${base}.json`) };
 }
 

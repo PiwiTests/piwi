@@ -988,6 +988,56 @@ describe('the trace so far of a desktop run', () => {
     worker.socket.destroy();
   });
 
+  it('opens a trace only from the linked folder, whatever folder a worker names, and none of a run outside it', async () => {
+    const ref = 'desktop-trace-2';
+    traceLaunches.splice(0);
+    const first = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    first.begin();
+    // A second worker of the run names the worktree as the folder it runs in.
+    const second = new Worker(worktree).attach(ref, channel.token, 1, [], ['view-lane', 'trace']);
+    second.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers.find((w) => w.parallelIndex === 1)?.test);
+    const theirs = path.join(worktree, 'test-results', '.playwright-artifacts-1', 'traces');
+    const ours = path.join(folder, 'test-results', '.playwright-artifacts-1', 'traces');
+    for (const traces of [theirs, ours]) {
+      fs.mkdirSync(traces, { recursive: true });
+      fs.writeFileSync(path.join(traces, 'id-pays.trace'), '{"type":"context-options"}\n');
+    }
+    const answer = (traces: string) => ({
+      ok: true,
+      message: "The attempt's trace grows there.",
+      file: path.join(traces, 'id-pays.trace'),
+    });
+    const outside = window.command({ type: 'openTrace', id: 9, ref, lane: 1 });
+    await second.answer('trace', answer(theirs));
+    expect(await outside).toEqual({
+      type: 'answer',
+      id: 9,
+      ok: false,
+      message: 'The worker named a trace outside the folder the run runs in.',
+    });
+    const inside = window.command({ type: 'openTrace', id: 10, ref, lane: 1 });
+    await second.answer('trace', answer(ours), 1);
+    expect(await inside).toMatchObject({ id: 10, ok: true });
+    expect(traceLaunches).toEqual([{ folder, trace: path.join(ours, 'id-pays.json') }]);
+    traceClosers.splice(0).forEach((close) => close());
+    // A run in the worktree, which no project links: no trace is offered, nor opened, nor its worker asked.
+    const repro = new Worker(worktree).attach('desktop-trace-3', channel.token, 0, [], ['view-lane', 'trace']);
+    repro.begin();
+    await waitFor(() => window.session('desktop-trace-3')?.workers[0]?.test);
+    expect(window.session('desktop-trace-3')!.workers[0]).not.toHaveProperty('traces');
+    expect(await window.command({ type: 'openTrace', id: 11, ref: 'desktop-trace-3', lane: 0 })).toEqual({
+      type: 'answer',
+      id: 11,
+      ok: false,
+      message: "This run's folder is not known here: open its trace from the editor or the app that started it.",
+    });
+    expect(repro.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    window.close();
+    for (const worker of [first, second, repro]) worker.socket.destroy();
+  });
+
   it('starts the viewer with none of the server’s own settings and secrets', async () => {
     // The launcher the server wires, on a linked folder whose stand-in Playwright writes the environment it got.
     const linked = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-viewer-')));

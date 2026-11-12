@@ -112,12 +112,12 @@ function harness(
   options: {
     features?: RunFeature[];
     launcher?: TraceViewerLauncher | null;
-    root?: string;
+    root?: string | null;
     cwd?: string;
     retry?: number;
   } = {},
 ) {
-  const root = options.root ?? run;
+  const root = options.root === undefined ? run : options.root;
   const sent: RunSession[] = [];
   const notices: string[] = [];
   const own = standIn();
@@ -137,7 +137,7 @@ function harness(
     type: 'run-attach',
     token: 't',
     ref: 'ed-1',
-    cwd: options.cwd ?? root,
+    cwd: options.cwd ?? root ?? run,
     workerIndex: 0,
     parallelIndex: 0,
     pid: 1,
@@ -211,6 +211,40 @@ describe('opening a lane’s running test’s trace', () => {
     expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: true, message: OPENED });
     expect(own.launches).toHaveLength(2);
     own.closeAll();
+  });
+
+  test('starts the viewer from the run’s folder the host knows, whatever folder its worker names', async () => {
+    const own = harness({ cwd: path.join(root, 'elsewhere') });
+    own.begin();
+    own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
+    expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: true, message: OPENED });
+    expect(own.launches).toEqual([{ folder: run, trace: path.join(traces, `${TEST_ID}.json`) }]);
+    own.closeAll();
+    // The trace of the folder the worker names is not the run's.
+    const elsewhere = harness({ cwd: path.join(root, 'elsewhere') });
+    elsewhere.begin();
+    elsewhere.answer.value = named(
+      file(path.join(root, 'elsewhere', '.playwright-artifacts-0', 'traces', `${TEST_ID}.trace`)),
+    );
+    expect(await elsewhere.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({
+      ok: false,
+      message: 'The worker named a trace outside the folder the run runs in.',
+    });
+    expect(elsewhere.launches).toEqual([]);
+  });
+
+  test('opens no trace of a run whose folder the host does not know, nor offers it', async () => {
+    const own = harness({ root: null, cwd: run });
+    own.begin();
+    own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
+    expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({
+      ok: false,
+      message: "This run's folder is not known here: open its trace from the editor or the app that started it.",
+    });
+    expect(own.asked).toEqual([]);
+    expect(own.launches).toEqual([]);
+    await waitFor(() => last(own.sent)?.workers[0]?.test ?? undefined);
+    expect(last(own.sent)!.workers[0]).not.toHaveProperty('traces');
   });
 
   test('refuses a worker whose reporter does not say where its trace grows, and one between two tests', async () => {
@@ -355,10 +389,10 @@ describe('the trace file a worker names', () => {
       ok: false,
       message: inside,
     });
-    // A run whose working directory is another folder.
+    // A run whose folder is another one.
     expect(
       checkTraceFile(path.join(traces, `${TEST_ID}.trace`), {
-        folders: [path.join(root, 'elsewhere')],
+        folder: path.join(root, 'elsewhere'),
         worker: 0,
         testId: TEST_ID,
         retry: 0,

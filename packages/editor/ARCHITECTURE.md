@@ -1062,8 +1062,12 @@ app's server; without one, the hub leaves `trace` out of its features and the re
   that comes after the test ended opens nothing.
 - **The checks** (`checkTraceFile`): an absolute path; a name `<testId>[-retry<k>][-recording<N>].trace` of the attempt
   that runs; a regular file now, no link (`lstat`); its folder, as the file system spells it, named `traces` in the
-  worker's own `.playwright-artifacts-<workerIndex>`; and inside the run's working directory or its config's folder,
-  as the file system spells them. Each refusal is a sentence.
+  worker's own `.playwright-artifacts-<workerIndex>`; and inside the run's folder as its host knows it, as the file
+  system spells it. Each refusal is a sentence.
+- **The run's folder** is the session's `root` (`RunSessionsOptions.rootOf`: the editor context's config folder, the
+  desktop app's linked folder holding the run), never the `cwd` a worker names in `run-attach`: the viewer runs from
+  it and the trace must be inside it. A run whose folder the host does not know (a terminal's run outside every
+  context, a desktop run in a worktree) opens no trace, and its workers carry no `traces`.
 - **What the viewer opens.** `<traces>/<attempt>.json`, which names no file: Playwright's trace viewer server answers
   it with every file of the folder whose name starts with the attempt's (the test's own context and the later ones,
   their network files) and the folder's resources, and reads them as a live trace, an unfinished call shown running.

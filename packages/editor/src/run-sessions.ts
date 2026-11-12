@@ -320,6 +320,9 @@ const CANNOT_TRACE = "This worker's reporter cannot open its trace: update @piwi
 /** Why **Open the trace so far** is refused between two tests. */
 const NO_TEST = 'No test runs on this worker now.';
 
+/** Why **Open the trace so far** is refused in a run whose folder the host does not know (`rootOf`). */
+const NO_ROOT = "This run's folder is not known here: open its trace from the editor or the app that started it.";
+
 /** `text` with its first letter in capitals. */
 function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -1681,8 +1684,9 @@ export class RunSessions {
   /**
    * **Open the trace so far** of the lane `lane` of the run `ref`: its worker names where its running test's trace
    * grows, to this host alone; the file passes `checkTraceFile`, and Playwright's trace viewer starts on it from the
-   * run's folder (`traceViewer`), one for each attempt at a time. Answered in a sentence that never names the file,
-   * which no message, log or answer of the host carries.
+   * run's folder as this host knows it (`session.root`, never the folder the worker names; a run without one opens
+   * none), one for each attempt at a time (`traceViewer`). Answered in a sentence that never names the file, which no
+   * message, log or answer of the host carries.
    */
   async openTrace(params: OpenTraceParams): Promise<RunControlResult> {
     const launch = this.options.traceViewer;
@@ -1691,6 +1695,8 @@ export class RunSessions {
     if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
     if (!launch) return { ok: false, message: `${capitalized(this.host)} cannot open a trace.` };
     if (!session || session.ended) return { ok: false, message: this.noWorker(session) };
+    const root = session.root;
+    if (root === null) return { ok: false, message: NO_ROOT };
     const worker = [...session.workers.values()].find((w) => w.parallelIndex === lane);
     if (!worker) return { ok: false, message: `This run has no worker ${lane + 1} now.` };
     if (!worker.features.has('trace')) return { ok: false, message: CANNOT_TRACE };
@@ -1703,7 +1709,7 @@ export class RunSessions {
       return { ok: false, message: 'The test ended: open the trace of the one that runs now.' };
     }
     const checked = checkTraceFile(answer.file, {
-      folders: session.root ? [worker.cwd, session.root] : [worker.cwd],
+      folder: root,
       worker: worker.index,
       testId: test.id,
       retry: test.retry,
@@ -1717,7 +1723,7 @@ export class RunSessions {
       };
     }
     this.traceViewers.add(checked.trace);
-    const started = await launch({ folder: worker.cwd, trace: checked.trace }).catch(
+    const started = await launch({ folder: root, trace: checked.trace }).catch(
       (error: unknown): { ok: false; reason: string } => ({
         ok: false,
         reason: error instanceof Error ? error.message : String(error),
@@ -2552,7 +2558,7 @@ export class RunSessions {
           watchable: worker.features.has('view-lane'),
           layers: worker.features.has('view-lane') && worker.features.has('layers'),
           showsWindow: worker.features.has('front'),
-          ...(worker.features.has('trace') && this.options.traceViewer ? { traces: true } : {}),
+          ...(worker.features.has('trace') && session.root !== null && this.opensTraces ? { traces: true } : {}),
           ...watchersField(this.watchersOf(session, worker, null)),
         })),
       ended: session.ended,
