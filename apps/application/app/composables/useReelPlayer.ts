@@ -4,6 +4,8 @@
  * test's end and before the file's, by showing the other element. The visible element's `src` never changes during
  * playback. Only the playing and the next video have a `src`.
  *
+ * A reel can start at an entry other than its first (`startAt`): that test's video is the one loaded and waiting.
+ *
  * Where playback stands comes from `requestVideoFrameCallback`, which reports every frame as it is shown, with
  * `timeupdate` where a browser has none.
  */
@@ -15,7 +17,7 @@ type Slot = 0 | 1;
 /** How long `advance` waits for the next video's first frame before it asks the element to play regardless. */
 const FIRST_FRAME_WAIT_MS = 4000;
 
-export function useReelPlayer(reel: Ref<Reel | null>) {
+export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | null | undefined>) {
   const baseURL = useRuntimeConfig().app.baseURL;
   const els: Array<HTMLVideoElement | null> = [null, null];
   /** The reel entry each element holds, null when it holds none. */
@@ -350,7 +352,8 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     finished.value = false;
     playing.value = false;
     positionMs.value = 0;
-    const first = playable()[0] ?? null;
+    const wanted = startAt?.value;
+    const first = (wanted != null && playable().includes(wanted) ? wanted : playable()[0]) ?? null;
     current.value = first;
     held[0] = held[1] = null;
     for (const slot of [0, 1] as const) {

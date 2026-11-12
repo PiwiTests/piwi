@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vue from 'vue';
-import { buildReel, type ReelExecution } from '#shared/video-reel';
+import { buildReel, focusReel, type Reel, type ReelExecution } from '#shared/video-reel';
 
 /** `useReelPlayer` on fake `<video>` elements: what its moves do when a load, a click or a pause cuts across them. */
 
@@ -105,12 +105,16 @@ function execution(id: number): ReelExecution {
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 function setup(count = 3, tweak: (e: ReelExecution) => ReelExecution = (e) => e) {
-  mounted.length = 0;
   const [reel] = buildReel(
     Array.from({ length: count }, (_, i) => tweak(execution(i + 1))),
     'worker',
   );
-  const player = useReelPlayer(vue.ref(reel!));
+  return setupReel(reel!);
+}
+
+function setupReel(reel: Reel, startAt?: number) {
+  mounted.length = 0;
+  const player = useReelPlayer(vue.ref(reel), startAt == null ? undefined : vue.ref(startAt));
   const els = [new FakeVideo(), new FakeVideo()];
   els.forEach((el, slot) => {
     player.bind(slot as 0 | 1, el as unknown as HTMLVideoElement);
@@ -369,6 +373,118 @@ describe('useReelPlayer', () => {
       els[0].dispatchEvent(new Event('timeupdate'));
       await flush();
       expect(player.current.value).toBe(1);
+    });
+  });
+
+  describe('a reel that starts at one of its tests', () => {
+    const fileOf = (count: number) =>
+      Array.from({ length: count }, (_, i) => execution(i + 1)).map((e) => ({
+        ...e,
+        parallelIndex: e.executionId % 2,
+      }));
+
+    it('loads the test it starts at, and the one after it, and plays that test first', async () => {
+      const all = fileOf(4);
+      const { reel } = focusReel(all, all[1]!, 'file')!;
+      const { player, els } = setupReel(reel, 1);
+      expect(player.current.value).toBe(1);
+      expect(els[0].srcValue).toBe('/files/p/2.webm');
+      expect(els[1].srcValue).toBe('/files/p/3.webm');
+      player.togglePlay();
+      await flush();
+      expect(player.current.value).toBe(1);
+      expect(els[0].plays).toBe(1);
+      expect(player.ticked.value).toEqual([true, false, false, false]);
+    });
+
+    it('starts at the first video when the wanted test has none', () => {
+      const all = fileOf(3);
+      all[1] = { ...all[1]!, video: null };
+      const { reel } = focusReel(all, all[0]!, 'file')!;
+      const { player } = setupReel(reel, 1);
+      expect(player.current.value).toBe(0);
+    });
+  });
+
+  describe('a single test of its file', () => {
+    // The span of one test in its video: the reel has the file's other tests beside it, none of them played.
+    const file = () => Array.from({ length: 3 }, (_, i) => execution(i + 1));
+
+    it('holds one video, and no other test of the file is loaded', () => {
+      const all = file();
+      const { reel, focusIndex } = focusReel(all, all[1]!, 'test')!;
+      const { player, els } = setupReel(reel, focusIndex);
+      expect(player.current.value).toBe(1);
+      expect(els[0].srcValue).toBe('/files/p/2.webm');
+      expect(els[1].srcValue).toBeNull();
+    });
+
+    it('stops at the end of the test and plays no other test', async () => {
+      const all = file();
+      const { reel, focusIndex } = focusReel(all, all[1]!, 'test')!;
+      const { player, els } = setupReel(reel, focusIndex);
+      player.togglePlay();
+      await flush();
+      expect(player.playing.value).toBe(true);
+      els[0].currentTime = 0.5;
+      els[0].dispatchEvent(new Event('timeupdate'));
+      await flush();
+      expect(player.playing.value).toBe(true);
+      expect(player.ticked.value).toEqual([false, false, false]);
+
+      // The test is 1 s long in a video that runs on in its frozen tail: the player stops at the test's end.
+      els[0].currentTime = 1.1;
+      els[0].dispatchEvent(new Event('timeupdate'));
+      await flush();
+
+      expect(els[0].paused).toBe(true);
+      expect(player.playing.value).toBe(false);
+      expect(player.finished.value).toBe(true);
+      expect(player.current.value).toBe(1);
+      expect(els[1].plays).toBe(0);
+      expect(player.ticked.value).toEqual([false, true, false]);
+    });
+
+    it('plays the test again from its start when Play is pressed after it ended', async () => {
+      const all = file();
+      const { reel, focusIndex } = focusReel(all, all[1]!, 'test')!;
+      const { player, els } = setupReel(reel, focusIndex);
+      player.togglePlay();
+      await flush();
+      els[0].currentTime = 1.1;
+      els[0].dispatchEvent(new Event('timeupdate'));
+      await flush();
+      expect(player.finished.value).toBe(true);
+
+      player.togglePlay();
+      await flush();
+
+      expect(player.finished.value).toBe(false);
+      expect(player.playing.value).toBe(true);
+      expect(player.current.value).toBe(1);
+      expect(els[0].currentTime).toBe(0);
+    });
+
+    it('stops at the end of an earlier attempt that is not on the run list', async () => {
+      const all = file();
+      const earlier = {
+        ...all[1]!,
+        executionId: 20,
+        retries: 0,
+        status: 'failed',
+        video: { id: 20, path: 'p/20.webm', contentType: 'video/webm', size: 10 },
+      };
+      const final = { ...all[1]!, retries: 1 };
+      const { reel, focusIndex } = focusReel([all[0]!, final, all[2]!], earlier, 'test')!;
+      const { player, els } = setupReel(reel, focusIndex);
+      expect(els[0].srcValue).toBe('/files/p/20.webm');
+      player.togglePlay();
+      await flush();
+      els[0].currentTime = 1.1;
+      els[0].dispatchEvent(new Event('timeupdate'));
+      await flush();
+      expect(player.finished.value).toBe(true);
+      expect(els[0].paused).toBe(true);
     });
   });
 });
