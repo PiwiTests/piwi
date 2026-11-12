@@ -596,7 +596,6 @@ export function holdStop(
     browser: stop.browser ?? null,
   };
   held = holding;
-  laneStopped(id, stop.page);
   tellHub({
     type: 'stopped',
     stop: id,
@@ -608,6 +607,8 @@ export function holdStop(
     bar: stop.bar,
     ...(stop.error ? { error: stop.error } : {}),
   });
+  // After the hub heard the stop: the lane's latest frame goes again at once, named for it.
+  laneStopped(id, stop.page);
   if (!runChannelOpen() && !stop.bar) holding.answer('resume');
   return {
     stop: id,
