@@ -43,7 +43,8 @@ import { internalCall } from './quiet-capture.js';
  * - **The test's growing trace**: where the runner traces the attempt, its files are read as they grow (`traceOf`):
  *   `<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>][-recording<N>].trace`, from where the
  *   last read stopped, only the lines of its ARIA snapshots parsed; the ARIA files the lines name, under that folder
- *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read.
+ *   alone. Nothing is written, nor any option of the trace changed, and its screencast images are never read. The
+ *   attempt's own file is named to the hub alone as it asks (`attemptTraceFile`), which opens it in the trace viewer.
  * - **Text** (`takeLaneText`): the page's ARIA snapshot, from the trace's latest one of the lane's page (by
  *   Playwright's id of the page, its time) when the project's trace writes them, else taken through an internal call
  *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), masked by `maskAriaSnapshot` with the masks the wire
