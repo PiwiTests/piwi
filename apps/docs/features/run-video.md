@@ -34,11 +34,12 @@ switch picks what plays, and it starts on **This test**:
 - **Its worker** plays the tests of this test's worker, in the order they ran, and starts on this test. A sharded run
   keeps each shard's workers apart.
 
-The opened test carries a **This test** tag in every mode. Closing the window stops the video.
+In these two modes only the tests that play are ticked, and **Play** after the end starts again from this test. The
+opened test is marked **This test** in every mode. Closing the window stops the video.
 
-Only final attempts are in the file and worker reels. On an earlier attempt, This test plays that attempt's own video
-and the other two modes are off. A run lists at most 2,000 tests with a video, so a test past that limit also keeps only
-This test.
+Only final attempts that ran are in the file and worker reels. On an earlier attempt or a skipped test, This test plays
+its own video and the other two modes are off, with the reason shown under the switch. A run lists at most 2,000 tests
+with a video, so a test past that limit also keeps only This test.
 
 ## When there are no videos
 
