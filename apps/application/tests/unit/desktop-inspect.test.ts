@@ -10,7 +10,7 @@
  */
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import { createRequire } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -83,6 +83,32 @@ async function waitFor<T>(read: () => T | undefined | false | null, ms = 15_000)
     if (Date.now() - start > ms) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 20));
   }
+}
+
+/** Node's file system promises, as the reader calls them: a test holds one of its calls with `holdOpen`. */
+const fsPromises = requireHere('node:fs/promises') as { open: (...args: unknown[]) => Promise<unknown> };
+
+/**
+ * Holds the next opening of `file` until `release` is called, `at` resolving as it is held: a read of the reader in
+ * flight, at the moment the test chooses.
+ */
+function holdOpen(file: string): { at: Promise<void>; release: () => void } {
+  const open = fsPromises.open;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let reached!: () => void;
+  const at = new Promise<void>((resolve) => (reached = resolve));
+  fsPromises.open = async (...args: unknown[]) => {
+    if (args[0] === file) {
+      fsPromises.open = open;
+      syncBuiltinESMExports();
+      reached();
+      await released;
+    }
+    return open(...args);
+  };
+  syncBuiltinESMExports();
+  return { at, release };
 }
 
 /** A reader of the attempt `base` in `traces`, into a store of its own, with what it kept and said. */
@@ -303,6 +329,26 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
   });
 });
 
+describe('a reader that closes while it reads', () => {
+  it('tells nothing of what the read in flight finds', async () => {
+    const traces = path.join(root, 'closing', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    fs.writeFileSync(
+      file,
+      `${['c@1', 'c@2', 'c@3'].map((call) => JSON.stringify({ type: 'before', callId: call, method: 'click' })).join('\n')}\n`,
+    );
+    const own = readerOf(traces, 't1');
+    const held = holdOpen(file);
+    const turn = own.reader.turn();
+    await held.at;
+    own.reader.close();
+    held.release();
+    await turn;
+    expect(own.refused).toEqual([]);
+  });
+});
+
 /** A run `desktop-7` whose lane 0's worker runs the attempt `test` (none between tests). */
 function sessionOf(test: { id: string; retry: number } | null, ended = false): RunSession {
   return {
@@ -427,6 +473,40 @@ describe('the lanes the windows have Inspect open on', () => {
     expect(own.inspects.calls(VIEWER, 'desktop-7', 0)).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(own.asked).toHaveLength(3);
+  });
+
+  it('tells the windows nothing of an attempt’s trace once the lane follows the next one', async () => {
+    const traces = path.join(root, 'next', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    fs.writeFileSync(
+      file,
+      `${['c@1', 'c@2', 'c@3'].map((call) => JSON.stringify({ type: 'before', callId: call, method: 'click' })).join('\n')}\n`,
+    );
+    const untraced = "This test's attempt is not traced: its project's trace option records none of it.";
+    const found: LaneTrace = {
+      ok: true,
+      root: '/home/dev/shop',
+      traces,
+      base: 't1',
+      file,
+      worker: 5,
+      test: { id: 't1', retry: 0 },
+    };
+    const own = lanes([found, ...Array.from({ length: 20 }, () => ({ ok: false as const, message: untraced }))]);
+    const held = holdOpen(file);
+    own.inspects.open(VIEWER, 'desktop-7', 0);
+    await held.at;
+    // The test ends and the next begins while the reader of the first one reads.
+    own.set(sessionOf({ id: 't2', retry: 0 }));
+    await waitFor(() => own.inspects.calls(VIEWER, 'desktop-7', 0)?.refused === untraced);
+    held.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(own.heard.filter((h) => h.event.refused).map((h) => [h.event.attempt, h.event.refused])).toEqual([
+      ['t2#0', untraced],
+    ]);
+    expect(own.inspects.calls(VIEWER, 'desktop-7', 0)).toMatchObject({ attempt: 't2#0', refused: untraced });
+    own.inspects.dispose();
   });
 
   it('ends with the run and with a window that leaves, and refuses a run that ended or a lane it has not', async () => {

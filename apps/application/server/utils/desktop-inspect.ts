@@ -400,6 +400,7 @@ export class DesktopTraceReader {
       const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await network.read()) {
+          if (this.closed) break;
           if (typeof line === 'string' && line.startsWith(RESOURCE_LINE)) this.takeResource(line);
         }
         if (!network.behind) break;
@@ -407,6 +408,7 @@ export class DesktopTraceReader {
       const trace = this.tail(file, MAX_SNAPSHOT_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await trace.read()) {
+          if (this.closed) break;
           if (typeof line !== 'string') this.passedOver(line.head);
           else if (line.startsWith(BEFORE_LINE)) this.takeCall(line);
           else if (line.startsWith(SNAPSHOT_LINE)) this.takeSnapshot(line);
@@ -417,7 +419,7 @@ export class DesktopTraceReader {
     }
     if (!behind && !this.toldNoSnapshots && !this.snapshotsRead && this.calls.size >= CALLS_BEFORE_NO_SNAPSHOTS) {
       this.toldNoSnapshots = true;
-      this.options.refused(NO_SNAPSHOTS);
+      this.tell(NO_SNAPSHOTS);
     }
     return behind;
   }
@@ -555,7 +557,12 @@ export class DesktopTraceReader {
     if (restarts) return;
     const told = this.stopped.has(frame);
     this.stopped.add(frame);
-    if (this.mainFrames.has(frame) && !told) this.options.refused(`${why} ${UNTIL_NAVIGATION}`);
+    if (this.mainFrames.has(frame) && !told) this.tell(`${why} ${UNTIL_NAVIGATION}`);
+  }
+
+  /** Tell the windows why a page goes no further, or why the trace has none: a reader closed tells nothing. */
+  private tell(text: string): void {
+    if (!this.closed) this.options.refused(text);
   }
 
   /** Keep a main frame's snapshot for the labels a later one's references name, its chain started again by a full one. */
@@ -665,7 +672,7 @@ export class DesktopTraceReader {
       test: this.options.test,
     });
     if (added === 'full') return this.stopChain(fields.frame, FULL, 'until-full');
-    if (added !== 'kept') return;
+    if (added !== 'kept' || this.closed) return;
     this.options.kept({
       type: 'snapshot',
       shard: null,
@@ -1011,7 +1018,9 @@ export class DesktopInspects {
     }
     const store = new RunInspect(this.budget, DESKTOP_INSPECT_WORDS);
     inspected.store = store;
-    inspected.reader = new DesktopTraceReader({
+    // What a reader tells is of the attempt it reads: the lane hears none of it once it follows another.
+    const current = () => !inspected.closed && inspected.attempt === attempt && inspected.reader === reader;
+    const reader = new DesktopTraceReader({
       trace: found,
       store,
       key: String(inspected.lane),
@@ -1019,16 +1028,19 @@ export class DesktopInspects {
       test: inspected.test,
       titleOf: (call) => inspected.titles.get(call) ?? null,
       kept: (snapshot) => {
+        if (!current()) return;
         if (inspected.refused) inspected.refused = null;
         this.tell(inspected, { attempt, snapshot });
       },
       refused: (text) => {
+        if (!current()) return;
         inspected.refused = text;
         this.tell(inspected, { attempt, refused: text });
       },
       readMs: this.options.readMs,
     });
-    inspected.reader.start();
+    inspected.reader = reader;
+    reader.start();
   }
 
   /** The lane's reading stops, and what it kept of its attempt goes. */
