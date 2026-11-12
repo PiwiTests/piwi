@@ -65,9 +65,9 @@ wrote it:
 
 | Action | Shown |
 |---|---|
-| Fill, type | The locator and "typed N chars", never the text |
+| Fill, type | The locator and "typed N chars", never the text. "typed text", with no count, for a password, card or code field, or when no field is named |
 | Press | A named key or a shortcut, such as `Enter` or `Control+A`; a single character, alone or behind Shift or Alt, shows as "a key" |
-| Navigate | The origin and path, without the query string, fragment or credentials |
+| Navigate | The origin and path, without the query string, fragment or credentials; a path segment shaped like a token is hidden |
 | Check, uncheck, select | The locator only, never the chosen option |
 
 ## When there are no videos

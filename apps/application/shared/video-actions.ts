@@ -6,7 +6,15 @@
  */
 import { quoteJsString, tryParseLocatorChain } from '@piwitests/core/locator-chain';
 import { extractStepLocatorUse } from '@piwitests/core/step-locators';
-import { HIDDEN_VALUE } from '@piwitests/core/mask';
+import {
+  HIDDEN_VALUE,
+  hideSecretsInText,
+  hideSecretsInUrl,
+  isSecretFieldName,
+  isSecretLocator,
+  isSecretValue,
+  looksLikeCardNumber,
+} from '@piwitests/core/mask';
 import { MAX_STEP_PARAM_VALUE_CHARS } from '@piwitests/core/step-analysis';
 import { videoTimingMap, type VideoTimingInput } from './video-reel';
 
@@ -124,21 +132,29 @@ export function typedLabel(chars: number | null): string {
   return `typed ${chars} ${chars === 1 ? 'char' : 'chars'}`;
 }
 
-/** A URL as its origin and path: the query string, the fragment and any credentials dropped. Null when it names none. */
+/** The schemes whose whole URL names no page content: `about:blank`, `about:srcdoc`. */
+const CONTENTLESS_SCHEMES = new Set(['about:']);
+
+/**
+ * A URL as its origin and path: the query string, the fragment and any credentials dropped, and a path segment shaped
+ * like a credential hidden (`hideSecretsInUrl`, the masking of the rest of the app). Null when it names none.
+ */
 export function originAndPath(url: unknown): string | null {
   if (typeof url !== 'string' || url.trim() === '') return null;
   const text = url.trim();
   try {
     const parsed = new URL(text);
     if (parsed.origin === 'null') {
-      // `file:` names a path; `data:`, `javascript:` and the like carry content, so only their scheme shows.
+      // `file:` names a path and `about:blank` names no page; `data:`, `javascript:` and the like carry content, so only their scheme shows.
+      if (CONTENTLESS_SCHEMES.has(parsed.protocol)) return `${parsed.protocol}${parsed.pathname}`.slice(0, 200);
       return (parsed.protocol === 'file:' ? `${parsed.protocol}${parsed.pathname}` : parsed.protocol).slice(0, 200);
     }
-    return `${parsed.origin}${parsed.pathname === '/' ? '' : parsed.pathname}`.slice(0, 200);
+    return hideSecretsInUrl(`${parsed.origin}${parsed.pathname === '/' ? '' : parsed.pathname}`).slice(0, 200);
   } catch {
-    // A relative path (`/login?next=…`), or text that is no URL: without a query, a fragment or credentials.
-    const bare = text.replace(/[?#].*$/s, '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
-    return bare.slice(0, 200) || null;
+    // A relative path (`/login?next=…`), a protocol-relative one (`//user:pw@host/p`), or text that is no URL: without a
+    // query, a fragment or credentials.
+    const bare = text.replace(/[?#].*$/s, '').replace(/^((?:[a-z][a-z0-9+.-]*:)?\/\/)[^/]*@/i, '$1');
+    return hideSecretsInUrl(bare).slice(0, 200) || null;
   }
 }
 
@@ -146,6 +162,8 @@ export interface ActionParts {
   kind: VideoActionKind;
   /** The locator the action used, as Playwright prints it. */
   locator?: string | null;
+  /** The selector the action used before it was rendered, when the source has one: read for a secret field as well. */
+  selector?: string | null;
   /** How many characters a fill or a typing wrote; null when unknown. */
   typedChars?: number | null;
   /** The key a press used. */
@@ -154,9 +172,22 @@ export interface ActionParts {
   url?: unknown;
 }
 
-/** The tooltip of an action: its verb, the locator, and for the kinds that carry a value, only what is safe of it. */
+/** Whether a locator, as written or as Playwright's engines hold it, names a field that holds a secret or a card's number. */
+function namesSecretField(locator: string): boolean {
+  if (isSecretLocator(locator)) return true;
+  for (const quoted of locator.matchAll(/(['"])((?:(?!\1)[^\\]|\\.)*)\1/g))
+    if (isSecretFieldName(quoted[2]!)) return true;
+  return false;
+}
+
+/**
+ * The tooltip of an action: its verb, the locator, and for the kinds that carry a value, only what is safe of it. A
+ * fill or a typing into a field that may hold a secret, or into none the action names (`keyboard.type`), shows no
+ * count either, as the step path does: `typed text`.
+ */
 export function actionLabel(parts: ActionParts): string {
-  const { kind, locator } = parts;
+  const { kind } = parts;
+  const locator = parts.locator ? hideSecretsInText(parts.locator) : null;
   const target = locator ? ` ${locator}` : '';
   switch (kind) {
     case 'goto': {
@@ -164,8 +195,13 @@ export function actionLabel(parts: ActionParts): string {
       return where ? `${VERBS.goto} ${where}` : 'Navigate';
     }
     case 'fill':
-    case 'type':
-      return `${VERBS[kind]}${target}: ${typedLabel(parts.typedChars ?? null)}`;
+    case 'type': {
+      const secret =
+        !parts.locator ||
+        namesSecretField(parts.locator) ||
+        (parts.selector != null && namesSecretField(parts.selector));
+      return `${VERBS[kind]}${target}: ${typedLabel(secret ? null : (parts.typedChars ?? null))}`;
+    }
     case 'press':
       return `${VERBS.press} ${keyLabel(parts.key)}${locator ? ` on ${locator}` : ''}`;
     default:
@@ -217,8 +253,10 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+/** How many characters a typed value has; null when it is no text or reads as a credential or a card's number. */
 function textLength(value: unknown): number | null {
-  return typeof value === 'string' ? Array.from(value).length : null;
+  if (typeof value !== 'string') return null;
+  return looksLikeCardNumber(value) || isSecretValue(value) ? null : Array.from(value).length;
 }
 
 /** One quoted engine argument: `"Save"i` is `Save`, and `s` makes it exact. */
@@ -318,6 +356,7 @@ export function actionsFromTrace(
     const label = actionLabel({
       kind,
       locator: renderInternalSelector(params.selector),
+      selector: str(params.selector) || null,
       typedChars: textLength(kind === 'fill' ? params.value : params.text),
       key: params.key,
       url: params.url,

@@ -61,6 +61,66 @@ describe('originAndPath', () => {
   });
 });
 
+describe('masking as the rest of the app does', () => {
+  const contexts = [{ origin: 'library', wallTime: T0, monotonicTime: 5_000 }];
+  const traced = (method: string, params: Record<string, unknown>) =>
+    actionsFromTrace([{ apiName: `x.${method}`, class: 'Frame', method, startTime: 5_000, params }], contexts)![0]!
+      .label;
+
+  it('hides a token-shaped path segment of a navigation, in the trace and in the label', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij';
+    const label = traced('goto', { url: `https://app.test/reset/${jwt}?x=1` });
+    expect(label).toBe('Navigate to https://app.test/reset/<hidden>');
+    expect(originAndPath(`https://app.test/reset/${jwt}`)).not.toContain('eyJ');
+    expect(originAndPath('https://app.test/files/report-2024')).toBe('https://app.test/files/report-2024');
+  });
+
+  it('shows no count for a fill into a password field', () => {
+    expect(traced('fill', { selector: 'internal:label="Password"i', value: 'hunter2hunter2' })).toBe(
+      "Fill getByLabel('Password'): typed text",
+    );
+    expect(traced('fill', { selector: 'input[type=password]', value: 'hunter2hunter2' })).toBe(
+      "Fill locator('input[type=password]'): typed text",
+    );
+  });
+
+  it('shows no count for a fill into a card field', () => {
+    expect(traced('fill', { selector: 'internal:label="Card number"i', value: '4242424242424242' })).toBe(
+      "Fill getByLabel('Card number'): typed text",
+    );
+  });
+
+  it('shows no count for a typing that names no field (keyboard.type)', () => {
+    expect(traced('keyboardType', { text: 'hunter2' })).toBe('Type: typed text');
+    expect(actionLabel({ kind: 'type', typedChars: 7 })).toBe('Type: typed text');
+  });
+
+  it('keeps the count for a field that holds no secret', () => {
+    expect(traced('fill', { selector: 'internal:label="Email"i', value: 'ada@example.com' })).toBe(
+      "Fill getByLabel('Email'): typed 15 chars",
+    );
+  });
+
+  it('hides a credential a locator quotes', () => {
+    const label = actionLabel({
+      kind: 'click',
+      locator: "getByText('Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij')",
+    });
+    expect(label).not.toContain('eyJhbGci');
+  });
+
+  it('drops the credentials of a protocol-relative URL', () => {
+    expect(originAndPath('//user:pw@host.test/p?x=1')).toBe('//host.test/p');
+    expect(traced('goto', { url: '//user:pw@host.test/p' })).toBe('Navigate to //host.test/p');
+  });
+
+  it('keeps about:blank whole', () => {
+    expect(originAndPath('about:blank')).toBe('about:blank');
+    expect(traced('goto', { url: 'about:blank' })).toBe('Navigate to about:blank');
+    expect(originAndPath('data:text/html,SECRET')).toBe('data:');
+  });
+});
+
 describe('renderInternalSelector chains', () => {
   it('splits a chain only outside quoted text', () => {
     expect(renderInternalSelector('internal:text="a >> b"i')).toBe("getByText('a >> b')");
@@ -220,13 +280,13 @@ describe('actionsFromTrace', () => {
           method: 'selectOption',
           params: { selector: 'internal:label="Country"i', options: [{ valueOrLabel: 'Secretland' }] },
         }),
-        call({ apiName: 'locator.pressSequentially', method: 'type', params: { selector: '#pin', text: '1234' } }),
+        call({ apiName: 'locator.pressSequentially', method: 'type', params: { selector: '#note', text: '1234' } }),
       ],
       contexts,
     )!;
     expect(out.map((a) => a.label)).toEqual([
       "Select option getByLabel('Country')",
-      "Type locator('#pin'): typed 4 chars",
+      "Type locator('#note'): typed 4 chars",
     ]);
   });
 
@@ -281,22 +341,26 @@ describe('actionsFromSteps', () => {
 
   it('counts the characters from the 1.63 layout, with the chain in the params', () => {
     const [fill] = actionsFromSteps([
+      step({ title: 'Fill "hunter2"', params: { locator: "getByLabel('Nickname')" }, category: 'input' }),
+    ]);
+    expect(fill!.label).toBe("Fill getByLabel('Nickname'): typed 7 chars");
+    const [secret] = actionsFromSteps([
       step({ title: 'Fill "hunter2"', params: { locator: "getByLabel('Password')" }, category: 'input' }),
     ]);
-    expect(fill!.label).toBe("Fill getByLabel('Password'): typed 7 chars");
+    expect(secret!.label).toBe("Fill getByLabel('Password'): typed text");
   });
 
   it('counts a value from the params first, and says no count for a hidden or cut one', () => {
     const [byParam] = actionsFromSteps([
-      step({ title: 'Fill "<hidden>"', params: { locator: "getByLabel('Pin')", value: '123456' } }),
+      step({ title: 'Fill "<hidden>"', params: { locator: "getByLabel('Nickname')", value: '123456' } }),
     ]);
-    expect(byParam!.label).toBe("Fill getByLabel('Pin'): typed 6 chars");
-    const [hidden] = actionsFromSteps([step({ title: 'Fill "<hidden>" getByLabel(\'Pin\')' })]);
-    expect(hidden!.label).toBe("Fill getByLabel('Pin'): typed text");
+    expect(byParam!.label).toBe("Fill getByLabel('Nickname'): typed 6 chars");
+    const [hidden] = actionsFromSteps([step({ title: 'Fill "<hidden>" getByLabel(\'Nickname\')' })]);
+    expect(hidden!.label).toBe("Fill getByLabel('Nickname'): typed text");
     const [cut] = actionsFromSteps([
-      step({ title: 'Fill "abc"', params: { locator: "getByLabel('Pin')", value: `${'x'.repeat(199)}…` } }),
+      step({ title: 'Fill "abc"', params: { locator: "getByLabel('Nickname')", value: `${'x'.repeat(199)}…` } }),
     ]);
-    expect(cut!.label).toBe("Fill getByLabel('Pin'): typed text");
+    expect(cut!.label).toBe("Fill getByLabel('Nickname'): typed text");
   });
 
   it('shows a named key, and hides a character, a typed value and an option', () => {
