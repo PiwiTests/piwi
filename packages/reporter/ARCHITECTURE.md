@@ -460,14 +460,19 @@ What the package does to a user's run, process by process.
   `__stop__` message alone, as Playwright compares the environment with the one the
   worker started with and hands what changed to the projects that depend on its own,
   and takes it out again on the next tick.
-- On it the instance says how many people watch the worker (`viewers`). While anyone does,
+- On it the instance says how many people watch the worker (`viewers`), and what they ask of its
+  images (`view`: the largest size one of them shows it at, within 1280 by 800, and four frames a
+  second for a full view or one for tiles alone). While anyone watches,
   the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
-  the editor's views share), through internal calls: at most 640 by 400 at quality 50 unless the
+  the editor's views share, its subscription told as `view` changes, `asked`), through internal calls:
+  at the size `view` asks at quality 50, else at most 640 by 400 from an instance that never says it, unless the
   test's trace or video came first (their size and quality, 800 wide at 90), or an editor's
   view of the run is on too (the largest size and quality the views ask, 1280 by 800 at 60,
   and the stop's page while the worker stands at one), four frames a
   second and about 256 KB a second (a heavier frame holds the next one back longer, before it
-  is masked), a frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  is masked), a frame over 192 KB replaced by an image at quality 30. A frame goes as one live message (its
+  JPEG's bytes behind a JSON header, `LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside
+  JSON to an older one. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,

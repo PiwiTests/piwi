@@ -8,6 +8,8 @@ export interface RecordedReq {
   url: string;
   headers: http.IncomingHttpHeaders;
   body: string;
+  /** The body's bytes, as they came. */
+  bytes: Buffer;
   raw: http.IncomingMessage;
 }
 
@@ -27,16 +29,18 @@ export type RouteHandler = (req: RecordedReq, res: http.ServerResponse) => void;
 export function startServer(handler: RouteHandler): Promise<FakeServer> {
   const requests: RecordedReq[] = [];
   const server = http.createServer((req, res) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
     });
     req.on('end', () => {
+      const bytes = Buffer.concat(chunks);
       const rec: RecordedReq = {
         method: req.method ?? 'GET',
         url: req.url ?? '/',
         headers: req.headers,
-        body,
+        body: bytes.toString('utf8'),
+        bytes,
         raw: req,
       };
       requests.push(rec);
@@ -73,16 +77,18 @@ export async function startServerOnTestPort(handler: RouteHandler): Promise<Fake
   for (let port = TEST_PORTS.first; port <= TEST_PORTS.last; port++) {
     const requests: RecordedReq[] = [];
     const server = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk) => {
-        body += chunk;
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
       });
       req.on('end', () => {
+        const bytes = Buffer.concat(chunks);
         const rec: RecordedReq = {
           method: req.method ?? 'GET',
           url: req.url ?? '/',
           headers: req.headers,
-          body,
+          body: bytes.toString('utf8'),
+          bytes,
           raw: req,
         };
         requests.push(rec);
@@ -200,7 +206,14 @@ export function fakeResult(opts: {
 
 /** A fake Playwright `FullConfig`. */
 export function fakeConfig(
-  opts: { version?: string; shard?: any; workers?: number; projects?: any[]; configFile?: string; rootDir?: string } = {},
+  opts: {
+    version?: string;
+    shard?: any;
+    workers?: number;
+    projects?: any[];
+    configFile?: string;
+    rootDir?: string;
+  } = {},
 ): any {
   return {
     configFile: opts.configFile,

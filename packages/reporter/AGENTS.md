@@ -109,8 +109,10 @@ responsibilities.
      `live`), or from the start of a run no run channel follows with `PIWI_SHARE_LIVE=1`, an environment variable
      alone, never an option, given up after the quick retries or a 401 or 404 until shared again: only while the
      instance says someone watches does it post frames of the test's page, through
-     the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
-     its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     the lane's one view, which the editor's views share (`lane-feed.ts`), at the size and pace the instance says its
+     viewers ask (`view`, within 1280 by 800, a recording's size kept), as live messages (`LIVE_FRAME_TYPE`) to an
+     instance that says `view` and in base64 JSON to an older one (`tests/live-view-binary.spec.ts`), each with its
+     call (through `hideSecretsInText`), its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read

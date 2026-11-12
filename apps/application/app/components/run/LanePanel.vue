@@ -2,28 +2,34 @@
 /**
  * The live view of one worker of a running run, docked beside the run page (a sheet on a phone), from the test of the
  * row it was opened from: the images of its page the worker sends while this view is open, a few a second, each with
- * the call it was taken at. In a CI run, the worker also sends the call its test is in as Playwright logs it: the
- * log's last lines beside the image, how long the call has run and the elements its locator matches, and over the
+ * the call it was taken at, at the size this view shows them in device pixels (1280 by 800 at most), on the page's one
+ * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when there is
+ * one. In a CI run, the worker also sends the call its test is in as Playwright logs it: the log's last lines beside
+ * the image, how long the call has run and the elements its locator matches, and over the
  * image the first one outlined and the point an input action acts on; **Zoom to the element** crops the image around
  * that element, a click on the image zooms where it points. Watching only: nothing here reaches the test.
  *
  * A view of a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's
  * earlier tests listed, and goes on with the next, through the worker Playwright starts in the lane again, unless
- * **Follow the worker's next test** is off; one of an older reporter's worker ends with its test. A view ends as the
- * worker leaves, the run ends (saying the run's verdict, `verdict`), the project turns its live view off, as it
- * closes, and after `HIDDEN_CLOSE_MS` in a hidden tab; one the instance refuses says why, and offers to try again.
- * Nothing is kept: the latest image and call log alone are in this page's memory, until the view closes.
+ * **Follow the worker's next test** is off; one of an older reporter's worker ends with its test. **Follow what needs
+ * attention** (`attention`, the page's) lets the page move the view to a lane whose test failed, got stuck or stopped,
+ * and the view says why it moved (`movedWhy`). A view ends as the worker leaves, the run ends (saying the run's
+ * verdict, `verdict`), the project turns its live view off, as it closes, and after `HIDDEN_CLOSE_MS` in a hidden tab;
+ * one the instance refuses says why, and offers to try again. Nothing is kept: the latest image and call log alone are
+ * in this page's memory, until the view closes.
  */
 import {
   LIVE_VIEW_END_TEXT,
   liveWorkerName,
-  parseLiveViewerMessage,
   type LiveCall,
   type LiveCallLog,
   type LiveTestOutcome,
   type LiveViewEnd,
+  type LiveViewerMessage,
 } from '#shared/live-view';
+import { readLiveViewSize } from '@piwitests/core/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
+import type { LiveFocusEvent, LiveWatchHandle } from '~/composables/useLiveWatch';
 import type { ApiResponse } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
 import { stepAfterFrame } from '~/utils/live-caption';
@@ -47,8 +53,14 @@ const props = defineProps<{
   /** Piwi project id + name, for the IDE opener of each call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** The page's watch of the run, which carries this view's images. */
+  live: LiveWatchHandle;
+  /** Why **Follow what needs attention** moved the view here, while it shows that lane. */
+  movedWhy?: string | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
+/** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
+const attention = defineModel<boolean>('attention', { default: false });
 
 const WAITING = 'Waiting for the first image of the page…';
 const STALLED =
@@ -96,21 +108,30 @@ function nextTest(test: string): boolean {
   lastTarget.value = null;
   return true;
 }
-let source: EventSource | null = null;
+/** What stops this view's hold on the page's watch. */
+let off: (() => void) | null = null;
 let viewOpen = false;
+/** Whether the watch opened since this view connected: a view refused then had shown its worker. */
+let opened = false;
 /** Says so when the view's stream has not been open for a while, through its reconnections. */
 const streamStall = stallWatch(
   () => viewOpen,
   () => {
-    if (source) notice.value = STALLED;
+    if (off) notice.value = STALLED;
   },
 );
 
-const baseURL = useRuntimeConfig().app.baseURL;
+/** Show `bytes` as the view's image, the image shown before it let go. */
+function showImage(bytes: Uint8Array | null): void {
+  if (image.value) URL.revokeObjectURL(image.value);
+  image.value = bytes
+    ? URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }))
+    : null;
+}
 
 function connect(): void {
   disconnect();
-  image.value = null;
+  showImage(null);
   call.value = null;
   log.value = null;
   endedAt.value = 0;
@@ -122,77 +143,92 @@ function connect(): void {
   frameAt.value = 0;
   lastTarget.value = null;
   zoom.value = null;
-  const query = new URLSearchParams({ worker: String(props.worker) });
-  if (props.shard !== null) query.set('shard', String(props.shard));
-  if (follows.value) query.set('slot', String(props.slot));
-  const opening = new EventSource(
-    `${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`,
-  );
-  source = opening;
+  const worker = { shard: props.shard, worker: props.worker, ...(follows.value ? { slot: props.slot! } : {}) };
+  // The worker's latest tile shows while its first full image comes.
+  const tile = props.live.latest(worker);
+  if (tile?.image && (!tile.test || tile.test === watchedTest.value || follows.value)) {
+    showImage(tile.image);
+    call.value = tile.call;
+    notice.value = '';
+  }
   viewOpen = false;
-  let opened = false;
-  streamStall.arm();
-  opening.onopen = () => {
+  opened = false;
+  off = props.live.show(worker, hear);
+  viewOpen = props.live.state.value.kind === 'open';
+  if (viewOpen) opened = true;
+  else streamStall.arm();
+}
+
+/** What the page's watch says to this view. */
+function hear(event: LiveFocusEvent): void {
+  if (ended.value) return;
+  if (event.kind === 'refused') return refused();
+  if (event.kind === 'message') return onMessage(event.message);
+  const state = event.state;
+  if (state.kind === 'open') {
     viewOpen = true;
     opened = true;
     streamStall.disarm();
     if (notice.value === STALLED) notice.value = image.value ? '' : WAITING;
-  };
-  source.onmessage = (event) => {
-    const message = parseLiveViewerMessage(String(event.data));
-    if (!message) return;
-    if (message.type === 'frame') {
-      // The worker went on to its next test: a view of its lane goes on with it, a view of one test ends.
-      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
-        return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
-      }
-      // A frame after the test ended is of the lane's next test, of the same title.
-      // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
-      if (outcome.value && follows.value) {
-        outcome.value = null;
-        log.value = null;
-        lastTarget.value = null;
-        if (zoom.value?.kind === 'element') zoom.value = null;
-      }
-      image.value = `data:image/jpeg;base64,${message.data}`;
-      call.value = message.call;
-      frameAt.value = message.at ?? 0;
-      callAt.value = Date.now();
-      notice.value = '';
-    } else if (message.type === 'call-log') {
-      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
-        return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
-      }
-      const before = log.value;
-      log.value = message.log;
-      logAt.value = Date.now();
-      now.value = logAt.value;
-      if (message.log.status !== 'running' && (before?.id !== message.log.id || before.status === 'running')) {
-        endedAt.value = logAt.value;
-      }
-    } else if (message.type === 'refused') {
-      notice.value = message.message;
-    } else if (message.type === 'test-ended') {
-      showOutcome(message.outcome);
-      // Not following the lane: the view ends with its test.
-      if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
-    } else {
-      if (message.outcome) showOutcome(message.outcome);
-      end(LIVE_VIEW_END_TEXT[message.reason], message.reason);
-    }
-  };
-  source.onerror = () => {
+  } else if (state.kind === 'connecting') {
     viewOpen = false;
-    if (source?.readyState === EventSource.CONNECTING) streamStall.arm(STREAM_RECONNECT_STALL_MS);
-    // A stream the instance refused, or one that cannot open again, is closed for good: the view says why.
-    if (source?.readyState !== EventSource.CLOSED) return;
-    const hadImage = !!image.value;
-    end(hadImage && opened ? LIVE_VIEW_END_TEXT['worker-left'] : 'Asking the instance why the view did not open…');
-    canRetry.value = true;
-    void whyRefused(hadImage).then((why) => {
-      if (ended.value && !endReason.value) notice.value = why;
-    });
-  };
+    streamStall.arm(state.again ? STREAM_RECONNECT_STALL_MS : undefined);
+  } else if (state.kind === 'closed') {
+    viewOpen = false;
+    if (state.reason) end(LIVE_VIEW_END_TEXT[state.reason], state.reason);
+    else refused();
+  }
+}
+
+/** The instance would not show this view, or its watch gave up: the view says why, and offers to try again. */
+function refused(): void {
+  const hadImage = !!image.value;
+  end(hadImage && opened ? LIVE_VIEW_END_TEXT['worker-left'] : 'Asking the instance why the view did not open…');
+  canRetry.value = true;
+  void whyRefused(hadImage).then((why) => {
+    if (ended.value && !endReason.value) notice.value = why;
+  });
+}
+
+function onMessage(message: LiveViewerMessage): void {
+  if (message.type === 'frame') {
+    // The worker went on to its next test: a view of its lane goes on with it, a view of one test ends.
+    if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+      return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
+    }
+    // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
+    if (outcome.value && follows.value) {
+      outcome.value = null;
+      log.value = null;
+      lastTarget.value = null;
+      if (zoom.value?.kind === 'element') zoom.value = null;
+    }
+    showImage(message.image);
+    call.value = message.call;
+    frameAt.value = message.at ?? 0;
+    callAt.value = Date.now();
+    notice.value = '';
+  } else if (message.type === 'call-log') {
+    if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+      return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
+    }
+    const before = log.value;
+    log.value = message.log;
+    logAt.value = Date.now();
+    now.value = logAt.value;
+    if (message.log.status !== 'running' && (before?.id !== message.log.id || before.status === 'running')) {
+      endedAt.value = logAt.value;
+    }
+  } else if (message.type === 'refused') {
+    notice.value = message.message;
+  } else if (message.type === 'test-ended') {
+    showOutcome(message.outcome);
+    // Not following the lane: the view ends with its test.
+    if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
+  } else if (message.type === 'end') {
+    if (message.outcome) showOutcome(message.outcome);
+    end(LIVE_VIEW_END_TEXT[message.reason], message.reason);
+  }
 }
 
 function showOutcome(shown: LiveTestOutcome | null): void {
@@ -209,8 +245,8 @@ function end(why: string, reason: LiveViewEnd | null = null): void {
 
 function disconnect(): void {
   streamStall.disarm();
-  source?.close();
-  source = null;
+  off?.();
+  off = null;
 }
 
 /** Why the instance closed the view's stream, from what its workers' endpoint says of the run's live view. */
@@ -245,7 +281,7 @@ watch(
     } else {
       disconnect();
       stopClock();
-      image.value = null;
+      showImage(null);
       log.value = null;
       fullscreen.value = false;
     }
@@ -255,6 +291,7 @@ watch(
 onBeforeUnmount(() => {
   disconnect();
   stopClock();
+  showImage(null);
   if (hiddenTimer) clearTimeout(hiddenTimer);
 });
 
@@ -366,6 +403,17 @@ watch(overlay, (drawn) => {
 
 const frameBox = ref<HTMLElement | null>(null);
 const { width: frameWidth, height: frameHeight } = useElementSize(frameBox);
+// The worker sends its images at the size this view shows them, in device pixels, once the view settles.
+watchDebounced(
+  [frameWidth, frameHeight],
+  ([width, height]) => {
+    if (!open.value || !width || !height) return;
+    const ratio = window.devicePixelRatio || 1;
+    const size = readLiveViewSize(Math.round(width * ratio), Math.round(height * ratio));
+    if (size) props.live.resize(size);
+  },
+  { debounce: 400 },
+);
 /** The image's zoom as a CSS transform of what it draws, the overlay included. */
 const zoomStyle = computed(() => {
   const shown = zoom.value;
@@ -498,13 +546,26 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
 
   <DefineBody>
     <div class="@container flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-      <UCheckbox
-        v-if="follows && !ended"
-        v-model="followNext"
-        label="Follow the worker's next test"
-        size="sm"
-        data-testid="live-follow"
-      />
+      <div v-if="!ended" class="flex flex-wrap gap-x-4 gap-y-2">
+        <UCheckbox
+          v-if="follows"
+          v-model="followNext"
+          label="Follow the worker's next test"
+          size="sm"
+          data-testid="live-follow"
+        />
+        <UCheckbox
+          v-if="follows"
+          v-model="attention"
+          label="Follow what needs attention"
+          size="sm"
+          title="Move to a worker whose test failed, got stuck or stopped, and say why"
+          data-testid="live-follow-attention"
+        />
+      </div>
+      <p v-if="movedWhy && !ended" role="status" class="text-xs text-muted" data-testid="live-moved">
+        {{ movedWhy }}
+      </p>
       <div class="grid gap-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)] @3xl:items-start">
         <figure class="min-w-0 space-y-2" data-testid="live-view">
           <div

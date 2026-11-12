@@ -37,7 +37,7 @@ export function liveViewRefusalText(answer: LiveViewAnswer, view: RefusedView): 
     return `${name} is not in the run’s live view now: its tests may have ended.`;
   }
   if (answer.viewers >= answer.maxViewers) {
-    return `${answer.maxViewers} people at most watch one run at a time, and as many views of this run are open. Try again once one closes.`;
+    return `${answer.maxViewers} pages at most watch one run at a time, and as many watch this run now. Try again once one closes.`;
   }
   return 'The view did not open. Try again.';
 }

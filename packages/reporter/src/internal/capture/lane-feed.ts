@@ -74,6 +74,11 @@ export interface LaneSubscription {
   resend(): void;
   /** Forget the latest frame of every sink, and take an image of the page now: the masks changed. */
   refresh(): void;
+  /**
+   * What the sink asks changed (its size, its pace): its frames go at its new pace from now on, and the view opens
+   * again when what the sinks ask together changed.
+   */
+  asked(): void;
   close(): Promise<void>;
 }
 
@@ -239,6 +244,14 @@ export function subscribeLane(sink: LaneSink): LaneSubscription {
       }
       if (source) source.latest = null;
       void source?.view.then((view) => view?.refresh());
+    },
+    asked: () => {
+      if (!subscribers.has(own)) return;
+      own.pacer.close();
+      own.pacer = pacerOf(own);
+      void sync();
+      // A view that stays as it was paints nothing new for the sink: it gets the latest frame at its new pace.
+      if (source?.latest && current(source.latest)) give(own, source.latest);
     },
     close: async () => {
       if (!subscribers.delete(own)) return;
