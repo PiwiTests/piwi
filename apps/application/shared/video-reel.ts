@@ -267,6 +267,66 @@ export type FocusMode = 'test' | 'file' | 'worker';
  */
 export type FocusLimit = 'earlier-attempt' | 'not-listed';
 
+/** The execution on show, as `GET /api/test-run-cases/:id` returns it: what a reel entry needs of it. */
+export interface FocusDetail {
+  id: number;
+  testCaseId: number;
+  title: string;
+  filePath: string | null;
+  line: number | null;
+  status: string;
+  retries: number | null;
+  passedAfterFailure: boolean;
+  shardIndex: number | null;
+  parallelIndex: number | null;
+  workerIndex: number | null;
+  startedAt: number | null;
+  duration: number | null;
+  steps: readonly TimingStep[] | null;
+  /** Every attempt of the result, each its own execution. */
+  attempts: ReadonlyArray<{ retry: number; executionId: number | null }> | null;
+}
+
+/**
+ * The execution on show as a reel execution. The run's video list holds the final attempts, so the execution itself
+ * is taken from it when it is there, with the server's choice of video. An earlier attempt is not, nor is a test the
+ * list was cut before: it is built from the detail and its own `video`, with the browser, repetition and column
+ * of the final attempt of its result, which the list holds unless it was cut.
+ */
+export function focusExecution(
+  detail: FocusDetail,
+  video: ReelVideo,
+  executions: readonly ReelExecution[],
+): ReelExecution {
+  const listed = executions.find((e) => e.executionId === detail.id);
+  if (listed) return listed;
+  const finalId = (detail.attempts ?? []).reduce<{ retry: number; id: number | null }>(
+    (best, a) => (a.retry > best.retry ? { retry: a.retry, id: a.executionId } : best),
+    { retry: -1, id: null },
+  ).id;
+  const sibling = executions.find((e) => e.executionId === finalId);
+  return {
+    executionId: detail.id,
+    testCaseId: detail.testCaseId,
+    title: detail.title,
+    filePath: detail.filePath ?? '',
+    line: detail.line,
+    column: sibling?.column ?? null,
+    status: detail.status,
+    retries: detail.retries ?? 0,
+    repeatEachIndex: sibling?.repeatEachIndex ?? 0,
+    browserName: sibling?.browserName ?? null,
+    passedAfterFailure: detail.passedAfterFailure,
+    shardIndex: detail.shardIndex,
+    parallelIndex: detail.parallelIndex,
+    workerIndex: detail.workerIndex,
+    startedAt: detail.startedAt,
+    durationMs: detail.duration,
+    createPageEndMs: createPageEndMs(detail.steps),
+    video,
+  };
+}
+
 /**
  * Whether `focus` is on the run's final-attempt reels. `executions` is `GET /api/test-runs/:id/videos`; `focus` is the
  * execution on show, which that list lacks when it is an earlier attempt or when the list was cut.

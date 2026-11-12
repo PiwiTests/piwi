@@ -4,7 +4,9 @@ import {
   buildReel,
   createPageEndMs,
   entryEndMs,
+  focusExecution,
   focusLimit,
+  type FocusDetail,
   focusReel,
   testSpanInVideo,
   tickedEntries,
@@ -431,5 +433,66 @@ describe('focusReel', () => {
     expect(tickedEntries(reel, null)).toEqual([false, false, false]);
     expect(tickedEntries(reel, { index: focusIndex, videoMs: 500 })).toEqual([false, false, false]);
     expect(tickedEntries(reel, { index: focusIndex, videoMs: 1000 })).toEqual([false, false, true]);
+  });
+});
+
+describe('focusExecution', () => {
+  const video = { id: 7, path: 'p/own.webm', contentType: 'video/webm', size: 5 };
+  const detail: FocusDetail = {
+    id: 22,
+    testCaseId: 2,
+    title: 'checkout',
+    filePath: 'tests/a.spec.ts',
+    line: 20,
+    status: 'failed',
+    retries: 0,
+    passedAfterFailure: false,
+    shardIndex: null,
+    parallelIndex: 1,
+    workerIndex: 3,
+    startedAt: T0,
+    duration: 900,
+    steps: [{ title: 'Create page', startTime: T0 + 100, duration: 30 }],
+    attempts: [
+      { retry: 0, executionId: 22 },
+      { retry: 1, executionId: 12 },
+    ],
+  };
+
+  it('takes the execution from the run list when the list holds it', () => {
+    const listed = execution({ executionId: 22, testCaseId: 2 });
+    expect(focusExecution(detail, video, [listed])).toBe(listed);
+  });
+
+  it('builds an earlier attempt from the detail, with the browser and repetition of the final attempt', () => {
+    const final = execution({
+      executionId: 12,
+      testCaseId: 2,
+      retries: 1,
+      browserName: 'firefox',
+      repeatEachIndex: 2,
+      column: 9,
+    });
+    const built = focusExecution(detail, video, [final]);
+    expect(built).toMatchObject({
+      executionId: 22,
+      title: 'checkout',
+      retries: 0,
+      status: 'failed',
+      browserName: 'firefox',
+      repeatEachIndex: 2,
+      column: 9,
+      parallelIndex: 1,
+      durationMs: 900,
+      createPageEndMs: T0 + 130,
+      video,
+    });
+    expect(focusLimit([final], built)).toBe('earlier-attempt');
+  });
+
+  it('builds a test the list was cut before from the detail alone', () => {
+    const built = focusExecution({ ...detail, attempts: null, filePath: null }, video, []);
+    expect(built).toMatchObject({ filePath: '', browserName: null, repeatEachIndex: 0, column: null });
+    expect(focusLimit([], built)).toBe('not-listed');
   });
 });
