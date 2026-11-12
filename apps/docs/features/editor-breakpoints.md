@@ -20,9 +20,10 @@ or pick a better locator, which lands back on that line in the editor. The stop 
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
    or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
-3. The test stops before the call on your line runs. A run Piwi starts is headless, breakpoints or not, unless you
-   chose **Run headed** ([How a run starts](./editor-runs#how-a-run-starts)): the editor marks the line and shows the
-   stopped page ([A headless run](./editor-run-control#a-headless-run)). In a headed run, the pause bar appears in the
+3. The test stops before the call on your line runs. A run Piwi starts follows your config, headless unless it sets
+   `headless: false` or you chose **Run headed** ([How a run starts](./editor-runs#how-a-run-starts)): the editor
+   marks the line and shows the stopped page ([A headless run](./editor-run-control#a-headless-run)). In a headed run,
+   the pause bar appears in the
    browser with the call as Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a
    locator call's element is highlighted.
 
@@ -99,8 +100,9 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
   stops, and the run's output names it once.
 - **A run started from Piwi**, or [started outside Piwi](./terminal-runs). The editor passes the breakpoints under the
   Playwright config's folder to the run as `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
-  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`. It adds `--headed` only when you chose
-  **Run headed**. Set `PIWI_PAUSE_AT` yourself to
+  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`. It adds `--headed` when you chose
+  **Run headed**, or when the reporter stops only headed: older than 0.62.0, of an unknown version, or with no run
+  channel to show a headless stop. Set `PIWI_PAUSE_AT` yourself to
   [pause a run you start](/features/locator-healing#pause-at-a-breakpoint-local-runs).
 
 ## Limits

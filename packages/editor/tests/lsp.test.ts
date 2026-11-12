@@ -1881,7 +1881,7 @@ describe('breakpoints', () => {
     await client.sendRequest('piwi/refresh');
   });
 
-  test('pause a run at their lines, headless, and say when the reporter is too old for them', async () => {
+  test('pause a run at their lines, headed with a reporter that stops at none headless, and say when it is too old for them', async () => {
     write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.46.0' }));
     await client.sendRequest('piwi/refresh');
     const command = (await client.sendRequest('piwi/runArgs', {
@@ -1891,8 +1891,8 @@ describe('breakpoints', () => {
     })) as RunCommand;
     expect(command).toEqual({
       cwd: dir,
-      args: ['tests/checkout.spec.ts:3'],
-      command: 'npx playwright test tests/checkout.spec.ts:3',
+      args: ['tests/checkout.spec.ts:3', '--headed'],
+      command: 'npx playwright test tests/checkout.spec.ts:3 --headed',
       env: {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: command.ref,
@@ -1911,7 +1911,7 @@ describe('breakpoints', () => {
       key: 'smoke',
       breakpoints: breakpoints(),
     })) as RunCommand;
-    expect(selection.command).toBe('npx playwright test tests/checkout.spec.ts:3');
+    expect(selection.command).toBe('npx playwright test tests/checkout.spec.ts:3 --headed');
     expect(selection.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4');
   });
 

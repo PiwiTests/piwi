@@ -281,22 +281,37 @@ export function headedCommand(command: string, args: string[]): { command: strin
 /** The first `@piwitests/reporter` that pauses at the editor's breakpoints. */
 export const PAUSE_REPORTER_VERSION = '0.48.0';
 
+/** The first `@piwitests/reporter` that stops headless at a breakpoint, its stop shown on the run channel. */
+export const HEADLESS_PAUSE_REPORTER_VERSION = '0.62.0';
+
+/** Whether `version` (major.minor.patch) is older than `need`; null when it does not read as a version. */
+function olderThan(version: string, need: string): boolean | null {
+  const parse = (v: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim())?.slice(1).map(Number) ?? null;
+  const have = parse(version);
+  const wanted = parse(need)!;
+  if (!have) return null;
+  for (let i = 0; i < 3; i++) {
+    if (have[i]! !== wanted[i]!) return have[i]! < wanted[i]!;
+  }
+  return false;
+}
+
 /**
  * Why breakpoints do nothing with the project's reporter: a sentence when its version (major.minor.patch) is older
  * than `PAUSE_REPORTER_VERSION`; null when it is as new, or unknown.
  */
 export function breakpointsNotice(reporterVersion: string | null): string | null {
-  const parse = (v: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim())?.slice(1).map(Number) ?? null;
-  const have = reporterVersion ? parse(reporterVersion) : null;
-  const need = parse(PAUSE_REPORTER_VERSION)!;
-  if (!have) return null;
-  for (let i = 0; i < 3; i++) {
-    if (have[i]! > need[i]!) return null;
-    if (have[i]! < need[i]!) {
-      return `Breakpoints need @piwitests/reporter ${PAUSE_REPORTER_VERSION} or later; this project has ${reporterVersion!.trim()}.`;
-    }
-  }
-  return null;
+  if (!reporterVersion || !olderThan(reporterVersion, PAUSE_REPORTER_VERSION)) return null;
+  return `Breakpoints need @piwitests/reporter ${PAUSE_REPORTER_VERSION} or later; this project has ${reporterVersion.trim()}.`;
+}
+
+/**
+ * Whether a run with breakpoints goes headed for the project's reporter to stop at them: its version is older than
+ * `HEADLESS_PAUSE_REPORTER_VERSION` or unknown, or the run has no run channel (`channel`) to show a headless stop on.
+ */
+export function breakpointRunHeaded(reporterVersion: string | null, channel: boolean): boolean {
+  if (!channel || !reporterVersion) return true;
+  return olderThan(reporterVersion, HEADLESS_PAUSE_REPORTER_VERSION) !== false;
 }
 
 /** Which files each test reaches, from the code index; undefined when it holds no client reach. Built once per index. */

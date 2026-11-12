@@ -2166,9 +2166,9 @@ describe('how every run of the window starts', () => {
       ['headed', 'Run headed', 'Off'],
       ['holdFailures', 'Hold failures', 'On'],
     ]);
-    // A breakpoint never runs a test headed: Run headed off leaves the run headless.
+    // Run headed off leaves a run with breakpoints headless, unless its reporter stops at none headless.
     expect(picks[0]!.detail).toBe(
-      'Runs are headed only for a page.pause(); a breakpoint never makes one headed. Pick to run every test headed.',
+      'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
     );
   });
 

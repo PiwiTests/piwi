@@ -41,7 +41,7 @@ steps and resumes it too: [Pause and step from the editor](./editor-run-control)
 
 Two choices apply to every test run you start: **Run headed** (`--headed`, a verification included) and
 [**Hold failures**](/guide/concepts#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
-decide: on with your breakpoints or a `page.pause()`, headed for the latter alone. In VS Code,
+decide: on with your breakpoints or a `page.pause()`, headed for the latter. In VS Code,
 **Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
 in a JetBrains IDE, **Tools → Piwi → Run Headed** and **Hold Failures from Each Run's Start…**. A
 [debug run](./debug-in-editor), a Flake Lab line and a fix plan's check leave them out.

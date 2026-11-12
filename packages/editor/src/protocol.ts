@@ -308,8 +308,9 @@ export interface RunTestsArgs extends RunStartOptions {
   /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
    * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion)
-   * (`PIWI_PAUSE_AT` in `RunCommand.env`). A breakpoint never runs a test headed: the run shows Piwi's pause bar only
-   * when it is headed (`RunStartOptions.headed`), and a headless stop shows in the editor.
+   * (`PIWI_PAUSE_AT` in `RunCommand.env`). A breakpoint runs a test headed only when the project's reporter stops at
+   * none headless or the run has no run channel: the run shows Piwi's pause bar only when it is headed
+   * (`RunStartOptions.headed`), and a headless stop shows in the editor.
    */
   breakpoints?: EditorBreakpoint[];
   /**

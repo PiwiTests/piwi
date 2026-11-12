@@ -61,6 +61,7 @@ import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
   applyPatchFile,
   breakMessage,
+  breakpointRunHeaded,
   breakpointsNotice,
   breaksByAnchor,
   breaksOfChange,
@@ -3435,8 +3436,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
    * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`), and a
-   * notice when the project's reporter does not pause at them. Headless still: a breakpoint never runs a test headed,
-   * its stop watched in the worker view. Unchanged without one.
+   * notice when the project's reporter does not pause at them. Headless, its stop watched in the worker view, unless
+   * the project's reporter stops at none headless or the run has no run channel (`breakpointRunHeaded`): `--headed`
+   * then. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
@@ -3455,8 +3457,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!pauseAt) return command;
     if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
+    const headed = breakpointRunHeaded(context.reporterVersion, !!recordChannel);
     return {
       ...command,
+      ...(headed ? headedCommand(command.command, command.args) : {}),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };

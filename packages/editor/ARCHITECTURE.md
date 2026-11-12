@@ -662,7 +662,9 @@ those in files under the context's folder:
 - they go in the command's environment as `PIWI_PAUSE_AT`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
   relative to that folder, 1-based, separated by semicolons (`pauseAtValue` in `src/analysis.ts`);
 - the run is started to be watched (its Hold failures on), and stays headless: a stop at a breakpoint is watched in
-  the worker view as any headless stop is.
+  the worker view as any headless stop is. It goes headed (`headedCommand`) only for a reporter that stops at none
+  headless, older than `HEADLESS_PAUSE_REPORTER_VERSION` (0.62.0) or of a version unknown, or for a run with no run
+  channel, the record channel having failed to listen (`breakpointRunHeaded`).
 
 The person's start options (`RunStartOptions`, the clients' settings, sent with every test run the editor starts) go
 over that: `headed` appends `--headed` unless the command carries `--headed`, `--ui` or `--debug` (`headedCommand`;

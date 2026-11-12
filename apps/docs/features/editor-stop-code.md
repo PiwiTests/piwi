@@ -25,8 +25,7 @@ are on [Pause and step from the editor](./editor-run-control).
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made | The editor alone, at any stop |
 
 The first four need the pause bar, so a headed browser: choose **Run headed**
-([How a run starts](./editor-runs#how-a-run-starts)), as a breakpoint never makes a run headed. **Mock a
-request** works headless too.
+([How a run starts](./editor-runs#how-a-run-starts)). **Mock a request** works headless too.
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
   in the palette while a stop offers them (**Piwi: Assert in the stopped test's page**, **Piwi: Mock a request of the
