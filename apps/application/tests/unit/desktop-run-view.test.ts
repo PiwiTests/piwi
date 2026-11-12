@@ -625,7 +625,7 @@ describe('the window’s stream of its runs', () => {
     runs.want(false);
   });
 
-  test('keeps Watch live for each worker through a new stream, until it is turned off or its run ends', async () => {
+  test('keeps Watch for each worker through a new stream, until it is turned off or its run ends', async () => {
     const runs = await hub();
     runs.want(true);
     const source = FakeSource.last!;
@@ -636,12 +636,12 @@ describe('the window’s stream of its runs', () => {
     runs.setWatchLive('desktop-7', 1, true);
     runs.setWatchLive('desktop-7', 1, false);
     expect([runs.watchesLive('desktop-7', 0), runs.watchesLive('desktop-7', 1)]).toEqual([true, false]);
-    // The stream opens again: Watch live stays.
+    // The stream opens again: Watch stays.
     source.send({ type: 'hello', viewer: VIEWER });
     expect(runs.watchesLive('desktop-7', 0)).toBe(true);
     source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
     expect(runs.watchesLive('desktop-7', 0)).toBe(false);
-    // The window stops listening: every run it showed is over, and so is their Watch live.
+    // The window stops listening: every run it showed is over, and so is their Watch.
     runs.setWatchLive('desktop-8', 0, true);
     runs.want(false);
     expect(runs.watchesLive('desktop-8', 0)).toBe(false);
@@ -666,12 +666,12 @@ describe('the window’s stream of its runs', () => {
     runs.chooseTab('desktop-7', 0);
     run(running(0), stopped(1, 's1'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
-    // A worker whose lane is watched keeps its tab when another stops; its Watch live, which shows nothing while it
+    // A worker whose lane is watched keeps its tab when another stops; its Watch, which shows nothing while it
     // runs, does not.
     runs.setWatchLive('desktop-7', 0, true);
     run(running(0), stopped(1, 's4'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
-    // Pausing with Watch live on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
+    // Pausing with Watch on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
     runs.chooseTab('desktop-7', 0);
     run({ ...running(0), pausing: true }, stopped(1, 's5'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);

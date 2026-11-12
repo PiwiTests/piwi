@@ -96,7 +96,7 @@ The attempt must be traced: [which attempts are](/guide/concepts#trace-so-far).
 
 ## Interact
 
-At a stop, **Interact**, beside **Watch live** or **Watch** in each view once the view is on, sends your clicks, the
+At a stop, **Interact**, beside **Watch** in each view once the view is on, sends your clicks, the
 wheel and your keys on the view to the page as a person's would. The first of them takes control of the stop, so an
 agent waits until you give it back ([driving a stop](/guide/concepts#presence-driving-a-stop)). It stays on across the
 worker's next stops, where your first click or key takes the stop again. Turning it or watching off, **Give back** or

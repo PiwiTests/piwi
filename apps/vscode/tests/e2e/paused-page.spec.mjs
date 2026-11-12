@@ -52,7 +52,7 @@ test('watch and interaction are opt-in, help stays closed, and clicks still pick
   page,
 }, testInfo) => {
   await preview(page);
-  await expect(page.getByLabel('Watch live')).not.toBeChecked();
+  await expect(page.getByLabel('Watch', { exact: true })).not.toBeChecked();
   await expect(page.getByLabel('Interact', { exact: true })).toBeDisabled();
   await expect(page.getByRole('group')).not.toHaveAttribute('open');
   await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 100, y: 80 } });
@@ -66,7 +66,7 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   page,
 }) => {
   const { view, state } = await preview(page);
-  await page.getByLabel('Watch live').check();
+  await page.getByLabel('Watch', { exact: true }).check();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 7, on: true });
   view.live.on = true;
   await state();
@@ -121,7 +121,7 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   await expect(page.getByLabel('Interact', { exact: true })).toBeChecked();
   view.acting = false;
   await state();
-  // Checking Watch live and Interact posted releases of their own: only what follows Escape counts.
+  // Checking Watch and Interact posted releases of their own: only what follows Escape counts.
   const before = await page.evaluate(() => window.messages.length);
   await page.keyboard.press('Escape');
   // Escape lets go of the input held, then turns Interact off, which gives the stop back.
@@ -143,7 +143,7 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   expect(await page.evaluate(() => window.messages)).toContainEqual(
     expect.objectContaining({ type: 'pick', shown: 7, x: 40, y: 30 }),
   );
-  await page.getByLabel('Watch live').uncheck();
+  await page.getByLabel('Watch', { exact: true }).uncheck();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 7, on: false });
 });
 
@@ -209,7 +209,7 @@ test('Escape sends the input queued before it, then the release, and a double cl
   ]);
 });
 
-test('Watch live off sends the click held back for a second one, then the release, then turns the view off', async ({
+test('Watch off sends the click held back for a second one, then the release, then turns the view off', async ({
   page,
 }) => {
   const { view, state } = await preview(page, {
@@ -217,7 +217,7 @@ test('Watch live off sends the click held back for a second one, then the releas
   });
   await state();
   await expect(page.getByLabel('Interact', { exact: true })).toBeChecked();
-  // A click held back for a second one, then Watch live off, and the extension's state of a frame meanwhile.
+  // A click held back for a second one, then Watch off, and the extension's state of a frame meanwhile.
   await page.evaluate((view) => {
     window.messages = [];
     const picture = document.getElementById('page');
@@ -234,7 +234,7 @@ test('Watch live off sends the click held back for a second one, then the releas
   const [sent, , off] = await page.evaluate(() => window.messages);
   expect(sent.events).toEqual([expect.objectContaining({ type: 'mouse', action: 'click', clickCount: 1 })]);
   expect(off).toEqual({ type: 'view', shown: 7, on: false });
-  await expect(page.getByLabel('Watch live')).not.toBeChecked();
+  await expect(page.getByLabel('Watch', { exact: true })).not.toBeChecked();
 });
 
 test('the worker panel watches its slot, dims an image of what the worker left, and offers Interact at a stop alone', async ({

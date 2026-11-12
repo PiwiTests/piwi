@@ -1890,7 +1890,7 @@ describe('the paused page view', () => {
     expect(html).not.toContain('<test>');
     expect(
       pausedPageHtml({ image: null, caption: 'Still image' }, 'n', 'https://webview/paused-page.js'),
-    ).not.toContain('Watch live');
+    ).not.toContain('id="live"');
   });
 
   test('runs one script, by the style’s nonce, only where a click on the image picks', () => {
