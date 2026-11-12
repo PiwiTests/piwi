@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Get the project tracker binding',
     description:
-      'The resolved project-integration binding — connection, Jira project key, issue type, labels, default assignee, ticket language, title prefix (null inherits the default of the connection), include toggles, sync policies, owner routes and the auto-create fields. Returns the defaults when no binding is stored. Requires `project:manage` (Project admin on the project).',
+      'The resolved project-integration binding — connection, Jira project key, issue type, the issue types linked from test tags, labels, default assignee, ticket language, title prefix (null inherits the default of the connection), include toggles, sync policies, owner routes and the auto-create fields. Returns the defaults when no binding is stored. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },

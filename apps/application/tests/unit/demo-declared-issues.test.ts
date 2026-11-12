@@ -10,6 +10,7 @@ import { migrateToLatest } from './temp-db';
  * The demo runs the link step at a run's finish as the server does (`tests/unit/declared-issues.test.ts`), with its
  * canned Jira answering the lookup: the issues a failing test names in the DEMO project are linked to its cluster,
  * a key the demo's Jira does not know is counted in *and N more*, and a run the `tracker` use refuses links nothing.
+ * A tag the project's issue key pattern matches names an issue too, linked when it is of the binding's issue type.
  */
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
@@ -27,10 +28,20 @@ beforeEach(async () => {
   state.db = db;
 });
 
-/** A run whose one test fails naming `issues`, finished as `finish` says; the cluster it failed into. */
-async function failNaming(issues: string[], finish: Partial<TestRunFinishPayload> = {}) {
+const ISSUE_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$';
+
+/**
+ * A run whose one test fails naming `issues` and carrying `tags`, finished as `finish` says; the cluster it failed
+ * into. The project reads issue keys from tags when `tagKeys` is set.
+ */
+async function failNaming(
+  issues: string[],
+  finish: Partial<TestRunFinishPayload> = {},
+  { tags = [], tagKeys = null }: { tags?: string[]; tagKeys?: string | null } = {},
+) {
   const run = { projectName: 'demo-checkout', instanceId: 'ci-run-1' };
   const { runId, setupToken } = await apiSetupTestRun(run);
+  if (tagKeys) await db.update(schema.projects).set({ tagKeys: { issue: tagKeys, testCase: null } });
   const { streamToken } = await apiBeginTestRun(runId, { setupToken, totalTests: 1, ...run });
   await apiPostRunEvents(runId, {
     streamToken,
@@ -42,6 +53,7 @@ async function failNaming(issues: string[], finish: Partial<TestRunFinishPayload
         status: 'failed',
         duration: 10,
         error: "TimeoutError: locator.fill: Timeout 10000ms exceeded.\nwaiting for getByLabel('Email address')",
+        tags,
         testMeta: { issues },
       },
     ],
@@ -80,6 +92,40 @@ describe("the demo's link step", () => {
     // DEMO-64 is not in the demo's Jira; SHOP-1 is not in the bound project, so it is not named at all.
     const [cluster] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, clusterId));
     expect(cluster!.declaredIssuesMore).toBe(1);
+  });
+
+  test('links the Bug a tag names with the tag as its source, and leaves the Task it does not link out of the count', async () => {
+    const clusterId = await failNaming(
+      [],
+      {},
+      { tags: ['smoke', 'DEMO-52', 'DEMO-53', 'SHOP-1'], tagKeys: ISSUE_PATTERN },
+    );
+
+    const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, clusterId));
+    expect(links.map((l) => [l.key, l.origin, l.statusText, l.metadata])).toEqual([
+      [
+        'DEMO-52',
+        'tag',
+        'To Do',
+        expect.objectContaining({ source: { testCaseId: expect.any(Number), tag: '@DEMO-52' } }),
+      ],
+    ]);
+    // DEMO-53 is a Task and the binding's issue type is Bug, so it is dropped and not counted; SHOP-1 is not in the
+    // bound project.
+    const [cluster] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, clusterId));
+    expect(cluster!.declaredIssuesMore).toBe(0);
+  });
+
+  test('reads no tag when the project has no issue key pattern', async () => {
+    const clusterId = await failNaming([], {}, { tags: ['DEMO-52'] });
+    const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, clusterId));
+    expect(links).toEqual([]);
+  });
+
+  test('links the annotation, not the tag, when both name the issue', async () => {
+    const clusterId = await failNaming(['DEMO-52'], {}, { tags: ['DEMO-52'], tagKeys: ISSUE_PATTERN });
+    const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, clusterId));
+    expect(links.map((l) => [l.key, l.origin])).toEqual([['DEMO-52', 'annotation']]);
   });
 
   test('links nothing for a run the tracker use refuses', async () => {

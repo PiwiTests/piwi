@@ -81,6 +81,7 @@ describe('JiraClient', () => {
       assignee: { id: 'u2', displayName: 'Bob', email: 'bob@acme.io' },
       projectKey: null,
       issueType: null,
+      issueTypeId: null,
     });
   });
 

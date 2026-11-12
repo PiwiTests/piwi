@@ -12,8 +12,8 @@ the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a
 diagnosis comment and description updates that never overwrite an edit made in the tracker), and run tickets: a
 run's issue, and one for an execution with no failure cluster, filed by hand with a comment, once per submission
 ([run-on-my-machine.md](run-on-my-machine.md), D17), and the links the tests declare from `piwi:issue` annotations,
-with the dismissals and the read-only handling by origin (the first of their two pull requests). Flaky-test tickets,
-the `relatedIssue` run link, the tag source of [Links the tests declare](#links-the-tests-declare) (the rest of step
+with the dismissals and the read-only handling by origin, and the tag source of
+[Links the tests declare](#links-the-tests-declare). Flaky-test tickets, the `relatedIssue` run link (the rest of step
 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
@@ -445,8 +445,8 @@ needs a binding).
 Requested in [#1153](https://github.com/PiwiTests/piwi/issues/1153). A suite often names, on each test, the issue its
 failures are tracked in, so a person still opens each new cluster and pastes the same URL into *Link an issue*. Piwi
 reads that name when the run is ingested and links the cluster itself. The `piwi:issue` source, the link step, the
-dismissals and the read-only handling by origin shipped (the first pull request of rollout step 4); the tag source
-remains. Each *Default* below answers one of open questions 10 to 14.
+dismissals and the read-only handling by origin shipped (the first pull request of rollout step 4), and so did the
+tag source (the second). Each *Default* below answers one of open questions 10 to 14.
 
 **Two sources, both declared in the spec.**
 
@@ -489,6 +489,11 @@ issue on the site and show its title and status to the project's readers. Pinnin
 - A project match does not keep out a story tag when stories live in the same Jira project. *Default:* the tag source
   links only the issue types listed in its setting, which defaults to the binding's issue type (what Piwi files bugs
   as); the setting is required when the binding has none. The annotation is explicit, so it has no type filter.
+  The list is a nullable column on the binding (`declared_issue_types`; null, and a list that names none, mean the
+  binding's issue type), edited as a multi-select under the issue type. An entry of digits matches the
+  issue's type id or a type named with those digits, and any other entry the type name, ignoring case, since the
+  binding stores either. A key the filter drops is left out of *and N more named by its tests*; a key Jira did not
+  return is counted.
 
 **Links from the tests are read-only.** Run data must not drive writes through the shared account. Today the policies
 write to the cluster's tracker link (`getClusterTrackerLink`: the newest keyed link `writableLink` accepts) and the
@@ -814,8 +819,8 @@ Each step is a separately mergeable pull request that leaves the app green and u
 4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see
    `shared/integrations/automation.ts`); flaky-test tickets; the `relatedIssue` run link; the links the
    tests declare, in two pull requests: `piwi:issue` in core with the link step, the dismissals and the read-only
-   handling by origin (`feat(app)`, `feat(db)` for the migrations) ✅ *shipped*, then the tag source, with or after Zephyr's
-   shared tag-key helper ([zephyr-sync.md](zephyr-sync.md#rollout), step 3).
+   handling by origin (`feat(app)`, `feat(db)` for the migrations) ✅ *shipped*, then the tag source, on Zephyr's
+   shared tag-key helper ([zephyr-sync.md](zephyr-sync.md#rollout), step 3) ✅ *shipped*.
 5. **Confluence** — the wiki interface, the storage renderer, publish investigation and run report, page-in-place
    updates.
 6. **The next trackers** — GitHub Issues and GitLab Issues on the SCM token; Jira Data Center; Linear.

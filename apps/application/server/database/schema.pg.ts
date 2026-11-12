@@ -1516,6 +1516,7 @@ export const projectIntegrations = pgTable(
       .references(() => integrationConnections.id, { onDelete: 'cascade' }),
     projectKey: text('project_key'), // Jira project key (tracker binding)
     issueType: text('issue_type'),
+    declaredIssueTypes: jsonb('declared_issue_types'), // string[] | null — the issue types the tag source links; the binding's issue type when null
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default

@@ -62,9 +62,9 @@ everywhere:
 
 ## Links the tests declare
 
-A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) links its cluster to issues of the
-bound Jira project. It counts as tracked, yet Piwi never writes to it and its status never resolves or reopens the
-cluster on its own.
+A failing test's [`piwi:issue`](/reference/test-metadata#issues-the-tests-declare) or
+[issue-key tag](/reference/test-metadata#keys-in-test-tags) links its cluster to issues of the bound project. It counts
+as tracked, yet Piwi never writes to it and its status never resolves or reopens the cluster itself.
 
 ## Keep the ticket honest
 

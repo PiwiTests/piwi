@@ -204,6 +204,19 @@ export const DEMO_EXAMPLES = [
     },
   },
   {
+    id: 'declared-issue-tag-link',
+    doc: 'features/issue-tracking',
+    title: 'E2E Checkout › should complete checkout with PayPal',
+    shows:
+      'Its tag DEMO-52 names a Bug, linked with the chip From the tag; the credit card test’s tag DEMO-53 names a Task, which the binding’s issue type leaves out, so it is neither linked nor counted.',
+    route: '/failure-clusters/1',
+    expect: {
+      cluster: { id: 1, story: 'checkout-pay-timeout' },
+      issue: { key: 'DEMO-52', status: 'To Do' },
+      declaredMore: null,
+    },
+  },
+  {
     id: 'ai-diagnosis-simulated',
     doc: 'features/ai-diagnosis',
     title: 'E2E Checkout › should complete checkout with Apple Pay',
