@@ -6,7 +6,8 @@
  * another instance, is a new watch in its place. The windows that watch the lane get each image, base64, at most
  * `MAX_VIEW_FPS` a second, the latest one waiting, and nothing is kept. A window that asks another lane takes the watch
  * there, the others hearing it moved (`moved`): one watch of the instance's bounds (16 a run, 4 a person) at a time.
- * The watch ends as its last window leaves, as the run leaves the list or the instance ends it, once it brings nothing
+ * A window that joins a watch still opening, or still moving to its lane, gets the instance's answer to it; a window's
+ * later ask wins over its earlier one still on its way. The watch ends as its last window leaves, as the run leaves the list or the instance ends it, once it brings nothing
  * for `IDLE_MS`, or on an error: its windows hear why (`ci-ended`) unless they asked. Nothing here reaches the run's
  * workers: no control, input or pick.
  */
@@ -39,8 +40,15 @@ export interface CiViewer {
 
 export interface CiWatchOptions {
   settings: () => Promise<ConnectionSettings>;
-  /** A lane of a listed run: whether its lanes can be watched and its worker; null for a run not followed now. */
-  target: (runId: number, shard: number | null, lane: number) => { watchable: boolean; worker: number | null } | null;
+  /**
+   * A lane of a listed run: whether its lanes can be watched and its worker, `followed: false` for a run listed but
+   * not followed now; null for a run not listed.
+   */
+  target: (
+    runId: number,
+    shard: number | null,
+    lane: number,
+  ) => { followed?: boolean; watchable: boolean; worker: number | null } | null;
   open: (settings: ConnectionSettings, runId: number, query: URLSearchParams, signal: AbortSignal) => Promise<Response>;
   change: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
   idleMs?: number;
@@ -58,6 +66,8 @@ interface Watch extends RunsCiLane {
   asked: number;
   /** The windows that watch it, each with the pace of its images. */
   viewers: Map<CiViewer, LatestPacer<RunsCiFrame>>;
+  /** The instance's answer to its opening, or to its last move to another lane: a window that joins gets it. */
+  answer: Promise<RunsAnswer>;
 }
 
 /** Bytes as base64. */
@@ -87,11 +97,19 @@ const OK: RunsAnswer = { ok: true, message: '' };
 
 export class CiLaneWatch {
   private current: Watch | null = null;
+  /** Each window's asks, counted: an ask still on its way when the same window asks again changes nothing. */
+  private readonly asks = new WeakMap<CiViewer, number>();
 
   constructor(private readonly options: CiWatchOptions) {}
 
   /** A window asks to watch a lane of a CI run (`on`), or stops. */
-  async watch(viewer: CiViewer, lane: RunsCiLane, on: boolean): Promise<RunsAnswer> {
+  watch(viewer: CiViewer, lane: RunsCiLane, on: boolean): Promise<RunsAnswer> {
+    const ask = (this.asks.get(viewer) ?? 0) + 1;
+    this.asks.set(viewer, ask);
+    return this.ask(viewer, lane, on, ask);
+  }
+
+  private async ask(viewer: CiViewer, lane: RunsCiLane, on: boolean, ask: number): Promise<RunsAnswer> {
     const own = this.current;
     if (!on) {
       if (own && sameLane(own, lane)) this.leave(viewer);
@@ -99,14 +117,16 @@ export class CiLaneWatch {
     }
     const target = this.options.target(lane.runId, lane.shard, lane.lane);
     if (!target) return refused('unlisted');
+    if (target.followed === false) return refused('unfollowed');
     if (!target.watchable) return refused('unwatchable');
     if (target.worker === null) return refused('no-test');
     const settings = await this.options.settings();
-    if (this.current !== own) return this.watch(viewer, lane, on);
+    if (this.asks.get(viewer) !== ask) return OK;
+    if (this.current !== own) return this.ask(viewer, lane, on, ask);
     if (own && own.instance === settings.instanceUrl && own.runId === lane.runId) {
       if (sameLane(own, lane)) {
         this.join(own, viewer);
-        return OK;
+        return own.answer;
       }
       if (own.id) return this.change(own, viewer, lane, target.worker);
     }
@@ -155,12 +175,7 @@ export class CiLaneWatch {
     for (const viewer of only ?? own.viewers.keys()) viewer.ended(lane, why);
   }
 
-  private async open(
-    settings: ConnectionSettings,
-    viewer: CiViewer,
-    lane: RunsCiLane,
-    worker: number,
-  ): Promise<RunsAnswer> {
+  private open(settings: ConnectionSettings, viewer: CiViewer, lane: RunsCiLane, worker: number): Promise<RunsAnswer> {
     const watch: Watch = {
       ...lane,
       instance: settings.instanceUrl,
@@ -170,9 +185,20 @@ export class CiLaneWatch {
       id: null,
       asked: 0,
       viewers: new Map(),
+      answer: Promise.resolve(OK),
     };
     this.current = watch;
     this.join(watch, viewer);
+    watch.answer = this.opening(watch, settings, lane, worker);
+    return watch.answer;
+  }
+
+  private async opening(
+    watch: Watch,
+    settings: ConnectionSettings,
+    lane: RunsCiLane,
+    worker: number,
+  ): Promise<RunsAnswer> {
     const query = new URLSearchParams({
       worker: String(worker),
       slot: String(lane.lane),
@@ -183,7 +209,7 @@ export class CiLaneWatch {
     let late = false;
     const wait = setTimeout(() => {
       late = true;
-      watch.abort.abort();
+      watch.abort.abort(new DOMException('The instance did not open the watch in time.', 'TimeoutError'));
     }, this.options.openMs ?? OPEN_MS);
     try {
       let response: Response;
@@ -216,7 +242,12 @@ export class CiLaneWatch {
   }
 
   /** Show another lane of the run on the watch open: the windows of the lane before hear it moved. */
-  private async change(watch: Watch, viewer: CiViewer, lane: RunsCiLane, worker: number): Promise<RunsAnswer> {
+  private change(watch: Watch, viewer: CiViewer, lane: RunsCiLane, worker: number): Promise<RunsAnswer> {
+    watch.answer = this.changing(watch, viewer, lane, worker);
+    return watch.answer;
+  }
+
+  private async changing(watch: Watch, viewer: CiViewer, lane: RunsCiLane, worker: number): Promise<RunsAnswer> {
     const before = { runId: watch.runId, shard: watch.shard, lane: watch.lane };
     for (const [other, pacer] of watch.viewers) {
       if (other === viewer) continue;

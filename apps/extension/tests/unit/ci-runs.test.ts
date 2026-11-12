@@ -226,7 +226,7 @@ describe('the lanes of the CI runs', () => {
     ...over,
   });
 
-  function watch(ids: number[]) {
+  function watch(ids: number[], watched: () => number | null = () => null) {
     const opened: number[] = [];
     const streams = new Map<number, ReturnType<typeof stream>>();
     const signals = new Map<number, AbortSignal>();
@@ -245,6 +245,7 @@ describe('the lanes of the CI runs', () => {
         return s.response;
       },
       left: (runId) => left.push(runId),
+      watched,
       pollMs: 1_000,
       pushMs: 100,
       streamIdleMs: 5_000,
@@ -272,6 +273,54 @@ describe('the lanes of the CI runs', () => {
     expect([3, 4, 5].every((id) => signals.get(id)!.aborted)).toBe(true);
   });
 
+  it('keeps following the run watched as newer runs start, letting the oldest unwatched go first', async () => {
+    vi.useFakeTimers();
+    let watched: number | null = 1;
+    const { ci, opened, signals, setRuns } = watch([1, 2, 3], () => watched);
+    ci.listen(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened.sort()).toEqual([1, 2, 3]);
+    setRuns([1, 2, 3, 4]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(signals.get(1)!.aborted).toBe(false);
+    expect(signals.get(2)!.aborted).toBe(true);
+    expect(opened).toContain(4);
+    // A run listed but not followed is not one that ended.
+    expect(ci.lane(2, null, 0)).toEqual({ followed: false, watchable: false, worker: null });
+    watched = null;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(signals.get(1)!.aborted).toBe(true);
+    expect(opened.filter((id) => id === 2)).toHaveLength(2);
+  });
+
+  it('lets the runs’ streams go while no window that listens shows, and opens them again as one does', async () => {
+    vi.useFakeTimers();
+    const { ci, opened, signals } = watch([1, 2]);
+    const a = () => {};
+    const b = () => {};
+    ci.listen(a);
+    ci.listen(b);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened.sort()).toEqual([1, 2]);
+    ci.shown(a, false);
+    expect(signals.get(1)!.aborted).toBe(false);
+    ci.shown(b, false);
+    expect([1, 2].every((id) => signals.get(id)!.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(opened).toHaveLength(2);
+    // The list is still read, and the runs keep their lanes as last heard: a watch asked as a window shows finds them.
+    expect(
+      ci
+        .state()
+        .map((run) => run.id)
+        .sort(),
+    ).toEqual([1, 2]);
+    expect(ci.lane(1, null, 0)).toMatchObject({ followed: true });
+    ci.shown(b, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toHaveLength(4);
+  });
+
   it('lists the tests the lanes run, whether they can be watched, and the lane a watch asks', async () => {
     vi.useFakeTimers();
     const { ci, streams } = watch([1]);
@@ -292,8 +341,8 @@ describe('the lanes of the CI runs', () => {
       { shard: null, lane: 0, worker: 0, state: 'running', title: 'cart › pays 0', retry: 0 },
       { shard: null, lane: 1, worker: 1, state: 'running', title: 'cart › pays 1', retry: 0 },
     ]);
-    expect(ci.lane(1, null, 1)).toEqual({ watchable: true, worker: 1 });
-    expect(ci.lane(1, null, 7)).toEqual({ watchable: true, worker: null });
+    expect(ci.lane(1, null, 1)).toEqual({ followed: true, watchable: true, worker: 1 });
+    expect(ci.lane(1, null, 7)).toEqual({ followed: true, watchable: true, worker: null });
     expect(ci.lane(2, null, 1)).toBeNull();
     // A lane that ends its test leaves the list; a project that turns its live view off is no more watchable.
     s.send('lane', lane(1, { state: 'done' }));

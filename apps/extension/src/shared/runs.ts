@@ -166,12 +166,20 @@ export type RunsCiFrame = RunsCiLane &
 export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
 
 /**
- * Why a CI lane was not watched: the run is no longer listed (`unlisted`), its lanes cannot be watched
- * (`unwatchable`), no test ran in the lane yet (`no-test`), the instance did not answer (`offline`) or not in time
- * (`late`), its live view is not one the extension reads (`older`), or it refused (`refused`, its sentence the
- * answer's `message`, else its `status`).
+ * Why a CI lane was not watched: the run is no longer listed (`unlisted`), it is listed but its lanes are not followed
+ * now, newer runs' being (`unfollowed`), its lanes cannot be watched (`unwatchable`), no test ran in the lane yet
+ * (`no-test`), the instance did not answer (`offline`) or not in time (`late`), its live view is not one the extension
+ * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`).
  */
-export type CiWatchFailure = 'unlisted' | 'unwatchable' | 'no-test' | 'offline' | 'late' | 'older' | 'refused';
+export type CiWatchFailure =
+  | 'unlisted'
+  | 'unfollowed'
+  | 'unwatchable'
+  | 'no-test'
+  | 'offline'
+  | 'late'
+  | 'older'
+  | 'refused';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
@@ -238,6 +246,13 @@ export type RunsRequest =
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }
+  /** Whether the person can see the window: the CI runs' streams are read while one that can does. */
+  | { type: 'shown'; shown: boolean }
+  /**
+   * Stop sharing each run of the hub's editor window live (`share` with `scope: 'window'` and no run named), answered
+   * with `answer` of the same `id`.
+   */
+  | { type: 'unshare-window'; id: number; hub: string }
   /**
    * Watch a running test's lane of a CI run (`on`), read-only, or stop: answered with `answer` of the same `id`, then
    * its images as `ci-frame` and its end as `ci-ended`.
@@ -394,6 +409,13 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
     case 'find':
     case 'ping':
       return { type: value.type };
+    case 'shown':
+      return typeof value.shown === 'boolean' ? { type: 'shown', shown: value.shown } : null;
+    case 'unshare-window': {
+      const { id, hub } = value;
+      if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
+      return { type: 'unshare-window', id, hub };
+    }
     case 'ci-watch': {
       const { id, runId, shard, lane, on } = value;
       if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;

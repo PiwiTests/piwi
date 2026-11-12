@@ -8993,6 +8993,10 @@
     "message": "This CI run is no longer in progress.",
     "description": "Runs window, why a CI run’s worker could not be watched: the run is no longer listed in progress."
   },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker follows three CI runs at a time, the newest: this run’s tests show again once a newer one ends.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the run is listed, but its workers are not followed now, three newer runs’ being."
+  },
   "runs_ciRefusedUnwatchable": {
     "message": "This run’s tests cannot be watched: its project’s live view is off, or the run holds no key.",
     "description": "Runs window, under a CI run’s running tests, and why one could not be watched: the project’s live view is off on the instance, or the run holds no live view key."

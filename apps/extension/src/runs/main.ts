@@ -291,6 +291,7 @@ function connect(): void {
       if (window.id !== undefined) post({ type: 'window', windowId: window.id });
     })
     .catch(() => undefined);
+  post({ type: 'shown', shown: !document.hidden });
 }
 
 /** What a command names besides its stop: the response to mock, whether a view is on, a lane, the input, a point. */
@@ -298,6 +299,33 @@ type CommandExtra = Pick<
   Extract<RunsRequest, { type: 'command' }>,
   'request' | 'on' | 'scope' | 'lane' | 'layers' | 'events' | 'x' | 'y'
 >;
+
+/**
+ * Sends the worker a request it answers with `answer` of the request's id: `offline` without a port to it, `late` once
+ * `COMMAND_TIMEOUT_MS` passed.
+ */
+function answered(make: (id: number) => RunsRequest, offline: RunsAnswer, late: RunsAnswer): Promise<RunsAnswer> {
+  const id = nextId++;
+  return new Promise((resolve) => {
+    if (!port) {
+      resolve(offline);
+      return;
+    }
+    // A request the worker drops, or never answers, frees its buttons: a later answer finds nobody waiting.
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      resolve(late);
+    }, COMMAND_TIMEOUT_MS);
+    waiting.set(id, (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    });
+    post(make(id));
+  });
+}
+
+const OFFLINE: RunsAnswer = { ok: false, message: '', failure: 'offline' };
+const TIMEOUT: RunsAnswer = { ok: false, message: '', failure: 'timeout' };
 
 function command(
   hub: string,
@@ -307,23 +335,7 @@ function command(
   since: string | null,
   extra: CommandExtra = {},
 ): Promise<RunsAnswer> {
-  const id = nextId++;
-  return new Promise((resolve) => {
-    if (!port) {
-      resolve({ ok: false, message: '', failure: 'offline' });
-      return;
-    }
-    // A command the worker drops, or never answers, frees its buttons: a later answer finds nobody waiting.
-    const timer = setTimeout(() => {
-      waiting.delete(id);
-      resolve({ ok: false, message: '', failure: 'timeout' });
-    }, COMMAND_TIMEOUT_MS);
-    waiting.set(id, (answer) => {
-      clearTimeout(timer);
-      resolve(answer);
-    });
-    post({ type: 'command', id, hub, ref, worker, since, what, ...extra });
-  });
+  return answered((id) => ({ type: 'command', id, hub, ref, worker, since, what, ...extra }), OFFLINE, TIMEOUT);
 }
 
 /**
@@ -421,8 +433,8 @@ function runKeyOf(run: RunsRun): string {
 }
 
 /**
- * Share a run live (`on`), or stop sharing it, or with `byWindow`, each run of its editor window until the person stops,
- * or none of them, unless a share of it is on its way: a refusal is shown and read out.
+ * Share a run live (`on`), or stop sharing it, or with `byWindow`, share each run of its editor window until the person
+ * stops, unless a share of it is on its way: a refusal is shown and read out.
  */
 async function share(run: RunsRun, on: boolean, byWindow = false): Promise<void> {
   const key = runKeyOf(run);
@@ -468,8 +480,8 @@ function answerShare(run: RunsRun, yes: boolean, byWindow = false): void {
 /** The runs whose Stop sharing waits for the person to confirm it. */
 const stopAsking = new Set<string>();
 
-/** Stop sharing, or Stop sharing this window's runs (`byWindow`): asked first, every time. */
-function askStopSharing(run: RunsRun, yes: boolean | null, byWindow: boolean): void {
+/** Stop sharing a run, asked first, every time: the run alone, whether or not its editor window shares its runs. */
+function askStopSharing(run: RunsRun, yes: boolean | null): void {
   const key = runKeyOf(run);
   if (yes === null) {
     stopAsking.add(key);
@@ -479,7 +491,40 @@ function askStopSharing(run: RunsRun, yes: boolean | null, byWindow: boolean): v
   stopAsking.delete(key);
   focusKey = `${key}|stop-sharing`;
   if (!yes) return render();
-  void share(run, false, byWindow);
+  void share(run, false);
+}
+
+/** The hubs whose Stop sharing this window's runs waits for the person to confirm it, or for the hub's answer. */
+const windowStopAsking = new Set<string>();
+const windowStopping = new Set<string>();
+/** Why a hub refused to stop sharing its window's runs, until it is asked again. */
+const windowStopRefusals = new Map<string, string>();
+
+/** Stop sharing this window's runs, on the hubs line: asked first, every time, then every run of the window stops. */
+function askStopWindow(hub: string, yes: boolean | null): void {
+  if (yes === null) {
+    windowStopAsking.add(hub);
+    focusKey = `hubs|${hub}|stop-window-yes`;
+    return render();
+  }
+  windowStopAsking.delete(hub);
+  focusKey = `hubs|${hub}|stop-window`;
+  if (!yes) return render();
+  void stopWindow(hub);
+}
+
+async function stopWindow(hub: string): Promise<void> {
+  if (windowStopping.has(hub)) return;
+  windowStopping.add(hub);
+  windowStopRefusals.delete(hub);
+  render();
+  const answer = await answered((id) => ({ type: 'unshare-window', id, hub }), OFFLINE, TIMEOUT);
+  windowStopping.delete(hub);
+  if (answer.ok && state?.hubs.find((h) => h.id === hub)?.windowShared) windowsAsked.add(hub);
+  const text = answer.ok ? answer.message : failureText(answer, hub);
+  if (!answer.ok) windowStopRefusals.set(hub, text);
+  if (text) announce(text);
+  render();
 }
 
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
@@ -1244,22 +1289,11 @@ function isCiLive(view: CiView | null): view is CiView {
 
 /** Ask the worker to watch a CI lane, or stop, answered as a command is. */
 function ciCommand(lane: RunsCiLane, on: boolean): Promise<RunsAnswer> {
-  const id = nextId++;
-  return new Promise((resolve) => {
-    if (!port) {
-      resolve({ ok: false, message: '', ci: 'offline' });
-      return;
-    }
-    const timer = setTimeout(() => {
-      waiting.delete(id);
-      resolve({ ok: false, message: '', ci: 'late' });
-    }, COMMAND_TIMEOUT_MS);
-    waiting.set(id, (answer) => {
-      clearTimeout(timer);
-      resolve(answer);
-    });
-    post({ type: 'ci-watch', id, ...lane, on });
-  });
+  return answered(
+    (id) => ({ type: 'ci-watch', id, ...lane, on }),
+    { ok: false, message: '', ci: 'offline' },
+    { ok: false, message: '', ci: 'late' },
+  );
 }
 
 /** **Watch** on a CI run's running test: watch its lane, or stop watching it. */
@@ -1312,6 +1346,8 @@ function ciRefusalText(answer: RunsAnswer): string {
   switch (answer.ci) {
     case 'unlisted':
       return t('runs_ciRefusedUnlisted');
+    case 'unfollowed':
+      return t('runs_ciRefusedUnfollowed');
     case 'unwatchable':
       return t('runs_ciRefusedUnwatchable');
     case 'no-test':
@@ -1864,6 +1900,7 @@ document.addEventListener('keydown', (event) => {
 // A window the person cannot see watches nothing: its views and lanes stop, and come again as it shows, the stop's Watch and
 // Watch left on.
 document.addEventListener('visibilitychange', () => {
+  post({ type: 'shown', shown: !document.hidden });
   if (!document.hidden) {
     render();
     return;
@@ -1991,7 +2028,10 @@ function announceChanges(next: RunsState): void {
     if (hub.windowShared) windows.add(hub.id);
     const editor = hub.client ?? t('runs_editor');
     // A window's share, turned on or off in the editor: one this window asked for says its answer.
-    const asked = [...sharing].some((key) => key.startsWith(`${hub.id}|`)) || windowsAsked.delete(hub.id);
+    const asked =
+      [...sharing].some((key) => key.startsWith(`${hub.id}|`)) ||
+      windowStopping.has(hub.id) ||
+      windowsAsked.delete(hub.id);
     if (windowsSeen && !asked && hub.windowShared !== windowsSeen.has(hub.id)) {
       said.push(t(hub.windowShared ? 'runs_announceWindowShared' : 'runs_announceWindowUnshared', { editor }));
     }
@@ -2160,11 +2200,23 @@ function renderHubs(current: RunsState): void {
   if (editorPaired) {
     const line = editorLine(current);
     if (!(boxSays === 'editor' && line.boxed)) lines.push(line);
-    // Each editor window that shares its runs until the person stops says so, whether or not a run is listed.
+    // Each editor window that shares its runs until the person stops says so, with its stop, whether or not a run is
+    // listed.
     for (const hub of current.hubs) {
       if (!hub.connected || !hub.windowShared) continue;
       const editor = hub.client ?? t('runs_editor');
-      lines.push({ icon: 'eye', text: t('runs_windowShared', { editor }), boxed: false, actions: [] });
+      lines.push({
+        icon: 'eye',
+        text: t('runs_windowShared', { editor }),
+        boxed: false,
+        actions: [],
+        stopWindow: {
+          hub: hub.id,
+          asking: windowStopAsking.has(hub.id),
+          waiting: windowStopping.has(hub.id),
+          refusal: windowStopRefusals.get(hub.id) ?? null,
+        },
+      });
     }
   }
   if (desktopPaired) {
@@ -2176,13 +2228,46 @@ function renderHubs(current: RunsState): void {
   if (shown === hubsShown) return;
   hubsShown = shown;
   hubsLine.replaceChildren(
-    ...lines.map(({ icon, text, actions }, index) => {
+    ...lines.flatMap(({ icon, text, actions, stopWindow }, index) => {
       const line = iconText(element('p'), icon, text);
       line.classList.toggle('waiting', icon !== 'check-circle' && icon !== 'eye');
       for (const action of actions) line.append(emptyActionButton(action, `hubs|${index}|${action}`));
-      return line;
+      return stopWindow ? [line, renderStopWindow(stopWindow)] : [line];
     }),
   );
+}
+
+/** A window's share, on the hubs line: Stop sharing this window's runs, asked first, and why it was refused. */
+function renderStopWindow({ hub, asking, waiting, refusal }: NonNullable<HubLine['stopWindow']>): HTMLElement {
+  const box = element('div', 'hub-share');
+  const row = element('div', 'piwi-actions');
+  const button = (label: string, onClick: () => void, focus: string, options: Parameters<typeof makeButton>[2]) => {
+    const made = makeButton(label, onClick, options);
+    made.dataset.focus = `hubs|${hub}|${focus}`;
+    if (waiting) made.setAttribute('aria-disabled', 'true');
+    row.append(made);
+  };
+  if (asking) {
+    const question = element('p', 'share-warning', t('runs_stopSharingWindowAsk'));
+    question.id = `stop-window-${++headings}`;
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', t('runs_stopSharingWindow'));
+    box.setAttribute('aria-describedby', question.id);
+    box.append(question);
+    button(t('runs_stopSharing'), () => askStopWindow(hub, true), 'stop-window-yes', {
+      icon: 'eye-off',
+      tone: 'danger',
+    });
+    button(t('common_cancel'), () => askStopWindow(hub, false), 'stop-window-no', { icon: 'close' });
+  } else {
+    button(t('runs_stopSharingWindow'), () => askStopWindow(hub, null), 'stop-window', {
+      icon: 'eye-off',
+      title: t('runs_stopSharingWindowTitle'),
+    });
+  }
+  box.append(row);
+  if (refusal) box.append(iconText(element('p', 'note'), 'info', refusal));
+  return box;
 }
 
 /** A status line: its icon and sentence, whether the empty box says the same, and the buttons the sentence names. */
@@ -2191,6 +2276,8 @@ interface HubLine {
   text: string;
   boxed: boolean;
   actions: EmptyAction[];
+  /** For an editor window that shares its runs: its hub, and where its Stop sharing this window's runs stands. */
+  stopWindow?: { hub: string; asking: boolean; waiting: boolean; refusal: string | null };
 }
 
 /** The status lines as last drawn. */
@@ -3005,7 +3092,8 @@ function renderShare(run: RunsRun, live: HubLive, hub: RunsHub | undefined): HTM
   const asking = shareAsking.has(key);
   const waiting = sharing.has(key);
   const refusal = shareRefusals.get(key) ?? null;
-  // The hub shares its editor window's runs: offered beside the run's own, and while on, stopped for all of them.
+  // The hub shares its editor window's runs: offered beside the run's own, and while on, said under the run, whose Stop
+  // sharing stops it alone (the hubs line stops the window's).
   const offersWindow = !!hub?.sharesWindow;
   const byWindow = offersWindow && !!hub?.windowShared;
   const stopping = live.shared && stopAsking.has(key);
@@ -3038,29 +3126,23 @@ function renderShare(run: RunsRun, live: HubLive, hub: RunsHub | undefined): HTM
       }
       if (byWindow) box.append(iconText(element('p', 'note shared-window'), 'info', t('runs_sharedByWindow')));
       if (stopping) {
-        const question = element(
-          'p',
-          'share-warning',
-          t(byWindow ? 'runs_stopSharingWindowAsk' : 'runs_stopSharingAsk'),
-        );
+        const question = element('p', 'share-warning', t('runs_stopSharingAsk'));
         question.id = `stop-sharing-${++headings}`;
         box.setAttribute('role', 'group');
-        box.setAttribute('aria-label', t(byWindow ? 'runs_stopSharingWindow' : 'runs_stopSharing'));
+        box.setAttribute('aria-label', t('runs_stopSharing'));
         box.setAttribute('aria-describedby', question.id);
         box.append(question);
         row.replaceChildren();
-        button(t('runs_stopSharing'), () => askStopSharing(run, true, byWindow), 'stop-sharing-yes', {
+        button(t('runs_stopSharing'), () => askStopSharing(run, true), 'stop-sharing-yes', {
           icon: 'eye-off',
           tone: 'danger',
         });
-        button(t('common_cancel'), () => askStopSharing(run, false, byWindow), 'stop-sharing-no', { icon: 'close' });
+        button(t('common_cancel'), () => askStopSharing(run, false), 'stop-sharing-no', { icon: 'close' });
       } else {
-        button(
-          t(byWindow ? 'runs_stopSharingWindow' : 'runs_stopSharing'),
-          () => askStopSharing(run, null, byWindow),
-          'stop-sharing',
-          { icon: 'eye-off', title: t(byWindow ? 'runs_stopSharingWindowTitle' : 'runs_stopSharingTitle') },
-        );
+        button(t('runs_stopSharing'), () => askStopSharing(run, null), 'stop-sharing', {
+          icon: 'eye-off',
+          title: t('runs_stopSharingTitle'),
+        });
       }
     } else if (asking) {
       const warning = element('p', 'share-warning', t('runs_shareWarning', { instance: instanceOf(live) }));

@@ -730,6 +730,18 @@ describe('a hub’s connection', () => {
     expect(hubs.state().hubs[0]).toMatchObject({ sharesWindow: true, windowShared: true });
     expect(changed).toHaveBeenCalled();
     stop();
+    // Stopping it names no run: every run of the window stops sharing, whichever are listed.
+    const unshared = hubs.unshareWindow(HUB.url);
+    expect(socket.sent[socket.sent.length - 1]).toEqual({
+      type: 'share',
+      id: 5,
+      ref: null,
+      on: false,
+      scope: 'window',
+    });
+    socket.hear({ type: 'answer', id: 5, ok: true, message: 'Stopped sharing this window’s runs live.' });
+    expect(await unshared).toEqual({ ok: true, message: 'Stopped sharing this window’s runs live.' });
+    expect(await hubs.unshareWindow('ws://127.0.0.1:9/piwi/hub')).toMatchObject({ ok: false, failure: 'offline' });
     // A hub that does not list it says nothing of a window, whatever it sends.
     const { hubs: older, sockets: olderSockets } = setup();
     await older.find();

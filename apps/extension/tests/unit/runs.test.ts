@@ -361,6 +361,20 @@ describe('Share live, as the worker reads it', () => {
     }
   });
 
+  it('stops sharing each run of an editor window by its hub alone, naming no run', () => {
+    const hub = 'ws://127.0.0.1:1/piwi/hub';
+    expect(parseRunsRequest({ type: 'unshare-window', id: 3, hub })).toEqual({ type: 'unshare-window', id: 3, hub });
+    for (const bad of [
+      { type: 'unshare-window', id: 0, hub },
+      { type: 'unshare-window', id: 3 },
+      { type: 'unshare-window', id: 3, hub: 'x'.repeat(201) },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+    expect(parseRunsRequest({ type: 'shown', shown: false })).toEqual({ type: 'shown', shown: false });
+    expect(parseRunsRequest({ type: 'shown', shown: 'no' })).toBeNull();
+  });
+
   it('reads why a run cannot be shared, as the reporter says it, and no other sentence', () => {
     expect(shareRefusalOf(LIVE_SHARE_MISSING.local)).toBe('local');
     expect(shareRefusalOf(LIVE_SHARE_MISSING.off)).toBe('off');

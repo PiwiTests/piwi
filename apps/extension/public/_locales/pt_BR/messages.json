@@ -7573,6 +7573,9 @@
   "runs_ciRefusedUnlisted": {
     "message": "Esta execução de CI não está mais em andamento."
   },
+  "runs_ciRefusedUnfollowed": {
+    "message": "O Piwi Picker acompanha três execuções de CI por vez, as mais recentes: os testes desta voltam a aparecer quando uma mais recente terminar."
+  },
   "runs_ciRefusedUnwatchable": {
     "message": "Os testes desta execução não podem ser assistidos: a visualização ao vivo do projeto está desligada, ou a execução não tem chave."
   },

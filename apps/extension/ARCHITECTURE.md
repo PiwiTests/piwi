@@ -714,7 +714,8 @@ that imports `piwi-client.ts` directly. Keep it that way.
 `chrome.storage.local`, no secret).
 
 - `withConnectionHealth` records `ok`, `unauthorized`, `unreachable` or `error`, with the time and the instance
-  address, and passes the answer or the error on unchanged.
+  address, and passes the answer or the error on unchanged. A request the extension aborted itself (`AbortError`)
+  records nothing; a wait it gave up on aborts as a `TimeoutError`, which counts.
 - It wraps every request of `project-refresh.ts`, the requests of `bug-reports.ts` that send, list or read reports and
   share a verdict, and the settings page's read of the URL patterns. Two best-effort reads catch their own errors and
   are not wrapped: the project's bug-report intake (`fetchBugReportIntake`) and a replayed step's screenshot
@@ -945,8 +946,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   sharing** and **Cancel**. At a hub whose features list `share-window` (an editor window's, `RunsHub.sharesWindow`),
   **Share this editor window's runs** beside **Share live**, and in the first share's question, shares the run and each
   run that window starts until the person stops (`share` with `scope: 'window'`); while the window shares its runs
-  (`RunsHub.windowShared`, the hub's `share-window`), a line under the heading says so, its shared runs say they are
-  one of the window's, each read out as it is shared, and their **Stop sharing this window's runs** stops them all.
+  (`RunsHub.windowShared`, the hub's `share-window`), a line under the heading says so with **Stop sharing this
+  window's runs**, whatever runs are listed, asked to confirm as a run's is (`unshare-window`, the hub's `share` with
+  `scope: 'window'` naming no run), and its shared runs say they are one of the window's, each read out as it is
+  shared; a run's own **Stop sharing** stops that run alone.
   A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
   why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
   sentence as the hub said it.
@@ -1109,8 +1112,10 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   the runs of several projects are listed, its project (`ciRunWhere`), its page (`Run #78`, **Open** and **Copy**) and
   its tally, then one line saying nothing here steers them. The words are the run model's
   (`@piwitests/run-model/ci`), through `runsSpeaker`.
-- **Its tests**: the newest `MAX_CI_STREAMS` (3) runs listed are followed through their own stream (`GET
-  /api/test-runs/:id/stream`, `openRunStream`, read by `EventParser` in `sse.ts`) while a window is open: `live-view`
+- **Its tests**: `MAX_CI_STREAMS` (3) runs listed, the run a window watches then the newest, are followed through
+  their own stream (`GET /api/test-runs/:id/stream`, `openRunStream`, read by `EventParser` in `sse.ts`, which drops an
+  over-long line to its end) while a window that can be seen is open (`shown`; hidden, the streams close and the lanes
+  stay as last heard): `live-view`
   says whether their lanes can be watched (the project's live view on and the run holding a key), and each `lane`,
   read by `@piwitests/core/live-lane`'s `readLane`, how it stands. The window lists the tests the lanes run
   (`RunsCiRun.tests`, `ciTestsOf`, 32 a run at most), `Worker 2` or `Shard 1, worker 2`, each with **Watch** where the
@@ -1123,7 +1128,9 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   live messages read with `@piwitests/core/live-view`'s reader, its images base64 to the windows that watch the lane
   (`ci-frame`, `MAX_VIEW_FPS` a second, the latest waiting), nothing kept; another lane of the run is a POST on the
   same watch, and another run a new watch. One lane at a time in the worker, within the instance's 16 watches a run and
-  4 a person: a window that asks another lane takes it there, the others hearing `moved`. The watch ends as its last
+  4 a person: a window that asks another lane takes it there, the others hearing `moved`. A window that joins a watch
+  still opening, or moving, gets the instance's answer to it, and a window's stop wins over its own watch still on its
+  way. A run listed but not followed is refused as such (`unfollowed`), never as one that ended. The watch ends as its last
   window stops or closes, as the window hides (asked again as it shows), as the run leaves the list, as the instance
   ends it, after 45 s of silence or on an error, each window hearing why (`ci-ended`, `CiWatchEnd`), shown in the view
   with **Watch on the dashboard**; a refusal (`RunsAnswer.ci`) is said there too, the instance's own sentence when it
@@ -1190,13 +1197,14 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   watched lane's layers kept and said (`layers.test.ts`), in English. `run-words.test.ts`
   holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
 - `ci-runs.test.ts` checks the CI runs: those of the mapped projects, the CI runs alone, read only while a window
-  listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance
-  does not answer; their streams, the newest three alone, the tests their lanes run and whether they can be watched,
-  a stream opened again, and a run that left; `packages/run-model/tests/ci.test.ts` their tally, name, place and
-  order. `ci-watch.test.ts` checks the CI watch: its query, the lane's images alone to the windows that watch it,
-  paced, another lane by a POST, another run by a new watch, each end and each refusal. `runs-ci.spec.ts` plays an
-  instance: the tests listed, Watch read-only with the key, another lane, Watch on the dashboard, the run's end said,
-  a hidden window, and a run whose live view is off.
+  listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance does
+  not answer; their streams, three alone, the run watched kept, closed while no window shows, the tests their lanes run
+  and whether they can be watched, a stream opened again, and a run that left; `sse.test.ts` the events' parser;
+  `packages/run-model/tests/ci.test.ts` their tally, name, place and order. `ci-watch.test.ts` checks the CI watch: its
+  query, the lane's images alone to the windows that watch it, paced, another lane by a POST, another run by a new
+  watch, each end and each refusal, a window joining a watch still opening and a stop that wins over a watch on its way.
+  `runs-ci.spec.ts` plays an instance: the tests listed, Watch read-only with the key, another lane, Watch on the
+  dashboard, the run's end said, a hidden window, and a run whose live view is off.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
 - `piwi-client.test.ts` checks `fetchDesktopHubs`: the proof first, the token on `/api/desktop/live` alone, a hub

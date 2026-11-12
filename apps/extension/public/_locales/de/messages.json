@@ -7573,6 +7573,9 @@
   "runs_ciRefusedUnlisted": {
     "message": "Dieser CI-Lauf läuft nicht mehr."
   },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker verfolgt drei CI-Läufe auf einmal, die neuesten: Die Tests dieses Laufs erscheinen wieder, sobald ein neuerer endet."
+  },
   "runs_ciRefusedUnwatchable": {
     "message": "Die Tests dieses Laufs lassen sich nicht ansehen: Die Live-Ansicht seines Projekts ist aus, oder der Lauf hat keinen Schlüssel."
   },

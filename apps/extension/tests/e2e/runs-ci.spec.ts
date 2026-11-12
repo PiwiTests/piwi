@@ -108,7 +108,7 @@ test('Watch on a CI run’s running test shows its lane read-only, through one w
   await expect.poll(() => instance.watches[1]!.closed).toBe(true);
   await expect(run.locator('.ci-view')).toHaveCount(0);
 
-  // A hidden window watches nothing, and watches again as it shows.
+  // A hidden window watches nothing, the run's stream included, and watches again as it shows.
   await first.getByRole('button', { name: 'Watch', exact: true }).click();
   await expect.poll(() => instance.watches.length).toBe(3);
   await page.evaluate(() => {
@@ -116,11 +116,13 @@ test('Watch on a CI run’s running test shows its lane read-only, through one w
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect.poll(() => instance.watches[2]!.closed).toBe(true);
+  await expect.poll(() => instance.runStreams.length).toBe(0);
   await page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect.poll(() => instance.watches.length).toBe(4);
+  await expect.poll(() => instance.runStreams.length).toBe(1);
   await page.close();
   await expect.poll(() => instance.watches[3]!.closed).toBe(true);
   await expect.poll(() => instance.runStreams.length).toBe(0);

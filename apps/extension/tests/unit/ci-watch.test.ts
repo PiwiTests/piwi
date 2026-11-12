@@ -50,7 +50,7 @@ function watcher() {
     stream: ReturnType<typeof liveStream>;
   }> = [];
   const posted: Array<{ runId: number; body: Record<string, unknown> }> = [];
-  let target: { watchable: boolean; worker: number | null } | null = { watchable: true, worker: 3 };
+  let target: { followed?: boolean; watchable: boolean; worker: number | null } | null = { watchable: true, worker: 3 };
   let answer: () => Promise<Response> = async () => new Response(null, { status: 204 });
   const watch = new CiLaneWatch({
     settings: async () => settings,
@@ -245,5 +245,53 @@ describe('the watch of a CI lane', () => {
     expect(a.frames.map((f) => ('test' in f ? f.test : null))).toEqual(['one']);
     await vi.advanceTimersByTimeAsync(100);
     expect(a.frames.map((f) => ('test' in f ? f.test : null))).toEqual(['one', 'three']);
+  });
+});
+
+describe('a watch asked while another ask is on its way', () => {
+  it('answers a window that joins a watch still opening as the instance answers it', async () => {
+    let release!: (response: Response) => void;
+    const watch = new CiLaneWatch({
+      settings: async () => settings,
+      target: () => ({ watchable: true, worker: 3 }),
+      open: () => new Promise<Response>((resolve) => (release = resolve)),
+      change: async () => new Response(null, { status: 204 }),
+    });
+    const a = viewer();
+    const b = viewer();
+    const asked = watch.watch(a.it, LANE, true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const joined = watch.watch(b.it, LANE, true);
+    release(Response.json({ message: 'No' }, { status: 403 }));
+    const refusal = { ok: false, message: 'No.', ci: 'refused' };
+    expect(await asked).toEqual(refusal);
+    expect(await joined).toEqual(refusal);
+    expect(watch.watching()).toBeNull();
+  });
+
+  it('lets a window’s stop win over its watch still reading the settings', async () => {
+    let opens = 0;
+    const watch = new CiLaneWatch({
+      settings: () => new Promise((resolve) => setTimeout(() => resolve(settings), 5)),
+      target: () => ({ watchable: true, worker: 3 }),
+      open: async () => {
+        opens++;
+        return liveStream().response;
+      },
+      change: async () => new Response(null, { status: 204 }),
+    });
+    const a = viewer();
+    const on = watch.watch(a.it, LANE, true);
+    expect(await watch.watch(a.it, LANE, false)).toEqual({ ok: true, message: '' });
+    await on;
+    expect(opens).toBe(0);
+    expect(watch.watching()).toBeNull();
+  });
+
+  it('refuses a lane of a run listed but not followed now without saying the run ended', async () => {
+    const { watch, setTarget } = watcher();
+    const a = viewer();
+    setTarget({ followed: false, watchable: false, worker: null });
+    expect(await watch.watch(a.it, LANE, true)).toMatchObject({ ok: false, ci: 'unfollowed' });
   });
 });

@@ -1,11 +1,11 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
  * desktop app, the secret area and the browser's WebSocket; the CI runs in progress the connected instance lists,
- * read while a window is open (`ciRuns`), and the CI lane they watch (`ciWatch`); the window's port (`RUNS_PORT`, taken from `runs.html`
- * alone), which gets the state at each change, what each code written at a stop came to, the frames of the live
- * views and lanes it watches and the layers of those lanes it asked for, and passes the window's commands on, its
- * views and lanes stopped as it closes; the
- * popup's Runs tile; and the global shortcut.
+ * read while a window is open, their runs' streams while one shows (`ciRuns`), and the CI lane they watch
+ * (`ciWatch`); the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at each change, what
+ * each code written at a stop came to, the frames of the live views and lanes it watches and the layers of those lanes
+ * it asked for, and passes the window's commands on, its views and lanes stopped as it closes; the popup's Runs tile;
+ * and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -73,7 +73,7 @@ export const runHubs = new RunHubs({
 });
 
 /** The CI runs in progress of the mapped projects, read from the connected instance while a Runs window is open. */
-export const ciRuns = new CiRunsWatch({
+export const ciRuns: CiRunsWatch = new CiRunsWatch({
   settings: getConnectionSettings,
   activeRuns: (settings) => withConnectionHealth(settings.instanceUrl, () => fetchActiveRuns(settings)),
   metadata: (settings, runId) => withConnectionHealth(settings.instanceUrl, () => fetchRunMetadata(settings, runId)),
@@ -81,10 +81,11 @@ export const ciRuns = new CiRunsWatch({
   stream: (settings, runId, signal) =>
     withConnectionHealth(settings.instanceUrl, () => openRunStream(settings, runId, signal)),
   left: (runId) => ciWatch.runLeft(runId),
+  watched: () => ciWatch.watching()?.runId ?? null,
 });
 
 /** The one CI lane the Runs windows watch, read-only, from the connected instance. */
-export const ciWatch = new CiLaneWatch({
+export const ciWatch: CiLaneWatch = new CiLaneWatch({
   settings: getConnectionSettings,
   target: (runId, shard, lane) => ciRuns.lane(runId, shard, lane),
   open: (settings, runId, query, signal) =>
@@ -163,7 +164,10 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       runsWindows.set(port, request.windowId);
       if (lookedAt()) runHubs.seen();
     } else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
-    else if (request.type === 'ci-watch') {
+    else if (request.type === 'shown') ciRuns.shown(postState, request.shown);
+    else if (request.type === 'unshare-window') {
+      void runHubs.unshareWindow(request.hub).then((answer) => post({ type: 'answer', id: request.id, ...answer }));
+    } else if (request.type === 'ci-watch') {
       const { id, on, ...lane } = request;
       void ciWatch.watch(ciViewer, lane, on).then((answer) => post({ type: 'answer', id, ...answer }));
     } else if (request.type === 'command') {

@@ -696,14 +696,31 @@ test('Share this editor window’s runs shares each run the window starts until 
       next.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
       await expect(runs.locator('#announce')).toContainText('shared live, as one of its editor window’s runs');
 
-      // Stop sharing this window's runs asks first, then stops them all.
+      // The run's own Stop sharing stops it alone: the window's runs stay shared.
       const nextCard = liveRun(runs);
-      await nextCard.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
-      const stopping = nextCard.getByRole('group', { name: 'Stop sharing this window’s runs' });
-      await expect(stopping).toContainText('the runs it starts next stay on this machine');
+      await nextCard.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+      const stopping = nextCard.getByRole('group', { name: 'Stop sharing' });
+      await expect(stopping).toContainText('Stop sharing this run live?');
       await stopping.getByRole('button', { name: 'Stop sharing' }).click();
       expect(await next.worker.next('share', 1)).toEqual({ type: 'share', on: false });
-      await expect(runs.locator('#hubs')).not.toContainText('this window’s runs are shared live');
+      next.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await expect(nextCard.getByRole('button', { name: 'Share live' })).toBeVisible();
+      const hubs = runs.locator('#hubs');
+      await expect(hubs).toContainText('this window’s runs are shared live');
+      await endRun(next);
+      next = null;
+
+      // With no shared run listed, the line that says the window's runs are shared stops them, asked first.
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      const stopAsked = hubs.getByRole('group', { name: 'Stop sharing this window’s runs' });
+      await expect(stopAsked).toContainText('the runs it starts next stay on this machine');
+      await expect(stopAsked.getByRole('button', { name: 'Stop sharing' })).toBeFocused();
+      await stopAsked.getByRole('button', { name: 'Cancel' }).click();
+      await expect(hubs.getByRole('group')).toHaveCount(0);
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      await stopAsked.getByRole('button', { name: 'Stop sharing' }).click();
+      await expect(hubs).not.toContainText('this window’s runs are shared live');
+      await expect(runs.locator('#announce')).toContainText('Stopped sharing this window');
     } finally {
       if (next) await endRun(next);
       await endRun(run).catch(() => undefined);

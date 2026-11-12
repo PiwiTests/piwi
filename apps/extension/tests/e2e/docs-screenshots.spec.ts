@@ -461,8 +461,9 @@ test('picker-runs-share-window', async () => {
           );
       };
       await runsAtWidths(runs, 'picker-runs-share-window', 640, named);
-      await runs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
-      await runs
+      const hubs = runs.locator('#hubs');
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      await hubs
         .getByRole('group', { name: 'Stop sharing this window’s runs' })
         .getByRole('button', { name: 'Stop sharing' })
         .click();

@@ -360,6 +360,13 @@ export class RunHubs {
     ]);
   }
 
+  /** Stop sharing each run of a hub's editor window live, whichever runs are listed: the hub's answer. */
+  unshareWindow(hub: string): Promise<RunsAnswer> {
+    const connection = this.connections.get(hub);
+    if (!connection) return Promise.resolve(OFFLINE);
+    return connection.command({ type: 'share', ref: null, on: false, scope: 'window' });
+  }
+
   /** Passes a command of a window (`viewer`, for the live view's commands) to its hub. */
   command(request: Omit<CommandRequest, 'type' | 'id'>, viewer?: RunsViewer): Promise<RunsAnswer> {
     const connection = this.connections.get(request.hub);
