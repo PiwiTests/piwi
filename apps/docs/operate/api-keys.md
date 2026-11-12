@@ -118,10 +118,10 @@ Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-
 ## Using the reporter with a username and password
 
 As an alternative to API keys, give the reporter the credentials of a dedicated Member with the **Uploader** role,
-created in **Settings → Users**: set `PIWI_USERNAME` and `PIWI_PASSWORD` as secrets in your CI provider (or the
-`username` and `password` options). The reporter signs in before each upload and uses the resulting session for the
-requests that follow. API keys are still preferred for CI: they need no sign-in round-trip, and each one can be revoked
-on its own.
+created in **Settings → Users**: set `PIWI_USERNAME` (its username or email address) and `PIWI_PASSWORD` as secrets in
+your CI provider (or the `username` and `password` options). The reporter signs in before each upload and uses the
+resulting session for the requests that follow. API keys are still preferred for CI: they need no sign-in round-trip,
+and each one can be revoked on its own.
 
 ## Related
 

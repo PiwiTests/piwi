@@ -8,17 +8,28 @@
  *
  * A NULL column compares as an empty value, so an exclusion (`-owner:alice`)
  * keeps the rows with no value, as the in-memory matcher does.
+ *
+ * `is:` reads a running attempt's state, which no stored column holds: it
+ * matches no row, and `-is:` excludes none.
  */
 import { not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { foldedContains, foldedEquals } from '#shared/utils/fold-text-sql';
-import { freeTextFields, testSearchFieldDef, type TestSearchField, type TestSearchQuery } from '#shared/test-search';
+import {
+  freeTextFields,
+  testSearchFieldDef,
+  TEST_SEARCH_NUMBER_FIELDS,
+  type TestSearchField,
+  type TestSearchQuery,
+} from '#shared/test-search';
 
 /**
  * The column behind each qualifier. `describe` is the describe path with its
  * blocks joined by `\x1f`; `tag` and `lock` are JSON arrays of strings (tags
- * without their `@`). A field without a column matches nothing.
+ * without their `@`); `worker` is the lane from 0 (`parallel_index`), which
+ * `worker:` reads from 1, and `shard` the shard from 1 (`shard_index`). A field
+ * without a column matches nothing; `is` never has one.
  */
-export type TestSearchColumns = Partial<Record<TestSearchField, SQLWrapper>>;
+export type TestSearchColumns = Partial<Record<Exclude<TestSearchField, 'is'>, SQLWrapper>>;
 
 const JSON_ARRAY_FIELDS: ReadonlySet<TestSearchField> = new Set(['tag', 'lock']);
 
@@ -37,9 +48,21 @@ function arrayElementPredicate(column: SQLWrapper, value: string): SQL {
   return foldedContains(sql`COALESCE(CAST(${column} AS TEXT), '')`, JSON.stringify(value));
 }
 
+/**
+ * The integer column equals the number a value names, less `offset`; a value that names no number matches nothing. A
+ * NULL column is false, never NULL, so an exclusion keeps it.
+ */
+function numberPredicate(column: SQLWrapper, value: string, offset: number): SQL | null {
+  if (!/^\d+$/.test(value)) return null;
+  const n = Number(value) - offset;
+  return Number.isSafeInteger(n) ? sql`(${column} IS NOT NULL AND ${column} = ${n})` : null;
+}
+
 function fieldPredicate(field: TestSearchField, value: string, columns: TestSearchColumns): SQL | null {
+  if (field === 'is') return null;
   const column = columns[field];
   if (!column) return null;
+  if (TEST_SEARCH_NUMBER_FIELDS.has(field)) return numberPredicate(column, value, field === 'worker' ? 1 : 0);
   if (JSON_ARRAY_FIELDS.has(field)) return arrayElementPredicate(column, value);
   return testSearchFieldDef(field).match === 'contains'
     ? containsPredicate(column, value)
@@ -61,12 +84,13 @@ export function testSearchConditions(query: TestSearchQuery, columns: TestSearch
     }
     if (term.negated) {
       if (predicate) conditions.push(not(predicate));
+    } else if (term.field && testSearchFieldDef(term.field).single) {
+      // A value no row can hold matches nothing in its group, and leaves the group's other values standing.
+      const group = anyOf.get(term.field) ?? [];
+      group.push(predicate ?? sql`1 = 0`);
+      anyOf.set(term.field, group);
     } else if (!predicate) {
       conditions.push(sql`1 = 0`);
-    } else if (term.field && testSearchFieldDef(term.field).single) {
-      const group = anyOf.get(term.field) ?? [];
-      group.push(predicate);
-      anyOf.set(term.field, group);
     } else {
       conditions.push(predicate);
     }

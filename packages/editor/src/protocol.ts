@@ -5,6 +5,8 @@
  * goes through these requests, and each client draws them natively: CodeLens
  * in VS Code, Code Vision in the JetBrains IDEs.
  */
+import type { LaneLayer } from '@piwitests/core/live-layers';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
@@ -37,6 +39,10 @@ export interface FileEdit {
 export interface SummaryLine {
   /** 0-based line the text sits above. */
   line: number;
+  /**
+   * On a test's line, the text of its gutter mark's tooltip after `Piwi:`: its latest result and the run it is from
+   * (`failing in run #124`, `never run`), then its pass rate, quarantine, flaky score and selections.
+   */
   title: string;
   command?: PiwiCommand;
   /**
@@ -80,6 +86,12 @@ export interface TestFailure {
    * `failing` otherwise.
    */
   state?: 'failing' | 'edited';
+  /**
+   * Whether the failure's diagnostic, which says why it failed, is on `line` of this file: the clients then say it
+   * nowhere else on that line. False on a line that calls the code the failure is in, and while no diagnostic shows
+   * (`failureSeverity` `off`).
+   */
+  diagnosed?: boolean;
 }
 
 /**
@@ -132,8 +144,13 @@ export interface TestAtParams {
 export interface TestAtResult {
   /** The test whose `test(…)` call spans `line`; null outside every test Piwi knows. */
   test: EditorTest | null;
-  /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
-  spec: { uri: string; testIds: number[] } | null;
+  /**
+   * The spec's tests: those Piwi knows (`testIds`), and the spec as a location without a line (`location`, relative to
+   * the Playwright config's folder, as `RunTestsArgs.locations` takes it), which runs every test of the file as saved,
+   * known to Piwi or not, generated ones included: Run This Spec and the spec's lens run it. Null for a file that is not
+   * a spec under a Playwright config's folder.
+   */
+  spec: { uri: string; testIds: number[]; location: string } | null;
   /**
    * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
    * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,
@@ -270,8 +287,19 @@ export interface EditorBreakpoint {
   line: number;
 }
 
+/**
+ * How a run starts, as the person chose it for every test run the editor starts (kept, so a rerun starts the same
+ * way): headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
+ * decides: headed, with Hold failures on, for a run with the editor's breakpoints or a `page.pause()`; headless and off
+ * otherwise.
+ */
+export interface RunStartOptions {
+  headed?: boolean;
+  holdFailures?: boolean;
+}
+
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
-export interface RunTestsArgs {
+export interface RunTestsArgs extends RunStartOptions {
   /** Any file of the workspace the tests belong to, to pick the Playwright config when `root` does not name it. */
   uri: string;
   /** The folder of the Playwright config to run them with, as `WorkspaceFailure.root` names it. */
@@ -292,13 +320,14 @@ export interface RunTestsArgs {
   coverage?: 'server' | 'browser';
   /**
    * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
-   * config `uri` or `root` names), run in place of `testIds`: a test the instance does not know yet, such as one just
-   * recorded, runs too, and the command needs no instance. The spec runs as saved.
+   * config `uri` or `root` names), or a whole spec by its path alone (`TestAtResult.spec.location`), run in place of
+   * `testIds`: a test the instance does not know yet, such as one just recorded, runs too, and the command needs no
+   * instance. The spec runs as saved.
    */
   locations?: string[];
   /**
-   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless: the
-   * breakpoints are not passed. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
+   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless unless
+   * `headed`: the breakpoints are not passed, and it holds no failure. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
    * did not reach an instance, a `piwi/notice` from its exit code.
    */
   repeat?: number;
@@ -327,6 +356,11 @@ export interface DebugRun {
    * stopped page, outlined there and said (a `piwi/notice`, and the stopped line's `piwi/locatorAtCaret`).
    */
   execution?: number | null;
+  /**
+   * The name the dashboard gave the run (`ed-` then 16 to 32 hexadecimal digits), which its page follows the run by on
+   * the instance: the run takes it unless a run of this window holds it; absent or null, the service names it.
+   */
+  ref?: string | null;
 }
 
 export interface RunCommand {
@@ -354,9 +388,30 @@ export interface RunCommand {
    * (`PIWI_PAUSE_AT`). Absent otherwise.
    */
   pauses?: boolean;
+  /**
+   * Who started the run when a person did not: `Started by Claude Code`, for an agent's run (`piwi/startRun`), which
+   * the client says as the run starts (VS Code in its task's name too). Absent for a person's run.
+   */
+  label?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
+
+/**
+ * `piwi/startRun` (request, server to client, for a client that sent `InitializationOptions.startsRuns`): run the
+ * command the service built for an agent's `run_start` where the developer sees it, as the client runs a person's,
+ * labeled `command.label`; the answer says whether it started.
+ */
+export interface StartRunParams {
+  command: RunCommand & { ref: string; label: string };
+}
+
+export interface StartRunResult {
+  ok: boolean;
+  message: string;
+}
+
+export const START_RUN_REQUEST = 'piwi/startRun';
 
 /** `piwi.runCommand`'s argument: a command line to run in a terminal. */
 export interface RunCommandArgs {
@@ -364,16 +419,52 @@ export interface RunCommandArgs {
   command: string;
   /** Environment variables to set on the command's process. */
   env?: Record<string, string>;
+  /**
+   * The command runs Playwright for nobody watching (a fix plan's verification, a Flake Lab command): the client asks
+   * `piwi/followCommand` for it, and runs the `RunCommand` it answers as it runs a test run, telling its end
+   * (`piwi/commandEnded`), so its runs are listed, paused and stopped as the editor's. As a plain terminal command when
+   * the answer is null. Absent otherwise.
+   */
+  follow?: boolean;
 }
+
+/**
+ * Asks the service to follow a command it gave with `RunCommandArgs.follow`: it answers the command with a ref of its
+ * own and the run channel in its environment (`args` its Playwright arguments, none for a command that runs no
+ * `playwright test` itself), its runs held to no failure, since nobody attends them. Null for a command of no
+ * Playwright config's folder, or while the run channel does not listen.
+ */
+export const FOLLOW_COMMAND_REQUEST = 'piwi/followCommand';
 
 export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
 /**
- * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
- * (`no-project`), a key missing or refused (`refused`), or an instance that did not answer, or answered with an error
- * (`unreachable`).
+ * What a failures view shows: failures, none in a run read (`clear`), an instance that does not answer (`unreachable`),
+ * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance still being read (`loading`), no
+ * run to read yet (`norun`), or no connection (`disconnected`).
  */
-export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'unreachable';
+export type FailuresViewState =
+  | 'failures'
+  | 'clear'
+  | 'norun'
+  | 'unreachable'
+  | 'desktop-unproven'
+  | 'loading'
+  | 'disconnected';
+
+/** A failures view's state and the sentence it shows for it; null beside failures. */
+export interface FailuresView {
+  state: FailuresViewState;
+  message: string | null;
+}
+
+/**
+ * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
+ * (`no-project`), a key missing or refused (`refused`), a desktop app that answered without proving it holds its token,
+ * which the service then does not send (`desktop-unproven`: an app older than the proof, or another program on its
+ * port), or an instance that did not answer, or answered with an error (`unreachable`).
+ */
+export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'desktop-unproven' | 'unreachable';
 
 /** `piwi/status`: what the service is connected to, per workspace context. */
 export interface StatusResult {
@@ -506,13 +597,44 @@ export interface InitializationOptions {
    */
   stopCode?: boolean;
   /**
+   * The client stops a run it started as another tool asks (`piwi/stopRun`). Without it, the hub offers no Stop for a
+   * whole run (its `stop` feature).
+   */
+  stopsRuns?: boolean;
+  /**
+   * The client runs a command the service built for an agent (`piwi/startRun`). Without it, the agents' tools offer
+   * no `run_start`.
+   */
+  startsRuns?: boolean;
+  /**
    * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
    * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256
    * characters of base64url), else a new random one. The client keeps the port and the token, so an agent's
    * configuration copied once still connects after a restart.
    */
   agents?: { enabled?: boolean; port?: number | null; token?: string | null };
+  /**
+   * Where a run's picks go, as `PIWI_EDITOR_SEND` names it (`<url>#<token>`, on the loopback interface): the service
+   * names it in its discovery file, so a run started in a terminal that follows the editor posts **Pick a locator**
+   * there. `piwi/setRunPairing` names it later, or again.
+   */
+  runPairing?: string;
+  /**
+   * The window's runs are shared live (`piwi/shareRun` with `scope: 'window'`): a service started again while the window
+   * is open shares them as the person left them.
+   */
+  shareWindow?: boolean;
 }
+
+/**
+ * `piwi/setRunPairing` (notification, client to server): where a run's picks go (`InitializationOptions.runPairing`),
+ * once the client knows it or as it changes; null for none.
+ */
+export interface SetRunPairingParams {
+  address: string | null;
+}
+
+export const SET_RUN_PAIRING_NOTIFICATION = 'piwi/setRunPairing';
 
 /**
  * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,
@@ -663,6 +785,12 @@ export interface LiveRun {
   own: boolean;
   /** The ref of the command that started it (`RunCommand.ref`), on an own run the service keeps the command of. */
   ref?: string;
+  /** Its page on the instance (`/test-runs/:id`), which the status bar opens while it runs. */
+  url?: string;
+  /** A CI run's (its origin, else the CI it names): the clients say so, never as the person's own tests running. */
+  ci?: boolean;
+  /** The branch it runs on, as it reported it; absent for a run that names none. */
+  branch?: string;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -674,6 +802,161 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 
 /** `piwi/runStatusChanged` (notification, server to client): a context's latest run changed; carries `RunStatusResult`. */
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
+
+/**
+ * `piwi/ciSessionChanged` (notification, server to client): a CI run of the branch a context reads, or of the
+ * checked-out branch, while it runs, as the instance tells it: read-only, so no control, share or hold reaches it, and
+ * its tests never stop. Sent when the service starts to follow it, when its progress, its tests or the calls they are
+ * at change (a burst at most every 500 ms), and last with `ended`. A client keeps the latest of each `root` and
+ * `runId` until one says `ended`.
+ */
+export interface CiSession {
+  /** The run's number on the instance (`#78`). */
+  runId: number;
+  /** The folder of the Playwright config whose project and branch it runs, as `piwi/status` names it. */
+  root: string;
+  /** Its page on the instance, which **Open** opens. */
+  url: string;
+  /** `CI run #78`: how the clients name it. */
+  name: string;
+  /** The branch it runs on; null for a run that names none. */
+  branch: string | null;
+  /** ISO 8601. */
+  startedAt: string;
+  /** How far it is, from the instance's tally. */
+  progress: CiProgress;
+  /** `12 of 40 tests · 1 failed`: its progress in words. */
+  summary: string;
+  /**
+   * Its tests: those running now, by shard and worker, then the latest that ended, newest first; at most
+   * `MAX_CI_TESTS` of them, a failure kept before a pass. The progress counts every test.
+   */
+  tests: CiTest[];
+  /**
+   * The project's live view is on and the run holds a key: a running test's lane can be watched in the editor
+   * (`piwi/ciWatch`) or on the dashboard, from its `watch` address. False until the run's stream says so.
+   */
+  watchable: boolean;
+  /**
+   * The run ended, or the service follows it no more (the context reads another branch, project or instance, or a
+   * newer CI run of the branch took its place). Its last notification.
+   */
+  ended: boolean;
+}
+
+/** The most tests a `CiSession` lists. */
+export const MAX_CI_TESTS = 60;
+
+/**
+ * How far a CI run is: how many tests it holds (`total`), how many ended (`done`, retries counted as the instance counts
+ * them, never past `total`), and of them `failed`, `flaky` and `skipped`; `running`, `finalizing`, or how it ended.
+ */
+export interface CiProgress {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  status: string;
+}
+
+/** A test of a CI run: running now, or its result. */
+export interface CiTest {
+  /** Its `test.describe` blocks' titles, then its own. */
+  title: string[];
+  /** Its spec in the workspace and the 0-based line of its `test(…)` call; null when the workspace holds no such spec. */
+  uri: string | null;
+  line: number | null;
+  /** Its Playwright project's name; empty when the run names none. */
+  project: string;
+  status: LiveTestStatus;
+  /** 0 on its first attempt, 1 on its first retry. */
+  retry: number;
+  /** Its worker's lane, from 1 in each shard (`worker 2`), and its shard, from 1; null when the run names none. */
+  lane: number | null;
+  shard: number | null;
+  /**
+   * While it runs: the call it is at, as the CI run's reporter streams its steps while someone follows the run, in a
+   * file of the workspace. A CI position, never a stop: nothing waits there. Null when the run sent no step yet or
+   * named a file the workspace does not hold.
+   */
+  at: CiPosition | null;
+  /**
+   * While it runs and the run is `watchable`: the dashboard's view of its lane (the run's page with `?watch=`), where
+   * it can be watched, as it can in the editor by its `lane` and `shard` (`piwi/ciWatch`); null otherwise.
+   */
+  watch: string | null;
+}
+
+/** Where a running test of a CI run is: the call it runs, in a file of the workspace. */
+export interface CiPosition {
+  /** The call as the run's reporter titled it: `Click getByRole('button', { name: 'Pay' })`. */
+  title: string;
+  /** The file of its line, as the workspace names it, and its 0-based line and character (null when unknown). */
+  uri: string;
+  line: number;
+  character: number | null;
+  /** `CI run #78 · worker 2: Click getByRole('button', { name: 'Pay' })`: the words the clients show at the line. */
+  text: string;
+}
+
+export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
+
+/**
+ * `piwi/ciWatch`: the client watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest`
+ * names them), read-only, through the team instance's watch of the run, opened with the editor's key: the page of the
+ * test the lane's worker runs, through its next tests and the worker Playwright starts in its place, until the client
+ * stops (`on: false`), its session ends, or the instance ends the watch. One watch per client: another replaces it.
+ * Answered once the instance opened the watch, or with why not (`ok: false`): a run the service does not follow, one
+ * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick.
+ */
+export interface CiWatchParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  on: boolean;
+  /**
+   * The layers the client shows beside the images (`calls`, `events`, `text`, `filmstrip`), none when left out: the
+   * instance's watch takes them (`piwi/ciLayer`), and a watch of the same lane asked again with others changes them.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
+}
+
+/**
+ * `piwi/ciFrame` (notification, server to client): a transient JPEG of the CI lane the client watches, as its worker
+ * masked it, with the title of its test and the call it was taken at; or why no image shows now (`refused`), the watch
+ * going on; or why the watch ended (`ended`), its last word, unless the client ended it. Never stored.
+ */
+export type CiFrame = { root: string; runId: number; shard: number | null; lane: number } & (
+  | { data: string; test: string | null; call: string | null }
+  | { refused: string }
+  | { ended: string }
+);
+
+/**
+ * `piwi/ciLayer` (notification, server to client): a layer of the CI lane the client watches, one it asked for alone
+ * (`CiWatchParams.layers`), of the worker `worker` (its index, as the instance names it: a retry runs in another) and
+ * the test `test` (its title as the instance names it), as the instance relays it and `@piwitests/core/live-layers`
+ * reads it: the call its test is in (`calls`), something its page or its requests said (`events`), the page's text or
+ * why none goes (`text`), an image of the test's filmstrip, its JPEG in base64 (`filmstrip`). Never stored, none after
+ * the watch ends.
+ */
+export type CiLayer = {
+  root: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  worker: number;
+  test: string | null;
+} & LaneLayerData;
+
+export const CI_WATCH_REQUEST = 'piwi/ciWatch';
+export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
+export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
@@ -717,6 +1000,11 @@ export interface RunEnded {
   failed: number;
   flaky: number;
   skipped: number;
+  /**
+   * How many of `skipped` were ended at a stop (End the test), as the run's own process counted them: a client says it
+   * beside the skipped. Absent for none, and for a reporter that predates the count.
+   */
+  endedAtStop?: number;
   fixed: number;
   stillFailing: string[];
   newFailures: string[];
@@ -759,6 +1047,11 @@ export interface McpServerDefinition {
    * connects (no `headers`); `none`, the connection has no key and the instance asks for none.
    */
   authorization: 'key' | 'sign-in' | 'none';
+  /**
+   * The desktop app's bundled server, whose run tools a client that lists its own runs' server to its agent leaves out
+   * by listing this one with `?runs=off`. Absent for another instance.
+   */
+  desktop?: true;
 }
 
 /** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */
@@ -790,7 +1083,7 @@ export interface SelectionsResult {
 export const SELECTIONS_REQUEST = 'piwi/selections';
 
 /** `piwi/runSelection`: the command line that runs a saved selection, as `piwi run <key>` resolves it. */
-export interface RunSelectionParams {
+export interface RunSelectionParams extends RunStartOptions {
   /** Any file of the workspace, to pick the Playwright config. */
   uri: string;
   key: string;
@@ -967,6 +1260,8 @@ export interface FailuresParams {
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];
+  /** What the view says beside its failures, or in their place: the state the workspace is in, and its words. */
+  view?: FailuresView;
   /**
    * The baseline run of the one context that has a run, runs laid over none (a developer's own runs only) or failures;
    * null when only overlays are read. Absent when several contexts do, each `context` node of the tree carrying its
@@ -1379,6 +1674,20 @@ export type RunPlace = EditorBreakpoint;
 export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
 
 /**
+ * What a stop says of why its test stands there, by its reason, as every surface says it: the editors here (the
+ * JetBrains plugin's `Glue.RUN_STOP_WORDS` mirrors it), the run page, the desktop app and Piwi Picker
+ * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure says how it failed instead.
+ */
+export const RUN_STOP_WORDS: Record<Exclude<RunStopReason, 'failure'>, string> = {
+  breakpoint: 'Stopped at a breakpoint',
+  step: 'Stopped after a step',
+  pause: 'Paused',
+  'run-to': 'Stopped at the line it ran to',
+  'page-pause': 'Stopped at page.pause()',
+  other: 'Stopped',
+};
+
+/**
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
  * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
  * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
@@ -1439,6 +1748,30 @@ export interface RunStop {
    * client shows beside the stop. Absent for a stop a person or a breakpoint made.
    */
   by?: 'agent';
+  /**
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the surface whose
+   * person took it (a click, a key or text on its view, a pick, an intent, or a hub's `drive`), which takes it from the
+   * agent. An agent's actions there are refused while a person drives. Absent while nobody drives.
+   */
+  driver?: RunPresence;
+  /**
+   * An action that takes Escape as its own runs in the test's window at this stop: a pick, a check or a region's pick,
+   * started from the pause bar or as an intent. A view sends Escape there while one runs. Absent while none runs, and
+   * from a reporter that predates it.
+   */
+  acting?: 'pick' | 'assert' | 'assert-region';
+}
+
+/**
+ * A tool present on a run, a lane or a stop: a Runs window of Piwi Picker (`picker`), an editor (`editor`, this client
+ * among them, `self`), the desktop app's window (`desktop`) or an agent through the service's MCP server (`agent`), and
+ * its name as the service knows it (`Visual Studio Code`, `Piwi Picker`).
+ */
+export interface RunPresence {
+  kind: 'picker' | 'editor' | 'desktop' | 'agent';
+  name: string;
+  /** It is the client that hears it. */
+  self?: true;
 }
 
 /** A test a worker runs. */
@@ -1477,6 +1810,24 @@ export interface RunWorker {
   takes: RunTake[];
   /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
   watchable: boolean;
+  /**
+   * Its reporter sends the layers of its slot's view beside the frames (`LaneViewParams.layers`): the call log, the
+   * page's events, its text and the test's filmstrip.
+   */
+  layers: boolean;
+  /**
+   * Its reporter brings the test's window to the front at a stop its pause bar shows: `piwi/stopAction` `front`
+   * (**Show the browser**).
+   */
+  showsWindow: boolean;
+  /**
+   * Its reporter says where its running test's trace grows: `piwi/openTrace` opens it (**Open the trace so far**).
+   * Absent for a reporter that does not, in a run whose folder the service does not know, and on a machine without a
+   * display.
+   */
+  traces?: boolean;
+  /** The tools that watch its page now, its slot's view or its stop's, each viewer once; absent while none does. */
+  watchers?: RunPresence[];
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
@@ -1546,14 +1897,46 @@ export interface RunSession {
   live?: RunLive;
   /** How far the run is, as its own process says; absent for a run whose reporter predates it. */
   progress?: RunProgress;
+  /**
+   * The run's page on the instance it reports to, its number there and its address, once its own process names it;
+   * absent before, for a run that reports to no instance, and for one whose reporter predates it.
+   */
+  page?: RunPage;
+  /**
+   * Whether a failure no pause bar shows waits at its line in this run (**Hold failures**), and who said so; absent for
+   * a run nobody attends, whose failures always go on at once.
+   */
+  hold?: RunHoldFailures;
+  /**
+   * The tools that have the run open beyond this client: each Runs window that follows the runs, the desktop app's
+   * window, and an agent that follows this run. Absent while none does.
+   */
+  presence?: RunPresence[];
+}
+
+/**
+ * A run's **Hold failures**: whether a failure no pause bar shows waits at its line for an answer (`on`), and who said
+ * so last: the run's own start (`start`: on for a run built to be watched, off otherwise), a person on a surface
+ * (`person`), or an agent (`agent`).
+ */
+export interface RunHoldFailures {
+  on: boolean;
+  by: 'start' | 'person' | 'agent';
+}
+
+/** A run's page on an instance: its number there (`#78`) and its address. */
+export interface RunPage {
+  id: number;
+  url: string;
 }
 
 /**
  * How far a run is (`run-begin`, `run-progress` and `run-end` of `@piwitests/core/run-channel`): how many tests it
  * holds (`total`, its repeats included), how many ended, each once by the outcome of its last attempt (`done`, and of
- * them `failed`, `flaky` and `skipped`; the others passed), whether it still runs or how it ended (`status`, `other`
- * for a status of a newer Playwright), and its first failure once it ended (the test's title and the first line of its
- * error; null for none).
+ * them `failed`, `flaky` and `skipped`; the others passed), how many of the skipped were ended at a stop (End the
+ * test: `endedAtStop`, absent from a reporter that predates the count), whether it still runs or how it ended
+ * (`status`, `other` for a status of a newer Playwright), and its first failure once it ended (the test's title and
+ * the first line of its error; null for none).
  */
 export interface RunProgress {
   total: number;
@@ -1561,6 +1944,7 @@ export interface RunProgress {
   failed: number;
   flaky: number;
   skipped: number;
+  endedAtStop?: number;
   status: 'running' | 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
   failure: { title: string; error: string | null } | null;
 }
@@ -1639,13 +2023,74 @@ export const RUN_CONTROL_REQUEST = 'piwi/runControl';
  * page while it runs, and sees when a test is paused; or stop sharing it (`on: false`), which ends the views there. A
  * worker that connects later follows the choice. Answered with `RunControlResult`: refused, with why, for a run whose
  * reporter predates it or that cannot be shared (no instance, the project's live view off). No agent asks it.
+ *
+ * `scope: 'window'` shares this window's runs until the person stops, or the window closes: the run of `ref`, when one
+ * is named, and each run that starts from then on, each one said as it is shared (`piwi/notice`) and continuing the one
+ * shared before it on the instance (`after`); `on: false` with it stops sharing every run of the window. The service
+ * says the window's scope in `piwi/shareWindowChanged`.
  */
 export interface ShareRunParams {
+  ref?: string;
+  on: boolean;
+  scope?: 'run' | 'window';
+}
+
+export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+
+/** `piwi/shareWindowChanged` (notification, server to client): whether this window's runs are shared live. */
+export interface ShareWindowParams {
+  on: boolean;
+}
+
+export const SHARE_WINDOW_NOTIFICATION = 'piwi/shareWindowChanged';
+
+/**
+ * `piwi/askToWatch` (notification, server to client): a signed-in teammate asks to watch the run of `ref`, which is
+ * not shared live (**Ask to watch**): the client asks the developer, naming them (`by`) and the run (`run`, its number
+ * on the instance; null when unknown), with **Share live** (`piwi/shareRun`) and **Not now** (`piwi/answerAsk`).
+ */
+export interface AskToWatchParams {
+  ref: string;
+  id: string;
+  by: string;
+  run: number | null;
+}
+
+export const ASK_TO_WATCH_NOTIFICATION = 'piwi/askToWatch';
+
+/** `piwi/answerAsk`: the developer's **Not now** to an ask, which the teammate's page shows. Answers `RunControlResult`. */
+export interface AnswerAskParams {
+  ref: string;
+  id: string;
+  answer: 'not-now';
+}
+
+export const ANSWER_ASK_REQUEST = 'piwi/answerAsk';
+
+/**
+ * `piwi/holdRun`: **Hold failures** for the run of `ref`, as a person asks: on, a failure no pause bar shows waits at
+ * its line for an answer; off, it goes on at once, one held now included. The run keeps it whichever surface set it,
+ * the hub's `hold` and an agent's `run_follow` included. Answered with `RunControlResult`: refused for a run nobody
+ * attends.
+ */
+export interface HoldRunParams {
   ref: string;
   on: boolean;
 }
 
-export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+export const HOLD_RUN_REQUEST = 'piwi/holdRun';
+
+/**
+ * `piwi/stopRun` (request, server to client): stop the run of `ref` the client started, as its own Stop does (VS Code
+ * ends the run's task, the JetBrains plugin its process), as another tool asks through the hub (`stop`). Sent only to a
+ * client whose `InitializationOptions.stopsRuns` is true, never for a run started in a terminal. Answered with
+ * `RunControlResult`: refused for a run the client did not start, its `message` saying where to stop it.
+ */
+export interface StopRunParams {
+  ref: string;
+}
+
+export const STOP_RUN_REQUEST = 'piwi/stopRun';
 
 /**
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of
@@ -1722,6 +2167,22 @@ export type PageFrame = Omit<PageViewParams, 'on'> &
 
 export const PAGE_VIEW_REQUEST = 'piwi/pageView';
 export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
+
+/**
+ * `piwi/driveStop`: the editor's person gives back the stop `since` names (`on: false`, as **Interact** goes off: `Esc`,
+ * unchecked, the watch off or refused, the view hidden or closed), whichever of the client's views drove it, or takes
+ * it (`on: true`: an agent's actions there are refused until it is given back) as the view of the client that watches
+ * it, refused while none does. Answered with `RunControlResult`; giving back a stop the editor did not drive changes
+ * nothing.
+ */
+export interface DriveStopParams {
+  ref: string;
+  worker: number;
+  since: string;
+  on: boolean;
+}
+
+export const DRIVE_STOP_REQUEST = 'piwi/driveStop';
 export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
 
 /**
@@ -1736,6 +2197,13 @@ export interface LaneViewParams {
   ref: string;
   lane: number;
   on: boolean;
+  /**
+   * The layers the client shows beside the frames (`calls`, `events`, `text`, `filmstrip`), none when left out: each
+   * goes as `piwi/laneLayer`. A watch of the lane it watches, asked again with other layers, changes them in place.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
 }
 
 /**
@@ -1748,8 +2216,19 @@ export type LaneFrame = { ref: string; lane: number; worker: number; test: strin
   | { refused: string }
 );
 
+/**
+ * `piwi/laneLayer` (notification, server to client): a layer of the lane the editor watches, one it asked for alone
+ * (`LaneViewParams.layers`), of the worker `worker` and its test `test` (Playwright's id; null for the text of a page no
+ * test shows), as `@piwitests/core/live-layers` bounds and masks it: the call its test is in (`calls`), something its
+ * page or its requests said (`events`), the page's text or why none goes (`text`), an image of the test's filmstrip,
+ * its JPEG in base64 (`filmstrip`). Never stored, none after the watch ends. The worker sends the call log and the
+ * filmstrip again as the layers change: a client keeps one image of the filmstrip per call.
+ */
+export type LaneViewLayer = { ref: string; lane: number; worker: number; test: string | null } & LaneLayerData;
+
 export const LANE_VIEW_REQUEST = 'piwi/laneView';
 export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
+export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
@@ -1777,9 +2256,26 @@ export interface PickAtResult {
   ok: boolean;
   message: string;
   locator: string | null;
+  /** Whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
 }
 
 export const PICK_AT_REQUEST = 'piwi/pickAt';
+
+/**
+ * `piwi/openTrace`: **Open the trace so far** of the lane `lane` (Playwright's `parallelIndex`) of the run `ref`: the
+ * service asks the lane's worker where its running test's trace grows, checks the file (a regular `.trace` file in the
+ * runner's trace folder, inside the run's folder) and starts Playwright's trace viewer on it, from the project's own
+ * Playwright, on this machine. Answered with `RunControlResult`, whose sentence never names the file. Refused for a
+ * worker whose reporter does not say where its trace grows (`RunWorker.traces`), with no test running, for an attempt
+ * the runner does not trace, in a run whose folder the service does not know, and on a machine without a display.
+ */
+export interface OpenTraceParams {
+  ref: string;
+  lane: number;
+}
+
+export const OPEN_TRACE_REQUEST = 'piwi/openTrace';
 
 /**
  * `piwi/hub`: the address of the service's hub, Piwi Picker's WebSocket, and, with `forwarded`, the loopback ports of
@@ -1807,15 +2303,15 @@ export const HUB_REQUEST = 'piwi/hub';
  * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element
  * there, and `assert-region` the picker, for a region whose ARIA snapshot is read; `mock` makes `page.route(…)` from a
  * response the test kept (`request`, an id `piwi/stopRequests` lists). The code of `assert`, `assert-region` and
- * `mock` comes in `piwi/stopCode`. `pick`, `record`, `assert` and `assert-region` need the pause bar (a headed
- * window); `mock` does not.
+ * `mock` comes in `piwi/stopCode`. `front` (**Show the browser**) brings the test's window to the front. `pick`,
+ * `record`, `assert`, `assert-region` and `front` need the pause bar (a headed window); `mock` does not.
  */
-export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'mock';
+export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'mock' | 'front';
 
 /**
  * `piwi/stopAction`: start an action at the stop `since` names, of the run's one stopped worker or `worker`. Answered
  * once the worker said whether it started (`pick`, `record`, `assert`, `assert-region`; the person then acts in the
- * test's window) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
+ * test's window), once its window came to the front (`front`) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
  * (`The test went on.`), a stop no pause bar shows, a reporter that does not take the action, a client without
  * `InitializationOptions.stopCode` for an action that writes code, and, before `assert` or `assert-region` starts in
  * the test's window, a stopped line no code can be written above: outside a test's or a function's body, on its

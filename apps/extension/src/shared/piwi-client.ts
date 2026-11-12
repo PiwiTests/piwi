@@ -28,7 +28,8 @@ import { t } from './i18n.js';
  * `piwi-get-bug-report`, `piwi-replay-step-view` and `piwi-share-reproduction`,
  * and the desktop app's: `piwi-desktop-repro` once the developer confirmed its
  * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
- * window, `fetchDesktopHubs`) only,
+ * window, `fetchDesktopHubs`; and the CI runs in progress the Runs window lists
+ * while it is open, `fetchActiveRuns` and `fetchRunMetadata`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -154,6 +155,73 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
   });
   if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
   return listItems<ProjectOption>(await instanceJson(res));
+}
+
+/**
+ * A run in progress as the instance lists it (`GET /api/test-runs/recent`): its project, its branch, what launched it
+ * (`origin`, absent from an older instance) and its counts.
+ */
+export interface ActiveRun {
+  id: number;
+  projectId: number;
+  projectName: string;
+  branch: string | null;
+  status: string;
+  startTime: string;
+  origin?: unknown;
+  totalTests?: unknown;
+  passedTests?: unknown;
+  failedTests?: unknown;
+  skippedTests?: unknown;
+  didNotRunTests?: unknown;
+  flakyTests?: unknown;
+}
+
+const ACTIVE_STATUSES = new Set(['running', 'initializing', 'finalizing']);
+
+/**
+ * The runs in progress of the projects the key may read, as the dashboard's home lists them
+ * (`GET /api/test-runs/recent`, the latest runs that ended left out), for the Runs window's CI runs.
+ */
+export async function fetchActiveRuns(settings: ConnectionSettings): Promise<ActiveRun[]> {
+  if (!settings.instanceUrl.trim()) return [];
+  const headers = await authHeaders(settings);
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/recent`, {
+      headers,
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  return listItems<ActiveRun>(await instanceJson(res)).filter(
+    (run) =>
+      typeof run?.id === 'number' &&
+      typeof run.projectId === 'number' &&
+      typeof run.status === 'string' &&
+      ACTIVE_STATUSES.has(run.status),
+  );
+}
+
+/**
+ * What launched a run, as its details keep it (`GET /api/test-runs/:id`'s `metadata`), for an instance whose list names
+ * no `origin`; null when it names nothing.
+ */
+export async function fetchRunMetadata(settings: ConnectionSettings, runId: number): Promise<unknown> {
+  const headers = await authHeaders(settings);
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}`, {
+      headers,
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
+  if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
+  return ((await instanceJson(res)) as { metadata?: unknown } | null)?.metadata ?? null;
 }
 
 /**

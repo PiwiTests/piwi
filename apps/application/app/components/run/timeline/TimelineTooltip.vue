@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { isGapKind, isHookKind, testTimeNotes, type TimelineItem } from '~/composables/useTimelineModel';
+import {
+  isGapKind,
+  isHookKind,
+  runningTimeNotes,
+  testTimeNotes,
+  type TimelineItem,
+} from '~/composables/useTimelineModel';
 import {
   TIMELINE_PAUSE_COLORS,
   TIMELINE_WAIT_COLORS,
@@ -26,6 +32,7 @@ const item = computed(() => props.state.item);
 const swatchStyle = computed(() => {
   const hovered = item.value;
   if (!hovered) return {};
+  if (hovered.kind === 'test' && hovered.stuck) return { backgroundColor: STATUS_PALETTE.running.stuck!.color };
   if (hovered.kind === 'test') return { backgroundColor: timelineStatusColor(hovered.status, hovered.flaky) };
   if (hovered.kind === 'step')
     return { backgroundColor: timelineStepColor(hovered.category ?? 'other', hovered.status === 'failed') };
@@ -122,8 +129,15 @@ const gapText = computed<string[]>(() => {
   return [];
 });
 
-/** What a test bar says about its time: the duration Playwright reported, and how long the test stood paused. */
-const timeNotes = computed(() => (item.value?.kind === 'test' ? testTimeNotes(item.value) : []));
+/**
+ * What a test bar says about its time: the duration Playwright reported, and how long the test stood paused; for a
+ * running attempt, how long its test usually takes and whether it is stuck.
+ */
+const timeNotes = computed(() => {
+  const hovered = item.value;
+  if (hovered?.kind !== 'test') return [];
+  return hovered.status === 'running' ? runningTimeNotes(hovered) : testTimeNotes(hovered);
+});
 
 /** What clicking the bar does, for the bars whose click is not obvious. */
 const clickHint = computed(() => {
@@ -186,7 +200,7 @@ const positionStyle = computed(() => {
       </div>
       <div class="flex items-center gap-3 text-gray-500">
         <span v-if="item.kind === 'pause'">{{ pauseReasonText(item.status) }}</span>
-        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky) }}</span>
+        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky, item.endedAtStop) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
           Worker {{ item.slot != null ? item.slot + 1 : item.workerIndex

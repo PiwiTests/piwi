@@ -51,13 +51,15 @@ export const MAX_COVERAGE_FILES = 2000;
 export const MAX_COVERAGE_RANGES = 10_000;
 
 /**
- * The colors of the coverage marks, the same in the dashboard and in the editors: a line the tests ran, and an
- * executable line no test runs. Neither is a test outcome color. The dashboard's `--color-coverage-*` tokens, the VS
- * Code extension's `piwi.coverage*Border` colors and the JetBrains color schemes' `PIWI_COVERAGE_*` keys restate them.
+ * The colors of the coverage marks, the same in the dashboard and in the editors: a line the tests ran, an executable
+ * line no test runs, and, in the editors alone, a line changed since the coverage run and a changed line of a file no
+ * test reaches. None is a test outcome color. The dashboard's `--color-coverage-*` tokens (the first two), the VS Code
+ * extension's `piwi.coverage*Border` and `piwi.uncoveredChangeBorder` colors and the JetBrains color schemes'
+ * `PIWI_COVERAGE_*` and `PIWI_UNCOVERED_CHANGE` keys restate them.
  */
 export const COVERAGE_MARK_COLORS = {
-  light: { run: '#0d9488', notRun: '#94a3b8' },
-  dark: { run: '#14b8a6', notRun: '#64748b' },
+  light: { run: '#0d9488', notRun: '#94a3b8', changed: '#9a6700', uncovered: '#bc4c00' },
+  dark: { run: '#14b8a6', notRun: '#64748b', changed: '#d29922', uncovered: '#f0883e' },
 } as const;
 
 /** Highest line number accepted. */

@@ -41,6 +41,11 @@ import {
   MIN_INTEGRATIONS_SYNC_MINUTES,
   MAX_INTEGRATIONS_SYNC_MINUTES,
 } from '#shared/integrations/sync-config';
+import {
+  DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+} from '#shared/integrations/test-management-limits';
 
 export type PiwiEnvVarCategory =
   | 'general'
@@ -230,7 +235,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Integrations',
     order: 13,
     intro:
-      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection; otherwise connections are managed from **Settings → Integrations**.',
+      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection, and `PIWI_ZEPHYR_API_TOKEN` one for Zephyr Scale Cloud; otherwise connections are managed from **Settings → Integrations**.',
     note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Integrations](/operate/integrations).',
   },
   clustering: {
@@ -767,7 +772,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CLAUDE_CLI_PATH: {
     description:
-      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
+      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app, where Claude Code must sign in with an Anthropic API key or a cloud provider: a Claude subscription runs only in the desktop app. Auto-detected otherwise.',
     category: 'ai',
     since: '0.30.0',
     example: '/usr/local/bin/claude',
@@ -1380,6 +1385,36 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
     requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
   },
+  PIWI_ZEPHYR_API_TOKEN: {
+    description:
+      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection. Never returned by the API.',
+    category: 'integrations',
+    secret: true,
+    since: '0.68.0',
+    docs: 'operate/zephyr-scale',
+  },
+  PIWI_ZEPHYR_REGION: {
+    description: 'Region of the Zephyr Scale Cloud host the token belongs to: "us", "eu", "au" or "de".',
+    category: 'integrations',
+    type: 'enum',
+    enum: ['us', 'eu', 'au', 'de'],
+    default: 'us',
+    since: '0.68.0',
+    relevantWhen: { PIWI_ZEPHYR_API_TOKEN: '*' },
+    notes: 'Any other value is logged and ignored, and the region stays `us`.',
+  },
+  PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE: {
+    description:
+      'How many requests a minute Piwi sends to a test management tool (Zephyr Scale Cloud) per connection: the test case catalog read, the pickers and the Refresh catalog button share this budget.',
+    category: 'integrations',
+    type: 'number',
+    default: String(DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE),
+    min: MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+    max: MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+    since: '0.68.0',
+    docs: 'operate/zephyr-scale',
+    notes: 'A value that is not a whole number in range is logged once and the default is used.',
+  },
   PIWI_INTEGRATIONS_SYNC_MINUTES: {
     description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',
     category: 'integrations',
@@ -1458,26 +1493,11 @@ export const PIWI_ENV_VARS = {
     category: 'test',
     runtimeOnly: true,
   },
-  PIWI_MAILPIT_URL: {
-    description: 'Mailpit base URL; when set, the email/notification E2E tests run against it.',
-    category: 'test',
-    runtimeOnly: true,
-  },
   PIWI_LIVE_JIRA_PROJECT_KEY: {
     description: 'Jira project key the live Jira E2E files into (with PIWI_JIRA_* credentials).',
     category: 'test',
     runtimeOnly: true,
     since: '0.29.0',
-  },
-  PIWI_MAILPIT_SMTP_PORT: {
-    description: 'SMTP port the email E2E tests send to (Mailpit).',
-    category: 'test',
-    runtimeOnly: true,
-  },
-  PIWI_EMAIL_SERVER_URL: {
-    description: 'Base URL the email test spec targets.',
-    category: 'test',
-    runtimeOnly: true,
   },
   PIWI_TEST_CLEANUP_ENABLED: {
     description:

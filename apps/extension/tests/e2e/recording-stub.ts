@@ -113,3 +113,11 @@ export async function readStoredEvents(page: Page): Promise<RawCaptureEvent[]> {
   const state = result.piwiRecording as { events?: RawCaptureEvent[] } | undefined;
   return state?.events ?? [];
 }
+
+/**
+ * The stored events' text alone: every string value, with numbers (timestamps, coordinates, sizes) left out, so a
+ * check that no secret was kept looks only at what a page could have written.
+ */
+export function storedText(events: RawCaptureEvent[]): string {
+  return JSON.stringify(events, (_key, value: unknown) => (typeof value === 'number' ? undefined : value));
+}

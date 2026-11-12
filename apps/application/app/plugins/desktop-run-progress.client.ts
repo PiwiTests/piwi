@@ -11,10 +11,19 @@
  * `snapshot` of the runs already in flight when the shell connects, then live
  * lifecycle + progress deltas. The active runs are aggregated
  * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
- * command; when the last run finishes the outcome flashes (green pass / amber
- * interrupted / red fail) briefly before clearing, and a red one asks for the
- * user's attention. A step of a job of the Local runs tray (a reproduction, a
- * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
+ * command; as a run of this window's local runs ends (`trayListsRun`), its outcome
+ * flashes (green pass / amber interrupted / red fail) for a moment, whatever else
+ * runs, and a red one asks for the user's attention; an editor's, a terminal's,
+ * CI's, another window's run, or one from before a reload, never flashes. While a
+ * test of the app's runs waits at a stop for the person (the hub's runs,
+ * `runsAttention`), or one of an editor's runs (`editor-runs`, which the server
+ * observes and never steers), the shell says so first, amber (`paused`): `1 test
+ * waits for you`, and, for the app's own, the tray's menu offers Show the stopped
+ * test (`waiting`), which opens the Local runs tray on the first of them
+ * (`firstWaiting`). The Windows
+ * thumbnail's Stop stops this window's run started last (`thumbnailStopRun`).
+ * A step of a job of the Local runs tray (a reproduction, a bisect, a Flake Lab
+ * session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
  * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
  * launched it. A local run stopped from the app, and a job (a Flake Lab session
@@ -28,6 +37,8 @@
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
+import { firstWaiting, runsAttention } from '@piwitests/run-model/attention';
+import { desktopEditorRuns } from '#shared/desktop-runs';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,
@@ -36,9 +47,12 @@ import {
   finishedRunFlash,
   liveRunFacts,
   runsOfLocalRun,
+  thumbnailStopRun,
+  trayListsRun,
   unbegunRunsOf,
   type FinishedRunFlash,
   type LiveRun,
+  type LocalRunOwner,
   type RunProgressState,
 } from '~/utils/desktop-run-progress';
 
@@ -104,6 +118,12 @@ export default defineNuxtPlugin(() => {
   let lastFinished: FinishedRunFlash | null = null;
   /** The runs a local run's end took off the bar, and when. */
   const swept = new Map<number, number>();
+  /** The tests of the app's runs that wait at a stop for the person, as the hub tells them (`runsAttention`). */
+  let waiting = 0;
+  /** The tests of the editors' runs that wait at a stop, as the server observes them (`editor-runs`). */
+  let editorWaiting = 0;
+  /** The runs of the Local runs tray: only theirs flash as they end. */
+  let trayRuns: () => readonly LocalRunOwner[] = () => [];
 
   /** Whether a local run's end took the run off the bar less than `SWEPT_MS` ago. */
   function wasSwept(runId: number): boolean {
@@ -114,35 +134,37 @@ export default defineNuxtPlugin(() => {
     return false;
   }
 
+  /** What the shell shows now: a change of the tests that wait sends it again, with their count, during a flash too. */
+  let showing: Parameters<typeof send> = ['none', null, null];
+
   function send(state: RunProgressState, fraction: number | null, label: string | null, failing = false) {
+    showing = [state, fraction, label, failing];
     // Collapse identical updates — progress events are frequent but the shell
     // only needs the changes.
-    const key = `${state}|${fraction ?? ''}|${label ?? ''}|${failing}`;
+    const key = `${state}|${fraction ?? ''}|${label ?? ''}|${failing}|${waiting}`;
     if (key === lastSent) return;
     lastSent = key;
-    core!.invoke('desktop_set_run_progress', { state, fraction, label, failing }).catch(() => {});
+    core!.invoke('desktop_set_run_progress', { state, fraction, label, failing, waiting }).catch(() => {});
   }
 
   function pushUpdate() {
-    if (clearTimer) {
-      clearTimeout(clearTimer);
-      clearTimer = null;
-    }
-    const agg = aggregateRunProgress([...active.values()]);
-    if (agg.state !== 'none') {
+    // An outcome flashes as its run or job ends, whatever else runs or waits, for its moment.
+    const flash = lastFinished;
+    if (flash) {
       lastFinished = null;
-      send(agg.state, agg.fraction, agg.label, agg.failing);
+      if (clearTimer) clearTimeout(clearTimer);
+      send(flash.progress.state, flash.progress.fraction, flash.progress.label, flash.progress.failing);
+      clearTimer = setTimeout(() => {
+        clearTimer = null;
+        pushUpdate();
+      }, flash.durationMs);
       return;
     }
-    // Nothing in flight — flash the last outcome, then clear.
-    const flash = lastFinished;
-    lastFinished = null;
-    if (flash) {
-      send(flash.progress.state, flash.progress.fraction, flash.progress.label, flash.progress.failing);
-      clearTimer = setTimeout(() => send('none', null, null), flash.durationMs);
-    } else {
-      send('none', null, null);
-    }
+    // A flash keeps its moment: the bar shows what stands once it ends.
+    if (clearTimer) return;
+    const agg = aggregateRunProgress([...active.values()], waiting + editorWaiting);
+    if (agg.state === 'none') send('none', null, null);
+    else send(agg.state, agg.fraction, agg.label, agg.failing);
   }
 
   /** Tracks a run in flight with these counts, keeping what launched it once a message of it said so. */
@@ -201,9 +223,10 @@ export default defineNuxtPlugin(() => {
         if (!run) break;
         active.delete(msg.runId!);
         // A job's step has no outcome of its own: its job's verdict flashes once the job ends. Neither has a run
-        // nothing names, one that never began.
+        // nothing names, one that never began, nor one the tray does not list: an editor's, a terminal's, another
+        // window's.
         const facts = liveRunFacts(msg) ?? liveRunFacts(run);
-        if (facts && !facts.job) {
+        if (facts && !facts.job && trayListsRun(msg.runId!, { ...run, ...facts }, trayRuns())) {
           lastFinished = finishedRunFlash(msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled');
         }
         pushUpdate();
@@ -215,21 +238,55 @@ export default defineNuxtPlugin(() => {
 
   // The server resends a fresh snapshot on each (re)connection, which re-seeds
   // `active` without extra work here.
-  subscribeDesktopEvents((message) => handle(message as unknown as LiveRunMessage));
+  const editorRuns = useDesktopEditorRuns();
+  subscribeDesktopEvents((message) => {
+    if (message.type !== 'editor-runs') return handle(message as unknown as LiveRunMessage);
+    // An editor's test that waits at a stop shows on the bar and the dot, as the app's do; it opens in its editor. The
+    // run page shows where its own run's tests wait (`DesktopEditorRunNote`).
+    const runs = desktopEditorRuns(message.runs);
+    editorRuns.value = runs;
+    const now = runsAttention(runs.map((run) => run.session))?.waiting ?? 0;
+    if (now === editorWaiting) return;
+    editorWaiting = now;
+    // A flash keeps its moment: the bar counts them once it ends.
+    if (!clearTimer) pushUpdate();
+  });
+
+  // A test of the app's runs that waits at a stop shows first: the hub's runs say which (`useDesktopRunHub`). The bar
+  // is drawn from the first snapshot, never cleared as the window loads.
+  const hub = useDesktopRunHub();
+  const waitingNow = () => runsAttention(Object.values(hub.state.sessions))?.waiting ?? 0;
+  waiting = waitingNow();
+  watch(waitingNow, (now) => {
+    waiting = now;
+    if (clearTimer) send(...showing);
+    else pushUpdate();
+  });
 
   // Local ("Run locally") runs are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {
-    const { runs, stopRun, onRunEnded } = useDesktopLocalRuns();
+    const { runs, stopRun, onRunEnded, showWorker, trayMounts } = useDesktopLocalRuns();
+    trayRuns = () => runs.value;
+
+    // The tray's Show the stopped test brings the window up and reaches the dashboard as this event: the Local runs
+    // tray opens on the first test that waits, on the home page when the page shown holds no tray (TV mode, an error).
+    tauriEvent()
+      ?.listen('piwi:tray-show-stop', async () => {
+        const first = firstWaiting(Object.values(hub.state.sessions));
+        if (!first) return;
+        if (trayMounts.value === 0) await navigateTo('/');
+        showWorker(first.run.ref, first.worker.worker);
+      })
+      .catch(() => {});
 
     // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
-    // dashboard as this event.
+    // dashboard as this event: it stops one run, the one started last.
     tauriEvent()
       ?.listen('piwi:taskbar-stop', () => {
-        for (const run of runs.value) {
-          if (run.status === 'running') void stopRun(run);
-        }
+        const run = thumbnailStopRun(runs.value);
+        if (run) void stopRun(run);
       })
       .catch(() => {});
 

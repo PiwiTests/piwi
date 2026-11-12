@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { TAKES_ASKS_FIELD, parseLiveAsk, type LiveAsk, type LiveAskAnswer } from '@piwitests/core/live-view';
 import { errorMessage } from '../support/errors.js';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
@@ -14,6 +15,7 @@ import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { answeredRunUrl } from '../support/run-url.js';
 import { requestedRunTarget } from '../config/env.js';
 import { formatDuration } from '../flake/lab.js';
+import { announceLiveRun } from '../support/ci-output.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
@@ -183,6 +185,14 @@ export class StreamManager {
   }
   /** Called when the dashboard says someone opened the run. */
   onWatched: (() => void) | null = null;
+  /** Called once for each teammate's ask to watch the run the dashboard hands over (`ask` of its answers). */
+  onAsk: ((ask: LiveAsk) => void) | null = null;
+  /** The asks handed over, by id, the latest 20: one the dashboard hands over again is not told again. */
+  private readonly asksHeard = new Set<string>();
+  /** The developer's answers to asks, sent one per request of the stream (`askAnswer`) until the dashboard took it. */
+  private readonly askAnswers: LiveAskAnswer[] = [];
+  /** Called once the run's stream opened, with the run's id and its page. */
+  onOpened: ((runId: number, runUrl: string) => void) | null = null;
 
   /**
    * @param httpClient  HTTP client for server communication.
@@ -362,13 +372,15 @@ export class StreamManager {
     this._token = token;
     this._enabled = true;
     this.streamBuffer.bindRun(runId);
-    this.logger.info(
-      late
-        ? `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`
-        : `Streaming enabled. Run ID: ${runId}`,
-    );
+    // A stream that opened late says so; one on time is plumbing.
+    if (late) {
+      this.logger.info(
+        `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`,
+      );
+    } else this.logger.debug(`Streaming enabled. Run ID: ${runId}`);
     // The global setup printed it already for the run it registered.
-    if (this._runUrl !== shown) this.logger.info(`View live progress: ${this._runUrl}`);
+    if (this._runUrl !== shown) announceLiveRun(this._runUrl, this.logger);
+    this.onOpened?.(runId, this._runUrl);
     this.lastActivityAt = Date.now();
     this.scheduleHeartbeat();
     // Whatever queued while the stream opened goes now, not at the next event or the finalize.
@@ -486,15 +498,22 @@ export class StreamManager {
     const chunks = this.chunkEvents(events);
     while (chunks.length > 0) {
       const chunk = chunks.shift()!;
+      const carried = this.askAnswers[0];
       try {
         const response = await this.httpClient.postJSON(
           `/api/test-runs/${this._runId}/events`,
-          { streamToken: this._token, testCases: chunk },
+          {
+            streamToken: this._token,
+            testCases: chunk,
+            [TAKES_ASKS_FIELD]: true,
+            ...(carried ? { askAnswer: carried } : {}),
+          },
           this._auth,
           undefined,
           { headers: runTokenHeaders(this._token) },
         );
         this.noteWatched(response);
+        this.askAnswerTaken(carried);
         this.retryCount = 0;
         this.headFailingSince = null;
         this.lastActivityAt = Date.now();
@@ -615,6 +634,15 @@ export class StreamManager {
    * keeps step events flowing.
    */
   noteWatched(response: unknown): void {
+    const ask = parseLiveAsk((response as { ask?: unknown } | null | undefined)?.ask);
+    if (ask && !this.asksHeard.has(ask.id)) {
+      this.asksHeard.add(ask.id);
+      for (const oldest of this.asksHeard) {
+        if (this.asksHeard.size <= 20) break;
+        this.asksHeard.delete(oldest);
+      }
+      this.onAsk?.(ask);
+    }
     const watched = (response as { watched?: unknown } | null | undefined)?.watched;
     const next = typeof watched === 'boolean' ? watched : null;
     if (next !== null && next !== this.watched) {
@@ -635,6 +663,25 @@ export class StreamManager {
       this.heartbeatTimer = null;
       this.scheduleHeartbeat();
     }
+  }
+
+  /**
+   * The developer answered a teammate's ask to watch the run with `not-now`: it goes to the dashboard with the next
+   * request of the stream, a heartbeat at once when none is about to go.
+   */
+  answerAsk(answer: LiveAskAnswer): void {
+    if (this.askAnswers.some((pending) => pending.id === answer.id)) return;
+    this.askAnswers.push(answer);
+    if (this.heartbeatStopped || !this._runId) return;
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    this.scheduleHeartbeat(MIN_HEARTBEAT_WAIT_MS);
+  }
+
+  /** The dashboard answered a request that carried `answer`: it took it. */
+  private askAnswerTaken(answer: LiveAskAnswer | undefined): void {
+    const at = answer ? this.askAnswers.indexOf(answer) : -1;
+    if (at >= 0) this.askAnswers.splice(at, 1);
   }
 
   // Idle time after which a heartbeat goes out.
@@ -658,20 +705,22 @@ export class StreamManager {
     if (this.heartbeatStopped || !this._enabled || !this._runId || !this._token) return;
 
     // Activity within the period: the heartbeat waits for the rest of it only, so a run nobody watched learns that
-    // someone opened it within one period.
+    // someone opened it within one period. An answer to an ask goes at once.
     const idleFor = Date.now() - this.lastActivityAt;
-    if (idleFor < this.heartbeatDelay() || this.pendingEvents.length > 0) {
+    if (!this.askAnswers.length && (idleFor < this.heartbeatDelay() || this.pendingEvents.length > 0)) {
       this.scheduleHeartbeat(Math.max(this.heartbeatDelay() - idleFor, MIN_HEARTBEAT_WAIT_MS));
       return;
     }
 
+    const carried = this.askAnswers[0];
     try {
       const response = await this.httpClient.postJSON(
         `/api/test-runs/${this._runId}/heartbeat`,
-        { streamToken: this._token },
+        { streamToken: this._token, [TAKES_ASKS_FIELD]: true, ...(carried ? { askAnswer: carried } : {}) },
         this._auth,
       );
       this.noteWatched(response);
+      this.askAnswerTaken(carried);
       this.lastActivityAt = Date.now();
     } catch (error) {
       if (endsRun(error)) {

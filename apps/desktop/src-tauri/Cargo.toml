@@ -43,6 +43,8 @@ sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 semver = "1"
+# A folder's real path without Windows' `\\?\` verbatim prefix (`runner::real_path`). Already built for Tauri.
+dunce = "1"
 # Only compiled into e2e test builds (see the `e2e-testing` feature). Lets a
 # Playwright runner drive the real webview to smoke-test the shell integration.
 tauri-plugin-playwright = { version = "0.4", optional = true }

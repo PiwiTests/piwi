@@ -414,6 +414,37 @@ describe('StreamManager idle heartbeat', () => {
     expect(sm.runEnded).toBe(true);
   });
 
+  it('hands a teammate’s ask on once, and sends the developer’s answer with the next heartbeat until one is answered', async () => {
+    const bodies: any[] = [];
+    let fail = true;
+    const sm = makeEnabledManager(async (url, body) => {
+      bodies.push(body);
+      if (fail) {
+        fail = false;
+        throw new Error('offline');
+      }
+      return { watched: false, ask: { id: 'a1', by: 'Dana' } };
+    });
+    const asks: unknown[] = [];
+    sm.onAsk = (ask) => asks.push(ask);
+    sm.noteWatched({ watched: false, ask: { id: 'a1', by: 'Dana' } });
+    sm.noteWatched({ watched: false, ask: { id: 'a1', by: 'Dana' } });
+    sm.noteWatched({ watched: false, ask: { id: 'bad id', by: 'Dana' } });
+    expect(asks).toEqual([{ id: 'a1', by: 'Dana' }]);
+
+    (sm as any).unwatchedHeartbeatInterval = 20;
+    (sm as any).lastActivityAt = Date.now();
+    sm.answerAsk({ id: 'a1', answer: 'not-now' });
+    sm.answerAsk({ id: 'a1', answer: 'not-now' });
+    await wait(400);
+    (sm as any).stopHeartbeat();
+    // The first heartbeat failed and the next carried the answer again; once taken, none carries it.
+    expect(bodies[0]).toEqual({ streamToken: 'tok', takesAsks: true, askAnswer: { id: 'a1', answer: 'not-now' } });
+    expect(bodies[1]).toEqual({ streamToken: 'tok', takesAsks: true, askAnswer: { id: 'a1', answer: 'not-now' } });
+    expect(bodies.slice(2).every((body) => !('askAnswer' in body))).toBe(true);
+    expect(asks).toHaveLength(1);
+  });
+
   it('drain stops the heartbeat', async () => {
     const calls: string[] = [];
     const sm = makeEnabledManager(async (url) => {
@@ -1120,7 +1151,9 @@ describe('StreamManager start asked again', () => {
     expect(requests).not.toContain('/api/test-runs/start');
     expect(sent).toEqual(['begin early', 'step-begin a step', 'complete early']);
     expect(linesWith('Live streaming could not start (connect ECONNREFUSED')).toHaveLength(1);
-    expect(linesWith('Streaming started')).toEqual(['[Piwi Dashboard] Streaming started 7 s late, once the dashboard answered. Run ID: 5']);
+    expect(linesWith('Streaming started')).toEqual([
+      '[Piwi Dashboard] Streaming started 7 s late, once the dashboard answered. Run ID: 5',
+    ]);
     expect(sm.lostResults).toBe(false);
   });
 

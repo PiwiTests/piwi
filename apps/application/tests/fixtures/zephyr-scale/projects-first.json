@@ -1,0 +1,16 @@
+{
+  "_spec": "ProjectList",
+  "next": "https://api.zephyrscale.smartbear.com/v2/projects?maxResults=1&startAt=1",
+  "startAt": 0,
+  "maxResults": 1,
+  "total": 3,
+  "isLast": false,
+  "values": [
+    {
+      "id": 10001,
+      "jiraProjectId": 20001,
+      "key": "SHOP",
+      "enabled": true
+    }
+  ]
+}

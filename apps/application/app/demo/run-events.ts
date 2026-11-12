@@ -11,6 +11,8 @@
  * subscribing components can share their handling code between modes.
  */
 import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
+import type { RunProgressBroadcast } from '~~/server/utils/run-events';
+import { runProgressThrottle } from '~~/server/utils/run-progress-throttle';
 
 const CHANNEL_NAME = 'piwi-demo-run-events';
 
@@ -49,6 +51,8 @@ export interface DemoGlobalEvent {
 export type DemoEventMessage =
   | { scope: 'run'; runId: number; event: DemoRunEvent }
   | { scope: 'global'; event: DemoGlobalEvent }
+  /** A running run's tally, as the server's `/api/stream` sends its `run-progress`. */
+  | { scope: 'progress'; event: RunProgressBroadcast }
   | { scope: 'notification'; event: Record<string, unknown> };
 
 // ── Publishing (service worker side) ───────────────────────────────────────
@@ -69,9 +73,26 @@ export function publishDemoRunEvent(runId: number, event: DemoRunEvent): void {
 /** The global events after which the analytics test filters memoized over the run's project are stale. */
 const STALE_TEST_FILTER_EVENTS = new Set<DemoGlobalEvent['type']>(['run-finished', 'run-submitted', 'rollup-updated']);
 
+/** The runs' tallies, throttled per run as the server's `/api/stream` throttles them. */
+let progressThrottle: ReturnType<typeof runProgressThrottle> | null = null;
+
+function getProgressThrottle() {
+  progressThrottle ??= runProgressThrottle((event) =>
+    getPublishChannel().postMessage({ scope: 'progress', event } satisfies DemoEventMessage),
+  );
+  return progressThrottle;
+}
+
 export function publishDemoGlobalEvent(event: DemoGlobalEvent): void {
   if (STALE_TEST_FILTER_EVENTS.has(event.type)) dropProjectTestFilters(event.projectId);
+  // The run's tally held back goes first, as on the server's stream.
+  progressThrottle?.flush(event.runId);
   getPublishChannel().postMessage({ scope: 'global', event } satisfies DemoEventMessage);
+}
+
+/** Publish a running run's tally, at most once every 2 s per run, its latest winning. */
+export function publishDemoRunProgress(progress: RunProgressBroadcast): void {
+  getProgressThrottle().push(progress.runId, progress);
 }
 
 export function publishDemoNotificationEvent(event: Record<string, unknown>): void {

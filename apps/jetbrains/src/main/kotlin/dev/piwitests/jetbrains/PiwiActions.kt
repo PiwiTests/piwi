@@ -1,13 +1,16 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataKey
+import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
@@ -30,6 +33,11 @@ private fun fileUri(file: VirtualFile): String? =
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    /** In the status bar item's popup, only while a Playwright config is not connected; everywhere else, always. */
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.place != ActionPlaces.STATUS_BAR_PLACE || !piwiAllConnected(e.project)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -80,6 +88,52 @@ class RefreshAction : AnAction(), DumbAware {
         }
         // A Playwright config added since the project opened shows the tool window and starts the service.
         project.service<PiwiProjectService>().findPlaywright()
+    }
+}
+
+/**
+ * Restart the Editor Service: the service stopped and started again, or started for the open files when it does not run
+ * (`PiwiProjectService.restartServer`). In a trusted project that holds a Playwright config.
+ */
+class RestartServiceAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service != null && service.trusted() && service.hasPlaywrightConfig()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.restartService()
+    }
+}
+
+/** Open Log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
+class OpenLogAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.project?.service<PiwiProjectService>()?.hasPlaywrightConfig() == true
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiLog>()?.show()
+    }
+}
+
+/**
+ * Piwi: Refresh the Latest Run — the latest run and its failures read again, not the indexes **Refresh** fetches
+ * (`PiwiProjectService.refreshRun`). Enabled while connected.
+ */
+class RefreshRunAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.refreshRun()
     }
 }
 
@@ -137,12 +191,33 @@ class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glu
 
 class RunSpecAction : RunInSpecAction(wholeSpec = true)
 
-/** Piwi: Open in dashboard — this file's test, or the latest run. */
+/** The dashboard page of what the Piwi tool window has selected: a failure's test, or a run. */
+val DASHBOARD_URL: DataKey<String> = DataKey.create("piwi.dashboardUrl")
+
+/** Whether a context of the project reads an instance: the actions that read it are enabled only then. */
+fun piwiConnected(project: Project?): Boolean =
+    project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().any { it.connected }
+
+/** Whether every Playwright config of the project is connected, and there is at least one. */
+fun piwiAllConnected(project: Project?): Boolean =
+    project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().let { contexts ->
+        contexts.isNotEmpty() && contexts.all { it.connected }
+    }
+
+/**
+ * Piwi: Open in dashboard — the page of what the Piwi tool window has selected, else this file's test, else the latest
+ * run.
+ */
 class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.getData(DASHBOARD_URL) != null || piwiConnected(e.project)
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
+        e.getData(DASHBOARD_URL)?.let { return BrowserUtil.browse(it) }
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
@@ -170,16 +245,32 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
+        val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
+        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the Latest Run in the Dashboard"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         e.project?.let { url(it) }?.let { BrowserUtil.browse(it) }
     }
 
-    /** The page of the run the status bar shows, for the context of the selected editor's file. */
-    private fun url(project: Project): String? = project.service<PiwiProjectService>().let {
+    /** The run in progress the status bar counts, with its page, for the context of the selected editor's file. */
+    private fun liveRun(project: Project): LiveRun? = project.service<PiwiProjectService>().let {
+        Glue.liveRun(it.status, it.runs, PiwiStatusBarWidget.shownFile(project))?.takeIf { live -> live.url != null }
+    }
+
+    /** The page of the run in progress the status bar counts, else of the run it shows. */
+    private fun url(project: Project): String? = liveRun(project)?.url ?: project.service<PiwiProjectService>().let {
         Glue.statusView(it.status, it.runs, file = PiwiStatusBarWidget.shownFile(project)).url
+    }
+}
+
+/** Opens the page of a run started or followed here, on the instance it reports to: `Open Run #78`. */
+class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}", null, AllIcons.General.Web), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        BrowserUtil.browse(page.url)
     }
 }
 
@@ -249,6 +340,12 @@ class CompareWithAction : AnAction(), DumbAware {
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    /** Enabled while failures are listed, from a run read before the instance stopped answering too. */
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled =
+            e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failures.orEmpty().isNotEmpty()
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         PiwiCommands.rerunFailing(e.project ?: return)
     }
@@ -257,6 +354,10 @@ class RerunFailingAction : AnAction(), DumbAware {
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -281,9 +382,16 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setTitle("Run which selection?")
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val breakpoints = project.service<PiwiProjectService>().breakpoints()
+                            val service = project.service<PiwiProjectService>()
+                            val breakpoints = service.breakpoints()
                             val places = breakpoints.map { it.place }.ifEmpty { null }
-                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, places))?.orNull()
+                            val local = service.local()
+                            val params = Glue.withRunStart(
+                                RunSelectionParams(uri, picked.key, places),
+                                local.runHeaded,
+                                local.runHoldFailures,
+                            )
+                            val command = server?.runSelection(params)?.orNull()
                             if (command != null) PiwiCommands.startRun(project, command, breakpoints)
                         }
                     }
@@ -291,6 +399,42 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .showCenteredInCurrentWindow(project)
             }
         }
+    }
+}
+
+/**
+ * Piwi: Run Headed — every run Piwi starts in this project runs headed (`RunTestsArgs.headed`), a verification's too;
+ * kept on this machine, as **Settings → Tools → Piwi** shows it.
+ */
+class RunHeadedAction : ToggleAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun isSelected(e: AnActionEvent): Boolean = e.project?.service<PiwiProjectService>()?.local()?.runHeaded ?: false
+
+    override fun setSelected(e: AnActionEvent, state: Boolean) {
+        e.project?.service<PiwiProjectService>()?.local()?.runHeaded = state
+    }
+}
+
+/**
+ * Piwi: Hold Failures from Each Run's Start… — Auto, On or Off for every run Piwi starts in this project
+ * (`Glue.HOLD_FAILURES_CHOICES`), kept on this machine, as **Settings → Tools → Piwi** shows it.
+ */
+class RunHoldFailuresAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val local = project.service<PiwiProjectService>().local()
+        val current = local.runHoldFailures
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
+            .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
+            .setSelectedValue(current, true)
+            .setTitle("Hold Failures from Each Run's Start")
+            .setItemChosenCallback { local.runHoldFailures = it }
+            .createPopup()
+            .showCenteredInCurrentWindow(project)
     }
 }
 
@@ -325,11 +469,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
             if (properties.getBoolean(OFFERED)) return
             properties.setValue(OFFERED, true)
-            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                .createNotification(
-                    "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
-                    NotificationType.INFORMATION,
-                )
+            PiwiNotifier.create(
+                PiwiNotice.OFFER,
+                "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
+            )
                 .addAction(NotificationAction.createSimpleExpiring("Copy the configuration") { copyMcpConfiguration(project) })
                 .notify(project)
         }
@@ -370,7 +513,7 @@ class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
                 if (url == null || token == null) {
                     return@executeOnPooledThread PiwiCommands.notify(
                         project,
-                        served?.message ?: "The Piwi editor service is not running: open a test file first.",
+                        served?.message ?: Glue.SERVICE_NOT_RUNNING,
                         NotificationType.WARNING,
                     )
                 }
@@ -440,5 +583,17 @@ class ResetRunsMcpTokenAction : AnAction(), DumbAware {
 private fun <T> textRenderer(label: (T) -> String): SimpleListCellRenderer<T> = object : SimpleListCellRenderer<T>() {
     override fun customize(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
         text = value?.let(label) ?: ""
+    }
+}
+
+/**
+ * The editor's context menu's Piwi submenu (`Piwi.EditorPopup`): compact, so an entry that does not apply is left out
+ * rather than grayed, and gone when none applies, as on a file Piwi has nothing for.
+ */
+class PiwiEditorPopupGroup : com.intellij.openapi.actionSystem.DefaultCompactActionGroup(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isHideGroupIfEmpty = true
     }
 }

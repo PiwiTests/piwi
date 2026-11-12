@@ -88,8 +88,8 @@ describe('a run’s session, with a client that answers stops', () => {
         type: 'breakpoints',
         places: [{ file: 'tests/cart.spec.ts', line: 3 }],
       });
-      // Nobody follows the runs in Piwi Picker: it holds no failure.
-      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [] });
+      // A failure does not stop it while its Hold failures is off. Its lines name the editor as it named itself.
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [], host: 'Test Editor' });
       expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, root: dir, terminal: true });
       worker.begin();
       worker.stopAt(1, 3);
@@ -109,6 +109,27 @@ describe('a run’s session, with a client that answers stops', () => {
       expect((await waitFor(() => svc.latest(own.ref))).terminal).toBeUndefined();
     } finally {
       ownWorker.socket.destroy();
+    }
+  });
+
+  test('takes a run started in a terminal and piped elsewhere unattended: no breakpoint, and an unasked stop goes on', async () => {
+    const discovery = await waitFor(() => last(svc.published) ?? undefined);
+    const channel = discovery.runChannel!;
+    await svc.client.sendNotification('piwi/setBreakpoints', { places: [{ uri: uri('tests/cart.spec.ts'), line: 2 }] });
+    // Once the service read it.
+    await control({ ref: 'none', action: 'pause' });
+    const ref = 'terminal-4244-1730000000002-unattended';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, terminal: true });
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [], host: 'Test Editor' });
+      worker.begin();
+      // A breakpoint the run still met, nobody asked it to stop there: it goes on.
+      worker.stopAt(1, 3);
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(worker.heard.filter((m) => m.type === 'breakpoints')).toEqual([]);
+    } finally {
+      worker.socket.destroy();
     }
   });
 
@@ -192,6 +213,7 @@ describe('a run’s session, with a client that answers stops', () => {
       expect(await waitFor(() => svc.latest(ref))).toEqual({
         ref,
         root: dir,
+        hold: { on: false, by: 'start' },
         workers: [
           {
             worker: 3,
@@ -203,6 +225,8 @@ describe('a run’s session, with a client that answers stops', () => {
             waiting: null,
             takes: ['pick', 'record'],
             watchable: false,
+            layers: false,
+            showsWindow: false,
           },
         ],
         ended: false,
@@ -251,6 +275,7 @@ describe('a run’s session, with a client that answers stops', () => {
         root: dir,
         workers: [],
         ended: true,
+        hold: { on: false, by: 'start' },
       });
       await worker.closed;
     } finally {
@@ -697,7 +722,13 @@ describe('RunSessions', () => {
     const second = attach(1);
     second.socket.destroy();
     await waitFor(() => (last(sent)?.ended ? true : undefined), 2000);
-    expect(last(sent)).toEqual({ ref: 'ed-1', root: '/work/shop', workers: [], ended: true });
+    expect(last(sent)).toEqual({
+      ref: 'ed-1',
+      root: '/work/shop',
+      workers: [],
+      ended: true,
+      hold: { on: false, by: 'start' },
+    });
     expect(sent.filter((s) => s.ended)).toHaveLength(1);
 
     // A later worker of the same ref, a rerun of the command, starts a new session.
@@ -813,10 +844,18 @@ describe('RunSessions', () => {
   test('tells a worker that holds a failure only for a service that shows it that this one does, and an older one nothing', async () => {
     const { sessions, attach } = harness();
     const heard = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
-    expect(heard(attach(0, { holds: ['failure'] }).socket)).toEqual([{ type: 'attached', holds: ['failure'] }]);
+    // A failure's only while the run's Hold failures is on, which the worker hears again each time it turns over.
+    const failing = attach(0, { holds: ['failure'] }).socket;
+    expect(heard(failing)).toEqual([{ type: 'attached', holds: [] }]);
     expect(heard(attach(1, { holds: [] }).socket)).toEqual([{ type: 'attached', holds: [] }]);
     // A reporter that predates the capability lists none, and hears no message it would not know.
-    expect(heard(attach(2).socket)).toEqual([]);
+    const older = attach(2).socket;
+    expect(heard(older)).toEqual([]);
+    expect(sessions.hold({ ref: 'ed-1', on: true }, 'person').ok).toBe(true);
+    expect(last(heard(failing))).toEqual({ type: 'attached', holds: ['failure'] });
+    sessions.hold({ ref: 'ed-1', on: false }, 'person');
+    expect(last(heard(failing))).toEqual({ type: 'attached', holds: [] });
+    expect(heard(older)).toEqual([]);
     sessions.dispose();
   });
 
@@ -871,17 +910,15 @@ describe('RunSessions', () => {
     return { controls, fail };
   }
 
-  test('holds a failure no bar shows only in a run started to be watched, or while a Runs window follows the runs', async () => {
+  test('holds a failure no bar shows only while its run’s Hold failures is on, from its start or as a person or an agent set it', async () => {
     let watched = false;
-    let followed = false;
     const notices: string[] = [];
     const { sessions, sent } = harness({
       watched: () => watched,
-      followed: () => followed,
       notice: (_root, _severity, message) => void notices.push(message),
     });
     const worker = takingWorker(sessions);
-    // A plain run of a client that answers stops: the failure goes on at once, shown and said to nobody.
+    // A plain run: its Hold failures off, the failure goes on at once, shown and said to nobody.
     worker.fail(1);
     expect(worker.controls()).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
     await new Promise((r) => setTimeout(r, 30));
@@ -889,20 +926,39 @@ describe('RunSessions', () => {
     // One the bar shows waits for its answer there.
     worker.fail(2, true);
     expect(worker.controls()).toHaveLength(1);
-    // A run started with breakpoints, or followed in a Runs window, holds it.
+    // A run started with breakpoints holds it from its start.
     watched = true;
     worker.fail(3);
-    watched = false;
-    followed = true;
-    worker.fail(4);
     expect(worker.controls()).toHaveLength(1);
-    // The last Runs window closes: the failure it held goes on.
-    followed = false;
-    sessions.surfacesChanged();
+    await waitFor(() => (last(sent)?.hold?.on ? true : undefined));
+    expect(last(sent)!.hold).toEqual({ on: true, by: 'start' });
+    // A person turns it off: the failure held now goes on, and so does the next.
+    expect(sessions.hold({ ref: 'ed-1', on: false }, 'person')).toEqual({
+      ok: true,
+      message: 'A failure of this run no pause bar shows goes on at once.',
+    });
+    worker.fail(4);
     expect(worker.controls()).toEqual([
       { type: 'control', action: 'resume', stop: 1 },
+      { type: 'control', action: 'resume', stop: 3 },
       { type: 'control', action: 'resume', stop: 4 },
     ]);
+    // An agent turns it on again: the next failure waits, and the run says who set it.
+    expect(sessions.hold({ ref: 'ed-1', on: true }, 'agent')).toMatchObject({ ok: true });
+    worker.fail(5);
+    expect(worker.controls()).toHaveLength(3);
+    await waitFor(() => (last(sent)?.hold?.by === 'agent' ? true : undefined));
+    expect(last(sent)!.hold).toEqual({ on: true, by: 'agent' });
+    // Past the bound of the runs kept, a live run's stays over those of runs that are not live: its start's is off.
+    watched = false;
+    for (let i = 0; i < 60; i++) sessions.hold({ ref: `ed-gone-${i}`, on: false }, 'person');
+    worker.fail(6);
+    expect(worker.controls()).toHaveLength(3);
+    // The run ends: a rerun under its ref starts from its own start's.
+    sessions.commandEnded('ed-1');
+    takingWorker(sessions);
+    await waitFor(() => (last(sent)?.ended === false && last(sent)?.hold?.by === 'start' ? true : undefined));
+    expect(last(sent)!.hold).toEqual({ on: false, by: 'start' });
     expect(notices).toEqual([]);
     sessions.dispose();
   });
@@ -910,7 +966,6 @@ describe('RunSessions', () => {
   test('holds no failure in a run its host says holds none, whoever watches it, and tells its workers so', () => {
     const { sessions, attach } = harness({
       watched: () => true,
-      followed: () => true,
       holdsFailures: (ref) => ref !== 'lab-1',
       host: 'the desktop app',
     });
@@ -936,6 +991,49 @@ describe('RunSessions', () => {
     expect(controls(lab.socket)).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
     sessions.surfacesChanged();
     expect(controls(plain.socket)).toEqual([]);
+    sessions.dispose();
+  });
+
+  test('lets a run nobody attends go on past a stop no one asked for, and sends it no breakpoint', () => {
+    const notices: string[] = [];
+    const { sessions, attach } = harness({
+      holdsFailures: (ref) => ref !== 'ed-9',
+      notice: (_root, _severity, message) => void notices.push(message),
+    });
+    const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    const controls = (socket: ReturnType<typeof fakeSocket>) => lines(socket).filter((m) => m.type === 'control');
+    const unattended = attach(0, { ref: 'ed-9', takes: [...RUN_TAKES] });
+    const attended = attach(0, { ref: 'ed-1', takes: [...RUN_TAKES] });
+    const stop = (id: number, reason: 'page-pause' | 'breakpoint' | 'pause'): RunToHub => ({
+      type: 'stopped',
+      stop: id,
+      reason,
+      title: 'Click',
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: false,
+    });
+    // A `page.pause()` and a breakpoint go on at once in the run nobody attends, said once; they wait in the other.
+    unattended.read(stop(1, 'page-pause'));
+    unattended.read({ type: 'running', stop: 1 });
+    unattended.read(stop(2, 'breakpoint'));
+    attended.read(stop(1, 'page-pause'));
+    expect(controls(unattended.socket)).toEqual([
+      { type: 'control', action: 'resume', stop: 1 },
+      { type: 'control', action: 'resume', stop: 2 },
+    ]);
+    expect(controls(attended.socket)).toEqual([]);
+    expect(notices).toEqual(['Piwi let the test stopped at a.spec.ts:4 go on: nobody attends this run.']);
+    // A Pause someone asked for waits there too.
+    unattended.read({ type: 'running', stop: 2 });
+    unattended.read(stop(3, 'pause'));
+    expect(controls(unattended.socket)).toHaveLength(2);
+    // The editor's breakpoints reach the run someone attends alone.
+    const places = [{ uri: 'file:///work/shop/tests/a.spec.ts', line: 3 }];
+    sessions.setBreakpoints({ ref: 'ed-9', places });
+    sessions.setBreakpoints({ ref: 'ed-1', places });
+    expect(lines(unattended.socket).filter((m) => m.type === 'breakpoints')).toEqual([]);
+    expect(lines(attended.socket).filter((m) => m.type === 'breakpoints')).toHaveLength(1);
     sessions.dispose();
   });
 
@@ -1145,11 +1243,9 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
-  test('takes a run started in a terminal, with the editor’s breakpoints as it starts and no failure held unfollowed', async () => {
-    let followed = false;
+  test('takes a run started in a terminal, with the editor’s breakpoints as it starts, its failures going on until held', async () => {
     const { sessions, sent, attach } = harness({
       terminal: (ref) => ref.startsWith('terminal-'),
-      followed: () => followed,
       lingerMs: 20,
     });
     const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
@@ -1164,14 +1260,14 @@ describe('RunSessions', () => {
       { type: 'attached', holds: [] },
       { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
     ]);
+    // Its Hold failures off until a person or an agent turns it on: nobody may be there to answer one.
     const shown = await waitFor(() => sent.find((s) => s.ref === 'terminal-41-1'));
-    expect(shown).toMatchObject({ ref: 'terminal-41-1', terminal: true });
+    expect(shown).toMatchObject({ ref: 'terminal-41-1', terminal: true, hold: { on: false, by: 'start' } });
     // The run's lines are the files as it started: later breakpoints of the editor reach the runs that start later.
     sessions.setEditorBreakpoints({ places: [{ uri: pathToFileURL('/work/shop/tests/a.spec.ts').href, line: 9 }] });
-    followed = true;
     const second = attach(1, { ref: 'terminal-41-1', holds: ['failure'] });
     expect(lines(second.socket)).toEqual([
-      { type: 'attached', holds: ['failure'] },
+      { type: 'attached', holds: [] },
       { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
     ]);
     // A terminal's run is no test runner's.

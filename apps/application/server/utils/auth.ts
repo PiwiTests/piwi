@@ -17,6 +17,7 @@ import {
 } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { findUserByEmail } from '#shared/handlers/users';
 import { accountPictureVersion } from '#shared/user-avatar';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
@@ -320,12 +321,25 @@ export async function revokeUserSessions(userId: number): Promise<number> {
 // solely so login response timing can't be used to tell whether a username exists.
 const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT_COST.log2N}$${SCRYPT_COST.r}$${SCRYPT_COST.p}$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
-// Verify user credentials and return user
-export async function verifyUser(event: H3Event, username: string, password: string): Promise<User | null> {
-  const db = await getDatabase();
-  const userResults = await db.select().from(users).where(eq(users.username, username));
-  const user = userResults[0];
+/**
+ * The account a sign-in's typed text names: the account whose username is exactly
+ * `identifier`, else, when it holds an `@`, the account whose email matches it
+ * ignoring letter case (verified or not), else null. A username wins over another
+ * account's email.
+ */
+export async function findLoginAccount(db: DrizzleDB, identifier: string): Promise<User | null> {
+  const [byUsername] = await db.select().from(users).where(eq(users.username, identifier)).limit(1);
+  if (byUsername) return byUsername;
+  if (!identifier.includes('@')) return null;
+  return (await findUserByEmail(db, identifier)) ?? null;
+}
 
+/**
+ * Check `password` against `user`, the account {@link findLoginAccount} resolved
+ * (null when none), and return the account when it matches. A hash at an older
+ * cost is rewritten at the current one.
+ */
+export async function verifyUser(event: H3Event, user: User | null, password: string): Promise<User | null> {
   // Equalize response time whether or not the account exists and has a
   // password: a missing or OAuth-only (password-less) account still spends one
   // scrypt verification against a dummy hash, so login timing can't be used to
@@ -343,6 +357,7 @@ export async function verifyUser(event: H3Event, username: string, password: str
   if (passwordNeedsRehash(user.password)) {
     // Rewrite the hash at the current cost, unless the password changed meanwhile.
     const rehashed = await hashPassword(event, password);
+    const db = await getDatabase();
     await db
       .update(users)
       .set({ password: rehashed })
@@ -713,6 +728,14 @@ export function refuseApiKey(event: H3Event): void {
       message: 'A signed-in session is required: an API key cannot change account credentials or create new ones',
     });
   }
+}
+
+/**
+ * Whether a request `requireAuth` authenticated comes from a person signed in with a session: authentication is on,
+ * and no API key made it.
+ */
+export function isSignedInPerson(event: H3Event): boolean {
+  return isAuthEnabled(event) && event.context.apiKeyId === undefined;
 }
 
 /**

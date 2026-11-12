@@ -3,13 +3,14 @@
  * Full-screen viewer for a list of images: arrow keys and buttons step through
  * them, Escape closes, and a capture larger than the stage toggles to actual
  * size. Beside the image (below it on a phone) a details panel says what the
- * page shows — the test, the step it was captured at, the error raised on it
- * and facts about the image — whenever the caller supplied any of them; it
- * can be hidden to give the image the whole screen.
+ * page shows — the test, the name the test attached the screenshot under (its
+ * expected result on a line of its own), the step it was captured at, the
+ * error raised on it and facts about the image — whenever the caller supplied
+ * any of them; it can be hidden to give the image the whole screen.
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useElementSize } from '@vueuse/core';
-import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
+import { splitExpected, type LightboxImage, type LightboxSubject } from '~/utils/lightbox';
 
 const props = defineProps<{
   images: LightboxImage[];
@@ -35,10 +36,15 @@ const currentImage = computed(() => {
 const hasDetails = computed(
   () =>
     Boolean(props.subject?.title || props.subject?.location) ||
-    props.images.some((img) => img.step || img.error || img.facts?.length),
+    props.images.some((img) => img.attachmentName || img.step || img.error || img.facts?.length),
 );
 const detailsOpen = ref(true);
 const detailsShown = computed(() => hasDetails.value && detailsOpen.value);
+// The attached name in full, the header's caption being cut to one line.
+const attachedName = computed(() => {
+  const name = currentImage.value?.attachmentName;
+  return name ? splitExpected(name) : null;
+});
 // The caller's facts, after the image's own size once it has loaded.
 const imageFacts = computed(() => [
   ...(natural.value ? [`${natural.value.w}×${natural.value.h} px`] : []),
@@ -238,6 +244,14 @@ const roundButton =
                     :project-name="subject.projectName ?? undefined"
                   />
                 </dd>
+              </div>
+              <div v-if="attachedName" class="space-y-1">
+                <dt class="text-sm font-semibold text-highlighted">Screenshot</dt>
+                <dd class="text-sm text-highlighted leading-relaxed break-words">{{ attachedName.step }}</dd>
+                <template v-if="attachedName.expected">
+                  <dt class="pt-2 text-sm font-semibold text-highlighted">Expected</dt>
+                  <dd class="text-sm text-highlighted leading-relaxed break-words">{{ attachedName.expected }}</dd>
+                </template>
               </div>
               <div v-if="currentImage.step" class="space-y-1">
                 <dt class="text-sm font-semibold text-highlighted">Step</dt>

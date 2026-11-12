@@ -19,8 +19,8 @@ over them, and follow each failing line through your edits until a run covers it
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
-line a failing test failed at (the line that calls the page object, when it failed in one) is tinted darker, with the
-reason, **Run this test**, **Screenshot** and **Trace** above it.
+line a failing test failed at (often its call into a page object) is tinted darker, with **✗ Failed here**, the
+reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
 On a failure, the quick fixes are:
 
@@ -54,9 +54,10 @@ the gutter and the lines above the tests still show the failures.
 ## Your local runs
 
 A later finished run on the branch, from the editor, `piwi run`, `npx playwright test` or the desktop app, overlays the
-latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed
-locally in run #124*; a test failing in it is an error labeled *local run #124*, or *your run #124* when this editor
-started it. The editor reads a run within a second of its end: [After a run](./editor-runs#after-a-run).
+latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed locally
+in run #124*; a test failing in it is an error that starts *Local failure:* and names *local run #124*, or *your run
+#124* when this editor started it. The editor reads a run within a second of its end: [After a
+run](./editor-runs#after-a-run).
 
 ## Failures follow your edits
 
@@ -84,7 +85,7 @@ the progress of the run you started (`running 4/9`). Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, the toggles of the tool window's toolbar. The choice is kept for the
+  **Group by…** in the view's title bar, **Group By** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
@@ -101,10 +102,18 @@ Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) 
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
 line.
 
-The title bar, or the toolbar, holds Refresh, **Re-run the failing tests** (every config's), **Open the run in the
-dashboard** (the run the status bar shows), **Compare with…** (for the active file's config) and the grouping. In VS
-Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge counts the
-failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a failure.
+The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
+run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
+**Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
+menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
+title and its icon's red dot do. A JetBrains IDE keeps Connect, Piwi Picker's pairing, the MCP configurations and the
+settings in the tool window's gear menu, and a hover on a node says what VS Code's does. The tree is read again when a
+run ends or an edit moves a failure.
+
+With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
+baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
+again on its own too); a desktop app to restart or update; an instance still being read; or no connection, with
+**Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
 
 ## Compare with another run
 

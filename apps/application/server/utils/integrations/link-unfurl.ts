@@ -6,10 +6,15 @@ import { unfurlUrl } from '../unfurl';
 import { createTracker } from './connections';
 import type { TrackerStatusCategory } from './types';
 
-/** A link's enrichment; a tracker read also gives the status category and assignee. */
+/**
+ * A link's enrichment; a tracker read also gives the status category, the
+ * assignee and the issue's stable id (`externalId`, null when the tracker
+ * reports none).
+ */
 export interface LinkUnfurlResult extends UnfurlResult {
   statusCategory?: TrackerStatusCategory | null;
   assignee?: string | null;
+  externalId?: string | null;
 }
 
 const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: null };
@@ -42,6 +47,7 @@ export async function unfurlLink(
           statusColor: issue.statusColor,
           statusCategory: issue.statusCategory,
           assignee: issue.assignee?.displayName ?? null,
+          externalId: issue.id,
         };
       }
     } catch {

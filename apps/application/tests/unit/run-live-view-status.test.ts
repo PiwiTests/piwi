@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { runLiveViewStatus, type RunLiveViewReadiness } from '../../app/utils/run-live-view-status';
+import {
+  askToWatchView,
+  runLiveViewStatus,
+  type AskToWatchInput,
+  type RunLiveViewReadiness,
+} from '../../app/utils/run-live-view-status';
+import type { LiveAskView } from '#shared/live-view';
 
 const run = (over: Partial<RunLiveViewReadiness> = {}): RunLiveViewReadiness => ({
   desktop: false,
@@ -68,5 +74,48 @@ describe('live-view readiness', () => {
     expect(runLiveViewStatus(run({ state: { enabled: false, keyed: false }, turnedOn: true })).kind).toBe('disabled');
     // A run that holds a key, the setting having been off only for a moment, keeps its own status.
     expect(runLiveViewStatus(run({ state: { enabled: true, keyed: true }, turnedOn: true })).kind).toBe('waiting');
+  });
+});
+
+describe('Ask to watch beside Not shared live', () => {
+  const ask = (answer: LiveAskView['answer'], waitMs = 0): LiveAskView => ({ id: 'a1', by: 'Dana', answer, waitMs });
+  const view = (over: Partial<AskToWatchInput> = {}) =>
+    askToWatchView({ status: 'unshared', canAsk: true, ask: null, askAgainAt: null, now: 1_000_000, ...over });
+
+  test('is offered on a run nobody shares, to a viewer who may ask, and nowhere else', () => {
+    expect(view()).toEqual({ note: null, action: 'ask', waitMinutes: null });
+    expect(view({ canAsk: false })).toBeNull();
+    expect(view({ status: 'available' })).toBeNull();
+    expect(view({ status: 'waiting' })).toBeNull();
+  });
+
+  test('says the ask waits, then that the developer answered Not now, and when the viewer may ask again', () => {
+    expect(view({ ask: ask(null), askAgainAt: 1_000_000 + 4 * 60_000 + 1 })).toEqual({
+      note: 'asked',
+      action: null,
+      waitMinutes: 5,
+    });
+    expect(view({ ask: ask('not-now'), askAgainAt: 1_000_000 + 60_000 })).toEqual({
+      note: 'not-now',
+      action: null,
+      waitMinutes: 1,
+    });
+    expect(view({ ask: ask('not-now'), askAgainAt: 1_000_000 })).toEqual({
+      note: 'not-now',
+      action: 'ask-again',
+      waitMinutes: null,
+    });
+  });
+
+  test('a run shared after an ask and no longer shared offers to ask again once the wait is over', () => {
+    expect(view({ ask: ask('shared'), askAgainAt: 999_999 })).toEqual({
+      note: null,
+      action: 'ask-again',
+      waitMinutes: null,
+    });
+  });
+
+  test('an ask the instance refused as too soon waits, with nothing asked shown', () => {
+    expect(view({ askAgainAt: 1_000_000 + 90_000 })).toEqual({ note: null, action: null, waitMinutes: 2 });
   });
 });

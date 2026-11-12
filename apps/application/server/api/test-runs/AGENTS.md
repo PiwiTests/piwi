@@ -124,7 +124,17 @@ How the server merges shards:
   (a restart, the setting turned off and on) is taken back only for that run, compared in constant time, while it is
   initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
-  export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
+  export, and the relay holds one waiting frame per worker a watch shows at most (`tests/unit/live-view-relay.test.ts`).
+- **A watch is changed by its own person alone**: `[id]/live-view/watch`'s `POST` names the watch by the random id its
+  stream opened with (`hello`, said on that stream alone), and `changeWatch` refuses another person's or another run's
+  as missing (`tests/unit/live-view-relay.test.ts`). It answers what the watch shows then (`watch`, and `data.watch` of
+  the 404 that refuses a full view, the change's other fields applied), which the page holds as shown
+  (`readLiveWatchShown`, `tests/unit/live-view-routes.test.ts`).
+- **An ask to watch reaches its run's reporter once, and its changes the person who asked alone**
+  (`server/utils/live-asks.ts`): only a signed-in session asks (`isSignedInPerson`), the `events`, `heartbeat` and
+  `live-resources` answers hand each ask over once (`handOverAnswer`), an `askAnswer` answers an ask of that run alone,
+  and `[id]/stream` relays a `live-ask` event to its asker only (`viewerAskEvent`; `tests/unit/live-asks.test.ts`,
+  `tests/unit/live-ask-route.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays
   valid until that shard calls `/begin`, which swaps it for the shard's stream token: read the set with
   `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.

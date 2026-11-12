@@ -7,6 +7,7 @@
  */
 import type { ProjectDetails } from '~~/types/api';
 import {
+  RESERVED_SELECTION_KEYS,
   SELECTION_KEY_PATTERN,
   validateSelectionDefinition,
   type Selection,
@@ -112,6 +113,7 @@ const parsed = computed<{ definition?: SelectionDefinition; error?: string }>(()
 const keyError = computed<string | undefined>(() => {
   if (!form.key) return 'A key is required';
   if (!SELECTION_KEY_PATTERN.test(form.key)) return 'Lowercase letters, digits and hyphens only';
+  if (RESERVED_SELECTION_KEYS.has(form.key)) return 'This name is taken by a selections route';
   return undefined;
 });
 
@@ -451,6 +453,8 @@ function saveSmoke(testCaseIds: number[]) {
             </div>
           </div>
         </SectionCard>
+
+        <ReuseForecastCard :project-id="projectId" />
 
         <SectionCard
           title="Suggestions"

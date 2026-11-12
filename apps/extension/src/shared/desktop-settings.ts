@@ -1,7 +1,7 @@
 import { moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
 
 /**
- * The optional pairing with the Piwi Dashboard desktop app: its loopback
+ * The optional pairing with the desktop app, Piwi Desktop: its loopback
  * address and access token, which **Pair** receives once the developer allows
  * it in the app's window, or which are pasted from the app's **Connect Piwi
  * Picker** (the extension cannot read `~/.piwi/desktop.json`). Kept together in

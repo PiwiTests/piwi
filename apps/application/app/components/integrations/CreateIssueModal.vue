@@ -8,7 +8,6 @@ import type {
   IssueIncludeOptions,
   TrackerProjectOption,
   TrackerIssueTypeOption,
-  TrackerUserOption,
 } from '#shared/integrations/types';
 import {
   fieldForProblem,
@@ -22,7 +21,7 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
-import { commentNodes, MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment } from '#shared/integrations/run-issue';
+import { MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment, openingCommentNodes } from '#shared/integrations/run-issue';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { isOutcomeUnknownError } from '#shared/integrations/action-keys';
 
@@ -86,7 +85,7 @@ const submissionId = ref('');
 const commentMarkdown = computed(() => {
   const text = normalizeIssueComment(comment.value);
   if (!text || !draft.value) return '';
-  return renderMarkdown({ nodes: commentNodes(locale.value, { text, author: draft.value.filedBy ?? null }) });
+  return renderMarkdown({ nodes: openingCommentNodes(locale.value, { text, author: null }) });
 });
 /** What the Comment field says it does: on a cluster already tracked, it may go to the issue Piwi filed. */
 const commentDescription = computed(() => {
@@ -128,8 +127,6 @@ const include = ref<IssueIncludeOptions>({
 // Picker options, loaded lazily from the connection.
 const projects = ref<TrackerProjectOption[]>([]);
 const issueTypes = ref<TrackerIssueTypeOption[]>([]);
-const assignableUsers = ref<TrackerUserOption[]>([]);
-const assigneeQuery = ref('');
 
 const showAllCreate = ref(false);
 
@@ -284,8 +281,6 @@ async function loadDraft() {
     void loadProjects();
     if (projectKey.value) {
       void loadIssueTypes();
-      // The prefilled assignee shows with its name and avatar rather than an account id.
-      if (assignee.value) void searchAssignable();
     }
   } catch (err) {
     error.value = errorMessage(err);
@@ -336,20 +331,6 @@ async function loadIssueTypes() {
   }
 }
 
-async function searchAssignable() {
-  if (!connectionId.value || !projectKey.value) return;
-  try {
-    const params = new URLSearchParams({ project: projectKey.value, q: assigneeQuery.value });
-    const { users } = await $fetch<{ users: TrackerUserOption[] }>(
-      `/api/integrations/connections/${connectionId.value}/assignable?${params.toString()}`,
-    );
-    assignableUsers.value = users;
-    for (const u of users) seenUsers.set(u.id, u);
-  } catch {
-    /* the modal falls back to the prefilled assignee */
-  }
-}
-
 function addLabel(text: string) {
   labels.value = withTypedValue(labels.value, text);
 }
@@ -368,20 +349,6 @@ const issueTypeItems = computed(() =>
 );
 const projectAvatar = computed(() => projectItems.value.find((p) => p.value === projectKey.value)?.avatar);
 const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === issueType.value)?.avatar);
-
-/** Every person a search listed, so the chosen assignee keeps its name and avatar after another search. */
-const seenUsers = reactive(new Map<string, TrackerUserOption>());
-const userItem = (u: TrackerUserOption) => ({
-  label: u.displayName || u.id,
-  value: u.id,
-  avatar: trackerIcon(connectionId.value, u.icon, 'round'),
-});
-const assigneeItems = computed(() => {
-  const items = assignableUsers.value.map(userItem);
-  const chosen = assignee.value ? seenUsers.get(assignee.value) : undefined;
-  return chosen && !items.some((i) => i.value === chosen.id) ? [userItem(chosen), ...items] : items;
-});
-const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value === assignee.value)?.avatar);
 
 watch(open, (isOpen) => {
   if (isOpen) {
@@ -679,22 +646,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
           </template>
 
           <UFormField v-if="draft.connectionId" label="Assignee">
-            <USelectMenu
-              v-model="assignee"
-              :items="assigneeItems"
-              :avatar="assigneeAvatar"
-              value-key="value"
-              searchable
-              :placeholder="assignee || 'Unassigned'"
-              class="w-full"
-              @update:open="searchAssignable"
-              @update:search-term="
-                (q: string) => {
-                  assigneeQuery = q;
-                  searchAssignable();
-                }
-              "
-            />
+            <TrackerAssigneePicker v-model="assignee" :connection-id="connectionId" :project-key="projectKey" />
             <CheckResultLine
               v-if="assigneeRequired"
               state="warning"
@@ -743,7 +695,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </p>
           </UFormField>
 
-          <div>
+          <div data-shot="issue-preview">
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
             <MarkdownPreview :text="previewMarkdown" max-height="16rem" />
           </div>

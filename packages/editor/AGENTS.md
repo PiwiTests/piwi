@@ -25,8 +25,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   worker's `run-attach` does not list in `takes` is refused. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
   `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered,
-  `piwi/runSessionChanged` with the last session sent, and each carries the whole new answer, so a client can keep it
-  without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  `piwi/runSessionChanged` and `piwi/ciSessionChanged` with the last session sent, and each carries the whole new
+  answer. Checked by `tests/lsp.test.ts` ("a change pushed to the client", "a CI run of the branch in progress …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))
@@ -72,13 +72,25 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
-  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`).
-  ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
+  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the instance's 401 for a key it no
+  longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance that sends no code): a 403
+  or any other 401, a proxy's among them, stops the host and keeps the key (`tests/request-host.test.ts`). The
+  instance's stream sends `revoked` only on such a 401 at its minute check; a 403 there closes it. What it ends of the
+  requests the instance counts as the target's, and the project names it passes on, are in
+  [ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy) (`tests/run-target-routes.test.ts`).
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
-  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`).
+  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
+  fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
+  runs' folders in `PUT /local-runs` and `PUT /key`'s `localRuns`), and a request still asked about is checked again
+  whenever such a run starts or ends (`planWaiting`). It also fails past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
+  argument plus one): the shell refuses both again (`run_target.rs`), and keeps its cap equal to this one.
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
+- **A CI session is read-only.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a lane), and its
+  position is never a stop and names a file of the context's folder alone (`workspaceFile`). Checked by
+  `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").
@@ -131,20 +143,29 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   a document edited since the run started back to it, and the service refuses or leaves out a file outside the run's
   folder, as `PIWI_PAUSE_AT` does. ([ARCHITECTURE.md](ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **A stop no pause bar shows goes on unless a surface answers stops.** The surfaces are a client that sent
-  `InitializationOptions.runControl` and a subscribed hub connection (`answersStops` in `src/server.ts`). Checked by
+  `InitializationOptions.runControl` and a hub connection subscribed for more than observing (`answersStops` in
+  `src/server.ts`). Checked by
   `tests/run-sessions.test.ts` ("… a client that does not answer stops") and `tests/run-hub.test.ts` ("a stop nobody
   else can answer …"). ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
 - **One connection per worker of a run.** A run connection naming the index of a worker connected now is closed, so
   another process the run's environment reached takes no worker's place. Checked by `tests/run-sessions.test.ts`
   ("refuses a second process …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
-- **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension that names it as this
-  machine.** A `Host` other than `127.0.0.1` or `localhost` at its port or at one the client forwards (`piwi/hub`,
-  `isHubHost`), or an `Origin` that is not an extension's (`isExtensionOrigin`), gets a 403 first, and commands are read
-  only after `hello` with the hub's token (`sameToken`) within `HUB_HELLO_MS`. Checked by `tests/run-hub.test.ts` ("the
-  handshake", "takes a loopback Host at a port the client forwards …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension, or a process of this
+  machine (no `Origin`: the desktop app's server), that names it as this machine.** A `Host` other than `127.0.0.1` or
+  `localhost` at its port or at one the client forwards (`piwi/hub`, `hubHostPort`), or an `Origin` that is not an
+  extension's (`isExtensionOrigin`), gets a 403 first, and commands are read only after `hello` with the hub's token
+  (`sameToken`) within `HUB_HELLO_MS`. A connection that subscribes to observe (`observe`) answers no stop. Checked by
+  `tests/run-hub.test.ts` ("the handshake", "takes a loopback Host at a port the client forwards …", "takes a process
+  of this machine that sends no Origin …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates
-  code, reads a file or reaches an instance.** Checked by `tests/run-hub.test.ts` ("the commands").
+  code, reaches an instance or names a file.** Checked by `tests/run-hub.test.ts` ("the commands").
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **A trace's path never leaves the hub, and the viewer opens only a file that passed `checkTraceFile` as the person
+  asked, from the run's folder its host knows (`session.root`), on a machine with a display, never for a hub
+  connection through a forwarded port.** The viewer reads the trace folder on its own afterwards; `startTraceViewer`
+  runs the project's own Playwright with an argument array, no shell, and the host's variables it needs alone
+  (`viewerEnv`: no `PIWI_*`, no `NODE_*`). Checked by `tests/run-trace.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-trace-so-far))
 - **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
   and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included
   (`PIWI_EDITOR_SEND`). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
@@ -154,21 +175,22 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
-- **A live view's frames go only to viewers of that stop, and never outlive it; a lane's only to that lane's
-  viewers.** The editor client opts in through `ClientPageView` and `ClientLaneView`; hub connections opt in through
-  `RunHub`. No frame goes to an instance or a file, none of a stop that ended, and neither transport keeps a history:
-  a viewer that comes to a view on has the worker send its latest frame again (`RunSessions.watch`, `watchLane`,
+- **A live view's frames go only to viewers of that stop, and never outlive it; a lane's frames and layers only to
+  its viewers, each layer to those that asked for it.** The editor client opts in through `ClientPageView` and
+  `ClientLaneView`, hub connections through `RunHub`. Nothing goes to an instance or a file, none of a stop that ended,
+  and neither transport keeps a history: a viewer that comes later has the worker send it again (`watchLane`,
   `RunHub.frame`). Checked by `tests/run-view.test.ts` and `tests/run-lanes.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
   view, or its lane at that stop.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else;
   following the runs (`follow`) grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
   "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
-- **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
-  or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), never in a run its host says
+- **A failure no pause bar shows is held only while its run's Hold failures is on.** On from the start of a run the
+  service built to be watched (`watched`), else as a person (`piwi/holdRun`, the hub's `hold`) or an agent
+  (`run_follow`'s `hold`) set it (`RunSessions.hold`); the hub's `follow` holds nothing. Never in a run its host says
   holds none (`holdsFailures`), and only for a worker whose `run-attach` lists `holds`, answered with `attached`
-  (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds a failure no bar shows only …", "holds no failure in
-  a run its host says …", "tells a worker that holds a failure …") and `tests/stop-actions.test.ts`.
+  (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds a failure no bar shows only while …", "holds no
+  failure in a run its host says …") and `tests/stop-actions.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
 - **The code from a stop goes to the client that writes it, placed where the stopped statement stands now, or is
   refused.** `RunLines` follows the file from the run's start (a rerun's own start) through every `didChange`, and
@@ -188,15 +210,18 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   execution, checked one by one (`checkedDebugRun`); `DebugRuns` keeps the line in the run's breakpoints until a worker
   stops there, and never sends it to the client. Checked by `tests/debug-run.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#a-run-that-debugs-a-failure))
+- **A run's page (`run-page`) is kept only on this machine or under an instance its host connects to.** The run's
+  process is the test's, so `RunSessions` drops any other address (`instances`, `isPageOfInstance` in
+  `@piwitests/core/run-channel`); checked by `tests/run-progress.test.ts` ("names the run’s page …").
 - **A run is shared live only as a person asks on a surface, never on an agent's word.** `RunSessions.share` serves
   `piwi/shareRun` and the hub's `share` alone, no tool of `run-agent.ts` reaches it, a worker that connects later
   follows the run's choice, and stopping is never refused. Checked by `tests/run-sessions.test.ts` ("shares a run live
   as a person asks …", "stops sharing a run while no worker of it is connected …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#share-live))
 - **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
-  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines` and the agents' `RunAgent`, which import
-  nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its
-  tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
+  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines`, `startTraceViewer` and the agents'
+  `RunAgent`, which import nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change
+  to their options runs its tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
   imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks
@@ -216,14 +241,25 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   window; nothing evaluates code, and code is written only by the client (`piwi/stopCode`).** `src/run-agent.ts`
   checks each argument (`Args`); a long poll waits `MAX_FOLLOW_WAIT_S` at most. Checked by `tests/run-agent.test.ts`.
   Another host serves the same tools in its own words (`agentTools`, `AgentWords`), the editor's left as they are
-  (`EDITOR_AGENT_WORDS`); the desktop app's server writes no file and gives the code back in the page content.
+  (`EDITOR_AGENT_WORDS`); the desktop app's server writes no file and gives the code back in the page content. An
+  agent's `run_start` runs only a command the service built as a person's run (`runCommandFor`), and only through the
+  client (`piwi/startRun`), three at once at most; checked by `tests/run-hub.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **The discovery file names the agents' server with the token of this process alone (`AgentServer.localToken`),
+  never the one the client keeps**, which outlives the process. Checked by `tests/run-hub.test.ts` ("names the agents’
+  MCP server …").
 - **What comes from the page reaches an agent apart from Piwi's answer, between the markers of a page-content block,
   its credentials hidden again.** The snapshot, its address and title, an element's words, the locators built from
   them, the console, the errors, the requests (their methods too) and every message a worker sends about a page call
-  (`said`: Piwi's own sentence stands in its place); never in the JSON that names the runs. Checked by
-  `tests/run-agent.test.ts` ("… the page’s text apart …", "says a worker’s own words …").
+  (`said`: Piwi's own sentence stands in its place), and a failed test's error in a run's progress; never in the JSON
+  that names the runs. Checked by `tests/run-agent.test.ts` ("… the page’s text apart …", "says a worker’s own words
+  …") and `tests/run-host.test.ts` ("run_list").
   ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **One driver at a stop, and a person's action takes it from the agent.** While a person drives a stop
+  (`RunSessions.drive`), the agent's `act` and its Resume, Step, Finish and End there are refused, and it hears `taken`;
+  a person's controls are never refused. Checked by `tests/run-view.test.ts` ("who is present …") and
+  `tests/run-agent.test.ts` ("drive a stop until a person takes it …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#presence-and-one-driver))
 - **What an agent does shows where a person watches.** A stop it asked for carries `RunStop.by: 'agent'`, its first
   action at a stop is a `piwi/notice`, and its code's sentences say the agent made it (`AGENT_WROTE` in
   `src/stop-actions.ts`), to the client and to Piwi Picker. Checked by `tests/run-agent.test.ts`.
@@ -236,8 +272,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
 - **A run started in a terminal never waits for nobody, and its Stop stays the terminal's.** Its session (a
   `terminal-` ref the service never built, `RunSession.terminal`, an editor's test runner's run too with
-  `RunSession.runner`) holds a failure only while a Runs window follows the runs, and the clients offer no Stop for
-  it. Checked by `tests/run-sessions.test.ts` ("takes a run started in a terminal …").
+  `RunSession.runner`) holds a failure only once a person or an agent turns its Hold failures on, and neither the
+  clients nor the hub's `stop` (`canStopRun`) stop it. Checked by `tests/run-sessions.test.ts` ("takes a run started in
+  a terminal …") and `tests/run-hub.test.ts` ("stop a run the editor started …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
 - **Every way the service stops removes its discovery file**: `shutdown`, `exit` and the function `startServer`
   returns, and in `src/main.ts` the process's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`. Checked by
@@ -268,12 +305,12 @@ npm run editor:test         # the Vitest suites of tests/
   [what each source file holds](ARCHITECTURE.md#source-files).
 - [Protocol](ARCHITECTURE.md#protocol): before adding or changing a request, a notification, a field or a command id.
 - [Runs and failures](ARCHITECTURE.md#runs-and-failures): the latest run and the baseline, failure diagnostics, the file
-  summary, test items, run streams, runs in progress and the editor's own run.
+  summary, test items, run streams, runs in progress, CI runs and the editor's own run.
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the agents' MCP
-  server and its tools, the desktop app's server as another host, and the discovery file.
+  pause bar shows, the hub, the live view, the code from a stop, the agents' MCP server, the desktop app's server as
+  another host, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

@@ -46,12 +46,19 @@ interface TrayRun {
   status: string;
   steps: Array<{ args: string[] }>;
   hubRefs: string[];
+  shellId: number;
+  stopRequested: boolean;
 }
 
 async function plugin(label: string | null = 'main', trays = 1) {
   const wants: boolean[] = [];
   const shows: string[][] = [];
+  const presents: boolean[] = [];
+  const visibility = ref<'visible' | 'hidden'>('visible');
   let stopListener: ((session: HubSession, worker: HubWorker) => void) | null = null;
+  let stopRunListener: ((ref: string) => void) | null = null;
+  const stoppedRuns: TrayRun[] = [];
+  const invoked: Array<[string, unknown]> = [];
   let emit: (message: Record<string, unknown>) => void = () => {};
   const runs = ref<TrayRun[]>([]);
   const holds = ref<Record<number, boolean>>({});
@@ -62,7 +69,12 @@ async function plugin(label: string | null = 'main', trays = 1) {
   if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   for (const [name, value] of Object.entries({ computed, ref, watch })) vi.stubGlobal(name, value);
-  vi.stubGlobal('tauriCore', () => ({ invoke: async () => null }));
+  vi.stubGlobal('tauriCore', () => ({
+    invoke: async (command: string, args: unknown) => {
+      invoked.push([command, args]);
+      return null;
+    },
+  }));
   vi.stubGlobal('tauriWindowLabel', () => label);
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
@@ -74,18 +86,28 @@ async function plugin(label: string | null = 'main', trays = 1) {
     trayOpen,
     trayMounts,
     activeCount: computed(() => runs.value.filter((run) => run.status === 'running').length),
+    stopRun: async (run: TrayRun) => {
+      run.stopRequested = true;
+      stoppedRuns.push(run);
+    },
   }));
   const hub = {
     state,
     want: (on: boolean) => wants.push(on),
     show: (refs: Iterable<string>) => shows.push([...refs]),
+    present: (on: boolean) => presents.push(on),
     onStop: (listener: typeof stopListener) => {
       stopListener = listener;
+      return () => {};
+    },
+    onStopRun: (listener: typeof stopRunListener) => {
+      stopRunListener = listener;
       return () => {};
     },
   };
   const useHub = vi.fn(() => hub);
   vi.stubGlobal('useDesktopRunHub', useHub);
+  vi.stubGlobal('useDocumentVisibility', () => visibility);
   vi.stubGlobal('document', { hidden: true, hasFocus: () => false });
   vi.stubGlobal('BroadcastChannel', FakeChannel);
   vi.stubGlobal(
@@ -102,6 +124,8 @@ async function plugin(label: string | null = 'main', trays = 1) {
   return {
     wants,
     shows,
+    presents,
+    visibility,
     runs,
     holds,
     trayOpen,
@@ -113,6 +137,10 @@ async function plugin(label: string | null = 'main', trays = 1) {
       hearing = label ?? 'main';
       stopListener?.(session, worker);
     },
+    /** Another tool asked through the hub to stop the run `ref`: the runs this window stopped, the shell's calls. */
+    stopRun: (ref: string) => stopRunListener?.(ref),
+    stoppedRuns,
+    invoked,
   };
 }
 
@@ -159,7 +187,8 @@ afterEach(() => {
 });
 
 function running(key: number, kind: TrayRun['kind'], hubRef: string): TrayRun {
-  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef] };
+  const shellId = Number(/^desktop-(\d+)/.exec(hubRef)?.[1]);
+  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef], shellId, stopRequested: false };
 }
 
 describe('the window’s hold on its runs’ hub', () => {
@@ -232,10 +261,12 @@ describe('the window’s hold on its runs’ hub', () => {
 
   test('with no tray on the page, shows no run live and tells the system of every stop, whatever the focus', async () => {
     // An analytics dashboard in TV mode, or an error page: no layout mounts the tray.
-    const { shows, runs, trayMounts, trayOpen, stop } = await plugin('main', 0);
+    const { shows, presents, visibility, runs, trayMounts, trayOpen, stop } = await plugin('main', 0);
     runs.value = [running(1, 'reproduce', 'desktop-5')];
     await settle();
     expect(shows).toEqual([[]]);
+    // With no tray, the window is present on no run.
+    expect(presents).toEqual([false]);
     vi.stubGlobal('document', { hidden: false, hasFocus: () => true });
     stop(session('desktop-5'), stopped('step'));
     stop(session('desktop-5'), stopped('failure'));
@@ -250,6 +281,11 @@ describe('the window’s hold on its runs’ hub', () => {
     expect(shows.at(-1)).toEqual(['desktop-5']);
     stop(session('desktop-5'), stopped('failure'));
     expect(notes).toHaveLength(2);
+    // Present while the tray shows the runs and the window is not hidden.
+    expect(presents).toEqual([false, true]);
+    visibility.value = 'hidden';
+    await settle();
+    expect(presents).toEqual([false, true, false]);
   });
 
   test('in another window, holds for that window’s own runs alone; in a run’s output window, nothing', async () => {
@@ -283,6 +319,39 @@ describe('the window’s hold on its runs’ hub', () => {
       'main: A test failed and waits',
       'main: A test failed and waits',
     ]);
+  });
+
+  test('stops a run another tool asks to stop once: in the window whose tray owns it, else through the shell', async () => {
+    const aux = await plugin('aux-1');
+    aux.runs.value = [running(1, 'tests', 'desktop-9')];
+    await settle();
+    const main = await plugin('main');
+    main.runs.value = [running(2, 'tests', 'desktop-4')];
+    await settle();
+    for (const ref of ['desktop-9-unattended', 'desktop-4', 'desktop-3']) {
+      for (const window of [aux, main]) window.stopRun(ref);
+    }
+    // Each window stopped its own run as its Stop does; the run no tray owns, the dashboard window had the shell stop.
+    expect(aux.stoppedRuns.map((run) => run.key)).toEqual([1]);
+    expect(main.stoppedRuns.map((run) => run.key)).toEqual([2]);
+    expect(aux.invoked).toEqual([]);
+    expect(main.invoked).toEqual([['desktop_stop_local_tests', { runId: 3 }]]);
+    // Asked again while they stop: neither is stopped twice, which the shell would take as a force stop.
+    for (const ref of ['desktop-4', 'desktop-3']) main.stopRun(ref);
+    expect(main.stoppedRuns).toHaveLength(1);
+    expect(main.invoked).toHaveLength(1);
+  });
+
+  test('stops a run of several steps only through the step it runs now, never an earlier one that ended', async () => {
+    const main = await plugin('main');
+    // Its first step, `desktop-5`, ended; its second, `desktop-6`, runs now.
+    main.runs.value = [{ ...running(1, 'tests', 'desktop-6'), hubRefs: ['desktop-5', 'desktop-6'] }];
+    await settle();
+    main.stopRun('desktop-5');
+    expect(main.stoppedRuns).toEqual([]);
+    expect(main.invoked).toEqual([]);
+    main.stopRun('desktop-6');
+    expect(main.stoppedRuns.map((run) => run.key)).toEqual([1]);
   });
 
   test('lets a window’s claim on its runs lapse once it stops saying it, as a window that closed unheard', async () => {

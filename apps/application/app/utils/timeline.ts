@@ -3,7 +3,8 @@
  * and SVG layout constants). Kept dependency-free so the timeline composables
  * and the presentational sub-components can all share one source of truth.
  */
-import { statusPalette } from './status-palette';
+import { STATUS_PALETTE, statusPalette } from './status-palette';
+import { stopWords } from './stop-words';
 
 /** Fixed pixel geometry for the timeline SVG. */
 export const TIMELINE_LAYOUT = {
@@ -136,6 +137,56 @@ export function timelineRetriedAttemptStyle(status: string, flaky?: boolean | nu
   return style;
 }
 
+/** A running attempt's bar: the running color, amber when the Stuck? rule marks it. One shared object each. */
+const RUNNING_FILL = { fill: STATUS_PALETTE.running.color };
+const STUCK_FILL = { fill: STATUS_PALETTE.running.stuck!.color };
+export function timelineRunningFill(stuck: boolean | undefined): { fill: string } {
+  return stuck ? STUCK_FILL : RUNNING_FILL;
+}
+
+/**
+ * The ghost behind a running attempt, its test's usual duration: a pale wash of the running color under a dashed
+ * outline, so it reads as where the attempt would usually end, not as time that ran.
+ */
+export const TIMELINE_GHOST_STYLE = {
+  fill: STATUS_PALETTE.running.color,
+  fillOpacity: 0.12,
+  stroke: STATUS_PALETTE.running.color,
+  strokeOpacity: 0.7,
+  strokeWidth: 1,
+  strokeDasharray: '3 2',
+} as const;
+
+/**
+ * Now on a live run's clock, at `browserNow` on this browser's: the browser's time, unless the results the page last
+ * heard (`heard`: the latest moment they tell, `at`, and when the page heard it, `seenAt`, on the browser's clock) put
+ * the run's clock ahead of it, as a runner whose clock runs ahead does and as the demo's simulated run does.
+ */
+export function liveRunNow(browserNow: number, heard: { at: number; seenAt: number } | null): number {
+  return heard ? Math.max(browserNow, heard.at + (browserNow - heard.seenAt)) : browserNow;
+}
+
+/**
+ * Where the plot of a live run ends once its clock reached `elapsedMs` from the timeline's zero: some way past it,
+ * so the running bars grow into room drawn ahead, and the plot widens (and every bar moves) once in a while rather
+ * than at each tick.
+ */
+export function livePlotEnd(elapsedMs: number): number {
+  return Math.max(elapsedMs * 1.2, elapsedMs + 10_000);
+}
+
+/**
+ * Which shards of a live sharded run have started, as the Timeline's header says it: `all 4 shards started`, else the
+ * ones that have, `shards 1 and 3 of 4 started`. `started` are the shards from 1 that have a test on the timeline.
+ */
+export function shardsStartedText(started: readonly number[], total: number): string {
+  const shards = [...new Set(started)].filter((shard) => shard >= 1 && shard <= total).sort((a, b) => a - b);
+  if (shards.length >= total) return `all ${total} shards started`;
+  if (shards.length === 0) return `no shard of ${total} started`;
+  if (shards.length === 1) return `shard ${shards[0]} of ${total} started`;
+  return `shards ${shards.slice(0, -1).join(', ')} and ${shards.at(-1)} of ${total} started`;
+}
+
 /**
  * Hook sections sit over their test's bar as a hatched overlay: a dark wash
  * when they passed, so the bar reads setup · body · teardown in any outcome
@@ -152,13 +203,12 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
-/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`, `Paused` for a Pause. */
+/**
+ * What a stop at Piwi's pause bar or in the editor was, in the run page's words for its reason (`stopWords`): `Stopped
+ * at a breakpoint`, `Paused` for a Pause. A stop whose reporter named no reason was at a breakpoint.
+ */
 export function pauseReasonText(reason: string | null | undefined): string {
-  if (reason === 'step') return 'Paused after Step';
-  if (reason === 'pause') return 'Paused';
-  if (reason === 'run-to') return 'Paused at the line run to';
-  if (reason === 'page-pause') return 'Paused at page.pause()';
-  return 'Paused at a breakpoint';
+  return stopWords(reason ?? 'breakpoint');
 }
 
 /**

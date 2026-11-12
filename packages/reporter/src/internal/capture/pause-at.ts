@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
-import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
+import type { Place, RunActing, RunIntent, StopReason } from '@piwitests/core/run-channel';
 import {
   pauseAnswered,
   removeStopHighlight,
@@ -344,9 +344,6 @@ export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   }
   return wantsStops(state) ? 'next' : 'resume';
 }
-
-/** Why a test ended at a stop (End the test) is skipped, as its `skip` annotation reads. */
-export const ENDED_REASON = 'Ended from Piwi';
 
 /**
  * Whether Playwright `version` (`testInfo.config.version`) gives a call up as the `signal` among its options aborts
@@ -690,12 +687,29 @@ const HIGHLIGHT_MS = 2000;
 /**
  * The pause bar's Pick a locator and Record here, started from outside the page (the editor's hub, for Piwi Picker):
  * the bar takes an intent while it waits for its answer, and one handed to it while it is about to (its highlight
- * still drawing) waits for it; while a pick or a recording runs, none is taken.
+ * still drawing) waits for it; while a pick or a recording runs, none is taken. Each action in the test's window that
+ * takes Escape as its own (a pick, a check, a region's pick: `RunActing`), the bar's own or an intent, is said to `said`
+ * as it starts, and null once it ended (`acting`); a recording, which records Escape as a step, is not.
  */
 export class BarIntents {
   private take: ((intent: RunIntent) => void) | null = null;
   private queued: RunIntent | null = null;
   private busy = false;
+  private readonly said: (what: RunActing | null) => void;
+
+  constructor(said: (what: RunActing | null) => void = () => {}) {
+    this.said = said;
+  }
+
+  /** Runs an action in the test's window (`what`), saying it runs until it ended. */
+  async acting<T>(what: RunActing, run: () => Promise<T>): Promise<T> {
+    this.said(what);
+    try {
+      return await run();
+    } finally {
+      this.said(null);
+    }
+  }
 
   /** Hand the bar an intent; false while it runs one, or holds one already. */
   offer(intent: RunIntent): boolean {
@@ -775,12 +789,12 @@ export async function viewHere(
     const signal = eitherSignal(ended, viewEnded());
     try {
       if (intent === 'pick') {
-        const picked = await pickLocator(page, probe, null, signal).catch(() => null);
+        const picked = await intents.acting('pick', () => pickLocator(page, probe, null, signal).catch(() => null));
         if (picked && !signal.aborted) await onPick(picked);
       } else if (intent === 'record') {
         await onRecord?.(signal);
-      } else {
-        await onIntent?.(intent, signal);
+      } else if (onIntent) {
+        await intents.acting(intent, () => onIntent(intent, signal));
       }
     } catch {
       // The page broke under the intent: the stop holds on.
@@ -954,6 +968,9 @@ export async function pauseHere(
         if (ended?.aborted) return 'resume';
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish' || choice === 'end') return choice;
+        /** The action runs in the test's window, said to `intents` while it runs. */
+        const acting = <T>(what: RunActing, run: () => Promise<T>): Promise<T> =>
+          intents ? intents.acting(what, run) : run();
         if (choice === 'record' && onRecord) {
           await unlessEnded(
             onRecord(ended).catch(() => undefined),
@@ -963,13 +980,13 @@ export async function pauseHere(
         }
         if ((choice === 'assert' || choice === 'assert-region') && onIntent) {
           await unlessEnded(
-            onIntent(choice, ended).catch(() => undefined),
+            acting(choice, () => onIntent(choice, ended).catch(() => undefined)),
             ended,
           );
           continue;
         }
         if (choice !== 'pick') continue;
-        const picked = await pickLocator(page, probe, null, ended).catch(() => null);
+        const picked = await acting('pick', () => pickLocator(page, probe, null, ended).catch(() => null));
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
         // The document the bar was drawn in is gone, or the page broke.

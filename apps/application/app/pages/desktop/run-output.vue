@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 /**
  * Desktop shell only: a local run's output in a window of its own, which the Local runs tray has the shell open on
  * this page (`DesktopRunOutputWindow`), named by `?name=`. The tray feeds it over `RUN_OUTPUT_CHANNEL`: the run's
@@ -38,7 +39,7 @@ onBeforeUnmount(() => channel?.close());
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
-useHead(() => ({ title: `${header.value?.title ?? 'Run output'} · Piwi Dashboard` }));
+useHead(() => ({ title: `${header.value?.title ?? 'Run output'} · ${DESKTOP_APP_NAME}` }));
 </script>
 
 <template>

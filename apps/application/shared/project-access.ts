@@ -51,8 +51,11 @@ export interface RoleBindingView {
 
 // ── Users (`/api/users`) ──────────────────────────────────────────────────────
 
-/** The longest username an account is created with, and the longest a sign-in or a lookup by username takes. */
+/** The longest username an account is created with, and the longest a lookup by username takes. */
 export const USERNAME_MAX_LENGTH = 200;
+
+/** The longest text a sign-in takes: a username, or an email address (at most 254 characters). */
+export const LOGIN_IDENTIFIER_MAX_LENGTH = 254;
 
 /** A user as administrators see them (`users:manage`). */
 export interface UserListItem {

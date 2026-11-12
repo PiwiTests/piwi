@@ -19,6 +19,10 @@ that names an instance wins:
 A project set up for the reporter needs nothing more. An editor started from the Dock or the Start menu may not see
 the variables your shell exports: the `.env` or Connect work either way.
 
+In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
+machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
+JetBrains IDE shows one notification: [JetBrains plugin](./jetbrains#install-and-start).
+
 ## With the desktop app
 
 The desktop app needs no pairing with the editor: while it runs, it publishes its address and a local token in
@@ -60,7 +64,7 @@ what the editor reads from it: the instance answers each read once.
 ## Connect
 
 Run **Piwi: Connect** from the command palette, or click **Piwi: connect** in the status bar. In a JetBrains IDE it is
-the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's toolbar, and under
+the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's gear menu, and under
 **Tools → Piwi**.
 
 1. When the desktop app runs, Connect lists it first, with the instance the workspace already names: choose
@@ -119,6 +123,14 @@ When the instance does not answer, or answers with an error, the status bar read
 **Piwi: connect**: the connection is kept, and the editor reads the instance again on its own, 15 seconds later, then
 twice as long each time, up to every five minutes. A click on the item, or **Piwi: Refresh**, reads it at once. A key
 the instance refuses still reads **Piwi: connect**, since only signing in again helps.
+
+When the desktop app answers but cannot prove it holds its token, which happens with a desktop app older than the
+editor or with another program on its port, the item reads **Piwi: restart the desktop app**: the editor does not
+send the app's token there. Restart or update the desktop app; the editor reads it again as soon as the app starts.
+
+The **Piwi** failures view says the same in both editors, naming the instance and why it does not answer, with
+**Retry**. When the editor service itself stops, VS Code's status bar reads **Piwi: not running** and its view offers
+**Piwi: Restart the editor service**, as does a **Piwi: Refresh** it did not answer.
 
 **Piwi: Open settings** in VS Code opens the extension's settings.
 

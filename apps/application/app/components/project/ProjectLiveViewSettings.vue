@@ -2,8 +2,9 @@
 /**
  * Project settings → Live view: whether people who may open a live CI run of the project, or a run a developer shares
  * from their machine (Share live), can watch the page each of its workers is on, from the run page, and the elements
- * each image paints over beside the secret fields (Playwright locators, one a line). Off by default; the section says
- * what goes out, from which runs, to whom, what is masked, and that nothing is kept.
+ * each image paints over beside the secret fields (Playwright locators, one a line), and whether a signed-in reader of
+ * a run nobody shares may ask its developer to share it (Ask to watch, on by default). The live view is off by
+ * default; the section says what goes out, from which runs, to whom, what is masked, and that nothing is kept.
  */
 import { MAX_LIVE_MASKS, liveMaskProblem } from '@piwitests/core/live-view';
 import type { ProjectWithTestRuns } from '~~/types/api';
@@ -13,6 +14,7 @@ const emit = defineEmits<{ saved: [] }>();
 
 const stored = () => ({
   liveView: props.project.liveView === true,
+  askToWatch: props.project.askToWatch !== false,
   masks: (props.project.liveViewMasks ?? []).join('\n'),
 });
 const { state, dirty } = useStoredForm(stored);
@@ -40,15 +42,21 @@ async function submit() {
   const before = stored();
   const on = state.value.liveView;
   const switched = on !== before.liveView;
+  const askSwitched = state.value.askToWatch !== before.askToWatch;
   const written = masks.value.join('\n');
   const masksChanged = written !== before.masks;
   // The text as the server keeps it: trimmed, without blank lines.
   state.value.masks = written;
-  if (!switched && !masksChanged) return;
+  if (!switched && !askSwitched && !masksChanged) return;
   let message = 'Live view settings saved';
-  if (!masksChanged) message = on ? 'Live view enabled for new runs' : 'Live view turned off';
+  if (switched && !askSwitched && !masksChanged)
+    message = on ? 'Live view enabled for new runs' : 'Live view turned off';
   const saved = await save(
-    { ...(switched ? { liveView: on } : {}), ...(masksChanged ? { liveViewMasks: masks.value } : {}) },
+    {
+      ...(switched ? { liveView: on } : {}),
+      ...(askSwitched ? { askToWatch: state.value.askToWatch } : {}),
+      ...(masksChanged ? { liveViewMasks: masks.value } : {}),
+    },
     message,
   );
   if (saved) emit('saved');
@@ -70,6 +78,14 @@ async function submit() {
             v-model="state.liveView"
             label="Let people who may open a run watch its workers live"
             description="Each CI run of this project the reporter's global setup registers from now on, while it runs: a run already going stays without it. Turning it off ends every view at once. A run on a developer's machine sends nothing unless its developer shares it (Share live)."
+          />
+        </UFormField>
+        <UFormField name="askToWatch">
+          <USwitch
+            v-model="state.askToWatch"
+            label="Let signed-in readers ask to watch a run nobody shares"
+            description="The developer sees who asks and answers where they launched the run; one ask per person every 5 minutes."
+            data-testid="ask-to-watch-setting"
           />
         </UFormField>
         <UFormField

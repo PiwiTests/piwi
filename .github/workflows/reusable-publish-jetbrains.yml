@@ -36,6 +36,9 @@ jobs:
       # reach only the steps that sign and publish.
       SIGNING_CONFIGURED: ${{ secrets.JETBRAINS_PRIVATE_KEY != '' }}
       PUBLISH_CONFIGURED: ${{ secrets.JETBRAINS_PUBLISH_TOKEN != '' }}
+      # Every Gradle run of the job builds the searchable options index Settings
+      # search reads, by running the IDE headless, so each builds the same plugin.
+      ORG_GRADLE_PROJECT_searchableOptions: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

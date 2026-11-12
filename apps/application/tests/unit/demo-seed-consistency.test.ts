@@ -32,6 +32,12 @@ import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
 import { overlappingTagKeys, validateTagKeyPattern } from '#shared/integrations/tag-keys';
+import {
+  DEMO_TEST_MANAGEMENT_CASES,
+  DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+  DEMO_UNKNOWN_TEST_CASE_KEY,
+} from '#shared/demo/demo-test-management.mjs';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -1035,6 +1041,7 @@ const EXPECT_KEYS = new Set([
   'diagnosis',
   'fixLanded',
   'issue',
+  'declaredMore',
   'lab',
   'resources',
   'incident',
@@ -1173,16 +1180,26 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
   }
   if (want.issue) {
     expect(want.cluster, `${label}: issue needs a cluster`).toBeTruthy();
-    // The newest tracker link wins, as clusterKnownIssues reads it.
+    // As clusterKnownIssues reads it: the newest tracker link, else the oldest link from the tests still open, else
+    // the oldest link from the tests.
     const [row] = q(`
       select key, provider, status_text from entity_links
       where failure_cluster_id = ${want.cluster!.id} and key is not null
         and (provider = 'jira' or connection_id is not null)
-      order by id desc limit 1
+      order by origin in ('annotation', 'tag'),
+        case when origin in ('annotation', 'tag') then 0 else -id end,
+        coalesce(json_extract(metadata, '$.statusCategory'), '') = 'done',
+        id
+      limit 1
     `);
     expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
     expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
     expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
+  }
+  if (want.declaredMore !== undefined) {
+    expect(want.cluster, `${label}: declaredMore needs a cluster`).toBeTruthy();
+    const [row] = q(`select declared_issues_more from failure_clusters where id = ${want.cluster!.id}`);
+    expect(row?.declared_issues_more, `${label}: the keys named and not linked`).toBe(want.declaredMore);
   }
   if (want.suspects) {
     expect(want.cluster, `${label}: suspects needs a cluster`).toBeTruthy();
@@ -1512,8 +1529,13 @@ describe('keys in test tags', () => {
 
     const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
     const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
-    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
-    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123']);
+    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag)).sort()).toEqual([
+      'DEMO-52',
+      'DEMO-53',
+      'SHOP-1234',
+    ]);
+    // SHOP-T124 is a key the test management catalog does not hold: the mapping summary's unknown-key state.
+    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123', 'SHOP-T124']);
     expect(
       tagged.flatMap((row) =>
         overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
@@ -1523,6 +1545,107 @@ describe('keys in test tags', () => {
 
   test('the other projects leave them off', () => {
     expect(q('select id from projects where id <> 1 and tag_keys is not null')).toEqual([]);
+  });
+});
+
+describe('the test management binding of the checkout project', () => {
+  test('is bound to the canned Zephyr Scale connection, with the dry run on and tags as the key source', () => {
+    const rows = q('select * from project_test_management');
+    expect(rows).toHaveLength(1);
+    const [binding] = rows;
+    expect(binding).toMatchObject({
+      project_id: 1,
+      connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      provider_project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+      enabled: 1,
+      dry_run: 1,
+    });
+    expect(JSON.parse(String(binding!.key_sources))).toEqual({ tags: true, externalId: false });
+    // The binding's foreign key needs the row, though the demo lists its connections from memory. No token is stored.
+    expect(q('select id, provider, credentials from integration_connections')).toEqual([
+      { id: DEMO_TEST_MANAGEMENT_CONNECTION_ID, provider: 'zephyr-scale', credentials: null },
+    ]);
+  });
+
+  test('has a catalog whose key a seeded test carries, and a test key the catalog leaves out', () => {
+    const catalog = q('select key from test_management_cases order by key').map((row) => String(row.key));
+    expect(catalog).toEqual(DEMO_TEST_MANAGEMENT_CASES.map((c) => c.key).sort());
+    const tagged = q('select tags from test_cases where project_id = 1 and tags is not null').flatMap(
+      (row) => JSON.parse(String(row.tags)) as string[],
+    );
+    expect(tagged).toContain('SHOP-T123');
+    expect(catalog).toContain('SHOP-T123');
+    expect(tagged).toContain(DEMO_UNKNOWN_TEST_CASE_KEY);
+    expect(catalog).not.toContain(DEMO_UNKNOWN_TEST_CASE_KEY);
+  });
+
+  test('the catalog was read hours ago, inside the day after which the hourly task would read it again', () => {
+    const [info] = q('select min(fetched_at) as at, max(fetched_at) as latest from test_management_cases');
+    const [read] = q('select fetched_at as at from test_management_catalog_reads');
+    expect(Number(read!.at)).toBe(Number(info!.latest));
+    const ageMs = Date.now() - Number(info!.latest);
+    expect(ageMs).toBeGreaterThan(0);
+    expect(ageMs).toBeLessThan(24 * 60 * 60 * 1000);
+  });
+});
+
+describe('the results syncs of the checkout project', () => {
+  const syncs = () =>
+    q(
+      `select a.*, r.branch, r.status as run_status, r.is_full_run, r.start_time from integration_actions a
+       join test_runs r on r.id = a.entity_id where a.kind = 'sync-results' order by a.entity_id`,
+    );
+  const read = (value: unknown) => JSON.parse(String(value)) as Record<string, any>;
+
+  test('are of whole runs on the default branch that ended, one each: a dry run, a sent run, an unknown outcome', () => {
+    const rows = syncs();
+    expect(rows.map((row) => `${row.status}:${read(row.result).dryRun ? 'dry' : 'live'}`)).toEqual([
+      'done:dry',
+      'done:live',
+      'failed:live',
+    ]);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        entity_type: 'test_run',
+        project_id: 1,
+        connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      });
+      expect(row.branch).toBe('main');
+      expect(row.is_full_run).toBe(1);
+      expect(['passed', 'failed']).toContain(row.run_status);
+      expect(row.dedupe_key).toBe(`sync-results:test_run:${row.entity_id}:conn${DEMO_TEST_MANAGEMENT_CONNECTION_ID}`);
+    }
+  });
+
+  test('send the catalog keys of the run and list the one it leaves out', () => {
+    for (const row of syncs()) {
+      const payload = read(row.payload);
+      expect(payload.results.map((r: { key: string }) => r.key)).toEqual(['SHOP-T123']);
+      expect(payload.unknownKeys).toEqual([DEMO_UNKNOWN_TEST_CASE_KEY]);
+      expect(payload.counts.passed + payload.counts.failed).toBe(payload.results.length);
+    }
+  });
+
+  test('keep what each state needs: a dry run its payload, a sent run its test run and link, an unknown outcome its start', () => {
+    const [dry, sent, unknown] = syncs();
+    expect(read(dry!.result).payload.results).toHaveLength(1);
+    expect(read(dry!.result).runKey).toBeUndefined();
+    const result = read(sent!.result);
+    expect(result.runKey).toBe(`${DEMO_TEST_MANAGEMENT_PROJECT_KEY}-R${sent!.entity_id}`);
+    const links = q(`select * from entity_links where provider = 'zephyr-scale'`);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ test_run_id: sent!.entity_id, key: result.runKey, url: result.runUrl });
+    expect(read(unknown!.result).uploadStartedAt).toBeGreaterThan(0);
+    expect(read(unknown!.result).runKey).toBeUndefined();
+    expect(String(unknown!.error)).toContain('Outcome unknown');
+  });
+
+  test('ended after their run started and before now', () => {
+    for (const row of syncs()) {
+      expect(Number(row.created_at)).toBeGreaterThan(Number(row.start_time) * 1000);
+      expect(Number(row.finished_at)).toBeLessThan(Date.now());
+      expect(new Date(read(row.payload).startedAt).getTime()).toBe(Number(row.start_time) * 1000);
+    }
   });
 });
 

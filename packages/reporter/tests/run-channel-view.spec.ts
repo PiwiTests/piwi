@@ -785,7 +785,12 @@ const GO = "getByRole('button', { name: 'Go' })";
 /** Pick on the image needs Playwright 1.60 (the snapshot's boxes): below it, it is refused, saying so. */
 const PICKS_AT = playwrightAtLeast('1.60');
 const PICKED_AT = PICKS_AT
-  ? { ok: true, message: `${GO} went to the editor, in place of the locator on the stopped line.`, locator: GO }
+  ? {
+      ok: true,
+      message: `${GO} went to the editor, in place of the locator on the stopped line.`,
+      locator: GO,
+      taken: true,
+    }
   : { ok: false, message: PICK_AT_NEEDS, locator: null };
 
 /** What Pick on the image sends where a pick goes, at the stop of the headless test `title`. */

@@ -93,6 +93,7 @@ export async function openDebugLink(
         title: link.title,
         project: link.project,
         execution: link.execution,
+        ref: link.ref,
       },
     })
     .catch(() => vscode.window.showWarningMessage('Piwi: the editor service did not answer, so nothing runs.'));

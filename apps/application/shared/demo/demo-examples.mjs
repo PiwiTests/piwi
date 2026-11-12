@@ -22,7 +22,11 @@
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.
  * - `issue: { key, status }`: the cluster is tracked in the Jira issue with that
- *   key, in that status: its newest tracker link, the one its pages show.
+ *   key, in that status: its known issue, the one its pages show (its newest
+ *   tracker link, else the oldest link from its tests still open, else the
+ *   oldest link from its tests).
+ * - `declaredMore: n`: the cluster's links end with *and n more named by its
+ *   tests*.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
  * - `incident: true`: the run is flagged as an environment incident.
@@ -187,6 +191,32 @@ export const DEMO_EXAMPLES = [
     expect: { cluster: { id: 3, story: 'auth-login-500' }, issue: { key: 'DEMO-42', status: 'In Progress' } },
   },
   {
+    id: 'declared-issue-links',
+    doc: 'features/issue-tracking',
+    title: 'E2E Checkout › should complete checkout with Apple Pay',
+    shows:
+      'Its test names three DEMO issues with piwi:issue: DEMO-57 and DEMO-61 are linked from the test’s annotation, DEMO-64 is not in Jira, and DEMO-61 is Done, so the known issue is DEMO-57.',
+    route: '/failure-clusters/2',
+    expect: {
+      cluster: { id: 2, story: 'checkout-email-renamed' },
+      issue: { key: 'DEMO-57', status: 'In Progress' },
+      declaredMore: 1,
+    },
+  },
+  {
+    id: 'declared-issue-tag-link',
+    doc: 'features/issue-tracking',
+    title: 'E2E Checkout › should complete checkout with PayPal',
+    shows:
+      'Its tag DEMO-52 names a Bug, linked with the chip From the tag; the credit card test’s tag DEMO-53 names a Task, which the binding’s issue type leaves out, so it is neither linked nor counted.',
+    route: '/failure-clusters/1',
+    expect: {
+      cluster: { id: 1, story: 'checkout-pay-timeout' },
+      issue: { key: 'DEMO-52', status: 'To Do' },
+      declaredMore: null,
+    },
+  },
+  {
     id: 'ai-diagnosis-simulated',
     doc: 'features/ai-diagnosis',
     title: 'E2E Checkout › should complete checkout with Apple Pay',
@@ -334,6 +364,15 @@ export const DEMO_EXAMPLES = [
     shows: 'A strict-mode violation: the locator matched several buttons, and the ranked replacements match one.',
     route: '/test-run-cases/533',
     expect: { execution: { id: 533, title: 'Button primary variant renders correctly' } },
+  },
+  {
+    id: 'test-ended-at-stop',
+    doc: 'features/end-the-test',
+    title: 'E2E Checkout › a cart test ended at its breakpoint',
+    shows:
+      'A run started from the editor stopped the test at its breakpoint and ended it there with End the test: Playwright skipped it, and its execution reads Ended at a stop.',
+    route: '/test-run-cases/834',
+    expect: { execution: { id: 834, title: 'should remove item from cart' } },
   },
 ];
 

@@ -11,6 +11,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { bugReports, entityLinks, failureClusters, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
+import { isTrackerLink } from '#shared/handlers/known-issues';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
@@ -32,7 +33,7 @@ import {
 import { resolveLinkEntityProjectId } from '../project-access';
 import { draftShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
-import { bindingRowToResolved } from './binding';
+import { bindingRowToResolved, bindingTitlePrefix } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
 import { resolveClusterOwner } from './owner';
 import { findFixedBefore } from '../cluster-memory';
@@ -62,7 +63,7 @@ async function linkedCandidates(db: DbClient, clusterId: number): Promise<Existi
     .from(entityLinks)
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)));
   return links
-    .filter((l) => l.provider === 'jira' || l.connectionId != null)
+    .filter(isTrackerLink)
     .filter((l) => (l.metadata as { statusCategory?: string | null } | null)?.statusCategory !== 'done')
     .map((l) => ({
       key: l.key ?? '',
@@ -116,7 +117,7 @@ async function fixedBeforeCandidates(db: DbClient, clusterId: number): Promise<E
       .select()
       .from(entityLinks)
       .where(and(eq(entityLinks.failureClusterId, match.clusterId), isNotNull(entityLinks.key)));
-    const jira = links.find((l) => l.provider === 'jira' || l.connectionId != null);
+    const jira = links.find(isTrackerLink);
     if (jira?.key) {
       out.push({
         key: jira.key,
@@ -207,21 +208,19 @@ export async function buildIssueDraft(
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const include = { ...resolved.include, ...(opts.include ?? {}) };
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
+  const buildOpts = {
+    ...include,
+    locale,
+    siteUrl: opts.siteUrl,
+    mintShareToken: draftShareTokenMinter,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  };
 
   const built: BuiltClusterIssue | null =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, {
-          ...include,
-          locale,
-          siteUrl: opts.siteUrl,
-          mintShareToken: draftShareTokenMinter,
-        })
-      : await buildExecutionIssue(db, entityId, {
-          ...include,
-          locale,
-          siteUrl: opts.siteUrl,
-          mintShareToken: draftShareTokenMinter,
-        });
+      ? await buildClusterIssue(db, entityId, buildOpts)
+      : await buildExecutionIssue(db, entityId, buildOpts);
   if (!built) return null;
 
   // The cluster's effective owner picks the first matching route; its overrides
@@ -271,16 +270,14 @@ export async function buildIssueDraft(
 
 /** The issues linked to an entity, as the draft's existing candidates. */
 function linkedIssueCandidates(links: (typeof entityLinks.$inferSelect)[]): ExistingIssueCandidate[] {
-  return links
-    .filter((l) => l.provider === 'jira' || l.connectionId != null)
-    .map((l) => ({
-      key: l.key ?? '',
-      url: l.url,
-      title: l.title ?? null,
-      statusText: l.statusText ?? null,
-      statusColor: l.statusColor ?? null,
-      reason: 'linked' as const,
-    }));
+  return links.filter(isTrackerLink).map((l) => ({
+    key: l.key ?? '',
+    url: l.url,
+    title: l.title ?? null,
+    statusText: l.statusText ?? null,
+    statusColor: l.statusColor ?? null,
+    reason: 'linked' as const,
+  }));
 }
 
 /**
@@ -302,7 +299,12 @@ async function buildRunDraft(
   const chosenId = boundConnection(connections, resolved);
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
-  const buildOpts = { locale, siteUrl: opts.siteUrl, filedBy: opts.filedBy ?? null };
+  const buildOpts = {
+    locale,
+    siteUrl: opts.siteUrl,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  };
   const built =
     entityType === 'test_run'
       ? await buildRunIssue(db, entityId, buildOpts)
@@ -357,7 +359,12 @@ async function buildBugReportDraft(
   const chosenId = boundConnection(connections, resolved);
   const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
-  const built = await buildBugReportIssue(db, bugReportId, { locale, siteUrl: opts.siteUrl });
+  const built = await buildBugReportIssue(db, bugReportId, {
+    locale,
+    siteUrl: opts.siteUrl,
+    filedBy: opts.filedBy ?? null,
+    titlePrefix: bindingTitlePrefix(resolved, chosenRow?.config),
+  });
   if (!built) return null;
   const linked = await db
     .select()

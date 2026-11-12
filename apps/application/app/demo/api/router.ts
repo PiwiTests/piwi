@@ -72,6 +72,17 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
 import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
+import { getRunSync } from '#shared/handlers/test-management-sync';
+import {
+  demoTestManagementCases,
+  demoTestManagementKeyConfig,
+  demoTestManagementOptions,
+  demoTestManagementSettings,
+  demoTestManagementSummary,
+  refreshDemoTestManagementCatalog,
+  saveDemoTestManagement,
+  sendDemoRunSync,
+} from './test-management';
 import {
   apiCreateRunRequest,
   apiGetRunRequest,
@@ -237,6 +248,9 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import { getReuseForecast } from '#shared/handlers/reuse-forecast';
+import { getRunReusedResults } from '#shared/handlers/reused-results';
+import { runUsualDurations } from '#shared/handlers/stuck-tests';
 import {
   computeScenarioGaps,
   listScenarioGaps,
@@ -422,7 +436,7 @@ import {
   apiLiveResourcesTestRun,
 } from './reporter';
 import { demoLiveSteps, demoRunningCases } from './stuck-tests';
-import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { isVisibleRun, UNFINISHED_RUN_STATUSES, type RunVisibilityFields } from '#shared/run-eligibility';
 import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
@@ -595,13 +609,44 @@ type DemoEntity =
  * `requireResolvedProjectAccess` does: resolve the owning project (404 when the
  * entity does not exist), then check the route's permission there. Returns the
  * project id, or null for an administrator, whose request is not resolved.
+ * Another person's private run, and an execution of one, are answered as
+ * missing whoever asks, an administrator included, as the server's
+ * `resolveRunProjectId` answers.
  */
 async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntity, id: number): Promise<number | null> {
-  if (!ctx || isAdministrator(ctx.access)) return null;
+  if (!ctx) return null;
+  if (entity === 'run' || entity === 'execution') {
+    const run = await demoRunRow(entity, id);
+    if (run && !isVisibleRun(run, ctx.actingUserId)) throw demoHttpError(404, 'Not found');
+    if (isAdministrator(ctx.access)) return null;
+    if (!run) throw demoHttpError(404, 'Not found');
+    assertDemoScope(ctx, run.projectId);
+    return run.projectId;
+  }
+  if (isAdministrator(ctx.access)) return null;
   const projectId = await demoEntityProjectId(entity, id);
   if (projectId === null) throw demoHttpError(404, 'Not found');
   assertDemoScope(ctx, projectId);
   return projectId;
+}
+
+/** A run, or the run of an execution, with what its visibility reads; undefined when it does not exist. */
+async function demoRunRow(
+  entity: 'run' | 'execution',
+  id: number,
+): Promise<(RunVisibilityFields & { projectId: number }) | undefined> {
+  const db = await getDemoDb();
+  const columns = { projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId };
+  if (entity === 'run') {
+    const [row] = await db.select(columns).from(testRuns).where(eq(testRuns.id, id));
+    return row;
+  }
+  const [row] = await db
+    .select(columns)
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(eq(testRunsCases.id, id));
+  return row;
 }
 
 /** The project an entity belongs to, or null when it does not exist. */
@@ -611,8 +656,7 @@ async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<numb
   if (entity === 'project') {
     projectId = id;
   } else if (entity === 'run') {
-    const [row] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, id));
-    projectId = row?.projectId ?? null;
+    projectId = (await demoRunRow('run', id))?.projectId ?? null;
   } else if (entity === 'case') {
     const [row] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, id));
     projectId = row?.projectId ?? null;
@@ -637,12 +681,7 @@ async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<numb
   } else if (entity === 'suggestion') {
     projectId = await getSuggestionProjectId(db, id);
   } else {
-    const [row] = await db
-      .select({ projectId: testRuns.projectId })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.id, id));
-    projectId = row?.projectId ?? null;
+    projectId = (await demoRunRow('execution', id))?.projectId ?? null;
   }
   return projectId;
 }
@@ -742,7 +781,7 @@ async function assertDemoConnectionAccess(ctx: DemoCtx | undefined, connectionId
 
 /** Check the route's permission on the project of an existing link's target (the server's `resolveLinkProjectId`). */
 async function assertDemoLinkScope(ctx: DemoCtx | undefined, linkId: number): Promise<void> {
-  if (!ctx || isAdministrator(ctx.access)) return;
+  if (!ctx) return;
   const [link] = await (await getDemoDb()).select().from(entityLinks).where(eq(entityLinks.id, linkId));
   if (!link) throw demoHttpError(404, 'Link not found');
   if (link.testRunId != null) await assertDemoEntityScope(ctx, 'run', link.testRunId);
@@ -1233,6 +1272,69 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementSettings(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/test-management$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return saveDemoTestManagement(await getDemoDb(), +m[1]!, body);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/options$/,
+    permission: 'project:manage',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementOptions(Number(q?.get('connectionId')), q?.get('projectKey') || null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/summary$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementSummary(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/key-config$/,
+    permission: 'project:read',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementKeyConfig(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/cases$/,
+    permission: 'project:read',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoTestManagementCases(await getDemoDb(), +m[1]!, q?.get('keys'));
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/test-management\/catalog\/refresh$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return refreshDemoTestManagementCatalog(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/projects\/(\d+)\/ci-server-check$/,
     permission: 'project:manage',
@@ -1492,6 +1594,24 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/test-management-sync$/,
+    permission: 'project:read',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return { sync: await getRunSync(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/test-management-sync$/,
+    permission: 'run:control',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return sendDemoRunSync(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
     permission: ['run:delete', 'run:request'],
@@ -1532,6 +1652,22 @@ const routes: RouteEntry[] = [
   },
 
   // Run insights
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/reused$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return getRunReusedResults(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/usual-durations$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return runUsualDurations(await getDemoDb(), +m[1]!);
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/insights$/,
@@ -1921,7 +2057,7 @@ const routes: RouteEntry[] = [
     method: 'PATCH',
     pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
     handler: async (m, body, _q, ctx) => {
-      if (ctx && ctx.scope !== 'all') {
+      if (ctx) {
         const db = await getDemoDb();
         const [diag] = await db
           .select({ clusterId: failureDiagnoses.clusterId, testRunsCaseId: failureDiagnoses.testRunsCaseId })
@@ -3008,6 +3144,14 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/selections\/reuse-forecast$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getReuseForecast(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/selections\/([^/]+)$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -3590,12 +3734,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/links$/,
-    handler: async (_, __, q) => {
+    handler: async (_, __, q, ctx) => {
       const entityType = q?.get('entityType') ?? '';
       const entityId = parseInt(q?.get('entityId') ?? '0', 10);
       if (!(LINK_ENTITY_TYPES as readonly string[]).includes(entityType) || !entityId) {
         throw demoHttpError(400, 'Invalid entityType or entityId');
       }
+      await assertDemoLinkTargetScope(ctx, entityType, entityId);
       return { items: (await listLinks(await getDemoDb(), entityType as LinkEntityType, entityId)).links };
     },
   },
@@ -3615,11 +3760,11 @@ const routes: RouteEntry[] = [
     permission: 'link:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoLinkScope(ctx, +m[1]!);
-      return deleteLink(await getDemoDb(), +m[1]!);
+      return deleteLink(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
 
-  // Integrations — one canned Jira connection, answered from constants
+  // Integrations — one canned connection per provider, answered from constants
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections$/,
@@ -3658,14 +3803,14 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     permission: 'connections:manage',
-    handler: async () => testDemoConnection(),
+    handler: async (m) => testDemoConnection(+m[1]!),
   },
   {
     method: 'POST',
     pattern: /^\/api\/integrations\/connections\/check$/,
     permission: 'connections:manage',
     handler: async (_, body) => {
-      const result = checkDemoConnection(body as { baseUrl?: string });
+      const result = checkDemoConnection(body as { provider?: string; baseUrl?: string; region?: string });
       if (!result) throw demoHttpError(400, 'Enter the site address, e.g. https://your-team.atlassian.net');
       return result;
     },
@@ -3727,6 +3872,7 @@ const routes: RouteEntry[] = [
         fields: b.fields,
         comment: b.comment ?? null,
         filedBy: await demoFiledByName(db, ctx),
+        filedById: ctx?.actingUserId ?? null,
         submissionId: b.submissionId ?? null,
       });
       if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
@@ -3777,9 +3923,9 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoConnectionAccess(ctx, +m[1]!);
-      return demoAssignable();
+      return demoAssignable(query?.get('q') ?? '', query?.get('accountId')?.trim() ?? '');
     },
   },
   {

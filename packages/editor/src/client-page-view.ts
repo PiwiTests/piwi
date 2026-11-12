@@ -5,8 +5,10 @@ import {
   type ViewInput,
   type ViewButton,
 } from '@piwitests/core/run-view';
+import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
 import type {
   LaneFrame,
+  LaneViewLayer,
   LaneViewParams,
   PageFrame,
   PageInputParams,
@@ -55,7 +57,7 @@ class HeldInput {
  * Sends a viewer's frames to the client one at a time, the latest alone while one is on its way, each only while
  * `goes` says it still does.
  */
-class FrameSender<F> {
+export class FrameSender<F> {
   private pending: F | null = null;
   private sending = false;
 
@@ -90,17 +92,27 @@ class FrameSender<F> {
   }
 }
 
+/** A viewer of the editor's client, which presence names by the editor's name as it gave it (`editor`). */
+function editorViewer(editor: () => string | null, viewer: Viewer): Viewer {
+  return Object.defineProperty(viewer, 'who', {
+    get: () => ({ kind: 'editor' as const, name: editor() ?? 'the editor' }),
+    enumerable: true,
+  });
+}
+
 /** One editor panel's viewer of a stop, sharing the run channel with the other local viewers. */
 export class ClientPageView {
   private current: PageViewParams | null = null;
   private readonly held = new HeldInput();
   private readonly sender: FrameSender<PageFrame>;
-  readonly viewer: Viewer = { frame: (frame) => this.frame(frame) };
+  readonly viewer: Viewer;
 
   constructor(
     private readonly sessions: RunSessions,
     notify: (frame: PageFrame) => Promise<void>,
+    editor: () => string | null = () => null,
   ) {
+    this.viewer = editorViewer(editor, { frame: (frame) => this.frame(frame) });
     // The stop may have ended since the frame came, before the paced session change says so.
     this.sender = new FrameSender(
       notify,
@@ -164,23 +176,37 @@ export class ClientPageView {
   }
 }
 
+/** The lane a client watches, and the layers it shows beside the frames, in `LANE_LAYERS`' order. */
+interface WatchedLane {
+  ref: string;
+  lane: number;
+  layers: LaneLayer[];
+}
+
 /**
  * One editor panel's viewer of a worker's lane (`piwi/laneView`): its frames, running or stopped, through its tests and
- * the workers Playwright starts in it, and its input at a stop of the lane's running test, which watching the lane
- * makes it a viewer of.
+ * the workers Playwright starts in it, the layers it asked for beside them (`piwi/laneLayer`), and its input at a stop
+ * of the lane's running test, which watching the lane makes it a viewer of.
  */
 export class ClientLaneView {
-  private current: Omit<LaneViewParams, 'on'> | null = null;
+  private current: WatchedLane | null = null;
   private readonly held = new HeldInput();
   /** The stop the input held down was sent to, which a release goes to. */
   private heldAt: PageInputParams | null = null;
   private readonly sender: FrameSender<LaneFrame>;
-  readonly viewer: Viewer = { frame: () => {}, laneFrame: (frame) => this.frame(frame) };
+  readonly viewer: Viewer;
 
   constructor(
     private readonly sessions: RunSessions,
     notify: (frame: LaneFrame) => Promise<void>,
+    editor: () => string | null = () => null,
+    private readonly notifyLayer: (layer: LaneViewLayer) => Promise<void> = async () => {},
   ) {
+    this.viewer = editorViewer(editor, {
+      frame: () => {},
+      laneFrame: (frame) => this.frame(frame),
+      laneLayer: (layer) => this.layer(layer),
+    });
     // The lane's worker may have gone on or left since the frame came, before the paced session change says so.
     this.sender = new FrameSender(
       notify,
@@ -198,12 +224,37 @@ export class ClientLaneView {
       if (this.matches(params)) this.dispose();
       return { ok: true, message: 'You no longer watch the worker.' };
     }
-    this.dispose();
-    this.current = { ref: params.ref, lane: params.lane };
+    if (params.layers != null && !Array.isArray(params.layers)) {
+      return { ok: false, message: 'The layers are a list: calls, events, text, filmstrip.' };
+    }
+    const layers = readLaneLayers(params.layers ?? []) ?? [];
     const own = this.current;
-    const answer = await this.sessions.watchLane(params, this.viewer);
-    if (this.current !== own) return { ok: false, message: 'The worker view changed.' };
+    // The lane it watches: its layers change in place, and the page's text is asked for as the client asks or first
+    // shows it; the run sessions merge the asks that come together.
+    if (own && this.matches(params) && this.sessions.watchesLane(this.viewer, own.ref, own.lane)) {
+      if (layers.join() !== own.layers.join()) {
+        const shows = layers.includes('text') && !own.layers.includes('text');
+        own.layers = layers;
+        const answer = await this.sessions.watchLane({ ref: own.ref, lane: own.lane, on: true, layers }, this.viewer);
+        if (!answer.ok || (params.text !== true && !shows)) return answer;
+        if (params.text !== true) {
+          if (this.current === own) void this.sessions.laneText(own, this.viewer);
+          return answer;
+        }
+      } else if (params.text !== true) {
+        return { ok: true, message: `You watch worker ${own.lane + 1}.` };
+      }
+      return this.current === own
+        ? this.sessions.laneText(own, this.viewer)
+        : { ok: false, message: 'The worker view changed.' };
+    }
+    this.dispose();
+    this.current = { ref: params.ref, lane: params.lane, layers };
+    const watched = this.current;
+    const answer = await this.sessions.watchLane({ ref: params.ref, lane: params.lane, on: true, layers }, this.viewer);
+    if (this.current !== watched) return { ok: false, message: 'The worker view changed.' };
     if (!answer.ok) this.dispose();
+    else if (layers.includes('text')) void this.sessions.laneText(watched, this.viewer);
     return answer;
   }
 
@@ -258,6 +309,17 @@ export class ClientLaneView {
   private matches(at: { ref: string; lane: number } | null | undefined): boolean {
     const own = this.current;
     return !!own && !!at && own.ref === at.ref && own.lane === at.lane;
+  }
+
+  /**
+   * A layer of the lane this client watches and asked for, as the worker sent it: told to the client at once, none of
+   * a lane it stopped watching. Each goes, as the worker paces each layer; one the client cannot take is let go.
+   */
+  private layer(layer: LaneViewLayer): void {
+    const own = this.current;
+    if (!own || !this.matches(layer) || !own.layers.includes(layer.layer)) return;
+    if (!this.sessions.watchesLane(this.viewer, own.ref, own.lane)) return;
+    this.notifyLayer(layer).catch(() => {});
   }
 
   private frame(frame: LaneViewFrame): void {

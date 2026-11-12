@@ -1,0 +1,5 @@
+{
+  "_spec": "InsufficientPermissionError",
+  "errorCode": 403,
+  "message": "You do not have the following required permissions: Browse Projects"
+}

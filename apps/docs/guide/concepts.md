@@ -207,6 +207,107 @@ That derived owner is used in [pull-request comments](/features/pr-feedback), on
 A public repository's CODEOWNERS is read without a token; a private one needs an
 [SCM token](./source-control), and without it ownership falls back to annotations alone.
 
+## Live runs
+
+The words every tool uses for a run while it goes ([Watch a run](/features/watch-a-run)).
+
+### Run number
+
+**A run's id on the instance it reports to, `#78`, and its page there.** The reporter learns it as the run starts and
+tells it to the editor or the desktop app that follows the run, so every tool links the same page.
+
+### Run name
+
+**The name a run carries before it has a number** (`piwiRunRef` in its metadata): the one its launcher gave it, an
+editor's ref, a run request's id, else `local-<pid>-<time>` for a run outside CI. A CI run has none: its number names
+it. See [Test metadata](/reference/test-metadata#run-origin).
+
+### Worker
+
+**One of the run's Playwright processes, named by its lane, `Worker 2`.** A lane is Playwright's `parallelIndex`,
+counted from 1 in each shard; a worker Playwright starts again after a failure takes the same lane.
+
+### Stop
+
+**A test standing at a call, waiting to be answered:** at a breakpoint, after a step, at a Pause, at the line it was run
+to, at `page.pause()`, or at a failure held for a look. Each tool names it by why it stopped, in the same words
+(**Stopped at a breakpoint**, **Paused**, …). At a stop of a headed run, **Show the browser** brings the test's
+window to the front ([Watch a run](/features/watch-a-run#where-a-test-stopped)). A test ended there with
+[End the test](/features/end-the-test) is skipped, and marked **Ended at a stop** on the run's and the test's pages,
+in the Runs window, the Local runs tray and the editors.
+
+The test timeout stops while a test is paused at a breakpoint, and so does the paused call's own budget
+(`actionTimeout`, or `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its
+own deadline: `expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused call
+can run out while you look and fail the test: the pause bar then goes away, before Playwright's failure screenshot and
+the `afterEach` hooks. The test's duration leaves the time paused out, and every step keeps its clock time: the
+dashboard's timelines draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it
+out.
+
+### CI position
+
+**The call a running test of a CI run is at, in your code:** a plain mark at the end of its line in the editors,
+read-only. Never a stop: nothing waits there, and no tool answers it
+([A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch)). The editor follows the two newest
+CI runs of a branch through the connection to the instance it already holds, and Piwi Picker reads the list every 15
+seconds while its Runs window is open. While the editor follows a run, the run's reporter streams the call each test
+is at.
+
+### Hold failures
+
+**Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
+started with breakpoints, a debug run or a reproduction, off otherwise, unless an editor window chose
+it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)) or the desktop app started the
+run with it on; and any tool that follows the run turns it on or off, the editors, Piwi Picker's Runs window, the
+desktop app, or an agent (`run_follow`). Off, a failure goes on at once, as without Piwi. A run nobody attends never
+holds one: a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1 that does not stop at its first
+failure (`--max-failures=1`) and UI mode go on past each failure. So do an editor's **Verify ×3**, a fix plan's
+verification and a Flake Lab line, still listed, paused and stopped as the editor's other runs. Each tool shows it as the last one set it: the
+desktop app's switch turns it off as the app's last window closes only when no other tool set it since.
+
+### Presence, driving a stop
+
+**Who else is on a run, and who acts at its stop.** Each tool says which others have the run open (a Runs window, the
+desktop app, an agent that follows it), who watches each worker's page, and who drives a stop. One drives at a time: an
+agent drives a stop it asked for or acted on, and a person takes it by a click or a pick on the page's view, or with
+**Take control**. While a person drives, the agent's actions and controls at that stop are refused and it is told the
+stop was taken; the person gives it back with **Give back**, by no longer watching the page, or by closing the tool. A
+person's Resume, Step and Finish always answer the stop, and the stop a person's Step or Run to comes to stays theirs.
+
+### Watch, Share live
+
+**Watch** shows a worker's page as its test runs or stands stopped. Its frames go from the test's worker only to the
+tools that watch that page (an editor's view, the desktop app's window, Piwi Picker's Runs window), and to the team
+instance while the run is shared live; nothing on your machine keeps them. The worker takes images only while a view
+watches it, and paints over password fields and the fields of one-time codes and card numbers before an image leaves
+it; the editor service or the desktop app's server, on your machine, passes each to the views watching that worker,
+one view of the page serving every viewer at once (the editor's, Piwi Picker's and, for a run shared live, the
+team's). A CI run's lane watched in the editor comes from the team instance, read with the editor's key: the CI
+worker paints over the same fields before they leave it, the editor service keeps none, and the watch counts among
+the instance's watches of the run for the key's owner, as a dashboard tab does. **Share live** lets a teammate watch a run on
+your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
+being shared ([Live view of a run](/features/live-view)). **Watch all** shows every worker of such a run at once, a
+tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped
+([Watch all workers](/features/watch-all)).
+
+### Trace so far
+
+**A running test's trace up to now, opened in Playwright's trace viewer** (**Open the trace so far**, [Watch a running
+test](/features/watch-running-test#open-the-trace-so-far)). The editor service or the desktop app's server, on the
+machine the run runs on, asks the test's worker where its trace grows, checks that file, and starts the viewer there
+from your project's own Playwright. The trace's path never leaves that service: each tool hears a sentence alone,
+saying why when the viewer does not start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it
+opened: close it, then choose the button again, for what came since.
+
+### Verification
+
+**A test run several times without retries and without the breakpoints, to see how often it passes** (**Verify ×3**
+in the editors, `--repeat-each=3 --retries=0`). It says how many of its runs passed (`Passed 3 of 3`, `Failed 1 of 3`).
+Each run is a result of its own on the instance, and the editor counts them from the results the run streams as it
+executes; when it missed some, a failing verification says `Failed at least 1 of 3`. When its run never reached an
+instance, the exit code says it, which cannot tell a pass from a skip: `None of 3 runs failed: tests/checkout.spec.ts:42`,
+or `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`. It never holds a failure.
+
 ## Failures
 
 ### Error fingerprint & failure cluster
@@ -407,6 +508,13 @@ A changed file of a pull request that no test reached, in the run or the project
 changed line of. One rule decides it for the pull-request comment, the gate, MCP and the *changed, unreached* gap; a
 file nothing can observe, outside the coverage scope or deleted is counted apart. **Patch coverage** is the same
 question by line: the share of the changed lines that ran. See [Uncovered changes](/features/uncovered-changes).
+
+### Reusable result
+
+A test result whose code had already passed unchanged: an earlier first-attempt pass of the same test and Playwright
+project, at most 14 days older, recorded file versions (path and git blob) that are all among the versions this result
+ran, or ran at the same commit on CI. Either way, the pass recorded its file versions. A reusable result that failed is an **identical-code failure**: the test, its data or its environment caused it.
+See [Reuse forecast](/features/reuse-forecast).
 
 ### Suspect lines
 

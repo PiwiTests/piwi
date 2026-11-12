@@ -15,58 +15,68 @@ Nothing leaves your machine unless you [share a run live](#share-live).
 
 ## Each worker
 
-While a run goes on, the tray shows each worker's test, its Playwright project and its attempt, and whether it runs.
+While a run goes on, the tray shows each worker's test, project and attempt, and whether it runs.
 **Pause** stops the test before its next call that acts on or checks the page. A test also stops at a `page.pause()`,
 and a headed one shows Piwi's [pause bar](./editor-breakpoints#pause-a-run) there.
 
-At a stop, the tray says why the test stopped, the call about to run and its place in your code, with an image of the
-page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish** runs the test to its
-end without stopping again, and [**End the test**](./end-the-test) skips the rest of it.
+At a stop, the tray says why the test stopped, the call about to run (**Next**) and its place in your code (**At**),
+with an image of the page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish**
+runs it to its end without stopping again, and [**End the test**](./end-the-test) skips the rest.
 
-**Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
-it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
-which runs to show you the failure; while [Piwi Picker's Runs window](./runs-window) is open, failures are held too. A
-run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure.
+A run of several workers shows one at a time, behind a tab each (**worker 2**) marked with its state. A new stop takes
+the tab from a worker that runs unwatched, and **Resume** or **End the test** there moves it to the next stopped test.
+**Pause all** and **Resume all** steer every worker at once.
+
+**Hold failures**, on each running run, holds a failing test at its line: **Failed at**, its error under
+it, and **Resume** to let it end as it failed. It is on from the start for **Reproduce**, which runs to show you the
+failure, and a run started with it on; **Run again** keeps it. It is [the run's own](/guide/concepts#hold-failures),
+off again as the app's last window closes. A run [nobody attends](/guide/concepts#hold-failures) never holds one, and
+its switch says why.
 
 <figure>
-  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
+  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live with Interact on, with Resume, Step, Finish, Assert a region and Mock a request">
   <figcaption>A run the desktop app started, stopped at a <code>page.pause()</code> and watched live.</figcaption>
 </figure>
 
-The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
-tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every
-page, and again as soon as it reloads while a run of the app goes on. On a page without the tray, as an analytics
-dashboard in TV mode or an error page, the system tells you of every stop, whatever the window shows, and no failure
-is held; a `page.pause()`, a step or a breakpoint still waits there until something answers it: the tray once a page
-shows it again, [Piwi Picker's Runs window](./runs-window) or [an agent](#for-agents). When no run of the app is going
-on, the window stops listening, and a stop goes on at once.
+The tray opens at each stop, where a headless test waits for you. With the window in the background, the system tells
+you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every page, again
+as soon as it reloads while a run of the app goes on. On a page without the tray (an analytics dashboard in TV mode,
+an error page), the system tells you of every stop, whatever the window shows, and no failure is held; a
+`page.pause()`, a step or a breakpoint waits until the tray shows it again, or [Piwi Picker's Runs
+window](./runs-window) or [an agent](#for-agents) answers it. With no run of the app going on, the window stops
+listening, and a stop goes on at once.
 
 ## Its output
 
-Each run shows its output under its workers, in the colors Playwright prints in a terminal. **Open the output in a
-separate window**, the window button on the run, moves it to a window of its own, to keep beside your editor or on
-another screen: it goes on updating and has the run's **Stop**. Closing that window, or the same button, now **Show
-the output here**, brings the output back; the window closes with the app.
+Each run shows its output under its workers, in Playwright's terminal colors. **Open the output in a
+separate window**, the window button on the run, moves it to a window of its own, beside your editor or on another
+screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
+here**, brings it back; the window closes with the app.
 
 ## Watch live
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off; at a stop, the image takes your input as **Watch live** does. After **Step**, **Resume**
-or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
-update it.
+stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. Between two
+images, and with an older reporter: [Watch a running test](./watch-running-test).
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
-until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
-to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
-to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
+until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends your clicks, the wheel and your
+keys on the view to the page; `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the
+[frames](/guide/concepts#watch-share-live).
 
-**Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
-the test as **Pause** does, watching its worker: the tray opens at the stop, the page live. The row
-then says where the test stopped, with **Show its page** to open the tray on it again.
+**Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
+the test as **Pause** does and watches its worker: the tray opens at the stop, the page live, and the row says where
+it stopped, with **Show its page** to open the tray on it again.
 
 **Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
 the pointer: its locator shows under the test, with **Copy**.
+
+Under a watched page, from a reporter newer than 0.68.0, the tray shows what pixels cannot, as the editor does
+([beside the image](./watch-running-test#beside-the-image)): **Why it waits**, **Events**, **Text** (**Show the page's
+text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click enlarges
+an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens Playwright's
+trace viewer on the running test's trace up to now, on your machine, with a reporter newer than 0.68.0: [Watch a
+running test](./watch-running-test#open-the-trace-so-far).
 
 ## Code to copy
 
@@ -80,8 +90,8 @@ your file:
 - **A locator picked**, on the image or with the pause bar's **Pick a locator**, shows with the line it was picked
   for.
 
-Each code shows the line it goes above, and its import lines apart, each with **Copy**. The code is made from the file
-as it is on disk, in the folder linked to the project.
+Each code shows the line it goes above and, apart, its import lines, each with **Copy**, made from the file as it is
+on disk in the folder linked to the project.
 
 <figure>
   <img src="/screenshots/desktop-run-live-code.png" alt="Code from the runs in the desktop app's tray: a mocked request, the page.route call to write above tests/checkout.spec.ts:18, with Copy">
@@ -95,24 +105,20 @@ names it does, can be shared there for a teammate to watch: **Share live**, abov
 first time since the app started. Who sees what, and why a run cannot be shared: [Share a
 run live](./share-live#from-the-desktop-app).
 
-## From Piwi Picker
-
-Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s-runs) lists its runs beside your
-editor's, steers them, and watches their pages live. Code it starts at a stop of the app's run comes to the app's tray
-too.
-
 ## For agents
 
-The app's [MCP server](./mcp), which its **MCP server** page connects your coding agent to, serves these runs with
-the tools of [Run control for agents](./agent-run-control): `run_list`, `run_follow`, `run_control`,
-`page_snapshot`, `page_act`, `page_locator` and `code_write`. An agent follows a run, pauses or steps it, reads the
-stopped page as its ARIA snapshot and acts on it by ref, as you can and no further: a stopped page alone, the actions
-the tools name, no code to evaluate. What comes from the page reaches it marked as the page's, never as instructions.
+The app's [MCP server](./mcp) (its **MCP server** page connects your coding agent) serves these runs with
+the tools of [Run control for agents](./agent-run-control). An agent follows a run, pauses or steps it, and reads
+and acts on the stopped page as you can and no further: [what keeps it safe](./agent-run-control#what-keeps-it-safe).
 
-What it does shows in the tray: a stop it asked for says so (**Paused by the agent**), and so does its first action
-at a stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under
+The tray shows what it does: a stop it asked for says so (**Paused by the agent**), as does its first action at a
+stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under
 **Code from the runs**, to copy, and back to the agent in its answer: no file is written. A run nobody attends is not
 served, so an agent sees no Flake Lab run, bisect or lab job.
+
+The tray names who else is there: the tools that have a run open (**Also open in Piwi Picker · An agent follows this
+run**), who watches a worker's page, and who [drives a stop](/guide/concepts#presence-driving-a-stop): **Take control**
+from an agent, and **Give back**.
 
 An agent pauses, steps or runs to a line only while the app's window is open, in the tray included: a headless stop
 goes on with no window to show it. A stop it asked for goes on two minutes after its last call, so a run never waits
@@ -128,15 +134,13 @@ for an agent that left.
 - **A reload forgets the tray's runs.** A run still going shows among the app's other runs, without **Hold
   failures**: its failures go on, a reproduction's included.
 - **Run to cursor** stays in the editor, which has the file.
-- **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
-  passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 40 seconds at most
-  (a 30-second wait, then the stopped page's snapshot).
 
 ## Related
 
 - [Desktop app](./desktop): what it runs, and how it links a project to its folder.
 - [Pause and step from the editor](./editor-run-control): the same stops, in VS Code and the JetBrains IDEs.
 - [Code from a pause](./editor-stop-code): what each action writes.
-- [Runs window](./runs-window): Piwi Picker's window for the same runs.
+- [Runs window](./runs-window#the-desktop-app-s-runs): Piwi Picker's window, paired with the app, for the same runs;
+  the code it starts at their stops comes to this tray.
 - [Run control for agents](./agent-run-control): the tools an agent steers the runs with.
 - [Flake Lab](./flake-lab#in-the-desktop-app): **Reproduce this flake** and a flake-aware bisect, run by the app.

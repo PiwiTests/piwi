@@ -1,7 +1,10 @@
 import { isPiwiAnnotation, TEST_PRIORITIES, type TestMetadata } from '@piwitests/core/test-meta';
+import { endedAtStopIn } from '@piwitests/core/run-channel';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { isFlakyExecution } from '#shared/utils/test-counts';
+import { isEndedAtStop } from '#shared/utils/skip-kind';
 import type { TestCaseResult } from '~~/types/api';
+import { isStuckAttempt } from './test-attempts';
 
 /**
  * One badge on a test row. `BadgeGroup` shows the first three and folds the
@@ -17,7 +20,19 @@ export interface TestRowBadge {
   title?: string;
   /** Render monospaced — Playwright marks (`@fixme`) and tags. */
   mono?: boolean;
+  /** The test tag this badge shows (without its `@`), so a tag that is a test case key can carry its hover card. */
+  tag?: string;
 }
+
+/** The mark of a result ended at a stop (End the test), in place of its `skip` mark. */
+export const ENDED_AT_STOP_BADGE: TestRowBadge = {
+  key: 'ended-at-stop',
+  label: 'Ended at a stop',
+  color: 'neutral',
+  variant: 'soft',
+  icon: 'i-lucide-skip-forward',
+  title: 'Ended at a stop with End the test: skipped, so it neither passed nor failed',
+};
 
 const PRIORITY_COLOR: Record<(typeof TEST_PRIORITIES)[number], TestRowBadge['color']> = {
   critical: 'error',
@@ -60,6 +75,8 @@ export interface TestRowBadgeInput {
   quarantined?: boolean | null;
   /** A `test.fail()` test that passed: the bug it reproduces looks fixed. */
   looksFixed?: boolean | null;
+  /** The execution was ended at a stop (End the test, `isEndedAtStop`): its skip reads so. */
+  endedAtStop?: boolean | null;
   annotations?: Array<{ type: string; description?: string }> | null;
   tags?: string[] | null;
   /** Lock names this test held — a shared resource the runner serializes holders of. */
@@ -129,6 +146,11 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
 
   for (const ann of input.annotations ?? []) {
     if (isPiwiAnnotation(ann.type)) continue;
+    // End the test's skip reads as what it is: the test was ended at a stop, neither passed nor failed.
+    if (input.endedAtStop && endedAtStopIn([ann])) {
+      badges.push(ENDED_AT_STOP_BADGE);
+      continue;
+    }
     const label = ann.type === 'tag' ? (ann.description ?? ann.type) : ann.type;
     badges.push({
       key: `mark:${ann.type}:${ann.description ?? ''}`,
@@ -162,7 +184,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
     });
   }
   for (const tag of input.tags ?? []) {
-    badges.push({ key: `tag:${tag}`, label: `@${tag}`, color: 'primary', variant: 'soft', mono: true });
+    badges.push({ key: `tag:${tag}`, label: `@${tag}`, color: 'primary', variant: 'soft', mono: true, tag });
   }
   for (const lock of input.locks ?? []) {
     badges.push({
@@ -193,11 +215,12 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
 /** Whether a badge is one of the exceptional signals (shown even when others hide). */
 export function badgesFromTestCase(tc: TestCaseResult, opts?: { quarantined?: boolean }): TestRowBadge[] {
   return buildTestRowBadges({
-    stuck: tc.status === 'running' && tc.stuck != null,
+    stuck: isStuckAttempt(tc),
     looksFixed: isExpectedFailurePassed(tc.status, tc.expectedStatus),
     isNewRegression: tc.isNewRegression,
     isNewFlaky: tc.isNewFlaky,
     passedOnRetry: isFlakyExecution(tc),
+    endedAtStop: isEndedAtStop(tc),
     quarantined: opts?.quarantined,
     annotations: tc.testAnnotations,
     tags: tc.tags,

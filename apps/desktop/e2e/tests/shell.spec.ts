@@ -180,7 +180,7 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
       lines: [{ id: 1, text: 'rendered by the dashboard', error: false }],
     }), true)
   `);
-  await tauriPage.waitForWindow((w) => w.label === opened.label && w.title === 'Piwi e2e run · Piwi Dashboard', {
+  await tauriPage.waitForWindow((w) => w.label === opened.label && w.title === 'Piwi e2e run · Piwi Desktop', {
     timeout: 15_000,
   });
 

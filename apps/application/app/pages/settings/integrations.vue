@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { INTEGRATION_PROVIDER_LIST, type IntegrationProviderName } from '#shared/integrations/registry';
+import {
+  INTEGRATION_PROVIDER_LIST,
+  providerEndpoint,
+  type IntegrationProviderName,
+} from '#shared/integrations/registry';
 import type { ConnectionSummary, ConnectionTestResult } from '#shared/integrations/types';
 import { ATLASSIAN_API_TOKENS_URL, jiraWebhooksAdminUrl, tokenExpiry } from '#shared/integrations/jira-setup';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { looksPrivateHost } from '#shared/utils/private-host';
 import type { ApiResponse } from '~~/types/api';
+import type { HelpTopicKey } from '~/utils/help-content';
 import { trackerSyncToast } from '~/utils/tracker-sync';
 
 const toast = useToast();
@@ -32,7 +37,20 @@ function connectionsFor(provider: IntegrationProviderName): ConnectionSummary[] 
 /** Env vars that back an environment-managed connection, per provider. */
 const ENV_VARS_BY_PROVIDER: Partial<Record<IntegrationProviderName, PiwiEnvVarName[]>> = {
   jira: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+  'zephyr-scale': ['PIWI_ZEPHYR_API_TOKEN', 'PIWI_ZEPHYR_REGION'],
 };
+
+/** The card's help topic: a provider with its own setup has its own entry. */
+const HELP_BY_PROVIDER: Partial<Record<IntegrationProviderName, HelpTopicKey>> = {
+  'zephyr-scale': 'settings.integrations.zephyr-connection',
+};
+
+/** The name of the region a region-reached connection was saved with, for its card. */
+function regionLabel(conn: ConnectionSummary): string | null {
+  const endpoint = providerEndpoint(conn.provider);
+  if (endpoint?.kind !== 'region') return null;
+  return endpoint.regions.find((r) => r.id === conn.config?.region)?.label ?? null;
+}
 
 function statusColor(status: ConnectionSummary['status']): 'success' | 'error' | 'neutral' {
   if (status === 'ok') return 'success';
@@ -225,14 +243,23 @@ function errorMessage(err: unknown): string {
         :key="provider.name"
         :icon="provider.icon"
         :title="provider.label"
-        help="settings.integrations"
+        :help="HELP_BY_PROVIDER[provider.name] ?? 'settings.integrations'"
+        :data-shot="`integration-${provider.name}`"
         data-tour="integration-connections"
       >
         <template #subtitle>
-          Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
-          connection.
+          <template v-if="provider.kind === 'tracker'">
+            Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
+            connection.
+          </template>
+          <template v-else>
+            Piwi sends nothing to {{ provider.label }} yet: the connection can be created, checked and tested.
+          </template>
         </template>
-        <template v-if="canManageConnections && connectionsFor(provider.name).length > 0" #actions>
+        <template
+          v-if="provider.kind === 'tracker' && canManageConnections && connectionsFor(provider.name).length > 0"
+          #actions
+        >
           <UButton
             color="neutral"
             variant="outline"
@@ -267,7 +294,10 @@ function errorMessage(err: unknown): string {
                 }}</UBadge>
                 <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
               </div>
-              <p class="text-xs text-muted font-mono break-all">
+              <p v-if="regionLabel(conn)" class="text-xs text-muted break-all">
+                {{ regionLabel(conn) }} region · <span class="font-mono">{{ conn.baseUrl }}</span>
+              </p>
+              <p v-else class="text-xs text-muted font-mono break-all">
                 <OutboundLink :href="conn.baseUrl">{{ conn.baseUrl }}</OutboundLink>
               </p>
               <p v-if="conn.credentialValues.email || tokenKindLine(conn)" class="text-xs text-muted break-all">
@@ -292,7 +322,11 @@ function errorMessage(err: unknown): string {
               <CheckResultLine
                 v-if="testResults[conn.id]?.ok"
                 state="ok"
-                :text="`Signed in as ${testResults[conn.id]?.account?.displayName || 'the account'}.`"
+                :text="
+                  provider.kind === 'tracker'
+                    ? `Signed in as ${testResults[conn.id]?.account?.displayName || 'the account'}.`
+                    : `Connected to ${testResults[conn.id]?.account?.displayName || provider.label}.`
+                "
               />
               <CheckResultLine
                 v-else-if="testResults[conn.id]"
@@ -378,8 +412,18 @@ function errorMessage(err: unknown): string {
           </ul>
 
           <!-- Connect / edit form -->
+          <RegionConnectionForm
+            v-if="formProvider === provider.name && providerEndpoint(provider.name)?.kind === 'region'"
+            :key="editingConnection?.id ?? 'new'"
+            :provider="provider.name"
+            :connection="editingConnection"
+            :can-store-secrets="canStoreSecrets"
+            :env-vars="ENV_VARS_BY_PROVIDER[provider.name] ?? []"
+            @saved="onSaved"
+            @cancel="closeForm"
+          />
           <JiraConnectionForm
-            v-if="formProvider === provider.name && provider.name === 'jira'"
+            v-else-if="formProvider === provider.name && provider.name === 'jira'"
             :key="editingConnection?.id ?? 'new'"
             :connection="editingConnection"
             :can-store-secrets="canStoreSecrets"
@@ -401,10 +445,13 @@ function errorMessage(err: unknown): string {
         </div>
 
         <template #footer>
-          <p class="text-xs text-muted" data-tour="integration-private-host">
+          <p v-if="provider.kind === 'tracker'" class="text-xs text-muted" data-tour="integration-private-host">
             A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host
             works.
             <HelpHint topic="settings.integrations.private-host" />
+          </p>
+          <p v-else class="text-xs text-muted">
+            {{ provider.label }} is reached on the host of the region you choose, never on an address typed here.
           </p>
         </template>
       </SectionCard>

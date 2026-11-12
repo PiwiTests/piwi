@@ -1,14 +1,18 @@
 import { and, eq } from 'drizzle-orm';
 import {
-  INTEGRATION_PROVIDERS,
+  connectionBaseUrl,
   isIntegrationProvider,
+  isProviderOfKind,
   nonSecretCredentials,
+  providerHasCapability,
   type IntegrationProviderName,
+  type TestManagementProviderName,
 } from '#shared/integrations/registry';
 import type {
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
+  TestManagementConnectionSummary,
   TrackerSummary,
 } from '#shared/integrations/types';
 import {
@@ -25,16 +29,22 @@ import { hashToken } from '../token-hash';
 import { JiraClient } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
+import { resolveTitlePrefix } from '#shared/integrations/title-prefix';
 import type { IssueTracker, TrackerCredentials } from './types';
-
-/** Providers whose registry entry is a tracker (as opposed to a wiki). */
-const TRACKER_PROVIDERS: ReadonlySet<IntegrationProviderName> = new Set(
-  (Object.keys(INTEGRATION_PROVIDERS) as IntegrationProviderName[]).filter(
-    (name) => INTEGRATION_PROVIDERS[name].kind === 'tracker',
-  ),
-);
+import {
+  ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+  ZEPHYR_TOKEN_UNUSABLE,
+  ZephyrScaleClient,
+  type ZephyrClientOptions,
+} from './test-management/zephyr-scale';
+import { zephyrFailureHint } from './test-management/zephyr-check';
+import { connectionPausedUntil } from './connection-pauses';
+import { INTERACTIVE_MAX_WAIT_MS, limiterForConnection, RequestLimiterBusyError } from './test-management/limiter';
+import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
 const ENV_JIRA_NAME = 'Jira (environment)';
+const ENV_ZEPHYR_NAME = 'Zephyr Scale (environment)';
+const DEFAULT_ZEPHYR_REGION = 'us';
 
 /** The Jira credentials configured through the environment, or null. */
 function envJiraCredentials(): { baseUrl: string; email: string; apiToken: string } | null {
@@ -50,53 +60,107 @@ function jiraFlavor(): 'cloud' {
   return 'cloud';
 }
 
+/** Region values already reported as invalid, so the log names each one once. */
+const reportedZephyrRegions = new Set<string>();
+
+/** The Zephyr Scale credentials configured through the environment, or null. An invalid region is logged and ignored. */
+function envZephyrCredentials(): { region: string; baseUrl: string; apiToken: string } | null {
+  const apiToken = process.env.PIWI_ZEPHYR_API_TOKEN;
+  if (!apiToken) return null;
+  const requested = process.env.PIWI_ZEPHYR_REGION?.trim().toLowerCase() || DEFAULT_ZEPHYR_REGION;
+  let endpoint = connectionBaseUrl('zephyr-scale', { region: requested });
+  if ('error' in endpoint) {
+    if (!reportedZephyrRegions.has(requested)) {
+      reportedZephyrRegions.add(requested);
+      console.warn(
+        `[integrations] PIWI_ZEPHYR_REGION "${requested}" is not a Zephyr Scale region; using ${DEFAULT_ZEPHYR_REGION}`,
+      );
+    }
+    endpoint = connectionBaseUrl('zephyr-scale', { region: DEFAULT_ZEPHYR_REGION });
+  }
+  if ('error' in endpoint || !endpoint.region) return null;
+  return { region: endpoint.region, baseUrl: endpoint.baseUrl, apiToken };
+}
+
+/** The credential map an environment-managed connection of `provider` holds, or null when its env vars are unset. */
+function envCredentialMap(provider: string): Record<string, string> | null {
+  if (provider === 'jira') {
+    const env = envJiraCredentials();
+    return env ? { email: env.email, apiToken: env.apiToken } : null;
+  }
+  if (provider === 'zephyr-scale') {
+    const env = envZephyrCredentials();
+    return env ? { apiToken: env.apiToken } : null;
+  }
+  return null;
+}
+
+/** An environment-managed connection as the env vars describe it. */
+interface EnvManagedConnection {
+  name: string;
+  baseUrl: string;
+  config: Record<string, unknown>;
+}
+
+/** The environment-managed connection of each provider that has one, or null for a provider whose env vars are unset. */
+const ENV_MANAGED: Partial<Record<IntegrationProviderName, () => EnvManagedConnection | null>> = {
+  jira: () => {
+    const env = envJiraCredentials();
+    return env ? { name: ENV_JIRA_NAME, baseUrl: env.baseUrl, config: { flavor: jiraFlavor() } } : null;
+  },
+  'zephyr-scale': () => {
+    const env = envZephyrCredentials();
+    return env ? { name: ENV_ZEPHYR_NAME, baseUrl: env.baseUrl, config: { region: env.region } } : null;
+  },
+};
+
 /**
  * Reconcile the environment-managed connections with the current env vars: create
- * or update the Jira connection when `PIWI_JIRA_*` are set, remove it when they
- * are not. Credentials for an env-managed connection live in the environment, so
- * the row's `credentials` column stays null and never needs `PIWI_SECRET_KEY`.
+ * or update the Jira connection when `PIWI_JIRA_*` are set and the Zephyr Scale one when
+ * `PIWI_ZEPHYR_API_TOKEN` is, remove each when its variables are not. Credentials for an
+ * env-managed connection live in the environment, so the row's `credentials` column stays
+ * null and never needs `PIWI_SECRET_KEY`.
  */
 export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
-  const env = envJiraCredentials();
-  const [existing] = await db
-    .select()
-    .from(integrationConnections)
-    .where(and(eq(integrationConnections.provider, 'jira'), eq(integrationConnections.managedBy, 'env')));
+  for (const [provider, describe] of Object.entries(ENV_MANAGED)) {
+    const env = describe();
+    const [existing] = await db
+      .select()
+      .from(integrationConnections)
+      .where(and(eq(integrationConnections.provider, provider), eq(integrationConnections.managedBy, 'env')));
 
-  if (!env) {
-    if (existing) await db.delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
-    return;
-  }
-
-  if (existing) {
-    if (existing.baseUrl !== env.baseUrl) {
-      // Preserve any admin-set config (e.g. the webhook token's digest) across a base-URL change.
-      const config = {
-        ...((existing.config as Record<string, unknown> | null) ?? {}),
-        flavor: jiraFlavor(),
-      };
-      await db
-        .update(integrationConnections)
-        .set({ baseUrl: env.baseUrl, config, updatedAt: new Date() })
-        .where(eq(integrationConnections.id, existing.id));
+    if (!env) {
+      if (existing) await db.delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
+      continue;
     }
-    return;
-  }
 
-  await db.insert(integrationConnections).values({
-    provider: 'jira',
-    name: ENV_JIRA_NAME,
-    baseUrl: env.baseUrl,
-    config: { flavor: jiraFlavor() },
-    credentials: null,
-    status: 'unverified',
-    managedBy: 'env',
-  });
+    if (existing) {
+      if (existing.baseUrl !== env.baseUrl) {
+        // Preserve any admin-set config (e.g. the webhook token's digest) across a base-URL change.
+        const config = { ...((existing.config as Record<string, unknown> | null) ?? {}), ...env.config };
+        await db
+          .update(integrationConnections)
+          .set({ baseUrl: env.baseUrl, config, updatedAt: new Date() })
+          .where(eq(integrationConnections.id, existing.id));
+      }
+      continue;
+    }
+
+    await db.insert(integrationConnections).values({
+      provider,
+      name: env.name,
+      baseUrl: env.baseUrl,
+      config: env.config,
+      credentials: null,
+      status: 'unverified',
+      managedBy: 'env',
+    });
+  }
 }
 
 /** True when the connection has usable credentials, without revealing them. */
 function hasStoredCredentials(row: IntegrationConnection): boolean {
-  if (row.managedBy === 'env') return envJiraCredentials() !== null;
+  if (row.managedBy === 'env') return envCredentialMap(row.provider) !== null;
   return !!row.credentials;
 }
 
@@ -112,10 +176,7 @@ function decryptCredentials(row: IntegrationConnection): Record<string, string> 
 
 /** The full credential map for a connection — from the environment or the stored blob. */
 function credentialMap(row: IntegrationConnection): Record<string, string> | null {
-  if (row.managedBy === 'env') {
-    const env = envJiraCredentials();
-    return env ? { email: env.email, apiToken: env.apiToken } : null;
-  }
+  if (row.managedBy === 'env') return envCredentialMap(row.provider);
   return decryptCredentials(row);
 }
 
@@ -238,6 +299,12 @@ export async function createConnection(db: DbClient, input: ConnectionInput): Pr
   return toSummary(row!);
 }
 
+/** Whether `baseUrl` is another place than where the connection's row reaches its provider. */
+function movedEndpoint(row: IntegrationConnection, baseUrl: string): boolean {
+  if (row.provider === 'jira') return normalizeJiraSiteUrl(baseUrl)?.url !== normalizeJiraSiteUrl(row.baseUrl)?.url;
+  return baseUrl !== row.baseUrl;
+}
+
 export async function updateConnection(
   db: DbClient,
   id: number,
@@ -260,10 +327,9 @@ export async function updateConnection(
   // Merge the submitted credential fields onto the stored ones. A blank field is
   // ignored, so changing one field — rotating the API token, or correcting the
   // account email — never drops the others. An empty map keeps the stored blob.
-  // A move to another site keeps none of them: a stored token never goes to another host.
+  // A move to another site or region keeps none of them: a stored token never goes to another host.
   const incoming = nonEmptyValues(input.credentials);
-  const movedSite =
-    input.baseUrl !== undefined && normalizeJiraSiteUrl(input.baseUrl)?.url !== normalizeJiraSiteUrl(row.baseUrl)?.url;
+  const movedSite = input.baseUrl !== undefined && movedEndpoint(row, input.baseUrl);
   const stored = movedSite ? {} : (decryptCredentials(row) ?? {});
   const changed = movedSite || Object.keys(incoming).some((key) => stored[key] !== incoming[key]);
   if (changed) {
@@ -307,13 +373,67 @@ export function trackerForRow(row: IntegrationConnection): IssueTracker | null {
   return JiraClient.fromCredentials(row.baseUrl, credentials, cloudIdFromConfig(row));
 }
 
+/** The test management credentials of a connection, or null when it holds no token. */
+function resolveTestManagementCredentials(row: IntegrationConnection): TestManagementCredentials | null {
+  const apiToken = credentialMap(row)?.apiToken;
+  return apiToken ? { apiToken } : null;
+}
+
+/** Build a test management client for a connection, or null when it is not one or cannot be resolved. */
+export async function createTestManagement(db: DbClient, connectionId: number): Promise<TestManagementProvider | null> {
+  const row = await getConnectionRow(db, connectionId);
+  if (!row) return null;
+  return testManagementForRow(row);
+}
+
+/**
+ * How a test management client spends its time. `maxWaitMs` caps how long one request queues behind the limiter;
+ * `deadlineAt` (epoch ms) is when the caller's whole budget ends, so a request whose turn comes after it is refused
+ * rather than queued.
+ */
+export type TestManagementClientOptions = ZephyrClientOptions & { maxWaitMs?: number; deadlineAt?: number };
+
+/** The longest a request may queue now: the smaller of its own cap and what is left of the caller's budget. */
+function waitBudget(maxWaitMs: number | undefined, deadlineAt: number | undefined): number | undefined {
+  if (deadlineAt === undefined) return maxWaitMs;
+  const left = Math.max(0, deadlineAt - Date.now());
+  return maxWaitMs === undefined ? left : Math.min(maxWaitMs, left);
+}
+
+/**
+ * Build a test management client from an already-loaded connection row. It calls the host of the row's region from the
+ * registry; the row's stored address is never used.
+ */
+export function testManagementForRow(
+  row: IntegrationConnection,
+  options: TestManagementClientOptions = {},
+): TestManagementProvider | null {
+  if (!isProviderOfKind(row.provider, 'test-management')) return null;
+  const credentials = resolveTestManagementCredentials(row);
+  if (!credentials) return null;
+  const region = (row.config as Record<string, unknown> | null)?.region;
+  // Every call of a saved connection goes through its limiter, whoever makes it.
+  const { maxWaitMs, deadlineAt, ...clientOptions } = options;
+  const limited: ZephyrClientOptions = {
+    beforeRequest: () => limiterForConnection(row.id).wait({ maxWaitMs: waitBudget(maxWaitMs, deadlineAt) }),
+    ...clientOptions,
+  };
+  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, limited) : null;
+}
+
 /** Every tracker connection with usable credentials — what drives the UI entry points. */
 export async function listTrackerConnections(db: DbClient): Promise<TrackerSummary[]> {
   await ensureEnvManagedConnections(db);
   const rows = await db.select().from(integrationConnections);
   return rows
-    .filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName) && hasStoredCredentials(r))
-    .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name, baseUrl: r.baseUrl }));
+    .filter((r) => isProviderOfKind(r.provider, 'tracker') && hasStoredCredentials(r))
+    .map((r) => ({
+      id: r.id,
+      provider: r.provider as IntegrationProviderName,
+      name: r.name,
+      baseUrl: r.baseUrl,
+      titlePrefix: resolveTitlePrefix(null, r.config),
+    }));
 }
 
 /**
@@ -353,7 +473,7 @@ export async function connectionByWebhookToken(db: DbClient, token: string): Pro
   const digest = hashToken(token);
   const rows = await db.select().from(integrationConnections);
   await hashPlainWebhookTokens(db, rows);
-  return rows.find((r) => webhookTokenDigestFor(r) === digest) ?? null;
+  return rows.find((r) => providerHasCapability(r.provider, 'webhook') && webhookTokenDigestFor(r) === digest) ?? null;
 }
 
 /** The per-project binding for a connection, or the first binding, or null. */
@@ -399,10 +519,75 @@ export async function resolveJiraUnfurlConfig(
   };
 }
 
+/** Record the outcome of a connection test on its row. */
+async function recordTest(
+  db: DbClient,
+  id: number,
+  outcome: { ok: true; config?: Record<string, unknown> } | { ok: false; error: string },
+): Promise<void> {
+  const now = new Date();
+  await db
+    .update(integrationConnections)
+    .set(
+      outcome.ok
+        ? {
+            status: 'ok',
+            lastCheckedAt: now,
+            lastError: null,
+            updatedAt: now,
+            ...(outcome.config && { config: outcome.config }),
+          }
+        : { status: 'failed', lastCheckedAt: now, lastError: outcome.error, updatedAt: now },
+    )
+    .where(eq(integrationConnections.id, id));
+}
+
+/**
+ * Record the outcome of a read of a connection that is not a sign-in test: the reason it failed on the row, or null to
+ * clear an earlier one. The connection's status is left as it is: a timeout does not make a token bad.
+ */
+export async function recordConnectionError(db: DbClient, id: number, error: string | null): Promise<void> {
+  await db
+    .update(integrationConnections)
+    .set({ lastError: error, updatedAt: new Date() })
+    .where(eq(integrationConnections.id, id));
+}
+
+/**
+ * Record that a provider refused a connection's credentials (a 401 from a picker, a catalog read or a test): the
+ * connection shows as failed, with the provider's reason, until the next successful test.
+ */
+export async function markConnectionFailed(db: DbClient, id: number, error: string): Promise<void> {
+  await recordTest(db, id, { ok: false, error });
+}
+
+/**
+ * Record that a provider accepted a connection's credentials by answering a real read (a full catalog read): the
+ * connection shows as ok, and any earlier failure is cleared.
+ */
+export async function markConnectionOk(db: DbClient, id: number): Promise<void> {
+  await recordTest(db, id, { ok: true });
+}
+
+/** Every test management connection with a stored token — what the project's binding form offers. */
+export async function listTestManagementConnections(db: DbClient): Promise<TestManagementConnectionSummary[]> {
+  await ensureEnvManagedConnections(db);
+  const rows = await db.select().from(integrationConnections).orderBy(integrationConnections.id);
+  return rows
+    .filter((r) => isProviderOfKind(r.provider, 'test-management') && hasStoredCredentials(r))
+    .map((r) => ({
+      id: r.id,
+      provider: r.provider as IntegrationProviderName,
+      name: r.name,
+      status: r.status as ConnectionSummary['status'],
+    }));
+}
+
 /** Verify a connection with the provider's `whoAmI`, recording the outcome. */
 export async function testConnection(db: DbClient, id: number): Promise<ConnectionTestResult | null> {
   const row = await getConnectionRow(db, id);
   if (!row) return null;
+  if (isProviderOfKind(row.provider, 'test-management')) return testTestManagementConnection(db, row);
   const tracker = trackerForRow(row);
   if (!tracker) {
     return { ok: false, error: 'No credentials configured for this connection.' };
@@ -415,26 +600,66 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
     const detected = tracker.detectedConfig?.() ?? null;
     const tokenKind: JiraTokenKind = detected?.cloudId ? 'scoped' : 'classic';
     const config = { ...((row.config as Record<string, unknown> | null) ?? {}), ...(detected ?? {}), tokenKind };
-    await db
-      .update(integrationConnections)
-      .set({
-        status: 'ok',
-        lastCheckedAt: new Date(),
-        lastError: null,
-        updatedAt: new Date(),
-        config,
-      })
-      .where(eq(integrationConnections.id, id));
+    await recordTest(db, id, { ok: true, config });
     return { ok: true, account, tokenKind };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(integrationConnections)
-      .set({ status: 'failed', lastCheckedAt: new Date(), lastError: message, updatedAt: new Date() })
-      .where(eq(integrationConnections.id, id));
+    await recordTest(db, id, { ok: false, error: message });
     const failure = jiraCheckFailure(err);
     return { ok: false, error: message, hint: failure ? jiraFailureHint('auth', failure) : null };
   }
+}
+
+/**
+ * {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host, the queue
+ * for the limiter included, within {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}. A connection the provider rate limited is
+ * not called until its pause ends.
+ */
+async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
+  const paused = connectionPausedUntil(row.id, new Date());
+  if (paused) {
+    return { ok: false, error: `Paused until ${paused.toISOString()}: the provider rate limited this connection` };
+  }
+  const client = testManagementForRow(row, {
+    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
+    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+    deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+  });
+  if (!client) {
+    // A token the row holds but the client refuses to send is not the same as no token at all.
+    return {
+      ok: false,
+      error: resolveTestManagementCredentials(row)
+        ? ZEPHYR_TOKEN_UNUSABLE
+        : 'No credentials configured for this connection.',
+    };
+  }
+  try {
+    const account = await client.whoAmI();
+    await recordTest(db, row.id, { ok: true });
+    return { ok: true, account };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof RequestLimiterBusyError) return { ok: false, error: message };
+    await recordTest(db, row.id, { ok: false, error: message });
+    return { ok: false, error: message, hint: zephyrFailureHint(err) };
+  }
+}
+
+/**
+ * The credentials of the connection being edited that a pre-save check may fill blank fields from, or an empty map:
+ * the stored ones, only while `sameEndpoint` says the check calls the place the connection already reaches.
+ */
+async function storedCredentialsForCheck(
+  db: DbClient,
+  connectionId: number | null | undefined,
+  provider: IntegrationProviderName,
+  sameEndpoint: (row: IntegrationConnection) => boolean,
+): Promise<Record<string, string>> {
+  if (!connectionId) return {};
+  const row = await getConnectionRow(db, connectionId);
+  return row && row.provider === provider && sameEndpoint(row) ? (credentialMap(row) ?? {}) : {};
 }
 
 /**
@@ -447,11 +672,42 @@ export async function credentialsForCheck(
   input: { siteUrl: string; credentials?: Record<string, string> | null; connectionId?: number | null },
 ): Promise<TrackerCredentials | null> {
   let merged = nonEmptyValues(input.credentials);
-  if (input.connectionId && (!merged.email || !merged.apiToken)) {
-    const row = await getConnectionRow(db, input.connectionId);
-    if (row && normalizeJiraSiteUrl(row.baseUrl)?.url === input.siteUrl) {
-      merged = { ...(credentialMap(row) ?? {}), ...merged };
-    }
+  if (!merged.email || !merged.apiToken) {
+    const stored = await storedCredentialsForCheck(
+      db,
+      input.connectionId,
+      'jira',
+      (row) => normalizeJiraSiteUrl(row.baseUrl)?.url === input.siteUrl,
+    );
+    merged = { ...stored, ...merged };
   }
   return merged.email && merged.apiToken ? { email: merged.email, apiToken: merged.apiToken } : null;
+}
+
+/**
+ * {@link credentialsForCheck} for a test management provider reached by region: a blank token is taken from the
+ * connection being edited only while it is of the same provider and its region is the one being checked.
+ */
+export async function regionCredentialsForCheck(
+  db: DbClient,
+  input: {
+    provider: TestManagementProviderName;
+    region: string;
+    credentials?: Record<string, string> | null;
+    connectionId?: number | null;
+  },
+): Promise<TestManagementCredentials | null> {
+  const typed = nonEmptyValues(input.credentials);
+  const endpoint = connectionBaseUrl(input.provider, { region: input.region });
+  if ('error' in endpoint) return null;
+  const stored = typed.apiToken
+    ? {}
+    : await storedCredentialsForCheck(
+        db,
+        input.connectionId,
+        input.provider,
+        (row) => row.baseUrl === endpoint.baseUrl,
+      );
+  const apiToken = typed.apiToken || stored.apiToken;
+  return apiToken ? { apiToken } : null;
 }

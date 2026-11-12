@@ -14,6 +14,9 @@ import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
+import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
+import { PRESSED_TOGGLE_CLASS } from '~/utils';
+import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
 import {
   isFinalRefetch,
@@ -23,6 +26,7 @@ import {
   type FinalRefetchFailure,
 } from '~/utils/refetch-keeping';
 import { runReadEndedNotice } from '~/utils/run-read-ended';
+import { desktopEditorRunOf } from '~/utils/desktop-run-view';
 import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
@@ -35,6 +39,7 @@ import {
   liveWatchAddress,
   liveWorkerKey,
   parseLiveWatchAddress,
+  type LiveAskView,
   type LiveLane,
   type LiveViewRunState,
   type LiveWorkerState,
@@ -122,6 +127,7 @@ let pageLeft = false;
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
 provideExternalIdUrl(() => testRun.value?.project?.externalIdUrl);
+provideTestManagementKeys(() => testRun.value?.project?.id);
 type LatestRunInfo = { id: number; status: string } | null;
 const { data: latestRunInfo, refresh: refreshLatestRun } = projectId
   ? await useFetch<LatestRunInfo>(`/api/projects/${projectId}/latest-run`, { key: `latest-run-${projectId}` })
@@ -222,17 +228,10 @@ const runVerdict = computed(() => {
 const liveWorkerSeen = ref(false);
 const testsRanLong = ref(false);
 let testsRanTimer: ReturnType<typeof setTimeout> | null = null;
-// What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
-// key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
-// no key, where the tests' pages show.
+// What the running rows say where Watch would be, while no worker is in the run's view: in the desktop app, which
+// hands out no key, where the tests' pages show. A run nobody shares says so once, in the Tests toolbar.
 const liveNote = computed(() =>
-  liveRowNote({
-    live: isLive.value,
-    desktop: isDesktop,
-    keyed: liveViewKeyed.value,
-    ci: !!testRun.value?.metadata?.ci,
-    workers: Object.keys(liveWorkers.value).length,
-  }),
+  liveRowNote({ live: isLive.value, desktop: isDesktop, workers: Object.keys(liveWorkers.value).length }),
 );
 // The live runs the desktop app started that report to this run, by the origin it records: their running rows offer
 // Pause and watch.
@@ -241,9 +240,17 @@ const desktopSessions = useDesktopRunSessions(() => ({
   kind: runOrigin(testRun.value?.metadata),
   ref: runOriginRef(testRun.value?.metadata),
 }));
+// The runs of an editor of this machine that report to this page, as the desktop app's server observes them: the
+// page says where their tests wait, which the editor answers. Matched by the run's page on this app's own server.
+const editorRuns = useDesktopEditorRuns();
+const editorRunsHere = computed(() =>
+  isDesktop && import.meta.client
+    ? editorRuns.value.filter((run) => desktopEditorRunOf(run.session, Number(runId), window.location.origin))
+    : [],
+);
 // The worker someone opened Watch on, its lane, and the execution of the row they opened it from (null when the
-// page's address opened it): the view starts on that test, and follows the lane's next tests when the worker says
-// its lane.
+// page's address, a tile with no running row or Follow what needs attention opened it): the view starts on that test,
+// and follows the lane's next tests when the worker says its lane.
 const watching = ref<{
   worker: number;
   shard: number | null;
@@ -257,8 +264,8 @@ const watchAsked = ref(false);
 // The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
 const watchAddress = ref<LiveLane | null>(null);
 function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
-  // Watch on a row replaces a lane the address still waits for.
-  if (testCase) watchAddress.value = null;
+  // The worker shown replaces a lane the address still waits for.
+  watchAddress.value = null;
   watchAsked.value = testCase !== null;
   watching.value = {
     worker: worker.worker,
@@ -313,9 +320,54 @@ watch(
   { immediate: true },
 );
 watch(liveWorkers, openAddressed);
+/** The lane the page's address named as the run ended: a run that continues this one opens on it. */
+let watchAtEnd: string | null = null;
 watch(runOver, (over) => {
-  if (over) watchAddress.value = null;
+  if (!over) return;
+  if (typeof route.query.watch === 'string') watchAtEnd = route.query.watch;
+  watchAddress.value = null;
 });
+
+/**
+ * The run that continued this one, shared after it from the same editor window: as the run said it when the page read
+ * it, or as the instance tells it while the page is open (`continued` on the run's stream, `run-continued` once it
+ * ended). Told while the page is open, the page says so, and opens that run, on the lane its address names, only when
+ * it followed this run live: a page opened to read an ended run stays where it is.
+ */
+const continuedInId = ref<number | null>(testRun.value?.continuedInId ?? null);
+watch(
+  () => testRun.value?.continuedInId,
+  (id) => {
+    if (id) continuedInId.value = id;
+  },
+);
+/** The run that continues this one, with the lane the page's address names, as a route. */
+const continuedRoute = computed(() => {
+  if (!continuedInId.value) return null;
+  const lane = typeof route.query.watch === 'string' ? route.query.watch : watchAtEnd;
+  return { path: `/test-runs/${continuedInId.value}`, query: lane ? { watch: lane } : {} };
+});
+/** How long the page says the run continues elsewhere before it opens that run. */
+const FOLLOW_DELAY_MS = 1500;
+let followTimer: ReturnType<typeof setTimeout> | null = null;
+/** The page showed this run live: a run that continues it is followed there. */
+let followedLive = false;
+watch(
+  isLive,
+  (live) => {
+    if (live) followedLive = true;
+  },
+  { immediate: true },
+);
+function followContinuation(next: unknown): void {
+  if (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= Number(runId) || followTimer) return;
+  continuedInId.value = next;
+  if (!followedLive) return;
+  followTimer = setTimeout(() => {
+    followTimer = null;
+    if (!pageLeft && continuedRoute.value) void navigateTo(continuedRoute.value);
+  }, FOLLOW_DELAY_MS);
+}
 /** The page's address names the lane the view follows while it is open, so it can be shared, and a lane it waits for. */
 function syncAddress(): void {
   if (!import.meta.client || watchAddress.value) return;
@@ -355,6 +407,78 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 }
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
+
+// The page's one watch of the run: the lane panel's full view and Watch all's tiles, on one connection.
+const live = useLiveWatch(() => Number(runId));
+/** **Watch all**: a tile of every worker in the run's live view, above its tests. */
+const watchAll = ref(false);
+// The demo runs no worker to watch: its tiles name each lane's step.
+watch(watchAll, (on) => !isDemoMode && live.watchAll(on));
+// A worker that left the run's live view leaves its tile.
+watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
+/**
+ * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, each running lane's
+ * stand-in.
+ */
+const watchAllWorkers = computed<LiveWorkerState[]>(() => {
+  if (!isDemoMode) return Object.values(liveWorkers.value);
+  const lanes = new Map<string, LiveWorkerState>();
+  for (const row of dedupedDisplayCases.value) {
+    if (row.status !== 'running' || typeof row.parallelIndex !== 'number') continue;
+    const worker = { shard: row.shardIndex ?? null, worker: row.workerIndex ?? row.parallelIndex };
+    lanes.set(liveWorkerKey(worker), { ...worker, slot: row.parallelIndex, connected: true, paused: null });
+  }
+  return [...lanes.values()];
+});
+/** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
+const offersWatchAll = computed(
+  () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
+);
+const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
+/** What each lane needs attention for now: its rows' failures, Stuck? marks and stops, and its worker's stop. */
+const attentionNow = computed(() => attentionSignals(displayTestCases.value, Object.values(liveWorkers.value)));
+/** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
+const followAttention = ref(false);
+/** Why the lane panel moved where it is, while it shows that lane. */
+const movedWhy = ref<string | null>(null);
+let follower = new AttentionFollower();
+// Turned on, it reads what needs attention afresh, and may move at once.
+watch(followAttention, (on) => {
+  follower = new AttentionFollower();
+  if (!on) movedWhy.value = null;
+  else followWhatNeedsAttention();
+});
+/**
+ * Move the lane panel where the follower says, when Follow what needs attention is on. While the panel is closed, the
+ * follower notes what needs attention, and nothing moves.
+ */
+function followWhatNeedsAttention(): void {
+  if (!followAttention.value) return;
+  if (!watchOpen.value) return follower.note(attentionNow.value, Date.now());
+  const shown = watching.value;
+  const lane = shown?.slot !== undefined ? { shard: shown.shard, slot: shown.slot } : null;
+  const inView = Object.values(liveWorkers.value).flatMap((worker) =>
+    worker.slot === undefined ? [] : [{ shard: worker.shard, slot: worker.slot }],
+  );
+  const move = follower.update(attentionNow.value, lane, inView, Date.now());
+  const worker = move ? laneWorker(move.lane) : null;
+  if (!move || !worker) return;
+  watchWorker(worker, null);
+  movedWhy.value = attentionWords(move);
+}
+watch([attentionNow, liveWorkers], followWhatNeedsAttention);
+// The follower's waits end on a clock of their own: a lane holds the view a while, then the next news moves it.
+useIntervalFn(followWhatNeedsAttention, 1000);
+/**
+ * The person shows a worker in the lane panel, from a tile or a row, with the test it runs when the page knows it: the
+ * view stays there a while, and what needed attention before moves it nowhere.
+ */
+function chooseWorker(worker: LiveWorkerState, testCase: TestCaseResult | null): void {
+  follower.chose(attentionNow.value, Date.now());
+  movedWhy.value = null;
+  watchWorker(worker, testCase);
+  watchAsked.value = true;
+}
 
 /** What the page shows while live: the attempts a retry followed, then each test's latest attempt. */
 function showLive(): void {
@@ -524,10 +648,12 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
       } & StuckAttempt;
       const key = liveCaseKey(d);
-      const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
-      if (row) {
-        row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
-        liveTestCases.value = [...liveTestCases.value];
+      const idx = liveTestCases.value.findIndex((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
+      if (idx >= 0) {
+        // A new row object, so what the list's search reads of it (`is:stuck`) is read again.
+        const copy = [...liveTestCases.value];
+        copy[idx] = { ...copy[idx]!, stuck: { elapsedMs: d.elapsedMs, usualMs: d.usualMs } };
+        liveTestCases.value = copy;
         showLive();
       }
     } else if (parsed.type === 'test-stopped' || parsed.type === 'test-resumed') {
@@ -577,6 +703,7 @@ function flushPendingEvents() {
         tags?: string[] | null;
         locks?: string[] | null;
         testMeta?: TestCaseResult['testMeta'];
+        testAnnotations?: TestCaseResult['testAnnotations'];
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
@@ -609,6 +736,7 @@ function flushPendingEvents() {
         tags: d.tags ?? null,
         locks: d.locks ?? null,
         testMeta: d.testMeta ?? null,
+        testAnnotations: d.testAnnotations ?? null,
       });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
@@ -663,6 +791,8 @@ function flushPendingEvents() {
             tags: d.tags ?? existing.tags,
             locks: d.locks ?? existing.locks,
             testMeta: d.testMeta ?? existing.testMeta,
+            // The attempt's annotations: a skip ended at a stop reads so on its row and in the header's count.
+            testAnnotations: d.testAnnotations !== undefined ? d.testAnnotations : existing.testAnnotations,
           };
           liveTestCases.value = copy;
           showLive();
@@ -735,6 +865,11 @@ function flushPendingEvents() {
       liveViewState.value = state;
       // Catch-up starts with the view state and then its current workers.
       if (parsed.seq === 0 || !liveViewKeyed.value) liveWorkers.value = {};
+    } else if (parsed.type === 'live-ask') {
+      // The viewer's own ask to watch the run changed: the developer answered, or a worker of the run streams.
+      if (liveViewState.value) liveViewState.value = { ...liveViewState.value, ask: data as unknown as LiveAskView };
+    } else if (parsed.type === 'continued') {
+      followContinuation((data as { runId?: unknown }).runId);
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -921,6 +1056,7 @@ watch(
 onUnmounted(() => {
   pageLeft = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
+  if (followTimer) clearTimeout(followTimer);
   disconnectStream();
 });
 
@@ -966,6 +1102,7 @@ const displayProgress = computed(() => {
       failedTests: s.failed,
       skippedTests: s.skipped,
       fixmeTests: s.fixme,
+      endedAtStopTests: s.endedAtStop,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
       interruptedTests: s.interrupted,
@@ -977,6 +1114,7 @@ const displayProgress = computed(() => {
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
     fixmeTests: 0,
+    endedAtStopTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
     interruptedTests: 0,
@@ -1005,7 +1143,10 @@ const tabIndicator = useTabRunIndicator(() => {
 // leave the live state. The global stream is closed while the tab is hidden, so
 // a live run is also refetched when the tab comes back.
 useRunEvents((event) => {
-  if (event.runId !== Number(runId) || !isLive.value) return;
+  if (event.runId !== Number(runId)) return;
+  // A run shared after this one from the same editor window continues it: the page follows, live or ended.
+  if (event.type === 'run-continued') return followContinuation(event.continuedInId);
+  if (!isLive.value) return;
   // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open. The demo's
   // own stream always hears the end.
   if (event.type === 'run-cancelled') reloadRun();
@@ -1049,6 +1190,7 @@ function buildRunSummary(): string {
     failed: p?.failedTests ?? run.failedTests ?? 0,
     skipped: p?.skippedTests ?? run.skippedTests ?? 0,
     fixme: p?.fixmeTests ?? 0,
+    endedAtStop: p?.endedAtStopTests ?? 0,
     flaky: p?.flakyTests ?? run.flakyTests ?? 0,
     didNotRun: p?.didNotRunTests ?? run.didNotRunTests ?? 0,
     interrupted: p?.interruptedTests ?? 0,
@@ -1413,9 +1555,38 @@ const moreMenuItems = computed(() => {
               @toggle-status="handleFilterStatus"
               @label-updated="reloadRunAsked"
             />
+            <p
+              v-if="continuedRoute"
+              class="mt-3 text-sm text-highlighted leading-relaxed max-sm:px-4"
+              data-testid="run-continued"
+              data-shot="run-continued"
+            >
+              Continued in
+              <NuxtLink
+                :to="continuedRoute"
+                class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                >run #{{ continuedInId }}</NuxtLink
+              >
+            </p>
+            <DesktopRunHome v-if="isDesktop && isLive && testRun" :run-id="testRun.id" :sessions="desktopSessions" />
+            <DesktopEditorRunNote v-if="isLive && editorRunsHere.length" :runs="editorRunsHere" />
           </template>
 
           <template #tab-test-cases>
+            <RunWatchAll
+              v-if="watchAll && offersWatchAll"
+              class="mb-3 max-h-[45svh] shrink-0 overflow-y-auto"
+              :workers="watchAllWorkers"
+              :tiles="live.images.value"
+              :steps="liveSteps"
+              :running="runningRows"
+              :signals="attentionNow"
+              :focused="watchOpen ? watching : null"
+              :state="live.state.value"
+              :demo="isDemoMode"
+              @focus="chooseWorker"
+              @retry="live.resume()"
+            />
             <TestCasesList
               ref="testCasesListRef"
               data-shot="failure-clusters"
@@ -1443,12 +1614,26 @@ const moreMenuItems = computed(() => {
               :run-id="Number(runId)"
               class="flex-1 min-h-0"
               @quarantine-changed="reloadQuarantine"
-              @watch="watchWorker"
+              @watch="chooseWorker"
             >
               <template #toolbar-extra>
+                <UButton
+                  v-if="offersWatchAll"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-layout-grid"
+                  label="Watch all"
+                  :class="watchAll ? PRESSED_TOGGLE_CLASS : ''"
+                  :aria-pressed="watchAll"
+                  title="Show every running worker's page as a tile"
+                  data-testid="watch-all-toggle"
+                  @click="watchAll = !watchAll"
+                />
                 <RunLiveViewStatus
                   v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded && !runReadEnded"
                   :project-id="testRun.projectId"
+                  :run-id="testRun.id"
                   :readiness="{
                     desktop: isDesktop,
                     demo: isDemoMode,
@@ -1516,7 +1701,6 @@ const moreMenuItems = computed(() => {
     <ClientOnly>
       <LanePanel
         v-if="watching"
-        :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
         v-model:open="watchOpen"
         :take-focus="watchAsked"
         :run-id="Number(runId)"
@@ -1524,10 +1708,14 @@ const moreMenuItems = computed(() => {
         :shard="watching.shard"
         :slot="watching.slot"
         :test="watching.test"
+        :execution-id="watching.executionId"
         :verdict="runVerdict"
         :step="watchedStep"
         :project-key="testRun?.projectId"
         :project-name="testRun?.project?.name"
+        :live="live"
+        :moved-why="movedWhy"
+        v-model:attention="followAttention"
       />
     </ClientOnly>
   </div>

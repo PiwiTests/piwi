@@ -3,21 +3,18 @@
  * Desktop shell only: the one image element a live view of a worker's page draws into, in the Local runs tray, for a
  * stop's view (`DesktopRunStopPage`) and a lane's (`DesktopRunLaneView`). Each frame is decoded aside and shown once
  * whole, the latest alone waiting meanwhile, and is kept nowhere else (`draw`). While the stop it shows takes the
- * window's input (`input`), the pointer, the wheel and the keys on it go to the page: Tab leaves the image unless a
- * click took the keyboard, and Escape gives it back (`leave`). A Shift+click, or a click while `picking`, names the
- * point under the pointer instead (`pick`). The input and the points come from the Runs window's own logic
- * (`view-input.ts`, `pagePoint`). `dimmed` shows an image that is no longer the page as it is now, and `mark` says
- * over it what it shows.
+ * window's input (`input`, while Interact is on), the pointer, the wheel and the keys on it go to the page: Tab leaves
+ * the image unless a click took the keyboard, and Escape turns Interact off (`leave`), but goes to the page while a pick
+ * or a check runs there (`input.acting`) and Pick on the image does not wait. A Shift+click, or a click while
+ * `picking`, names the point under the pointer instead (`pick`). The input and the points come from the run model the
+ * tray shares with Piwi Picker's Runs window (`@piwitests/run-model/view-input`, `pagePoint`). `dimmed` shows an image
+ * that is no longer the page as it is now, and `mark` says over it what it shows. It fills the width of its page card
+ * (`DesktopRunPageCard`), and while it takes the input, says how under it.
  */
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
-import {
-  ViewInputBatcher,
-  keyOnView,
-  pastedText,
-  type ViewModifier,
-} from '../../../../extension/src/shared/view-input';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopImagePoint, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
+import { desktopImagePoint, desktopSay, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
 
 const props = defineProps<{
   alt: string;
@@ -25,8 +22,8 @@ const props = defineProps<{
   input: DesktopRunInputTarget | null;
   /** The image is the page as it last showed, not as it is now. */
   dimmed?: boolean;
-  /** What the mark over the image says: `Live`, with its dot, or `Running…`; none when null. */
-  mark?: 'Live' | 'Running…' | null;
+  /** What the mark over the image says: `Live`, with its dot, or `Running…` (`running`); none when null. */
+  mark?: 'live' | 'running' | null;
 }>();
 
 const emit = defineEmits<{
@@ -34,8 +31,10 @@ const emit = defineEmits<{
   said: [answer: DesktopRunAnswer];
   /** A point of the page to name the element at, in CSS pixels of its viewport. */
   pick: [point: { x: number; y: number }];
-  /** Escape gave the keyboard back: the view's own control takes it. */
+  /** Escape on the image: Interact goes off, and its toggle takes the keyboard. */
   leave: [];
+  /** Input that drives the stop (all but the pointer's moves) reached the stop `since` names. */
+  played: [since: string];
 }>();
 
 /** Picking a point: the next click on the image names it. */
@@ -104,6 +103,7 @@ defineExpose({
   drop,
   clear,
   focus: () => img.value?.focus({ preventScroll: true }),
+  release,
   viewport,
 });
 
@@ -127,22 +127,34 @@ function stopInput(): void {
   captured = false;
 }
 
+/**
+ * The image takes no more input, and what it played ends well (`ViewInputBatcher.finish`): resolves once what waited
+ * went out, the image unmounted meanwhile included.
+ */
+function release(): Promise<void> {
+  const ending = batcher;
+  batcher = null;
+  captured = false;
+  return ending ? ending.finish() : Promise.resolve();
+}
+
 watch(
   inputKey,
   (key) => {
     stopInput();
     const target = props.input;
     if (!key || !target) return;
-    batcher = new ViewInputBatcher({
+    const mine = new ViewInputBatcher({
       clickCounts: target.clickCounts,
       send: async (events: ViewInput[]) => {
-        if (inputKey.value !== key) return false;
         const { ref, worker, since } = target;
         const answer = await hub.command({ type: 'input', ref, worker, since, events });
-        if (!answer.ok && inputKey.value === key) emit('said', answer);
+        if (answer.ok && events.some((e) => e.type !== 'mouse' || e.action !== 'move')) emit('played', since);
+        if (!answer.ok && batcher === mine) emit('said', answer);
         return answer.ok;
       },
     });
+    batcher = mine;
   },
   { immediate: true },
 );
@@ -226,7 +238,9 @@ function onKeyDown(event: KeyboardEvent): void {
       altGraph: event.getModifierState?.('AltGraph') ?? false,
       isComposing: event.isComposing,
     },
-    { mac: MAC, captured },
+    // An action runs in the test's window at the stop (a pick, a check): its Escape is the page's, unless Pick on the
+    // image waits, which Escape stops.
+    { mac: MAC, captured, acting: !!props.input?.acting && !picking.value },
   );
   if (decided === 'leave') {
     // The keyboard back to the tray; Pick on the image, waiting, stops too.
@@ -260,15 +274,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-show="viewport" class="space-y-2">
+  <div v-show="viewport">
     <div class="relative">
       <img
         ref="img"
         :alt="alt"
         :tabindex="inputOn ? 0 : undefined"
         :data-stale="dimmed || undefined"
+        :data-acting="input?.acting ? '' : undefined"
         draggable="false"
-        class="block w-full rounded-md border border-default focus-visible:outline-2 focus-visible:outline-primary select-none transition-opacity"
+        class="block w-full bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary select-none transition-opacity"
         :class="[dimmed ? 'opacity-50' : '', picking ? 'cursor-crosshair' : inputOn ? 'cursor-default' : '']"
         @pointerdown="onPointerDown"
         @mousedown="onMouseDown"
@@ -287,12 +302,12 @@ onBeforeUnmount(() => {
         aria-hidden="true"
         class="pointer-events-none absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-default/90 px-1.5 py-0.5 text-xs text-highlighted"
       >
-        <span v-if="mark === 'Live'" class="size-1.5 rounded-full bg-error" />
-        {{ mark }}
+        <span v-if="mark === 'live'" class="size-1.5 rounded-full bg-error" />
+        {{ desktopSay(mark === 'live' ? 'runs_liveBadge' : 'runs_laneRunning') }}
       </span>
     </div>
-    <p v-if="inputOn" class="text-xs text-muted">
-      Clicks and keys on the view go to the page. Escape gives the keyboard back; Tab leaves unless a click took it.
+    <p v-if="inputOn" class="px-2.5 py-1.5 border-t border-default text-xs text-muted">
+      {{ desktopSay('runs_liveHint') }}
     </p>
   </div>
 </template>

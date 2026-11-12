@@ -1,8 +1,9 @@
 /**
  * The Testing view's Piwi tests (`piwi.testExplorer`): the specs the catalog knows, as they stand, each test with its
  * latest result as the service reads it (`piwi/testItems`), published as a test run whenever the latest run changes;
- * a run in progress followed as a test run of its own; and two run profiles, **Run with Piwi** and **Verify ×3 with
- * Piwi**, that run tests as every other run of the extension does, through the command the service builds.
+ * a run in progress followed as a test run of its own, whose output says what each worker runs and where it stops; and
+ * two run profiles, **Run with Piwi** and **Verify ×3 with Piwi**, that run tests as every other run of the extension
+ * does, through the command the service builds.
  */
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
@@ -12,17 +13,20 @@ import {
   type LiveTestStatus,
   type RunCommand,
   type RunEnded,
+  type RunSession,
   type RunStatusResult,
   type RunTestsArgs,
   type TestItemsParams,
   type TestItemsResult,
 } from '@piwitests/editor/protocol';
+import { sessionLines } from './run-control';
 import {
   SPEC_FILE,
   VERIFY_REPEAT,
   liveRunName,
   resultsKey,
   resultsRunName,
+  testItemExtras,
   testOutcome,
   testRunsOf,
   testTree,
@@ -74,6 +78,10 @@ interface Followed {
   results: Map<number, LiveTestStatus>;
   /** The state each item was last shown in. */
   shown: Map<vscode.TestItem, string>;
+  /** The editor's own run: its tests show as running; another run's show their results alone. */
+  own: boolean;
+  /** The ref the run carries, when the editor started it: its run sessions write in this test run's output. */
+  ref: string | null;
 }
 
 /** A result the Testing view shows: a test's outcome, or an error a run gave a test it has no result of. */
@@ -104,6 +112,8 @@ export class TestExplorer implements vscode.Disposable {
   /** The exit codes of commands that ended while a profile run was starting them, by ref, until it takes them. */
   private readonly endedEarly = new Map<string, number | null>();
   private readonly followed = new Map<string, Followed>();
+  /** The last session of each run of this window that has not ended, by ref, which `sessionChanged` compares with. */
+  private readonly sessions = new Map<string, RunSession>();
   private chain: Promise<void> = Promise.resolve();
   private queued: Promise<void> | null = null;
   private readonly edits = new Map<string, ReturnType<typeof setTimeout>>();
@@ -317,6 +327,9 @@ export class TestExplorer implements vscode.Disposable {
       }
       item.label = node.label;
       item.sortText = node.sortText;
+      const extras = testItemExtras(node.test);
+      item.description = extras.description;
+      item.tags = extras.tags.map((tag) => new vscode.TestTag(tag));
       // To the end of the call's last line, so the cursor anywhere in the test is in it.
       item.range = node.range ? new vscode.Range(node.range.start, 0, node.range.end, 10_000) : undefined;
       if (node.test) {
@@ -384,9 +397,59 @@ export class TestExplorer implements vscode.Disposable {
       }
     }
     const run = profile?.run ?? this.controller.createTestRun(new vscode.TestRunRequest(), liveRunName(live), false);
-    const followed: Followed = { runId: live.runId, run, profile, results: new Map(), shown: new Map() };
+    const followed: Followed = {
+      runId: live.runId,
+      run,
+      profile,
+      results: new Map(),
+      shown: new Map(),
+      own: live.own,
+      ref: live.ref ?? null,
+    };
     this.followed.set(root, followed);
     return followed;
+  }
+
+  /**
+   * A run of this window changed (`piwi/runSessionChanged`): what it brings is written in the output of the test run
+   * that follows it (`sessionLines`), at the test it is of and, for a stop, where it stands. A run no test run follows
+   * writes nothing.
+   */
+  sessionChanged(session: RunSession): void {
+    if (this.disposed) return;
+    const run = this.runOfRef(session.ref);
+    // Kept only once a test run follows the run: what it brought before is written then, as it stands.
+    const before = run ? this.sessions.get(session.ref) : undefined;
+    if (session.ended || !run) this.sessions.delete(session.ref);
+    else this.sessions.set(session.ref, session);
+    if (!run) return;
+    for (const line of sessionLines(before, session)) {
+      const at = line.at
+        ? new vscode.Location(vscode.Uri.parse(line.at.uri), new vscode.Position(line.at.line, 0))
+        : undefined;
+      run.appendOutput(`${line.text}\r\n`, at, line.test ? this.itemAt(line.test.uri, line.test.line) : undefined);
+    }
+  }
+
+  /** The service stopped: its runs' sessions ended with it, and a rerun of a ref starts anew. */
+  sessionsCleared(): void {
+    this.sessions.clear();
+  }
+
+  /** The test run that follows the run of `ref`: a profile run's command, else a run in progress followed. */
+  private runOfRef(ref: string): vscode.TestRun | null {
+    for (const profile of this.profiles) if (profile.parts.some((p) => p.ref === ref)) return profile.run;
+    for (const followed of this.followed.values()) if (followed.ref === ref) return followed.run;
+    return null;
+  }
+
+  /** The test whose `test(…)` call holds the 0-based `line` of the spec at `uri`. */
+  private itemAt(uri: string, line: number): vscode.TestItem | undefined {
+    const spec = vscode.Uri.parse(uri).toString();
+    for (const item of this.testOf.keys()) {
+      if (item.uri?.toString() === spec && item.range?.contains(new vscode.Position(line, 0))) return item;
+    }
+    return undefined;
   }
 
   /** Show the results a run in progress brought since the last time. */
@@ -394,6 +457,8 @@ export class TestExplorer implements vscode.Disposable {
     for (const [id, status] of followed.results) {
       for (const item of this.byCase.get(id) ?? []) {
         if (followed.profile && !followed.profile.tests.has(item)) continue;
+        // Another run's test (a CI run's, a teammate's) is not shown running here: only its result.
+        if (!followed.own && status === 'running') continue;
         if (followed.shown.get(item) === status) continue;
         followed.shown.set(item, status);
         const outcome =

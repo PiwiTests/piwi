@@ -1,6 +1,11 @@
 import { describe, expect, test, vi } from 'vitest';
+import type { PageEvent } from '@piwitests/core/live-layers';
+import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
+  CiSession,
   LocatorAtCaretResult,
+  RunControlResult,
+  RunPresence,
   RunSession,
   RunStop,
   RunTake,
@@ -9,6 +14,30 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  ciLaneArg,
+  ciLaneCaption,
+  ciLaneLayersNote,
+  ciLaneRedraws,
+  ciLaneTakes,
+  ciLaneTitle,
+  eventLine,
+  LANE_LAYER_PARTS,
+  laneDuration,
+  laneLayersAsked,
+  laneLayersMessage,
+  laneLayersNote,
+  laneTextNote,
+  layersAfterAnswer,
+  MAX_LANE_EVENTS,
+  NO_LANE_LAYERS,
+  waitsView,
+  withLaneLayer,
+  ciNodes,
+  ciPositionFiles,
+  ciPositionsIn,
+  withCiSession,
+  type CiSessions,
+  stopRunAnswer,
   CARET_REFUSAL_MS,
   CARET_WAIT_MS,
   CaretCounts,
@@ -22,16 +51,28 @@ import {
   breakpointUpdates,
   canEnd,
   canShare,
+  canShowBrowser,
   caretText,
+  accessibleLabel,
   controlItems,
   controlState,
+  giveBackParams,
   heardSession,
   imageClickOf,
+  keepsInteract,
+  laneKeepsInteract,
   lineEditOf,
   linesAbove,
   liveInstance,
   liveItem,
   progressItem,
+  holdTarget,
+  holdText,
+  runLabel,
+  runName,
+  runPageTarget,
+  sessionLines,
+  workersNow,
   frameIsCurrent,
   waitedFor,
   waitingWorkers,
@@ -41,6 +82,11 @@ import {
   watchableWorkers,
   liveTarget,
   liveText,
+  OPEN_TRACE_TITLE,
+  openTraceOffered,
+  openTraceParams,
+  TraceAsks,
+  traceAnswerText,
   PICK_HINT,
   RUN_COMMANDS,
   pagePoint,
@@ -48,17 +94,24 @@ import {
   pausedPageViewChange,
   picksOnImage,
   pausedText,
+  presenceText,
+  driverText,
+  watchersText,
+  stopCaption,
+  stopPresence,
   remember,
   requestPicks,
   runStarted,
   runTargetArg,
   shareLiveWarning,
+  askToWatchText,
   sharedText,
   sizeText,
   spelledSession,
   stopActions,
   stopCodeNotice,
   stopControls,
+  stopLensControls,
   stopIcon,
   stopKey,
   stopPick,
@@ -70,6 +123,7 @@ import {
   writtenLines,
   type CaretQuery,
   type CaretShown,
+  type LaneLayersShown,
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
@@ -110,6 +164,8 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   waiting: null,
   takes: [],
   watchable: false,
+  layers: false,
+  showsWindow: false,
   ...extra,
 });
 
@@ -121,6 +177,66 @@ const session = (ref: string, workers: RunWorker[], ended = false): RunSession =
 });
 
 const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSession(map, s), new Map());
+
+describe('what the Testing view writes of a run', () => {
+  test('a test each worker starts, each attempt, a stop and why, and the stop answered, each once', () => {
+    const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
+    expect(sessionLines(undefined, begun)).toEqual([
+      { text: 'Worker 1 · checkout › pays', test: { uri: spec, line: 2 }, at: null },
+    ]);
+    // Nothing new: nothing written.
+    expect(sessionLines(begun, begun)).toEqual([]);
+    const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
+    expect(sessionLines(begun, stopped)).toEqual([
+      {
+        text: 'Worker 1 · Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
+        test: { uri: spec, line: 2 },
+        at: { uri: spec, line: 5 },
+      },
+    ]);
+    expect(sessionLines(stopped, begun)).toEqual([
+      { text: 'Worker 1 · goes on', test: { uri: spec, line: 2 }, at: null },
+    ]);
+    // A retry is an attempt of its own; a run in a terminal says so at its stop.
+    const retried = session('ed-1', [worker(0, 'running', { test: runTest(1) })]);
+    expect(sessionLines(begun, retried)[0]?.text).toBe('Worker 1 · checkout › pays · attempt 2');
+    const terminal = { ...stopped, terminal: true };
+    expect(sessionLines(begun, terminal)[0]?.text).toMatch(/ · run in a terminal$/);
+  });
+});
+
+describe('what each worker runs now', () => {
+  test('each worker of the live runs by its lane: its test, stopped there, or between tests', () => {
+    const one = session('ed-1', [
+      worker(1, 'stopped', { stop: stopAt(spec, 5) }),
+      worker(0, 'running'),
+      worker(2, 'between'),
+    ]);
+    expect(workersNow(sessionsOf(one))).toEqual([
+      'Worker 1 · checkout › pays',
+      'Worker 2 · checkout › pays · stopped',
+      'Worker 3 · between tests',
+    ]);
+    // Several runs: each line names its run; an ended one lists none.
+    const two = session('ed-2', [worker(0, 'running')]);
+    expect(workersNow(sessionsOf(session('ed-1', [worker(0, 'running')]), two))).toEqual([
+      'Run in shop (ed-1) · Worker 1 · checkout › pays',
+      'Run in shop (ed-2) · Worker 1 · checkout › pays',
+    ]);
+    expect(workersNow(sessionsOf(session('ed-1', [worker(0, 'running')], true)))).toEqual([]);
+    // Many workers: the first seven, then how many more; a title's line break as a space.
+    const many = session(
+      'ed-1',
+      Array.from({ length: 12 }, (_, i) =>
+        worker(i, 'running', { test: { ...runTest(), title: ['cart', 'adds\na mug'] } }),
+      ),
+    );
+    const listed = workersNow(sessionsOf(many));
+    expect(listed).toHaveLength(8);
+    expect(listed[0]).toBe('Worker 1 · cart › adds a mug');
+    expect(listed[7]).toBe('and 5 more workers');
+  });
+});
 
 describe('the sessions kept', () => {
   test('are the latest of each run, one that ended dropped', () => {
@@ -180,12 +296,25 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
+  });
+
+  test('Show the browser at a stop its pause bar shows, whose reporter brings its window forward', () => {
+    const at = (bar: boolean, showsWindow: boolean) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5, bar), showsWindow })]));
+    expect(controlState(at(true, true)).browserShowable).toBe(true);
+    expect(canShowBrowser(stopsOf(at(true, true))[0]!)).toBe(true);
+    // A headless stop has no window; an older reporter cannot bring one forward.
+    expect(controlState(at(false, true)).browserShowable).toBe(false);
+    expect(controlState(at(true, false)).browserShowable).toBe(false);
   });
 
   test('sharing with Playwright tools at a stop whose reporter takes it alone', () => {
@@ -219,9 +348,12 @@ describe('what the controls offer', () => {
         endable: false,
         actions: [],
         shareable: false,
+        browserShowable: false,
         liveShared: false,
+        holdable: false,
         watchable: false,
         waiting: null,
+        failed: false,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -238,9 +370,12 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
@@ -255,9 +390,10 @@ describe('what the controls offer', () => {
       endable: true,
     };
     const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
-    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, waiting });
+    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, slot: 0, waiting });
     expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
       {
+        name: 'Piwi: Pausing',
         text: '$(loading~spin) Pausing… 1 min 5 s',
         tooltip:
           "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
@@ -265,12 +401,13 @@ describe('what the controls offer', () => {
       },
       {
         key: 'give-up',
+        name: 'Piwi: End the test',
         text: '$(circle-slash)',
         tooltip:
           "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
         command: 'piwi.endTest',
       },
-      { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: 'piwi.stopRun' },
+      { name: 'Piwi: Stop', text: '$(debug-stop)', tooltip: 'Piwi: Stop the run', command: 'piwi.stopRun' },
     ]);
     const unknown = controlState(
       sessionsOf(
@@ -282,7 +419,7 @@ describe('what the controls offer', () => {
     expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
       "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
       "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
-      'Piwi: Stop the run (Shift+F5)',
+      'Piwi: Stop the run',
     ]);
     // Beside Pause for another worker, and in place of End at a stop that cannot end.
     const keys = (sessions: ReturnType<typeof sessionsOf>) =>
@@ -296,11 +433,14 @@ describe('what the controls offer', () => {
     );
     const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
     expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
+    // A worker Playwright started again in its slot is named by the slot, as the worker views name it.
+    const restarted = sessionsOf(session('ed-1', [worker(2, 'running', { pausing: true, waiting, parallelIndex: 0 })]));
+    expect(waitingWorkers(restarted)).toEqual([{ ref: 'ed-1', worker: 2, slot: 0, waiting }]);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
     // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
     expect(endChoice(waitingSessions, true, null)).toBe('stop');
-    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, slot: 0, waiting }]);
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
@@ -327,16 +467,55 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
-      ['piwi.resumeRun', 'Piwi: Resume (F5)'],
-      ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
-      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)'],
-      ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
+      ['piwi.resumeRun', 'Piwi: Resume'],
+      ['piwi.stepRun', 'Piwi: Step to the next call'],
+      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again'],
+      ['piwi.stopRun', 'Piwi: Stop the run'],
     ]);
+  });
+
+  test('names each item for a screen reader, without its icon, and a held failure goes on with Resume alone', () => {
+    const failure = { ...stopAt(spec, 5), reason: 'failure' as const, title: 'Failed: Timed out 5000ms' };
+    const held = controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: failure })])));
+    expect(held.failed).toBe(true);
+    expect(controlItems(held).map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Stop']);
+    const items = controlItems(
+      controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]))),
+    );
+    expect(items.map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Step', 'Piwi: Finish', 'Piwi: Stop']);
+    expect(items.map(accessibleLabel)).toEqual([
+      'Piwi: Resume',
+      'Piwi: Step to the next call',
+      'Piwi: Finish the test without stopping at a breakpoint again',
+      'Piwi: Stop the run',
+    ]);
+    expect(
+      accessibleLabel({
+        name: 'Piwi: Run progress',
+        text: '$(beaker) 3 of 9',
+        tooltip:
+          "Piwi: [run #78](command:piwi.openRunPage) ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+        markdown: true,
+        command: null,
+      }),
+    ).toBe('Piwi: run #78 ran 3 of 9 tests.');
+    // A plain tooltip holds the test's own words, read as they are.
+    expect(
+      accessibleLabel({
+        name: 'Piwi: Pausing',
+        text: '$(loading~spin) Pausing…',
+        tooltip: "Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns",
+        command: null,
+      }),
+    ).toBe("Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns");
   });
 
   test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {
@@ -363,7 +542,7 @@ describe('what the controls offer', () => {
     const [stop] = stopsOf(sessionsOf(terminal));
     expect(stop!.terminal).toBe(true);
     expect(pausedText(stop!.stop, stop!.test, stop!.terminal)).toBe(
-      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
     );
     expect(stopPick(stop!).label).toContain('· run in a terminal');
     // A run of this window's beside it can be stopped.
@@ -378,12 +557,63 @@ describe('what the controls offer', () => {
     const [stop] = stopsOf(sessionsOf(runner));
     expect(stop).toMatchObject({ terminal: true, runner: true });
     expect(pausedText(stop!.stop, stop!.test, stop!.terminal, stop!.runner)).toBe(
-      "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+      "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
     );
     expect(stopPick(stop!).label).toContain("· run by the editor's test runner");
     // Said of a run the editor started, it says nothing.
     const [own] = stopsOf(sessionsOf({ ...session('ed-1', stopped), runner: true }));
     expect(own).not.toHaveProperty('runner');
+  });
+});
+
+describe('Hold failures', () => {
+  const held = (ref: string, on: boolean, by: 'start' | 'person' | 'agent' = 'start'): RunSession => ({
+    ...session(ref, [worker(0, 'running')]),
+    hold: { on, by },
+    progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+  });
+
+  test('turns over the only live run’s, or the one a command names, and asks among several', () => {
+    expect(holdTarget(sessionsOf(), undefined)).toEqual({ none: 'no run of this window can hold its failures now.' });
+    expect(holdTarget(sessionsOf(held('ed-1', false)), undefined)).toEqual({ ref: 'ed-1', on: true });
+    expect(holdTarget(sessionsOf(held('ed-1', true)), undefined)).toEqual({ ref: 'ed-1', on: false });
+    const two = sessionsOf(held('ed-1', false), held('ed-2', true));
+    expect(holdTarget(two, undefined)).toEqual({ candidates: ['ed-1', 'ed-2'] });
+    expect(holdTarget(two, { ref: 'ed-2', on: true })).toEqual({ ref: 'ed-2', on: true });
+    expect(holdTarget(two, { ref: 'ed-2' })).toEqual({ ref: 'ed-2', on: false });
+    // A run nobody attends has none, and an ended run is not turned over.
+    expect(holdTarget(sessionsOf(session('lab-1', [worker(0, 'running')])), { ref: 'lab-1' })).toEqual({
+      none: 'that run holds no failure: nobody attends it.',
+    });
+    expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), undefined)).toMatchObject({
+      none: expect.any(String),
+    });
+    expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), { ref: 'ed-1', on: false })).toEqual({
+      none: 'that run has ended.',
+    });
+    expect(controlState(sessionsOf(held('ed-1', false))).holdable).toBe(true);
+    expect(controlState(sessionsOf(session('lab-1', [worker(0, 'running')]))).holdable).toBe(false);
+  });
+
+  test('names each run in the tooltip once more than one has a Hold failures, page or none', () => {
+    const paged = { ...held('ed-1', true), page: { id: 42, url: 'https://piwi.example/runs/42' } };
+    const unpaged = { ...held('term-2', false), root: '/work/shop' };
+    const tooltip = progressItem(sessionsOf(paged, unpaged))!.tooltip;
+    expect(tooltip).toContain('Run #42: Hold failures on');
+    expect(tooltip).toContain('Run in shop (term-2): Hold failures off');
+    expect(runLabel(held('ed-3', false))).toBe('Run in shop (ed-3)');
+    expect(runLabel({ ...held('ed-3', false), root: null })).toBe('Run ed-3');
+  });
+
+  test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {
+    expect(holdText({ on: true, by: 'start' })).toBe('Hold failures on: a failed test waits at its line');
+    expect(holdText({ on: false, by: 'person' })).toBe('Hold failures off');
+    expect(holdText({ on: true, by: 'agent' })).toBe(
+      'Hold failures on: a failed test waits at its line, as an agent set it',
+    );
+    const item = progressItem(sessionsOf(held('ed-1', false)))!;
+    const arg = encodeURIComponent(JSON.stringify([{ ref: 'ed-1', on: true }]));
+    expect(item.tooltip).toContain(`Hold failures off · [Turn on](command:piwi.holdFailures?${arg})`);
   });
 });
 
@@ -409,29 +639,68 @@ describe('Share live', () => {
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
   });
 
-  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+  test('counts in the status bar the tests the runs ran, as their own processes say, their failures and ends', () => {
     expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
     const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
       ...session(ref, [worker(0, 'running')]),
       progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
-      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      // What each worker runs now, under the counts.
+      tooltip: 'Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays',
+      markdown: true,
       command: null,
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 4 of 10 · $(error) 1',
-      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      tooltip:
+        'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.\n\n' +
+        'Run in shop (ed-1) · Worker 1 · checkout › pays\n\nRun in shop (ed-2) · Worker 1 · checkout › pays',
+      markdown: true,
       command: null,
     });
-    // A worker whose reporter shows its running test: a click watches it.
+    // A test ended at a stop is marked so, not counted as a plain pass.
+    const ended: RunSession = {
+      ...session('ed-1', [worker(0, 'running')]),
+      progress: { total: 2, done: 2, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1, status: 'passed', failure: null },
+    };
+    expect(progressItem(sessionsOf(ended))?.tooltip).toMatch(/^Piwi: the run ran 2 of 2 tests: 1 ended at a stop\./);
+    // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
-      tooltip: "Piwi: the run ran 3 of 9 tests. Click to watch a worker's test.",
+      tooltip:
+        "Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n[Watch a worker's test](command:piwi.watchWorker)",
+      markdown: true,
       command: RUN_COMMANDS.watch,
     });
+    // A run whose own process named its page: its number, and its page opens from the item and its tooltip.
+    const named = { ...counted('ed-1', 3, 9), page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } };
+    const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
+    expect(progressItem(sessionsOf(named))).toEqual({
+      name: 'Piwi: Run progress',
+      text: '$(beaker) #78 · 3 of 9',
+      tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n${link}`,
+      markdown: true,
+      command: RUN_COMMANDS.openPage,
+    });
+    expect(runPageTarget(sessionsOf(named), undefined)).toEqual({
+      ref: 'ed-1',
+      id: 78,
+      url: 'https://piwi.example.com/test-runs/78',
+    });
+    expect(runPageTarget(sessionsOf(named, counted('ed-2', 1, 1)), { ref: 'ed-2' })).toBeNull();
+    const twice = sessionsOf(named, {
+      ...counted('ed-2', 1, 1),
+      page: { id: 79, url: 'https://piwi.example.com/test-runs/79' },
+    });
+    expect(runPageTarget(twice, undefined)).toBeNull();
+    expect(runPageTarget(twice, { ref: 'ed-2' })?.id).toBe(79);
+    expect(runName({ id: 79 })).toBe('Run #79');
   });
 
   test('lists the workers a panel can watch, and those Pause and watch can pause', () => {
@@ -472,7 +741,9 @@ describe('Share live', () => {
     const at = stopsOf(sessionsOf(session('ed-1', [stopped])));
     const shown = laneShown(session('ed-1', [stopped]), 1, at);
     expect(shown.stop).toEqual(at[0]);
-    expect(shown.caption).toBe('Worker 2 · Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8');
+    expect(shown.caption).toBe(
+      'Worker 2 · Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8',
+    );
     const test = running.test!.id;
     expect(frameIsCurrent({ worker: 5, test, since: null }, running)).toBe(true);
     expect(frameIsCurrent({ worker: 5, test, since: null }, stopped)).toBe(false);
@@ -484,6 +755,7 @@ describe('Share live', () => {
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
     expect(liveItem(sessionsOf(live('ed-1')))).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast)',
       tooltip: 'Piwi: Share the run live on piwi.example.com, for a teammate to watch from its page',
       command: 'piwi.shareRunLive',
@@ -497,6 +769,7 @@ describe('Share live', () => {
     // A run whose sharing stopped though nobody asked is offered again, saying why it stopped.
     const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
     expect(liveItem(sessionsOf(live('ed-1', { stopped: lost })))).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast)',
       tooltip: `Piwi: ${lost} Share the run live on piwi.example.com, for a teammate to watch from its page.`,
       command: 'piwi.shareRunLive',
@@ -507,6 +780,7 @@ describe('Share live', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
     expect(liveItem(shared)).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast) Live · 2 views',
       tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
       command: 'piwi.stopSharingRun',
@@ -515,6 +789,7 @@ describe('Share live', () => {
     expect(
       liveItem(sessionsOf(live('ed-1', { shared: true, viewers: 2 }), live('ed-2', { shared: true, viewers: 1 }))),
     ).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast) Live · 3 views',
       tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
       command: 'piwi.stopSharingRun',
@@ -534,11 +809,13 @@ describe('Share live', () => {
 
 describe('a stop', () => {
   test('says what is about to run, and the attempt after the first', () => {
-    expect(pausedText(stopAt(spec, 5), runTest())).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
-    expect(pausedText(stopAt(spec, 5), runTest(1))).toBe(
-      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
+    expect(pausedText(stopAt(spec, 5), runTest())).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
     );
-    expect(pausedText(stopAt(spec, 5), null)).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    expect(pausedText(stopAt(spec, 5), runTest(1))).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
+    );
+    expect(pausedText(stopAt(spec, 5), null)).toBe('Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')');
     // A stop an agent asked for says so.
     expect(pausedText({ ...stopAt(spec, 5), by: 'agent' }, null)).toBe(
       'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\')',
@@ -551,7 +828,7 @@ describe('a stop', () => {
     const stops = stopsOf(
       sessionsOf(
         session('ed-1', [worker(0, 'stopped', { stop: a }), worker(1, 'running')]),
-        session('ed-2', [worker(3, 'stopped', { stop: b })]),
+        session('ed-2', [worker(3, 'stopped', { stop: b, parallelIndex: 1 })]),
       ),
     );
     expect(stops.map((s) => [s.ref, s.worker, s.stop.line])).toEqual([
@@ -560,9 +837,96 @@ describe('a stop', () => {
     ]);
     expect(new Set(stops.map(stopKey)).size).toBe(2);
     expect(stopPick(stops[1]!)).toEqual({
-      label: '$(debug-pause) Paused · Fill "WELCOME10" getByLabel(\'Coupon\')',
-      description: 'checkout › pays · checkout.page.ts:9 · worker 3',
+      label: '$(debug-pause) Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
+      description: 'checkout › pays · checkout.page.ts:9 · Worker 2',
     });
+  });
+});
+
+describe('who else is there', () => {
+  const picker: RunPresence = { kind: 'picker', name: 'Piwi Picker' };
+  const desktop: RunPresence = { kind: 'desktop', name: 'the desktop app' };
+  const agent: RunPresence = { kind: 'agent', name: 'an agent' };
+  const me: RunPresence = { kind: 'editor', name: 'Visual Studio Code', self: true };
+
+  test('shows a run’s folder and the tools’ names as text in the progress tooltip, never as a link', () => {
+    const named = (ref: string, root: string): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      root,
+      hold: { on: false, by: 'start' },
+      presence: [{ kind: 'picker', name: 'Piwi Picker' }],
+      progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+    });
+    const tooltip = progressItem(
+      sessionsOf(named('ed-1', '/w/[x](command:piwi.holdFailures)'), named('ed-2', '/w/my_shop_app')),
+    )!.tooltip;
+    expect(tooltip).not.toContain('[x](command:');
+    expect(tooltip).toContain('Run in \\[x\\](command:piwi.holdFailures) (ed-1): Also open in Piwi Picker');
+    expect(tooltip).toContain('Run in my\\_shop\\_app (ed-2): Hold failures off');
+  });
+
+  test('names the tools that have a run open, leaving this editor out', () => {
+    const run = session('ed-1', [worker(0, 'running')]);
+    expect(presenceText(run)).toBeNull();
+    expect(presenceText({ ...run, presence: [me] })).toBeNull();
+    expect(presenceText({ ...run, presence: [picker] })).toBe('Also open in Piwi Picker');
+    expect(presenceText({ ...run, presence: [picker, picker, desktop, agent, me] })).toBe(
+      'Also open in Piwi Picker and the desktop app · An agent follows this run',
+    );
+    expect(presenceText({ ...run, presence: [agent] })).toBe('An agent follows this run');
+    const tooltip = progressItem(
+      sessionsOf({
+        ...run,
+        presence: [picker, agent],
+        progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+      }),
+    )!.tooltip;
+    expect(tooltip).toContain('\n\nAlso open in Piwi Picker · An agent follows this run');
+  });
+
+  test('names who watches a worker’s page, this editor last as you, and nothing while it alone does', () => {
+    expect(watchersText(undefined)).toBeNull();
+    expect(watchersText([me])).toBeNull();
+    expect(watchersText([me, picker])).toBe('Watched by Piwi Picker and you');
+    expect(watchersText([picker, agent, desktop])).toBe('Watched by Piwi Picker, an agent and the desktop app');
+  });
+
+  test('names who drives a stop, and that Interact takes it from the agent', () => {
+    const stop = stopAt(spec, 5, false);
+    expect(driverText(stop)).toBeNull();
+    expect(driverText({ ...stop, driver: me }, true)).toBe('You drive this stop');
+    expect(driverText({ ...stop, driver: picker }, true)).toBe('Piwi Picker drives this stop');
+    expect(driverText({ ...stop, driver: agent })).toBe('An agent drives this stop');
+    expect(driverText({ ...stop, driver: agent }, true)).toBe('An agent drives this stop: your input takes control');
+  });
+
+  test('says who drives the stop and who watches it in the paused page’s and the worker panel’s captions', () => {
+    const uri = 'file:///work/shop/tests/cart.spec.ts';
+    const stopped = worker(5, 'stopped', {
+      parallelIndex: 1,
+      stop: { ...stopAt(uri, 7, false), by: 'agent', driver: agent },
+      takes: ['input'],
+      watchers: [picker, me],
+    });
+    const sessions = sessionsOf(session('ed-1', [stopped]));
+    const at = stopsOf(sessions);
+    const said = 'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8';
+    const present = 'An agent drives this stop: your input takes control · Watched by Piwi Picker and you';
+    expect(stopPresence(at[0]!, sessions)).toBe(present);
+    expect(stopCaption(at[0]!, sessions)).toBe(`${said} · ${present}`);
+    expect(laneShown(session('ed-1', [stopped]), 1, at).caption).toBe(`Worker 2 · ${said} · ${present}`);
+    // A stop nobody drives and no other tool watches says neither.
+    const alone = worker(5, 'stopped', { parallelIndex: 1, stop: stopAt(uri, 7, false), watchers: [me] });
+    const quiet = sessionsOf(session('ed-1', [alone]));
+    expect(stopPresence(stopsOf(quiet)[0]!, quiet)).toBeNull();
+    expect(stopCaption(stopsOf(quiet)[0]!, quiet)).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8',
+    );
+    // A running worker's panel says who else watches it.
+    const running = worker(5, 'running', { parallelIndex: 1, watchers: [desktop, me] });
+    expect(laneShown(session('ed-1', [running]), 1, []).caption).toBe(
+      'Worker 2 · Running · checkout › pays · Watched by the desktop app and you',
+    );
   });
 });
 
@@ -1199,6 +1563,36 @@ describe('the paused page view', () => {
     expect(pausedPageViewChange(false, true, false)).toBe('none');
   });
 
+  test('keeps Interact for the next stops of its worker slot that take input, and gives back the stop it was on for', () => {
+    const live: RunTake[] = ['view', 'input', 'pick-at'];
+    const at = (ref: string, slot: number, takes: RunTake[], line = 7): ShownStop => ({
+      ref,
+      worker: slot + 4,
+      slot,
+      stop: stopAt(spec, line),
+      test: runTest(),
+      takes,
+    });
+    const on = { ref: 'ed-1', slot: 1 };
+    // The slot's next stop, the worker Playwright starts in its place included.
+    expect(keepsInteract(on, at('ed-1', 1, live, 9))).toBe(true);
+    expect(keepsInteract(on, { ...at('ed-1', 1, live), worker: 11 })).toBe(true);
+    // Interact off, another slot or run, or a stop that takes no input on a live view: off.
+    expect(keepsInteract(null, at('ed-1', 1, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 2, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-2', 1, live))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 1, ['view', 'pick-at']))).toBe(false);
+    expect(keepsInteract(on, at('ed-1', 1, ['input']))).toBe(false);
+    // The worker panel keeps it while its worker runs and through a stop that takes input.
+    expect(laneKeepsInteract(true, null)).toBe(true);
+    expect(laneKeepsInteract(true, at('ed-1', 1, live))).toBe(true);
+    expect(laneKeepsInteract(true, at('ed-1', 1, ['view']))).toBe(false);
+    expect(laneKeepsInteract(false, at('ed-1', 1, live))).toBe(false);
+    const stop = at('ed-1', 1, live);
+    // Interact going off gives the stop back; nothing takes one as Interact turns on.
+    expect(giveBackParams(stop)).toEqual({ ref: 'ed-1', worker: 5, since: stop.stop.since, on: false });
+  });
+
   test('shows the JPEG under its caption, with no script and data images only', () => {
     const html = pausedPageHtml({ image: { mime: 'image/jpeg', data: '/9j/4AAQ+w==' }, caption: 'Click <b>' }, 'n0nce');
     expect(html).toContain(
@@ -1224,6 +1618,8 @@ describe('the paused page view', () => {
     expect(html).toContain('src="https://webview/paused-page.js?a=1&#38;b=2"');
     expect(html).toContain('data-shown="7"');
     expect(html).toContain('id="interact" type="checkbox" disabled');
+    expect(html).toContain('your first one drives the stop');
+    expect(html).toContain('Escape turns it off and gives the stop back');
     expect(html).toContain('<details><summary>');
     expect(html).not.toContain('<details open');
     expect(html).not.toContain('<test>');
@@ -1343,6 +1739,21 @@ describe('a failure held for the editor', () => {
       'Finish',
     ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
+  });
+
+  test('keeps the lens row above a stop to five entries: Run to cursor, End test and each action stay in its hover', () => {
+    expect(stopLensControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+      'Write code…',
+    ]);
+    expect(stopLensControls(shown(failed)).map((c) => c.title)).toEqual(['Resume', 'Write code…']);
+    expect(stopLensControls(shown(stopAt(spec, 5), ['view'])).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+    ]);
   });
 
   test('offers the code actions as any stop does', () => {
@@ -1586,5 +1997,584 @@ describe('the code a stop makes', () => {
       severity: 'warning',
       text: 'Piwi wrote the mock above checkout.spec.ts:5. 2 values named or shaped like credentials are written as <hidden>.',
     });
+  });
+});
+
+describe('a run another tool asks the extension to stop', () => {
+  test('is stopped when its task is this window’s, else refused, saying where to stop it', () => {
+    expect(stopRunAnswer(true)).toEqual({ ok: true, message: 'VS Code stops the run.' });
+    expect(stopRunAnswer(false)).toEqual({
+      ok: false,
+      message: 'The run was not started in this VS Code window: stop it where it was started.',
+    });
+  });
+});
+
+describe("this window's runs shared live, and a teammate's ask", () => {
+  test('says the window is shared, with or without a run, and stops it on a click', () => {
+    expect(liveItem(new Map(), true)).toMatchObject({
+      text: '$(broadcast) Live · this window',
+      command: 'piwi.stopSharingWindowLive',
+    });
+    expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
+      /^Share this window's runs live, each run this window follows from now on \(those you start here, and those of a terminal it follows\) until you stop or close the window, on piwi\.example\.com\?/,
+    );
+  });
+
+  test('names who asks and the run', () => {
+    expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
+    expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
+  });
+});
+
+describe('the CI runs of the branch', () => {
+  const spec = 'file:///work/shop/tests/checkout.spec.ts';
+  const page = 'file:///work/shop/tests/pages/checkout.page.ts';
+  const ci = (runId: number, over: Partial<CiSession> = {}): CiSession => ({
+    runId,
+    root: '/work/shop',
+    url: `https://piwi.example/test-runs/${runId}`,
+    name: `CI run #${runId}`,
+    branch: 'feature/pay',
+    startedAt: '2026-11-12T10:00:00.000Z',
+    progress: { total: 4, done: 1, failed: 1, flaky: 0, skipped: 0, status: 'running' },
+    summary: '1 of 4 tests · 1 failed',
+    tests: [
+      {
+        title: ['checkout', 'pays'],
+        uri: spec,
+        line: 2,
+        project: 'chromium',
+        status: 'running',
+        retry: 0,
+        lane: 2,
+        shard: null,
+        at: {
+          title: "Click getByRole('button')",
+          uri: page,
+          line: 8,
+          character: 21,
+          text: `CI run #${runId} · worker 2: Click getByRole('button')`,
+        },
+        watch: `https://piwi.example/test-runs/${runId}?watch=2`,
+      },
+      {
+        title: ['refunds'],
+        uri: spec,
+        line: 10,
+        project: 'chromium',
+        status: 'failed',
+        retry: 1,
+        lane: 1,
+        shard: null,
+        at: null,
+        watch: null,
+      },
+    ],
+    watchable: true,
+    ended: false,
+    ...over,
+  });
+
+  test('are kept, the latest of each run, until one says it ended', () => {
+    let kept: CiSessions = new Map();
+    kept = withCiSession(kept, ci(78));
+    kept = withCiSession(kept, ci(79));
+    kept = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect([...kept.values()].map((s) => [s.runId, s.summary])).toEqual([
+      [78, '2 of 4 tests · 1 failed'],
+      [79, '1 of 4 tests · 1 failed'],
+    ]);
+    kept = withCiSession(kept, ci(78, { ended: true }));
+    expect([...kept.values()].map((s) => s.runId)).toEqual([79]);
+  });
+
+  test('mark the line each running test is at, never a test that ended', () => {
+    const kept = withCiSession(withCiSession(new Map(), ci(78)), ci(79));
+    expect(ciPositionFiles(kept)).toEqual(new Set([page]));
+    expect(ciPositionsIn(kept, page)).toEqual([
+      {
+        line: 8,
+        text: "CI run #78 · worker 2: Click getByRole('button') · CI run #79 · worker 2: Click getByRole('button')",
+      },
+    ]);
+    expect(ciPositionsIn(kept, spec)).toEqual([]);
+  });
+
+  test('list each run named as other runs are, with its progress, Open, its tests and Watch, read-only', () => {
+    const [run] = ciNodes(withCiSession(new Map(), ci(78)));
+    expect(run).toMatchObject({
+      label: 'CI run #78',
+      description: 'feature/pay · 1 of 4 tests · 1 failed',
+      icon: 'cloud',
+      open: null,
+    });
+    expect(run!.tooltip).toContain('Read-only');
+    const [open, running, failed] = run!.children;
+    expect(open).toMatchObject({ label: 'Open run #78', open: { url: 'https://piwi.example/test-runs/78' } });
+    expect(running).toMatchObject({
+      label: 'checkout › pays',
+      description: "chromium · worker 2 · Click getByRole('button')",
+      icon: 'sync~spin',
+      open: { uri: page, line: 8, character: 21 },
+    });
+    // Watch opens the lane in the worker panel; the dashboard's view is the second choice.
+    expect(running!.children).toEqual([
+      expect.objectContaining({
+        label: 'Watch',
+        description: 'worker 2',
+        icon: 'eye',
+        open: {
+          lane: {
+            root: '/work/shop',
+            runId: 78,
+            shard: null,
+            lane: 2,
+            dashboard: 'https://piwi.example/test-runs/78?watch=2',
+          },
+        },
+      }),
+      expect.objectContaining({
+        label: 'Watch on the dashboard',
+        open: { url: 'https://piwi.example/test-runs/78?watch=2' },
+      }),
+    ]);
+    expect(failed).toMatchObject({
+      label: 'refunds',
+      description: 'chromium · retry 1 · failed',
+      icon: 'error',
+      open: { uri: spec, line: 10, character: 0 },
+      children: [],
+    });
+    // Each node keeps its key as the list moves.
+    const again = ciNodes(withCiSession(new Map(), ci(78, { tests: [...ci(78).tests].reverse() })));
+    expect(new Set(again[0]!.children.map((n) => n.key))).toEqual(new Set(run!.children.map((n) => n.key)));
+  });
+
+  test('offer no Watch while the run cannot be watched', () => {
+    const [run] = ciNodes(
+      withCiSession(new Map(), ci(78, { watchable: false, tests: ci(78).tests.map((t) => ({ ...t, watch: null })) })),
+    );
+    expect(run!.children.flatMap((n) => n.children)).toEqual([]);
+  });
+
+  test('read the lane a Watch names, and nothing else, from a command’s argument', () => {
+    const lane = {
+      root: '/work/shop',
+      runId: 78,
+      shard: 2,
+      lane: 1,
+      dashboard: 'https://piwi.example/test-runs/78?watch=2.1',
+    };
+    expect(ciLaneArg({ ci: lane })).toEqual(lane);
+    expect(ciLaneArg({ ci: { ...lane, dashboard: 'javascript:alert(1)' } })).toEqual({ ...lane, dashboard: null });
+    expect(ciLaneArg({ ci: { ...lane, lane: 0 } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, shard: undefined } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, runId: '78' } })).toBeNull();
+    // A local run's target is no CI lane.
+    expect(ciLaneArg({ ref: 'ed-1234abcd', worker: 1 })).toBeNull();
+    expect(ciLaneArg(undefined)).toBeNull();
+  });
+
+  test('say in the worker panel which CI lane it shows, what runs there, and that it is read-only', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    expect(ciLaneTitle(lane)).toBe('Piwi: CI run #78 · worker 2');
+    expect(ciLaneTitle({ ...lane, shard: 3 })).toBe('Piwi: CI run #78 · shard 3, worker 2');
+    expect(ciLaneCaption(kept, lane)).toBe(
+      "CI run #78 · worker 2 · Running checkout › pays · Click getByRole('button') · read-only",
+    );
+    expect(ciLaneCaption(kept, { ...lane, lane: 1 })).toBe('CI run #78 · worker 1 · between tests · read-only');
+    expect(ciLaneCaption(new Map(), lane)).toBe('CI run #78 · worker 2 · the run ended.');
+  });
+
+  test('take nothing a CI lane’s panel sends but Watch: no Interact, pick, input or release reaches its page', () => {
+    expect(ciLaneTakes({ type: 'ready' })).toBe(true);
+    expect(ciLaneTakes({ type: 'view', on: true })).toBe(true);
+    expect(ciLaneTakes({ type: 'layers', text: true, filmstrip: false })).toBe(true);
+    expect(ciLaneTakes({ type: 'text' })).toBe(true);
+    for (const type of ['interact', 'pick', 'input', 'release', undefined]) expect(ciLaneTakes({ type })).toBe(false);
+  });
+
+  test('draw a CI lane’s panel again only when what it says of the lane, or its watch, changed', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    const caption = ciLaneCaption(kept, lane);
+    const view = { caption, live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false } };
+    // Another run's push, or one of this run that changes nothing the panel says.
+    expect(ciLaneRedraws(view, ciLaneCaption(withCiSession(kept, ci(79)), lane), true)).toBe(false);
+    const counted = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect(ciLaneRedraws(view, ciLaneCaption(counted, lane), true)).toBe(false);
+    // The run ends, the watch goes off, or nothing was drawn yet.
+    expect(ciLaneRedraws(view, ciLaneCaption(new Map(), lane), false)).toBe(true);
+    expect(ciLaneRedraws(view, caption, false)).toBe(true);
+    expect(ciLaneRedraws(null, caption, true)).toBe(true);
+  });
+
+  test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI run #78 · worker 2 · between tests · read-only',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      },
+      'n0nce',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain('<input id="live" type="checkbox"> Watch</label>');
+    expect(html).toContain('<label hidden><input id="interact" type="checkbox" disabled> Interact</label>');
+    expect(html).toContain('read-only');
+    expect(html).toContain('alt="The page of the CI worker\'s test"');
+    expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('the worker panel’s Open the trace so far', () => {
+  const view = {
+    image: null,
+    caption: 'Worker 2 · Running · checkout › pays',
+    lane: true,
+    live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+  };
+  const script = 'https://webview/paused-page.js';
+
+  test('draw the button beside Watch and Interact while the slot’s worker can open its trace, off while it is asked', () => {
+    const shown = pausedPageHtml({ ...view, trace: { asking: false } }, 'n', script);
+    expect(shown).toContain(
+      `Interact</label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toContain(
+      '>Open the trace so far</button>',
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toMatch(/id="trace"[^>]* disabled>/);
+    // Held hidden for a worker that cannot open its trace: the script shows it as the worker comes to one.
+    expect(pausedPageHtml(view, 'n', script)).toMatch(/<button id="trace" type="button" title="[^"]*" hidden>/);
+    // Neither a CI run's lane nor the paused page of one stop has it.
+    expect(pausedPageHtml({ ...view, ci: true, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+    expect(pausedPageHtml({ ...view, lane: false, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+  });
+
+  test('ask for the slot the panel shows, and say why not without one or for a CI run’s lane', () => {
+    expect(openTraceParams({ ref: 'r1', lane: 1 }, false)).toEqual({ ref: 'r1', lane: 1 });
+    expect(openTraceParams(null, false)).toEqual({ none: "no worker panel is open: watch a worker's test first." });
+    expect(openTraceParams(null, true)).toEqual({
+      none: 'a CI run’s trace is on the machine that runs it, not on this one.',
+    });
+  });
+
+  test('wait for one ask per slot: another slot’s button stays on, and asks for its own slot', async () => {
+    const asks = new TraceAsks();
+    const sent: number[] = [];
+    const answers = new Map<number, (said: RunControlResult) => void>();
+    const send = (lane: number) => () => {
+      sent.push(lane);
+      return new Promise<RunControlResult>((resolve) => answers.set(lane, resolve));
+    };
+    const first = asks.ask({ ref: 'r1', lane: 0 }, send(0));
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(true);
+    // Worker 2 shown while worker 1's ask waits: its button is on, and its click asks for it.
+    expect(asks.asking({ ref: 'r1', lane: 1 })).toBe(false);
+    expect(asks.asking({ ref: 'r2', lane: 0 })).toBe(false);
+    expect(asks.asking(null)).toBe(false);
+    const second = asks.ask({ ref: 'r1', lane: 1 }, send(1));
+    // A second click on worker 1 while its ask waits gets that ask's answer, and sends nothing.
+    expect(asks.ask({ ref: 'r1', lane: 0 }, send(0))).toBe(first);
+    expect(sent).toEqual([0, 1]);
+    answers.get(1)!({ ok: true, message: 'Opened.' });
+    expect(await second).toEqual({ ok: true, message: 'Opened.' });
+    expect(asks.asking({ ref: 'r1', lane: 1 })).toBe(false);
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(true);
+    answers.get(0)!({ ok: false, message: 'Not traced.' });
+    expect(await first).toEqual({ ok: false, message: 'Not traced.' });
+    expect(asks.asking({ ref: 'r1', lane: 0 })).toBe(false);
+  });
+
+  test('say an answer as it is beside its own slot, and with its worker’s name once the panel shows another', () => {
+    const said = "Playwright's trace viewer opened on the trace so far.";
+    expect(traceAnswerText({ ref: 'r1', lane: 0 }, { ref: 'r1', lane: 0 }, said)).toBe(said);
+    expect(traceAnswerText({ ref: 'r1', lane: 0 }, { ref: 'r1', lane: 1 }, said)).toBe(`Worker 1: ${said}`);
+    expect(traceAnswerText({ ref: 'r1', lane: 2 }, { ref: 'r2', lane: 2 }, said)).toBe(`Worker 3: ${said}`);
+    // The panel closed, or shows a CI run's lane.
+    expect(traceAnswerText({ ref: 'r1', lane: 1 }, null, said)).toBe(`Worker 2: ${said}`);
+  });
+
+  test('offer the command while the panel’s slot can open its trace and no ask of it waits', () => {
+    expect(openTraceOffered({ ...view, trace: { asking: false } })).toBe(true);
+    expect(openTraceOffered({ ...view, trace: { asking: true } })).toBe(false);
+    expect(openTraceOffered({ ...view, trace: null })).toBe(false);
+    expect(openTraceOffered(view)).toBe(false);
+    // A CI run's lane, and no panel.
+    expect(openTraceOffered({ ...view, ci: true, trace: { asking: false } })).toBe(false);
+    expect(openTraceOffered(null)).toBe(false);
+  });
+});
+
+describe('the worker panel’s layers', () => {
+  const at = 1_800_000_000_000;
+  const log = (extra: Partial<LiveCallLog> = {}): LiveCallLog => ({
+    id: 'c3',
+    call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 9 },
+    status: 'running',
+    lines: [
+      'waiting for getByRole(…)',
+      '  locator resolved to <button disabled>',
+      '  element is not enabled',
+      'retrying',
+    ],
+    point: null,
+    target: { count: 1, box: null, enabled: false },
+    viewport: null,
+    ms: 4200,
+    error: null,
+    ...extra,
+  });
+  const thumb = (call: string, index: number) => ({
+    layer: 'filmstrip' as const,
+    test: 't1',
+    thumb: { call, title: `Call ${index}`, index, width: 320, height: 200, at },
+    data: `/9j/${call}==`,
+  });
+
+  test('ask for the call log and the events always, the text and the filmstrip while their section is open', () => {
+    expect(laneLayersAsked({ text: false, filmstrip: false })).toEqual(['calls', 'events']);
+    expect(laneLayersAsked({ text: true, filmstrip: true })).toEqual(['calls', 'events', 'text', 'filmstrip']);
+    expect(laneLayersAsked({ text: false, filmstrip: true })).toEqual(['calls', 'events', 'filmstrip']);
+  });
+
+  test('say why the call waits: how long, what its locator matches, the log’s last lines and its error', () => {
+    expect(waitsView(log())).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · waiting 4.2 s",
+      target: '1 element matches, disabled',
+      lines: ['  locator resolved to <button disabled>', '  element is not enabled', 'retrying'],
+      failed: false,
+    });
+    expect(waitsView(log({ target: { count: 0, box: null, enabled: null }, ms: 17_400 })).target).toBe(
+      'No element matches yet',
+    );
+    expect(waitsView(log({ target: { count: 3, box: null, enabled: true } })).target).toBe(
+      '3 elements match, the first enabled',
+    );
+    const failed = waitsView(log({ status: 'failed', ms: 30_000, error: 'Timeout 30000ms exceeded.', lines: ['a'] }));
+    expect(failed).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · failed after 30 s",
+      target: null,
+      lines: ['a', 'Timeout 30000ms exceeded.'],
+      failed: true,
+    });
+    expect(waitsView(log({ status: 'passed', ms: 120 })).head).toMatch(/done in 120 ms$/);
+    expect(laneDuration(999)).toBe('999 ms');
+  });
+
+  test('list each event in a line of its own, a request’s pending time by its address’s path', () => {
+    const pending = eventLine(
+      {
+        kind: 'request-pending',
+        id: 4,
+        method: 'POST',
+        url: 'https://shop.test/api/checkout?x=1',
+        ms: 17_000,
+        done: false,
+      },
+      at,
+      2,
+      1,
+    );
+    expect(pending).toEqual({
+      key: 'pending 2:4',
+      text: 'POST /api/checkout?x=1 pending 17 s',
+      level: 'warning',
+      url: 'https://shop.test/api/checkout?x=1',
+      at,
+    });
+    const line = (event: PageEvent) => eventLine(event, at, 0, 1);
+    expect(line({ kind: 'console', text: 'Oops' })).toMatchObject({ text: 'Console error: Oops', level: 'error' });
+    expect(line({ kind: 'page-error', text: 'x is undefined' }).text).toBe('Uncaught error: x is undefined');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: 'https://shop.test/cart', status: 503, failure: null }).text,
+    ).toBe('GET /cart answered 503');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: '/x', status: null, failure: 'net::ERR_ABORTED' }).text,
+    ).toBe('GET /x failed: net::ERR_ABORTED');
+    expect(
+      line({
+        kind: 'backend',
+        method: 'POST',
+        url: 'https://shop.test/pay',
+        status: 500,
+        level: 'error',
+        text: 'Card',
+      }),
+    ).toMatchObject({ text: 'Backend error on POST /pay (500): Card', level: 'error' });
+    expect(
+      line({ kind: 'api', method: 'POST', url: 'https://api.test/orders', status: 201, ms: 85, failure: null }),
+    ).toMatchObject({ text: 'API POST /orders answered 201 in 85 ms', level: 'info' });
+    expect(line({ kind: 'dropped', count: 12 }).text).toBe('12 more events were not sent: too many at once.');
+  });
+
+  test('keep the newest events first, capped, one line per pending request, its last time in place', () => {
+    let shown = NO_LANE_LAYERS;
+    const event = (e: PageEvent) => {
+      const next = withLaneLayer(shown, { layer: 'events', event: e, at, test: 't1', worker: 0 });
+      shown = next.shown;
+      return next.changed;
+    };
+    const request = {
+      kind: 'request-pending',
+      id: 1,
+      method: 'POST',
+      url: '/api/checkout',
+      ms: 5000,
+      done: false,
+    } as const;
+    expect(event(request)).toEqual(['events']);
+    event({ kind: 'console', text: 'Oops' });
+    event({ ...request, ms: 10_000 });
+    expect(shown.events.map((e) => e.text)).toEqual(['POST /api/checkout pending 10 s', 'Console error: Oops']);
+    event({ ...request, ms: 12_300, done: true });
+    expect(shown.events[0]).toMatchObject({ text: 'POST /api/checkout answered after 12 s', level: 'info' });
+    expect(shown.events).toHaveLength(2);
+    for (let i = 0; i < MAX_LANE_EVENTS + 5; i++) event({ kind: 'console', text: `n${i}` });
+    expect(shown.events).toHaveLength(MAX_LANE_EVENTS);
+    expect(shown.events[0]!.text).toBe(`Console error: n${MAX_LANE_EVENTS + 4}`);
+  });
+
+  test('keep one image of the filmstrip per call, in the test’s order, and start anew with another test', () => {
+    let shown = NO_LANE_LAYERS;
+    const hear = (layer: Parameters<typeof withLaneLayer>[1]) => {
+      const next = withLaneLayer(shown, layer);
+      shown = next.shown;
+      return next.changed;
+    };
+    expect(hear(thumb('c1', 1))).toEqual(['strip']);
+    expect(hear(thumb('c2', 2))).toEqual(['strip']);
+    // The strip sent again, as a viewer asks for it again, changes nothing.
+    expect(hear(thumb('c1', 1))).toEqual([]);
+    expect(hear(thumb('c2', 2))).toEqual([]);
+    expect(hear({ ...thumb('c9', 9), data: 'iVBORw0KGgo=' })).toEqual([]);
+    expect(shown.strip.map((image) => image.call)).toEqual(['c1', 'c2']);
+    hear({ layer: 'calls', log: log(), test: 't1' });
+    hear({
+      layer: 'text',
+      text: { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at },
+      test: null,
+    });
+    expect(shown.waits).not.toBeNull();
+    // Another test's call log clears the strip and the call log before it; the text stays.
+    expect(hear({ layer: 'calls', log: log({ id: 'd1' }), test: 't2' }).sort()).toEqual(['strip', 'waits']);
+    expect(shown.strip).toEqual([]);
+    expect(shown.text).toMatchObject({ text: '- heading "Shop"' });
+    expect(hear({ layer: 'text', refused: 'The page is closed.', test: 't2' })).toEqual(['text']);
+    expect(laneTextNote(shown.text)).toBe('The page is closed.');
+    expect(laneTextNote({ text: 'x', cut: true, source: 'trace', at })).toBe(
+      'From the test’s trace. Cut at 96 K characters.',
+    );
+  });
+
+  test('start the filmstrip and the call log anew for a retry of the test, in another worker or from its first call', () => {
+    const attempt = (worker: number | undefined, call: string, index: number) => ({
+      layer: 'filmstrip' as const,
+      test: 'same-test-id',
+      ...(worker === undefined ? {} : { worker }),
+      thumb: { call, title: `Attempt ${worker ?? '?'} call ${index}`, index, width: 320, height: 200, at },
+      data: `/9j/${call.replace(/[^A-Za-z0-9]/g, '')}${worker ?? 9}==`,
+    });
+    const strip = (shown: LaneLayersShown) => shown.strip.map((image) => `${image.call} ${image.title}`);
+    let shown = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['abcd@1', 1],
+      ['abcd@2', 2],
+      ['abcd@3', 3],
+    ] as const) {
+      shown = withLaneLayer(shown, attempt(0, call, index)).shown;
+    }
+    shown = withLaneLayer(shown, { layer: 'calls', log: log(), test: 'same-test-id', worker: 0 }).shown;
+    // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+    const retry = withLaneLayer(shown, attempt(1, 'wxyz@1', 1));
+    expect(retry.changed.sort()).toEqual(['strip', 'waits']);
+    expect(retry.shown.waits).toBeNull();
+    shown = withLaneLayer(retry.shown, attempt(1, 'wxyz@2', 2)).shown;
+    expect(strip(shown)).toEqual(['wxyz@1 Attempt 1 call 1', 'wxyz@2 Attempt 1 call 2']);
+
+    // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+    let restarted = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['pw:api@1', 1],
+      ['pw:api@2', 2],
+      ['pw:api@3', 3],
+    ] as const) {
+      restarted = withLaneLayer(restarted, attempt(0, call, index)).shown;
+    }
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@1', 1)).shown;
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['pw:api@1 Attempt 1 call 1', 'pw:api@2 Attempt 1 call 2']);
+    // A layer that names no worker: an image placed at or before the strip's last, of a call it does not hold, is
+    // another attempt's.
+    restarted = withLaneLayer(restarted, attempt(undefined, 'qq@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['qq@2 Attempt ? call 2']);
+  });
+
+  test('post the parts that changed, each image of the strip once, and every part to a view drawn anew', () => {
+    let shown = NO_LANE_LAYERS;
+    shown = withLaneLayer(shown, thumb('c1', 1)).shown;
+    shown = withLaneLayer(shown, thumb('c2', 2)).shown;
+    const posted = new Set(['c1']);
+    expect(laneLayersMessage(4, shown, ['strip'], posted)).toEqual({
+      type: 'layers',
+      shown: 4,
+      strip: [
+        { call: 'c1', title: 'Call 1', index: 1 },
+        { call: 'c2', title: 'Call 2', index: 2 },
+      ],
+      images: { c2: '/9j/c2==' },
+    });
+    expect(laneLayersMessage(4, shown, LANE_LAYER_PARTS, new Set(), 'Worker 2 shows no page now.')).toMatchObject({
+      waits: null,
+      events: [],
+      text: { text: null, note: 'Worker 2 shows no page now.' },
+      images: { c1: '/9j/c1==', c2: '/9j/c2==' },
+    });
+    expect(laneLayersNote({ layers: false })).toMatch(/^This worker’s reporter sends its images alone/);
+    expect(laneLayersNote({ layers: true })).toBeNull();
+    expect(laneLayersNote(null)).toBeNull();
+  });
+
+  test('say why a CI lane may show none of its layers until the first comes', () => {
+    expect(ciLaneLayersNote(NO_LANE_LAYERS)).toMatch(/older than the editor’s sends the images alone\.$/);
+    // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+    const calls = withLaneLayer(NO_LANE_LAYERS, { layer: 'calls', log: log(), test: 't1', worker: 2 }).shown;
+    expect(ciLaneLayersNote(calls)).not.toBeNull();
+    const event = { layer: 'events' as const, event: { kind: 'console' as const, text: 'Oops' }, at, test: 't1' };
+    expect(ciLaneLayersNote(withLaneLayer(calls, event).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, thumb('c1', 1)).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, { layer: 'text', refused: 'No page.', test: 't1' }).shown)).toBeNull();
+  });
+
+  test('hold a change of the layers as asked unless the service refused that very change', () => {
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', true)).toBe('calls,events,text');
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', false)).toBe('');
+    // A later change asked meanwhile stays held: its own answer decides.
+    expect(layersAfterAnswer('calls,events', 'calls,events,text', false)).toBe('calls,events');
+  });
+
+  test('draw the sections under a worker’s image, empty, with Text and Filmstrip open as the person left them', () => {
+    const view = {
+      image: null,
+      caption: 'Worker 2',
+      lane: true,
+      live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+      layers: { text: true, filmstrip: false, note: 'Update <b>' },
+    };
+    const html = pausedPageHtml(view, 'n', 'https://webview/paused-page.js');
+    expect(html).toContain('<details id="text-section" class="layer" open>');
+    expect(html).toContain('<details id="strip-section" class="layer">');
+    expect(html).toContain('Update &#60;b&#62;');
+    expect(html).not.toContain('<b>');
+    // The paused page of one stop has none.
+    expect(pausedPageHtml({ ...view, lane: false }, 'n', 'https://webview/paused-page.js')).not.toContain(
+      'id="layers"',
+    );
   });
 });

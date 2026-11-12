@@ -10,7 +10,7 @@ import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile,
 
 /** One row of the confirmation: a check that failed stops **Run**, a warning does not. */
 export interface RequestCheck {
-  id: 'folder' | 'config' | 'specs' | 'playwright' | 'commit' | 'changes';
+  id: 'folder' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
   level: 'ok' | 'warn' | 'fail';
   message: string;
 }
@@ -32,6 +32,26 @@ export interface RequestPlan {
 
 /** How many missing spec files a check names before it counts the rest. */
 const NAMED_SPECS = 3;
+
+/**
+ * The most characters the arguments after `playwright test` may take, each counted with one separator, so the whole
+ * command stays within what every platform starts. The shell refuses a launch past it too (`run_target.rs`).
+ */
+export const REQUESTED_RUN_ARGS_MAX_CHARS = 24_000;
+
+/** The characters `args` take as `REQUESTED_RUN_ARGS_MAX_CHARS` counts them. */
+export function argsLength(args: string[]): number {
+  return args.reduce((total, arg) => total + arg.length + 1, 0);
+}
+
+/** A folder's real path, or null when it is gone. */
+function realFolder(folder: string): string | null {
+  try {
+    return fs.realpathSync(folder);
+  } catch {
+    return null;
+  }
+}
 
 /** A spec of the request that is an existing regular file inside `folder`, its path as Playwright loads it. */
 function specInFolder(folder: string, filePath: string): string | null {
@@ -115,8 +135,14 @@ function displayArg(arg: string): string {
  * Check `folder`, the folder linked to the request's project on this machine (null when none is), against
  * `request`, and build the command. A failed check names its fix and leaves the command empty; a branch or a commit
  * other than the request's, or uncommitted changes, warns and selects the tests by title, since a line may have moved.
+ * `runningIn` names the folders a run of this app is going in, requested or the person's own: one of them fails the
+ * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`.
  */
-export async function planRequestedRun(request: RunRequest, folder: string | null): Promise<RequestPlan> {
+export async function planRequestedRun(
+  request: RunRequest,
+  folder: string | null,
+  runningIn: string[] = [],
+): Promise<RequestPlan> {
   const checks: RequestCheck[] = [];
   const done = (extra: Partial<RequestPlan> = {}): RequestPlan => {
     const runnable = !checks.some((c) => c.level === 'fail');
@@ -145,6 +171,13 @@ export async function planRequestedRun(request: RunRequest, folder: string | nul
     return done();
   }
   checks.push({ id: 'folder', level: 'ok', message: 'The folder is linked.' });
+  if (runningIn.some((other) => realFolder(other) === real)) {
+    checks.push({
+      id: 'busy',
+      level: 'fail',
+      message: 'Another run is going in this folder: this one can run once it ends.',
+    });
+  }
 
   if (!playwrightConfigFile(real)) {
     checks.push({ id: 'config', level: 'fail', message: 'The folder holds no Playwright config.' });
@@ -192,5 +225,13 @@ export async function planRequestedRun(request: RunRequest, folder: string | nul
     checks.push({ id: 'changes', level: 'warn', message: 'Your folder has uncommitted changes.' });
   }
   const byTitle = picksByTitle(request, !onCommit || changed);
-  return done({ args: requestedRunArgs(request, real, byTitle), byTitle, branch, commit });
+  const args = requestedRunArgs(request, real, byTitle);
+  if (argsLength(args) > REQUESTED_RUN_ARGS_MAX_CHARS) {
+    checks.push({
+      id: 'command',
+      level: 'fail',
+      message: `The command for these tests is longer than ${REQUESTED_RUN_ARGS_MAX_CHARS.toLocaleString('en-US')} characters: ask for fewer tests.`,
+    });
+  }
+  return done({ args, byTitle, branch, commit });
 }

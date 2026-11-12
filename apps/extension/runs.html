@@ -213,6 +213,11 @@
         padding: 8px 12px;
         border-top: 1px solid var(--border);
       }
+      /* Why a run's Stop was refused, under the row of its controls, which draws the line above it. */
+      .run > .stop-refused {
+        border-top: 0;
+        border-bottom: 1px solid var(--border);
+      }
       .run-ended {
         display: flex;
         align-items: center;
@@ -251,42 +256,205 @@
       .run-progress .flaky {
         color: var(--warn);
       }
+      /* Who else has the run open, under its name, as its hub says. */
+      .run-presence {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .run-presence > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
+      /* Who watches a worker's page: in its page's head, else on a line of its own. */
+      .watchers {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin: 0;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .watchers > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
+      /* Who drives a stop, with Take control or Give back: the page card's foot. */
+      .run-driver {
+        align-items: center;
+        padding: 6px 10px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .run-driver .driver {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .run-driver .driver > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
+      /* The run's number on the instance, with Open and Copy for its page. */
+      .run-page {
+        margin: 0;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        align-items: center;
+      }
+      .run-page .run-number {
+        font-weight: 600;
+        margin-right: 4px;
+      }
+      /* The CI runs in progress, under the runs the hubs follow: read-only, a heading above them and a note below. */
+      .ci-heading {
+        margin: 4px 0 8px;
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: none;
+      }
+      .ci-run .run-progress {
+        border-bottom: 0;
+      }
+      .ci-note {
+        margin: 0 0 12px;
+      }
+      /* Hold failures, and Pause all or Resume all, on one row under the run's name. */
+      .run-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .run-bar > .run-hold,
+      .run-bar > .run-hold-box,
+      .run-bar > .run-controls {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      /* Stop the run, apart from the controls that steer its tests. */
+      .run-bar > .run-stop {
+        margin-left: auto;
+      }
+      /*
+       * A live run's workers, one shown at a time: a tab each, marked with its state in its tone. The strip's line is
+       * drawn inside it and the selected tab's underline inside the tab, so nothing overflows the strip but its width.
+       */
+      .worker-tabs {
+        display: flex;
+        gap: 2px;
+        padding: 6px 12px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        box-shadow: inset 0 -1px 0 var(--border);
+      }
+      .worker-tabs .piwi-btn[role='tab'] {
+        flex-shrink: 0;
+        border-radius: 6px 6px 0 0;
+        color: var(--muted);
+      }
+      .worker-tabs .piwi-btn[role='tab']:focus-visible {
+        outline-offset: -2px;
+      }
+      .worker-tabs .piwi-btn[role='tab'][aria-selected='true'] {
+        color: inherit;
+        font-weight: 600;
+        box-shadow: inset 0 -2px 0 var(--accent-fg);
+      }
+      .worker-tabs .piwi-btn[role='tab'][data-status='stopped'] {
+        color: var(--stopped);
+      }
+      .worker-tabs .piwi-btn[role='tab'][data-status='failed'] {
+        color: var(--error);
+      }
       .workers {
         list-style: none;
         margin: 0;
         padding: 0;
       }
+      /* A worker's parts in one column, one gap between each: the test, its status, its controls, its page. */
       .worker {
-        padding: 10px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
         background: var(--bg);
+      }
+      li.worker > * {
+        margin: 0;
       }
       .worker + .worker {
         border-top: 1px solid var(--border);
+      }
+      /* The test's name, then its project and attempt, on one line where they fit. */
+      .test-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 10px;
+      }
+      .test-head .test {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      /* The project and attempt keep to one line, beside the name or under it, wrapping only past the row's width. */
+      .test-head .meta {
+        flex: 0 0 auto;
+        max-width: 100%;
+        margin-left: auto;
+        overflow-wrap: anywhere;
+      }
+      /* Where the test stands, in a card of its tone: its state, then the call about to run or the error. */
+      .status {
+        --tone: var(--running);
+        padding: 8px 10px;
+        border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--border));
+        border-left: 3px solid var(--tone);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--tone) 7%, var(--bg));
+      }
+      .status[data-tone='stopped'] {
+        --tone: var(--stopped);
+      }
+      .status[data-tone='failed'] {
+        --tone: var(--error);
+      }
+      .status[data-tone='between'] {
+        --tone: var(--muted);
       }
       .state {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin: 0 0 4px;
+        margin: 0;
         font-size: 12px;
         font-weight: 600;
         line-height: 16px;
         color: var(--running);
       }
+      /* The card's words in its tone, and its labels, darkened toward the text so they keep their contrast on its tint. */
+      .status .state {
+        color: color-mix(in srgb, var(--tone) 80%, var(--fg));
+      }
+      .status .stop dt {
+        color: color-mix(in srgb, var(--muted) 80%, var(--fg));
+      }
       .state > .piwi-icon {
         width: 14px;
         height: 14px;
-      }
-      .state .worker-number {
-        margin-left: auto;
-        font-weight: 400;
-        color: var(--muted);
-      }
-      .worker[data-state='stopped'] .state {
-        color: var(--stopped);
-      }
-      .worker[data-state='between'] .state {
-        color: var(--muted);
       }
       .test {
         margin: 0;
@@ -312,12 +480,12 @@
         height: 12px;
         margin-top: 2px;
       }
-      /* Where the test stands: the call about to run, and its file and line. */
+      /* Under the state: the call about to run, and its file and line. */
       .stop {
         display: grid;
         grid-template-columns: auto 1fr;
         gap: 2px 8px;
-        margin: 8px 0;
+        margin: 6px 0 0;
         font-size: 12px;
       }
       .stop dt {
@@ -332,29 +500,64 @@
         font-family: var(--mono);
         font-size: 11.5px;
       }
-      /* The stopped page, or a watched lane's, under the controls: an image the hub took, never a page of its own. */
+      /*
+       * The stopped page, or a watched lane's, under the controls, in a card: its head (the caption, then Watch live,
+       * Watch and Pick on the image), the image the hub took (never a page of its own), then what it says of it.
+       */
       .page {
-        margin: 8px 0 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .page-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        min-height: 36px;
+        padding: 4px 6px 4px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      /* The caption, and under it who watches the page. */
+      .page-title {
+        display: flex;
+        flex-direction: column;
+        margin-right: auto;
+        min-width: 0;
+      }
+      .page-caption {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
       }
       .page img {
         display: block;
         width: 100%;
         height: auto;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--surface);
+        background: var(--bg);
       }
       .page p {
         margin: 0;
+        padding: 6px 10px;
         font-size: 11.5px;
         color: var(--muted);
+      }
+      .page-frame + p {
+        border-top: 1px solid var(--border);
+      }
+      /* No image yet: the place the image takes, what it waits for in its middle. */
+      .page-empty {
+        display: grid;
+        place-items: center;
+        aspect-ratio: 16 / 10;
+        text-align: center;
       }
       /* Why a live view ended or was refused, that it starts, and how its input works. */
       .page .view-note {
         display: flex;
         gap: 6px;
         align-items: flex-start;
-        margin-top: 6px;
         line-height: 16px;
       }
       .view-note > .piwi-icon {
@@ -363,17 +566,13 @@
         height: 12px;
         margin-top: 2px;
       }
-      /* Watch live and Pick on the image, above the image. */
-      .page-tools {
-        margin-bottom: 6px;
-      }
       /* The image, or the live view in its place: the width of the window, its aspect kept. */
       .page-frame {
         position: relative;
       }
       .page img.live:focus {
         outline: 2px solid var(--accent-fg);
-        outline-offset: 2px;
+        outline-offset: -2px;
       }
       /* A watched lane's last frame, while it no longer shows where the test stands: dimmed until the next one comes. */
       .page img.stale {
@@ -409,18 +608,190 @@
         padding-left: 6px;
         background: #374151;
       }
+      /*
+       * A watched lane's layers, under its page: why its call waits, its page's events, the page's text and the
+       * test's filmstrip, each a section with its heading.
+       */
+      .layers {
+        display: grid;
+        gap: 10px;
+      }
+      .layer {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .layer-title {
+        margin: 0;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .layer p,
+      .layer ul {
+        margin: 0;
+      }
+      .layer-empty {
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .layer-call {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .layer-call .place {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .layer-state {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--running);
+      }
+      .layer-state[data-tone='passed'] {
+        color: var(--ok);
+      }
+      .layer-state[data-tone='failed'],
+      .layer-error {
+        color: var(--error);
+      }
+      .layer-error {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      /* The call's log and the page's text: their own lines, scrolled within the window's width. */
+      .layer-log,
+      .layer-text {
+        margin: 0;
+        max-height: 160px;
+        overflow: auto;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 15px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .layer-text {
+        max-height: 240px;
+      }
+      .layer-text:focus {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: -2px;
+      }
+      /* The page's events, newest first: what each is in its tone, then what it says. */
+      .layer-events {
+        display: grid;
+        gap: 2px;
+        padding: 0;
+        list-style: none;
+        max-height: 180px;
+        overflow: auto;
+        font-size: 11.5px;
+      }
+      .layer-event {
+        overflow-wrap: anywhere;
+      }
+      .layer-event .event-label {
+        font-weight: 600;
+        color: var(--running);
+      }
+      .layer-event[data-tone='error'] .event-label {
+        color: var(--error);
+      }
+      .layer-event[data-tone='warning'] .event-label,
+      .layer-event[data-tone='waiting'] .event-label {
+        color: var(--warn);
+      }
+      .layer-event .event-text {
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      /* The filmstrip: a row of small images that scrolls sideways, and the one chosen shown larger above it. */
+      .film-strip {
+        display: flex;
+        gap: 4px;
+        padding: 0 0 4px;
+        overflow-x: auto;
+        list-style: none;
+      }
+      .film-thumb {
+        display: block;
+        flex: 0 0 auto;
+        padding: 0;
+        border: 2px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg);
+        cursor: pointer;
+      }
+      .film-thumb[aria-pressed='true'] {
+        border-color: var(--accent-fg);
+      }
+      .film-thumb:focus-visible {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: 1px;
+      }
+      .film-thumb img {
+        display: block;
+        width: 80px;
+        height: auto;
+      }
+      .film-shown {
+        margin: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      .film-shown img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .film-shown figcaption {
+        padding: 4px 8px;
+        font-size: 11.5px;
+        overflow-wrap: anywhere;
+      }
       /* The controls that steer the test, then the code a stop can write, on a row of their own. */
       .controls {
         display: grid;
         gap: 6px;
-        margin-top: 8px;
       }
-      /* A test held where it failed: a stop, not a breakpoint. */
-      .worker[data-failed] .state {
-        color: var(--error);
+      /* Resume, Step and Finish, one group: their borders meet. */
+      .controls .joined {
+        display: inline-flex;
+      }
+      .controls .joined > .piwi-btn:not(:first-child) {
+        margin-left: -1px;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+      }
+      .controls .joined > .piwi-btn:not(:last-child) {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .controls .joined > .piwi-btn:focus-visible {
+        position: relative;
+        z-index: 1;
+      }
+      /* End the test, apart from the controls that move the test on. */
+      .controls [data-apart] {
+        margin-left: auto;
+      }
+      /* The code row's label, before its quiet buttons. */
+      .controls .row-label {
+        color: var(--muted);
+        font-size: 12px;
+        margin-right: 2px;
       }
       /* A failure's error, its lines as it states them. */
       .stop .error {
+        margin: 0;
         overflow-wrap: anywhere;
         white-space: pre-line;
       }
@@ -429,14 +800,22 @@
         opacity: 0.5;
         cursor: default;
       }
-      /* Mock a request while its list of requests is open under it. */
-      .piwi-btn[aria-expanded='true'] {
+      /*
+       * Mock a request while its list of requests is open under it, and More while it shows what it folds: pressed,
+       * whatever their tone (the buttons' own styles come after this sheet).
+       */
+      .piwi-btn.piwi-btn[aria-expanded='true'] {
         background: var(--piwi-btn-pressed-bg);
         border-color: var(--piwi-btn-pressed-border);
       }
-      .piwi-btn[aria-disabled='true']:hover {
+      /* A held button keeps its look under the pointer, whatever its tone. */
+      .piwi-btn.piwi-btn[aria-disabled='true']:hover {
         background: var(--piwi-btn-bg);
         border-color: var(--piwi-btn-border);
+      }
+      .piwi-btn.piwi-btn[data-tone='ghost'][aria-disabled='true']:hover {
+        background: none;
+        border-color: transparent;
       }
       /* What a command answered when it was not done. */
       .answer {
@@ -622,6 +1001,8 @@
         <div id="empty-actions" class="piwi-actions"></div>
       </div>
       <div id="runs"></div>
+      <!-- The CI runs in progress the connected instance lists, read-only. -->
+      <div id="ci" class="ci" hidden></div>
       <footer>
         <div id="shortcut" class="shortcut" hidden>
           <p id="shortcut-text" class="note"></p>

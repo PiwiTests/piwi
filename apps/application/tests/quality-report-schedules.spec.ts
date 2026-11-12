@@ -5,8 +5,8 @@
  *   /reports and /reports/:id — the Reports page, Run now, the snapshot page
  *   Schedule… on /analytics   — the schedule form, prefilled with the scope, and its preview
  *
- * The email itself is checked by email-notifications.spec.ts (it needs
- * Mailpit); here the delivery row is queued and recorded on the snapshot.
+ * The email itself is checked by email-notifications.spec.ts; here the
+ * delivery row is queued and recorded on the snapshot.
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';

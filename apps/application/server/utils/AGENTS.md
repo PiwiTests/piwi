@@ -192,6 +192,10 @@ message, a page's text), which must never make it run a command, read a file or 
   `ai-claude-cli.ts`): a CLI without them is refused; `--max-turns` is a print-mode option `--help` does not list. An
   assistant turn adds only the turn's MCP endpoint (in an `--mcp-config` file, so its token stays off the command line)
   and its tools.
+- **Claude Code's sign-in is its own, and a Claude subscription runs only in the desktop app** (Anthropic's terms for
+  Claude Code): Piwi never starts a sign-in or sign-out, never reads a credential, and passes every sign-in variable
+  through (`cliEnv`); outside the desktop app `usesApiCredentials` must hold (an API key, a gateway token or a cloud
+  provider), or `assertReady` refuses the call. `tests/unit/ai-claude-cli.test.ts` checks both.
 - **Codex runs isolated** (`ai-codex-cli.ts`): every invocation has a private home and working directory, a file-backed
   ChatGPT login snapshot, an allowlisted environment (`codexCliEnv`), disabled feature flags and model metadata with no
   built-in execution or filesystem tools. An assistant turn configures only its `piwi` MCP server and allowed tools.
@@ -224,8 +228,9 @@ runs (`@piwitests/editor/run-host`), plus these:
   added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
   (a real run through the built reporter) drive the wiring.
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
-  `Host`, extension `Origin`, limits and closed command set; the window reaches the same hub as a joined peer through
-  `/api/desktop/runs/*`, behind the desktop guard. None of the routes is an open route (`isOpenDesktopRoute`).
+  `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
+  the window reaches the same hub as a joined peer through `/api/desktop/runs/*`, behind the desktop guard. None of the
+  routes is an open route (`isOpenDesktopRoute`).
 - **The window's stream counts what the window has not read.** `runs/events.get.ts` writes to the response itself, its
   sink's `buffered()` being `res.writableLength`, so a frame waits past 1 MB unread and the stream is cut past 32 MB, as
   the hub does with a WebSocket; a `ReadableStream` handed to h3 counts nothing (`desktop-runs-events.test.ts`).
@@ -241,9 +246,13 @@ runs (`@piwitests/editor/run-host`), plus these:
   its disk text, and refused once the file was written since the run's first connection opened.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
-  **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref
-  ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab
-  job, and a run with `--repeat-each` above 1 or `--ui`.
+  **Hold failures** switch is on) or whose Hold failures Piwi Picker or an agent turned on, and never in a run nobody
+  attends: its ref ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a
+  bisect, a lab job, a run with `--ui`, and one with `--repeat-each` above 1 unless it stops at its first failure.
+- **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
+  editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
+  it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)
+  (`tests/unit/desktop-editor-runs.test.ts`).
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to

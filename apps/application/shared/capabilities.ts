@@ -41,7 +41,8 @@ export type CapabilityId =
   | 'agent-diagnoses'
   | 'agent-write-log'
   | 'assistant'
-  | 'machine-runs';
+  | 'machine-runs'
+  | 'pass-reuse';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -329,6 +330,16 @@ export const CAPABILITIES: CapabilityDef[] = [
     hiddenOnDesktop: true,
     since: '0.68.0',
     doc: 'features/run-on-my-machine',
+  },
+  {
+    id: 'pass-reuse',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: ['fixtures'],
+    detection: null,
+    optIn: true,
+    since: '0.68.0',
+    doc: 'features/reuse-forecast',
   },
 ];
 

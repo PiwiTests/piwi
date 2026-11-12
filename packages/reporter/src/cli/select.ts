@@ -42,6 +42,8 @@ Usage:
   npx @piwitests/reporter select <key> [options]     print the Playwright args
   npx @piwitests/reporter run <key> [options] [-- <playwright args>]
   npx @piwitests/reporter run impact --base <ref>    run the tests your diff impacts
+  npx @piwitests/reporter run <key> --reuse          plan with pass reuse, then run
+  npx @piwitests/reporter run --plan <id> [--shard <i/n>]   run a stored plan's tests
 
 Connection:
   --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL, .env, the desktop app)
@@ -54,6 +56,11 @@ Selection:
   --shard <i/n>         Keep only shard i of n, balanced by duration, lock-aware
   --fail-fast           Order the least-reliable tests first (fail-fast)
   --base <ref>          For "impact": the ref to diff the working tree against
+
+Pass reuse (experimental, run only):
+  --reuse               Skip each test whose code has not changed since it last
+                        passed (see piwi plan); "full" plans the whole suite
+  --plan <id>           Run the tests of a plan made by piwi plan
 
 Behavior:
   --strict              Fail (exit 2) instead of falling back when unreachable
@@ -100,10 +107,11 @@ const VALUE_FLAGS = new Set([
   '--shard',
   '--base',
   '--pkg-runner',
+  '--plan',
 ]);
 
 /** Read `--flag value` / `--flag=value`, or undefined when absent. */
-function readOption(argv: string[], name: string): string | undefined {
+export function readOption(argv: string[], name: string): string | undefined {
   const withEquals = argv.find((arg) => arg.startsWith(`${name}=`));
   if (withEquals) return withEquals.slice(name.length + 1);
   const index = argv.indexOf(name);
@@ -113,7 +121,7 @@ function readOption(argv: string[], name: string): string | undefined {
 }
 
 /** The first positional argument (the selection key), skipping value-flag values. */
-function findKey(argv: string[]): string | undefined {
+export function findKey(argv: string[]): string | undefined {
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i]!;
     if (tok.startsWith('-')) {
@@ -259,7 +267,7 @@ function printWarnings(resolution: Resolution): void {
 
 // ── impact-from-diff ───────────────────────────────────────────────────────────
 
-function git(args: string[]): string {
+export function git(args: string[]): string {
   return execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -273,7 +281,7 @@ function git(args: string[]): string {
  * let the dashboard keep only the tests that ran them. The file list stands on
  * its own when the full diff cannot be read.
  */
-function gitChange(base: string): { changedFiles: string[]; changes: BaseLineChange[] } {
+export function gitChange(base: string): { changedFiles: string[]; changes: BaseLineChange[] } {
   const names = git(['diff', '--name-only', base])
     .split('\n')
     .map((line) => line.trim())

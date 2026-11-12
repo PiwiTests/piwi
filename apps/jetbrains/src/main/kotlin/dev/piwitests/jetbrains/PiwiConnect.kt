@@ -135,7 +135,7 @@ object PiwiConnectFlow {
                 Glue.ConnectTarget.DESKTOP -> return useDesktop(project, desktop)
                 Glue.ConnectTarget.INSTANCE -> {
                     service.useInstance()
-                    PiwiCommands.notify(project, "Connected to ${choice.serverUrl}.")
+                    PiwiNotifier.confirm(project, "Connected to ${choice.serverUrl}.")
                     return true
                 }
                 Glue.ConnectTarget.OTHER -> Unit
@@ -143,7 +143,7 @@ object PiwiConnectFlow {
         }
         val typed = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
         if (desktop != null && typed == desktop.url) return useDesktop(project, desktop)
-        val reached = request(project, "Reaching $typed…") { PiwiInstance.reach(typed) } ?: return false
+        val reached = request(project, "Reaching $typed…", typed) { PiwiInstance.reach(typed) } ?: return false
         // The address that answered: on this machine, it may be another loopback address than the one typed.
         val url = reached.url
         if (desktop != null && url == desktop.url) return useDesktop(project, desktop)
@@ -174,7 +174,7 @@ object PiwiConnectFlow {
                 NotificationType.WARNING,
             )
         } else {
-            PiwiCommands.notify(project, "Connected to $picked on $url.")
+            PiwiNotifier.confirm(project, "Connected to $picked on $url.")
         }
         return true
     }
@@ -200,7 +200,7 @@ object PiwiConnectFlow {
         val linked = desktop.linked
         if (linked != null) {
             service.useDesktop(null)
-            PiwiCommands.notify(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
+            PiwiNotifier.confirm(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
             return true
         }
         val names = desktop.projects.orEmpty().map { it.name }
@@ -217,7 +217,7 @@ object PiwiConnectFlow {
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
         service.useDesktop(picked)
-        PiwiCommands.notify(
+        PiwiNotifier.confirm(
             project,
             "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
         )
@@ -228,7 +228,10 @@ object PiwiConnectFlow {
     fun disconnect(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         val settings = service.settings()
-        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: return false
+        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: run {
+            Messages.showInfoMessage(project, Glue.NOTHING_SAVED, "Piwi: Disconnect")
+            return false
+        }
         if (Messages.showYesNoDialog(project, question, "Piwi: Disconnect", null) != Messages.YES) return false
         service.disconnect()
         return true
@@ -328,13 +331,13 @@ object PiwiConnectFlow {
     }
 
     /** Run one request with modal progress; null when it was cancelled or failed, after saying why. */
-    private fun <T> request(project: Project, title: String, work: (ProgressIndicator) -> T): T? =
+    private fun <T> request(project: Project, title: String, url: String? = null, work: (ProgressIndicator) -> T): T? =
         try {
             ProgressManager.getInstance().run(task(project, title, work))
         } catch (_: ProcessCanceledException) {
             null
         } catch (e: Exception) {
-            failed(project, null, e)
+            failed(project, url, e)
         }
 
     private fun <T> task(project: Project, title: String, work: (ProgressIndicator) -> T) =
@@ -343,13 +346,8 @@ object PiwiConnectFlow {
         }
 
     private fun <T> failed(project: Project, url: String?, e: Exception): T? {
-        val reason = when {
-            e is PiwiInstance.HttpStatus && (e.status == 401 || e.status == 403) -> "the instance refused the key (${e.status})"
-            e is java.net.ConnectException -> "nothing answers there. Is the instance running, on that port?"
-            e is java.net.http.HttpConnectTimeoutException -> "no answer within 10 seconds"
-            e is java.net.UnknownHostException -> "unknown host ${e.message ?: ""}".trim()
-            else -> e.message ?: e.javaClass.simpleName
-        }
+        val reason = Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)
+        com.intellij.openapi.diagnostic.Logger.getInstance(PiwiConnectFlow::class.java).info("Piwi: Connect failed: $reason", e)
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)
         return null
     }

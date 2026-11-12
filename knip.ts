@@ -39,6 +39,8 @@ const config: KnipConfig = {
         'tests/globalTeardown.ts',
         // The fake Claude Code CLI the server runs in `assistant-claude-code.spec.ts`.
         'tests/fixtures/fake-claude.mjs',
+        // The fetch hook `integrations-zephyr-binding.spec.ts` loads into the spawned server with `node --import`.
+        'tests/utils/zephyr-fetch-redirect.mjs',
         'drizzle.config.pg.ts',
         // Dashboard widgets are imported from `#components` by `app/utils/analytics-widgets.ts`.
         'app/components/analytics/*.vue',
@@ -99,6 +101,7 @@ const config: KnipConfig = {
       // Piwi Runner).
       entry: ['app/**/*.{ts,vue}'],
     },
+    'packages/run-model': {},
     'apps/runner': {
       // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
       entry: ['server/main.ts', 'app/**/*.{ts,vue}'],

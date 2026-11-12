@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   ATLASSIAN_API_GATEWAY,
   JIRA_SCOPED_TOKEN_SCOPES,
+  assigneeSearchHint,
   jiraFailureHint,
   jiraGatewayUrl,
   jiraProjectUrl,
@@ -93,6 +94,36 @@ describe('jiraFailureHint', () => {
 
   test('an error with nothing to add yields null', () => {
     expect(jiraFailureHint('projects', { status: 500 })).toBeNull();
+  });
+});
+
+describe('assigneeSearchHint', () => {
+  test('a 403 names the permission and the scope', () => {
+    const hint = assigneeSearchHint(403);
+    expect(hint).toContain('Assign Issues');
+    expect(hint).toContain('Browse users and groups');
+    expect(hint).toContain('read:jira-user');
+  });
+
+  test("a 401 is about the connection's email and token, not a permission", () => {
+    const hint = assigneeSearchHint(401);
+    expect(hint).toMatch(/email and token/);
+    expect(hint).toMatch(/expired or been revoked/);
+    expect(hint).not.toContain('Assign Issues');
+  });
+
+  test('a 404 is about the project key', () => {
+    expect(assigneeSearchHint(404)).toMatch(/project key/);
+  });
+
+  test('a 429 asks to try again', () => {
+    expect(assigneeSearchHint(429)).toMatch(/Try again/);
+  });
+
+  test('any other status, or none, yields null', () => {
+    expect(assigneeSearchHint(500)).toBeNull();
+    expect(assigneeSearchHint(null)).toBeNull();
+    expect(assigneeSearchHint(undefined)).toBeNull();
   });
 });
 

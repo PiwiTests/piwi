@@ -34,17 +34,21 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pi
 The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
 Windows, **More info** then **Run anyway** in SmartScreen.
 
-Data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
-`~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
-on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
-folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM tokens.
+Where its data lives, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
-hidden in the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
-holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
-use Ctrl. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
-While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the tray does not list (a `piwi flake` from a terminal or an
-editor, a probe, another window's, or from before a reload) never does. In the background,
+hidden in the tray. The windows open where you left them. The app has its own
+[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+While a test waits at a stop for you, the tray menu's **Show the stopped test** opens the window on it. **Open in a
+window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
+While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
+or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
+Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs, or of an
+editor's, waits at a stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome as it ends, whatever
+else runs, and, failed while you look away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only
+at its verdict; an editor's, a terminal's or CI's run, or one from before a reload, never does. On Windows, the taskbar
+button's thumbnail has **Open**, which restores the window, and **Stop**, which stops the window's run started last, the
+next one at a second click. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
 
@@ -78,17 +82,18 @@ page there, starting the app if needed (macOS: from Applications; Linux: after o
 report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` in the
 folder fixes what is missing. The link stays on this machine, under **project page → Settings → Local folder**, with
 the same checks and **Change** and **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/`;
-[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
+[Open in editor](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
 serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app
 
 A run, an execution, a cluster or a test runs again here with the folder's own Playwright, and its button says what:
-**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
+**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (×20 until a failure, traced) on a test case.
 
 - **The arrow** shows the command, runs it once headed, in the inspector or UI mode, and sets its
   options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
-  options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
+  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/desktop-runs#each-worker).
+  The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
   **Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with
@@ -96,7 +101,8 @@ A run, an execution, a cluster or a test runs again here with the folder's own P
   from Piwi Picker runs there too.
 - **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
 - **Watch, pause and step** each worker from the tray, running or at a stop: [Desktop app
-  runs](/features/desktop-runs).
+  runs](/features/desktop-runs). While it goes on, the run's own page shows the same (**On your machine**), with its
+  **Stop**, **Hold failures** and output.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -132,13 +138,8 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-**Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
-connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
-(`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start, so the app must run, and sends the token only
-to a server that proves it holds it. It writes only its own entry and keeps the first backup beside
-the config. A disk image (DMG), a translocated copy or a dev build writes nothing, for Connect, Disconnect and the
-startup repair alike; each client shows **Manual setup** with the reason. After a move, startup points that entry at the app again,
-as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**; **Update** replaces it. Restart the client afterwards. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
+**Settings → MCP server** connects Claude Code, Cursor and the other clients it detects in one click:
+[the desktop app's client setup](/features/mcp#in-the-desktop-app).
 
 ## Updates
 

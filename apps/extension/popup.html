@@ -15,6 +15,7 @@
         --accent-fg: #6d28d9;
         --bug: #dc2626;
         --ok: #059669;
+        --wait: #b45309;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -26,6 +27,7 @@
           --accent-fg: #c4b5fd;
           --bug: #f87171;
           --ok: #34d399;
+          --wait: #fbbf24;
         }
       }
       /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
@@ -300,6 +302,19 @@
       .tile[data-state='waiting'] svg,
       .tile[data-state='waiting'] .label {
         color: var(--muted);
+      }
+      /* Runs while a test of the editor's or the desktop app's runs waits for you (amber), or failed (red). */
+      .tile[data-state='attention'] {
+        border-color: color-mix(in srgb, var(--wait) 60%, transparent);
+        background: color-mix(in srgb, var(--wait) 8%, var(--surface));
+      }
+      .tile[data-state='attention'] svg,
+      .tile[data-state='attention'] .hint {
+        color: var(--wait);
+      }
+      .tile[data-state='failed'] svg,
+      .tile[data-state='failed'] .hint {
+        color: var(--bug);
       }
       .tile[data-state='stop']:hover,
       .tile[data-state='stop']:focus-visible {

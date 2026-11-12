@@ -524,6 +524,7 @@ export class GitLabProvider extends ScmProvider {
     try {
       // GitLab has no `error` state; it splits GitHub's `failure` into
       // `failed` and `canceled`. Map both non-success states onto `failed`.
+      // A run in progress stays `pending`, which a later `pending` updates.
       const state = status.state === 'success' ? 'success' : status.state === 'pending' ? 'pending' : 'failed';
       const url = new URL(
         `https://${this.hostname}/api/v4/projects/${this.projectPath()}/statuses/${encodeGitRef(sha)}`,

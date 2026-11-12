@@ -65,10 +65,10 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 .gutterIconRenderer(TestResultGutter(file.project, line, uri, document.createRangeMarker(first, end)))
                 .create()
             val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
-            val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), document.getLineEndOffset(it.line)) }
+            val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), Glue.lineEndWithBreak(document.getLineEndOffset(it.line), document.textLength)) }
             if (line.status == "failed") {
                 val last = (line.endLine ?: line.line).coerceIn(line.line, document.lineCount - 1)
-                val test = TextRange(start, document.getLineEndOffset(last))
+                val test = TextRange(start, Glue.lineEndWithBreak(document.getLineEndOffset(last), document.textLength))
                 // Two backgrounds on one line have no set order: the test's goes around the failing line.
                 val parts = if (failedAt != null && test.contains(failedAt)) {
                     listOf(TextRange(test.startOffset, failedAt.startOffset), TextRange(failedAt.endOffset, test.endOffset))
@@ -80,11 +80,8 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 }
             }
             if (failure != null && failedAt != null && !failedAt.isEmpty) {
-                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
-                    .range(failedAt)
-                    .textAttributes(FAILING_LINE)
-                    .tooltip(Glue.failureTooltip(failure.headline, failure.message, failure.state == "edited"))
-                    .create()
+                // Why it failed is the diagnostic's and the hover's, which the service writes.
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(failedAt).textAttributes(FAILING_LINE).create()
             }
         }
     }
@@ -100,7 +97,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         private val at: RangeMarker,
     ) : GutterIconRenderer(), DumbAware {
         override fun getIcon(): Icon = when (line.status) {
-            "failed" -> AllIcons.RunConfigurations.TestFailed
+            "failed" -> PiwiIcons.FAILED
             "flaky" -> AllIcons.General.Warning
             "passed" -> AllIcons.RunConfigurations.TestPassed
             "skipped" -> AllIcons.RunConfigurations.TestIgnored
@@ -108,7 +105,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             else -> AllIcons.RunConfigurations.TestNotRan
         }
 
-        override fun getTooltipText(): String = Glue.testResultTooltip(line.status, line.title)
+        override fun getTooltipText(): String = Glue.testResultTooltip(line.title)
 
         override fun isNavigateAction(): Boolean = line.command != null
 

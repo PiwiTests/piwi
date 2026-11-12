@@ -10,6 +10,7 @@
     "packages/reporter",
     "packages/editor",
     "packages/run-ui",
+    "packages/run-model",
     "apps/application",
     "apps/runner",
     "apps/extension",

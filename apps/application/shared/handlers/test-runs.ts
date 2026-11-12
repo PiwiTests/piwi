@@ -1,3 +1,4 @@
+import { runPlanId } from '../run-plan';
 import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
   testRuns,
@@ -321,6 +322,13 @@ export async function getTestRun(
     keptByName = keeper ? keeper.name || keeper.username : null;
   }
 
+  // The run that continued this one, while it is still stored.
+  let continuedInId: number | null = null;
+  if (testRun.continuedInId != null) {
+    const [next] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, testRun.continuedInId));
+    continuedInId = next?.id ?? null;
+  }
+
   let projectPublic;
   if (project) {
     const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectRest } = project;
@@ -362,9 +370,11 @@ export async function getTestRun(
 
   return {
     ...testRunPublic,
+    continuedInId,
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
+    planId: runPlanId(testRun.metadata),
     hasResources:
       (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
@@ -416,19 +426,22 @@ const RECENT_FIELDS = {
   branch: testRuns.branch,
 };
 
+/** The recent list's fields: a run's own, and what launched it (`origin`), known once the run has begun. */
+const RECENT_LIST_FIELDS = { ...RECENT_FIELDS, origin: testRuns.origin };
+
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
   if (scope !== 'all' && scope.size === 0) return [];
   // Filtered before the limit, so runs of other projects never crowd out the caller's.
   const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const [activeRuns, recentRuns] = await Promise.all([
     db
-      .select(RECENT_FIELDS)
+      .select(RECENT_LIST_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), notPrivateRun(testRuns.origin), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
-      .select(RECENT_FIELDS)
+      .select(RECENT_LIST_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.origin), inScope))

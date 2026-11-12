@@ -19,6 +19,7 @@ const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/hist
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });
 provideExternalIdUrl(() => testCase.value?.project?.externalIdUrl);
+provideTestManagementKeys(() => testCase.value?.project?.id);
 
 // Project timeline markers, overlaid on the history chart for context.
 const historyMarkers = ref<MarkerInfo[]>([]);
@@ -48,8 +49,8 @@ useHead(
 
 const passRate = computed<number | null>(() => testCase.value?.passRate ?? null);
 
-/** The desktop app's run of this test: by its title, 20 times with a trace, to catch a failure that comes and goes. */
-const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, trace: true } as const;
+/** The desktop app's run of this test: by its title, up to 20 times with a trace, until the failure that comes and goes. */
+const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, stopAtFirstFailure: true, trace: true } as const;
 const reproduceCases = computed(() =>
   testCase.value?.filePath ? [{ filePath: testCase.value.filePath, title: testCase.value.title, line: null }] : [],
 );
@@ -290,6 +291,7 @@ useViewScroll(
                 :href="`/test-run-cases/${exec.id}`"
                 :title="formatRelativeTime(exec.startTime)"
                 :status="exec.status"
+                :ended-at-stop="exec.endedAtStop"
                 :error="exec.error"
                 :issue="exec.knownIssue"
                 :project-key="testCase?.project?.id"

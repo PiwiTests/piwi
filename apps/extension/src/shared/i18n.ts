@@ -172,6 +172,11 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat(safeLocale()).format(value);
 }
 
+/** Words joined as the interface language joins a list: `you, Piwi Picker and an agent` in English. */
+export function formatList(items: readonly string[]): string {
+  return new Intl.ListFormat(safeLocale(), { type: 'conjunction' }).format(items);
+}
+
 /** A quantity with its unit, in the interface language's narrow form: `12B`, `1.2kB`, `0.8s` in English. */
 export function formatUnit(value: number, unit: 'byte' | 'kilobyte' | 'second'): string {
   return new Intl.NumberFormat(safeLocale(), {

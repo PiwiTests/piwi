@@ -51,7 +51,12 @@ export interface EcosystemPiece {
   needs: FeatureNeed[];
   /** Docs page (+ optional `#anchor`), resolved by `docs-drift.test.ts`. */
   doc: string;
+  /** The name its own windows, tray and notifications show, for a piece that has them. */
+  app?: string;
 }
+
+/** The name the desktop app goes by in its windows, tray and notifications, and on the pages that name it. */
+export const DESKTOP_APP_NAME = 'Piwi Desktop';
 
 export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
   {
@@ -73,6 +78,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     when: 'One developer running Playwright on their own machine, with no server to operate.',
     needs: ['desktop'],
     doc: 'features/desktop',
+    app: DESKTOP_APP_NAME,
   },
   {
     id: 'demo',
@@ -311,7 +317,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       },
       {
         option: 'Claude Code CLI',
-        when: 'The desktop app, or a server with `PIWI_CLAUDE_CLI_PATH` set, runs the local `claude` CLI on its own sign-in, with no API key (`PIWI_AI_PROVIDER=claude-cli`).',
+        when: 'The desktop app, or a server with `PIWI_CLAUDE_CLI_PATH` set, runs the local `claude` CLI on its own sign-in (`PIWI_AI_PROVIDER=claude-cli`): your Claude subscription in the desktop app, an Anthropic API key or a cloud provider on a server.',
       },
     ],
     doc: 'guide/ai-provider',

@@ -17,7 +17,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
   and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
-  freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`).
+  freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`). A new
+  command id or setting is registered in its D25 in the same change
+  (`apps/application/tests/unit/editor-ids-register.test.ts`).
   `tests/walkthrough.test.ts` also fails when a walkthrough step names a command, view or context key that no longer
   exists.
 - **Credentials are handed to the service only when they differ from the ones last handed** (`handChangedCredentials`,
@@ -59,9 +61,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A default keybinding uses a chord that VS Code's default keymap leaves free, and the JetBrains plugin binds the
   same chord.** Today: `ctrl+shift+alt` (`cmd` on macOS) with `r`, `f` and `k`. The letters each editor's keymaps
   already take, and the JetBrains conflicts, are in [Keybindings](ARCHITECTURE.md#keybindings).
-- **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
-  runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
-  test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
+- **A run's controls are the exception: they take the debugger's keys, only while they apply and the debugger does
+  not take the key**: Stop on `!inDebugMode`, the others on `debugState != 'stopped'` (`contributes.keybindings`).
+  **Pause** has no default key: a key bound for as long as a test runs takes one from the workbench.
+  ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
   control, a code action, a press, key or pick on a page, never a pointer moving; never one only watched), or while no
   other held stop's file was opened and no Step or Run to the cursor from the editor waits, `RESERVED_MS` at most; any
@@ -78,11 +81,14 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
   closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
   `tests/run-control.test.ts`.
+- **Every command has its concept's codicon, present in VS Code 1.91, or is listed as waiting for Piwi's glyph.** The
+  concepts are Appendix A of `proposals/editor-ux-coherence.md`. Checked by `tests/menus.test.ts` ("the commands'
+  glyphs"); the codicon's presence in 1.91, by hand against `@vscode/codicons` 0.0.36.
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
-- **The coverage marks default to the dashboard's colors** (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`).
-  Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
+- **The coverage marks default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`**, the run and not-run marks the
+  dashboard's, as do the JetBrains color schemes. Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
 
 ### Secrets and security
 
@@ -127,7 +133,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
 - **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
   Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
-  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  messages name the view they were drawn for, a stop's at a stop; a CI run's lane takes none (`ci`, `ciLaneTakes`): checked by `tests/run-control.test.ts`,
   `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
   for the paused page, another stop shown in it ends or restarts its watch, never a focus change
   (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
@@ -175,7 +181,8 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
-  panel (**Piwi: worker N**); `src/run-control.ts`: their pure half.
+  panel (**Piwi: worker N**); `src/ci-view.ts`: the CI runs of the branch, read-only (the **CI Runs** view, the CI
+  positions); `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

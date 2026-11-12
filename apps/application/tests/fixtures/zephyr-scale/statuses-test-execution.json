@@ -1,0 +1,70 @@
+{
+  "_spec": "StatusList",
+  "next": null,
+  "startAt": 0,
+  "maxResults": 1000,
+  "total": 5,
+  "isLast": true,
+  "values": [
+    {
+      "id": 20000,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Not Executed",
+      "index": 0,
+      "color": "#cccccc",
+      "archived": false,
+      "default": true
+    },
+    {
+      "id": 20001,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "In Progress",
+      "index": 1,
+      "color": "#cccccc",
+      "archived": false,
+      "default": false
+    },
+    {
+      "id": 20002,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Pass",
+      "index": 2,
+      "color": "#cccccc",
+      "archived": false,
+      "default": false
+    },
+    {
+      "id": 20003,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Fail",
+      "index": 3,
+      "color": "#cccccc",
+      "archived": false,
+      "default": false
+    },
+    {
+      "id": 20009,
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "name": "Retired",
+      "index": 9,
+      "color": "#cccccc",
+      "archived": true,
+      "default": false
+    }
+  ]
+}

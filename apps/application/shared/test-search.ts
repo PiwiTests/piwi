@@ -10,11 +10,14 @@
  *
  * Text fields (title, describe, file, error) match anywhere inside the value,
  * and `*` stands for any characters; the others (tag, lock, browser, owner,
- * priority, feature, id) match a whole value. Case and accents never matter
- * (`foldText`). Every term must
- * match, except that repeating a qualifier of a field a test has one value of
- * (file, browser, owner, priority, feature, id) matches any of the values. A
+ * priority, feature, id, is, worker, shard) match a whole value. Case and
+ * accents never matter (`foldText`). Every term must match, except that
+ * repeating a qualifier of a field a test has one value of (file, browser,
+ * owner, priority, feature, id, worker, shard) matches any of the values. A
  * qualifier the list does not know is read as a free word.
+ *
+ * `is:` names a state of a running attempt (`is:stuck`), which only a live run
+ * knows: no stored column answers it, so in SQL it matches nothing.
  *
  * One parser serves the browser (the run list filters in memory, both lists
  * highlight matches and suggest completions) and the server (the catalog turns
@@ -34,7 +37,10 @@ export type TestSearchField =
   | 'owner'
   | 'priority'
   | 'feature'
-  | 'id';
+  | 'id'
+  | 'is'
+  | 'worker'
+  | 'shard';
 
 export interface TestSearchFieldDef {
   field: TestSearchField;
@@ -83,7 +89,17 @@ export const TEST_SEARCH_FIELD_DEFS: readonly TestSearchFieldDef[] = [
   { field: 'priority', key: 'priority', aliases: [], description: 'Priority', match: 'exact', single: true },
   { field: 'feature', key: 'feature', aliases: [], description: 'Feature', match: 'exact', single: true },
   { field: 'id', key: 'id', aliases: [], description: 'External test ID', match: 'exact', single: true },
+  { field: 'is', key: 'is', aliases: [], description: 'State: stuck', match: 'exact', single: false },
+  { field: 'worker', key: 'worker', aliases: [], description: 'Worker, from 1', match: 'exact', single: true },
+  { field: 'shard', key: 'shard', aliases: [], description: 'Shard, from 1', match: 'exact', single: true },
 ];
+
+/** The states `is:` reads: a running attempt the Stuck? rule marks (`#shared/stuck-tests`). */
+const TEST_SEARCH_STATES = ['stuck'] as const;
+export type TestSearchState = (typeof TEST_SEARCH_STATES)[number];
+
+/** The qualifiers whose value is a number from 1. */
+export const TEST_SEARCH_NUMBER_FIELDS: ReadonlySet<TestSearchField> = new Set(['worker', 'shard']);
 
 const DEF_BY_FIELD = new Map(TEST_SEARCH_FIELD_DEFS.map((def) => [def.field, def]));
 
@@ -91,7 +107,10 @@ export function testSearchFieldDef(field: TestSearchField): TestSearchFieldDef {
   return DEF_BY_FIELD.get(field)!;
 }
 
-/** The qualifiers of a run's Tests tab: executions carry an error and a browser. */
+/**
+ * The qualifiers of a run's Tests tab: executions carry an error, a browser, a worker and a shard, and a live run's
+ * running attempts a state.
+ */
 export const RUN_SEARCH_FIELDS: readonly TestSearchField[] = [
   'file',
   'describe',
@@ -104,6 +123,9 @@ export const RUN_SEARCH_FIELDS: readonly TestSearchField[] = [
   'priority',
   'feature',
   'id',
+  'is',
+  'worker',
+  'shard',
 ];
 
 /** The qualifiers of a project's Tests catalog. */
@@ -219,10 +241,12 @@ export function tokenizeTestSearch(
   return tokens;
 }
 
-/** The value a term compares: trimmed, and a tag without its leading `@`. */
+/** The value a term compares: trimmed, a tag without its leading `@`, a number without its leading zeros. */
 function termValue(field: TestSearchField | null, value: string): string {
   const trimmed = value.trim();
-  return field === 'tag' ? trimmed.replace(/^@+/, '') : trimmed;
+  if (field === 'tag') return trimmed.replace(/^@+/, '');
+  if (field && TEST_SEARCH_NUMBER_FIELDS.has(field) && /^\d+$/.test(trimmed)) return String(Number(trimmed));
+  return trimmed;
 }
 
 /** A contains-value made only of wildcards matches everything, so it constrains nothing. */
@@ -280,6 +304,12 @@ export interface TestSearchSubject {
   feature?: string | null;
   /** The test's external ID (`piwi:id`, or read from its title). */
   externalId?: string | null;
+  /** What a live run knows of a running attempt (`is:`). */
+  states?: readonly TestSearchState[] | null;
+  /** The worker's lane from 1 (`workerNumber`), null when the lane is not known. */
+  worker?: number | null;
+  /** The shard from 1, null for a run that is not sharded. */
+  shard?: number | null;
 }
 
 /** The describe path as one string, blocks joined the way the database stores them. */
@@ -344,6 +374,12 @@ function subjectTexts(subject: TestSearchSubject, field: TestSearchField): strin
       return subject.feature ? [subject.feature] : [];
     case 'id':
       return subject.externalId ? [subject.externalId] : [];
+    case 'is':
+      return [...(subject.states ?? [])];
+    case 'worker':
+      return subject.worker != null ? [String(subject.worker)] : [];
+    case 'shard':
+      return subject.shard != null ? [String(subject.shard)] : [];
   }
 }
 
@@ -455,6 +491,9 @@ const VALUE_FIELDS: readonly TestSearchField[] = [
   'owner',
   'priority',
   'feature',
+  'is',
+  'worker',
+  'shard',
 ];
 
 /** Count every value of the list's value fields: a describe block once per test under it. */

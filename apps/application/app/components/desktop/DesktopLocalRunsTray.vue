@@ -12,13 +12,19 @@
  * (`DesktopRunCopyList`). The window holds the hub's stream from a plugin
  * (`desktop-run-hub.client.ts`), which opens the tray on every stop it hears;
  * here, the stop's run expands, its worker scrolls into view, and the live
- * region reads it out. A worker's **Watch** shows its page as its test runs,
- * and at each stop (`DesktopRunLaneView`). The tray also
+ * region reads it out; a stop that opens the tray shows its worker's tab, in a
+ * run of several workers, which show one at a time as in Piwi Picker's Runs
+ * window (`DesktopRunSession`). A worker's **Watch** shows its page as its test
+ * runs, and at each stop (`DesktopRunLaneView`). The tray also
  * opens on the worker the run page's **Show its page** names (`showWorker`),
- * its run expanded and the focus on that worker. A running run's **Hold
- * failures** switch, off by default and on from the start for a reproduction,
- * makes a failure no pause bar shows wait at its line (`show`, said by the
- * plugin from the store's `holds`); a run nobody attends (a Flake Lab, a
+ * and on the first test that waits at the system tray menu's **Show the
+ * stopped test**, its run expanded, its tab shown and the focus on that worker. A running
+ * run's **Hold failures** switch, off by default and on from the start for a
+ * reproduction,
+ * makes a failure no pause bar shows wait at its line (`hold` for its live
+ * steps, and `show`, said by the plugin from the store's `holds`, for its
+ * steps to come); it shows the run's own, which Piwi Picker or an agent may
+ * change too. A run nobody attends (a Flake Lab, a
  * bisect, a run repeating its tests or in UI mode) holds none, and its switch
  * says why.
  *
@@ -35,16 +41,12 @@ import {
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
-import {
-  desktopRunHoldRefusal,
-  desktopRunHolds,
-  desktopRunOf,
-  desktopStopSaid,
-  desktopWorkerKey,
-} from '~/utils/desktop-run-view';
+import { desktopRunOf, desktopStopSaid, desktopWorkerKey } from '~/utils/desktop-run-view';
+import { endedAtStopWords } from '@piwitests/run-model/outcome';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, shownWorker, activeCount, holds, trayMounts } = store;
+const { runs, trayOpen, shownWorker, activeCount, trayMounts } = store;
 const toast = useToast();
 
 const available = ref(false);
@@ -85,6 +87,8 @@ function announce(text: string) {
 async function heardStop(session: HubSession, worker: HubWorker) {
   const stop = worker.stop;
   if (!stop) return;
+  // The stop opened the tray: its worker's tab shows.
+  if (!openShown) hub.chooseTab(session.ref, worker.parallelIndex);
   const run = runOf(session);
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
   announce(desktopStopSaid(session, worker, stop));
@@ -93,6 +97,16 @@ async function heardStop(session: HubSession, worker: HubWorker) {
     .querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(session.ref, worker.worker)}"]`)
     ?.scrollIntoView({ block: 'nearest' });
 }
+
+/** Whether the tray showed open before the stop it hears now: the plugin opens it first, on every stop. */
+let openShown = trayOpen.value;
+watch(
+  trayOpen,
+  (open) => {
+    openShown = open;
+  },
+  { flush: 'post' },
+);
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
@@ -120,17 +134,24 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-// A worker the window was asked to show (the run page's Show its page): its run expands, and the focus moves to the
-// worker once it is drawn.
-watch(shownWorker, async (shown) => {
+/**
+ * A worker the window was asked to show (the run page's Show its page, the system tray's Show the stopped test): its run
+ * expands, its tab shows, and the focus moves to the worker once it is drawn.
+ */
+async function showAsked(shown: { ref: string; worker: number } | null) {
   if (!shown) return;
   shownWorker.value = null;
   const session = hub.state.sessions[shown.ref];
   const run = session ? runOf(session) : undefined;
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  const lane = session?.workers.find((worker) => worker.worker === shown.worker)?.parallelIndex;
+  if (lane !== undefined) hub.chooseTab(shown.ref, lane);
   await nextTick();
   document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
-});
+}
+watch(shownWorker, (shown) => void showAsked(shown));
+// One asked before this tray was mounted, as the page changed to one that holds it.
+onMounted(() => void showAsked(shownWorker.value));
 
 /** The runs whose output shows in a separate window instead of the tray. */
 const separateByKey = ref<Record<number, boolean>>({});
@@ -156,36 +177,34 @@ function separateClosed(run: LocalRun, opened: boolean) {
   }
 }
 
-/** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
-function holdRefusal(run: LocalRun): string | null {
-  return desktopRunHoldRefusal(run, liveSessions.value);
-}
-
-function holdsFailures(run: LocalRun): boolean {
-  return desktopRunHolds(run, holds.value[run.key], liveSessions.value);
-}
-
-function setHold(run: LocalRun, on: boolean) {
-  holds.value = { ...holds.value, [run.key]: on };
-}
-
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
 function duration(run: LocalRun): string {
   return localRunDuration(run.startedAt, run.finishedAt, now.value);
 }
 
+/** How many tests of a run's steps were ended at a stop (End the test), as the hub heard them end. */
+function endedAtStopIn(run: LocalRun): number {
+  return Object.entries(hub.state.endedAtStop).reduce(
+    (sum, [ref, count]) => sum + (run.hubRefs.includes(desktopRunOf(ref)) ? count : 0),
+    0,
+  );
+}
+
 function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
   switch (run.status) {
     case 'running':
       return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
-    case 'passed':
+    case 'passed': {
       if (run.kind === 'flake') {
         return flakeLabOutcome(run.exitCode) === 'reproduced'
           ? { label: 'Reproduced', color: 'success' }
           : { label: 'Not reproduced', color: 'neutral' };
       }
-      return { label: 'Passed', color: 'success' };
+      // A test ended at a stop is skipped: the run passed, marked so.
+      const ended = endedAtStopWords(endedAtStopIn(run), englishRunSpeaker);
+      return { label: ended ? `Passed · ${ended}` : 'Passed', color: 'success' };
+    }
     case 'failed':
       return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
     case 'stopped':
@@ -314,34 +333,23 @@ function runDetail(run: LocalRun): string {
             />
           </div>
           <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="runDetail(run)">{{ runDetail(run) }}</p>
-          <div
+          <DesktopRunHoldSwitch
             v-if="run.status === 'running'"
-            class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"
+            :run="run"
+            :described-id="`desktop-run-hold-${run.key}`"
+            class="mt-1.5"
             data-shot="desktop-run-hold"
-          >
-            <USwitch
-              :model-value="holdsFailures(run)"
-              :disabled="!!holdRefusal(run)"
-              label="Hold failures"
-              size="sm"
-              :aria-describedby="`desktop-run-hold-${run.key}`"
-              :ui="{ label: 'text-xs font-medium' }"
-              @update:model-value="(on: boolean) => setHold(run, on)"
-            />
-            <p :id="`desktop-run-hold-${run.key}`" class="min-w-0 text-xs text-muted">
-              {{ holdRefusal(run) ?? 'A failing test waits at its line for you to look at it and resume.' }}
-            </p>
-          </div>
+          />
           <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
             <UButton
               size="xs"
-              color="success"
-              variant="soft"
+              color="neutral"
+              variant="outline"
               icon="i-lucide-external-link"
               :to="`/test-runs/${run.piwiRunId}`"
               @click="trayOpen = false"
             >
-              Live in Piwi — Run #{{ run.piwiRunId }}
+              Open run #{{ run.piwiRunId }}
             </UButton>
             <UButton
               v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"

@@ -27,6 +27,11 @@ import {
   MIN_INTEGRATIONS_SYNC_MINUTES,
   MAX_INTEGRATIONS_SYNC_MINUTES,
 } from '#shared/integrations/sync-config';
+import {
+  DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+} from '#shared/integrations/test-management-limits';
 
 const ROOT = resolve(__dirname, '../..');
 
@@ -86,7 +91,6 @@ const BASELINE_VARS: readonly string[] = [
   'PIWI_DATABASE_PATH',
   'PIWI_DATABASE_URL',
   'PIWI_DEMO_MODE',
-  'PIWI_EMAIL_SERVER_URL',
   'PIWI_INGEST_MAX_ARIA_CHARS',
   'PIWI_INGEST_MAX_CONSOLE_ENTRIES',
   'PIWI_INGEST_MAX_CONSOLE_ENTRY_CHARS',
@@ -97,8 +101,6 @@ const BASELINE_VARS: readonly string[] = [
   'PIWI_INGEST_MAX_STEPS',
   'PIWI_INGEST_MAX_STEP_EVENTS',
   'PIWI_INGEST_MAX_TEST_SOURCE_CHARS',
-  'PIWI_MAILPIT_SMTP_PORT',
-  'PIWI_MAILPIT_URL',
   'PIWI_OAUTH_ALLOWED_DOMAINS',
   'PIWI_OAUTH_GITHUB_ALLOWED_ORGS',
   'PIWI_OAUTH_GITHUB_CLIENT_ID',
@@ -220,6 +222,9 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_EDITOR',
       // The CI job's variable that `piwi rerun` reads; the app names it in the CI re-run help and placeholders.
       'PIWI_RERUN_ARGS',
+      // Read by the reporter of a run started in a terminal, which it shares live from its start; the run page's
+      // help names it.
+      'PIWI_SHARE_LIVE',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);
@@ -270,6 +275,15 @@ describe('PIWI_ENV_VARS registry', () => {
     expect(meta.default).toBe(String(DEFAULT_INTEGRATIONS_SYNC_MINUTES));
     expect(meta.min).toBe(MIN_INTEGRATIONS_SYNC_MINUTES);
     expect(meta.max).toBe(MAX_INTEGRATIONS_SYNC_MINUTES);
+  });
+
+  test('registry default and clamps for the test management request rate match the code constants', () => {
+    const meta = PIWI_ENV_VARS.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
+    expect(meta.type).toBe('number');
+    expect(meta.default).toBe(String(DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE));
+    expect(meta.min).toBe(MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
+    expect(meta.max).toBe(MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
+    expect(meta.since).toBe('0.68.0');
   });
 
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {

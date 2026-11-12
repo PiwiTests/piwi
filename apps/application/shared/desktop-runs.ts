@@ -13,20 +13,46 @@ import type {
   HubCodeMessage,
   HubLaneFrameMessage,
   HubLaneFrameRefusal,
+  HubLaneLayerMessage,
+  HubSession,
   HubSessionMessage,
 } from '@piwitests/core/run-hub';
+import { UNATTENDED_REF_SUFFIX, isUnattendedRef } from '@piwitests/core/run-channel';
 import type { StopCode } from '@piwitests/editor/run-host';
 
 /**
  * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
- * lab job, a run that repeats each test (`--repeat-each` above 1) or runs in UI mode. The server holds no failure of
- * such a run, whoever watches it.
+ * lab job, a run in UI mode, or one that repeats each test (`--repeat-each` above 1) without stopping at its first
+ * failure; the reporter ends so a run started in a terminal and piped elsewhere. The server holds no failure of such a
+ * run, whoever watches it.
  */
-export const UNATTENDED_RUN_SUFFIX = '-unattended';
+export const UNATTENDED_RUN_SUFFIX = UNATTENDED_REF_SUFFIX;
+
+/**
+ * A live run of an editor of this machine, as the server observes it (`editor-runs` on `/api/desktop/events`): the
+ * editor as it names itself, and the run as its hub tells it. The app shows it and steers none of it.
+ */
+export interface DesktopEditorRun {
+  client: string | null;
+  session: HubSession;
+}
+
+/** The editors' runs of an `editor-runs` message, each that reads as one; none for anything else. */
+export function desktopEditorRuns(value: unknown): DesktopEditorRun[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (run): run is DesktopEditorRun =>
+      !!run &&
+      typeof run === 'object' &&
+      (run.client === null || typeof run.client === 'string') &&
+      typeof run.session?.ref === 'string' &&
+      Array.isArray(run.session.workers),
+  );
+}
 
 /** Whether the run `ref` names is one nobody attends: none of its failures waits for an answer. */
 export function isUnattendedDesktopRun(ref: string): boolean {
-  return ref.endsWith(UNATTENDED_RUN_SUFFIX);
+  return isUnattendedRef(ref);
 }
 
 /** The most codes made at stops and locators picked the server keeps, the latest, for a window that opens later. */
@@ -66,6 +92,11 @@ export type DesktopRunEvent =
   /** A frame of a lane the window watches (`watch`), as its test runs or stands at a stop, or why none comes now. */
   | HubLaneFrameMessage
   | HubLaneFrameRefusal
+  /**
+   * A layer of a lane the window watches and asked for (`watch`'s `layers`): the call its test is in, what its page
+   * said, the page's text, an image of its filmstrip. Kept nowhere on the way.
+   */
+  | HubLaneLayerMessage
   /** What each code made at a stop came to, whichever surface started it: its sentence. */
   | HubCodeMessage
   /** The code itself, made at a stop of a run, for the window to copy; the latest ones again as the stream opens. */
@@ -73,7 +104,17 @@ export type DesktopRunEvent =
   /** A locator a test of a run picked, for the window to copy; the latest ones again as the stream opens, with the codes. */
   | { type: 'pick'; pick: DesktopRunPick }
   /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
-  | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string };
+  | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string }
+  /**
+   * A signed-in teammate asks to watch the run `ref`, which is not shared live (**Ask to watch**): the window asks the
+   * person, naming them (`by`) and the run's number on the instance (`run`), with Share live and Not now (`answer-ask`).
+   */
+  | { type: 'ask-to-watch'; ref: string; id: string; by: string; run: number | null }
+  /**
+   * Another tool asked through the hub to stop the run `ref` (the hub's `stop`): the window that holds it stops it as
+   * its own Stop does, else the main window has the shell stop its process.
+   */
+  | { type: 'stop-run'; ref: string };
 
 /**
  * A command of the window: one of the hub's (`HubCommand`, answered as the hub answers it), or `show`, which only the
@@ -81,7 +122,12 @@ export type DesktopRunEvent =
  * held in it, until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
  * from (`viewer`, the stream's `hello`), whose views it watches and whose input it plays.
  */
-export type DesktopRunCommand = (HubCommand | { type: 'show'; id: number; ref: string; on: boolean }) & {
+export type DesktopRunCommand = (
+  | HubCommand
+  | { type: 'show'; id: number; ref: string; on: boolean }
+  /** The person's Not now to a teammate's ask to watch the run `ref` (`ask`, the ask's id). */
+  | { type: 'answer-ask'; id: number; ref: string; ask: string }
+) & {
   viewer: string;
 };
 

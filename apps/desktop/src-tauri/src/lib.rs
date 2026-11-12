@@ -86,10 +86,13 @@ const WINDOW_STATE_FLAGS: StateFlags =
 
 /// The key the window-state plugin keeps a window's state under: the
 /// dashboard window's own, and one for each kind of window opened at run time
-/// (`aux-<n>`, `output-<name>_<n>`), so the next one opens where the last was.
+/// (`aux-<n>`, `output-<name>_<n>`, `worker-<run>-<lane>`), so the next one
+/// opens where the last was.
 fn window_state_key(label: &str) -> &str {
     if label.starts_with("aux-") {
         "aux"
+    } else if label.starts_with(WORKER_WINDOW_PREFIX) {
+        "worker"
     } else if output_window_name(label).is_some() {
         "output"
     } else {
@@ -177,6 +180,19 @@ struct DataDir(PathBuf);
 
 /// The reporter discovery file, removed on quit so it never outlives the server.
 struct DiscoveryFile(PathBuf);
+
+/// What the discovery file names of the bundled server as a hub (`discovery_hub_fields`), once its session loaded;
+/// none while no server that proved its token runs. Held, with the file's writes, under one lock.
+#[derive(Default)]
+struct DiscoveryHub(Mutex<HeldHub>);
+
+/// The hub fields of the discovery file, and the count of the publishes and withdrawals that set them: a publish whose
+/// answer comes after a later one stores nothing.
+#[derive(Default)]
+struct HeldHub {
+    generation: u64,
+    fields: Option<serde_json::Value>,
+}
 
 /// The server log path, shared so the webview error bridge (`desktop_log`) can
 /// append to the *same* `logs/server.log` the server sidecar writes to — a
@@ -400,10 +416,14 @@ struct TrayStatusInner {
     run_failed: bool,
 }
 
-const TRAY_TOOLTIP_IDLE: &str = "Piwi Dashboard (click to open)";
+/// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
+/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
+pub(crate) const APP_NAME: &str = "Piwi Desktop";
+const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
 /// it while a run is active and it is restored when the run ends.
-const MAIN_WINDOW_TITLE: &str = "Piwi Dashboard";
+const MAIN_WINDOW_TITLE: &str = APP_NAME;
 
 /// Compose the tray tooltip from the ambient signals. An active run leads; the
 /// unread count follows; the free-form notification status line shows only
@@ -424,7 +444,7 @@ fn compose_tooltip(unread: u32, activity: Option<&str>, progress: Option<&str>) 
     if parts.is_empty() {
         TRAY_TOOLTIP_IDLE.to_string()
     } else {
-        format!("Piwi Dashboard — {}", parts.join(" — "))
+        format!("{APP_NAME} — {}", parts.join(" — "))
     }
 }
 
@@ -567,6 +587,8 @@ fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
 /// `fraction`, a `label` and whether any of them is `failing`, which turns the
 /// status dot red. `state = "none"` clears the bar and restores the resting
 /// title; run progress leaves the tooltip while the unread count (if any) stays.
+/// `waiting` counts the tests of the app's runs that wait at a stop for the
+/// person, which the tray's menu offers to show (`refresh_tray_stop`).
 #[tauri::command]
 fn desktop_set_run_progress(
     app: tauri::AppHandle,
@@ -574,9 +596,11 @@ fn desktop_set_run_progress(
     fraction: Option<f64>,
     label: Option<String>,
     failing: Option<bool>,
+    waiting: Option<u32>,
 ) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        refresh_tray_stop(&handle, waiting.unwrap_or(0));
         let status = progress_bar_status(&state);
         let active = status.is_some();
         let glyph = status_dot_color(&state, fraction, failing.unwrap_or(false));
@@ -1069,15 +1093,22 @@ fn write_discovery_file(
     let dir = home.join(DISCOVERY_DIR);
     private_fs::create_private_dir(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    private_fs::write_private(&path, discovery_body(port, token, links).to_string().as_bytes())?;
+    private_fs::write_private(&path, discovery_body(port, token, links, None).to_string().as_bytes())?;
     Ok(path)
 }
 
 /// The discovery file's content: the address and token, this process's id, and the projects linked
 /// to a folder on this machine, so an editor opened on one of those folders
 /// connects to its project with no setup, and the bundled server reads a
-/// project's git history from its folder. Readers ignore fields they do not know.
-fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
+/// project's git history from its folder; with `hub`, the server as the hub of
+/// a run started in a terminal in one of those folders (`discovery_hub_fields`).
+/// Readers ignore fields they do not know.
+fn discovery_body(
+    port: u16,
+    token: &str,
+    links: &HashMap<String, runner::LinkRecord>,
+    hub: Option<&serde_json::Value>,
+) -> serde_json::Value {
     let mut projects: Vec<(i64, &str)> = links
         .iter()
         .filter_map(|(id, link)| id.parse::<i64>().ok().map(|id| (id, link.path.as_str())))
@@ -1085,12 +1116,118 @@ fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRe
     projects.sort();
     // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
     // localhost resolves to ::1 first on some systems.
-    json!({
+    let mut body = json!({
         "url": format!("http://127.0.0.1:{port}"),
         "token": token,
         "pid": std::process::id(),
         "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
-    })
+    });
+    if let (Some(serde_json::Value::Object(fields)), Some(object)) = (hub, body.as_object_mut()) {
+        for (key, value) in fields {
+            object.insert(key.clone(), value.clone());
+        }
+    }
+    body
+}
+
+/// The bundled server as the hub of a run started in a terminal in a linked
+/// folder (the reporter's `hub.ts`), from `GET /api/desktop/run-channel`'s
+/// answer: its run channel (`runChannel`, `{ path, token }`), where the run's
+/// picks go (`send`, `{ url, token }`) and its hub's WebSocket for Piwi Picker
+/// (`hub`, `{ url, token }`). `None` without a run channel; a field that does
+/// not read as one is left out.
+fn discovery_hub_fields(answer: &serde_json::Value) -> Option<serde_json::Value> {
+    let channel = answer
+        .get("runChannel")?
+        .as_str()
+        .filter(|value| hub_env::is_run_channel(value))?;
+    let (path, token) = channel.rsplit_once('#')?;
+    let mut fields = json!({ "runChannel": { "path": path, "token": token } });
+    if let Some((url, token)) = answer
+        .get("picks")
+        .and_then(|value| value.as_str())
+        .filter(|value| hub_env::is_picks_address(value))
+        .and_then(|value| value.rsplit_once('#'))
+    {
+        fields["send"] = json!({ "url": url, "token": token });
+    }
+    let hub = answer.get("hub");
+    let url = hub
+        .and_then(|hub| hub.get("url"))
+        .and_then(|value| value.as_str())
+        .filter(|url| url.starts_with("ws://127.0.0.1:") && !url.contains(char::is_whitespace));
+    let token = hub
+        .and_then(|hub| hub.get("token"))
+        .and_then(|value| value.as_str())
+        .filter(|token| !token.is_empty());
+    if let (Some(url), Some(token)) = (url, token) {
+        fields["hub"] = json!({ "url": url, "token": token });
+    }
+    Some(fields)
+}
+
+/// Name the bundled server as the hub in the discovery file, once the window
+/// loaded the session of a server that proved its token: read from
+/// `GET /api/desktop/run-channel` over a connection that proves it again.
+/// Nothing for an app that publishes no discovery file (Piwi Runner).
+pub(crate) fn publish_discovery_hub(app: &AppHandle, holds: session::ProofHolds) {
+    let (Some(_), Some(info), Some(hub)) = (
+        app.try_state::<DiscoveryFile>(),
+        app.try_state::<mcp_clients::ServerInfo>(),
+        app.try_state::<DiscoveryHub>(),
+    ) else {
+        return;
+    };
+    let server = mcp_clients::ServerInfo {
+        port: info.port,
+        token: info.token.clone(),
+    };
+    let generation = {
+        let mut held = hub.0.lock().unwrap();
+        held.generation += 1;
+        held.generation
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // `hubSince`, in milliseconds since the epoch: a reader takes no hub named before the machine started.
+        let fields = crate::repro::local_get_json(&server, "/api/desktop/run-channel")
+            .ok()
+            .and_then(|answer| discovery_hub_fields(&answer))
+            .map(|mut fields| {
+                fields["hubSince"] = json!(unix_millis());
+                fields
+            });
+        // Stored only while the server that answered still holds its proof and no later publish or withdrawal came.
+        let current = app.try_state::<DiscoveryHub>().is_some_and(|hub| {
+            let mut held = hub.0.lock().unwrap();
+            if held.generation != generation || !holds() {
+                return false;
+            }
+            held.fields = fields;
+            true
+        });
+        if current {
+            refresh_discovery_file(&app);
+        }
+    });
+}
+
+/// Now, in milliseconds since the Unix epoch.
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64)
+}
+
+/// Name no hub in the discovery file: the window left the server, whose run
+/// channel goes with it.
+pub(crate) fn withdraw_discovery_hub(app: &AppHandle) {
+    if let Some(hub) = app.try_state::<DiscoveryHub>() {
+        let mut held = hub.0.lock().unwrap();
+        held.generation += 1;
+        held.fields = None;
+    }
+    refresh_discovery_file(app);
 }
 
 /// Rewrite the discovery file after a folder link changes, while this app
@@ -1106,7 +1243,11 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     if !file.0.exists() {
         return;
     }
-    let body = discovery_body(info.port, &info.token, &runner::read_links(app));
+    // The hub's lock is held until the file is written, so two rewrites never land out of order.
+    let hub = app.try_state::<DiscoveryHub>();
+    let held = hub.as_ref().map(|hub| hub.0.lock().unwrap());
+    let fields = held.as_ref().and_then(|held| held.fields.as_ref());
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app), fields);
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
@@ -1456,7 +1597,7 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
                         .idle(true)
                         .sleep(cfg!(target_os = "linux"))
                         .reason("Playwright tests are running")
-                        .app_name("Piwi Dashboard")
+                        .app_name(APP_NAME)
                         .app_reverse_domain("io.piwitests.dashboard")
                         .create()
                     {
@@ -1510,12 +1651,14 @@ fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
     menu_id.strip_prefix(TRAY_STOP_RUN_PREFIX)?.parse().ok()
 }
 
-/// The tray's menu, which the runs watcher adds the Stop items to.
+/// The tray's menu, which the runs watcher adds the Stop items to, and the
+/// window's progress Show the stopped test.
 struct TrayMenu(tauri::menu::Menu<tauri::Wry>);
 
-/// The items the runs watcher keeps in the tray's menu, under Open: a Stop
+/// The items kept in the tray's menu: the runs watcher's under Open, a Stop
 /// item per running run, with the id and text it was made with, then a
-/// separator while there is any.
+/// separator while there is any; and, above Open, Show the stopped test while
+/// a test waits (`refresh_tray_stop`).
 #[derive(Default)]
 struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
@@ -1523,6 +1666,67 @@ struct TrayRunItems(Mutex<TrayRunItemsInner>);
 struct TrayRunItemsInner {
     stops: Vec<(String, String, tauri::menu::MenuItem<tauri::Wry>)>,
     separator: Option<tauri::menu::PredefinedMenuItem<tauri::Wry>>,
+    /// Show the stopped test, first in the menu while a test waits, with its text.
+    show: Option<(String, tauri::menu::MenuItem<tauri::Wry>)>,
+}
+
+impl TrayRunItemsInner {
+    /// Where Open stands in the menu: under Show the stopped test while it shows.
+    fn open_at(&self) -> usize {
+        usize::from(self.show.is_some())
+    }
+}
+
+/// Id of the tray's Show the stopped test.
+const TRAY_SHOW_STOP_ID: &str = "show-stop";
+
+/// Event the shell emits to the dashboard window as the tray's Show the
+/// stopped test is chosen: the window opens its Local runs tray on the first
+/// test that waits (`firstWaiting`).
+const TRAY_SHOW_STOP_EVENT: &str = "piwi:tray-show-stop";
+
+/// The text of the tray's Show the stopped test for the tests of the app's
+/// runs that wait at a stop for the person, which shows the first of them;
+/// `None` while none waits.
+fn tray_show_stop_text(waiting: u32) -> Option<String> {
+    match waiting {
+        0 => None,
+        1 => Some("Show the stopped test".to_string()),
+        count => Some(format!("Show a stopped test ({count} wait)")),
+    }
+}
+
+/// Keep Show the stopped test first in the tray's menu while a test of the
+/// app's runs waits at a stop for the person, its text saying how many wait;
+/// none once the window leaves the server (`session::leave_server`). On the
+/// main thread.
+pub(crate) fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
+    let (Some(menu), Some(items)) = (app.try_state::<TrayMenu>(), app.try_state::<TrayRunItems>()) else {
+        return;
+    };
+    let mut items = items.0.lock().unwrap();
+    match (tray_show_stop_text(waiting), items.show.take()) {
+        (None, Some((text, item))) => {
+            // Kept while it stands in the menu, so the Stop items' places still count it.
+            if menu.0.remove(&item).is_err() {
+                items.show = Some((text, item));
+            }
+        }
+        (None, None) => {}
+        (Some(text), Some((shown, item))) => {
+            if shown != text {
+                let _ = item.set_text(&text);
+            }
+            items.show = Some((text, item));
+        }
+        (Some(text), None) => {
+            if let Ok(item) = MenuItemBuilder::with_id(TRAY_SHOW_STOP_ID, text.as_str()).build(app) {
+                if menu.0.insert(&item, 0).is_ok() {
+                    items.show = Some((text, item));
+                }
+            }
+        }
+    }
 }
 
 /// Keep a Stop item per running run in the tray's menu, under Open. The items
@@ -1534,6 +1738,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         return;
     };
     let mut items = items.0.lock().unwrap();
+    let first = items.open_at() + 1;
     let wanted = tray_run_entries(runs);
     items.stops.retain(|(id, text, item)| {
         let keep = wanted.iter().any(|(w_id, w_text)| w_id == id && w_text == text);
@@ -1548,7 +1753,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
             continue;
         }
         if let Ok(item) = MenuItemBuilder::with_id(id.as_str(), text.as_str()).build(app) {
-            let _ = menu.0.insert(&item, 1 + index);
+            let _ = menu.0.insert(&item, first + index);
             items.stops.insert(index, (id.clone(), text.clone(), item));
         }
     }
@@ -1559,7 +1764,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         }
         (None, false) => {
             if let Ok(separator) = PredefinedMenuItem::separator(app) {
-                let _ = menu.0.insert(&separator, 1 + items.stops.len());
+                let _ = menu.0.insert(&separator, first + items.stops.len());
                 items.separator = Some(separator);
             }
         }
@@ -1629,9 +1834,12 @@ pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     }
     // Local test runs die with the shell — never orphan a browser fleet. They stop first, while the server is up to
     // take the end each run's reporter sends in the grace `kill_all` gives it.
+    run_target::quit_requested_runs(app_handle);
     if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
         runs.kill_all();
     }
+    // The requested runs it held end too, while the server is up to tell their instance.
+    run_target::end_requested_runs_on_quit(app_handle);
     // Best-effort: stop the bundled server so no orphan process lingers.
     if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
         kill_server(child, server_wait);
@@ -1975,7 +2183,7 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
     }
     let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
     let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
-        .title("Piwi Dashboard")
+        .title(APP_NAME)
         .inner_size(1200.0, 820.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
@@ -2046,8 +2254,62 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
     );
     let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
-        .title("Piwi Dashboard")
+        .title(APP_NAME)
         .inner_size(960.0, 640.0)
+        .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
+        .on_document_title_changed(|window, title| {
+            let _ = window.set_title(&title);
+        })
+        .on_navigation(move |url| is_sidecar_url(url, port))
+        .build()
+        .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
+    Ok(label)
+}
+
+/// Label prefix of a worker's window ([`desktop_open_worker_window`]):
+/// `worker-<run>-<lane>`, one per lane of a run.
+const WORKER_WINDOW_PREFIX: &str = "worker-";
+
+/// Whether `value` is a run's name on the hub (`PIWI_RUN_REF`): 1 to 64
+/// letters, digits, `_` and `-`, which a window label takes as it is.
+fn is_run_ref(value: &str) -> bool {
+    (1..=64).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Open a worker of a run in a window of its own, kept above the others, and
+/// return its label: the dashboard's `/desktop/run-worker` page for the run
+/// named `run_ref` and its lane `lane` (Playwright's `parallelIndex`, which the
+/// worker that replaces a failed one keeps), its status, controls and live
+/// view. The page reads the runs' hub itself, behind the desktop guard as
+/// the dashboard window does: the window holds no IPC grant (the capabilities
+/// name the main window only) and stays on the sidecar's origin. A window
+/// already open on that lane comes forward instead.
+#[tauri::command]
+async fn desktop_open_worker_window(app: tauri::AppHandle, run_ref: String, lane: u32) -> Result<String, String> {
+    if !is_run_ref(&run_ref) {
+        return Err("invalid run".into());
+    }
+    let label = format!("{WORKER_WINDOW_PREFIX}{run_ref}-{lane}");
+    if let Some(window) = app.get_webview_window(&label) {
+        bring_to_front(&window);
+        return Ok(label);
+    }
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
+    let url = tauri::Url::parse(&format!(
+        "{}/desktop/run-worker?ref={run_ref}&lane={lane}",
+        sidecar_origin(port)
+    ))
+    .map_err(|e| e.to_string())?;
+    let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+        .title(APP_NAME)
+        .inner_size(520.0, 680.0)
+        .always_on_top(true)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .on_document_title_changed(|window, title| {
             let _ = window.set_title(&title);
@@ -2248,7 +2510,8 @@ fn show_server_notification(app: &AppHandle, notification: ServerNotification) {
     if !wanted || main_window_in_front(app) {
         return;
     }
-    let _ = show_notification(app, &notification.title, &notification.body, None, notification.path.as_deref());
+    // Titled with the app's name: the server's title is the dashboard's, for a browser tab, and the facts are its body.
+    let _ = show_notification(app, APP_NAME, &notification.body, None, notification.path.as_deref());
 }
 
 /// How long the notification stream may stay silent before the shell connects
@@ -2676,7 +2939,7 @@ fn quit_after_confirming(app: &AppHandle, app_name: &str) {
 }
 
 /// What the desktop app's questions call it ([`quit_question`]).
-const DESKTOP_APP_NAME: &str = "Piwi";
+const DESKTOP_APP_NAME: &str = APP_NAME;
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -3068,6 +3331,7 @@ pub fn run() {
             desktop_open_in_ide,
             desktop_open_window,
             desktop_open_output_window,
+            desktop_open_worker_window,
             desktop_close_output_window,
             desktop_bring_to_front,
             desktop_notify,
@@ -3150,6 +3414,7 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            run_target::sweep_leftover_request_dirs(app.handle());
             app.manage(session::Session::new(
                 app.get_webview_window("main").and_then(|w| w.url().ok()),
                 app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
@@ -3187,6 +3452,7 @@ pub fn run() {
                 Ok(path) => {
                     append_log(&log_path, &format!("reporter discovery file: {}", path.display()));
                     app.manage(DiscoveryFile(path));
+                    app.manage(DiscoveryHub::default());
                 }
                 // Not fatal: the reporter can still be pointed here by hand with
                 // the URL and token shown in Settings.
@@ -3349,7 +3615,7 @@ pub fn run() {
             });
 
             // --- tray ---
-            let open_i = MenuItemBuilder::with_id("open", "Open Piwi Dashboard").build(app)?;
+            let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
             let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
             let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
             let bg_i = CheckMenuItemBuilder::with_id("run_bg", "Run in background")
@@ -3359,7 +3625,7 @@ pub fn run() {
             let login_i = CheckMenuItemBuilder::with_id("autostart", "Start on login")
                 .checked(autostart_enabled)
                 .build(app)?;
-            let quit_i = MenuItemBuilder::with_id("quit", "Quit Piwi Dashboard").build(app)?;
+            let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&open_i)
@@ -3377,7 +3643,7 @@ pub fn run() {
             let menu_run_bg = run_bg.clone();
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Piwi Dashboard (click to open)")
+                .tooltip(TRAY_TOOLTIP_IDLE)
                 .menu(&menu)
                 // Left-click opens the window; right-click shows the menu.
                 .show_menu_on_left_click(false)
@@ -3422,6 +3688,12 @@ pub fn run() {
                         let _ = login_i.set_checked(!enabled);
                     }
                     "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
+                    TRAY_SHOW_STOP_ID => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            bring_to_front(&w);
+                        }
+                        let _ = app.emit_to("main", TRAY_SHOW_STOP_EVENT, ());
+                    }
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
                             let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
@@ -3612,12 +3884,14 @@ mod tests {
 
     use super::{
         crash_decision, CrashDecision,
-        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, discovery_hub_fields,
+        download_file_name, is_run_ref,
         connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_stop_run_id, window_state_key,
+        app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_show_stop_text, tray_stop_run_id,
+        window_state_key, TRAY_SHOW_STOP_ID,
         AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
         args_to_act_on, bootstrap_url, link_page, LinkedPage,
@@ -3783,13 +4057,58 @@ mod tests {
         links.insert("3".to_string(), link("/work/admin"));
         links.insert("not-an-id".to_string(), link("/work/other"));
         assert_eq!(
-            discovery_body(3001, "pd_x", &links),
+            discovery_body(3001, "pd_x", &links, None),
             serde_json::json!({
                 "url": "http://127.0.0.1:3001",
                 "token": "pd_x",
                 "pid": std::process::id(),
                 "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
             })
+        );
+    }
+
+    const HUB_TOKEN: &str = "Ab3_-Ab3_-Ab3_-Ab3_-Ab3_-Ab3_-Ab";
+
+    #[test]
+    fn discovery_names_the_server_as_the_hub_of_a_terminals_runs() {
+        let answer = serde_json::json!({
+            "runChannel": format!("/tmp/piwi-desktop-run-x1/channel.sock#{HUB_TOKEN}"),
+            "picks": format!("http://127.0.0.1:3001/api/desktop/runs/picks#{HUB_TOKEN}"),
+            "hub": { "url": "ws://127.0.0.1:3001/piwi/hub", "token": "pd_x" },
+        });
+        let fields = discovery_hub_fields(&answer).unwrap();
+        assert_eq!(
+            fields,
+            serde_json::json!({
+                "runChannel": { "path": "/tmp/piwi-desktop-run-x1/channel.sock", "token": HUB_TOKEN },
+                "send": { "url": "http://127.0.0.1:3001/api/desktop/runs/picks", "token": HUB_TOKEN },
+                "hub": { "url": "ws://127.0.0.1:3001/piwi/hub", "token": "pd_x" },
+            })
+        );
+        let body = discovery_body(3001, "pd_x", &std::collections::HashMap::new(), Some(&fields));
+        assert_eq!(body["runChannel"]["token"], HUB_TOKEN);
+        assert_eq!(body["send"]["url"], "http://127.0.0.1:3001/api/desktop/runs/picks");
+        assert_eq!(body["url"], "http://127.0.0.1:3001");
+        // A Windows named pipe is a channel too.
+        let pipe = serde_json::json!({ "runChannel": format!(r"\\.\pipe\piwi-run-0a1b#{HUB_TOKEN}") });
+        assert_eq!(
+            discovery_hub_fields(&pipe).unwrap()["runChannel"]["path"],
+            r"\\.\pipe\piwi-run-0a1b"
+        );
+    }
+
+    #[test]
+    fn discovery_names_no_hub_without_a_channel_and_leaves_out_what_is_not_one() {
+        assert_eq!(discovery_hub_fields(&serde_json::json!({ "runChannel": null })), None);
+        assert_eq!(discovery_hub_fields(&serde_json::json!({ "runChannel": "/tmp/x.sock#short" })), None);
+        let answer = serde_json::json!({
+            "runChannel": format!("/tmp/x.sock#{HUB_TOKEN}"),
+            "picks": format!("http://example.com:3001/picks#{HUB_TOKEN}"),
+            "hub": { "url": "ws://example.com/piwi/hub", "token": "pd_x" },
+        });
+        assert_eq!(
+            discovery_hub_fields(&answer),
+            Some(serde_json::json!({ "runChannel": { "path": "/tmp/x.sock", "token": HUB_TOKEN } }))
         );
     }
 
@@ -4155,7 +4474,7 @@ mod tests {
         assert_eq!(app_menu_action("app-menu-issue"), Some(AppMenuAction::OpenUrl(NEW_ISSUE_URL)));
         assert_eq!(app_menu_action("app-menu-logs"), Some(AppMenuAction::ShowLogs));
         // The tray's items are its own handler's.
-        for id in ["quit", "show_logs", "open", "run_bg"] {
+        for id in ["quit", "show_logs", "open", "run_bg", TRAY_SHOW_STOP_ID] {
             assert_eq!(app_menu_action(id), None, "{id}");
         }
         // Help opens the docs site.
@@ -4171,6 +4490,26 @@ mod tests {
         ];
         let texts: Vec<String> = tray_run_entries(&runs).into_iter().map(|(_, text)| text).collect();
         assert_eq!(texts, ["Stop tests in R&&D", "Stop tests in R&&D (2)", "Stop tests in odd name"]);
+    }
+
+    #[test]
+    fn a_worker_window_names_a_run_by_its_hub_ref_alone() {
+        for ok in ["desktop-7", "terminal-41-1730000000000-unattended", "ed_1"] {
+            assert!(is_run_ref(ok), "{ok}");
+        }
+        let long = "x".repeat(65);
+        for bad in ["", "a/b", "a b", "a?worker=1", "x\u{0}", long.as_str()] {
+            assert!(!is_run_ref(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_tray_offers_to_show_the_tests_that_wait_while_any_does() {
+        assert_eq!(tray_show_stop_text(0), None);
+        assert_eq!(tray_show_stop_text(1).as_deref(), Some("Show the stopped test"));
+        assert_eq!(tray_show_stop_text(3).as_deref(), Some("Show a stopped test (3 wait)"));
+        // Its id is no Stop item's, nor the app menu's.
+        assert_eq!(tray_stop_run_id(TRAY_SHOW_STOP_ID), None);
     }
 
     #[test]
@@ -4219,6 +4558,8 @@ mod tests {
         assert_eq!(window_state_key("main"), "main");
         assert_eq!(window_state_key("aux-0"), "aux");
         assert_eq!(window_state_key("aux-17"), "aux");
+        assert_eq!(window_state_key("worker-desktop-41-0"), "worker");
+        assert_eq!(window_state_key("worker-terminal-12-1700000000000-unattended-3"), "worker");
         assert_eq!(window_state_key("output-run-12_3"), "output");
         // Not a run output window's label: kept as it is.
         assert_eq!(window_state_key("output-"), "output-");
@@ -4268,26 +4609,26 @@ mod tests {
     #[test]
     fn tooltip_composes_run_progress_unread_and_idle() {
         // Idle: nothing to say.
-        assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
+        assert_eq!(compose_tooltip(0, None, None), "Piwi Desktop (click to open)");
         // Unread only, no run in flight.
-        assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
+        assert_eq!(compose_tooltip(2, None, None), "Piwi Desktop — 2 unread");
         assert_eq!(
             compose_tooltip(2, Some("acme-web: failure"), None),
-            "Piwi Dashboard — 2 unread — acme-web: failure"
+            "Piwi Desktop — 2 unread — acme-web: failure"
         );
         // A run in flight leads and its label is what shows.
         assert_eq!(
             compose_tooltip(0, None, Some("Running 7/12…")),
-            "Piwi Dashboard — Running 7/12…"
+            "Piwi Desktop — Running 7/12…"
         );
         // Both signals: the run leads, the count follows, the notification status
         // line is dropped (the run is the more useful thing to surface).
         assert_eq!(
             compose_tooltip(3, Some("acme-web: failure"), Some("Running 7/12…")),
-            "Piwi Dashboard — Running 7/12… — 3 unread"
+            "Piwi Desktop — Running 7/12… — 3 unread"
         );
         // Empty strings are treated as absent, not shown as blanks.
-        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Dashboard (click to open)");
+        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Desktop (click to open)");
     }
 
     #[test]

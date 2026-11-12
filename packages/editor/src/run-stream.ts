@@ -1,9 +1,10 @@
 /**
  * Server-sent events from a Piwi instance, read over `fetch`: the instance's run events (`GET /api/stream`), on one
  * connection per instance and key whatever the number of contexts that read it, and one run's events
- * (`GET /api/test-runs/:id/stream`) while the editor follows that run. A connection that drops is opened again after
- * a second, then twice as long each time up to a minute; an instance without the route is asked again every five
- * minutes, and one that refuses the key is not asked again until the credentials change.
+ * (`GET /api/test-runs/:id/stream`) while the editor follows that run, on one connection whatever follows it
+ * (`RunStreams`). A connection that drops is opened again after a second, then twice as long each time up to a minute;
+ * an instance without the route is asked again every five minutes, and one that refuses the key is not asked again
+ * until the credentials change.
  */
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import { PiwiClient } from './piwi-client.js';
@@ -16,7 +17,10 @@ const NOT_FOUND_RETRY_MS = 5 * 60_000;
 /** A connection that brings nothing for this long is opened again: the instance sends a heartbeat every 15 s. */
 const IDLE_MS = 45_000;
 
-/** A run's lifecycle event on the instance's stream. */
+/**
+ * A run's lifecycle event on the instance's stream, or its tally while it runs (`run-progress`, at most every two
+ * seconds a run, from an instance that sends it: its counts, each result counted as it is reported).
+ */
 export interface InstanceEvent {
   type:
     | 'run-started'
@@ -25,10 +29,16 @@ export interface InstanceEvent {
     | 'run-finished'
     | 'run-submitted'
     | 'run-cancelled'
-    | 'rollup-updated';
+    | 'rollup-updated'
+    | 'run-progress';
   runId: number;
   projectId: number;
   status?: string;
+  totalTests?: number;
+  passedTests?: number;
+  failedTests?: number;
+  skippedTests?: number;
+  didNotRunTests?: number;
 }
 
 /**
@@ -96,6 +106,8 @@ export class EventStream {
   /** The instance refused the key (401 or 403): the stream is not opened again until `retry`. */
   refused = false;
   private closed = false;
+  /** `reopen` asked for a new connection while one was open: it opens at once once that one ends. */
+  private again = false;
   private abort: AbortController | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private wait: number;
@@ -114,6 +126,24 @@ export class EventStream {
   retry(): void {
     if (this.closed || this.abort) return;
     this.refused = false;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.wait = this.options.retryMs ?? RETRY_MS;
+    void this.connect();
+  }
+
+  /**
+   * Open it again at once, open or not: a reader that joins it reads the catch-up the instance sends a new connection.
+   * Its readers read that catch-up again, as after a connection that dropped.
+   */
+  reopen(): void {
+    if (this.closed) return;
+    this.refused = false;
+    if (this.abort) {
+      this.again = true;
+      this.abort.abort();
+      return;
+    }
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.wait = this.options.retryMs ?? RETRY_MS;
@@ -144,7 +174,7 @@ export class EventStream {
       alive();
       const response = await this.open(abort.signal);
       if (response.ok && response.body) {
-        await this.read(response.body, alive);
+        await this.read(response.body, alive, abort.signal);
         retryIn = this.backoff();
       } else {
         await response.body?.cancel().catch(() => {});
@@ -163,6 +193,11 @@ export class EventStream {
         if (!this.closed) this.onState(false);
       }
     }
+    if (this.again) {
+      this.again = false;
+      this.wait = this.options.retryMs ?? RETRY_MS;
+      retryIn = 0;
+    }
     if (this.closed || retryIn === null) return;
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -178,10 +213,14 @@ export class EventStream {
     return wait;
   }
 
-  private async read(body: ReadableStream<Uint8Array>, alive: () => void): Promise<void> {
+  /** Read the body's events until it ends, or `signal` aborts it, whatever the body does with the signal. */
+  private async read(body: ReadableStream<Uint8Array>, alive: () => void, signal: AbortSignal): Promise<void> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     const parser = new EventParser();
+    const cancel = () => void reader.cancel().catch(() => {});
+    signal.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) cancel();
     try {
       for (;;) {
         const { done, value } = await reader.read();
@@ -203,6 +242,7 @@ export class EventStream {
         }
       }
     } finally {
+      signal.removeEventListener('abort', cancel);
       await reader.cancel().catch(() => {});
     }
   }
@@ -238,5 +278,57 @@ export class InstanceStream extends EventStream {
       onState,
       options,
     );
+  }
+}
+
+/**
+ * One run's stream per instance, key and run, whoever follows the run: the context's run in progress and the CI
+ * sessions read one connection. A follower that joins a stream open already has it opened again, so its catch-up
+ * reaches every follower; the stream closes with its last follower. An instance without the run's stream (404) is not
+ * asked again.
+ */
+export class RunStreams {
+  private readonly streams = new Map<string, { stream: EventStream; listeners: Set<(event: RunEvent) => void> }>();
+
+  constructor(private readonly options: EventStreamOptions = {}) {}
+
+  /** Follow the events of run `runId` of `client`'s instance; the function returned stops following them. */
+  follow(client: PiwiClient, runId: number, listener: (event: RunEvent) => void): () => void {
+    const key = `${client.connection.serverUrl}\n${client.connection.apiKey ?? ''}\n${runId}`;
+    const open = this.streams.get(key);
+    if (open) {
+      open.listeners.add(listener);
+      open.stream.reopen();
+    } else {
+      const listeners = new Set([listener]);
+      const stream = new EventStream(
+        (signal) => client.runEvents(runId, signal),
+        (data) => {
+          if (isRunEvent(data)) for (const each of Array.from(listeners)) each(data);
+        },
+        undefined,
+        { ...this.options, notFoundRetryMs: null },
+      );
+      this.streams.set(key, { stream, listeners });
+    }
+    let followed = true;
+    return () => {
+      if (!followed) return;
+      followed = false;
+      const current = this.streams.get(key);
+      if (!current?.listeners.delete(listener) || current.listeners.size) return;
+      current.stream.close();
+      this.streams.delete(key);
+    };
+  }
+
+  /** How many runs' streams are open: one per instance, key and run. */
+  get size(): number {
+    return this.streams.size;
+  }
+
+  dispose(): void {
+    for (const { stream } of this.streams.values()) stream.close();
+    this.streams.clear();
   }
 }

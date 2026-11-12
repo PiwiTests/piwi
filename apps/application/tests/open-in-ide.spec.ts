@@ -4,7 +4,7 @@ import { waitForHydration } from './utils';
 import { fakeJetbrainsIdes } from './utils/fake-jetbrains';
 
 /**
- * Open in IDE through the Piwi JetBrains plugin: the dashboard asks every port
+ * Open in editor through the Piwi JetBrains plugin: the dashboard asks every port
  * a JetBrains IDE's built-in server may take (`/api/piwi/open?…&check=1`), then
  * has the IDE that holds the file open it, and reports what the IDE answered.
  * The IDEs are faked by intercepting those requests in the browser, so an IDE
@@ -15,11 +15,11 @@ async function openTheSettings(page: Page) {
   await page.goto('/');
   await waitForHydration(page);
   await page.getByRole('button', { name: 'Configuration' }).click();
-  await page.getByRole('menuitem', { name: 'Open in IDE…' }).click();
+  await page.getByRole('menuitem', { name: 'Open in editor…' }).click();
   await expect(page.getByRole('dialog').filter({ hasText: 'Click a source path anywhere' })).toBeVisible();
 }
 
-test.describe('Open in IDE through the Piwi JetBrains plugin', () => {
+test.describe('Open in editor through the Piwi JetBrains plugin', () => {
   test('opens the file in the IDE that holds it, the configured product first', async ({ page }) => {
     const seen = await fakeJetbrainsIdes(page, [
       { port: 63342, ide: 'WebStorm', holds: true },
@@ -109,7 +109,7 @@ async function fakeDesktopShell(page: Page) {
   });
 }
 
-test.describe('Open in IDE in the desktop app', () => {
+test.describe('Open in editor in the desktop app', () => {
   test.beforeEach(async ({ page }) => {
     await fakeDesktopShell(page);
     await page.addInitScript(() =>

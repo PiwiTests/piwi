@@ -1,4 +1,5 @@
-import { PIWI_SELECTION_ENV } from '../config/env.js';
+import { PIWI_PLAN_ENV, PIWI_SELECTION_ENV } from '../config/env.js';
+import { detectCliNarrowingFlags } from './cli-filters.js';
 import type { SelectionStamp } from '../../types.js';
 
 /**
@@ -16,4 +17,19 @@ export function readSelectionStamp(env: NodeJS.ProcessEnv = process.env): Select
   if (!Number.isFinite(version) || !Number.isFinite(resolvedCount) || !resolvedHash) return null;
 
   return { key, version, resolvedHash, resolvedCount };
+}
+
+/**
+ * The pass reuse plan `piwi run` left in the environment, or null unless it is
+ * a plan id and the run passed Playwright the plan's skip list
+ * (`--test-list-invert`): a `PIWI_PLAN` left in a shell for another run
+ * claims nothing.
+ */
+export function readPlanStamp(
+  env: NodeJS.ProcessEnv = process.env,
+  narrowing: string[] = detectCliNarrowingFlags(),
+): { id: number } | null {
+  const raw = env[PIWI_PLAN_ENV];
+  if (!raw || !/^\d+$/.test(raw) || !narrowing.includes('test-list-invert')) return null;
+  return { id: Number(raw) };
 }

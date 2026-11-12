@@ -52,6 +52,7 @@ const refresh = refetchKeeping(project, () =>
   $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery.value }),
 );
 provideExternalIdUrl(() => project.value?.externalIdUrl);
+provideTestManagementKeys(() => project.value?.id);
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 
@@ -234,8 +235,10 @@ const RUN_SORT_VALUES: Record<string, (run: TestRunSummary) => SortValue> = {
   duration: (run) => run.duration,
 };
 const sortedRuns = computed(() => sortRows(tableRuns.value, runsSorting.value, RUN_SORT_VALUES));
+// A running run's row shows its latest tally as it comes, with no read of the project.
+const liveRow = useLiveRunProgress();
 const pagedRuns = computed(() =>
-  sortedRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+  sortedRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE).map(liveRow),
 );
 // A new sort starts from its first page.
 watch(runsSorting, () => (runsPage.value = 1), { deep: true });
@@ -1235,7 +1238,13 @@ const moreMenuItems = computed(() => {
                   </div>
                 </template>
                 <template #duration-cell="{ row }">
-                  <div class="space-y-1 cursor-pointer" @click="openRun(row.original.id)">
+                  <RunLiveProgress
+                    v-if="isLiveRun(row.original)"
+                    :run="row.original"
+                    class="cursor-pointer"
+                    @click="openRun(row.original.id)"
+                  />
+                  <div v-else class="space-y-1 cursor-pointer" @click="openRun(row.original.id)">
                     <TestStatusBar
                       :passed="row.original.passedTests"
                       :failed="row.original.failedTests"

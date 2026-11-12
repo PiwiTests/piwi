@@ -1,7 +1,8 @@
 /**
  * The one connection a project reads and writes each kind of integration
  * through: the one its binding for that kind names. The tracker binding is
- * `project_integrations`; a kind with no binding table binds no project. Links
+ * `project_integrations` and the test management binding `project_test_management` (its connection whatever its
+ * `enabled` says: a disabled binding is still the project's); a kind with no binding table binds no project. Links
  * are tracker issues, read through the tracker binding. A link belongs to the project of the entity it is
  * pinned to (a failure cluster, a bug report, a run, an execution or a test).
  * Creating a link matches its URL against that connection alone, so a link to
@@ -10,7 +11,14 @@
  * policies pass it by until the project is bound to that connection again.
  */
 import { eq, inArray } from 'drizzle-orm';
-import { bugReports, failureClusters, testCases, testRuns, testRunsCases } from '../../database/schema';
+import {
+  bugReports,
+  failureClusters,
+  projectTestManagement,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../../database/schema';
 import type { EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { IntegrationKind } from '#shared/integrations/registry';
@@ -29,7 +37,14 @@ export async function boundConnectionId(
   switch (kind) {
     case 'tracker':
       return (await readProjectIntegration(db, projectId)).connectionId;
-    case 'test-management':
+    case 'test-management': {
+      const [row] = await db
+        .select({ connectionId: projectTestManagement.connectionId })
+        .from(projectTestManagement)
+        .where(eq(projectTestManagement.projectId, projectId))
+        .limit(1);
+      return row?.connectionId ?? null;
+    }
     case 'wiki':
       return null;
   }

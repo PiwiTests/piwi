@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { setAppSetting, deleteAppSetting } from '../../utils/app-settings';
-import { getPrFeedbackSettings } from '../../utils/scm/pr-feedback';
+import { getPrFeedbackSettings } from '../../utils/scm/pr-feedback-settings';
 import {
   DEFAULT_PR_FEEDBACK,
   PR_FEEDBACK_KEY,

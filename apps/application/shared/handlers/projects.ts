@@ -14,6 +14,7 @@ import {
   coverageReports,
   coverageTotals,
   entityLinks,
+  entityLinkDismissals,
   bugReports,
   analyticsDailyRollups,
   handbackOutcomes,
@@ -66,6 +67,7 @@ import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
+import { clusterIssueChips } from './known-issues';
 import { projectHealth } from '../project-health';
 import { deleteProjectStarsOn } from './project-stars';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
@@ -632,6 +634,8 @@ export async function updateProject(
     gateStatus?: boolean;
     /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
     liveView?: boolean;
+    /** Whether a signed-in reader of a run nobody shares may ask its developer to share it (Ask to watch). */
+    askToWatch?: boolean;
     /** Playwright locators of the elements the live view paints over, beside the secret fields; null or [] removes them. */
     liveViewMasks?: unknown;
     /** `GeneratedSpecSettings`; null clears them. */
@@ -668,6 +672,7 @@ export async function updateProject(
     quarantineFailsStatus,
     gateStatus,
     liveView,
+    askToWatch,
     liveViewMasks,
     generatedSpecs,
     targets,
@@ -725,6 +730,7 @@ export async function updateProject(
         quarantineFailsStatus,
         gateStatus,
         liveView,
+        askToWatch,
         liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
@@ -845,6 +851,7 @@ export async function deleteProjectData(
   const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+    await db.delete(entityLinkDismissals).where(inArray(entityLinkDismissals.failureClusterId, projectClusterIds));
   }
   const projectBugReports = await db
     .select({ id: bugReports.id })
@@ -1877,25 +1884,9 @@ export async function getProjectFailureClusters(
       : [];
   const diagnosisById = new Map(diagnosisRows.map((d: any) => [d.clusterId, d]));
 
-  // A pinned known-issue link per cluster (newest wins), carried into the list as
-  // a compact chip so a triaged cluster shows what is already tracking it.
-  const linkRows: any[] = await db
-    .select({
-      clusterId: entityLinks.failureClusterId,
-      id: entityLinks.id,
-      url: entityLinks.url,
-      provider: entityLinks.provider,
-      key: entityLinks.key,
-    })
-    .from(entityLinks)
-    .where(inArray(entityLinks.failureClusterId, clusterIds))
-    .orderBy(desc(entityLinks.id));
-  const issueByCluster = new Map<number, { url: string; provider: string; key: string | null }>();
-  for (const row of linkRows) {
-    if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
-      issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
-    }
-  }
+  // Each cluster's known issue, by the cluster page's rule, as a compact chip so a
+  // triaged cluster shows what is already tracking it.
+  const issueChips = await clusterIssueChips(db, clusterIds);
 
   return clusters.map((c: any) => {
     const runData = runDataById.get(c.lastSeenRunId) as { status: string; startTime: Date } | undefined;
@@ -1905,7 +1896,7 @@ export async function getProjectFailureClusters(
       lastSeenRunStatus: runData?.status ?? null,
       lastSeenAt: runData?.startTime ?? null,
       diagnosis: diagnosisById.get(c.id) ?? null,
-      issueLink: issueByCluster.get(c.id) ?? null,
+      issueLink: issueChips.get(c.id)?.issueLink ?? null,
     };
   });
 }

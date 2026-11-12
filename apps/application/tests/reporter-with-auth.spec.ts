@@ -108,7 +108,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // With the admin created, the page shows the login card, not the setup card.
     await expect(page.getByRole('heading', { name: 'Sign in to your account' })).toBeVisible();
 
-    await page.getByRole('textbox', { name: 'Username*' }).fill('admin');
+    await page.getByRole('textbox', { name: 'Username or email*' }).fill('admin');
     await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('wrongpassword');
     await page.getByRole('button', { name: 'Login' }).click();
     await expect(page.getByText('Invalid username or password').first()).toBeVisible();
@@ -1344,7 +1344,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
 
     // Sign in as the Viewer in the browser.
     await page.goto(`${AUTH_SERVER_URL}/login`);
-    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Username or email*' }).fill('ci-user');
     await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
     await page.getByRole('button', { name: 'Login' }).click();
     await page.waitForURL(`${AUTH_SERVER_URL}/`);
@@ -1371,7 +1371,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     request,
   }) => {
     await page.goto(`${AUTH_SERVER_URL}/login`);
-    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Username or email*' }).fill('ci-user');
     await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
     await page.getByRole('button', { name: 'Login' }).click();
     await page.waitForURL(`${AUTH_SERVER_URL}/`);

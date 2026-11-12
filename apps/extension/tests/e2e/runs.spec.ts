@@ -22,6 +22,7 @@ import {
   startLaneRun,
   startRun,
   stopAtCheckout,
+  stubEditor,
   waitFor,
   CART_RESPONSE,
   CHECK,
@@ -203,13 +204,18 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
     const run = await startRun(editor);
     try {
       await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
-      expect(await shortcut()).toEqual([{ ok: true, message: 'Pausing at the next call.' }]);
+      expect(await shortcut()).toEqual({
+        action: 'pause',
+        answers: [{ ok: true, message: 'Pausing at the next call.' }],
+      });
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
+      // Its sign on the toolbar badge, for a moment.
+      expect(await worker.evaluate(() => chrome.action.getBadgeText({}))).toBe('II');
       run.worker.stopAt(1, 30, true);
       await waitFor(() => editor.svc.latest(run.ref)?.workers[0]?.stop ?? undefined);
       // The extension hears the stop from the hub as the editor does, a burst at most every 50 ms.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      expect(await shortcut()).toEqual([{ ok: true, message: 'Resuming.' }]);
+      expect(await shortcut()).toEqual({ action: 'resume', answers: [{ ok: true, message: 'Resuming.' }] });
       expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
     } finally {
       run.worker.socket.destroy();
@@ -219,11 +225,183 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
-test('End the test ends a stopped test there, and a run started in a terminal or a test runner shows as one', async () => {
+test('says on the toolbar badge, the popup’s Runs tile and the Runs window’s title that a test waits for you', async () => {
+  const { context, worker, extensionId } = await pairedExtension(editor);
+  try {
+    const badge = () =>
+      worker.evaluate(async () => ({
+        text: await chrome.action.getBadgeText({}),
+        color: await chrome.action.getBadgeBackgroundColor({}),
+      }));
+    const run = await startRun(editor);
+    try {
+      await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
+      // A run that runs asks nothing: no badge.
+      await expect.poll(async () => (await badge()).text).toBe('');
+      run.worker.stopAt(1, 30, true);
+      await expect.poll(async () => (await badge()).text).toBe('1');
+      expect((await badge()).color).toEqual([180, 83, 9, 255]);
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.locator('#runs-hint')).toHaveText('1 test waits for you');
+      await expect(popup.locator('#runs')).toHaveAttribute('data-state', 'attention');
+      await popup.close();
+      const runs = await openRuns(context, extensionId);
+      await expect(runs).toHaveTitle('1 waiting · Runs · Piwi Picker');
+      // Answered, the stop asks nothing more: the badge and the title let go of it.
+      run.worker.send({ type: 'running', stop: 1 });
+      await expect.poll(async () => (await badge()).text).toBe('');
+      await expect(runs).toHaveTitle('Runs · Piwi Picker');
+    } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a run that failed with no Runs window open keeps the badge and the Runs tile red until a Runs window is in front', async () => {
+  const { context, worker, extensionId } = await pairedExtension(editor);
+  try {
+    const badge = () =>
+      worker.evaluate(async () => ({
+        text: await chrome.action.getBadgeText({}),
+        color: await chrome.action.getBadgeBackgroundColor({}),
+      }));
+    const run = await startRun(editor, 'pays');
+    const main = runMain(editor, run.channel, run.ref, 2);
+    try {
+      await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
+      main.send({ type: 'run-end', status: 'failed', failure: null, done: 2, failed: 1, flaky: 0, skipped: 0 });
+      await waitFor(() => (editor.svc.latest(run.ref)?.progress?.status === 'failed' ? true : undefined));
+    } finally {
+      main.socket.destroy();
+      await endRun(run);
+    }
+    // The run ended, but nobody saw it fail: the badge and the tile keep its failed test.
+    await expect.poll(async () => (await badge()).text).toBe('1');
+    expect((await badge()).color).toEqual([185, 28, 28, 255]);
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(popup.locator('#runs-hint')).toHaveText('1 test failed');
+    await expect(popup.locator('#runs')).toHaveAttribute('data-state', 'failed');
+    await popup.close();
+    // The Runs window, brought to the front, shows the run: the badge lets go of it.
+    const runs = await openRuns(context, extensionId);
+    await expect(runs.locator('.run.ended')).toHaveCount(1);
+    await runs.evaluate(async () => {
+      const { id } = await chrome.windows.getCurrent();
+      await chrome.windows.update(id!, { focused: true });
+    });
+    await expect.poll(async () => (await badge()).text).toBe('');
+    await expect(runs).toHaveTitle('Runs · Piwi Picker');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a run of several workers pauses and resumes all from its header, and F10 steps the stopped test', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    // This run alone: a run of an earlier test may still be listed.
+    const card = liveRun(runs).filter({ hasText: 'cart › pays' });
+    const { ref, channel } = await editor.svc.command();
+    const first = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const second = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 1, [...RUN_TAKES]);
+    first.begin('pays');
+    second.begin('adds a mug');
+    try {
+      await card.getByRole('button', { name: 'Pause all' }).click();
+      expect(await first.next('control')).toEqual({ type: 'control', action: 'pause' });
+      expect(await second.next('control')).toEqual({ type: 'control', action: 'pause' });
+      first.stopAt(1, 30, true);
+      second.stopAt(1, 31, true);
+      await card.getByRole('button', { name: 'Resume all' }).click();
+      expect(await first.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(await second.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      first.send({ type: 'running', stop: 1 });
+      second.send({ type: 'running', stop: 1 });
+      await expect(card.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0);
+      // The only stopped test takes the debuggers' keys, its buttons naming them.
+      first.stopAt(2, 30, true);
+      const step = card.getByRole('button', { name: 'Step', exact: true });
+      await expect(step).toHaveAttribute('aria-keyshortcuts', 'F10');
+      await expect(card.getByRole('button', { name: 'Resume all' })).toHaveCount(0);
+      await runs.keyboard.press('F10');
+      expect(await first.next('control', 2)).toEqual({ type: 'control', action: 'step', stop: 2 });
+    } finally {
+      await editor.svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
+      first.socket.destroy();
+      second.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a run’s tabs keep the stop being answered, move on as it is resumed, and its keys steer only the worker shown', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    // This run alone, the one with tabs: a run of an earlier test may still be listed.
+    const card = liveRun(runs).filter({ has: runs.getByRole('tablist') });
+    const { ref, channel } = await editor.svc.command();
+    const first = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const second = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 1, [...RUN_TAKES]);
+    first.begin('sends the order');
+    second.begin('adds a mug');
+    const selected = card.getByRole('tab', { selected: true });
+    const tab = (name: string) => card.getByRole('tab', { name });
+    try {
+      await expect(card.getByRole('tab')).toHaveText(['worker 1', 'worker 2']);
+      await expect(card.getByRole('tabpanel')).toHaveAccessibleName('worker 1');
+      // A stop takes the tab from a running worker as it comes.
+      second.stopAt(1, 31, true);
+      await expect(selected).toHaveText('worker 2');
+      // Another stop leaves the one being answered shown, its tab marked; a Step there keeps the tab through the run.
+      first.stopAt(1, 30, true);
+      await expect(tab('worker 1')).toHaveAttribute('data-status', 'stopped');
+      await expect(selected).toHaveText('worker 2');
+      await card.getByRole('button', { name: 'Step', exact: true }).click();
+      expect(await second.next('control')).toEqual({ type: 'control', action: 'step', stop: 1 });
+      second.send({ type: 'running', stop: 1 });
+      await expect(tab('worker 2')).toHaveAttribute('data-status', 'running');
+      await expect(selected).toHaveText('worker 2');
+      second.stopAt(2, 32, true);
+      await expect(tab('worker 2')).toHaveAttribute('data-status', 'stopped');
+      // Resumed there, the next stopped test takes the tab.
+      await card.getByRole('button', { name: 'Resume', exact: true }).click();
+      expect(await second.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
+      second.send({ type: 'running', stop: 2 });
+      await expect(selected).toHaveText('worker 1');
+      // A running worker chosen while another stands at its stop stays shown, and a key steers no test behind a tab.
+      await tab('worker 2').click();
+      await expect(selected).toHaveText('worker 2');
+      await runs.keyboard.press('F10');
+      await expect(runs.locator('#announce')).toHaveText(
+        'The stopped test is behind another worker’s tab: open that tab to steer it with a key.',
+      );
+      await runs.waitForTimeout(200);
+      expect(first.heard.filter((m) => m.type === 'control')).toEqual([]);
+      await expect(selected).toHaveText('worker 2');
+    } finally {
+      await editor.svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
+      first.socket.destroy();
+      second.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('End the test ends a stopped test there, Stop the run reaches the editor, and a terminal’s run has no Stop', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {
     const runs = await openRuns(context, extensionId);
     const card = liveRun(runs);
+    // A run of an earlier test may still be listed until its end is heard.
+    await expect(card).toHaveCount(0);
     const run = await startRun(editor, 'pays', [...RUN_TAKES]);
     try {
       await expect(card.getByText('Running')).toBeVisible();
@@ -238,6 +416,26 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
       run.worker.send({ type: 'running', stop: 1 });
       await expect(card.getByText('Running')).toBeVisible();
+      // Stop the run: the editor that started it ends it, as its own Stop does, and says so.
+      const stopRun = card.getByRole('button', { name: 'Stop the run' });
+      await expect(stopRun).toHaveAttribute(
+        'title',
+        'End the whole run now, as its own Stop does where it was started',
+      );
+      await stopRun.click();
+      await expect(runs.locator('#announce')).toHaveText('Test Editor stops the run.');
+      expect(editor.svc.stops).toContain(run.ref);
+      // A Stop the editor refuses says why under the row, until the next Stop.
+      const refusal = 'The run was not started in this VS Code window: stop it where it was started.';
+      editor.svc.stopAnswer = { ok: false, message: refusal };
+      try {
+        await stopRun.click();
+        await expect(card.locator('.stop-refused')).toHaveText(refusal);
+      } finally {
+        editor.svc.stopAnswer = { ok: true, message: 'Test Editor stops the run.' };
+      }
+      await stopRun.click();
+      await expect(card.locator('.stop-refused')).toHaveCount(0);
     } finally {
       await endRun(run);
     }
@@ -253,6 +451,8 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       stopAtCheckout(terminal, 1);
       await shown.getByRole('button', { name: 'End the test' }).click();
       expect(await terminal.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      // Its Stop stays the terminal's.
+      await expect(shown.getByRole('button', { name: 'Stop the run' })).toHaveCount(0);
     } finally {
       terminal.socket.destroy();
       // Its session ends a while after its last worker left, with no command to end.
@@ -273,6 +473,7 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       runner.begin('pays');
       const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Test runner' }) });
       await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTest runner`);
+      await expect(shown.getByRole('button', { name: 'Stop the run' })).toHaveCount(0);
     } finally {
       runner.socket.destroy();
       await waitFor(() => (editor.svc.latest(runnerRef)?.ended ? true : undefined), 10_000);
@@ -309,6 +510,8 @@ test('a Pause that waits for a call says which and for how long, and End the tes
       const end = card.getByRole('button', { name: 'End the test' });
       await expect(end).toHaveAttribute('title', /the call it waits in is given up/);
       await expect(end).not.toBeFocused();
+      // With no Resume, Step and Finish beside it, End the test stays at the row's start.
+      expect(await end.getAttribute('data-apart')).toBeNull();
       await end.click();
       expect(await run.worker.next('control', 1)).toEqual({
         type: 'control',
@@ -335,6 +538,15 @@ test('a run says how far it is and how it ended, as its own process says', async
     try {
       const card = liveRun(runs);
       await expect(card.locator('.run-progress')).toHaveText('0 of 3 tests');
+      // Its number and page on the instance, once its process names them.
+      await expect(card.locator('.run-page')).toHaveCount(0);
+      main.send({ type: 'run-page', id: 78, url: 'http://127.0.0.1:7494/test-runs/78' });
+      await expect(card.locator('.run-number')).toHaveText('Run #78');
+      await expect(card.getByRole('button', { name: 'Open' })).toHaveAttribute(
+        'title',
+        'http://127.0.0.1:7494/test-runs/78',
+      );
+      await expect(card.getByRole('button', { name: 'Copy link' })).toBeVisible();
       main.send({ type: 'run-progress', done: 2, failed: 1, flaky: 1, skipped: 0 });
       await expect(card.locator('.run-progress')).toHaveText('2 of 3 tests · 1 failed · 1 flaky');
       main.send({
@@ -355,6 +567,8 @@ test('a run says how far it is and how it ended, as its own process says', async
     await expect(ended.locator('.run-progress')).toHaveText('3 of 3 tests · 1 failed · 1 flaky');
     await expect(ended.locator('.run-ended')).toHaveText('The run failed. First failure: cart › pays');
     await expect(ended.locator('.first-failure')).toHaveAttribute('title', 'expect(locator).toBeVisible() failed');
+    // The run that ended keeps its page.
+    await expect(ended.locator('.run-number')).toHaveText('Run #78');
   } finally {
     await context.close();
   }
@@ -556,7 +770,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('cart › pays')).toBeVisible();
         stopAtCheckout(run.worker, 1);
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
-        // The test's controls, then the code this stop can write, in a group of their own.
+        // The test's controls, then the code this stop can write, in a group of their own, Assert a region and Mock a
+        // request folded under More.
         await expect(card.locator('.controls button')).toHaveText([
           'Resume',
           'Step',
@@ -565,13 +780,19 @@ test.describe('code from a stop', () => {
           'Pick',
           'Record',
           'Assert',
-          'Assert a region',
-          'Mock a request',
+          'More',
         ]);
-        await expect(card.getByRole('group', { name: 'Code from this stop' }).getByRole('button')).toHaveText([
+        const code = card.getByRole('group', { name: 'Code from this stop' });
+        const more = code.getByRole('button', { name: 'More' });
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toHaveAttribute('title', 'Assert a region, Mock a request');
+        await more.click();
+        await expect(more).toHaveAttribute('aria-expanded', 'true');
+        await expect(code.getByRole('button')).toHaveText([
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -662,6 +883,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await expect(mock).toHaveAttribute('aria-expanded', 'false');
         await mock.focus();
@@ -675,10 +897,12 @@ test.describe('code from a stop', () => {
         const list = card.getByRole('group', { name: 'Choose the request to mock' });
         await expect(list.getByRole('listitem')).toHaveCount(KEPT.length);
         await expect(runs.locator('#announce')).toHaveText(`${KEPT.length} requests: choose the one to mock.`);
-        // The list opens under the button, which keeps the focus and says it is open.
+        // The list opens under the button, which keeps the focus and says it is open, pressed whatever its tone.
         await expect(mock).toBeFocused();
         await expect(mock).toHaveAttribute('aria-expanded', 'true');
         await expect(mock).toHaveAttribute('aria-controls', (await list.getAttribute('id'))!);
+        const pressed = (button: Locator) => button.evaluate((el) => getComputedStyle(el).backgroundColor);
+        expect(await pressed(mock)).not.toBe('rgba(0, 0, 0, 0)');
 
         // Each row: the method and the address, then the status, the type, the size and when it ended.
         const cart = list.getByRole('button', { name: /^GET http:\/\/127\.0\.0\.1:3000\/api\/cart/ });
@@ -762,6 +986,23 @@ test.describe('code from a stop', () => {
         await expect(list).toHaveCount(0);
         await expect(mock).toBeFocused();
 
+        // More folds Mock a request and its open list together, and keeps the focus; it shows it is open, pressed.
+        const more = card.getByRole('button', { name: 'More' });
+        expect(await pressed(more)).not.toBe('rgba(0, 0, 0, 0)');
+        await runs.keyboard.press('Enter');
+        await answerNext(run.worker, 'requests', {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: [KEPT[0]],
+        });
+        await expect(list.getByRole('listitem')).toHaveCount(1);
+        await more.click();
+        await expect(list).toHaveCount(0);
+        await expect(mock).toHaveCount(0);
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toBeFocused();
+        await more.click();
+
         // A mock the editor asks for itself shows here too, at the stop it was made at.
         const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
         const fromEditor = editor.svc.client.sendRequest('piwi/stopAction', {
@@ -794,6 +1035,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await mock.click();
         // No response kept yet: the list says so.
@@ -835,7 +1077,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
         await expect(list).toHaveCount(0);
 
-        // An answer that comes once the test went on from its stop shows nothing.
+        // An answer that comes once the test went on from its stop shows nothing. The new stop folds More again.
+        await card.getByRole('button', { name: 'More' }).click();
         await mock.click();
         const late = await waitFor(() =>
           run.worker.heard.find((m) => m.type === 'request' && m.what === 'requests' && m.stop === 2),
@@ -870,21 +1113,14 @@ test.describe('code from a stop', () => {
         stopAtCheckout(run.worker, 1, { reason: 'failure' });
         await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
         await expect(card.locator('.worker')).toHaveAttribute('data-failed', '');
-        // The error its stop names, under its label, its lines kept.
-        await expect(card.locator('.stop dt')).toHaveText('Error');
+        // The error its stop names, under its place in its red card, its lines kept.
+        await expect(card.locator('.status')).toHaveAttribute('data-tone', 'failed');
         expect(await card.locator('.stop .error').innerText()).toBe(FAILURE_ERROR);
         await expect(runs.locator('#announce')).toHaveText('cart › pays failed at tests/checkout.spec.ts:5.');
         // No Step nor Finish: whatever answers it, the test ends as it failed.
-        await expect(card.locator('.controls button')).toHaveText([
-          'Resume',
-          'Pick',
-          'Record',
-          'Assert',
-          'Assert a region',
-          'Mock a request',
-        ]);
+        await expect(card.locator('.controls button')).toHaveText(['Resume', 'Pick', 'Record', 'Assert', 'More']);
         const resume = card.getByRole('button', { name: 'Resume' });
-        await expect(resume).toHaveAttribute('title', 'Let the test end as it failed');
+        await expect(resume).toHaveAttribute('title', 'Let the test end as it failed (F8)');
         await resume.click();
         expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
 
@@ -892,7 +1128,7 @@ test.describe('code from a stop', () => {
         run.worker.send({ type: 'running', stop: 1 });
         await expect(card.getByText('Running')).toBeVisible();
         stopAtCheckout(run.worker, 2, { reason: 'failure', error: null });
-        await expect(card.locator('.stop')).toHaveText('Errorexpect(locator).toBeVisible() failed');
+        await expect(card.locator('.stop')).toHaveText('expect(locator).toBeVisible() failed');
       } finally {
         await endRun(run);
       }
@@ -901,33 +1137,43 @@ test.describe('code from a stop', () => {
     }
   });
 
-  test('a plain run’s headless failure waits for an answer only while a Runs window is open', async () => {
+  test('a plain run’s headless failure waits for an answer only while its Hold failures is on, turned on here', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
-      // Paired, its Runs window never opened: the popup's tile shows once the worker hears the hub's runs.
-      const popup = await context.newPage();
-      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
-      await popup.close();
       const run = await startRun(editor, 'pays', [...RUN_TAKES]);
       const shown = () => editor.svc.sessions.some((s) => s.ref === run.ref && s.workers.some((w) => w.stop));
+      const controls = () => run.worker.heard.filter((m) => m.type === 'control');
       try {
         // A plain run, neither with breakpoints nor for a page.pause(): its failure goes on at once, shown to nobody.
         stopAtCheckout(run.worker, 1, { reason: 'failure', bar: false });
         expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
         expect(shown()).toBe(false);
 
-        // A Runs window opens: the next failure waits there for an answer.
+        // A Runs window open holds nothing by itself: the run's Hold failures, off, says so, and the failure goes on.
         const runs = await openRuns(context, extensionId);
         const card = liveRun(runs);
         await expect(card.getByText('cart › pays')).toBeVisible();
-        await runs.waitForTimeout(300);
+        const hold = card.getByRole('button', { name: 'Hold failures' });
+        await expect(hold).toHaveAttribute('aria-pressed', 'false');
+        await expect(hold).toHaveAttribute('title', /^A failed test goes on at once\./);
         stopAtCheckout(run.worker, 2, { reason: 'failure', bar: false });
-        await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
-        expect(run.worker.heard.filter((m) => m.type === 'control')).toHaveLength(1);
-        // The window closes: the failure goes on.
-        await runs.close();
         expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
+
+        // Turned on here: the run keeps it, and the next failure waits in the window for an answer.
+        await hold.click();
+        await expect(hold).toHaveAttribute('aria-pressed', 'true');
+        await expect(runs.locator('#announce')).toHaveText(
+          'A failure no pause bar shows waits at its line in this run until someone answers it.',
+        );
+        expect(editor.svc.latest(run.ref)?.hold).toEqual({ on: true, by: 'person' });
+        stopAtCheckout(run.worker, 3, { reason: 'failure', bar: false });
+        await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
+        await runs.waitForTimeout(200);
+        expect(controls()).toHaveLength(2);
+        // Turned off: the failure held now goes on.
+        await hold.click();
+        expect(await run.worker.next('control', 2)).toEqual({ type: 'control', action: 'resume', stop: 3 });
+        await expect(hold).toHaveAttribute('aria-pressed', 'false');
       } finally {
         await endRun(run);
       }
@@ -969,8 +1215,10 @@ test.describe('code from a stop', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
       } finally {
@@ -982,11 +1230,43 @@ test.describe('code from a stop', () => {
   });
 });
 
+test('Show the browser brings a headed stop’s window to the front, and is not offered at a headless one', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const card = liveRun(runs);
+    const { ref, channel } = await editor.svc.command();
+    const worker = laneWorker(editor, channel, ref, 0, ['view-lane', 'give-up', 'front']);
+    worker.begin('pays');
+    try {
+      stopAtCheckout(worker, 1);
+      const show = card.getByRole('button', { name: 'Show the browser' });
+      await expect(show).toHaveAttribute('title', 'Bring the test’s browser window to the front');
+      await show.click();
+      const asked = await answerNext(worker, 'front', { ok: true, message: "The test's window is in front." });
+      expect(asked).toMatchObject({ what: 'front', stop: 1 });
+      worker.send({ type: 'running', stop: 1 });
+      stopAtCheckout(worker, 2, { bar: false });
+      await expect(card.getByRole('button', { name: 'Resume' })).toBeVisible();
+      await expect(show).toHaveCount(0);
+    } finally {
+      await endRun({ ref, worker });
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 /** The actions in the test's window a headless stop takes once watched. */
 const WATCH_TO_USE = ['Pick', 'Record', 'Assert', 'Assert a region'];
 
-/** Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first. */
+/**
+ * Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first, Assert a
+ * region under More.
+ */
 async function expectWatchToUse(card: Locator): Promise<void> {
+  const more = card.getByRole('button', { name: 'More' });
+  if ((await more.getAttribute('aria-expanded')) === 'false') await more.click();
   for (const name of WATCH_TO_USE) {
     const button = card.getByRole('button', { name, exact: true });
     await expect(button).toHaveAttribute('aria-disabled', 'true');
@@ -1054,8 +1334,10 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
         await card.getByRole('button', { name: 'Pick', exact: true }).click({ force: true });
@@ -1065,11 +1347,13 @@ test.describe('the live view', () => {
 
         await watch.click();
         await expect(watch).toHaveAttribute('aria-pressed', 'true');
+        // Interact waits for the view the hub accepts.
+        await expect(card.getByRole('button', { name: 'Interact' })).toHaveCount(0);
         expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
         await expect(card.getByText('Starting the live view…')).toBeVisible();
         sendFrame(run.worker, 1, before);
-        const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
-        await expect(live).toBeVisible();
+        const live = card.locator('img.live');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         await expect(still).toHaveCount(0);
         await expect(card.locator('.live-badge')).toHaveText('Live');
         // As wide as the window lets it, its aspect kept.
@@ -1078,10 +1362,17 @@ test.describe('the live view', () => {
           img.naturalWidth,
         ]);
         expect(shown[0]).toBeCloseTo(VIEWPORT.width / VIEWPORT.height, 1);
-        await expect(
-          card.getByText('Your clicks, the wheel and your keys on the view go to the test’s page.', { exact: false }),
-        ).toBeVisible();
-        // Watched, the headless stop takes the actions in its page, driven through the view.
+        // Watching sends nothing to the page: Interact does, and says so the first time.
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(live).not.toHaveAttribute('tabindex');
+        const inputHint = 'Your clicks, the wheel and your keys on the view go to the test’s page.';
+        await expect(card.getByText(inputHint, { exact: false })).toHaveCount(0);
+        await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page: keys and clicks go to the page');
+        await expect(card.getByText(inputHint, { exact: false })).toBeVisible();
+        // Watched, the headless stop takes the actions in its page, driven through the view; More stays open.
         await expect(buttons).toHaveText([
           'Resume',
           'Step',
@@ -1090,6 +1381,7 @@ test.describe('the live view', () => {
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -1125,7 +1417,11 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
+          'Assert a region',
           'Mock a request',
         ]);
         await expectWatchToUse(card);
@@ -1142,7 +1438,7 @@ test.describe('the live view', () => {
     }
   });
 
-  test('a click, the wheel and keys on the live view reach the page at its CSS pixels, Escape staying the window’s', async () => {
+  test('a click, the wheel and keys on the live view reach the page at its CSS pixels once Interact is on, Escape turning it off', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1157,6 +1453,8 @@ test.describe('the live view', () => {
         await watch.click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
         const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
         await expect(live).toBeVisible();
         const buttons = () =>
@@ -1237,17 +1535,31 @@ test.describe('the live view', () => {
         ]);
         await expect(live).toBeFocused();
 
-        // Escape gives the keyboard back, on Watch live; Tab comes back to the view, past Pick on the image, and moves on
-        // from it.
+        // While a pick runs in the test's window, Escape is the page's: it goes there, and Interact stays on.
+        const escaped = input.events.length;
+        run.worker.send({ type: 'acting', stop: 1, what: 'pick' });
+        await expect(live).toHaveAttribute('data-acting', '');
+        await runs.keyboard.press('Escape');
+        await expect.poll(() => input.events.slice(escaped)).toEqual([{ type: 'key', action: 'press', key: 'Escape' }]);
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toBeFocused();
+        run.worker.send({ type: 'acting', stop: 1, what: null });
+        await expect(live).not.toHaveAttribute('data-acting');
+
+        // Escape turns Interact off, on Interact, the view watched still: Tab moves on past Pick on the image and the
+        // view, which takes nothing now.
         const sent = input.events.length;
         await runs.keyboard.press('Escape');
-        await expect(watch).toBeFocused();
+        await expect(interact).toBeFocused();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(watch).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('img.live')).toHaveAccessibleName('Live view of the test’s page');
         await runs.keyboard.press('Tab');
         await expect(card.getByRole('button', { name: 'Pick on the image' })).toBeFocused();
         await runs.keyboard.press('Tab');
-        await expect(live).toBeFocused();
-        await runs.keyboard.press('Tab');
-        await expect(live).not.toBeFocused();
+        await expect(card.locator('img.live')).not.toBeFocused();
+        await card.locator('img.live').click({ position: await at(card.locator('img.live'), 0.5, 0.5) });
+        await runs.keyboard.type('c');
         await runs.waitForTimeout(400);
         expect(input.events.length).toBe(sent);
       } finally {
@@ -1278,7 +1590,8 @@ test.describe('the live view', () => {
         await card.getByRole('button', { name: 'Watch live' }).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
-        const live = card.locator('img.live');
+        await card.getByRole('button', { name: 'Interact' }).click();
+        const live = card.locator('img.live[tabindex]');
         await expect(live).toBeVisible();
         const sent = () => input.events.filter((e) => e.type !== 'mouse' || e.action !== 'move');
         await live.dblclick({ position: await at(live, 0.25, 0.5) });
@@ -1358,6 +1671,13 @@ test.describe('the live view', () => {
           locator: null,
         });
         await expect(card.locator('.answer')).toHaveText('No element is under that point.');
+        // A locator no editor took is not said to be sent, and is offered to copy.
+        await live.click({ position: await at(live, 0.5, 0.5), modifiers: ['Shift'] });
+        const alone = `${locator}: no editor took it, as this run names no Send to editor pairing that answers.`;
+        await answerNext(run.worker, 'pick-at', { ok: true, message: alone, locator, taken: false });
+        await expect(card.locator('.note').filter({ hasText: 'no editor took it' })).toBeVisible();
+        await expect(card.locator('.note.sent')).toHaveCount(0);
+        await expect(card.getByRole('button', { name: 'Copy', exact: true })).toBeVisible();
       } finally {
         input.stop();
         await endRun(run);
@@ -1390,6 +1710,105 @@ test.describe('the live view', () => {
       }
     } finally {
       await context.close();
+    }
+  });
+
+  test('says who else has the run open, who watches a stop and who drives it, Take control and Give back moving it', async () => {
+    const theirs = await pairedExtension(editor);
+    const ours = await pairedExtension(editor);
+    try {
+      // A Runs window in another browser, and this one.
+      const other = liveRun(await openRuns(theirs.context, theirs.extensionId));
+      const runs = await openRuns(ours.context, ours.extensionId);
+      const { before } = await shopFrames(ours.context);
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      const input = playInput(run.worker);
+      try {
+        const card = liveRun(runs);
+        await expect(card.getByText('Running')).toBeVisible();
+        // Each window names the other, and leaves itself out.
+        await expect(card.locator('.run-presence')).toHaveText('Also open in Piwi Picker');
+        await expect(other.locator('.run-presence')).toHaveText('Also open in Piwi Picker');
+
+        // Watched here: the window says so, as you; nobody drives the stop and no agent follows the run, so nothing
+        // offers to take it.
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await answerView(run.worker);
+        await expect(card.locator('.watchers')).toHaveText('Watched by you');
+        await expect(other.locator('.watchers')).toHaveText('Watched by Piwi Picker');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+
+        // The editor watches too, and its input drives the stop from there.
+        const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
+        const at = { ref: run.ref, worker: 0, since };
+        expect(await editor.svc.client.sendRequest('piwi/pageView', { ...at, on: true })).toMatchObject({ ok: true });
+        sendFrame(run.worker, 1, before);
+        await expect(card.locator('.watchers')).toHaveText('Watched by you and Test Editor');
+        const typed = { ...at, events: [{ type: 'text', text: 'a' }] };
+        expect(await editor.svc.client.sendRequest('piwi/pageInput', typed)).toMatchObject({ ok: true });
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+
+        // Taken here: this window drives it, and the other one hears so.
+        await card.getByRole('button', { name: 'Take control' }).click();
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await expect(runs.locator('#announce')).toHaveText(
+          'You drive this stop: an agent would wait until you give it back.',
+        );
+        await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
+        const giveBack = card.getByRole('button', { name: 'Give back' });
+        await expect(giveBack).toHaveAttribute('title', 'Give this stop back: an agent may act on it again');
+        await expect(giveBack).toBeFocused();
+
+        // Given back: nobody drives it.
+        await giveBack.click();
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(other.locator('.run-driver')).toHaveCount(0);
+
+        // Interact sends the input on the view, and the first of it takes the stop, from the editor driving it again.
+        expect(await editor.svc.client.sendRequest('piwi/pageInput', typed)).toMatchObject({ ok: true });
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+        const interact = card.getByRole('button', { name: 'Interact' });
+        const view = card.locator('img.live');
+        await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+        await view.click({ position: { x: 20, y: 20 } });
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
+        // Turned off, its input sent, it gives the stop back.
+        await runs.evaluate(() => (document.getElementById('announce')!.textContent = ''));
+        await interact.click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(other.locator('.run-driver')).toHaveCount(0);
+        // Give back turns Interact off, as it gives the stop back; Interact and Give back wait meanwhile.
+        await expect(interact).not.toHaveAttribute('aria-disabled');
+        await interact.click();
+        await view.click({ position: { x: 30, y: 30 } });
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await card.getByRole('button', { name: 'Give back' }).click();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        // Watch live turned off with Interact on gives the stop back, as such, before the view ends.
+        await expect(interact).not.toHaveAttribute('aria-disabled');
+        await interact.click();
+        await view.click({ position: { x: 40, y: 40 } });
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await runs.evaluate(() => (document.getElementById('announce')!.textContent = ''));
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(card.locator('img.live')).toHaveCount(0);
+      } finally {
+        input.stop();
+        await endRun(run);
+      }
+    } finally {
+      await ours.context.close();
+      await theirs.context.close();
     }
   });
 
@@ -1476,6 +1895,10 @@ test.describe('the live view', () => {
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         await expect(card.locator('img.live')).toBeVisible();
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
+        const takes = 'Live view of the test’s page: keys and clicks go to the page';
+        await expect(card.locator('img.live')).toHaveAccessibleName(takes);
 
         // The test goes on: the view goes with its stop, and a frame of it shows nowhere.
         run.worker.send({ type: 'running', stop: 1 });
@@ -1492,6 +1915,9 @@ test.describe('the live view', () => {
         sendFrame(run.worker, 2, after);
         const live = card.locator('img.live');
         await expect(live).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
+        // Interact left on sends the input to the new stop's page too.
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toHaveAccessibleName(takes);
 
         // The window hides: it watches nothing until it shows again.
         const hidden = (value: boolean) =>
@@ -1580,15 +2006,15 @@ test.describe('the live view', () => {
     const { context, extensionId } = await pairedExtension(older);
     try {
       const runs = await openRuns(context, extensionId);
+      // Two workers, one shown at a time behind their tabs: the first stopped one, then the other.
       const workers = runs.locator('.worker');
-      await expect(workers).toHaveCount(2);
-      await expect(workers.nth(0).locator('.controls button')).toHaveText([
-        'Resume',
-        'Step',
-        'Finish',
-        'Mock a request',
-      ]);
-      await expect(workers.nth(1).locator('.controls button')).toHaveText([
+      await expect(runs.getByRole('tab')).toHaveText(['worker 1', 'worker 2']);
+      await expect(workers).toHaveCount(1);
+      await expect(workers.locator('.controls button')).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+      await expect(workers.getByRole('img')).toHaveCount(1);
+      await runs.getByRole('tab', { name: 'worker 2' }).click();
+      await expect(runs.getByRole('tab', { name: 'worker 2' })).toHaveAttribute('aria-selected', 'true');
+      await expect(workers.locator('.controls button')).toHaveText([
         'Resume',
         'Step',
         'Finish',
@@ -1596,7 +2022,11 @@ test.describe('the live view', () => {
         'Record',
         'Mock a request',
       ]);
-      await expect(workers.getByRole('img')).toHaveCount(2);
+      await expect(workers.getByRole('img')).toHaveCount(1);
+      // The arrow keys move between the tabs, the focus with them.
+      await runs.keyboard.press('ArrowLeft');
+      await expect(runs.getByRole('tab', { name: 'worker 1' })).toHaveAttribute('aria-selected', 'true');
+      await expect(runs.getByRole('tab', { name: 'worker 1' })).toBeFocused();
       await expect(runs.getByRole('button', { name: 'Watch live' })).toHaveCount(0);
       await expect(runs.getByRole('button', { name: 'Pick on the image' })).toHaveCount(0);
       await expect(runs.locator('.page-tools')).toHaveCount(0);
@@ -1640,10 +2070,11 @@ test.describe('watching a running test', () => {
         await expect(card.locator('img.stale')).toHaveCount(0);
         // Watched, Pause and watch has nothing left to do.
         await expect(card.locator('.controls button')).toHaveText(['Pause', 'Watch']);
-        // Its controls above its page, and no stop's image asked of a running test.
+        // Who watches it in its page's head, its controls above its page, and no stop's image asked of a running test.
+        await expect(card.locator('.page-head .watchers')).toHaveText('Watched by you');
         expect(
           await card.locator('.worker').evaluate((item) => [...item.children].map((child) => child.className)),
-        ).toEqual(['state', 'test', 'meta', 'controls', 'page']);
+        ).toEqual(['test-head', 'status', 'controls', 'page']);
         expect(heardRequests(run.worker, 'image')).toEqual([]);
 
         // The test ends: its last frame stays, dimmed and marked as running, until the next test's comes.
@@ -1679,7 +2110,7 @@ test.describe('watching a running test', () => {
     }
   });
 
-  test('Pause and watch brings the stop into view, whose frames take input with no view of its own, dimmed across a Step', async () => {
+  test('Pause and watch brings the stop into view, whose frames take Interact’s input with no view of their own, dimmed across a Step', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1715,17 +2146,25 @@ test.describe('watching a running test', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
+        await card.getByRole('button', { name: 'More' }).click();
+        await expect(card.getByRole('button', { name: 'Assert a region' })).toBeVisible();
         await expect(card.locator('.controls [aria-disabled]')).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', 1, after);
-        const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
+        const live = card.locator('img.live:not(.stale)');
         await expect(live).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
-        await expect(live).not.toHaveClass(/\bstale\b/);
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         await expect(card.locator('.live-badge')).toHaveText('Live');
 
-        // A click on it reaches the page at its CSS pixels, through the lane: no view of the stop's own is asked.
+        // With Interact, a click on it reaches the page at its CSS pixels, through the lane: no view of the stop's own
+        // is asked.
+        const interact = card.getByRole('button', { name: 'Interact' });
+        await interact.click();
+        await expect(live).toHaveAccessibleName('Live view of the test’s page: keys and clicks go to the page');
         await live.click({ position: await at(live, 0.5, 0.25) });
         await expect
           .poll(() => input.events.filter((e) => e.type === 'mouse' && e.action !== 'move').map((e) => e.action))
@@ -1741,10 +2180,12 @@ test.describe('watching a running test', () => {
         expect(await answerNext(run.worker, 'pick', { ok: true, message: 'Pick an element.' })).toMatchObject({
           stop: 1,
         });
-        // Escape gives the keyboard back to Watch.
+        // Escape turns Interact off, on Interact.
         await live.click({ position: await at(live, 0.25, 0.75) });
         await runs.keyboard.press('Escape');
-        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toBeFocused();
+        await expect(interact).toBeFocused();
+        await expect(interact).toHaveAttribute('aria-pressed', 'false');
+        await expect(live).toHaveAccessibleName('Live view of the test’s page');
         expect(heardRequests(run.worker, 'view')).toEqual([]);
 
         // Watched again once the window shows: the frame before is the page as last seen, dimmed and taking no input,
@@ -1832,6 +2273,163 @@ test.describe('watching a running test', () => {
         // The window closes: the worker stops watching.
         await runs.close();
         await expect.poll(lanes).toEqual([true, false, true, false]);
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('Watch shows the lane’s layers under its page: why its call waits, its events, its text as asked and its filmstrip', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before, after } = await shopFrames(context);
+      const { ref, channel } = await editor.svc.command();
+      const worker = laneWorker(editor, channel, ref, 0, ['view-lane', 'give-up', 'layers']);
+      worker.begin('pays');
+      const run = { ref, worker, channel };
+      try {
+        const card = liveRun(runs);
+        await card.getByRole('button', { name: 'Watch', exact: true }).click();
+        await answerLane(worker);
+        // The window takes every layer but the page's text, which it asks for as the person does.
+        const asked = () => worker.heard.flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+        await expect.poll(asked).toContainEqual(['calls', 'events', 'filmstrip']);
+        sendLaneFrame(worker, 'pays', null, before);
+        await expect(card.locator('img.live')).toBeVisible();
+        // Nothing shows under the page until the lane sends a layer.
+        await expect(card.locator('.layers')).toHaveCount(0);
+        const at = Date.now();
+        const layer = (data: Record<string, unknown>) =>
+          worker.send({ type: 'lane-layer', test: 'id-pays', ...data } as Parameters<typeof worker.send>[0]);
+        layer({
+          layer: 'calls',
+          log: {
+            id: 'call@7',
+            call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 12 },
+            status: 'running',
+            lines: ["waiting for getByRole('button', { name: 'Pay' })", '  - element is not enabled'],
+            point: null,
+            target: { count: 1, box: null, enabled: false },
+            viewport: null,
+            ms: 3400,
+            error: null,
+          },
+        });
+        const layers = card.locator('.layers');
+        await expect(layers.getByRole('heading')).toHaveText(['Why it waits', 'Events', 'Text', 'Filmstrip']);
+        expect(
+          await card.locator('.worker').evaluate((item) => [...item.children].map((child) => child.className)),
+        ).toEqual(['test-head', 'status', 'controls', 'page', 'layers']);
+        await expect(layers.locator('.layer-call')).toContainText('tests/checkout.spec.ts:12');
+        await expect(layers.locator('.layer-state')).toHaveText(
+          'Running for 3.4s · 1 element matches its locator · Its element is not enabled',
+        );
+        await expect(layers.locator('.layer-log')).toContainText('element is not enabled');
+
+        // The page's events, newest first, a pending request one line whose time grows.
+        const pending = { kind: 'request-pending', id: 3, method: 'POST', url: 'http://shop.test/api/checkout' };
+        layer({ layer: 'events', at, event: { ...pending, ms: 5000, done: false } });
+        layer({ layer: 'events', at, event: { kind: 'console', text: 'cart broke' } });
+        layer({ layer: 'events', at, event: { ...pending, ms: 10_000, done: false } });
+        await expect(layers.locator('.layer-event')).toHaveText([
+          'Console error cart broke',
+          'Pending request POST http://shop.test/api/checkout pending for 10s',
+        ]);
+
+        // The page's text, as asked: taken now, its secret fields hidden, then followed.
+        await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+        await expect.poll(asked).toContainEqual(['calls', 'events', 'text', 'filmstrip']);
+        await expect(layers.getByText('Reading the page…')).toBeVisible();
+        layer({
+          layer: 'text',
+          test: null,
+          text: {
+            call: null,
+            source: 'snapshot',
+            text: '- textbox "Password": S3cr3t\n- button "Pay"',
+            cut: false,
+            at,
+          },
+        });
+        const text = layers
+          .getByRole('region', { name: 'Text' })
+          .getByLabel('The page’s text, its secret fields hidden');
+        await expect(text).toContainText('textbox "Password": <hidden>');
+        await expect(text).not.toContainText('S3cr3t');
+        await expect(layers.getByText('Taken as you asked')).toBeVisible();
+        await expect(layers.getByText('Reading the page…')).toHaveCount(0);
+
+        // The filmstrip: one image a call, chosen to show larger with its call's title.
+        const thumb = (call: string, index: number, title: string) => ({
+          call,
+          title,
+          index,
+          width: 320,
+          height: 200,
+          at,
+        });
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@2', 1, "Click getByRole('button', { name: 'Check' })"),
+          data: before,
+        });
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@5', 2, 'Fill "<hidden>" getByLabel(\'Card number\')'),
+          data: after,
+        });
+        // Sent again for a window that came later: shown once.
+        layer({
+          layer: 'filmstrip',
+          thumb: thumb('call@2', 1, "Click getByRole('button', { name: 'Check' })"),
+          data: before,
+        });
+        const thumbs = layers.locator('.film-thumb');
+        await expect(thumbs).toHaveCount(2);
+        await thumbs.nth(1).click();
+        await expect(thumbs.nth(1)).toHaveAttribute('aria-pressed', 'true');
+        await expect(layers.locator('.film-shown img')).toHaveAttribute('src', `data:image/jpeg;base64,${after}`);
+        await expect(layers.locator('.film-shown figcaption')).toContainText("getByLabel('Card number')");
+        await layers.getByRole('button', { name: 'Close' }).click();
+        await expect(layers.locator('.film-shown')).toHaveCount(0);
+
+        // Kept in memory alone, never stored.
+        const stored = await runs.evaluate(async () =>
+          JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]),
+        );
+        expect(stored).not.toContain('cart broke');
+        expect(stored).not.toContain(after.slice(0, 200));
+
+        // Hide the text: the worker hears the layers without it.
+        const sent = asked().length;
+        await layers.getByRole('button', { name: 'Hide the text' }).click();
+        await expect.poll(() => asked().slice(sent)).toContainEqual(['calls', 'events', 'filmstrip']);
+        await expect(text).toHaveCount(0);
+        await expect(layers.getByRole('button', { name: 'Show the page’s text' })).toBeVisible();
+
+        // Shown again, then the next test starts its layers afresh, and asks the worker for its page's text: a second
+        // later, as the hub takes an ask within a second of the one before as that one.
+        await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+        await expect.poll(() => asked().slice(-1)).toEqual([['calls', 'events', 'text', 'filmstrip']]);
+        const textAsks = () => heardRequests(worker, 'text').length;
+        const shown = textAsks();
+        await runs.waitForTimeout(1100);
+        worker.send({ type: 'test-end', testId: 'id-pays', status: 'passed', pausedMs: 0 });
+        worker.begin('pays again');
+        worker.send({
+          type: 'lane-layer',
+          test: 'id-pays again',
+          layer: 'events',
+          at,
+          event: { kind: 'console', text: 'fresh' },
+        });
+        await expect(layers.locator('.layer-event')).toHaveText(['Console error fresh']);
+        await expect(layers.locator('.film-thumb')).toHaveCount(0);
+        await expect.poll(textAsks).toBeGreaterThan(shown);
+        await expect(layers.getByText('Reading the page…')).toBeVisible();
       } finally {
         await endRun(run);
       }
@@ -1948,9 +2546,8 @@ test.describe('watching a running test', () => {
         await live.click();
         expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
         sendFrame(run.worker, 1, before);
-        await expect(
-          card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' }),
-        ).toBeVisible();
+        await expect(card.getByRole('img', { name: 'Live view of the test’s page', exact: true })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Interact' })).toHaveAttribute('aria-pressed', 'false');
       } finally {
         await endRun(run);
       }
@@ -1990,6 +2587,85 @@ test.describe('watching a running test', () => {
     } finally {
       worker.socket.destroy();
       await context.close();
+    }
+  });
+
+  test('Open the trace so far, on a watched lane at a hub that opens traces, asks for its lane and shows the answer', async () => {
+    const running = (traces: boolean) => ({
+      worker: 0,
+      parallelIndex: 0,
+      state: 'running' as const,
+      pausing: false,
+      intents: ['watch' as const],
+      test: {
+        id: 't0',
+        title: ['cart', 'pays'],
+        uri: 'file:///home/me/shop/tests/cart.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      },
+      stop: null,
+      ...(traces ? { traces: true as const } : {}),
+    });
+    const run = (traces: boolean, ref: string) => ({
+      ref,
+      root: '/home/me/shop',
+      label: path.basename(editor.dir),
+      command: 'npx playwright test',
+      project: null,
+      workers: [running(traces)],
+      ended: false,
+    });
+    const said = 'Playwright’s trace viewer opened on the trace so far.';
+    const answer = (command: Record<string, unknown>) =>
+      command.type === 'watch' ? { message: 'Watching.' } : command.type === 'openTrace' ? { message: said } : null;
+    const stub = await stubEditor([run(true, 'ed-trace')], '', { features: ['lanes', 'trace'], answer });
+    const { context, extensionId } = await pairedExtension(stub);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const card = liveRun(runs);
+      await expect(card.getByText('Running')).toBeVisible();
+      const trace = card.getByRole('button', { name: 'Open the trace so far' });
+      // Not watched, the lane shows no page, and no button.
+      await expect(trace).toHaveCount(0);
+      await card.getByRole('button', { name: 'Watch', exact: true }).click();
+      await expect(trace).toBeVisible();
+      await expect(trace).toHaveAttribute(
+        'title',
+        'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
+      );
+      await trace.click();
+      await expect(card.getByText(said)).toBeVisible();
+      // The window names the run and the lane, never a file.
+      expect(stub.heard.filter((m) => m.type === 'openTrace')).toEqual([
+        { type: 'openTrace', id: expect.any(Number), ref: 'ed-trace', lane: 0 },
+      ]);
+      await card.screenshot({ path: test.info().outputPath('runs-trace.png') });
+    } finally {
+      await context.close();
+      await stub.close();
+    }
+
+    // A hub that does not list `trace`, or a worker whose reporter does not say where its trace grows: no button.
+    for (const [features, traces] of [
+      [['lanes'], true],
+      [['lanes', 'trace'], false],
+    ] as const) {
+      const other = await stubEditor([run(traces, 'ed-other')], '', { features: [...features], answer });
+      const paired = await pairedExtension(other);
+      try {
+        const runs = await openRuns(paired.context, paired.extensionId);
+        const card = liveRun(runs);
+        await card.getByRole('button', { name: 'Watch', exact: true }).click();
+        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator('figure')).toHaveCount(1);
+        await expect(card.getByRole('button', { name: 'Open the trace so far' })).toHaveCount(0);
+      } finally {
+        await paired.context.close();
+        await other.close();
+      }
     }
   });
 

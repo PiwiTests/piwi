@@ -4,7 +4,7 @@
 //
 // Rebuilds everything rather than only the changed entry: a full build takes
 // a second or two, and the standalone bundles share source files
-// (src/shared/**, @piwitests/core, @piwitests/picker-dom), so mapping a changed
+// (src/shared/**, @piwitests/core, @piwitests/picker-dom, @piwitests/run-model), so mapping a changed
 // file back to just the bundles that import it would be both slower to get
 // right and easy to get subtly wrong.
 //
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-// Everything the build reads, relative to this workspace — including the two
+// Everything the build reads, relative to this workspace — including the
 // workspaces it bundles from source (their package.json holds the `exports` map
 // imports resolve through) and `scripts/`, of which only build.mjs counts (see
 // `isInput`). `dist/` and `dist-firefox/` are deliberately absent — watching the
@@ -48,6 +48,8 @@ const WATCHED = [
   '../../packages/core/package.json',
   '../../packages/picker-dom/src',
   '../../packages/picker-dom/package.json',
+  '../../packages/run-model/src',
+  '../../packages/run-model/package.json',
 ];
 const DEBOUNCE_MS = 80;
 

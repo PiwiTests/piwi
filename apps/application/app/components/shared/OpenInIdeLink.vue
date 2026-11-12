@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Renders a source path (or a `file:line:col` location) as a fully-clickable
- * "open in IDE" link: a dashed-underlined label runs the configured default
+ * "open in editor" link: a dashed-underlined label runs the configured default
  * (Auto by default) and reveals an external-link icon on hover; a caret, shown
  * on hover or keyboard focus, opens a chooser to pick a specific method or copy
  * the path. Phones and touch screens get no caret — the label alone. Inside a
@@ -11,7 +11,7 @@
  * launching/preferences live in `useOpenInIde`; this is a thin, client-only
  * trigger safe to drop in anywhere a path is shown today.
  */
-import { parseLocation } from '~/utils/ide-links';
+import { IDE_METHOD_LABELS, parseLocation } from '~/utils/ide-links';
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +25,8 @@ const props = withDefaults(
     projectKey?: string | number | null;
     /** Piwi project name — default IDE project name for the jetbrains:// URL. */
     projectName?: string | null;
+    /** The folder the path is relative to, when the caller knows it (a desktop run's linked folder). */
+    root?: string | null;
     /** Render the label in a monospace font (default true). */
     mono?: boolean;
     /**
@@ -34,7 +36,7 @@ const props = withDefaults(
      */
     inline?: boolean;
   }>(),
-  { mono: true, line: null, column: null, inline: false },
+  { mono: true, line: null, column: null, root: null, inline: false },
 );
 
 defineSlots<{
@@ -55,7 +57,7 @@ const parsed = computed(() => {
 const resolvedPath = computed(() => parsed.value.filePath);
 const resolvedLine = computed(() => parsed.value.line);
 const label = computed(() => (resolvedLine.value ? `${resolvedPath.value}:${resolvedLine.value}` : resolvedPath.value));
-const absPath = computed(() => resolveAbsPath(resolvedPath.value, props.projectKey));
+const absPath = computed(() => resolveAbsPath(resolvedPath.value, props.projectKey, props.root));
 
 const target = computed(() => ({
   filePath: resolvedPath.value,
@@ -63,6 +65,7 @@ const target = computed(() => ({
   column: parsed.value.column,
   projectKey: props.projectKey ?? null,
   projectName: props.projectName ?? null,
+  root: props.root,
 }));
 
 const open = ref(false);
@@ -102,8 +105,8 @@ function run(action: () => void) {
       <button
         type="button"
         class="inline-flex items-center gap-1 min-w-0 max-w-full cursor-pointer text-left"
-        :title="`Open ${label} in IDE`"
-        :aria-label="`Open ${label} in IDE`"
+        :title="`Open ${label} in the editor`"
+        :aria-label="`Open ${label} in the editor`"
         @click="openInIde(target)"
       >
         <span
@@ -127,7 +130,7 @@ function run(action: () => void) {
         v-if="!menuMounted"
         type="button"
         :class="caretClass"
-        aria-label="Choose how to open in IDE"
+        aria-label="Choose how to open in the editor"
         title="Choose how to open"
         @click="mountMenu"
       >
@@ -137,14 +140,14 @@ function run(action: () => void) {
         <button
           type="button"
           :class="[caretClass, open ? 'opacity-100 pointer-events-auto' : '']"
-          aria-label="Choose how to open in IDE"
+          aria-label="Choose how to open in the editor"
           title="Choose how to open"
         >
           <UIcon name="i-lucide-chevron-down" class="size-3.5" />
         </button>
         <template #content>
-          <div class="w-56 p-1 space-y-0.5">
-            <p class="text-xs font-medium text-muted px-2 pt-1 pb-1">Open in IDE</p>
+          <div class="w-72 p-1 space-y-0.5">
+            <p class="text-xs font-medium text-muted px-2 pt-1 pb-1">Open in editor</p>
 
             <UButton
               block
@@ -166,7 +169,7 @@ function run(action: () => void) {
               icon="i-lucide-code"
               @click="run(() => openInVscode(target))"
             >
-              Open in VS Code
+              {{ IDE_METHOD_LABELS.vscode }}
             </UButton>
             <UButton
               block
@@ -177,7 +180,7 @@ function run(action: () => void) {
               icon="i-lucide-square-code"
               @click="run(() => openViaJetbrainsUrl(target))"
             >
-              JetBrains (URL)
+              {{ IDE_METHOD_LABELS['jetbrains-url'] }}
             </UButton>
             <UButton
               block
@@ -188,7 +191,7 @@ function run(action: () => void) {
               icon="i-lucide-server"
               @click="run(() => openViaJetbrainsHttp(target))"
             >
-              JetBrains (local server)
+              {{ IDE_METHOD_LABELS['jetbrains-http'] }}
             </UButton>
 
             <USeparator class="my-1" />

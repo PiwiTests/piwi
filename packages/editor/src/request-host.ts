@@ -20,11 +20,33 @@ import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
 type StreamEvent =
-  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[] }
-  | { type: 'request'; request: RunRequestOffer }
+  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[]; held?: unknown; projects?: unknown }
+  | { type: 'request'; request: RunRequestOffer; projects?: unknown }
   | { type: 'stop'; id: string }
   | { type: 'withdrawn'; id: string }
   | { type: 'revoked' };
+
+/** A project's id and the name the instance shows for it. */
+export interface ProjectName {
+  id: number;
+  name: string;
+}
+
+/** The longest project name the host passes on. */
+const MAX_PROJECT_NAME = 200;
+
+/** The project names in what the instance said, leaving out any that is not an id and a name. */
+export function readProjectNames(raw: unknown): ProjectName[] {
+  if (!Array.isArray(raw)) return [];
+  const names: ProjectName[] = [];
+  for (const item of raw.slice(0, 200)) {
+    const { id, name } = (item ?? {}) as { id?: unknown; name?: unknown };
+    if (!Number.isSafeInteger(id) || (id as number) <= 0 || typeof name !== 'string') continue;
+    const trimmed = name.trim();
+    if (trimmed && trimmed.length <= MAX_PROJECT_NAME) names.push({ id: id as number, name: trimmed });
+  }
+  return names;
+}
 
 /** Where the connection stands. */
 export type RequestHostStatus = 'connecting' | 'online' | 'offline' | 'revoked';
@@ -42,13 +64,30 @@ export interface RequestHostOptions {
   onWithdrawn: (id: string) => void;
   /** The requester asked to stop a request this target holds. */
   onStop: (id: string) => void;
+  /**
+   * Whether this app still holds a request the instance counts as this target's: one it asks the person about, or whose
+   * run is going. On its first list the host ends each one it does not hold, which the instance kept for an app that
+   * started again: unanswered ones are refused, one being stopped ends as stopped and the others as an error.
+   */
+  holds?: (id: string) => boolean;
+  /** The instance named projects this target may take requests for: each one's id and its label, else its name. */
+  onProjectNames?: (projects: ProjectName[]) => void;
   /** The connection changed: `revoked` once the key or its app was disconnected, after which the host stops. */
   onStatus?: (status: RequestHostStatus, detail?: string) => void;
+  /**
+   * The instance said the key no longer exists: its stream's `revoked` event, or its 401 for a key it no longer holds
+   * (`RUN_TARGET_KEY_REVOKED`, or that 401's message from an instance that sends no code). Any other 401, such as a
+   * proxy's, and a 403 stop the host and leave the key, since a 403 also answers a setting turned off or a permission.
+   */
+  onKeyRevoked?: () => void;
   /** `fetch` for the instance; `instanceFetch` by default. */
   fetch?: typeof instanceFetch;
   /** The pauses, in milliseconds, so tests can shorten them. */
   timing?: Partial<typeof DEFAULT_TIMING>;
 }
+
+/** Why a request the instance counted as this target's ended once the app started again without it. */
+const RESTARTED = 'The app started again and no longer holds this request';
 
 /** How long a request token starts a run after **Run**, in milliseconds: the instance's grant, and the target's wait. */
 export const REQUEST_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
@@ -77,6 +116,24 @@ export class RequestHostError extends Error {
 
 /** Whether a status says the key or its app no longer counts. */
 const isRevokedStatus = (status: number) => status === 401 || status === 403;
+
+/** The code of the instance's 401 for a key it no longer holds. */
+const KEY_REVOKED_CODE = 'RUN_TARGET_KEY_REVOKED';
+/** The message of that 401 from an instance whose answer carries no code. */
+const KEY_REVOKED_MESSAGE = 'Invalid or expired API key';
+
+/**
+ * What a refusal says: the `message` of its JSON body, empty for a body that is not the instance's, and whether it is
+ * the instance's 401 for a key it no longer holds.
+ */
+async function readRefusal(response: Response): Promise<{ message: string; keyGone: boolean }> {
+  type Body = { message?: unknown; data?: { errorCode?: unknown } | null } | null;
+  const body = (await response.json().catch(() => null)) as Body;
+  const message = typeof body?.message === 'string' ? body.message : '';
+  const keyGone =
+    response.status === 401 && (body?.data?.errorCode === KEY_REVOKED_CODE || message === KEY_REVOKED_MESSAGE);
+  return { message, keyGone };
+}
 
 /**
  * A request as the instance sent it, checked by the one parser, so nothing the target runs comes unchecked from the
@@ -159,6 +216,8 @@ export class RequestHost {
   private readonly claimed = new Set<string>();
   /** The stops already told, so a stop listed every minute is told once. */
   private readonly stopsTold = new Set<string>();
+  /** Whether the requests the instance counts as held were checked against `holds`, once a start. */
+  private reconciled = false;
   /** The latest list asked for: an older one that answers later is left out. */
   private listing = 0;
   private status: RequestHostStatus = 'offline';
@@ -237,10 +296,15 @@ export class RequestHost {
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
-  /** Tell the instance this app's platform, version and the projects it has a folder for. */
+  /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
   async describe(): Promise<void> {
     const { platform, version, projectIds } = this.options.describe();
-    await this.call('PUT', '/api/run-targets/self', { platform, version, projectIds: projectIds.slice(0, 200) });
+    const described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', {
+      platform,
+      version,
+      projectIds: projectIds.slice(0, 200),
+    });
+    if (!this.stopped) this.takeNames(described?.projects);
   }
 
   /** Where the connection stands now. */
@@ -268,14 +332,10 @@ export class RequestHost {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok) {
-      const message = await response
-        .json()
-        .then((answer: unknown) => {
-          const message = (answer as { message?: unknown } | null)?.message;
-          return typeof message === 'string' ? message : '';
-        })
-        .catch(() => '');
-      if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) this.revoked(message);
+      const { message, keyGone } = await readRefusal(response);
+      if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) {
+        this.revoked(message, keyGone);
+      }
       throw new RequestHostError(response.status, message || `The instance answered ${response.status}`);
     }
     return (await response.json().catch(() => ({}))) as T;
@@ -287,9 +347,10 @@ export class RequestHost {
     this.options.onStatus?.(status, detail);
   }
 
-  private revoked(detail?: string): void {
+  private revoked(detail?: string, keyGone = false): void {
     if (this.stopped) return;
     this.setStatus('revoked', detail);
+    if (keyGone) this.options.onKeyRevoked?.();
     this.close();
   }
 
@@ -298,9 +359,11 @@ export class RequestHost {
     if (this.stopped) return;
     switch (event.type) {
       case 'snapshot':
-        this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY);
+        this.takeNames(event.projects);
+        this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY, event.held);
         break;
       case 'request':
+        this.takeNames(event.projects);
         this.offer(event.request);
         break;
       case 'stop':
@@ -310,13 +373,19 @@ export class RequestHost {
         if (isRequestId(event.id)) this.withdraw(event.id);
         break;
       case 'revoked':
-        this.revoked();
+        this.revoked(undefined, true);
         break;
     }
   }
 
+  private takeNames(raw: unknown): void {
+    const names = readProjectNames(raw);
+    if (names.length) this.options.onProjectNames?.(names);
+  }
+
   /** Take a list of the requests read at `askedAt`: an offer made since then stays, whatever the list says. */
-  private takeList(requests: unknown, stops: unknown, askedAt: number): void {
+  private takeList(requests: unknown, stops: unknown, askedAt: number, held?: unknown): void {
+    this.reconcile(held);
     const offers = Array.isArray(requests) ? requests : [];
     const stopIds = (Array.isArray(stops) ? stops : []).filter(isRequestId);
     const listed = new Set<string>();
@@ -331,6 +400,26 @@ export class RequestHost {
     }
     for (const id of stopIds) this.tellStop(id);
     for (const id of Array.from(this.stopsTold)) if (!stopIds.includes(id)) this.stopsTold.delete(id);
+  }
+
+  /**
+   * End the requests the instance counts as this target's that this app no longer holds, on the first list that names
+   * them. An instance that names none leaves them to its own timeouts.
+   */
+  private reconcile(held: unknown): void {
+    if (this.reconciled || !Array.isArray(held)) return;
+    this.reconciled = true;
+    const holds = this.options.holds;
+    if (!holds) return;
+    for (const raw of held) {
+      const { id, state } = (raw ?? {}) as { id?: unknown; state?: unknown };
+      if (!isRequestId(id) || this.claimed.has(id) || holds(id)) continue;
+      const ended =
+        state === 'claimed'
+          ? this.answer(id, { decision: 'refused', detail: RESTARTED })
+          : this.report(id, { state: 'ended', outcome: state === 'stopping' ? 'stopped' : 'error', detail: RESTARTED });
+      void ended.catch(() => {});
+    }
   }
 
   private offer(raw: unknown): void {
@@ -373,9 +462,13 @@ export class RequestHost {
     const asked = ++this.listing;
     const askedAt = Date.now();
     try {
-      const listed = await this.call<{ requests?: unknown; stops?: unknown }>('GET', '/api/run-targets/requests');
+      const listed = await this.call<{ requests?: unknown; stops?: unknown; held?: unknown; projects?: unknown }>(
+        'GET',
+        '/api/run-targets/requests',
+      );
       if (this.stopped || asked !== this.listing) return;
-      this.takeList(listed.requests, listed.stops, askedAt);
+      this.takeNames(listed.projects);
+      this.takeList(listed.requests, listed.stops, askedAt, listed.held);
       if (!this.streamOpen) this.setStatus('online');
     } catch (error) {
       if (this.stopped || asked !== this.listing) return;
@@ -395,12 +488,17 @@ export class RequestHost {
       idle = setTimeout(() => controller.abort(), this.timing.idleMs);
       idle.unref?.();
     };
-    const run = async (): Promise<number | null> => {
+    const run = async (): Promise<{ status: number; message: string; keyGone: boolean } | null> => {
       const response = await this.fetch(`${this.options.instance}/api/run-targets/stream`, {
         headers: { Authorization: `Bearer ${this.options.key}`, Accept: 'text/event-stream' },
         signal: controller.signal,
       });
-      if (!response.ok || !response.body) return response.status;
+      if (!response.ok || !response.body) {
+        const refusal = isRevokedStatus(response.status)
+          ? await readRefusal(response)
+          : { message: '', keyGone: false };
+        return { status: response.status, ...refusal };
+      }
       this.streamOpen = true;
       this.failures = 0;
       this.setStatus('online');
@@ -423,8 +521,10 @@ export class RequestHost {
     run()
       .then(
         (refused) => {
-          if (refused !== null && isRevokedStatus(refused)) this.revoked();
-          return refused;
+          if (refused !== null && isRevokedStatus(refused.status)) {
+            this.revoked(refused.message || undefined, refused.keyGone);
+          }
+          return refused?.status ?? null;
         },
         () => null,
       )

@@ -1,19 +1,26 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.ide.ui.search.SearchableOptionContributor
+import com.intellij.ide.ui.search.SearchableOptionProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.COLUMNS_LARGE
+import com.intellij.ui.dsl.builder.LabelPosition
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
+import javax.swing.JButton
 import javax.swing.JEditorPane
 import javax.swing.JList
 
@@ -21,7 +28,7 @@ import javax.swing.JList
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
  * instance and project saved for this project, whether a key is saved for that instance, when
  * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
- * breakpoints, the severity of a failure in the editor, how the agent signs in to Piwi's MCP server, and the
+ * breakpoints, whether they run headed and hold their failures from their start, the severity of a failure in the editor, how the agent signs in to Piwi's MCP server, and the
  * connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
@@ -29,6 +36,13 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private lateinit var key: JEditorPane
     private lateinit var inUse: JEditorPane
     private lateinit var desktopState: JEditorPane
+    private lateinit var desktopCheck: JBCheckBox
+    private lateinit var desktopProjectField: JBTextField
+    private lateinit var urlField: JBTextField
+    private lateinit var projectField: JBTextField
+    private lateinit var disconnectButton: JButton
+    private lateinit var nodeButton: JButton
+    private lateinit var overridden: JEditorPane
 
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
@@ -42,25 +56,22 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     maxLineLength = 90,
                 )
             }
-            group("Piwi Desktop App") {
+            group("In use") {
                 row {
-                    desktopState = text("").component
+                    inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
                 row {
-                    checkBox("Read this project from the desktop app while it runs")
-                        .bindSelected({ local.desktop }, { local.desktop = it })
-                        .comment("Before the environment, the .env and the instance below. Kept for you only, in .idea/workspace.xml")
-                }
-                row("Project:") {
-                    textField()
-                        .bindText({ local.desktopProject }, { local.desktopProject = it.trim() })
-                        .columns(COLUMNS_LARGE)
-                        .comment("The project's name in the desktop app; empty uses the one linked there to this folder")
+                    button("Reconnect") { service.sendCredentials() }
+                        .comment("Hand the connection to the editor service again, which reads everything with it")
+                    nodeButton = button("Node.js Settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
             group("Instance") {
+                row {
+                    overridden = text("", maxLineLength = 90).align(AlignX.FILL).component
+                }
                 row("Server URL:") {
-                    textField()
+                    urlField = textField()
                         .bindText({ settings.serverUrl }, { settings.serverUrl = Glue.normalizeServerUrl(it) ?: it.trim() })
                         .columns(COLUMNS_LARGE)
                         .validationOnApply {
@@ -68,12 +79,14 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                             else error("An http(s) URL, such as https://piwi.example.com")
                         }
                         .comment("Kept in .idea/piwi.xml, which the team can share")
+                        .component
                 }
                 row("Project:") {
-                    textField()
+                    projectField = textField()
                         .bindText({ settings.project }, { settings.project = it.trim() })
                         .columns(COLUMNS_LARGE)
                         .comment("The project's name on the instance")
+                        .component
                 }
                 row("API key:") {
                     key = text("").component
@@ -81,20 +94,40 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     button("Connect…") { connect() }
                         .comment("Sign in with the browser, or paste a key, then pick the project")
-                    button("Disconnect") { disconnect() }
+                    disconnectButton = button("Disconnect") { disconnect() }.component
+                }
+            }
+            group("Piwi Desktop App") {
+                row {
+                    desktopState = text("").component
+                }
+                row {
+                    desktopCheck = checkBox("Read this project from the desktop app while it runs")
+                        .bindSelected({ local.desktop }, { local.desktop = it })
+                        .comment("Before the environment, the .env and the instance below. Kept for you only, in .idea/workspace.xml")
+                        .component
+                }
+                row("Desktop app project:") {
+                    desktopProjectField = textField()
+                        .bindText({ local.desktopProject }, { local.desktopProject = it.trim() })
+                        .columns(COLUMNS_LARGE)
+                        .comment("The project's name in the desktop app; empty uses the one linked there to this folder")
+                        .component
                 }
             }
             group("Runs") {
-                row("When a run started here ends:") {
+                row {
                     comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
+                        .label("When a run started here ends:", LabelPosition.TOP)
                         .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "always" })
                         .comment(
                             "A balloon says what the run changed: the failures it fixed, those still failing, its new ones. " +
                                 "Kept for you only, in .idea/workspace.xml",
                         )
                 }
-                row("A failing test's line in the editor:") {
+                row {
                     comboBox(Glue.FAILURE_SEVERITIES, FailureSeverityRenderer())
+                        .label("A failing test's line in the editor:", LabelPosition.TOP)
                         .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
                         .comment(
                             "A failure of a run on another branch is a warning at most; one whose line changed since its run, " +
@@ -111,18 +144,43 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
                 row {
+                    checkBox("Run every test Piwi starts headed, with its browser window shown")
+                        .bindSelected({ local.runHeaded }, { local.runHeaded = it })
+                        .comment(
+                            "A verification too. Otherwise a run is headed with a breakpoint in a spec, a page object or a " +
+                                "fixture, or a page.pause(). Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
+                    comboBox(Glue.HOLD_FAILURES_CHOICES, HoldFailuresRenderer())
+                        .label("Hold failures, from each run's start:", LabelPosition.TOP)
+                        .bindItem(
+                            { local.runHoldFailures.takeIf { it in Glue.HOLD_FAILURES_CHOICES } ?: "auto" },
+                            { local.runHoldFailures = it ?: "auto" },
+                        )
+                        .comment(
+                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold Failures " +
+                                "still turns it on or off while it runs. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
                     checkBox("Run the tests in the IDE's Playwright runner: a test tree, Debug, Rerun Failed Tests")
                         .bindSelected({ local.playwrightRunner }, { local.playwrightRunner = it })
                         .enabled(PlaywrightRunnerGate.available())
                         .comment(
-                            "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
-                                "(a selection's own). Kept for you only, in .idea/workspace.xml",
+                            if (PlaywrightRunnerGate.available()) {
+                                "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
+                                    "(a selection's own). Kept for you only, in .idea/workspace.xml"
+                            } else {
+                                Glue.NO_PLAYWRIGHT_RUNNER
+                            },
                         )
                 }
             }
             group("AI Assistant") {
-                row("Piwi's MCP server signs the agent in with:") {
+                row {
                     comboBox(Glue.MCP_AUTHORIZATIONS, McpAuthorizationRenderer())
+                        .label("Piwi's MCP server signs the agent in with:", LabelPosition.TOP)
                         .bindItem({ local.mcpAuthorization }, { local.mcpAuthorization = it ?: "key" })
                         .comment(
                             "As Copy the MCP Server Configuration writes it. The browser gives the agent a token of its own, " +
@@ -141,20 +199,27 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
             }
-            group("In use") {
-                row {
-                    inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
-                }
-                row {
-                    button("Refresh") {
-                        service.sendCredentials()
-                    }
-                }
-            }
             onReset { show() }
         }
-        service.onChange(disposable!!) { show() }
+        service.onChangeInDialogs(disposable!!) { show() }
         return content
+    }
+
+    /** Whether **Node.js Settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
+    private var nodeSettingsShown = false
+
+    /** The Node.js page in this Settings dialog, else in a dialog of its own. */
+    private fun openNodeSettings(source: java.awt.Component?) {
+        val dialog = source?.let { com.intellij.openapi.options.ex.Settings.KEY.getData(com.intellij.ide.DataManager.getInstance().getDataContext(it)) }
+        val node = dialog?.find(service.nodeSettingsId)
+        if (dialog == null || node == null) return service.openNodeSettings()
+        nodeSettingsShown = true
+        dialog.select(node)
+    }
+
+    override fun disposeUIResources() {
+        super.disposeUIResources()
+        if (nodeSettingsShown) ApplicationManager.getApplication().executeOnPooledThread { service.restartServer() }
     }
 
     override fun apply() {
@@ -188,8 +253,16 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
 
     private fun show() {
         val url = service.settings().serverUrl
+        disconnectButton.isEnabled = Glue.disconnectQuestion(url, service.settings().project, service.local().desktop) != null
         if (url.isBlank()) key.text = "None: no instance saved"
-        inUse.text = Glue.connectionSummary(service.status, service.local().desktop, service.startProblem)
+        inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted()))
+        nodeButton.isVisible = service.startProblem != null
+        // The instance the environment or a .env names comes first: the page shows it, its own fields left as saved.
+        val over = Glue.overriding(service.status, url)
+        overridden.text = over?.let { Glue.escapeHtml(Glue.overriddenText(it)) } ?: ""
+        overridden.isVisible = over != null
+        urlField.emptyText.text = over?.serverUrl ?: ""
+        projectField.emptyText.text = over?.project ?: ""
         // The password safe and the discovery file: read off the event thread.
         val keyLabel = key
         val label = desktopState
@@ -206,15 +279,30 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         }
     }
 
+    /** Connect with the URL typed on this page, Apply or not; the page's other edits stay pending. */
     private fun connect() {
-        // The URL typed on this page, even before Apply.
-        apply()
-        val url = service.settings().serverUrl.ifBlank { null }
-        if (PiwiConnectFlow.run(project, url)) reset()
+        val typed = urlField.text
+        val url = Glue.normalizeServerUrl(typed)
+        if (typed.isNotBlank() && url == null) {
+            Messages.showErrorDialog(project, "An http(s) URL, such as https://piwi.example.com", "Piwi")
+            return
+        }
+        if (PiwiConnectFlow.run(project, url)) showConnection()
     }
 
     private fun disconnect() {
-        if (PiwiConnectFlow.disconnect(project)) reset()
+        if (PiwiConnectFlow.disconnect(project)) showConnection()
+    }
+
+    /** The connection rows as Connect or Disconnect saved them, the page's other edits left pending. */
+    private fun showConnection() {
+        val settings = service.settings()
+        val local = service.local()
+        urlField.text = settings.serverUrl
+        projectField.text = settings.project
+        desktopCheck.isSelected = local.desktop
+        desktopProjectField.text = local.desktopProject
+        show()
     }
 }
 
@@ -226,6 +314,13 @@ private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
             "never" -> "Say nothing"
             else -> "Say what it changed"
         }
+    }
+}
+
+/** A choice of `PiwiLocalSettings.runHoldFailures`, in words. */
+private class HoldFailuresRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = Glue.holdFailuresLabel(value ?: "auto")
     }
 }
 
@@ -245,5 +340,25 @@ private class FailureSeverityRenderer : SimpleListCellRenderer<String>() {
             "off" -> "Nothing in the editor's problems"
             else -> "An error"
         }
+    }
+}
+
+/**
+ * The words Settings search finds **Settings → Tools → Piwi** by beyond its labels, which the release's searchable
+ * options index holds: what a developer looking for the page types.
+ */
+class PiwiSearchableOptions : SearchableOptionContributor() {
+    override fun processOptions(processor: SearchableOptionProcessor) {
+        for (word in KEYWORDS) processor.addOptions(word, null, word, CONFIGURABLE_ID, "Piwi", true)
+    }
+
+    companion object {
+        /** The id of the settings page, as `plugin.xml` registers it. */
+        const val CONFIGURABLE_ID = "dev.piwitests.piwi"
+
+        val KEYWORDS = listOf(
+            "Playwright", "dashboard", "test results", "flaky", "failures", "coverage", "reporter", "breakpoints",
+            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js", "headed", "hold failures",
+        )
     }
 }

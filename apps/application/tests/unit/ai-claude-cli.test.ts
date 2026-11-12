@@ -21,6 +21,7 @@ import {
   resolveClaudeBinaryDeep,
   runClaudeCliAgent,
   streamClaudeCli,
+  usesApiCredentials,
 } from '../../server/utils/ai-claude-cli';
 import type { ClaudeCliAgentRun } from '../../server/utils/ai-claude-cli';
 import type { ResolvedAiRole } from '../../types/api';
@@ -49,11 +50,11 @@ if (args.includes('--help')) {
 }
 if (args[0] === 'auth' && args[1] === 'status') {
   const loggedIn = process.env.CLAUDE_STUB_LOGGED_IN !== '0';
-  process.stdout.write(JSON.stringify({ loggedIn, authMethod: 'oauth_token', apiProvider: 'firstParty' }));
+  // CLAUDE_STUB_AUTH is the sign-in method: an API key unless a test sets another.
+  const authMethod = process.env.CLAUDE_STUB_AUTH || 'api_key';
+  process.stdout.write(JSON.stringify({ loggedIn, authMethod, apiProvider: process.env.CLAUDE_STUB_API || 'firstParty' }));
   process.exit(0);
 }
-if (args[0] === 'auth' && args[1] === 'login') { process.stdout.write('Open https://claude.ai/oauth/stub to continue\\n'); process.exit(0); }
-if (args[0] === 'auth' && args[1] === 'logout') { process.exit(0); }
 let input = '';
 process.stdin.on('data', (d) => (input += d));
 process.stdin.on('end', () => {
@@ -138,6 +139,8 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     chmodSync(stubPath, 0o755);
     process.env.PIWI_CLAUDE_CLI_PATH = stubPath;
     delete process.env.CLAUDE_STUB_LOGGED_IN;
+    delete process.env.CLAUDE_STUB_AUTH;
+    delete process.env.CLAUDE_STUB_API;
     delete process.env.CLAUDE_STUB_OLD;
     delete process.env.CLAUDE_STUB_ANCIENT;
     delete process.env.CLAUDE_STUB_HELP_FAIL;
@@ -228,8 +231,46 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(status.available).toBe(true);
     expect(status.version).toBe('9.9.9');
     expect(status.loggedIn).toBe(true);
-    expect(status.authMethod).toBe('oauth_token');
+    expect(status.authMethod).toBe('api_key');
     expect(status.error).toBeNull();
+  });
+
+  it('refuses a Claude subscription sign-in outside the desktop app', async () => {
+    process.env.CLAUDE_STUB_AUTH = 'claude.ai';
+    const status = await getClaudeCliStatus({ force: true });
+    expect(status.loggedIn).toBe(true);
+    expect(status.error).toMatch(/API key/);
+    await expect(callClaudeCli(role, { system: 'x', user: 'ping' })).rejects.toThrow(
+      /subscription serves its subscriber/,
+    );
+  });
+
+  it('runs on a Claude subscription inside the desktop app', async () => {
+    process.env.CLAUDE_STUB_AUTH = 'claude.ai';
+    process.env.NUXT_PUBLIC_DESKTOP = 'true';
+    const status = await getClaudeCliStatus({ force: true });
+    expect(status.error).toBeNull();
+    expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
+  });
+
+  it('runs on a server through a gateway token, and refuses a subscription token', async () => {
+    process.env.CLAUDE_STUB_AUTH = 'oauth_token';
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-subscription';
+    try {
+      expect((await getClaudeCliStatus({ force: true })).apiCredentials).toBe(false);
+      process.env.ANTHROPIC_AUTH_TOKEN = 'gw-token';
+      expect((await getClaudeCliStatus({ force: true })).apiCredentials).toBe(true);
+      expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
+    } finally {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+    }
+  });
+
+  it('runs on a server through a cloud provider', async () => {
+    process.env.CLAUDE_STUB_AUTH = 'third_party';
+    process.env.CLAUDE_STUB_API = 'bedrock';
+    expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
   });
 
   it('reports not-signed-in when the CLI has no account', async () => {
@@ -241,7 +282,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   });
 
   it('runs a non-streaming generation and maps usage + cost', async () => {
-    const before = getUsageTotals().calls;
+    const before = getUsageTotals();
     const res = await callClaudeCli(role, { system: 'be brief', user: 'ping' });
     expect(res.text).toBe('ECHO:ping');
     expect(res.model).toBe('claude-opus-5');
@@ -250,8 +291,8 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(res.outputTokens).toBe(7);
     expect(res.cacheReadInputTokens).toBe(1);
     expect(res.costUsd).toBe(0.02);
-    expect(getUsageTotals().calls).toBe(before + 1);
-    expect(getUsageTotals().costUsd).toBeCloseTo(0.02, 5);
+    expect(getUsageTotals().calls).toBe(before.calls + 1);
+    expect(getUsageTotals().costUsd - before.costUsd).toBeCloseTo(0.02, 5);
   });
 
   it('counts cache tokens as input, so Claude Code cached context is not undercounted', async () => {
@@ -295,14 +336,14 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     }
   });
 
-  it('passes the CLI its own settings and none of the server secrets or ANTHROPIC_API_KEY', async () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-should-be-stripped';
+  it('passes the CLI its own settings and sign-in, and none of the server secrets', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-own-key';
     process.env.PIWI_SECRET_KEY = 'server-secret';
     process.env.CLAUDE_CONFIG_DIR = '/home/ada/.claude-work';
     try {
       const res = await callClaudeCli(role, { system: 'x', user: 'ENVCHECK' });
       expect(res.text).toBe(
-        `ANTHROPIC_API_KEY=unset;PIWI_SECRET_KEY=unset;CLAUDE_CONFIG_DIR=/home/ada/.claude-work;HOME=${process.env.HOME}`,
+        `ANTHROPIC_API_KEY=sk-ant-own-key;PIWI_SECRET_KEY=unset;CLAUDE_CONFIG_DIR=/home/ada/.claude-work;HOME=${process.env.HOME}`,
       );
     } finally {
       delete process.env.ANTHROPIC_API_KEY;
@@ -578,6 +619,23 @@ describe('launching the CLI without a shell', () => {
   });
 });
 
+describe('usesApiCredentials', () => {
+  it('accepts an API key, a gateway token or a cloud provider, and refuses a subscription or an unknown method', () => {
+    expect(usesApiCredentials({ authMethod: 'api_key' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'api_key_helper' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'third_party' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { ANTHROPIC_AUTH_TOKEN: 'gw-token' })).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'claude.ai', apiKeySource: '/login managed key' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'claude.ai' }, {})).toBe(false);
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x' })).toBe(
+      false,
+    );
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-x' })).toBe(false);
+    expect(usesApiCredentials({ authMethod: 'gateway' }, {})).toBe(false);
+    expect(usesApiCredentials({ authMethod: null }, {})).toBe(false);
+  });
+});
+
 describe('the CLI environment', () => {
   it('keeps the allowlist, the locale and the cloud credentials only of the provider Claude Code is set to', () => {
     const env = cliEnv({
@@ -591,17 +649,18 @@ describe('the CLI environment', () => {
       AWS_SECRET_ACCESS_KEY: 'aws',
       PATH: '/usr/bin',
     });
-    expect(env).toMatchObject({ HOME: '/home/ada', LC_ALL: 'fr_FR.UTF-8', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-1' });
-    for (const name of [
-      'ANTHROPIC_API_KEY',
-      'PIWI_SECRET_KEY',
-      'PIWI_DATABASE_URL',
-      'PIWI_SMTP_PASSWORD',
-      'AWS_SECRET_ACCESS_KEY',
-    ]) {
+    expect(env).toMatchObject({
+      HOME: '/home/ada',
+      LC_ALL: 'fr_FR.UTF-8',
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-1',
+      ANTHROPIC_API_KEY: 'sk-ant-api',
+    });
+    for (const name of ['PIWI_SECRET_KEY', 'PIWI_DATABASE_URL', 'PIWI_SMTP_PASSWORD', 'AWS_SECRET_ACCESS_KEY']) {
       expect(env[name], name).toBeUndefined();
     }
     expect(env.PATH?.split(delimiter)).toContain('/usr/bin');
     expect(cliEnv({ CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws' }).AWS_SECRET_ACCESS_KEY).toBe('aws');
+    expect(cliEnv({ CLAUDE_CODE_USE_FOUNDRY: '1', AZURE_CLIENT_ID: 'id' }).AZURE_CLIENT_ID).toBe('id');
+    expect(cliEnv({ AZURE_CLIENT_SECRET: 'secret' }).AZURE_CLIENT_SECRET).toBeUndefined();
   });
 });

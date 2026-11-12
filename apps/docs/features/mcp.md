@@ -86,13 +86,24 @@ except in the desktop app, which requires its local access token as the Bearer v
 Replace `<your-piwi-url>` with your dashboard base URL (for example `http://localhost:3000`). For a client that signs
 in through OAuth, leave out the `headers` entry (`--header` on a command line); otherwise replace `pd_YOUR_API_KEY`
 with a real API key. The **MCP server** page of the dashboard shows both forms. In the
-[desktop app](/features/desktop#connecting-ai-assistants), the MCP server page detects the installed clients and
-writes their entry in one click instead.
+[desktop app](#in-the-desktop-app), the MCP server page detects the installed clients and writes their entry in one
+click instead.
 
 <figure>
   <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: the agents listed on the left, Claude Desktop picked, its config entry on the right">
   <figcaption>The <strong>MCP server</strong> page writes the setup for each client with this dashboard's URL already filled in.</figcaption>
 </figure>
+
+### In the desktop app
+
+In the [desktop app](/features/desktop#connecting-ai-assistants), **Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
+connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
+(`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start, so the app must run, and sends the token only
+to a server that proves it holds it. The bridge handles one call at a time, for every client it serves: a `run_follow` or a
+`run_control` that waits holds the next call, 40 seconds at most (a 30-second wait, then the stopped page's snapshot). It writes only its own entry and keeps the first backup beside
+the config. A disk image (DMG), a translocated copy or a dev build writes nothing, for Connect, Disconnect and the
+startup repair alike; each client shows **Manual setup** with the reason. After a move, startup points that entry at the app again,
+as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**; **Update** replaces it. Restart the client afterwards. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
 
 ### Claude Desktop
 
@@ -218,4 +229,4 @@ The six workflow [agent skills](/features/agent-skills) are prompts too (`invest
 - [MCP tools](/reference/mcp-tools): every tool, by module and capability
 - [Run control for agents](/features/agent-run-control): the runs an editor or the desktop app starts, as tools
 - [Agent skills](/features/agent-skills): workflows that tell an agent what to do with these tools
-- [Desktop app](/features/desktop#connecting-ai-assistants): one-click client setup
+- [Desktop app](/features/desktop#connecting-ai-assistants): the local tools its MCP server adds

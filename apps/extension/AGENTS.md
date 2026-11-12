@@ -127,25 +127,37 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause, Share live and End the test while a Pause waits (`give-up`) names the stop
-  shown (`since`),** so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and
-  Share live and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window (`runs.spec.ts`).
-  (see "The Runs window")
+- **Every Runs window control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the
+  trace so far (`trace`) and End the test while a Pause waits (`give-up`) names the stop shown (`since`),** so a click
+  made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share live, Hold failures, Stop
+  the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window
+  (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
   command is `aria-disabled`, never `disabled`,** so a control keeps the focus, restored across redraws by
   `data-focus` (`runs.spec.ts`). (see "The Runs window")
-- **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
-  `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
-  meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
+- **A Runs window open holds no failure: a run's Hold failures does, which the window turns on or off (`hold`).**
+  `RunHubs.listen` sends `follow` with `on: true` on each hub connection while a window is open, and `on: false`
+  as the last leaves; the toggle shows only for a run whose hub sends its `hold` (`runs.spec.ts`).
+  (see "A connection per hub")
 - **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
   the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
   input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,
   `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
   connection per hub")
-- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
-  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
+- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, Escape
+  but while an action runs in the test's window there (the stop's `acting`), and Tab leaves it unless a click took the
+  keyboard** (`keyOnView`, `packages/run-model/tests/view-input.test.ts`). The view takes input only while Interact is
+  on, and Escape on it otherwise turns Interact off and gives the stop back, in the Runs window and the desktop tray
+  alike. (see "The Runs window")
+- **What the Runs window shares with the desktop app's Local runs tray lives in `@piwitests/run-model`** (what a stop
+  takes, its place, a worker's status, controls and tab, who is present, the live view's input): change it there, never
+  copy it here. The window says its words through `runsSpeaker` (`src/shared/run-words.ts`), and `run-words.test.ts`
+  holds the model's English words to the catalogs. (see "The Runs window")
+- **The Runs window's CI runs are read-only, read from the connected instance only while a window is open**
+  (`CiRunsWatch`, `src/background/ci-runs.ts`): no control reaches them. Checked by `ci-runs.test.ts`. (see "The CI
+  runs in progress")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")
@@ -323,7 +335,7 @@ Run them from `apps/extension/`: the root `package.json` has no `extension:*` sc
 | `npm run extension:lab`               | The replay lab (`tests/lab/README.md`; not part of CI)                 |
 
 `extension:dev` watches `src/`, `public/`, the HTML pages, `manifest.json`, `scripts/build.mjs`, and the `src/` and
-`package.json` of `packages/core` and `packages/picker-dom`, which are bundled from source. The `--pseudo` build is never
+`package.json` of `packages/core`, `packages/picker-dom` and `packages/run-model`, which are bundled from source. The `--pseudo` build is never
 released. `extension:lab` records on a running Piwi dashboard, or with `LAB_SET=wild` on public sites (no dashboard needed).
 
 ## Loading it locally

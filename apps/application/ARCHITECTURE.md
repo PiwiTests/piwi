@@ -95,7 +95,7 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 | Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
 | Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
 | Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
-| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                                     |
+| Integrations         | `integration_connections`, `project_integrations`, `project_test_management`, `test_management_cases`, `test_management_catalog_reads`, `integration_actions`                                                |
 | Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                                          |
 | Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                                   |
 | Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                                           |
@@ -186,13 +186,24 @@ Each entry names folders under `server/api/`.
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
-    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
-    worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
-    may open the run) and `[id]/live-view/workers` (its workers and how many views are open, which `LanePanel` reads to
-    say why a view did not open). All of it is relayed in memory by
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`, a frame as a live message or, from an
+    older reporter, as JSON), `[id]/live-view/watch` (a page's one watch of the run, `GET`, to a person who may open
+    it: a stream of live messages carrying one worker's full view, of its test or of its lane, which follows the
+    lane's tests and the worker started in it again, and every worker's tile for **Watch all**; `POST` changes what it
+    shows by the id it opened with) and `[id]/live-view/workers` (its workers and how many watches are open, which
+    `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
+    (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
+    attention** moves the lane panel by `app/utils/live-attention.ts`. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key and stores its digest with the run
     (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
+    `[id]/live-view/ask` is **Ask to watch**: a signed-in reader asks the developer of a run nobody shares to share
+    it. The asks wait in memory (`server/utils/live-asks.ts`) until the answer of the run's next `events`,
+    `heartbeat` or `live-resources` request hands one over (`ask`); the reporter sends the developer's Not now back
+    (`askAnswer`), a worker that streams answers them as shared, and the person who asked hears each change on the
+    run's `[id]/stream` (`live-ask`), which also tells each viewer whether they may ask (`live-view`). A worker's
+    stream that names the run it continues (`after`) links that run to it (`test_runs.continued_in_id`,
+    `server/utils/run-continuation.ts`), whose page follows (`continued`, and `run-continued` on `/api/stream`).
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
@@ -266,9 +277,19 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands and each worker's Watch live,
-  `DesktopRunSession`, `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live
-  view (with the Runs window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live,
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch live and each
+  lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
+  given back by `DesktopRunWorker`), and
+  a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
+  does, else through the shell (`desktop-run-hub.client.ts`, `desktopShellIdOf`);
+  `DesktopRunSession`, `DesktopRunWorker`, `DesktopRunStopPage` and `DesktopRunLaneView` show each worker as Piwi
+  Picker's Runs window does, from the run model they share (`@piwitests/run-model`: a worker's status and tab, its
+  controls, who is present and drives a stop, which frame is the page now, the live view's input, Pause all and
+  Resume all, and their English words, `desktopSay`, with the model's icons mapped once in `DESKTOP_RUN_ICONS`): its
+  test, a status card in its tone, its controls, and its page in a card (`DesktopRunPageCard`, who drives the stop at
+  its foot, `DesktopRunDriver`). A run of several workers shows one at a time behind its worker tabs, which
+  `useDesktopRunHub` follows by run as it hears it (`desktopTabsAfter`, `shownLaneOf`; `chooseTab`, `advanceTab`), the
+  workers not shown kept drawn and hidden. `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
   tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
   `BroadcastChannel`, `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. On the run
@@ -416,6 +437,7 @@ Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTask
 | Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
 | Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
 | Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
 | Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
 
 ### Code the server and the demo share
@@ -620,7 +642,8 @@ rule):
   `EnvManagedAlert`.
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
-    `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+    `RunLiveProgress` (a running run's row in a runs list: its count bar and "120 of 400 · 2 failed"), `TagBadge` /
+    `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
   - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
     picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
@@ -645,8 +668,9 @@ rule):
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
   `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
-- **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
-  the browser tab's favicon and title).
+- **Run streaming**: `useRunStream`, `useNotificationStream`, `useLiveRunProgress` (a runs list's running rows moved
+  on by the `run-progress` tallies of `/api/stream`, throttled per run on the server, with no read of the list), and
+  `useTabRunIndicator` (a watched run's progress on the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
 - **Timeline**: `useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline` (an execution's failure timeline
   under one key, for its Timeline and Network tabs).

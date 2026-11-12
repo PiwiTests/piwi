@@ -18,6 +18,9 @@ and draws differently.
 
 ## Install and connect
 
+**You need a Piwi instance:** the [desktop app](/features/desktop), `npx @piwitests/server` or the Docker image.
+Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`
 in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**
@@ -26,13 +29,9 @@ the reporter already uses: the `PIWI_*` variables in the environment or the work
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
 In VS Code, the extension also opens a path clicked in the dashboard:
-[Open in IDE](./ide-integration#vs-code-the-piwi-extension).
+[Open in editor](./ide-integration#vs-code-the-piwi-extension).
 
-In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
-machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
-JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
-
-Nothing from your workspace is sent to the instance: the project's
+Self-hosted, zero telemetry. No file of your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
 your files locally.
 
@@ -49,8 +48,8 @@ Lines above the code (CodeLens):
 
 | File | What it shows | Click |
 |---|---|---|
-| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover its pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | opens the test in the dashboard |
-| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
+| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover that result's run, the pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
+| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or flake | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
@@ -104,8 +103,7 @@ your API keys. The desktop app keeps its own token. For the runs the editor star
 
 ## Commands
 
-VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Open the log**, **Get started** or
-**Refresh the latest run**.
+VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Get started**.
 
 | Command | What it does |
 |---|---|
@@ -114,7 +112,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
-| Piwi: Run this spec | Run the tests of the spec Piwi knows |
+| Piwi: Run this spec | Run every test of the spec as it stands |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
 | Piwi: Re-run the failing tests | Run every test still failing: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
@@ -126,7 +124,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
 | Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor, Finish the test without stopping again, End the test here, Stop the run, Show the paused page, Write code at the stop… | [Pause and step from the editor](./editor-run-control), [Code from a pause](./editor-stop-code) |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
-| Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
+| Piwi: Restart the editor service, Open the log | Start the editor service again; show its log of starts, stops, errors and failed requests, where VS Code's `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
 Three commands have the same shortcut in VS Code and the JetBrains IDEs (where some keymaps and plugins already use

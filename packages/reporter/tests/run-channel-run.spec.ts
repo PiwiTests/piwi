@@ -490,7 +490,9 @@ describe('a run steered over the run channel', () => {
     // the pause bar.
     expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual([`Fill "${HIDDEN_VALUE}"`, 'Click']);
     expect(output).toContain(`before Fill "${HIDDEN_VALUE}"`);
-    expect(output).not.toMatch(/Paused at [^\n]* before Fill "one"/);
+    expect(output).not.toMatch(/\[piwi\] [^\n]* before Fill "one"/);
+    // The terminal's line says why each test stopped, and where to answer it.
+    expect(output).toMatch(/\[piwi\] Stopped at a breakpoint at [^\n]* before Fill /);
     expect(stops[0]).toMatchObject({ locator: "locator('input')" });
     // Every stop ends with the editor's answer, and the bar it showed came down (the test checks it).
     const ended = heardIn('steered').filter((m) => m.type === 'running');

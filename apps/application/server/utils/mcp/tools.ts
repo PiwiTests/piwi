@@ -89,7 +89,7 @@ import { listTags } from '#shared/handlers/tags';
 import { createLinkSchema, deleteLinksTo, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
-import { createIssue } from '../integrations/create';
+import { createIssue, filedByName } from '../integrations/create';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -106,6 +106,8 @@ import { createTestFunctionSchema } from '#shared/test-function-schemas';
 import { listSelections, getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import { runPlanId } from '#shared/run-plan';
+import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import {
   validateSelectionDefinition,
   type ResolvedSelection,
@@ -714,6 +716,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         flakyTests: testRuns.flakyTests,
         skippedTests: testRuns.skippedTests,
         didNotRunTests: testRuns.didNotRunTests,
+        reusedCount: testRuns.reusedCount,
         environment: testRuns.environment,
         label: testRuns.label,
         metadata: testRuns.metadata,
@@ -796,6 +799,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       flaky: run.flakyTests || null,
       skipped: run.skippedTests || null,
       didNotRun: run.didNotRunTests || null,
+      reused:
+        run.reusedCount > 0
+          ? { count: run.reusedCount, planId: runPlanId(run.metadata) }
+          : run.reusedCount < 0
+            ? { unrecorded: true, planId: runPlanId(run.metadata) }
+            : null,
       env: run.environment || null,
       label: run.label || null,
       branch: meta?.scm?.branch || null,
@@ -2102,7 +2111,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const siteUrl = process.env.PIWI_SITE_URL ?? null;
     const locale = toIssueLocale(params.locale);
 
-    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
+    const filedBy = ctx.user ? filedByName(ctx.user) : null;
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl, filedBy });
     if (!draft) throw new Error('No Jira connection is configured');
     // One issue per cluster: an execution with no failure cluster is filed from the dashboard.
     if (entityType === 'test_runs_case' && draft.clusterId == null) {
@@ -2146,6 +2156,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       entityId,
       connectionId: draft.connectionId,
       title: typeof params.title === 'string' ? params.title : draft.title,
+      // An agent never saw the project's prefix: it goes on the title it gives.
+      prefixTitle: typeof params.title === 'string',
       projectKey: draft.projectKey,
       issueType: draft.issueType,
       labels: draft.labels,
@@ -2155,6 +2167,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       fields,
       // The auth-disabled administrator is user 0, which no row references.
       requestedBy: ctx.user?.id || null,
+      filedBy,
       siteUrl,
     });
     if (!outcome) return null;
@@ -2312,6 +2325,36 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           })
         : null,
     };
+  },
+
+  // ── get_reuse_forecast ──────────────────────────────────────────────────────
+  async get_reuse_forecast(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const forecast = await getReuseForecast(db, projectId);
+    return dropNulls({
+      windowDays: forecast.windowDays,
+      maxSourceAgeDays: forecast.maxSourceAgeDays,
+      from: forecast.from,
+      to: forecast.to,
+      defaultBranch: forecast.defaultBranch,
+      total: forecast.total,
+      scopes: forecast.scopes,
+      tests: forecast.tests.map((t) =>
+        dropNulls({
+          testCaseId: t.testCaseId,
+          title: t.title,
+          filePath: t.filePath,
+          browserName: t.browserName,
+          failed: t.failed,
+          flaky: t.flaky,
+          lastExecutionId: t.lastExecutionId,
+          sourceExecutionId: t.sourceExecutionId,
+        }),
+      ),
+      moreTests: forecast.moreTests || null,
+      truncated: forecast.truncated || null,
+    });
   },
 
   // ── analyze_selections ──────────────────────────────────────────────────────
@@ -3050,7 +3093,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
-    const removed = await deleteLinksTo(db, entityType, entityId, url);
+    const removed = await deleteLinksTo(db, entityType, entityId, url, ctx.user?.id || null);
     if (removed === 0) throw new Error(`${entityType} ${entityId} has no link to ${url}`);
     return { entityType, entityId, url, removed };
   },

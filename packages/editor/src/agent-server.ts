@@ -5,8 +5,9 @@
  * agent's copied configuration then reaches whatever holds the kept port, which must not learn a token that works
  * here); it answers only a request whose `Host` is its own (`127.0.0.1` or `localhost` at its port: a page reached
  * under another name, DNS rebinding, is refused), that carries no `Origin` (a browser's request always does, and MCP
- * clients are native), and whose `Authorization` is the bearer token the client keeps, compared in constant time. The token reaches the agent
- * through the IDE's registration of the server, or a configuration the developer copies; this user's own processes
+ * clients are native), and whose `Authorization` is the bearer token the client keeps, or the token of this process
+ * alone that the editor's discovery file names for `piwi mcp` (`localToken`), compared in constant time. The kept token
+ * reaches the agent through the IDE's registration of the server, or a configuration the developer copies; this user's own processes
  * are not a boundary, other users and web pages are. A body is 256 KiB at most, a batch 8 requests, and 8 requests
  * run at once: a long poll holds one of them, `MAX_FOLLOW_WAIT_S` at most, and lets go of it as soon as its client
  * closes the connection or cancels the request (`notifications/cancelled`).
@@ -24,7 +25,7 @@ import {
   type JsonRpcResponse,
 } from './mcp-protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolResult } from './run-agent.js';
+import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolDefinition, type ToolResult } from './run-agent.js';
 
 /** The endpoint's path. */
 export const AGENT_PATH = '/mcp';
@@ -43,6 +44,8 @@ export function isAgentToken(token: unknown): token is string {
 /** What the server answers with: the tools' results; `signal` aborts once nobody waits for the answer. */
 export interface AgentTools {
   call(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult>;
+  /** The tools `tools/list` names: the editor's own (`AGENT_TOOLS`) when absent. */
+  definitions?(): ToolDefinition[];
 }
 
 export interface AgentServerOptions {
@@ -95,6 +98,8 @@ function newToken(): string {
 
 export class AgentServer {
   private busy = 0;
+  /** A second token, this process's alone, never kept by the client: the one the discovery file names. */
+  private local = newToken();
   /** The tool calls being answered, by their JSON-RPC id, each with what aborts it: a cancel names them by id. */
   private readonly inflight = new Map<string | number, Set<AbortController>>();
 
@@ -112,9 +117,15 @@ export class AgentServer {
     return this.current;
   }
 
-  /** A new token from now on: the one before is refused, an answer under way aside. */
+  /** The token of this process alone, which `piwi mcp` reads from the discovery file and sends as an agent's. */
+  get localToken(): string {
+    return this.local;
+  }
+
+  /** New tokens from now on, the kept one and this process's: those before are refused, an answer under way aside. */
   newToken(): string {
     this.current = newToken();
+    this.local = newToken();
     return this.current;
   }
 
@@ -185,7 +196,7 @@ export class AgentServer {
     if (req.method !== 'POST') return refuse(res, 405, 'POST only.', { Allow: 'POST' });
     const authorization = req.headers.authorization ?? '';
     const token = /^Bearer (\S+)$/i.exec(authorization)?.[1] ?? '';
-    if (!sameToken(token, this.current)) {
+    if (!sameToken(token, this.current) && !sameToken(token, this.local)) {
       return refuse(res, 401, 'Not authorized: the bearer token is missing or wrong.');
     }
     if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
@@ -273,7 +284,7 @@ export class AgentServer {
       case 'ping':
         return ok(id, {});
       case 'tools/list':
-        return ok(id, { tools: AGENT_TOOLS });
+        return ok(id, { tools: this.options.tools.definitions?.() ?? AGENT_TOOLS });
       case 'tools/call': {
         const name = typeof params.name === 'string' ? params.name : '';
         const own = new AbortController();

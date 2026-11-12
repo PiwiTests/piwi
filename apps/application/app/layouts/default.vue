@@ -605,7 +605,7 @@ onMounted(async () => {
       <slot />
     </main>
 
-    <!-- Global "Open in IDE" settings modal, toggled from file-path choosers and the user menu -->
+    <!-- Global "Open in editor" settings modal, toggled from file-path choosers and the user menu -->
     <OpenInIdeSettingsModal />
 
     <!-- Desktop shell: import dialog for archives dropped on the window or opened with the app -->

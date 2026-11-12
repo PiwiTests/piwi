@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, expect as expectPage, type Browser, type Page } from '@playwright/test';
+import { withoutFieldSecrets } from '@piwitests/core/mask';
 import { MAX_ELEMENT_TEXT } from '@piwitests/core/run-channel';
-import { probeElementAttrs, showPauseBar } from '@piwitests/picker-dom';
+import { pauseAnswered, probeElementAttrs, showPauseBar } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
-import { actOnRef, readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
+import { actOnRef, readSnapshot, refLocators } from '../src/internal/capture/agent-page.js';
 import { maskedImage } from '../src/internal/capture/live-mask.js';
 
 /**
@@ -317,6 +318,33 @@ describe('an action under the pause bar', () => {
       expect(await page.title()).toBe('Orders');
       await expectPage(bar).toBeVisible();
       await expectPage(bar).toHaveCSS('pointer-events', 'auto');
+    } finally {
+      await page.close();
+    }
+  }, 15_000);
+
+  it('presses Escape on the element, not on the bar, which stays as it was', async () => {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await page.setContent(
+        `<label>Search <input id="q" onkeydown="if (event.key === 'Escape') document.title = 'Escaped'"></label>`,
+      );
+      await page.evaluate(showPauseBar, {
+        place: 'shop.spec.ts:44',
+        attempt: null,
+        action: 'Expect "toHaveText"',
+        locator: null,
+        end: true,
+      });
+      const read = await readSnapshot(page, null, false);
+      const ref = /textbox "Search" \[ref=(e\d+)\]/.exec(read.snapshot!)![1]!;
+      const acted = await actOnRef(page, PROBE, { ref, action: 'press', value: 'Escape' }, null);
+      expect(acted, acted.message).toMatchObject({ ok: true });
+      expect(await page.title()).toBe('Escaped');
+      expect(await page.evaluate(pauseAnswered)).toBe(false);
+      const bar = page.locator('#__piwi-pause-bar');
+      await expectPage(bar).toBeVisible();
+      expect(await bar.evaluate((el) => (el as unknown as { inert: boolean }).inert)).toBe(false);
     } finally {
       await page.close();
     }

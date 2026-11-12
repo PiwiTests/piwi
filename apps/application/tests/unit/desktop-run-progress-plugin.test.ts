@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ref, watch } from 'vue';
+import { nextTick, reactive, ref, watch } from 'vue';
 
 /**
  * The desktop shell's OS progress (`plugins/desktop-run-progress.client.ts`), driven as the window drives it: the
  * messages of the desktop event stream, and the Local runs tray's runs as the store says each one ends
- * (`onRunEnded`). What it asks the shell to show is each `desktop_set_run_progress` it sends; a red `error` without
- * `failing` is the failed end the shell asks for the user's attention on.
+ * (`onRunEnded`). What it asks the shell to show is each `desktop_set_run_progress` it sends, with the count of the
+ * tests that wait apart (`waits`); a red `error` without `failing` is the failed end the shell asks for the user's
+ * attention on. The shell's events reach the listeners the plugin gave `tauriEvent` (`hear`).
  */
 
 interface Shown {
@@ -35,17 +36,39 @@ interface TrayRun {
 
 async function plugin() {
   const shown: Shown[] = [];
+  const waits: number[] = [];
+  const listeners = new Map<string, (event: { payload: unknown }) => unknown>();
+  const shownWorkers: Array<{ ref: string; worker: number; mounts: number }> = [];
+  /** The pages the plugin went to, and how many Local runs trays the page shown holds. */
+  const visited: string[] = [];
+  const trayMounts = ref(1);
   let emit: (message: Record<string, unknown>) => void = () => {};
   const ended = new Set<(run: TrayRun) => void>();
   const runs = ref<TrayRun[]>([]);
+  const hub = { state: reactive<{ sessions: Record<string, unknown> }>({ sessions: {} }) };
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
+  vi.stubGlobal('useDesktopRunHub', () => hub);
   vi.stubGlobal('watch', watch);
+  vi.stubGlobal('navigateTo', async (to: string) => {
+    visited.push(to);
+    trayMounts.value = 1;
+  });
   vi.stubGlobal('tauriCore', () => ({
-    invoke: async (cmd: string, args: Shown) => {
-      if (cmd === 'desktop_set_run_progress') shown.push(args);
+    invoke: async (cmd: string, args: Shown & { waiting: number }) => {
+      if (cmd !== 'desktop_set_run_progress') return;
+      const { waiting, ...rest } = args;
+      shown.push(rest);
+      waits.push(waiting);
     },
   }));
-  vi.stubGlobal('tauriEvent', () => ({ listen: async () => () => {} }));
+  vi.stubGlobal('tauriEvent', () => ({
+    listen: async (name: string, listener: (event: { payload: unknown }) => unknown) => {
+      listeners.set(name, listener);
+      return () => {};
+    },
+  }));
+  const editorRuns = ref<unknown[]>([]);
+  vi.stubGlobal('useDesktopEditorRuns', () => editorRuns);
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
     return () => {};
@@ -53,6 +76,8 @@ async function plugin() {
   vi.stubGlobal('useDesktopLocalRuns', () => ({
     runs,
     stopRun: async () => {},
+    showWorker: (ref: string, worker: number) => shownWorkers.push({ ref, worker, mounts: trayMounts.value }),
+    trayMounts,
     onRunEnded: (listener: (run: TrayRun) => void) => {
       ended.add(listener);
       return () => ended.delete(listener);
@@ -62,7 +87,17 @@ async function plugin() {
   setup();
   return {
     shown,
+    waits,
+    shownWorkers,
+    visited,
+    trayMounts,
     runs,
+    hub,
+    editorRuns,
+    /** The shell emits `name` to the window; resolves once the window answered it. */
+    hear: async (name: string, payload?: unknown) => {
+      await listeners.get(name)?.({ payload });
+    },
     emit: (message: Record<string, unknown>) => emit(message),
     /** The store says the run ended, with these fields set. */
     end: (run: TrayRun, over: Partial<TrayRun>) => {
@@ -171,12 +206,145 @@ describe('the OS progress of a job of the Local runs tray', () => {
     expect(flashes(shown)).toEqual([{ state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false }]);
   });
 
-  test('still flashes a run that is no job, an editor’s or CI’s, as its outcome', async () => {
-    const { shown, emit } = await plugin();
+  test('flashes a run of the tray as its outcome, never an editor’s or CI’s, which it shows running alone', async () => {
+    const { shown, runs, emit } = await plugin();
     const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
     emit({ type: 'run-started', runId: 11, ...ci });
+    expect(shown.at(-1)?.label).toBe('Running…');
     emit({ type: 'run-finished', runId: 11, status: 'failed', ...ci });
+    expect(failedEnds(shown)).toEqual([]);
+    expect(shown.at(-1)).toEqual(NOTHING);
+    const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+    runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+    emit({ type: 'run-started', runId: 12, ...own });
+    emit({ type: 'run-finished', runId: 12, status: 'failed', ...own });
     expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
+  });
+
+  test('flashes a run of the tray as it ends while other runs go on or a test waits, then shows them again', async () => {
+    vi.useFakeTimers();
+    try {
+      const { shown, runs, hub, emit } = await plugin();
+      // Nothing is drawn before the stream says what runs: the bar is not cleared as the window loads.
+      expect(shown).toEqual([]);
+      const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
+      emit({ type: 'run-started', runId: 11, ...ci });
+      hub.state.sessions = {
+        'desktop-9': { ended: false, workers: [{ state: 'stopped', stop: { reason: 'pause' } }] },
+      };
+      await nextTick();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you · Running' });
+      const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+      runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+      emit({ type: 'run-started', runId: 12, ...own });
+      emit({ type: 'run-finished', runId: 12, status: 'failed', ...own });
+      expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
+      // Its moment over, the bar says again what goes on.
+      await vi.runAllTimersAsync();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you · Running' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('says first that a test of the app’s runs waits for the person, amber, as the hub tells it', async () => {
+    const { shown, hub, emit } = await plugin();
+    emit({
+      type: 'run-progress',
+      runId: 13,
+      projectId: 1,
+      totalTests: 10,
+      passedTests: 3,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    });
+    expect(shown.at(-1)?.label).toBe('Running 3/10…');
+    const stopped = { state: 'stopped', stop: { reason: 'pause' } };
+    hub.state.sessions = { 'desktop-7': { ended: false, workers: [stopped] } };
+    await nextTick();
+    expect(shown.at(-1)).toEqual({
+      state: 'paused',
+      fraction: 0.3,
+      label: '1 test waits for you · Running 3/10',
+      failing: false,
+    });
+    // Answered: the run runs on, as it did.
+    hub.state.sessions = { 'desktop-7': { ended: false, workers: [{ state: 'running', stop: null }] } };
+    await nextTick();
+    expect(shown.at(-1)?.label).toBe('Running 3/10…');
+  });
+
+  test('tells the shell how many tests wait, during a flash too; its Show the stopped test opens the tray on the first', async () => {
+    vi.useFakeTimers();
+    try {
+      const { shown, waits, shownWorkers, visited, trayMounts, runs, hub, emit, hear } = await plugin();
+      emit({ type: 'snapshot', runs: [] });
+      expect(waits).toEqual([0]);
+      // Nothing waits: Show the stopped test opens nothing.
+      await hear('piwi:tray-show-stop');
+      expect(shownWorkers).toEqual([]);
+      const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+      runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+      emit({ type: 'run-started', runId: 12, ...own });
+      emit({ type: 'run-finished', runId: 12, status: 'passed', ...own });
+      const flash = shown.at(-1);
+      // Two tests stop while the run's end flashes: the flash keeps its moment, and the shell hears the count at once.
+      const stopped = (driver: { kind: string } | null) => ({
+        'desktop-8': {
+          ref: 'desktop-8',
+          ended: false,
+          workers: [
+            { worker: 0, state: 'running', stop: null },
+            { worker: 3, state: 'stopped', stop: { reason: 'pause', driver } },
+          ],
+        },
+        'desktop-9': {
+          ref: 'desktop-9',
+          ended: false,
+          workers: [{ worker: 1, state: 'stopped', stop: { reason: 'failure' } }],
+        },
+      });
+      hub.state.sessions = stopped(null);
+      await nextTick();
+      expect(shown.at(-1)).toEqual(flash);
+      expect(waits.at(-1)).toBe(2);
+      await hear('piwi:tray-show-stop');
+      expect(shownWorkers).toEqual([{ ref: 'desktop-8', worker: 3, mounts: 1 }]);
+      expect(visited).toEqual([]);
+      // Its moment over, the bar says the tests wait.
+      await vi.runAllTimersAsync();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused' });
+      expect(shown.at(-1)?.label).toContain('2 tests wait for you');
+      // An agent drives the first: the next one is shown.
+      hub.state.sessions = stopped({ kind: 'agent' });
+      await nextTick();
+      expect(waits.at(-1)).toBe(1);
+      await hear('piwi:tray-show-stop');
+      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1, mounts: 1 });
+      // A page that holds no tray (TV mode): the home page, which holds one, shows it.
+      trayMounts.value = 0;
+      await hear('piwi:tray-show-stop');
+      expect(visited).toEqual(['/']);
+      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1, mounts: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('counts an editor’s test that waits on the bar, but offers to show only the app’s own', async () => {
+    const { shown, waits, emit, editorRuns } = await plugin();
+    emit({ type: 'snapshot', runs: [] });
+    const stopped = { state: 'stopped', stop: { reason: 'breakpoint' } };
+    const run = { client: 'Visual Studio Code', session: { ref: 'ed-1', ended: false, workers: [stopped] } };
+    emit({ type: 'editor-runs', runs: [run, { client: 'Broken', session: null }] });
+    expect(shown.at(-1)).toMatchObject({ state: 'paused', label: '1 test waits for you' });
+    // It opens in its editor: the tray menu offers nothing for it. The run page reads the runs kept.
+    expect(waits.at(-1)).toBe(0);
+    expect(editorRuns.value).toEqual([run]);
+    emit({ type: 'editor-runs', runs: [] });
+    expect(shown.at(-1)).toEqual(NOTHING);
+    expect(editorRuns.value).toEqual([]);
   });
 
   test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {

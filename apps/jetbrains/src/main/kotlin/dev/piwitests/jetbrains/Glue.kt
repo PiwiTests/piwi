@@ -57,6 +57,37 @@ object Glue {
         return RunTestsArgs(uri, emptyList(), locations = listOf(location), repeat = repeat)
     }
 
+    /**
+     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
+     */
+    val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
+
+    /** A choice of [HOLD_FAILURES_CHOICES] in words, for a menu or a setting. */
+    fun holdFailuresLabel(choice: String): String = when (choice) {
+        "on" -> "On from each run's start"
+        "off" -> "Off from each run's start"
+        else -> "Auto: on with a breakpoint or a page.pause()"
+    }
+
+    /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
+    fun holdFailuresOption(choice: String): Boolean? = when (choice) {
+        "on" -> true
+        "off" -> false
+        else -> null
+    }
+
+    /**
+     * A run's arguments started as the person chose for every run of the project: headed when `headed`, and Hold
+     * failures as `holdFailures` says ([holdFailuresOption]). A debug run (`debug`) starts as the service builds it.
+     */
+    fun withRunStart(args: RunTestsArgs, headed: Boolean, holdFailures: String): RunTestsArgs =
+        if (args.debug != null) args else args.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
+    /** A saved selection's run, started as [withRunStart] starts a run of tests. */
+    fun withRunStart(params: RunSelectionParams, headed: Boolean, holdFailures: String): RunSelectionParams =
+        params.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
@@ -109,8 +140,21 @@ object Glue {
      */
     fun playwrightConfigDirs(roots: List<Path>): List<Path> {
         val found = LinkedHashSet<Path>()
+        walkSearched(roots) { file ->
+            if (file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
+            false
+        }
+        return found.sorted()
+    }
+
+    /**
+     * Each regular file under `roots`, the roots included and down to [CONFIG_DEPTH] levels, skipping what the
+     * Playwright config search skips, until `visit` returns true.
+     */
+    private fun walkSearched(roots: List<Path>, visit: (Path) -> Boolean) {
         for (root in roots) {
             if (!Files.isDirectory(root)) continue
+            var done = false
             Files.walkFileTree(root, emptySet(), CONFIG_DEPTH + 1, object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
                     val name = dir.fileName?.toString() ?: return FileVisitResult.CONTINUE
@@ -119,14 +163,52 @@ object Glue {
                 }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (attrs.isRegularFile && file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
-                    return FileVisitResult.CONTINUE
+                    done = attrs.isRegularFile && visit(file)
+                    return if (done) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
                 }
 
                 override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
             })
+            if (done) return
         }
-        return found.sorted()
+    }
+
+    /** An MSBuild `PackageReference` element's `Include`, its other attributes quoted in either quote. */
+    private val PACKAGE_REFERENCE = Regex(
+        """<PackageReference\b(?:[^>"']|"[^"]*"|'[^']*')*?\bInclude\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** A Playwright for .NET package: `Microsoft.Playwright`, or one of its test framework packages (`.NUnit`, `.Xunit.v3`). */
+    private val DOTNET_PLAYWRIGHT_PACKAGE = Regex("""Microsoft\.Playwright(\.[A-Za-z0-9]+)*""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Whether the text of an MSBuild project or `Directory.Build.props` references Playwright for .NET, outside its
+     * comments; an `Include` may list several packages, split by `;`.
+     */
+    fun referencesDotnetPlaywright(project: String): Boolean =
+        PACKAGE_REFERENCE.findAll(project.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")).any { match ->
+            (match.groupValues[1].ifEmpty { match.groupValues[2] }).split(';')
+                .any { DOTNET_PLAYWRIGHT_PACKAGE.matches(it.trim()) }
+        }
+
+    /** Whether a file is an MSBuild project of .NET code, or the props every project of its folder imports. */
+    private fun isMsbuildProject(name: String): Boolean =
+        name.equals("Directory.Build.props", ignoreCase = true) ||
+            listOf(".csproj", ".fsproj", ".vbproj").any { name.endsWith(it, ignoreCase = true) }
+
+    /**
+     * Whether an MSBuild project under `roots` (`searchedFolders`) references Playwright for .NET, whose tests Piwi does
+     * not read. A file over a megabyte is not read.
+     */
+    fun holdsDotnetPlaywright(roots: List<Path>): Boolean {
+        var found = false
+        walkSearched(roots) { file ->
+            found = isMsbuildProject(file.fileName.toString()) &&
+                runCatching { Files.size(file) <= 1_000_000 && referencesDotnetPlaywright(Files.readString(file)) }.getOrDefault(false)
+            found
+        }
+        return found
     }
 
     /** The repository around `dir`: the nearest folder, `dir` included, that holds `.git`; null outside one. */
@@ -142,12 +224,20 @@ object Glue {
         val roots = outermost(folders.filter { Files.isDirectory(it) })
         val dirs = playwrightConfigDirs(roots)
         if (dirs.isNotEmpty()) return PlaywrightSearch(roots, dirs)
-        val homeFolder = home?.toAbsolutePath()?.normalize()
-        val repositories = outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+        val repositories = repositoriesAround(roots, home)
         if (repositories.isEmpty() || repositories == roots) return PlaywrightSearch(roots, dirs)
         val inRepositories = playwrightConfigDirs(repositories)
         return if (inRepositories.isEmpty()) PlaywrightSearch(roots, dirs) else PlaywrightSearch(repositories, inRepositories)
     }
+
+    /** The repositories around `roots`, but one in the home folder or at a drive's root, which hold other projects. */
+    private fun repositoriesAround(roots: List<Path>, home: Path?): List<Path> {
+        val homeFolder = home?.toAbsolutePath()?.normalize()
+        return outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+    }
+
+    /** Every folder `findPlaywright` searches for a project in `roots`: they and the repositories around them. */
+    fun searchedFolders(roots: List<Path>, home: Path?): List<Path> = outermost(roots + repositoriesAround(roots, home))
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
@@ -180,12 +270,12 @@ object Glue {
     /**
      * The context the status bar item speaks for: the one whose Playwright config folder holds `file` (a path, with
      * either separator), the deepest when several do, else the first connected, else the first the instance did not
-     * answer, else the first. Null without a context.
+     * answer or the desktop app did not prove itself to, else the first. Null without a context.
      */
     fun statusContext(contexts: List<ContextStatus>, file: String?): ContextStatus? =
         contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
             ?: contexts.firstOrNull { it.connected }
-            ?: contexts.firstOrNull { it.problemKind == "unreachable" }
+            ?: contexts.firstOrNull { it.problemKind == "unreachable" || it.problemKind == "desktop-unproven" }
             ?: contexts.firstOrNull()
 
     /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
@@ -212,19 +302,38 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+    /** A run in progress in the status bar: `Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the editor's own. */
     private fun liveText(live: LiveRun): String {
         val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
-        return "Piwi: ${live.done}/${live.total}$failing" + if (live.own) " · your run" else ""
+        val run = if (live.ci) "CI run" else "run"
+        return "Piwi: $run #${live.runId} · ${live.done}/${live.total}$failing" + if (live.own) " · yours" else ""
+    }
+
+    /**
+     * The run in progress the status bar counts for the context of `file`, as `statusView` picks it: that context's
+     * (the only one's, with one), else the editor's own run of another context, which stays in view whichever config
+     * the file belongs to; null while none runs, or while that context is not connected.
+     */
+    fun liveRun(status: StatusResult?, runs: RunStatusResult?, file: String?): LiveRun? {
+        val contexts = status?.contexts.orEmpty()
+        val shown = statusContext(contexts, file)?.takeIf { it.connected } ?: return null
+        val run = runs?.contexts?.firstOrNull { it.root == shown.root }
+            ?: if (contexts.size == 1) runs?.contexts?.firstOrNull() else null
+        return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
     /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
     private fun liveLine(live: LiveRun): String {
         val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
-        return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
+        val run = when {
+            live.own -> "Your run"
+            live.ci -> "CI run"
+            else -> "Run"
+        }
+        return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
-    /** The status bar text while the latest run is read again (**Read the Latest Run Again**, in its popup). */
+    /** The status bar text while the latest run is read again (**Refresh the Latest Run**, first in its popup). */
     const val REFRESHING = "Piwi: refreshing…"
 
     /**
@@ -270,7 +379,11 @@ object Glue {
         now: Long = System.currentTimeMillis(),
         startProblem: String? = null,
         file: String? = null,
+        trusted: Boolean = true,
     ): StatusView {
+        if (status == null && !trusted) {
+            return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
+        }
         if (status == null && startProblem != null) {
             return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
         }
@@ -280,6 +393,10 @@ object Glue {
             ?: return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
         val config = configLine(contexts, shown, file)
+        if (!shown.connected && shown.problemKind == "desktop-unproven") {
+            val problem = shown.problem ?: "The desktop app did not prove it holds its token"
+            return StatusView("Piwi: restart the desktop app", "$problem$config$hint", null, StatusAction.RETRY, StatusIcon.WARNING)
+        }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
             val tooltip = "$problem$config\nPiwi reads it again on its own; Refresh reads it now.$hint"
@@ -294,7 +411,8 @@ object Glue {
         val where = (shown.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
         val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
-        val live = run?.live
+        // The editor's own run in progress stays in view whichever config the file belongs to.
+        val live = run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
         val liveFailing = (live?.failed ?: 0) > 0
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
@@ -343,12 +461,35 @@ object Glue {
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
+    /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
+    const val NODE_SETTINGS_LINK = "Node.js Settings…"
+
+
+
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
+    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+
+    /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
+    const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
+        ".env. Trusting it starts Piwi."
 
     /** What the first-run notification says Piwi does. */
     const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
         "with your local runs laid over them, and records tests at the caret."
+
+    /**
+     * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
+     * Piwi reads Playwright Test suites in JavaScript and TypeScript.
+     */
+    const val DOTNET_PLAYWRIGHT_NOTE = "Piwi reads Playwright Test suites in JavaScript and TypeScript: the Playwright " +
+        "for .NET tests of this project get no failures, results or runs from Piwi in the IDE."
+
+    /** Why the settings page's Playwright runner option is off, in an IDE without the runner. */
+    const val NO_PLAYWRIGHT_RUNNER = "This IDE's JavaScript plugin has no Playwright runner, so the tests run in the " +
+        "Run tool window's console."
+
+    /** Where the docs say which suites Piwi reads: **Learn More** on `DOTNET_PLAYWRIGHT_NOTE`. */
+    const val DOTNET_PLAYWRIGHT_DOCS_URL = "https://piwitests.dev/features/jetbrains#install-and-start"
 
     /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
@@ -421,6 +562,8 @@ object Glue {
         val note: String? = null,
         val root: String? = null,
         val children: List<FailureNode> = emptyList(),
+        /** The lines of its hover, as the service writes them (`FailureTreeNode.tooltip`). */
+        val tooltip: List<String> = emptyList(),
     )
 
     /**
@@ -452,6 +595,7 @@ object Glue {
             note = node.note,
             root = node.root,
             children = node.children.orEmpty().map { draw(it) },
+            tooltip = node.tooltip.orEmpty(),
         )
         return result?.tree.orEmpty().map { draw(it) }
     }
@@ -679,34 +823,14 @@ object Glue {
     }
 
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
-    private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
     fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
 
-    /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
-    fun testResultTooltip(status: String?, title: String?): String {
-        val result = when (status) {
-            "failed" -> "failing"
-            "flaky" -> "flaky"
-            "passed" -> "passing"
-            "skipped" -> "skipped"
-            "running" -> "running"
-            else -> "no recent result"
-        }
-        return "<html>${escapeHtml(listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · "))}</html>"
-    }
-
-    /**
-     * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
-     * line changed since the run.
-     */
-    fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
-        val why = headline?.ifBlank { null } ?: "Failed"
-        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escapeHtml(it)}</pre>" } ?: ""
-        val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
-        return "<html><b>$title</b><br>${escapeHtml(why)}$details</html>"
-    }
+    /** A test's gutter tooltip: the summary the service writes, its latest result naming the run first, as HTML text. */
+    fun testResultTooltip(title: String?): String =
+        "<html>${escapeHtml(listOfNotNull("Piwi", title?.ifBlank { null }).joinToString(": "))}</html>"
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
@@ -735,6 +859,13 @@ object Glue {
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"
     const val RERUN_FAILING = "Re-run Failing"
 
+    /** The action of a passing run's notice that keeps the next ones for runs that fail (`runNotifications`). */
+    const val ONLY_ON_FAILURE = "Only on Failure"
+
+    /** The confirmation once Only on Failure is chosen. */
+    const val ONLY_ON_FAILURE_SET =
+        "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
+
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
 
@@ -746,8 +877,9 @@ object Glue {
     /**
      * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
      * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet. A run of each test several times
-     * says how many of its runs passed, `Run #124 · Failed 1 of 3`, whatever the setting.
+     * **Re-run Failing** when something fails, and **Only on Failure** when nothing does while `setting` is `always`.
+     * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
+     * `Run #124 · Failed 1 of 3`, whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
         val repeat = ended.repeat
@@ -766,11 +898,16 @@ object Glue {
         }
         if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
         if (parts.isEmpty()) {
+            val endedAtStop = ended.endedAtStop ?: 0
             parts += listOfNotNull(
                 "${ended.passed} passed",
                 "${ended.failed} failed",
                 if (ended.flaky > 0) "${ended.flaky} flaky" else null,
-                if (ended.skipped > 0) "${ended.skipped} skipped" else null,
+                if (ended.skipped > 0) {
+                    "${ended.skipped} skipped" + if (endedAtStop > 0) " ($endedAtStop ended at a stop)" else ""
+                } else {
+                    null
+                },
             ).joinToString(", ")
         }
         val failing = still + added > 0 || ended.failed > 0
@@ -778,7 +915,12 @@ object Glue {
         return RunVerdict(
             failing,
             "Run #${ended.runId} · ${parts.joinToString(" · ")}",
-            listOfNotNull(OPEN_FAILURES, OPEN_IN_DASHBOARD, if (failing) RERUN_FAILING else null),
+            listOfNotNull(
+                OPEN_FAILURES,
+                OPEN_IN_DASHBOARD,
+                if (failing) RERUN_FAILING else null,
+                if (!failing && setting == "always") ONLY_ON_FAILURE else null,
+            ),
         )
     }
 
@@ -790,16 +932,67 @@ object Glue {
         else -> "Settings → Tools → Piwi"
     }
 
+    /**
+     * The instance the environment or a workspace `.env` names, which comes before the one the settings page saves: its
+     * address, its project while it is the one read, where it comes from (`sourceLabel`), the config it is named for when
+     * the project has several (`label`), and whether the desktop app is read before it.
+     */
+    data class Overriding(
+        val serverUrl: String,
+        val project: String?,
+        val source: String,
+        val label: String? = null,
+        val desktopFirst: Boolean = false,
+    )
+
+    /**
+     * What overrides the settings page's instance, `saved`, from the status: the first config whose environment or `.env`
+     * names another; null when none does, or before the service starts.
+     */
+    fun overriding(status: StatusResult?, saved: String): Overriding? {
+        val contexts = status?.contexts.orEmpty()
+        for (c in contexts) {
+            val source = c.instance?.source ?: c.source
+            if (source != "environment" && source != "dotenv") continue
+            val url = c.instance?.serverUrl ?: c.serverUrl ?: continue
+            if (normalizeServerUrl(url) == normalizeServerUrl(saved)) continue
+            return Overriding(
+                url,
+                c.projectName.takeIf { c.source == source && c.connected },
+                sourceLabel(source),
+                c.label.takeIf { contexts.size > 1 },
+                c.source == "desktop",
+            )
+        }
+        return null
+    }
+
+    /** What the settings page says above its instance's fields while `overriding` names another one. */
+    fun overriddenText(overriding: Overriding): String {
+        val of = overriding.label?.let { " for $it" } ?: ""
+        val project = overriding.project?.let { ", project $it" } ?: ""
+        return if (overriding.desktopFirst) {
+            "${overriding.source.replaceFirstChar { it.uppercase() }} names ${overriding.serverUrl}$of, which Piwi reads " +
+                "before the server URL below while the desktop app is not in use."
+        } else {
+            "Overridden by ${overriding.source}$of: Piwi reads ${overriding.serverUrl}$project, not the server URL below."
+        }
+    }
+
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null): String {
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
+        if (status == null && !trusted) return WAITING_FOR_TRUST
         if (status == null) return startProblem ?: NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
         val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
+        val unproven = contexts.firstOrNull { it.problemKind == "desktop-unproven" }
         val c = contexts.firstOrNull { it.connected }
             ?: return if (unreachable != null) {
                 "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+            } else if (unproven != null) {
+                "Not connected. " + (unproven.problem ?: "") + hint
             } else {
                 "Not connected. " + (contexts.first().problem ?: "") + hint
             }
@@ -816,6 +1009,150 @@ object Glue {
         status.desktopUrl != null -> "The Piwi desktop app runs on this machine: Connect to use it."
         desktopChosen -> "The Piwi desktop app, chosen with Connect, is not running."
         else -> ""
+    }
+
+    /**
+     * The end of a tinted line's range: past its line break, so the editor paints the background to its right edge as it
+     * does a whole line's; the line's own end on the last line, which has none.
+     */
+    fun lineEndWithBreak(lineEnd: Int, textLength: Int): Int = if (lineEnd < textLength) lineEnd + 1 else lineEnd
+
+    /** Whether every stop held is a failure: the status item shows the error's icon, not the pause's. */
+    fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
+
+    /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
+    const val SERVICE_NOT_RUNNING =
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Restart the Editor Service."
+
+    /** What an action says when the running service did not answer it: the request failed, or took too long. */
+    const val SERVICE_NO_ANSWER =
+        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows its log."
+
+    /** What Restart the Editor Service says with no service running and no test file open: the IDE starts it for one. */
+    const val SERVICE_NEEDS_A_FILE = "The Piwi editor service starts for a test file: open one of this project's."
+
+    /** What the tool window says once the editor service that ran stopped, and nothing started it again. */
+    const val SERVICE_STOPPED = "The Piwi editor service stopped."
+
+    /** What a message that the service does not run or did not answer offers: Restart the Editor Service and Open Log. */
+    val SERVICE_FIXES = listOf(EmptyLink.RESTART_SERVICE, EmptyLink.OPEN_LOG)
+
+    /** Whether a message says the service does not run or did not answer: its balloon offers [SERVICE_FIXES]. */
+    fun offersServiceFixes(message: String): Boolean = SERVICE_NOT_RUNNING in message || SERVICE_NO_ANSWER in message
+
+    /** The tool window's text while no service answers: why, and the links that start it or show its log. */
+    fun serviceDownText(trusted: Boolean, startProblem: String?, stopped: Boolean): EmptyText = when {
+        !trusted -> EmptyText(WAITING_FOR_TRUST)
+        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG))
+        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES)
+        else -> EmptyText(NOT_STARTED)
+    }
+
+    /** The Piwi tool window's tab that holds the editor service's log, which **Open Log** opens. */
+    const val LOG_TAB = "Log"
+
+    /** How many lines the log keeps: the oldest go first. */
+    const val LOG_LINES = 5_000
+
+    /** How long a failed request of one method stays out of the log once one was written there. */
+    const val LOG_REPEAT_MILLIS = 60_000L
+
+    private val LOG_TIME = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+
+    /**
+     * The log's lines for `text` written at `at`: its first line after the time, the others indented under it, the blank
+     * lines at its end left out. Text that starts indented continues the line before it, as each line of a stack the
+     * service writes to stderr arrives on its own: it takes no time.
+     */
+    fun logLines(at: java.time.LocalTime, text: String): List<String> {
+        val lines = text.lines().dropLastWhile { it.isBlank() }.ifEmpty { return emptyList() }
+        val time = at.format(LOG_TIME)
+        val indent = " ".repeat(time.length + 1)
+        val continues = lines.first().firstOrNull()?.isWhitespace() == true
+        return lines.mapIndexed { i, line -> if (i == 0 && !continues) "$time $line" else "$indent$line" }
+    }
+
+    /**
+     * The log's lines, the oldest dropped past `max`, and when a failed request of each method was last written, so the
+     * daemon's repeated failures write one line a minute. Not thread-safe: `PiwiLog` holds its lock around it.
+     */
+    class LogBuffer(private val max: Int = LOG_LINES) {
+        private val lines = ArrayDeque<String>()
+        private val failures = HashMap<String, Long>()
+
+        fun add(added: List<String>) {
+            lines.addAll(added)
+            while (lines.size > max) lines.removeFirst()
+        }
+
+        fun lines(): List<String> = lines.toList()
+
+        /** Whether a failure of `method` at `now` is written: none of that method was within [LOG_REPEAT_MILLIS]. */
+        fun writesFailure(method: String, now: Long): Boolean {
+            val last = failures[method]
+            if (last != null && now - last < LOG_REPEAT_MILLIS) return false
+            failures[method] = now
+            return true
+        }
+    }
+
+    /** An action the Piwi tool window's empty text links, by its id. */
+    enum class EmptyLink(val label: String, val actionId: String) {
+        RESTART_SERVICE("Restart the Editor Service", "Piwi.RestartService"),
+        OPEN_LOG("Open Log", "Piwi.OpenLog"),
+        CONNECT("Connect…", "Piwi.Connect"),
+        RETRY("Retry", "Piwi.Refresh"),
+        SETTINGS("Settings…", "Piwi.OpenSettings"),
+        COMPARE("Compare With…", "Piwi.CompareWith"),
+    }
+
+    /** What the Piwi tool window says with no failure to list, and the actions it links. */
+    data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
+
+    /**
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
+     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare With…; no connection,
+     * with Connect…; else no failure in the run read (`runId`).
+     */
+    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
+        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
+        "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
+        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
+        "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
+        else -> EmptyText(
+            when {
+                baselineNoRun != null -> baselineNoRun
+                runId != null -> "No failure in run #$runId"
+                else -> "No failure in the latest run"
+            },
+        )
+    }
+
+    /** What Disconnect says when nothing is saved to forget. */
+    const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
+
+    /**
+     * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
+     * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it; any
+     * other TLS failure gives its own message.
+     */
+    fun connectFailure(e: Throwable, status: Int?, url: String?): String {
+        val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() } ?: "the instance"
+        val chain = generateSequence(e) { it.cause }.take(10).toList()
+        return when {
+            status == 401 || status == 403 -> "the instance refused the key ($status)"
+            status == 404 -> "not a Piwi instance: nothing answers Piwi's requests at this address (404)"
+            status != null -> "the instance answered $status"
+            chain.any { it is java.security.cert.CertificateException || it.message.orEmpty().contains("PKIX path") } ->
+                "the IDE does not trust the certificate of $host. Add it, or your company's root certificate, in " +
+                    "Settings → Tools → Server Certificates"
+            chain.any { it is java.net.http.HttpConnectTimeoutException } -> "no answer within 10 seconds"
+            chain.any { it is java.net.ConnectException } -> "nothing answers there. Is the instance running, on that port?"
+            chain.any { it is java.net.UnknownHostException } -> "unknown host ${chain.first { it is java.net.UnknownHostException }.message ?: host}"
+            else -> e.message ?: e.javaClass.simpleName
+        }
     }
 
     /** What Disconnect asks before forgetting the saved connection; null when nothing is saved. */
@@ -1136,17 +1473,43 @@ object Glue {
     /** A test file among a run's arguments, with its line and column: `tests/a.spec.ts:3`. */
     private val TEST_FILE_ARG = Regex("[^-\\s][^\\s]*\\.[cm]?[jt]sx?(:\\d+){0,2}")
 
-    /** The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command. */
+    /**
+     * The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command,
+     * a chain of several (`… && …`, [chained]) included.
+     */
     fun playwrightTestArgs(command: String): List<String>? {
         val parts = splitCommand(command)
-        return if (parts.take(3) == listOf("npx", "playwright", "test")) parts.drop(3) else null
+        return if (parts.take(3) == listOf("npx", "playwright", "test") && CHAIN !in parts) parts.drop(3) else null
     }
+
+    /** What joins the commands of a chain: a fix plan's verification of several Playwright projects. */
+    private const val CHAIN = "&&"
+
+    /** Whether a command chains several (`a && b`): a shell runs it, each one only once the one before it passed. */
+    fun chained(command: String): Boolean = CHAIN in splitCommand(command)
 
     /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
     fun playwrightRunName(args: List<String>): String {
         val targets = args.filter { TEST_FILE_ARG.matches(it) }
         val first = targets.firstOrNull()?.substringAfterLast('/') ?: return "Piwi"
         return if (targets.size > 1) "Piwi: $first and ${targets.size - 1} more" else "Piwi: $first"
+    }
+
+    /**
+     * The title of a run's tab in the Run tool window, after what it runs: the first test file of a `playwright test` and
+     * how many more ([playwrightRunName], a chain's included), else the command up to its first option, the reporter's
+     * package named as its command (`Piwi: piwi flake verify 12`).
+     */
+    fun runTabName(command: String): String {
+        val parts = splitCommand(command)
+        val words = parts.drop(if (parts.firstOrNull() == "npx") 1 else 0)
+        if (words.take(2) == listOf("playwright", "test")) return playwrightRunName(words.drop(2))
+        val tool = words
+            .map { if (it == "@piwitests/reporter") "piwi" else it }
+            .takeWhile { !it.startsWith("-") }
+            .take(4)
+            .joinToString(" ")
+        return if (tool.isEmpty()) "Piwi" else "Piwi: $tool"
     }
 
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */
@@ -1247,7 +1610,7 @@ object Glue {
             PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
-            PickOutcome.NOT_RUNNING -> "$went: the Piwi editor service is not running in this project."
+            PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
             PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
         }
     }
@@ -1398,6 +1761,8 @@ object Glue {
         val terminal: Boolean = false,
         val runner: Boolean = false,
         val slot: Int = worker,
+        /** Its reporter brings the test's window to the front (`RunWorker.showsWindow`). */
+        val showsWindow: Boolean = false,
     )
 
     /** Every stopped worker of the sessions, in their order. */
@@ -1413,6 +1778,7 @@ object Glue {
                     session.terminal,
                     session.terminal && session.runner,
                     w.parallelIndex,
+                    w.showsWindow,
                 )
             }
         }
@@ -1457,6 +1823,14 @@ object Glue {
      */
     fun actsOnPage(events: List<PageInput>): Boolean =
         events.any { it.type == "text" || it.type == "wheel" || (it.action != "move" && it.action != "up") }
+
+    /**
+     * Whether the Paused Page tab keeps Interact on as it shows `stop`: Interact is on (`interacting`) for the stop of
+     * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch live stays on, and the new stop of
+     * that slot takes input on a live view.
+     */
+    fun keepsInteract(interacting: Boolean, shown: Pair<String, Int>?, stop: ShownStop, watchLive: Boolean): Boolean =
+        interacting && watchLive && shown == (stop.ref to stop.slot) && "view" in stop.takes && "input" in stop.takes
 
     /**
      * Whether a new page selects the Paused Page tab: unless the Worker tab is in sight, selected in a tool window that
@@ -1675,10 +2049,24 @@ object Glue {
             else -> " · run in a terminal"
         }
         if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
-        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
-        val by = if (stop.by == "agent") " by the agent" else ""
-        return "Paused$by · ${stop.title.orEmpty()}$attempt$where"
+        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
+        val why = if (stop.by == "agent") {
+            "Paused by the agent"
+        } else {
+            stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
+        }
+        return "$why · ${stop.title.orEmpty()}$attempt$where"
     }
+
+    /** What a stop says of why its test stands there, by its reason: the editor service's `RUN_STOP_WORDS`. */
+    val RUN_STOP_WORDS = mapOf(
+        "breakpoint" to "Stopped at a breakpoint",
+        "step" to "Stopped after a step",
+        "pause" to "Paused",
+        "run-to" to "Stopped at the line it ran to",
+        "page-pause" to "Stopped at page.pause()",
+        "other" to "Stopped",
+    )
 
     /** Whether a token kept for the runs' MCP server is one the editor service takes: 32 to 256 characters of base64url. */
     fun isAgentsToken(token: String): Boolean = Regex("^[A-Za-z0-9_-]{32,256}$").matches(token)
@@ -1692,6 +2080,12 @@ object Glue {
 
     /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
     fun canShare(stop: ShownStop): Boolean = "bind" in stop.takes
+
+    /**
+     * Whether a stop's window can come to the front (Show the Browser): its pause bar shows, so its browser has a
+     * window, and its reporter brings it forward.
+     */
+    fun canShowBrowser(stop: ShownStop): Boolean = stop.stop.bar && stop.showsWindow
 
     /** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
     const val SHARE_WARNING =
@@ -1710,9 +2104,15 @@ object Glue {
         page?.let { runCatching { java.net.URI(it).authority }.getOrNull() }?.takeIf { it.isNotEmpty() }
 
     /** What Share live sends, and who sees it, asked before the project shares a run for the first time. */
-    fun shareLiveWarning(page: String?): String {
+    fun shareLiveWarning(page: String?, window: Boolean = false): String {
         val instance = liveInstance(page) ?: "the Piwi instance it reports to"
-        return "While this run is shared on $instance, anyone with its page open there sees each stop of its tests: " +
+        val what = if (window) {
+            "Each run this project follows from now on (those you start here, and those of a terminal it follows) is " +
+                "shared until you stop or close the project. While a run"
+        } else {
+            "While this run"
+        }
+        return "$what is shared on $instance, anyone with its page open there sees each stop of its tests: " +
             "the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
             "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can " +
             "open the run there can watch, and on an instance with authentication off, anyone who can reach it. " +
@@ -1721,20 +2121,63 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, and how many failed; null while no run says.
+     * of how many they hold, how many failed, and how many were ended at a stop; null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
-        val told = sessions.values.mapNotNull { it.progress }
+        val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
-        val failed = told.sumOf { it.failed }
-        return "Piwi: ${told.sumOf { it.done }} of ${told.sumOf { it.total }}" + if (failed > 0) " · $failed failed" else ""
+        val progress = told.mapNotNull { it.progress }
+        val failed = progress.sumOf { it.failed }
+        val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
+        val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
+            (if (failed > 0) " · $failed failed" else "") +
+            if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
     }
+
+    /**
+     * A stop's or a share's status with how far the runs are after it, so neither hides the other:
+     * `Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9`.
+     */
+    fun withProgress(status: String, progress: String?): String =
+        if (progress == null) status else "$status · ${progress.removePrefix("Piwi: ")}"
+
+    /** The runs whose own process named their page on the instance, in their order: `Run #78` and the address. */
+    fun runPages(sessions: Map<String, RunSession>): List<Pair<String, RunPage>> =
+        sessions.values.mapNotNull { session -> session.page?.takeIf { it.id > 0 }?.let { (session.ref ?: "") to it } }
 
     /** A worker a Worker tab can watch while its test runs: its run, its worker and slot (`lane`), and its words. */
     data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /**
+     * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
+     * stopped there (`· stopped`), or between tests; each run's name before them when several run. Null while no worker
+     * runs, as the VS Code extension's `workersNow` says it.
+     */
+    fun workersNowText(sessions: Map<String, RunSession>): String? {
+        val live = sessions.values.filter { !it.ended && !it.workers.isNullOrEmpty() }
+        val lines = live.flatMap { session ->
+            session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val run = if (live.size > 1) "${runLabel(session)} · " else ""
+                // A title's own line breaks as spaces: one line per worker.
+                val test = w.test?.title?.joinToString(" › ")?.replace(Regex("\\s+"), " ")
+                val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
+                "$run${workerName(w.parallelIndex)} · $what"
+            }
+        }
+        val shown = if (lines.size > MAX_WORKER_LINES) {
+            lines.take(MAX_WORKER_LINES - 1) + "and ${lines.size - MAX_WORKER_LINES + 1} more workers"
+        } else {
+            lines
+        }
+        return shown.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /** How many workers the tooltip lists, the last line counting the others. */
+    private const val MAX_WORKER_LINES = 8
 
     /**
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
@@ -1755,26 +2198,103 @@ object Glue {
                 }
         }
 
+    /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
+    private fun listed(names: List<String>): String =
+        if (names.size < 2) names.firstOrNull().orEmpty() else "${names.dropLast(1).joinToString(", ")} and ${names.last()}"
+
+    /**
+     * Who else has a run open, in words: `Also open in Piwi Picker and the desktop app · An agent follows this run`;
+     * null while no other tool has it open. This IDE's own entries (`self`) are left out.
+     */
+    fun presenceText(session: RunSession): String? {
+        val others = session.presence.orEmpty().filter { !it.self }
+        val open = others.filter { it.kind != "agent" }.map { it.name }.distinct()
+        val parts = listOfNotNull(
+            open.takeIf { it.isNotEmpty() }?.let { "Also open in ${listed(it)}" },
+            "An agent follows this run".takeIf { others.any { it.kind == "agent" } },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    /**
+     * Who else has each run open (`presenceText`), one line a run, each named (`runLabel`) when there are several; null
+     * while no other tool has one open.
+     */
+    fun runsPresenceText(sessions: Map<String, RunSession>): String? {
+        val lines = sessions.values.mapNotNull { session ->
+            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session)}: $it" else it }
+        }
+        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /**
+     * Who watches a worker's page now (`RunWorker.watchers`), in words: `Watched by Piwi Picker and you`, this IDE named
+     * last as `you`; null while no other tool watches it.
+     */
+    fun watchersText(watchers: List<RunPresence>?): String? {
+        val others = watchers.orEmpty().filter { !it.self }.map { it.name }.distinct()
+        if (others.isEmpty()) return null
+        return "Watched by ${listed(others + listOfNotNull("you".takeIf { watchers.orEmpty().any { it.self } }))}"
+    }
+
+    /**
+     * Who drives a stop now (`RunStop.driver`), in words: `You drive this stop`, `Piwi Picker drives this stop`, `An
+     * agent drives this stop`; with `interact` (the stop takes input), the agent's says that the person's input takes control.
+     * Null while nobody drives it.
+     */
+    fun driverText(stop: RunStop, interact: Boolean = false): String? {
+        val driver = stop.driver ?: return null
+        if (driver.self) return "You drive this stop"
+        val text = "${driver.name.replaceFirstChar { it.uppercaseChar() }} drives this stop"
+        return if (driver.kind == "agent" && interact) "$text: your input takes control" else text
+    }
+
+    /** Who drives a stop and who else watches its worker's page, in words; null when nobody does. */
+    private fun presentAt(stop: RunStop, takes: List<String>, worker: RunWorker?): String? =
+        listOfNotNull(driverText(stop, "input" in takes), watchersText(worker?.watchers))
+            .takeIf { it.isNotEmpty() }?.joinToString(" · ")
+
+    /**
+     * Who drives a stop and who else watches its worker's page, in words (`An agent drives this stop: Interact takes
+     * control · Watched by Piwi Picker and you`); null when nobody does.
+     */
+    fun stopPresence(stop: ShownStop, sessions: Map<String, RunSession>): String? =
+        presentAt(stop.stop, stop.takes, sessions[stop.ref]?.workers.orEmpty().firstOrNull { it.worker == stop.worker })
+
+    /**
+     * The Paused Page tab's caption of a stop: what it runs and its place, then who drives it and who else watches its
+     * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: Interact takes
+     * control · Watched by Piwi Picker and you`).
+     */
+    fun stopCaption(stop: ShownStop, sessions: Map<String, RunSession>): String =
+        listOfNotNull(
+            "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}",
+            stopPresence(stop, sessions),
+        ).joinToString(" · ")
+
     /** What a Worker tab says of its slot: the worker there now, its stop, and the caption above the image. */
     data class LaneShown(val worker: RunWorker?, val stop: ShownStop?, val caption: String)
 
     /**
      * What the Worker tab watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
-     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`.
+     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`; then who
+     * drives its stop and who else watches its page.
      */
     fun laneShown(session: RunSession?, lane: Int, stops: List<ShownStop>): LaneShown {
         val name = workerName(lane)
         if (session == null || session.ended) return LaneShown(null, null, "$name · the run ended.")
         val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == lane }
             ?: return LaneShown(null, null, "$name · starting…")
-        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests")
+        val seen = watchersText(worker.watchers)?.let { " · $it" }.orEmpty()
+        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests$seen")
         val title = test.title.orEmpty().joinToString(" › ")
         val stop = stops.firstOrNull { it.ref == session.ref && it.worker == worker.worker }
         if (stop == null && worker.pausing && worker.waiting != null) {
-            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title")
+            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title$seen")
         }
-        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
-        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
+        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title$seen")
+        val present = presentAt(stop.stop, stop.takes, worker)?.let { " · $it" }.orEmpty()
+        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}$present")
     }
 
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
@@ -1808,6 +2328,60 @@ object Glue {
         return if (refs.size == 1) LiveTarget.One(refs.single()) else LiveTarget.Choose(refs)
     }
 
+    /** The run whose Hold failures the action turns over, and to what (`on`); else the runs to choose among, or why none. */
+    sealed class HoldTarget {
+        data class One(val ref: String, val on: Boolean) : HoldTarget()
+
+        data class Choose(val refs: List<String>) : HoldTarget()
+
+        data class None(val why: String) : HoldTarget()
+    }
+
+    /**
+     * What the plugin answers another tool that asks it to stop a run (`piwi/stopRun`, from Piwi Picker or the desktop
+     * app through the hub): whether it ended the run's process, a run this IDE did not start refused.
+     */
+    fun stopRunAnswer(stopped: Boolean): RunControlResult =
+        if (stopped) {
+            RunControlResult(ok = true, message = "The IDE stops the run.")
+        } else {
+            RunControlResult(ok = false, message = "The run was not started in this IDE: stop it where it was started.")
+        }
+
+    /** The only live run that has a Hold failures, turned over; else the runs to choose among; else why none has. */
+    fun holdTarget(sessions: Map<String, RunSession>): HoldTarget {
+        val held = holdableRuns(sessions)
+        return when (held.size) {
+            0 -> HoldTarget.None("No run of this project can hold its failures now.")
+            1 -> HoldTarget.One(held.single().ref!!, held.single().hold?.on != true)
+            else -> HoldTarget.Choose(held.map { it.ref!! })
+        }
+    }
+
+    /** The live runs that have a Hold failures to turn over, in their order. */
+    fun holdableRuns(sessions: Map<String, RunSession>): List<RunSession> =
+        sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
+
+    /** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
+    fun runLabel(session: RunSession): String {
+        session.page?.let { return "Run #${it.id}" }
+        val folder = session.root?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
+        return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
+    }
+
+    /** The Hold Failures action's text: what a click does to the only live run that has one; else a choice to come. */
+    fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
+        true -> "Turn Hold Failures Off"
+        false -> "Turn Hold Failures On"
+        null -> "Turn Hold Failures On or Off"
+    }
+
+    /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
+    fun holdText(hold: RunHoldFailures): String {
+        val by = if (hold.by == "agent") ", as an agent set it" else ""
+        return if (hold.on) "Hold failures on: a failed test waits at its line$by" else "Hold failures off$by"
+    }
+
     /** What a shared browser's answer says, with the command that joins it. */
     fun sharedText(result: StopBindResult): String =
         if (!result.ok || result.name == null) result.message.orEmpty() else "${result.message.orEmpty()} Join it with: ${result.command}"
@@ -1821,10 +2395,24 @@ object Glue {
         return "${path?.fileName ?: stop.uri.orEmpty().substringAfterLast('/')}:${stop.line + 1}"
     }
 
+    /** How many Code Vision entries a line shows at most: one provider draws each (`PiwiCodeVisionProvider`). */
+    const val CODE_VISION_SLOTS = 8
+
+    /**
+     * The Code Vision entries the provider of `slot` draws: each line's entry at that place, in the service's order, of
+     * the file's line and the lines without a test status (a test's own line is drawn in the gutter), a blank title
+     * left out.
+     */
+    fun codeVisionSlot(summary: FileSummary, slot: Int): List<SummaryLine> =
+        (listOfNotNull(summary.file) + summary.lines.orEmpty().filter { it.status == null })
+            .filter { !it.title.isNullOrBlank() }
+            .groupBy { it.line }
+            .mapNotNull { (_, entries) -> entries.getOrNull(slot) }
+
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · ${workerName(stop.slot)}"
     }
 
     /**
@@ -1841,6 +2429,8 @@ object Glue {
         val actions: Set<StopAction> = emptySet(),
         /** A stop's browser can be shared with Playwright's own tools. */
         val shareable: Boolean = false,
+        /** A stop's window can come to the front: Show the Browser. */
+        val browserShowable: Boolean = false,
         val stoppable: Boolean = active,
         val endable: Boolean = false,
         /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
@@ -1849,6 +2439,10 @@ object Glue {
         val watchable: Boolean = false,
         /** The call a pausing worker's test waits in (the first such worker's): End the Test ends it there. */
         val waiting: RunWaiting? = null,
+        /** A live run has a Hold failures to turn over. */
+        val holdable: Boolean = false,
+        /** The Hold failures of the only live run that has one; null for none or several. */
+        val onlyHold: RunHoldFailures? = null,
     ) {
         val liveShared: Boolean get() = liveViewers != null
     }
@@ -1862,21 +2456,24 @@ object Glue {
             stopped = workers.any { it.state == "stopped" },
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
             shareable = stopsOf(sessions).any(::canShare),
+            browserShowable = stopsOf(sessions).any(::canShowBrowser),
             stoppable = sessions.values.any { !it.terminal },
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
             watchable = workers.any { it.watchable },
             waiting = workers.firstOrNull { it.pausing && it.waiting != null }?.waiting,
+            holdable = holdableRuns(sessions).isNotEmpty(),
+            onlyHold = holdableRuns(sessions).singleOrNull()?.hold,
         )
     }
 
     /** A pausing worker whose test waits in a call: its run, its worker, and the call. */
-    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting)
+    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting, val slot: Int = worker)
 
     /** The pausing workers whose test waits in a call, in their order. */
     fun waitingWorkers(sessions: Map<String, RunSession>): List<WaitingWorker> = sessions.values.flatMap { session ->
         session.workers.orEmpty().mapNotNull { w ->
-            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it) }
+            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it, w.parallelIndex) }
         }
     }
 
@@ -1902,8 +2499,17 @@ object Glue {
     private fun clipped(title: String): String =
         if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
-    /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
-    fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
+    /**
+     * The status bar's text while a run is shared live and none is stopped: the views open of the shared runs; while the
+     * project's runs are shared (`windowShared`), that they are, with or without a run.
+     */
+    fun liveStatus(controls: RunControls, windowShared: Boolean = false): String? = when {
+        windowShared -> "Piwi: this project's runs ${liveCount(controls.liveViewers ?: 0)}"
+        else -> controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
+    }
+
+    /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
+    fun askToWatchText(by: String, run: Int?): String = "$by asks to watch ${run?.let { "run #$it" } ?: "this run"} live."
 
     private fun liveCount(viewers: Int): String = if (viewers > 0) "shared live · ${views(viewers)}" else "shared live"
 
@@ -2279,12 +2885,21 @@ object Glue {
     /**
      * What a Debug in my editor request names beside the failing line: the test's spec as the run reported it, its title
      * after its describe blocks' (joined by ` › `), the Playwright project it failed in, and the failed execution whose
-     * suggested locator is outlined at the stop.
+     * suggested locator is outlined at the stop, and the name the dashboard gave the run, which its page follows it by.
      */
-    data class DebugRequest(val spec: String, val title: String, val project: String?, val execution: Int?)
+    data class DebugRequest(
+        val spec: String,
+        val title: String,
+        val project: String?,
+        val execution: Int?,
+        val ref: String? = null,
+    )
 
     /** The fields a debug request names, none of them twice. */
-    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution")
+    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution", "ref")
+
+    /** The name a dashboard gives a debug run, which the editor service checks again (`DEBUG_RUN_REF`). */
+    private val RUN_REF = Regex("^ed-[0-9a-f]{16,32}$")
 
     const val MAX_DEBUG_TITLE = 1000
     const val MAX_DEBUG_PROJECT = 200
@@ -2329,7 +2944,9 @@ object Glue {
         }
         val execution = one("execution")
         if (execution != null && positive(execution) == null) return "execution must be an id"
-        return DebugRequest(spec, title, project, execution?.let { positive(it) })
+        val ref = one("ref")?.trim()?.ifEmpty { null }
+        if (ref != null && !RUN_REF.matches(ref)) return "ref must be a run name the dashboard gives"
+        return DebugRequest(spec, title, project, execution?.let { positive(it) }, ref)
     }
 
     const val MAX_OPEN_PATH = 4096
@@ -2375,6 +2992,22 @@ object Glue {
     }
 
     /**
+     * The folders a file of the project is found in, by Open in IDE and by a debug request alike: the folders the
+     * service reads (`contextRoots`), the Playwright configs' (`configDirs`), the folders searched for them
+     * (`searchRoots`, where a config beside a Rider solution is found through Git), the project's folder (above `.idea`
+     * in Rider, `projectFolder`) and its content roots; each once, in that order.
+     */
+    fun openRoots(
+        contextRoots: List<String>,
+        configDirs: List<String>,
+        searchRoots: List<String>,
+        basePath: String?,
+        contentRoots: List<String>,
+    ): List<String> =
+        (contextRoots + configDirs + searchRoots + listOfNotNull(basePath?.let(::projectFolder), basePath) + contentRoots)
+            .distinct()
+
+    /**
      * Why a file a debug request names may not be debugged, with every link followed (`canonical`, the file's
      * canonical path, and the folders'): it must be in one of `projectRoots` and under one of `configDirs`, the failing
      * line's a script file, the test's a spec. Null when it may. `named` is the path as the request named it.
@@ -2411,7 +3044,7 @@ object Glue {
     fun debugRunArgs(specUri: String, fileUri: String, line: Int, debug: DebugRequest): RunTestsArgs = RunTestsArgs(
         uri = specUri,
         testIds = emptyList(),
-        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution),
+        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution, debug.ref),
     )
 
     /** Whether a path, with forward slashes, is absolute: `/home/me/a.ts` or `C:/me/a.ts`. */
@@ -2630,4 +3263,419 @@ object Glue {
 
     /** A test file's suffix, `.spec` or `.test` and its script extension (`.test.js` of `cart.test.js`); null for another file. */
     fun testFileSuffix(name: String): String? = SPEC_FILE.find(name)?.value
+
+    /** A CI session's key: its context's folder and its run. */
+    fun ciKey(session: CiSession): String = ciKey(session.root, session.runId)
+
+    fun ciKey(root: String?, runId: Int): String = "${root.orEmpty()}\n$runId"
+
+    /** The CI sessions kept, by `ciKey`, once `session` is heard: the latest of each run, one that ended dropped. */
+    fun withCiSession(sessions: Map<String, CiSession>, session: CiSession): Map<String, CiSession> {
+        val key = ciKey(session)
+        return if (session.ended) sessions - key else sessions + (key to session)
+    }
+
+    /** A CI position at a line, as the editor marks it after the line's text: the words of each test there, joined. */
+    data class CiMark(val line: Int, val text: String)
+
+    /**
+     * The CI positions in the file `uri` (as `Glue.sameFile` compares files): the call each running test of a CI run is
+     * at there, one mark per line. Never a stop: nothing waits there.
+     */
+    fun ciMarksIn(sessions: Collection<CiSession>, uri: String): List<CiMark> {
+        val lines = sortedMapOf<Int, MutableList<String>>()
+        for (session in sessions) {
+            for (test in session.tests.orEmpty()) {
+                val at = test.at ?: continue
+                if (test.status != "running" || !sameFile(at.uri, uri)) continue
+                val texts = lines.getOrPut(at.line) { mutableListOf() }
+                if (at.text !in texts) texts += at.text
+            }
+        }
+        return lines.map { (line, texts) -> CiMark(line, texts.joinToString(" · ")) }
+    }
+
+    /** The files a CI position is in now. */
+    fun ciMarkedFiles(sessions: Collection<CiSession>): Set<String> =
+        sessions.flatMap { s -> s.tests.orEmpty().mapNotNull { it.at?.uri } }.toSet()
+
+    /**
+     * A row of the CI Runs tab: a run (`CI run #78`, its branch and progress), its **Open** on the dashboard, a test (its
+     * name, then its project, attempt, worker and call, or its result), or a running test's **Watch** in the Worker tab
+     * (`ci-watch`) and on the dashboard (`watch`). What a row opens: a CI lane in the Worker tab (`lane`), else a file at a
+     * line (`uri`, `line`, `character`), else a page (`url`), else nothing. Its `key` stays as the rows move and its run
+     * progresses, so the tab keeps it selected.
+     */
+    data class CiRow(
+        val kind: String,
+        val text: String,
+        val detail: String,
+        val status: String? = null,
+        val uri: String? = null,
+        val line: Int = 0,
+        val character: Int = 0,
+        val url: String? = null,
+        val lane: CiLane? = null,
+        val key: String = "",
+    )
+
+    /**
+     * A lane of a CI run the Worker tab watches (`piwi/ciWatch`), as its `CiTest` names it (`lane` from 1, its shard),
+     * and its view on the dashboard, the second choice where the IDE cannot show it.
+     */
+    data class CiLane(val root: String, val runId: Int, val shard: Int?, val lane: Int, val dashboard: String?)
+
+    /** Whether a frame the service sent is of the CI lane the Worker tab asked to watch. */
+    fun sameCiLane(watching: CiWatchParams, frame: CiFrame): Boolean =
+        watching.root == frame.root && watching.runId == frame.runId && watching.shard == frame.shard && watching.lane == frame.lane
+
+    /** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
+    private fun ciLane(lane: Int?, shard: Int?): String = when {
+        lane == null -> ""
+        shard != null -> "shard $shard, worker $lane"
+        else -> "worker $lane"
+    }
+
+    private fun ciLane(test: CiTest): String = ciLane(test.lane, test.shard)
+
+    /** The Worker tab's name while it watches a CI lane: `CI run #78 · worker 2`. */
+    fun ciLaneTitle(lane: CiLane): String = "CI run #${lane.runId} · ${ciLane(lane.lane, lane.shard)}"
+
+    /**
+     * What the Worker tab says above a CI lane it watches, from the run's session (`sessions` by `ciKey`): the test
+     * running in the lane and the call it is at, else that the lane is between tests, else that the run ended; always
+     * read-only.
+     */
+    fun ciLaneCaption(sessions: Map<String, CiSession>, lane: CiLane): String {
+        val name = ciLaneTitle(lane)
+        val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
+        val test = session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
+            ?: return "$name · between tests · read-only"
+        val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+        val at = test.at?.let { " · ${it.title}" }.orEmpty()
+        return "$name · Running $title$at · read-only"
+    }
+
+    /**
+     * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
+     * progress, then **Open run #78**, its tests and, under a running test of a run that can be watched, **Watch** in the
+     * Worker tab and **Watch on the dashboard**. Read-only: no row pauses, steers, shares or holds the run.
+     */
+    fun ciRows(sessions: Collection<CiSession>): List<CiRow> = sessions.sortedByDescending { it.runId }.flatMap { session ->
+        val key = ciKey(session)
+        val head = CiRow(
+            "run",
+            session.name.ifEmpty { "CI run #${session.runId}" },
+            listOfNotNull(session.branch, session.summary.ifEmpty { null }).joinToString(" · "),
+            key = key,
+        )
+        val open = CiRow("open", "Open run #${session.runId}", "on the dashboard", url = session.url, key = "$key\nopen")
+        val keys = HashSet<String>()
+        val tests = session.tests.orEmpty().flatMapIndexed { index, test ->
+            val running = test.status == "running"
+            val detail = listOf(
+                test.project,
+                if (test.retry > 0) "retry ${test.retry}" else "",
+                if (running) ciLane(test) else test.status,
+                if (running) test.at?.title.orEmpty() else "",
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+            val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+            var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
+            if (!keys.add(testKey)) testKey = "$testKey\n$index"
+            val at = test.at
+            val row = when {
+                at != null -> CiRow("test", name, detail, test.status, at.uri, at.line, at.character ?: 0, key = testKey)
+                test.uri != null && test.line != null -> CiRow("test", name, detail, test.status, test.uri, test.line, key = testKey)
+                else -> CiRow("test", name, detail, test.status, key = testKey)
+            }
+            val here = test.watch?.let { url ->
+                test.lane?.let { lane ->
+                    CiRow(
+                        "ci-watch",
+                        "Watch",
+                        "${ciLane(test)} · read-only",
+                        lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
+                        key = "$testKey\nwatch-here",
+                    )
+                }
+            }
+            val watch = test.watch?.let { CiRow("watch", "Watch on the dashboard", "read-only", url = it, key = "$testKey\nwatch") }
+            listOfNotNull(row, here, watch)
+        }
+        listOf(head, open) + tests
+    }
+
+    /** The most events the Worker tab lists, the newest first. */
+    const val MAX_LANE_EVENTS = 50
+
+    /** The call log's last lines the Worker tab shows under its image. */
+    const val WAITS_LINES = 3
+
+    /** The most images a test's filmstrip keeps (`MAX_FILMSTRIP` of `@piwitests/core/live-layers`). */
+    const val MAX_FILMSTRIP = 40
+
+    /** The longest page's text a layer carries, in characters (`MAX_LANE_TEXT` of `@piwitests/core/live-layers`). */
+    const val MAX_LANE_TEXT = 96 * 1024
+
+    /** The size an image of a filmstrip is made at most (`LANE_THUMB_WIDTH`, `LANE_THUMB_HEIGHT` of the same). */
+    const val LANE_THUMB_WIDTH = 320
+    const val LANE_THUMB_HEIGHT = 200
+
+    /** The longest image of a filmstrip, in characters of base64 (`MAX_LANE_THUMB_BASE64` of the same). */
+    private const val MAX_LANE_THUMB_BASE64 = 4 * ((128 * 1024 + 2) / 3)
+
+    /**
+     * A JPEG's width and height as its frame header (`SOF0` to `SOF15`) says, read from its markers without decoding
+     * it; null for anything that is not a JPEG naming its size before its scan.
+     */
+    fun jpegSize(bytes: ByteArray): Pair<Int, Int>? {
+        fun at(i: Int) = bytes[i].toInt() and 0xFF
+        if (bytes.size < 4 || at(0) != 0xFF || at(1) != 0xD8) return null
+        var i = 2
+        while (i + 3 < bytes.size) {
+            if (at(i) != 0xFF) return null
+            val marker = at(i + 1)
+            when {
+                // Fill bytes before a marker.
+                marker == 0xFF -> i++
+                // A marker with no length: TEM, RSTn.
+                marker == 0x01 || marker in 0xD0..0xD7 -> i += 2
+                // The image ends, or its scan starts, before any frame header.
+                marker == 0xD9 || marker == 0xDA -> return null
+                else -> {
+                    val length = (at(i + 2) shl 8) or at(i + 3)
+                    if (length < 2) return null
+                    // A frame header, all but DHT (C4), JPG (C8) and DAC (CC): precision, height, width.
+                    if (marker in 0xC0..0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                        if (length < 7 || i + 8 >= bytes.size) return null
+                        return ((at(i + 7) shl 8) or at(i + 8)) to ((at(i + 5) shl 8) or at(i + 6))
+                    }
+                    i += 2 + length
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The bytes of a filmstrip image as the Worker tab may decode them: a JPEG in base64 of the thumbnail's bound, whose
+     * header names a size within twice `LANE_THUMB_WIDTH` by `LANE_THUMB_HEIGHT`, read before anything is decoded;
+     * null for anything else.
+     */
+    fun stripImageBytes(data: String?): ByteArray? {
+        if (data == null || data.length > MAX_LANE_THUMB_BASE64) return null
+        val bytes = pausedImageBytes(PausedImage("image/jpeg", data, null, null)) ?: return null
+        val (width, height) = jpegSize(bytes) ?: return null
+        return bytes.takeIf { width in 1..2 * LANE_THUMB_WIDTH && height in 1..2 * LANE_THUMB_HEIGHT }
+    }
+
+    /**
+     * The layers the Worker tab asks for (`piwi/laneView`'s and `piwi/ciWatch`'s `layers`): the call log and the page's
+     * events always, the page's text and the filmstrip while their tab is selected.
+     */
+    fun laneLayersAsked(text: Boolean, filmstrip: Boolean): List<String> =
+        listOfNotNull("calls", "events", "text".takeIf { text }, "filmstrip".takeIf { filmstrip })
+
+    /** A time as the Worker tab says it: `120 ms`, `4.2 s`, `17 s`. */
+    fun laneDuration(ms: Long): String = when {
+        ms < 1000 -> "${maxOf(0L, ms)} ms"
+        ms < 10_000 -> String.format(java.util.Locale.ROOT, "%.1f s", ms / 1000.0)
+        else -> "${Math.round(ms / 1000.0)} s"
+    }
+
+    private val WEB_ADDRESS = Regex("^https?://[^/?#]+([^#]*)", RegexOption.IGNORE_CASE)
+
+    /** An address as an event line shows it: its path and query on a web address, else as it came. */
+    fun eventAddress(url: String): String = WEB_ADDRESS.find(url)?.groupValues?.get(1)?.ifEmpty { "/" } ?: url
+
+    /**
+     * Why the call the lane's test is in waits: the call and how it stands (`head`), what its locator matches while it
+     * waits on one (`target`), the call log's last lines then the error it ended with (`lines`).
+     */
+    data class WaitsView(val head: String, val target: String?, val lines: List<String>, val failed: Boolean)
+
+    private fun targetWords(target: LiveCallTarget?): String? {
+        if (target == null) return null
+        if (target.count == 0) return "No element matches yet"
+        val state = when (target.enabled) { false -> "disabled"; true -> "enabled"; null -> null }
+        if (target.count == 1) return "1 element matches" + (state?.let { ", $it" } ?: "")
+        return "${target.count} elements match" + (state?.let { ", the first $it" } ?: "")
+    }
+
+    fun waitsView(log: LiveCallLog): WaitsView {
+        val time = laneDuration(log.ms)
+        val how = when (log.status) { "running" -> "waiting $time"; "passed" -> "done in $time"; else -> "failed after $time" }
+        val lines = log.lines.orEmpty().takeLast(WAITS_LINES)
+        return WaitsView(
+            "${log.call?.title.orEmpty()} · $how",
+            if (log.status == "running") targetWords(log.target) else null,
+            if (log.error != null) lines + log.error else lines,
+            log.status == "failed",
+        )
+    }
+
+    /** A line of the Worker tab's events: `key` the same request's lines share, `level` `error`, `warning` or `info`. */
+    data class EventLine(val key: String, val text: String, val level: String, val url: String?, val at: Long)
+
+    /** What a page event says, as the Worker tab lists it; `n` keys a line no other replaces. */
+    fun eventLine(event: PageEvent, at: Long, worker: Int, n: Int): EventLine {
+        fun line(text: String, level: String, url: String? = null, key: String = "$n") = EventLine(key, text, level, url, at)
+        val url = event.url.orEmpty()
+        val what = "${event.method.orEmpty()} ${eventAddress(url)}"
+        return when (event.kind) {
+            "console" -> line("Console error: ${event.text.orEmpty()}", "error")
+            "page-error" -> line("Uncaught error: ${event.text.orEmpty()}", "error")
+            "request-failed" ->
+                line("$what " + (event.status?.let { "answered $it" } ?: "failed: ${event.failure ?: "no answer"}"), "error", url)
+            "request-pending" -> {
+                val time = laneDuration(event.ms ?: 0)
+                val done = event.done == true
+                line(if (done) "$what answered after $time" else "$what pending $time", if (done) "info" else "warning", url, "pending $worker:${event.id}")
+            }
+            "backend" -> {
+                val level = if (event.level == "warning") "warning" else "error"
+                line("Backend $level on $what${event.status?.let { " ($it)" } ?: ""}: ${event.text.orEmpty()}", level, url)
+            }
+            "api" -> {
+                val status = event.status
+                if (event.failure != null || status == null) line("API $what failed: ${event.failure ?: "no answer"}", "error", url)
+                else line("API $what answered $status in ${laneDuration(event.ms ?: 0)}", if (status >= 400) "error" else "info", url)
+            }
+            "dropped" -> line("${event.count ?: 0} more events were not sent: too many at once.", "warning")
+            else -> line(event.text.orEmpty(), "info")
+        }
+    }
+
+    /** An image of the lane's filmstrip: the call it ended, its title and its place in the strip, its JPEG in base64. */
+    data class StripImage(val call: String, val title: String, val index: Int, val data: String)
+
+    /** The page's text as the Worker tab shows it (`text`, `cut`, `source`), or why none came (`refused`). */
+    data class LaneTextShown(val text: String?, val cut: Boolean, val source: String, val refused: String?)
+
+    /**
+     * The layers the Worker tab shows of its lane, as they came: of the test `test` (its id, or its title on a CI lane)
+     * and the worker `worker` that runs it, the newest events first, how many were heard, the page's text, the filmstrip
+     * in the order of the test's calls.
+     */
+    data class LaneLayersShown(
+        val test: String?,
+        val worker: Int?,
+        val waits: WaitsView?,
+        val events: List<EventLine>,
+        val heard: Int,
+        val text: LaneTextShown?,
+        val strip: List<StripImage>,
+    )
+
+    val NO_LANE_LAYERS = LaneLayersShown(null, null, null, emptyList(), 0, null, emptyList())
+
+    private val THUMB_DATA = Regex("^/9j/[A-Za-z0-9+/]*={0,2}$")
+
+    /**
+     * The layers shown with `layer` heard, and the parts it changed (`waits`, `events`, `text`, `strip`; none for an
+     * image of a call the strip holds, as the worker sends the filmstrip again when the layers change). A layer of
+     * another test, or of another worker (a retry runs in a new one), starts the call log and the filmstrip anew; so does
+     * an image placed at or before the strip's last of a call it does not hold, another attempt's. A request's pending
+     * time replaces its line, first again.
+     */
+    fun withLaneLayer(shown: LaneLayersShown, layer: LaneLayerFields): Pair<LaneLayersShown, Set<String>> {
+        val changed = linkedSetOf<String>()
+        var next = shown
+        val test = layer.test
+        val worker = layer.worker ?: shown.worker
+        if ((test != null && test != shown.test) || worker != shown.worker) {
+            if (shown.waits != null) changed += "waits"
+            if (shown.strip.isNotEmpty()) changed += "strip"
+            next = next.copy(test = test ?: shown.test, worker = worker, waits = null, strip = emptyList())
+        }
+        when (layer.layer) {
+            "calls" -> layer.log?.let {
+                next = next.copy(waits = waitsView(it))
+                changed += "waits"
+            }
+            "events" -> layer.event?.let {
+                val line = eventLine(it, layer.at ?: 0, worker ?: 0, next.heard + 1)
+                next = next.copy(
+                    events = (listOf(line) + next.events.filter { e -> e.key != line.key }).take(MAX_LANE_EVENTS),
+                    heard = next.heard + 1,
+                )
+                changed += "events"
+            }
+            "text" -> {
+                val text = layer.text
+                val refused = layer.refused
+                if (refused != null) next = next.copy(text = LaneTextShown(null, false, "", refused))
+                else if (text != null) next = next.copy(text = LaneTextShown(text.text, text.cut, text.source, null))
+                if (refused != null || text != null) changed += "text"
+            }
+            "filmstrip" -> {
+                val thumb = layer.thumb
+                val data = layer.data
+                if (thumb != null && data != null && THUMB_DATA.matches(data) && next.strip.none { it.call == thumb.call }) {
+                    val image = StripImage(thumb.call, thumb.title, thumb.index, data)
+                    val kept = next.strip.takeIf { it.isEmpty() || image.index > it.last().index }.orEmpty()
+                    next = next.copy(strip = (kept + image).takeLast(MAX_FILMSTRIP))
+                    changed += "strip"
+                }
+            }
+        }
+        return next to changed
+    }
+
+    /** What the page's text tab says above the text: where it came from and whether it was cut, or why none came. */
+    fun laneTextNote(text: LaneTextShown?): String = when {
+        text == null -> "Nothing yet."
+        text.refused != null -> text.refused
+        else -> (if (text.source == "trace") "From the test’s trace." else "Read from the page.") +
+            (if (text.cut) " Cut at ${MAX_LANE_TEXT / 1024} K characters." else "")
+    }
+
+    /** **Open the Trace So Far** in the Worker tab, and what its tooltip says it does. */
+    const val OPEN_TRACE = "Open the Trace So Far"
+    const val OPEN_TRACE_TITLE = "Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on"
+
+    /**
+     * Whether the Worker tab offers **Open the Trace So Far** for the worker in its slot: its reporter answers a trace
+     * ask (`traces`) and it runs a test, as `canOpenTrace` of `@piwitests/run-model/stop` says for the Runs window.
+     */
+    fun canOpenTrace(worker: RunWorker?): Boolean = worker?.traces == true && worker.test != null
+
+    /**
+     * What the answer to **Open the Trace So Far** for the slot `asked` (a run's ref and a lane) says: as it is while the
+     * Worker tab shows that slot (`shown`), else with the name of the worker it is for in front.
+     */
+    fun traceAnswerText(asked: Pair<String, Int>, shown: Pair<String, Int>?, message: String): String =
+        if (shown == asked) message else "${workerName(asked.second)}: $message"
+
+    /** The note over a lane whose reporter sends no layers; null when it sends them or the tab cannot tell. */
+    fun laneLayersNote(worker: RunWorker?): String? =
+        if (worker != null && !worker.layers) {
+            "This worker’s reporter sends its images alone: update @piwitests/reporter to see why it waits, the page’s events, its text and the filmstrip."
+        } else null
+
+    /**
+     * The note over a CI lane while none of its page's events, its text or its filmstrip came: neither the team instance
+     * nor the CI run's reporter says whether it sends them, and an older one of either sends the images alone. Null once
+     * one came.
+     */
+    fun ciLaneLayersNote(shown: LaneLayersShown): String? =
+        if (shown.heard > 0 || shown.text != null || shown.strip.isNotEmpty()) null
+        else "The page’s events, its text and the filmstrip show here as the CI run’s worker sends them: a team instance or a @piwitests/reporter older than the IDE’s sends the images alone."
+
+    /**
+     * The layers the Worker tab holds as asked once the service answered a change of them (`asked`): those it held,
+     * unless the service refused the very change they are, which leaves none held, so the next change asks again.
+     */
+    fun layersAfterAnswer(held: List<String>, asked: List<String>, ok: Boolean): List<String> =
+        if (ok || held != asked) held else emptyList()
+
+    /**
+     * Where `query` is next found in `text` from `from`, ignoring case, wrapping to the start; -1 for none or an empty
+     * query. The Text tab's search.
+     */
+    fun findIn(text: String, query: String, from: Int): Int {
+        if (query.isEmpty()) return -1
+        val at = text.indexOf(query, from.coerceIn(0, text.length), ignoreCase = true)
+        return if (at >= 0) at else text.indexOf(query, 0, ignoreCase = true)
+    }
 }

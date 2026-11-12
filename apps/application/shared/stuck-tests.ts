@@ -39,9 +39,10 @@ export function runningMs(begin: Record<string, unknown>, startedAt: number, now
  * what it carries when it is, null when it is not or when they are too few to tell.
  */
 export function stuckAttempt(elapsedMs: number, passingDurations: readonly number[]): StuckAttempt | null {
+  const usualMs = usualDurationMs(passingDurations);
   const thresholdMs = stuckThresholdMs(passingDurations);
-  if (thresholdMs === null || elapsedMs <= thresholdMs) return null;
-  return { elapsedMs, usualMs: Math.max(...passingDurations.filter((ms) => Number.isFinite(ms) && ms >= 0)) };
+  if (usualMs === null || thresholdMs === null || elapsedMs <= thresholdMs) return null;
+  return { elapsedMs, usualMs };
 }
 
 /**
@@ -66,7 +67,29 @@ export function testStuckEventData(
  * there are too few of them to tell.
  */
 export function stuckThresholdMs(passingDurations: readonly number[]): number | null {
+  const usualMs = usualDurationMs(passingDurations);
+  return usualMs === null ? null : Math.max(STUCK_FLOOR_MS, STUCK_FACTOR * usualMs);
+}
+
+/**
+ * A test's usual duration as the rule reads it: the longest of its last passing executions (`usualMs`), null when they
+ * are too few to tell. The run page's Timeline draws it behind each running attempt.
+ */
+export function usualDurationMs(passingDurations: readonly number[]): number | null {
   const durations = passingDurations.filter((ms) => Number.isFinite(ms) && ms >= 0);
-  if (durations.length < STUCK_MIN_PASSING) return null;
-  return Math.max(STUCK_FLOOR_MS, STUCK_FACTOR * Math.max(...durations));
+  return durations.length < STUCK_MIN_PASSING ? null : Math.max(...durations);
+}
+
+/** A test as its usual duration is found: its file, describe path and title, and its Playwright project. */
+export interface UsualDurationTest {
+  filePath?: string | null;
+  suitePath?: readonly string[] | null;
+  title: string;
+  /** The Playwright project's name; null or empty for none. */
+  browser?: string | null;
+}
+
+/** The key a test's usual duration is kept and found by, the same for a stored test and a running one. */
+export function usualDurationKey(test: UsualDurationTest): string {
+  return [test.filePath ?? '', (test.suitePath ?? []).join('\x1f'), test.title, test.browser ?? ''].join('\x00');
 }

@@ -39,13 +39,19 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
   `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
+  D25 of `proposals/1.0-stabilization.md` in the same change
+  (`apps/application/tests/unit/editor-ids-register.test.ts`).
 - **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
   ([Run control](ARCHITECTURE.md#run-control))
+- **Every request of the plugin's own goes through `piwiServer()`, whose proxy writes its failure in the Log tab**
+  (`PiwiLog.logged`). Checked by `PiwiPluginTest` (`testTheLogTabShowsTheServicesLogAndTheRequestsThatFailed`).
+  ([The log](ARCHITECTURE.md#the-log))
 - **The plugin's own requests go through `Lsp4jAccess`, never `getLsp4jServer()`** (deprecated, then removed by
   2026.2). `Lsp4jAccess` takes the lsp4j proxy from a `sendRequestSync` that sends nothing; `Lsp4jAccessTest` checks
   it. ([LSP integration](ARCHITECTURE.md#lsp-integration))
 - **A push from the service is never answered with a read of the same answer.** `PiwiProjectService` keeps each pushed
-  answer, and reads the three answers whole only at start, on Refresh, on the status bar's click and after new
+  answer, and reads the three answers whole only at start, on Refresh, on Refresh the Latest Run and after new
   credentials (`refreshStatus`). ([Native views and pushes](ARCHITECTURE.md#native-views-and-pushes))
 - **Open files are drawn again with `DaemonCodeAnalyzer.restart(PsiFile)`, and only those a change shows in, never
   with the whole daemon's `restart()`** (`Glue.redraw`).
@@ -73,6 +79,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Settings and secrets](ARCHITECTURE.md#settings-and-secrets))
 - **Choices made on this machine live in `.idea/workspace.xml`** (`PiwiLocalSettings`). Choosing the desktop app never
   changes the instance, its project or its key.
+- **A text from a run never renders as HTML, and an image from a run is sized before it is decoded.** Labels set
+  `html.disable`, and a tooltip goes through `Glue.htmlTooltip`, which escapes it: the platform renders every
+  component's tooltip as HTML. A filmstrip image is decoded only once its JPEG header names a size within twice a
+  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest` and `PausedPagePanelTest`.
 - **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, the
   desktop app, or the `PIWI_DASHBOARD_URL` of the IDE's environment (which reaches every open project). An instance's
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
@@ -111,9 +121,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   recording, `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret.
   `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
   plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
-- **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to a debug session.** From
-  the keyboard they are enabled only while no debug session runs, and `PiwiRunActionPromoter` puts them first only
-  while a run is live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
+- **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
+  takes the key.** From the keyboard, Resume, Step, Run to Caret and Finish give way to a suspended debug session, Pause
+  to a running one, Stop to any (`givesWayTo`); `PiwiRunActionPromoter` puts them first only while a run is live.
+  Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control at a
   stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
@@ -153,6 +164,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **One undo step per recording.** A `StartMarkAction` in a command of its own just before the first write, and a
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
+- **Every action but a toggle draws its concept's platform icon, one with a New UI glyph on 2024.1, or is listed as
+  waiting for Piwi's glyph.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`; the failed mark, Open in
+  Dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`
+  (`testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph`); the New UI glyph, by hand.
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
 
 ## Workflow
@@ -190,10 +205,11 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
   page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
-  `CaretCountInlay`).
+  `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI Run tab, the CI positions).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
+- `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
@@ -216,6 +232,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),
   [Connect](ARCHITECTURE.md#connect), [Settings and secrets](ARCHITECTURE.md#settings-and-secrets),
   [MCP server configuration](ARCHITECTURE.md#mcp-server-configuration).
+- [The log](ARCHITECTURE.md#the-log): what the Log tab holds and where each line comes from.
 - [Platform compatibility](ARCHITECTURE.md#platform-compatibility), [Threading](ARCHITECTURE.md#threading),
   [Dynamic plugin loading](ARCHITECTURE.md#dynamic-plugin-loading): the detail behind the platform rules.
 - [Change notes](ARCHITECTURE.md#change-notes), [Screenshots](ARCHITECTURE.md#screenshots),

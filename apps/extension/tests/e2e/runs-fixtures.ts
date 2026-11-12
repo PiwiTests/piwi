@@ -23,6 +23,7 @@ import type { RawCaptureEvent } from '@piwitests/core/recording';
 import {
   RUN_TAKES,
   type HubToRun,
+  type RunFeature,
   type KeptResponse,
   type RunMainToHub,
   type RunTake,
@@ -215,7 +216,6 @@ export async function startDesktop(dir: string): Promise<Desktop> {
     notice: () => {},
     rootOf: (cwd) => (cwd === dir ? dir : null),
     writesCode: () => true,
-    followed: () => !!hub?.follows(),
     declines: (what) =>
       DESKTOP_DECLINES.has(what) ? `${what} ends in an editor, and the desktop app has none.` : null,
     host: 'the desktop app',
@@ -382,10 +382,16 @@ export async function startLaneRun(
 }
 
 /**
- * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for, Playwright's worker
- * `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
+ * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for (or does what `features`
+ * say), Playwright's worker `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
  */
-export function laneWorker(editor: Editor, channel: Channel, ref: string, workerIndex: number): FakeWorker {
+export function laneWorker(
+  editor: Editor,
+  channel: Channel,
+  ref: string,
+  workerIndex: number,
+  features: RunFeature[] = ['view-lane', 'give-up'],
+): FakeWorker {
   const worker = new FakeWorker(channel.path, editor.dir);
   worker.send({
     type: 'run-attach',
@@ -399,7 +405,7 @@ export function laneWorker(editor: Editor, channel: Channel, ref: string, worker
     reporter: '0.67.0',
     takes: [...RUN_TAKES],
     holds: ['failure'],
-    features: ['view-lane', 'give-up'],
+    features,
   });
   return worker;
 }
@@ -632,9 +638,26 @@ export interface OlderEditor {
 /**
  * An editor service of a version before the live view, behind its own Send to editor endpoint: a hub that tells each
  * run as the spec gives it, with no `stop.intents` and no worker taking the view, and answers the image of a stopped
- * page without its viewport. A WebSocket server of its own, on the handshake and text frames alone.
+ * page without its viewport (`stubEditor` with no features).
  */
-export async function olderEditor(sessions: HubSession[], image: string): Promise<OlderEditor> {
+export function olderEditor(sessions: HubSession[], image: string): Promise<OlderEditor> {
+  return stubEditor(sessions, image);
+}
+
+/**
+ * An editor service the spec plays, behind its own Send to editor endpoint: a hub that welcomes with `features` (none
+ * when left out, as a hub that predates them), tells each run as the spec gives it, answers a command with what
+ * `answer` returns for it, else the image of a stopped page without its viewport, and refuses any other. A WebSocket
+ * server of its own, on the handshake and text frames alone.
+ */
+export async function stubEditor(
+  sessions: HubSession[],
+  image: string,
+  options: {
+    features?: string[];
+    answer?: (command: Record<string, unknown>) => { ok?: boolean; message: string } | null;
+  } = {},
+): Promise<OlderEditor> {
   const heard: Array<Record<string, unknown>> = [];
   const token = 'older_hub_token_0123456789';
   const server: Server = createServer(async (req, res) => {
@@ -686,12 +709,23 @@ export async function olderEditor(sessions: HubSession[], image: string): Promis
     const hear = (text: string) => {
       const message = JSON.parse(text) as Record<string, unknown>;
       if (message.type === 'hello') {
-        send({ type: 'welcome', pid: 4242, version: '0.60.0', client: 'Older Editor', roots: [], keepaliveMs: 20_000 });
+        const { features } = options;
+        send({
+          type: 'welcome',
+          pid: 4242,
+          version: '0.60.0',
+          client: 'Older Editor',
+          roots: [],
+          keepaliveMs: 20_000,
+          ...(features ? { features } : {}),
+        });
         return;
       }
       heard.push(message);
       const answer = { type: 'answer', id: message.id, ok: true, message: '' };
-      if (message.type === 'pausedPage') send({ ...answer, image: { mime: 'image/jpeg', data: image } });
+      const own = options.answer?.(message);
+      if (own) send({ ...answer, ...own });
+      else if (message.type === 'pausedPage') send({ ...answer, image: { mime: 'image/jpeg', data: image } });
       else if (message.type === 'subscribe' || message.type === 'follow') send(answer);
       else send({ ...answer, ok: false, message: `This editor does not know ${String(message.type)}.` });
       if (message.type === 'subscribe') for (const session of sessions) send({ type: 'session', session });

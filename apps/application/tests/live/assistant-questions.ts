@@ -863,7 +863,7 @@ const setting: LiveQuestion[] = [
     topic: 'setting',
     question: 'How do I make clicked source paths open in my editor?',
     tools: SETTING_TOOLS,
-    facts: [docs('features/ide-integration', 'Open in IDE')],
+    facts: [docs('features/ide-integration', 'Open in editor')],
     blocks: ['guide'],
     anchors: ['open-in-ide-settings', 'user-menu-open-in-ide'],
   },

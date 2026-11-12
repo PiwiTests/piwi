@@ -17,7 +17,20 @@ to that moment. Rollout step 2 built: `normalizeTestTagsWithDropped` counts the 
 warns once in `onBegin` and sends `metadata.tagsTruncated` (`collectTagsTruncated`), the server records the same from
 the raw tags of a payload sent without the reporter or imported from a blob report (`recordTagsTruncated`), a resent
 report counts once and each shard's adds up (`keepTagsTruncated`, `addTagsTruncated`), and the run page shows "Tags
-cut at 20 on N tests" with the tests in its Details. Steps 3 to 7 remain. Revised after the review on #1161: provider
+cut at 20 on N tests" with the tests in its Details. Rollout step 4 built: the `test-management` kind and the
+Zephyr Scale Cloud connection (registry entry with its four regions, the read-only client with `whoAmI`,
+`listProjects`, `listCases`, `listStatuses` and `caseUrl`, the connection card and form, `PIWI_ZEPHYR_API_TOKEN` and
+`PIWI_ZEPHYR_REGION`), tested against a stubbed `fetch` with fixtures written from the OpenAPI spec; nothing has been
+run against the real Zephyr API. `uploadRun`, `findRun` and `linkRun` are optional in the interface, and the client does
+not implement them. Rollout step 5 built: the `project_test_management` binding table, kept apart from the tracker
+binding, and the `test_management_cases` catalog (key, provider ID, name, status and folder, and nothing else of a
+case); the binding endpoints (`GET`/`PUT /api/projects/:id/test-management`, `options`, `summary`, `key-config`,
+`cases`, `catalog/refresh`); the catalog read, by a daily task and by Refresh catalog, with every page read before
+anything is replaced; one in-process limiter per connection (`PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE`)
+shared by the catalog read, the pickers and the Test button; the binding form with dry run on for a new binding; the
+mapping summary (mapped and unmapped tests, keys the catalog does not hold, `tagsTruncated` shown as "at least N"); the
+hover card on a tag or external ID that is a test case key; and the demo's seeded binding and catalog. Nothing is sent to
+Zephyr: `uploadRun` is still unwritten. Steps 6 and 7 remain. Revised after the review on #1161: provider
 dispatch in the outbox and the connection endpoints, a provider-neutral interface and tables, one binding table per
 integration kind, and a warning when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
 twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
@@ -366,10 +379,10 @@ Retries and idempotency:
 - **A 429 on the upload clears the marker.** The tool answered without creating a cycle, so the action removes
   `uploadStartedAt` in the same write that schedules the backoff, and the retry uploads normally. Any 5xx on the
   upload is an outcome unknown.
-- `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>
-  &onlyLastExecutions=true`, then the cycle of each hit, matched on `Piwi #<runId>` in its name. It depends on the
-  upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun` itself before a
-  retry; until then, the safe default above stands.
+- `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>`
+  (every execution, not only the last ones), then the cycle of each hit, matched on `Piwi #<runId>` in its name. It
+  depends on the upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun`
+  itself before a retry; until then, the safe default above stands.
 - Final refusals (400, 401, 403, 404, 413, 422) fail the action at once with the tool's message, as the Jira actions
   do; 401 also marks the connection `failed` so the settings page shows the token is rejected.
 - Other calls' 429 and 5xx with a response follow the outbox backoff; `Retry-After` wins (seconds or an HTTP date, capped at one
@@ -489,7 +502,7 @@ Retention: `test_management_results` rows of runs not written for 90 days go wit
 Environment variables, registered in `PIWI_ENV_VARS` with `since`: `PIWI_ZEPHYR_API_TOKEN` (secret) and
 `PIWI_ZEPHYR_REGION` (default `us`), which create an env-managed connection as `PIWI_JIRA_*` does.
 
-**Project, Integrations tab** (administrator):
+**Project, Integrations tab** (`project:manage`, Project admin on the project, as for the tracker binding):
 
 - *Keys in test tags*: the issue-key pattern of #1153 and the test case key pattern, with the overlap warning.
 - *Test management*: enabled, dry run (on), provider project, key sources (tags on, external ID off), branches and
@@ -512,16 +525,21 @@ Environment variables, registered in `PIWI_ENV_VARS` with `since`: `PIWI_ZEPHYR_
   execution, so: dry run by default, `autoCreateTestCases=false` always, no blind retry of an upload whose outcome is
   unknown (a row reclaimed after its lease expired included, see [8](#8-the-sync-action)), and a sync never writes to
   a test run it was not configured for.
-- **Roles**: connection and binding, `administrator`; *Sync again* and *Refresh catalog*, `administrator` and
-  `reporter`; reading the activity and the hover cards, any project member. Each endpoint declares `x-required-roles`.
+- **Roles**: the connection, `administrator`; the binding, its options and *Refresh catalog*, `project:manage` (Project
+  admin), like the tracker binding; *Sync again*, `administrator` and `reporter`; reading the activity, the hover cards
+  and `key-config`, `project:read`. Each endpoint declares its permission in `x-required-permission`.
+- **A Project admin chooses the connection.** They can bind their project to any test management connection on the
+  instance and to any Zephyr project its token sees, and the readers of that project then see the case names. This is
+  accepted for now: the tracker binding works the same way.
 
 ## Assumptions to confirm
 
 Read from SmartBear's OpenAPI spec (`https://support.smartbear.com/zephyr-scale-cloud/api-docs/api.cloud.stripped.yml`):
 the four regional hosts, the custom upload creating a new cycle, the 10 MB zip limit, the `testCycle` part fields,
 `TestExecutionInput`, `PUT /testexecutions/{id}`, `maxResults` up to 1,000, cycle web links, and no delete operation for
-test cases, cycles or executions. Not in the spec, so checked against a throwaway Zephyr project in the Zephyr pull
-request, before any code depends on them:
+test cases, cycles or executions. Not in the spec, so each has to be checked against a throwaway Zephyr project. They are
+**not checked yet**: no Zephyr project was available for step 4, which only reads. Check them before step 6, the first step that uploads,
+depends on them:
 
 1. The JSON schema of the custom format (`version`, `executions[].result`, `executions[].testCase.key`), the accepted
    `result` values, and whether an execution can carry a comment.
@@ -531,7 +549,9 @@ request, before any code depends on them:
    results carry only the status, and the cycle's description and web link carry the rest; `findRun` then cannot use
    `actualEndDateAfter`, and an unknown outcome stays with a person.
 4. The rate limit and its headers. The spec documents none; the client assumes a conservative default (20 requests a
-   minute per connection, `PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE`) and honors `Retry-After` when sent.
+   minute per connection, `PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE`) and honors `Retry-After` when sent. Step 4's client has no limiter: it
+   only reports a `Retry-After` on an error. The limiter comes with the first caller that loops, the catalog task in
+   step 5.
 5. Large uploads: a community report describes a gateway timeout on an upload of about a thousand executions, which is
    the unknown-outcome case of [8](#8-the-sync-action).
 
@@ -559,7 +579,7 @@ run page's test run link all work there.
    first.
 4. **Test management kind and the Zephyr Scale client** (`feat(app)`). The interface, the registry entry, the client
    (`whoAmI`, `listProjects`, `listCases`, `listStatuses`), the connection card with Provider and Region, the
-   env-managed connection, the assumptions above checked and recorded here.
+   env-managed connection. The assumptions above stay unchecked here: step 4 only reads.
 5. **Binding and catalog** (`feat(app)`, `feat(db)` for the migration). `project_test_management`,
    `test_management_cases`, the daily catalog task, the binding form with dry run, the mapping summary, the hover card
    on `TestIdChip` and on matching tags.
@@ -598,6 +618,8 @@ in `proposals/1.0-stabilization.md`.
 
 ## Documentation
 
+- `apps/docs/operate/zephyr-scale.md` (step 4): the connection, the region, the token and `PIWI_ZEPHYR_*`.
+  `operate/integrations.md` keeps the Jira text and links it. The feature page below links it for the connection.
 - `apps/docs/features/test-management.md`: what it sends and when, mapping with tags, the 20-tag limit, the settings,
   the calls per run, what leaves the server, dry run, limits (no imports, Zephyr Scale Cloud first), and the CI-only
   alternative with Playwright's `junit` reporter for teams without Piwi. It says that with the 2-minute request

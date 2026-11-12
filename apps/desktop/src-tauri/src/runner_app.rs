@@ -261,6 +261,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let log_path = log_dir.join(LOG_FILE);
             append_log(&log_path, "----- launch -----");
             app.manage(LogFile(log_path.clone()));
+            run_target::sweep_leftover_request_dirs(app.handle());
             app.manage(Session::new(
                 app.get_webview_window("main").and_then(|w| w.url().ok()),
                 app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
@@ -499,7 +500,7 @@ mod tests {
     #[test]
     fn the_quit_question_names_the_app() {
         assert_eq!(crate::quit_question(APP_NAME), "Quit Piwi Runner?");
-        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi?");
+        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi Desktop?");
     }
 
     #[test]

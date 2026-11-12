@@ -1163,6 +1163,62 @@
       "when": 1794162681902,
       "tag": "0165_amusing_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1794256870966,
+      "tag": "0166_amazing_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1794267445100,
+      "tag": "0167_common_silver_samurai",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1794304200101,
+      "tag": "0168_clean_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1794345552590,
+      "tag": "0169_same_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1794430807857,
+      "tag": "0170_lean_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1794439619442,
+      "tag": "0171_minor_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1794465774819,
+      "tag": "0172_marvelous_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1794475005204,
+      "tag": "0173_same_dust",
+      "breakpoints": true
     }
   ]
 }

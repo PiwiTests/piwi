@@ -75,6 +75,26 @@ describe('the editors’ discovery files', () => {
       roots: ['/a'],
       client: null,
     });
+    // Where a run's picks go: a pairing on the loopback interface, else none.
+    const send = { url: 'http://127.0.0.1:41003/piwi/send', token: 'editor-picks-token-0123456789' };
+    expect(parseEditorDiscovery(text({ send }))).toMatchObject({ send });
+    expect(parseEditorDiscovery(text({ send: { ...send, url: 'http://evil.test:80/piwi/send' } }))).not.toHaveProperty(
+      'send',
+    );
+    expect(parseEditorDiscovery(text({ send: 'http://127.0.0.1:41003/piwi/send' }))).not.toHaveProperty('send');
+    // The agents' MCP server: on 127.0.0.1 at /mcp, with a token of its form, else none.
+    const agents = { url: 'http://127.0.0.1:41005/mcp', token: 'a'.repeat(32) };
+    expect(parseEditorDiscovery(text({ agents }))).toMatchObject({ agents });
+    for (const other of [
+      { ...agents, url: 'http://localhost:41005/mcp' },
+      { ...agents, url: 'http://127.0.0.1:41005/other' },
+      { ...agents, token: 'short' },
+    ]) {
+      expect(parseEditorDiscovery(text({ agents: other })), other.url).not.toHaveProperty('agents');
+    }
+    // A service knows a run nobody attends only when it says so.
+    expect(parseEditorDiscovery(text({ unattended: true }))).toMatchObject({ unattended: true });
+    expect(parseEditorDiscovery(text({ unattended: 'yes' }))).not.toHaveProperty('unattended');
     for (const broken of ['{', '[]', text({ pid: 0 }), text({ pid: '4242' }), 'null']) {
       expect(parseEditorDiscovery(broken), broken).toBeNull();
     }

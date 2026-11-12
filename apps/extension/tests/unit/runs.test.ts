@@ -1,22 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-view';
-import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
+import type { HubProgress, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
-  heldUntilWatched,
-  laneFrameNow,
-  laneWatchOf,
+  attentionOf,
   pageHintOf,
-  pagePoint,
   parseRunsRequest,
-  runFile,
   shareRefusalOf,
+  keyTargetOf,
+  readRunsBounds,
+  stopKeyOf,
+  workerKey,
   shortcutCommands,
   stateForViewer,
-  stopError,
-  stopIntents,
-  stopPlace,
-  testName,
   viewKey,
   type RunsState,
 } from '../../src/shared/runs.js';
@@ -53,6 +49,8 @@ describe('the Runs window’s requests, as the worker reads them', () => {
     const command = { type: 'command', id: 3, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 2, since: 's4' };
     expect(parseRunsRequest({ ...command, what: 'step' })).toEqual({ ...command, what: 'step' });
     expect(parseRunsRequest({ ...command, what: 'end' })).toEqual({ ...command, what: 'end' });
+    // Show the browser, at the stop it names.
+    expect(parseRunsRequest({ ...command, what: 'front' })).toEqual({ ...command, what: 'front' });
     expect(parseRunsRequest({ ...command, worker: null, since: null, what: 'pause' })).toMatchObject({ worker: null });
     // End the test while a Pause waits for a call: its worker, and no stop.
     expect(parseRunsRequest({ ...command, since: null, what: 'give-up' })).toEqual({
@@ -82,6 +80,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       { ...command, since: null, what: 'resume' },
       { ...command, since: null, what: 'end' },
       { ...command, since: null, what: 'pick' },
+      { ...command, since: null, what: 'front' },
       { ...command, since: null, what: 'assert' },
       { ...command, since: null, what: 'requests' },
       // End the test while a Pause waits names its worker, and no stop.
@@ -147,37 +146,89 @@ describe('the global shortcut’s rule', () => {
   it('leaves ended runs alone, stopped workers included', () => {
     expect(shortcutCommands([run('a', [worker({ state: 'stopped', stop: stop('s1') })], true)])).toEqual([]);
   });
+
+  it('pauses only the runs a person attends, where its hub keeps a Hold failures for each, and resumes any stop', () => {
+    const plain = run('a', [worker({})]);
+    const attended = { ...plain, session: { ...plain.session, hold: { on: false, by: 'start' as const } } };
+    const unattended = run('b', [worker({ worker: 2 })]);
+    const hub = (holds: boolean) => ({
+      id: attended.hub,
+      connected: true,
+      client: null,
+      desktop: true,
+      lanes: true,
+      layers: true,
+      presence: true,
+      holds,
+      stops: false,
+      traces: false,
+    });
+    // A run nobody attends is left to run: the shortcut pauses the run a person attends.
+    expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
+      ['a', 'pause'],
+    ]);
+    // A hub that keeps no Hold failures names no run unattended.
+    expect(shortcutCommands([attended, unattended], [hub(false)]).map((c) => [c.ref, c.action])).toEqual([
+      ['a', 'pause'],
+      ['b', 'pause'],
+    ]);
+    // A stop of a run nobody attends, which a person paused, still resumes.
+    const stopped = run('b', [worker({ worker: 2, state: 'stopped', stop: stop('s1') })]);
+    expect(shortcutCommands([attended, stopped], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([['b', 'resume']]);
+  });
 });
 
-describe('where a test stands, as text', () => {
-  it('names a file relative to the run’s folder, with the 1-based line', () => {
-    expect(stopPlace({ uri: 'file:///home/me/shop/tests/pages/cart.page.ts', line: 12 }, '/home/me/shop')).toBe(
-      'tests/pages/cart.page.ts:13',
-    );
-    expect(runFile('file:///home/me/other/a%20b.ts', '/home/me/shop')).toBe('/home/me/other/a b.ts');
-    expect(runFile('file:///home/me/shop2/a.ts', '/home/me/shop')).toBe('/home/me/shop2/a.ts');
+describe('where the Runs window was left', () => {
+  it('keeps a place and size a window can have, and nothing else', () => {
+    expect(readRunsBounds({ left: 1200, top: -40, width: 440, height: 720 })).toEqual({
+      left: 1200,
+      top: -40,
+      width: 440,
+      height: 720,
+    });
+    for (const bad of [
+      null,
+      'here',
+      { left: 0, top: 0, width: 100, height: 720 },
+      { left: 0, top: 0, width: 440, height: 720.5 },
+      { left: 1e9, top: 0, width: 440, height: 720 },
+      { left: 0, width: 440, height: 720 },
+    ]) {
+      expect(readRunsBounds(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('the keys of the stop controls', () => {
+  const press = (
+    key: string,
+    more: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {},
+  ) => stopKeyOf({ key, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...more });
+
+  it('reads Resume on F8 or F5, Step on F10 and Finish on Shift+F11, and nothing held with Ctrl, Alt or Meta', () => {
+    expect([press('F8'), press('F5'), press('F10'), press('F11', { shiftKey: true })]).toEqual([
+      'resume',
+      'resume',
+      'step',
+      'finish',
+    ]);
+    for (const other of [press('F11'), press('F10', { shiftKey: true }), press('F8', { ctrlKey: true }), press('a')]) {
+      expect(other).toBeNull();
+    }
   });
 
-  it('reads a Windows file, whatever the case of its drive', () => {
-    expect(runFile('file:///c%3A/Shop/tests/cart.spec.ts', 'C:\\Shop')).toBe('tests/cart.spec.ts');
-    expect(runFile('file:///C:/Shop/tests/cart.spec.ts', null)).toBe('C:/Shop/tests/cart.spec.ts');
-  });
-
-  it('leaves anything but a file URI as it is', () => {
-    expect(runFile('untitled:Untitled-1', '/home')).toBe('untitled:Untitled-1');
-  });
-
-  it('names a test by its describe blocks, then its title', () => {
-    expect(testName({ title: ['cart', 'coupons', 'applies WELCOME10'] })).toBe('cart › coupons › applies WELCOME10');
-  });
-
-  it('names the error a failure stopped at, as its stop says it, else as an older one titles it', () => {
-    const title = 'Failed: Error: expect(locator).toBeVisible() failed';
-    expect(stopError({ title, error: "Error: the cart's own message\nLocator: getByTestId('cart')" })).toBe(
-      "Error: the cart's own message\nLocator: getByTestId('cart')",
-    );
-    expect(stopError({ title })).toBe('expect(locator).toBeVisible() failed');
-    expect(stopError({ title: 'Failed: Test timeout of 5000ms exceeded.' })).toBe('Test timeout of 5000ms exceeded.');
+  it('steers the test whose row holds the focus, else the only stopped one', () => {
+    const one = run('a', [worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
+    expect(keyTargetOf([one], null)).toMatchObject({ worker: 1, since: 's1', failed: false });
+    const two = run('b', [worker({ worker: 2, state: 'stopped', stop: { ...stop('s2'), reason: 'failure' } })]);
+    // Two stopped tests: a key needs the focus in one of them.
+    expect(keyTargetOf([one, two], null)).toBeNull();
+    expect(keyTargetOf([one, two], workerKey(two.hub, 'b', { worker: 2 }))).toMatchObject({ worker: 2, failed: true });
+    expect(keyTargetOf([run('c', [worker({ state: 'stopped', stop: stop('s3') })], true)], null)).toBeNull();
+    // A stop of a run whose hub was lost, shown as last heard, is no test a key steers.
+    expect(keyTargetOf([one, two], null, (hub) => hub !== two.hub || false)).toBeNull();
+    const lost = { ...two, hub: 'ws://127.0.0.1:50999/piwi/hub' };
+    expect(keyTargetOf([one, lost], null, (hub) => hub === one.hub)).toMatchObject({ worker: 1 });
   });
 });
 
@@ -222,6 +273,59 @@ describe('the live view’s commands, as the worker reads them', () => {
       { ...command, what: 'pick-at', x: 1, y: 1, on: true },
       { ...command, what: 'step', on: true },
       { ...command, what: 'mock', request: 2, x: 1, y: 1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('Hold failures, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone, and whether its failures wait', () => {
+    expect(parseRunsRequest({ ...command, what: 'hold', on: true })).toEqual({ ...command, what: 'hold', on: true });
+    expect(parseRunsRequest({ ...command, what: 'hold', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'hold' },
+      { ...command, what: 'hold', on: 'yes' },
+      { ...command, what: 'hold', on: true, worker: 0 },
+      { ...command, what: 'hold', on: true, since: 's3' },
+      { ...command, what: 'hold', on: true, lane: 1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('Stop the run, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone', () => {
+    expect(parseRunsRequest({ ...command, what: 'stop' })).toEqual({ ...command, what: 'stop' });
+    for (const bad of [
+      { ...command, what: 'stop', worker: 0 },
+      { ...command, what: 'stop', since: 's3' },
+      { ...command, what: 'stop', on: true },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('Take control and Give back, as the worker reads them', () => {
+  const command = { type: 'command', id: 8, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 0, since: 's3' };
+
+  it('name the run, the worker and its stop, and whether to drive it', () => {
+    expect(parseRunsRequest({ ...command, what: 'drive', on: true })).toEqual({ ...command, what: 'drive', on: true });
+    expect(parseRunsRequest({ ...command, what: 'drive', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'drive' },
+      { ...command, what: 'drive', on: 'yes' },
+      { ...command, what: 'drive', on: true, since: null },
+      { ...command, what: 'drive', on: true, worker: null },
+      { ...command, what: 'drive', on: true, ref: 'r 1' },
+      { ...command, what: 'drive', on: true, lane: 1 },
+      { ...command, what: 'drive', on: true, x: 1, y: 1 },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
@@ -307,23 +411,6 @@ describe('where a run says its tests’ pages show', () => {
 });
 
 describe('what a stop takes from the window', () => {
-  const at = { ...stop('s1'), intents: undefined };
-
-  it('is what the hub says it takes from this connection, when it says it', () => {
-    expect(stopIntents(worker({ intents: ['pick', 'mock', 'view'] }), { ...at, intents: ['view', 'pick-at'] })).toEqual(
-      ['view', 'pick-at'],
-    );
-    expect(stopIntents(worker({ intents: ['pick'] }), { ...at, intents: [] })).toEqual([]);
-  });
-
-  it('is, from an older service, what the reporter takes where the pause bar shows, and Mock a request anywhere', () => {
-    const takes = worker({
-      intents: ['pick', 'record', 'assert', 'assert-region', 'mock', 'view', 'input', 'pick-at'],
-    });
-    expect(stopIntents(takes, { ...at, bar: true })).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
-    expect(stopIntents(takes, { ...at, bar: false })).toEqual(['mock']);
-  });
-
   it('leaves a stop the window does not watch itself the input and, headless, the actions in the test’s window out', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
     const watched = [
@@ -340,7 +427,20 @@ describe('what a stop takes from the window', () => {
     const state: RunsState = {
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false }],
+      hubs: [
+        {
+          id: hub,
+          connected: true,
+          client: null,
+          desktop: false,
+          lanes: false,
+          layers: false,
+          presence: false,
+          holds: false,
+          stops: false,
+          traces: false,
+        },
+      ],
       runs: [
         {
           hub,
@@ -366,27 +466,6 @@ describe('what a stop takes from the window', () => {
   });
 });
 
-describe('a point on an image of a stopped page', () => {
-  it('maps to CSS pixels of the viewport the image names, whatever size it is shown at', () => {
-    expect(pagePoint({ x: 194, y: 60.625 }, { width: 388, height: 242.5 }, { width: 1280, height: 800 })).toEqual({
-      x: 640,
-      y: 200,
-    });
-    expect(pagePoint({ x: 10, y: 10 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
-      x: 40,
-      y: 40,
-    });
-  });
-
-  it('stays within the viewport, and maps nothing from an image shown at no size', () => {
-    expect(pagePoint({ x: -5, y: 900 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
-      x: 0,
-      y: 199.99,
-    });
-    expect(pagePoint({ x: 1, y: 1 }, { width: 0, height: 50 }, { width: 400, height: 200 })).toBeNull();
-  });
-});
-
 describe('Watch, as the worker reads it', () => {
   const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
 
@@ -408,66 +487,59 @@ describe('Watch, as the worker reads it', () => {
       { ...command, what: 'watch', lane: 1, on: true, worker: 1 },
       { ...command, what: 'watch', lane: 1, on: true, since: 's1' },
       { ...command, what: 'watch', lane: 1, on: true, events: [] },
-      // Only Watch names a lane.
+      // Only Watch and Open the trace so far name a lane.
       { ...command, what: 'share', lane: 1, on: true },
       { ...command, worker: 0, since: 's1', what: 'view', lane: 1, on: true },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
   });
+
+  it('names the layers of the lane the window takes, those the worker knows, each once, in their order', () => {
+    expect(
+      parseRunsRequest({ ...command, what: 'watch', lane: 2, on: true, layers: ['filmstrip', 'calls', 'calls'] }),
+    ).toEqual({ ...command, what: 'watch', lane: 2, on: true, layers: ['calls', 'filmstrip'] });
+    expect(parseRunsRequest({ ...command, what: 'watch', lane: 2, on: true, layers: ['newer'] })).toMatchObject({
+      layers: [],
+    });
+    for (const bad of [
+      { ...command, what: 'watch', lane: 1, on: true, layers: 'calls' },
+      // Only Watch names layers.
+      { ...command, what: 'share', on: true, layers: ['calls'] },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('Open the trace so far, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run and its lane alone', () => {
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 2 })).toEqual({ ...command, what: 'trace', lane: 2 });
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 0 })).toMatchObject({ lane: 0 });
+    for (const bad of [
+      { ...command, what: 'trace' },
+      { ...command, what: 'trace', lane: -1 },
+      { ...command, what: 'trace', lane: 1.5 },
+      { ...command, what: 'trace', lane: '1' },
+      { ...command, what: 'trace', lane: 1, on: true },
+      { ...command, what: 'trace', lane: 1, worker: 1 },
+      { ...command, what: 'trace', lane: 1, since: 's1' },
+      { ...command, what: 'trace', lane: 1, layers: ['calls'] },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+    // Nothing else goes to the hub with it: a path the window named is left out.
+    expect(parseRunsRequest({ ...command, what: 'trace', lane: 1, file: '/tmp/x.trace' })).toEqual({
+      ...command,
+      what: 'trace',
+      lane: 1,
+    });
+  });
 });
 
 describe('a lane watched while it runs', () => {
-  it('can be at a hub that shows lanes, for a reporter that lists watch; an older reporter is told to update', () => {
-    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view', 'watch'] }))).toBe('watch');
-    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view'] }))).toBe('outdated');
-    // A hub that predates it: a stop's own view alone, and nothing said.
-    expect(laneWatchOf({ lanes: false }, worker({ intents: ['view', 'watch'] }))).toBeNull();
-    expect(laneWatchOf(undefined, worker({ intents: ['watch'] }))).toBeNull();
-  });
-
-  it('shows where its worker stands now: the stop it stands at, else its running test, from that worker alone', () => {
-    const test = { id: 't1', title: ['pays'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: null };
-    const running = worker({ worker: 3, test });
-    const frame = (over: Partial<{ worker: number; test: string | null; since: string | null }> = {}) => ({
-      worker: 3,
-      test: 't1',
-      since: null,
-      ...over,
-    });
-    expect(laneFrameNow(frame(), running)).toBe(true);
-    // Taken at a stop the test went on from, or in the test before it.
-    expect(laneFrameNow(frame({ since: 's1' }), running)).toBe(false);
-    expect(laneFrameNow(frame({ test: 't0' }), running)).toBe(false);
-    // A newer service's state reads as running.
-    expect(laneFrameNow(frame(), { ...running, state: 'other' })).toBe(true);
-    // Between two tests, none does.
-    expect(laneFrameNow(frame(), { ...running, state: 'between', test: null })).toBe(false);
-    // At a stop, a frame of that stop alone.
-    const stopped = { ...running, state: 'stopped' as const, stop: stop('s2') };
-    expect(laneFrameNow(frame({ since: 's2' }), stopped)).toBe(true);
-    expect(laneFrameNow(frame({ since: 's1' }), stopped)).toBe(false);
-    expect(laneFrameNow(frame(), stopped)).toBe(false);
-    // The worker Playwright started in the lane in place of the one that sent it.
-    expect(laneFrameNow(frame(), { ...running, worker: 4 })).toBe(false);
-    expect(laneFrameNow(frame(), undefined)).toBe(false);
-  });
-
-  it('holds the actions in the test’s window at a headless stop the window does not watch, saying to watch first', () => {
-    const takes = worker({ intents: ['pick', 'record', 'assert', 'mock', 'view', 'input', 'pick-at', 'watch'] });
-    const unwatched = { ...stop('s1'), intents: ['mock' as const, 'view' as const, 'pick-at' as const] };
-    expect(heldUntilWatched(takes, unwatched, true)).toEqual(['pick', 'record', 'assert']);
-    // Watched, the stop takes them; a stop the bar shows takes them anyway.
-    expect(
-      heldUntilWatched(takes, { ...unwatched, intents: [...unwatched.intents, 'pick', 'record', 'assert'] }, true),
-    ).toEqual([]);
-    expect(heldUntilWatched(takes, { ...unwatched, bar: true }, true)).toEqual([]);
-    // Nothing to watch, a reporter that takes none of them, or a service that predates stop.intents: none held.
-    expect(heldUntilWatched(takes, unwatched, false)).toEqual([]);
-    expect(heldUntilWatched(worker({ intents: ['mock', 'view'] }), unwatched, true)).toEqual([]);
-    expect(heldUntilWatched(takes, stop('s1'), true)).toEqual([]);
-  });
-
   it('makes the window that watches it a viewer of the stops of its tests: the input and, headless, the actions in the test’s window', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
     const all = ['pick', 'record', 'mock', 'view', 'input', 'pick-at'] as const;
@@ -482,7 +554,20 @@ describe('a lane watched while it runs', () => {
     const state = (workers: HubWorker[]): RunsState => ({
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true }],
+      hubs: [
+        {
+          id: hub,
+          connected: true,
+          client: null,
+          desktop: false,
+          lanes: true,
+          layers: false,
+          presence: false,
+          holds: false,
+          stops: false,
+          traces: false,
+        },
+      ],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
     });
     const lanes: Array<number | null> = [];
@@ -497,5 +582,58 @@ describe('a lane watched while it runs', () => {
     // A stop outside a test, which no lane shows: watching the lane makes no viewer of it.
     const outside = stateForViewer(state([{ ...stopped, test: null }]), (_view, lane) => lane === 1);
     expect(outside.runs[0]!.session.workers[0]!.stop?.intents).toEqual(['mock', 'view', 'pick-at']);
+  });
+});
+
+describe('what the runs ask of the person', () => {
+  const hub = 'ws://127.0.0.1:50123/piwi/hub';
+  const hubs: RunsState['hubs'] = [
+    {
+      id: hub,
+      connected: true,
+      client: null,
+      desktop: false,
+      lanes: true,
+      layers: false,
+      presence: false,
+      holds: false,
+      stops: false,
+      traces: false,
+    },
+  ];
+  const progress = (status: HubProgress['status'], failed: number): HubProgress => ({
+    total: 4,
+    done: 4,
+    failed,
+    flaky: 0,
+    skipped: 0,
+    status,
+    failure: null,
+  });
+  const failedRun = (ref: string, failed: number, unseen?: boolean) => ({
+    ...run(ref, [], true),
+    session: { ...run(ref, [], true).session, progress: progress('failed', failed) },
+    ...(unseen ? { unseen } : {}),
+  });
+
+  it('counts the failed tests of a run that ended unseen, a run with none failed as one, until it is seen', () => {
+    expect(attentionOf({ hubs, runs: [failedRun('a', 2)] })).toBeNull();
+    expect(attentionOf({ hubs, runs: [failedRun('a', 2, true), failedRun('b', 0, true)] })).toEqual({
+      state: 'failing',
+      waiting: 0,
+      heldFailures: 0,
+      failed: 3,
+    });
+  });
+
+  it('says a test waiting first, the unseen failures added to the live ones', () => {
+    const waiting = run('w', [worker({ state: 'stopped', stop: stop('s1') })]);
+    const live = { ...waiting, session: { ...waiting.session, progress: progress('running', 1) } };
+    expect(attentionOf({ hubs, runs: [live, failedRun('a', 2, true)] })).toEqual({
+      state: 'waiting',
+      waiting: 1,
+      heldFailures: 0,
+      failed: 3,
+    });
   });
 });

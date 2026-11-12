@@ -21,12 +21,14 @@ import {
   ignoredEnvValues,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
+  PIWI_SHARE_LIVE_ENV,
+  readBool,
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
 import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
-import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
+import { PIWI_EDITOR_ENV, followHub, runInteractive, type FollowedHub } from '../internal/config/hub.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -37,7 +39,8 @@ import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { RunHubLink } from '../internal/streaming/run-hub-link.js';
+import { RunHubLink, countedOutcome } from '../internal/streaming/run-hub-link.js';
+import { TerminalProgress, terminalFeatures } from '../internal/support/terminal.js';
 import {
   collectStepMetrics,
   extractTestStepEvents,
@@ -66,6 +69,7 @@ import {
   LIVE_VIEW_ENV,
   formatLiveViewEnv,
   formatLiveViewMissing,
+  LIVE_SHARE_MISSING,
   type LiveViewMissing,
 } from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
@@ -203,6 +207,19 @@ function failedEveryAttempt(attempts: ReadonlyArray<{ status: string }>): boolea
   return ran.length > 0 && ran.every((attempt) => attempt.status === 'failed' || attempt.status === 'timedOut');
 }
 
+/** The line saying which hub a run started in a terminal attached to, how it attends it, and how to change that. */
+function followedLine(followed: FollowedHub): string {
+  const where = followed.pid === null ? followed.name : `${followed.name} (pid ${followed.pid})`;
+  if (!followed.attended) {
+    return (
+      `Following this run in ${where}, unattended: its output goes to no terminal, so no failure waits and only a ` +
+      `Pause stops it. ${PIWI_EDITOR_ENV}=on attends it, ${PIWI_EDITOR_ENV}=off runs it alone.`
+    );
+  }
+  const stops = followed.kind === 'editor' ? 'whose breakpoints stop it' : 'whose window pauses and watches it';
+  return `Following this run in ${where}, ${stops}: ${PIWI_EDITOR_ENV}=off runs it alone.`;
+}
+
 /**
  * Piwi Dashboard Playwright reporter.
  *
@@ -249,6 +266,8 @@ export class PiwiDashboardReporter {
   private runningTests = new Map<string, { test: TestCase; result: TestResult }>();
   /** Reads the stops the workers note (`readStopNotes`). */
   private stopNotes: StopNotesReader | null = null;
+  /** The run's progress in its terminal's tab or taskbar, for a run outside CI that reports to the dashboard. */
+  private terminalProgress: TerminalProgress | null = null;
   /**
    * The failed attempts with retries left, by `test.id`: each is its test's last failure when no later attempt has a
    * say in its outcome (`decidesOutcome`), the run stopping before the retry or the retry not running.
@@ -418,22 +437,24 @@ export class PiwiDashboardReporter {
     normalizeBoolEnv(process.env);
     // A requested run's workers reach neither the config's server nor its credentials.
     if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
-    // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
-    // hook, inherit the editor's run channel.
-    const followed = followEditor([configDirFromConfig(config), process.cwd()], {
-      env: process.env,
-      argv: process.argv,
-      terminal: !!process.stdout.isTTY || !!process.stderr.isTTY,
-    });
-    if (followed) {
-      const { editor } = followed;
-      this.logger.info(
-        `Following this run in ${editor.client ?? 'the editor'} (pid ${editor.pid}), whose breakpoints stop it: ` +
-          `${PIWI_EDITOR_ENV}=off runs it alone.`,
-      );
-    }
+    // A run started in a terminal attaches to its hub, the editor whose workspace holds it, else the desktop app whose
+    // linked folder does: its workers, which start after this hook, inherit the hub's run channel.
+    const dirs = [configDirFromConfig(config), process.cwd()];
+    const gate = { env: process.env, argv: process.argv, terminal: !!process.stdout.isTTY || !!process.stderr.isTTY };
+    const followed = followHub(dirs, gate);
+    if (followed) this.logger.info(followedLine(followed));
     // The hub its workers reach hears how far the run is, from its own process.
     this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
+    // The run the global setup registered names its page now; the stream names the run it opens, another on a refusal.
+    const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
+    if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
+    if (this.enabled && terminalFeatures(process.env, !!process.stdout.isTTY).progress) {
+      const progress = new TerminalProgress(suite.allTests().length, (text) => process.stdout.write(text));
+      progress.begin();
+      // A run whose process ends before `onEnd` (a second Ctrl+C) takes the bar off too.
+      process.once('exit', () => progress.end((text) => fs.writeSync(1, text)));
+      this.terminalProgress = progress;
+    }
     if (!this.enabled) {
       if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
       else if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
@@ -478,7 +499,8 @@ export class PiwiDashboardReporter {
         this.logger.debug(`Run sampler not started: ${errorMessage(error)}`);
       }
     }
-    this.logger.info(
+    // Plumbing: the run's own line is its page's (`View live progress`).
+    this.logger.debug(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
 
@@ -560,7 +582,7 @@ export class PiwiDashboardReporter {
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
     if (this.shardInfo) {
-      this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
+      this.logger.debug(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
     this.instanceId = computeInstanceId(
       this.options.projectName!,
@@ -623,6 +645,18 @@ export class PiwiDashboardReporter {
       this.environments?.atBegin(),
     );
     if (this.streamManager) {
+      this.streamManager.onOpened = (runId, runUrl) => this.hubLink?.page(runId, runUrl);
+      // A teammate asks to watch the run: the hub's tool asks the developer, and the run's terminal says so, whether a
+      // tool showed it or not.
+      this.streamManager.onAsk = (ask) => {
+        const asked = this.hubLink?.ask(ask) ?? false;
+        this.logger.info(
+          asked
+            ? `${ask.by} asks to watch this run live on the dashboard: share it from the editor or the app that follows it.`
+            : `${ask.by} asks to watch this run live on the dashboard. A run that no editor or app follows is shared from its start with PIWI_SHARE_LIVE=1.`,
+        );
+      };
+      if (this.hubLink) this.hubLink.onAskAnswer = (answer) => this.streamManager?.answerAsk(answer);
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
@@ -661,8 +695,14 @@ export class PiwiDashboardReporter {
     if (this.mergingReports) return;
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    // PIWI_SHARE_LIVE shares a run outside CI that no editor or app follows from its start; the workers read it as
+    // they open their live view.
+    const shareLive = !ci && !process.env[RUN_CHANNEL_ENV] && readBool(process.env[PIWI_SHARE_LIVE_ENV]) === true;
+    if (shareLive) process.env[PIWI_SHARE_LIVE_ENV] = 'true';
+    else delete process.env[PIWI_SHARE_LIVE_ENV];
     if (!setup?.liveViewKey) {
       const why = this.liveViewMissing(setup);
+      if (shareLive) this.logger.warn(`PIWI_SHARE_LIVE: ${LIVE_SHARE_MISSING[why]}`);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
       else if (why !== 'local') {
@@ -676,6 +716,11 @@ export class PiwiDashboardReporter {
       this.liveViewOn = true;
       this.logger.info(
         "Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.",
+      );
+    } else if (shareLive) {
+      this.liveViewOn = true;
+      this.logger.info(
+        `Shared live (PIWI_SHARE_LIVE) for the specs that use Piwi's fixtures: people who may open this run on ${this.httpClient.baseUrl} watch each worker's page, its calls and its stops while it runs, the secret fields painted over. Nothing is stored.`,
       );
     } else if (process.env[RUN_CHANNEL_ENV]) {
       this.logger.info(
@@ -988,6 +1033,8 @@ export class PiwiDashboardReporter {
     this.stopNotes?.read();
     this.runningTests.delete(test.id);
     this.hubLink?.testEnded(test, result);
+    const counted = this.terminalProgress ? countedOutcome(test, result) : null;
+    if (counted) this.terminalProgress?.testEnded(test.id, counted === 'failed');
     this.totalTests++;
     // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
     const worker = workerIndexOf(result);
@@ -1381,6 +1428,8 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    this.terminalProgress?.end();
+    this.terminalProgress = null;
     this.stopNotes?.stop();
     this.stopNotes = null;
     await this.hubLink?.end(result?.status ?? 'other');

@@ -32,6 +32,10 @@ shell and are feature-equivalent.
     over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
     IPC.
+  - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<lane>`, the ref checked by
+    `is_run_ref`) shows the dashboard's `/desktop/run-worker` page, kept above the other windows, stays on the
+    sidecar's origin and holds no IPC grant: the page reads the runs' hub through the routes behind the desktop guard,
+    as the dashboard window does.
   - The IPC capability (`src-tauri/runtime-capabilities/remote.json`) is added at startup for that origin only, never
     for a port wildcard, and no capability under `src-tauri/capabilities/` grants remote content.
   - A command that turns webview input into a path or a process takes only known values: digits-only project ids,
@@ -67,10 +71,10 @@ shell and are feature-equivalent.
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
   `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
   `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
-  with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
-  its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
-  `apps/application/server/utils/desktop-runs.ts`. Agents steer those runs only through `/mcp`, behind the same token
-  (`server/utils/mcp/run-tools.ts`), and never a run nobody attends.
+  with `--ui`, or with `--repeat-each` above 1 unless it stops at its first failure) ends its ref in `-unattended`
+  (`attended_args`, mirrored by `desktopArgsAttended`), and the server never holds its failures. The hub's WebSocket
+  takes the desktop token in `hello`; its code is `apps/application/server/utils/desktop-runs.ts`. Agents steer those
+  runs only through `/mcp`, behind the same token (`server/utils/mcp/run-tools.ts`), and never a run nobody attends.
 - **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
   - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
     the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in
@@ -91,14 +95,31 @@ shell and are feature-equivalent.
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
-  `isBrowserRequest`), refuses no arguments or a folder linked since, writes the token to a private file for the
-  reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. The instance's key lives in the OS keychain,
-  read only while `runTargetInstance` is set, handed to the server after each start (`hand_kept_key`), never to the
-  window; a stop from the dashboard reaches the shell on its notification stream.
+  `isBrowserRequest`), refuses no arguments, a folder linked since, a folder another local or requested run is going in
+  (`runs_in`, `hold_folder`; the server hears those folders whenever a local run starts or ends, `hand_local_runs`, so
+  it checks a waiting request again) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
+  the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
+  `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
+  2 s each, each on its own thread, waited for 3 s in all) and deletes its folder before it stops the server. A run
+  that ends once the quit began ends stopped (`end_child`), and only that quit post tells the server of it
+  (`quit_requested_runs`); from then on no requested run is held or takes its folder (`hold`, `hold_folder`), and a run
+  spawned meanwhile is killed (`spawn_tests`). At startup each app removes its own leftover folders
+  (`piwi-request-*`, Runner `piwi-runner-request-*`) older than a day that no run holds (`sweep_leftover_request_dirs`).
+  The instance's key lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after
+  each start, never to the window (`hand_kept_key`), with the ids of the requested runs still held (`running`) so a
+  restarted server ends only the requests the shell lost. A requested run's end stays held until the server answers its
+  `/ended` with a 200 (`tell_ended`); one still held goes in `PUT /key`'s `ended` and is forgotten once the server names
+  it back. A stop from the dashboard reaches the shell on its
+  notification stream, and so does `key-revoked`, which forgets the key only when it names the connected instance
+  (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
-  linked folders), and deletes it on quit. Its readers:
-  - `@piwitests/reporter`, from `src/internal/config/desktop.ts`;
+  linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`,
+  and `hubSince`) once the window loaded a session of a server that proved its token and takes it out as the window
+  leaves the server (`publish_discovery_hub`, `withdraw_discovery_hub`, a late publish storing nothing), and deletes it
+  on quit. Its readers:
+  - `@piwitests/reporter`, from `src/internal/config/desktop.ts`, and its hub pick (`hub.ts`) for a run started in a
+    terminal in a linked folder;
   - `src-tauri/src/mcp_stdio.rs`, which resolves the app's address from it on every message;
   - the editor service (`packages/editor/src/context.ts`), which picks the project linked to the workspace;
   - the bundled server (`apps/application/server/utils/desktop-links.ts`), which reads a project's linked folder to
@@ -123,12 +144,15 @@ shell and are feature-equivalent.
   `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
   `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
   keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
+- **The app calls itself Piwi Desktop (`APP_NAME` in `lib.rs`, `DESKTOP_APP_NAME` in `shared/piwi-ecosystem.ts`) in its
+  windows, splash, tray, taskbar, questions and notifications**; `productName` keeps Piwi Dashboard, which the OS lists,
+  until the installers' upgrade path is checked. Checked by `apps/application/tests/unit/desktop-app-name.test.ts`.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
 - **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
-  product, the sidecar's script and the keychain service, and shares the rest of `run_target.rs`, the window guards and
-  the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
+  product, the sidecar's script, the keychain service and the request folders' prefix, and shares the rest of
+  `run_target.rs`, the window guards and the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
 - **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
   `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of

@@ -32,6 +32,12 @@ export interface StatusPaletteEntry {
   chip: string;
   /** A row in this outcome among neutral rows: a faint background its text stays readable on. */
   tint: string;
+  /**
+   * A running attempt the Stuck? rule marks (`isStuckAttempt`): the warning tone of its **Stuck?** badge, as a CSS
+   * color, the SVG fill utility of a label written on a bar in it, and the text utility of a count of them, readable
+   * on the page background. Running only.
+   */
+  stuck?: { color: string; labelFill: string; text: string };
 }
 
 export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
@@ -106,6 +112,11 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     onBg: 'text-white',
     chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     tint: 'bg-blue-50 dark:bg-blue-950/30',
+    stuck: {
+      color: 'var(--ui-warning)',
+      labelFill: 'fill-amber-950',
+      text: 'text-warning-700 dark:text-warning-400',
+    },
   },
   // A test or run cut short (Ctrl+C, a crashed worker): no outcome, so a
   // neutral slate, apart from the skipped greys.

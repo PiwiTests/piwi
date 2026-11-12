@@ -120,6 +120,8 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(details).toContainText(CASE.title);
     await expect(details.getByText('Step', { exact: true })).toBeVisible();
     await expect(details).toContainText('locator.click: Timeout 1500ms exceeded.');
+    // A trace frame was not attached under a name: no Screenshot line.
+    await expect(details.getByText('Screenshot', { exact: true })).toHaveCount(0);
 
     // The page before the action raised no error yet: its details name the step only.
     await page.keyboard.press('ArrowLeft');

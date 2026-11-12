@@ -37,6 +37,8 @@ const props = defineProps<{
     skippedTests: number;
     /** `test.fixme()` skips — a subset of `skippedTests`. */
     fixmeTests?: number;
+    /** Tests ended at a stop (End the test) — a subset of `skippedTests`, marked beside the status. */
+    endedAtStopTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
     /** Tests the run's interruption cut short: in no outcome, known from the loaded cases only. */
@@ -74,6 +76,7 @@ const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 
 const environmentOpen = ref(false);
+const reusedOpen = ref(false);
 /** The runner's time zone, locale and OS in one line; null when the run recorded no environment. */
 const environmentSummary = computed(() => {
   const env = props.testRun?.environments;
@@ -159,6 +162,12 @@ const passed = computed(() => props.displayProgress?.passedTests ?? props.testRu
 const failed = computed(() => props.displayProgress?.failedTests ?? props.testRun?.failedTests ?? 0);
 const skipped = computed(() => props.displayProgress?.skippedTests ?? props.testRun?.skippedTests ?? 0);
 const fixme = computed(() => props.displayProgress?.fixmeTests ?? 0);
+const endedAtStop = computed(() => props.displayProgress?.endedAtStopTests ?? 0);
+const endedAtStopTitle = computed(() =>
+  endedAtStop.value === 1
+    ? 'A test of this run was ended at a stop with End the test: it counts as skipped, not passed'
+    : `${endedAtStop.value} tests of this run were ended at a stop with End the test: they count as skipped, not passed`,
+);
 const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?.totalTests ?? 0);
 // Flaky and didn't-run track the live progress too (both are 0 on the persisted
 // row until the run finishes), so the bar shows passed-on-retry and didn't-run
@@ -193,6 +202,12 @@ const runEnded = computed(
   () =>
     !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
 );
+/** When the run ended, from its start and duration, for what the header reads again just after the end. */
+const runEndedAt = computed(() => {
+  const start = props.testRun?.startTime ? new Date(props.testRun.startTime).getTime() : Number.NaN;
+  const duration = props.testRun?.duration;
+  return Number.isNaN(start) || duration == null ? null : new Date(start + duration).toISOString();
+});
 let primaryDecided = false;
 watch(
   runEnded,
@@ -372,6 +387,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         </button>
       </template>
 
+      <!-- A mark on the run's outcome: its status stays as it is. -->
+      <UTooltip v-if="endedAtStop > 0" :text="endedAtStopTitle">
+        <span class="shrink-0 text-xs text-muted" data-shot="run-ended-at-stop">{{
+          endedAtStopMark(endedAtStop)
+        }}</span>
+      </UTooltip>
+
       <UTooltip v-if="testRun?.keptAt" :text="describeKeep(testRun)">
         <span class="shrink-0 inline-flex items-center gap-1 text-xs text-muted" data-shot="run-kept">
           <UIcon name="i-lucide-lock" class="size-3.5" />
@@ -500,6 +522,27 @@ function onLabelKeydown(e: KeyboardEvent) {
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
+      </template>
+      <template v-if="(testRun?.reusedCount ?? 0) > 0">
+        <span class="text-dimmed">·</span>
+        <button
+          type="button"
+          class="hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+          title="The tests this run skipped because an earlier pass ran their unchanged code"
+          data-reused-open
+          @click="reusedOpen = true"
+        >
+          {{ testRun.reusedCount }} reused
+        </button>
+        <UModal v-model:open="reusedOpen" title="Reused tests" :ui="{ content: 'max-w-3xl' }">
+          <template #body>
+            <RunReusedTests
+              :run-id="testRun.id"
+              :project-key="testRun.projectId"
+              :project-name="testRun.project?.name"
+            />
+          </template>
+        </UModal>
       </template>
       <template v-if="ingestNotes.length">
         <span class="text-dimmed">·</span>
@@ -721,8 +764,8 @@ function onLabelKeydown(e: KeyboardEvent) {
       </div>
     </template>
 
-    <template v-if="runErrors.length || incident" #below>
-      <div class="space-y-3">
+    <template #below>
+      <div class="space-y-3 empty:hidden">
         <RunErrors
           v-if="runErrors.length"
           :errors="runErrors"
@@ -736,6 +779,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :project-id="testRun.projectId"
           :incident="incident"
           :review="incidentReview"
+          @changed="emit('label-updated')"
+        />
+        <RunTestManagementSync
+          v-if="testRun?.id && runEnded"
+          :run-id="testRun.id"
+          :project-id="testRun.projectId"
+          :ended-at="runEndedAt"
           @changed="emit('label-updated')"
         />
       </div>

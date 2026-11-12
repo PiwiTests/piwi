@@ -193,6 +193,13 @@ export function originEnv(kind: string, ref?: string | number): Record<string, s
 export const PIWI_SHARD_ENV = 'PIWI_SHARD';
 
 /**
+ * The pass reuse plan a run executes, set by `piwi run --plan` / `--reuse` on
+ * the Playwright process: the reporter records it as `metadata.piwiPlan`, and
+ * the dashboard records the tests the plan skipped as the run's reused results.
+ */
+export const PIWI_PLAN_ENV = 'PIWI_PLAN';
+
+/**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
  * capture fixtures run in probe mode. Not options — the probe CLI writes them and
  * the probe module reads them directly:
@@ -243,6 +250,20 @@ export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
  * starts (`internal/support/stop-notes.ts`). Not an option.
  */
 export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
+
+/**
+ * `PIWI_SHARE_LIVE=1` shares a run outside CI that no editor or app follows (no run channel) live from its start, the
+ * person's own choice for that run, set where they start it: never an option a config file sets for everyone. The
+ * reporter sets it to `true` for the workers, which open their live view stream at once, or removes it. Not an option.
+ */
+export const PIWI_SHARE_LIVE_ENV = 'PIWI_SHARE_LIVE';
+
+/**
+ * The terminal's own integrations of a run outside CI (`internal/support/terminal.ts`): `off` turns off the link around
+ * the run's page and the run's progress in the terminal's tab or taskbar, `on` shows the progress in any terminal.
+ * Not an option.
+ */
+export const PIWI_TERMINAL_PROGRESS_ENV = 'PIWI_TERMINAL_PROGRESS';
 
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {

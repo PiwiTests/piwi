@@ -39,6 +39,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/auth/avatar', // the signed-in user's profile picture; the demo stores no upload and its users sign in with no provider, so none has one
   'POST /api/test-runs/:id/gate', // CI gate policy — there is no pipeline to gate in a browser demo
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
+  'POST /api/projects/:id/run-plans/sources', // pass reuse — plans need a local git diff the browser demo cannot produce
+  'POST /api/projects/:id/run-plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
+  'GET /api/projects/:id/run-plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/run-plans` stores
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
@@ -63,6 +66,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PUT /api/desktop/run-target/key', // desktop build only; the shell hands the kept key back after each start
   'DELETE /api/desktop/run-target/key', // desktop build only; the shell disconnects from the team instance
   'PUT /api/desktop/run-target/links', // desktop build only; the folders the shell links for the instance's projects
+  'PUT /api/desktop/run-target/local-runs', // desktop build only; the folders the shell's own local runs are going in
   'POST /api/desktop/run-target/requests/:id/answer', // desktop build only; the person's answer in the window
   'POST /api/desktop/run-target/requests/:id/plan', // desktop build only; the checks again once a folder is linked
   'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
@@ -92,20 +96,23 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
-  // The run page's live view: a live run's test workers hold its streams and post its frames, and someone watches
-  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch.
+  // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
+  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch, and Watch all
+  // shows each running lane's step in place of its image.
   'GET /api/test-runs/:id/live-view',
   'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
+  'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
+  // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
+  // no reporter, so its simulated runs are never a run nobody shares.
+  'POST /api/test-runs/:id/live-view/ask',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',
-  // Local Claude CLI session: desktop-app only, drives a `claude` binary on the
-  // host. 404 everywhere else, including the demo, with nothing to script.
+  // Local Claude CLI status: the desktop app, or a server with PIWI_CLAUDE_CLI_PATH
+  // set, drives a `claude` binary on the host. The demo has no host to probe.
   'GET /api/ai/claude-cli/status',
-  'POST /api/ai/claude-cli/login',
-  'POST /api/ai/claude-cli/logout',
   // Connecting Piwi Picker: a device authorization that ends in an API key for
   // an account. The demo has no server for an extension to reach and no keys.
   'POST /api/extension/connect',

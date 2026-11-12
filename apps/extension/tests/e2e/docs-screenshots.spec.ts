@@ -19,6 +19,7 @@ import type { PiwiSteps } from '@piwitests/core/steps';
 import {
   answerNext,
   pairedExtension,
+  runMain,
   startEditor,
   startRun,
   RUN_TAKES,
@@ -259,8 +260,13 @@ test('picker-runs', async () => {
     await runs.setViewportSize({ width: 440, height: 700 });
     await runs.goto(`chrome-extension://${extensionId}/runs.html`);
     const run = await startRun(editor, 'pays with a coupon', [...RUN_TAKES]);
+    // The run's own process: its number and page on the instance, and how far it is.
+    const main = runMain(editor, run.channel, run.ref, 9);
     try {
       await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
+      main.send({ type: 'run-page', id: 78, url: 'http://127.0.0.1:7494/test-runs/78' });
+      main.send({ type: 'run-progress', done: 3, failed: 0, flaky: 0, skipped: 0 });
+      await expect(runs.locator('.run-progress')).toHaveText('3 of 9 tests');
       run.worker.send({
         type: 'stopped',
         stop: 1,
@@ -282,10 +288,10 @@ test('picker-runs', async () => {
       await runs.locator('.client').evaluate((client) => (client.textContent = 'Visual Studio Code'));
       await runs.getByRole('button', { name: 'Resume' }).hover();
       await runs.waitForTimeout(300);
-      const body = runs.locator('body');
-      // Below the pause bar, whose buttons answer the same stop.
-      await framedOver(backdrop, await body.screenshot(), (await body.boundingBox())!, 'picker-runs', 64);
+      // The window as it opens, its top: below the pause bar, whose buttons answer the same stop.
+      await framedOver(backdrop, await runs.screenshot(), runs.viewportSize()!, 'picker-runs', 64);
     } finally {
+      main.socket.destroy();
       run.worker.socket.destroy();
     }
   } finally {
@@ -331,6 +337,7 @@ test('picker-runs-live', async ({ context }) => {
       await answerNext(run.worker, 'view', { ok: true, message: 'The live view is on.' });
       run.worker.send({ type: 'frame', stop: 1, ...STOP_VIEWPORT, data: frame });
       await expect(runs.locator('img.live')).toBeVisible();
+      await runs.getByRole('button', { name: 'Interact' }).click();
       await runs.getByRole('button', { name: 'Pick', exact: true }).click();
       await answerNext(run.worker, 'pick', {
         ok: true,

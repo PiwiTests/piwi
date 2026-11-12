@@ -6,7 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
   createMessageConnection,
@@ -37,6 +37,7 @@ import type {
   NewTestFileResult,
   RunCommand,
   RunEnded,
+  CiSession,
   RunStatusResult,
   RunTestsArgs,
   ScreenshotResult,
@@ -231,7 +232,9 @@ function openEvents(res: http.ServerResponse): void {
 const sendEvent = (res: http.ServerResponse, data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
 /** An event on the instance's stream. */
-function pushInstanceEvent(event: { type: string; runId: number; projectId: number; status?: string }): void {
+function pushInstanceEvent(
+  event: { type: string; runId: number; projectId: number; status?: string } & Record<string, unknown>,
+): void {
   for (const res of instanceStreams) sendEvent(res, event);
 }
 
@@ -409,7 +412,7 @@ beforeAll(async () => {
       );
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Fskipped.spec.ts') {
-      // A test skipped on every run, and one with no run.
+      // A test skipped on every run, one never run, one that did not run last, one with no status, and one flaky lately.
       return res.end(
         JSON.stringify({
           items: [
@@ -422,7 +425,26 @@ beforeAll(async () => {
               passedRuns: 0,
               failedRuns: 0,
             },
-            { id: 32, title: 'refunds', filePath: 'tests/skipped.spec.ts', status: 'passed', totalRuns: 0 },
+            { id: 32, title: 'refunds', filePath: 'tests/skipped.spec.ts', status: 'never-run', totalRuns: 0 },
+            {
+              id: 33,
+              title: 'ships',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'didnotrun',
+              totalRuns: 3,
+              passedRuns: 2,
+              failedRuns: 0,
+            },
+            { id: 34, title: 'voids', filePath: 'tests/skipped.spec.ts', status: null, totalRuns: 0 },
+            {
+              id: 35,
+              title: 'holds',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'flaky',
+              totalRuns: 4,
+              passedRuns: 4,
+              failedRuns: 0,
+            },
           ],
         }),
       );
@@ -956,7 +978,13 @@ describe('the Piwi language server', () => {
       title: 'Run the verification',
       command: 'piwi.runCommand',
       arguments: [
-        { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
+        // A run nobody attends, which the client asks the service to follow.
+        {
+          cwd: dir,
+          command: 'npx playwright test tests/checkout.spec.ts:3',
+          env: { PIWI_ORIGIN: 'editor' },
+          follow: true,
+        },
       ],
     });
     // The context is gathered once the action is picked.
@@ -1082,6 +1110,7 @@ describe('the Piwi language server', () => {
       runLabel: 'Run #41 · CI · main · 1 failing',
       failing: 1,
       rerun: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
+      view: { state: 'failures', message: null },
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],
@@ -1270,18 +1299,24 @@ describe('the Piwi language server', () => {
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/described.spec.ts') } });
   });
 
-  test('gives no pass rate to a test with no passed or failed run', async () => {
+  test('says each test’s latest result in the dashboard’s words, and no pass rate without a passed or failed run', async () => {
     const skipped = [
       "import { test } from '@playwright/test';",
       "test('pays', async () => {});",
       "test('refunds', async () => {});",
+      "test('ships', async () => {});",
+      "test('voids', async () => {});",
+      "test('holds', async () => {});",
       '',
     ].join('\n');
     await open('tests/skipped.spec.ts', skipped);
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/skipped.spec.ts') })) as FileSummary;
-    expect(spec.lines.map((l) => [l.line, l.title])).toEqual([
-      [1, 'no pass rate (no passed or failed run) · skipped'],
-      [2, 'no pass rate (no passed or failed run)'],
+    expect(spec.lines.map((l) => [l.line, l.title, l.status])).toEqual([
+      [1, 'skipped in its latest run · no pass rate (no passed or failed run)', 'skipped'],
+      [2, 'never run', 'unknown'],
+      [3, "didn't run in its latest run · passed 2 of 2 runs", 'unknown'],
+      [4, 'no recent result', 'unknown'],
+      [5, 'flaky in recent runs · passed 4 of 4 runs', 'flaky'],
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
   });
@@ -1378,7 +1413,7 @@ describe('the Piwi language server', () => {
       {
         line: 2,
         title:
-          'passed 48/50 · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
+          'passed in its latest run · passed 48 of 50 runs · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
         command: { title: 'Open in dashboard', command: 'piwi.openInDashboard', arguments: [`${url}/test-cases/1`] },
         // The document as the earlier tests left it: the test's body spans two more lines.
         status: 'passed',
@@ -1400,7 +1435,9 @@ describe('the Piwi language server', () => {
         command: {
           title: 'Reproduce this flake',
           command: 'piwi.runCommand',
-          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake 1', env: { PIWI_ORIGIN: 'editor' } }],
+          arguments: [
+            { cwd: dir, command: 'npx @piwitests/reporter flake 1', env: { PIWI_ORIGIN: 'editor' }, follow: true },
+          ],
         },
       },
       {
@@ -1409,7 +1446,14 @@ describe('the Piwi language server', () => {
         command: {
           title: 'Verify the flake fix',
           command: 'piwi.runCommand',
-          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake verify 1', env: { PIWI_ORIGIN: 'editor' } }],
+          arguments: [
+            {
+              cwd: dir,
+              command: 'npx @piwitests/reporter flake verify 1',
+              env: { PIWI_ORIGIN: 'editor' },
+              follow: true,
+            },
+          ],
         },
       },
     ]);
@@ -1442,11 +1486,13 @@ describe('the Piwi language server', () => {
           executionId: 900,
           url: `${url}/test-run-cases/900`,
           state: 'failing',
+          // The diagnostic is on the page object's line, not on this call of it.
+          diagnosed: false,
         },
       }),
       {
         line: 6,
-        title: "✗ locator('.cart-row').nth(2) was not found",
+        title: "✗ Failed here · locator('.cart-row').nth(2) was not found",
         command: {
           title: 'Open the failure in the dashboard',
           command: 'piwi.openInDashboard',
@@ -1480,6 +1526,8 @@ describe('the Piwi language server', () => {
       position: { line: 6, character: 10 },
     })) as { contents: { value: string } };
     expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // No diagnostic is on this line: the hover says why, as the lens above it does.
+    expect(hover.contents.value).toContain("\n\nlocator('.cart-row').nth(2) was not found\n\n");
     expect(hover.contents.value).toContain('```text\nError: locator.click: Timeout 5000ms exceeded.\nCall log:');
     expect(hover.contents.value).toContain(
       `Called from [checkout.page.ts:5](${uri('tests/pages/checkout.page.ts')}#L5) ← [rows.spec.ts:7](${uri('tests/rows.spec.ts')}#L7)`,
@@ -1527,7 +1575,7 @@ describe('the Piwi language server', () => {
     const at = (file: string, line: number) =>
       client.sendRequest('piwi/testAt', { uri: file, line, character: 2 }) as Promise<TestAtResult>;
     const rows = uri('tests/rows.spec.ts');
-    const spec = { uri: rows, testIds: [3] };
+    const spec = { uri: rows, testIds: [3], location: 'tests/rows.spec.ts' };
     // Anywhere from its `test(` line to the line its call ends on.
     for (const line of [3, 6, 7]) {
       expect(await at(rows, line)).toEqual({
@@ -2028,7 +2076,7 @@ describe('local runs over the latest CI run', () => {
       const failures = onPage.filter((d) => d.code === 'ci-failure');
       expect(failures).toEqual([
         expect.objectContaining({
-          message: "getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
+          message: "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
           range: expect.objectContaining({ start: { line: 3, character: 2 } }),
           codeDescription: { href: `${url}/test-run-cases/950` },
         }),
@@ -2043,7 +2091,7 @@ describe('local runs over the latest CI run', () => {
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
       expect(fixed).toMatchObject({ line: 3, status: 'passed' });
-      expect(fixed.title).toMatch(/^passed 6\/9 · fixed locally in run #42 \(failing in run #41\)/);
+      expect(fixed.title).toMatch(/^fixed locally in run #42 \(failing in run #41\) · passed 6 of 9 runs/);
       expect(fixed.failure).toBeUndefined();
       expect(rows.lines.filter((l) => l.title.startsWith('✗'))).toEqual([]);
 
@@ -2156,8 +2204,8 @@ describe('failures follow the edits', () => {
     await open(rows, `// Rows.\n\n${FAILING_SPEC}`);
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
-      [5, 'passed 6/9'],
-      [8, "✗ locator('.cart-row').nth(2) was not found"],
+      [5, 'failing in run #41'],
+      [8, '✗ Failed here'],
       [8, 'Run this test'],
       [8, 'Screenshot'],
       [8, 'Trace'],
@@ -2199,6 +2247,7 @@ describe('failures follow the edits', () => {
     // The test still failed: its lens says so, and that the line it failed at changed since.
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { state: 'edited' } });
+    expect(spec.lines[0]!.title).toMatch(/^failing in run #41, its line edited since · /);
     expect(spec.lines.map((l) => l.title)).toContain(
       "✎ edited since run #41 · locator('.cart-row').nth(2) was not found",
     );
@@ -2209,6 +2258,9 @@ describe('failures follow the edits', () => {
     expect(hover.contents.value).toContain(
       `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
     );
+    // The diagnostic shows the headline: the hover gives the error's detail alone.
+    expect(hover.contents.value).not.toContain("\n\nlocator('.cart-row').nth(2) was not found\n");
+    expect(hover.contents.value).toContain('Timeout 5000ms exceeded');
   });
 
   test('deleting the test takes its failure away, and putting it back brings it back', async () => {
@@ -2314,7 +2366,7 @@ describe('failures follow the edits', () => {
       const local = await waitFor(() => onPage((d) => d.message.includes('local run #42')));
       expect(local).toMatchObject({
         severity: 1,
-        message: "locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
+        message: "Local failure: locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
         range: { start: { line: 6, character: 2 } },
       });
     } finally {
@@ -2329,6 +2381,7 @@ describe('runs as they happen', () => {
   const statuses: RunStatusResult[] = [];
   const notices: Notice[] = [];
   const verdicts: RunEnded[] = [];
+  const ciHeard: CiSession[] = [];
   const published = new Map<string, Array<{ message: string; code?: string }>>();
 
   beforeAll(async () => {
@@ -2357,6 +2410,9 @@ describe('runs as they happen', () => {
     });
     runsClient.onNotification('piwi/runEnded', (v: RunEnded) => {
       verdicts.push(v);
+    });
+    runsClient.onNotification('piwi/ciSessionChanged', (session: CiSession) => {
+      ciHeard.push(session);
     });
     runsClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
       published.set(p.uri, p.diagnostics);
@@ -2488,6 +2544,8 @@ describe('runs as they happen', () => {
       startedAt: startTime,
       own: true,
       ref: command.ref,
+      url: expect.stringMatching(/\/test-runs\/42$/),
+      branch: 'feature/other',
     });
 
     // A test's end, then the counts of its batch.
@@ -2503,10 +2561,42 @@ describe('runs as they happen', () => {
     const { ended, message } = await endRun(42, startTime);
     // The live run leaves in the notification that brings the failures read once it ended.
     expect(ended.contexts[0]).toMatchObject({ live: null, overlays: 1, failingTests: 2 });
-    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)");
+    expect(message).toBe(
+      "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)",
+    );
     const listed = (await runsClient.sendRequest('piwi/failures')) as FailuresResult;
     expect(listed.items.find((i) => i.runId === 42)).toMatchObject({ source: 'own', state: 'failing' });
+    const spec = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    expect(spec.lines.find((l) => l.status === 'failed')?.title).toMatch(/^failing in your run #42 · /);
   });
+
+  test('a debug link’s name for the run takes no run of that name that started before it', async () => {
+    const ref = 'ed-00112233445566778899';
+    // A run on the instance already carries the name the link gives.
+    runDetails.set(91, editorRun(91, ref, 'passed', '2026-01-01T00:00:00.000Z'));
+    refRuns.set(ref, { id: 91, status: 'passed' });
+    const seen = statuses.length;
+    const command = (await runsClient.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      debug: { stop: { uri: uri('tests/checkout.spec.ts'), line: 2 }, title: 'pays', ref },
+    })) as RunCommand;
+    expect(command.ref).toBe(ref);
+    // Looked for twice at least, every 500 ms while the instance's stream is connected.
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    // The run the debug run starts.
+    const startTime = new Date().toISOString();
+    runDetails.set(92, editorRun(92, ref, 'running', startTime));
+    refRuns.set(ref, { id: 92, status: 'running' });
+    const live = await waitFor(
+      () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 92)?.contexts[0]?.live ?? undefined,
+    );
+    expect(live).toMatchObject({ runId: 92, own: true });
+    expect(statuses.slice(seen).some((s) => s.contexts[0]?.live?.runId === 91)).toBe(false);
+    await endRun(92, startTime);
+  }, 15_000);
 
   test('a rerun of a command started here, with the same ref, is its own once the stream announces it', async () => {
     const command = await runTests();
@@ -2528,7 +2618,9 @@ describe('runs as they happen', () => {
       );
       expect(live).toMatchObject({ runId: id, status: 'running', own: true });
       const { message } = await endRun(id, startTime);
-      expect(message).toBe(`getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`);
+      expect(message).toBe(
+        `Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`,
+      );
     };
     // Before the command's end is heard of, as in a terminal reused without shell integration.
     await rerun(46, '2026-09-27T12:40:00.000Z');
@@ -2556,7 +2648,9 @@ describe('runs as they happen', () => {
     // It is the second command's run: the client knows it by the ref that command was built with.
     expect(live).toMatchObject({ runId: 48, status: 'running', own: true, ref: second.ref });
     const { message } = await endRun(48, startTime);
-    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    expect(message).toBe(
+      "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)",
+    );
     await waitFor(() => (verdicts.some((v) => v.runId === 48) ? true : undefined));
     expect(verdicts.find((v) => v.runId === 48)?.ref).toBe(second.ref);
     // The instance was never asked for the ref the second command was built with.
@@ -2628,6 +2722,7 @@ describe('runs as they happen', () => {
     );
     expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
     expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
+    expect((await testLine())?.title).toMatch(/^running in your run #60 · /);
 
     // It passes again on a retry of its serial group: the instance says no attempt failed, so it passed.
     pushRunEvent(60, 'test-completed', {
@@ -2661,6 +2756,7 @@ describe('runs as they happen', () => {
       statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'flaky' ? true : undefined,
     );
     expect(await testLine()).toMatchObject({ status: 'flaky' });
+    expect((await testLine())?.title).toMatch(/^flaky in your run #60 · /);
 
     // The run ends and is read: the test shows the latest run's result again.
     runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 2 });
@@ -2669,6 +2765,90 @@ describe('runs as they happen', () => {
     const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
     expect(ended.contexts[0]!.liveTests).toBeUndefined();
     expect((await testLine())?.status).not.toBe('flaky');
+  });
+
+  test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
+    const startTime = '2026-09-27T12:00:00.000Z';
+    runDetails.set(60, {
+      id: 60,
+      status: 'running',
+      branch: 'main',
+      startTime,
+      metadata: { piwiOrigin: { kind: 'ci' } },
+      totalTests: 3,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    });
+    pushInstanceEvent({ type: 'run-started', runId: 60, projectId: 7 });
+    const first = await waitFor(() => ciHeard.find((s) => s.runId === 60));
+    expect(first).toMatchObject({
+      name: 'CI run #60',
+      branch: 'main',
+      url: expect.stringMatching(/\/test-runs\/60$/),
+      summary: '0 of 3 tests',
+      tests: [],
+      ended: false,
+    });
+    // The context follows it as its run in progress too: one connection to the run's stream serves both.
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 60));
+    await waitFor(() => (runStreams.get(60)?.size === 1 ? true : undefined));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runStreams.get(60)?.size).toBe(1);
+
+    // What leaves the session as the client holds it tells the client nothing: the same tally, the same live view.
+    const told = ciHeard.length;
+    const tally = { totalTests: 3, passedTests: 0, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
+    pushInstanceEvent({ type: 'run-progress', runId: 60, projectId: 7, ...tally });
+    pushRunEvent(60, 'run-progress', { status: 'running', ...tally });
+    pushRunEvent(60, 'live-view', { enabled: false, keyed: false });
+    await new Promise((r) => setTimeout(r, 700));
+    expect(ciHeard.slice(told)).toEqual([]);
+
+    pushRunEvent(60, 'live-view', { enabled: true, keyed: true });
+    pushRunEvent(60, 'test-begin', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 0,
+      parallelIndex: 0,
+      shardIndex: null,
+      retries: 0,
+      browser: { projectName: 'chromium' },
+    });
+    pushRunEvent(60, 'step-begin', {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Pay now' })",
+      location: '/ci/work/shop/tests/checkout.spec.ts:5:20',
+      workerIndex: 0,
+      shardIndex: null,
+      stepCategory: 'pw:api',
+    });
+    const running = await waitFor(() => [...ciHeard].reverse().find((s) => s.runId === 60 && s.tests[0]?.at)?.tests[0]);
+    expect(running).toMatchObject({
+      title: ['pays'],
+      line: 2,
+      status: 'running',
+      lane: 1,
+      at: {
+        line: 4,
+        character: 19,
+        text: "CI run #60 · worker 1: Click getByRole('button', { name: 'Pay now' })",
+      },
+      watch: expect.stringMatching(/\/test-runs\/60\?watch=1$/),
+    });
+    expect(fileURLToPath(running.uri!)).toBe(fs.realpathSync(path.join(dir, 'tests/checkout.spec.ts')));
+    expect(running.at!.uri).toBe(running.uri);
+
+    // The run ends: the session's last notification.
+    runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 3 });
+    pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 3, passedTests: 3, failedTests: 0 });
+    pushInstanceEvent({ type: 'run-finished', runId: 60, projectId: 7, status: 'passed' });
+    const ended = await waitFor(() => ciHeard.find((s) => s.runId === 60 && s.ended));
+    expect(ended).toMatchObject({ progress: { status: 'passed' }, watchable: false });
+    expect(ended.tests[0]).toMatchObject({ at: null, watch: null });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
   });
 
   test('a run started here says what it changed once it ended and was read', async () => {
@@ -2680,6 +2860,13 @@ describe('runs as they happen', () => {
       resolved: [],
     };
     await runsClient.sendRequest('piwi/refreshRun');
+    // `pays` failed on its own line, where its diagnostic says why: the line above marks it alone.
+    const before = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    const pays = before.lines.find((l) => l.status === 'failed')!;
+    expect(pays.failure).toMatchObject({ diagnosed: true });
+    expect(before.lines.filter((l) => l.line === pays.failure!.line).map((l) => l.title)).toContain('✗ Failed here');
     const command = await runTests();
     const startTime = '2026-09-27T15:00:00.000Z';
     runDetails.set(61, editorRun(61, command.ref, 'running', startTime));
@@ -2755,7 +2942,11 @@ describe('runs as they happen', () => {
   test('a run of a test three times says how many of its runs passed, counted from its stream', async () => {
     const command = await verifyPays();
     expect(command.command).toBe('npx playwright test tests/checkout.spec.ts:3 --repeat-each=3 --retries=0');
-    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+    expect(command.env).toEqual({
+      PIWI_ORIGIN: 'editor',
+      PIWI_ORIGIN_REF: command.ref,
+      PIWI_RUN_CHANNEL: RECORD_CHANNEL,
+    });
     const startTime = '2026-09-27T16:00:00.000Z';
     runDetails.set(62, editorRun(62, command.ref, 'running', startTime));
     refRuns.set(command.ref!, { id: 62, status: 'running' });
@@ -2785,6 +2976,45 @@ describe('runs as they happen', () => {
 
     // A run of each test once says what it changed alone.
     expect(verdicts.find((v) => v.runId === 61)?.repeat).toBeUndefined();
+  });
+
+  test('a run started here whose tests were ended at a stop says how many, as its own process counted them', async () => {
+    const command = await runTests();
+    // The run's own process, on the channel the command names: one test of it was ended at a stop.
+    const channel = parseRecordChannel(command.env!.PIWI_RUN_CHANNEL)!;
+    const main = net.connect(channel.path);
+    const send = (message: unknown) => main.write(`${JSON.stringify(message)}\n`);
+    send({
+      type: 'run-begin',
+      token: channel.token,
+      ref: command.ref,
+      cwd: dir,
+      pid: 1,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 2,
+      workers: 1,
+      shard: null,
+    });
+    send({
+      type: 'run-end',
+      status: 'passed',
+      failure: null,
+      done: 2,
+      failed: 0,
+      flaky: 0,
+      skipped: 1,
+      endedAtStop: 1,
+    });
+    const startTime = '2026-09-27T17:00:00.000Z';
+    runDetails.set(63, editorRun(63, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 63, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 63));
+    runDetails.set(63, { ...runDetails.get(63), status: 'passed', passedTests: 1, skippedTests: 1 });
+    pushInstanceEvent({ type: 'run-finished', runId: 63, projectId: 7, status: 'passed' });
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 63));
+    expect(verdict).toMatchObject({ runId: 63, ref: command.ref, passed: 1, skipped: 1, endedAtStop: 1 });
+    main.destroy();
   });
 
   test('a run of a test three times that reached no instance says from its exit code how it went', async () => {
@@ -2949,9 +3179,21 @@ describe('the desktop app', () => {
       });
       // The desktop app's MCP server takes its token, whichever way the agent is set to sign in.
       await desktopClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      // Said to be the desktop app's, whose run tools a client listing its own runs' server leaves out
+      // (`?runs=off`); the address any client copies stays whole.
       expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
-        expect.objectContaining({ headers: { Authorization: 'Bearer pd_desktop' }, authorization: 'key' }),
+        expect.objectContaining({
+          url: `${url}/mcp`,
+          headers: { Authorization: 'Bearer pd_desktop' },
+          authorization: 'key',
+          desktop: true,
+        }),
       ]);
+      await desktopClient.sendRequest('piwi/agents', { enabled: true });
+      expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
+        expect.objectContaining({ url: `${url}/mcp`, desktop: true }),
+      ]);
+      await desktopClient.sendRequest('piwi/agents', { enabled: false });
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();
@@ -3187,7 +3429,9 @@ describe('the baseline chosen in the editor', () => {
     const onPage = await waitFor(() =>
       baselinePublished.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes('#119')),
     );
-    expect(onPage.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, local run #119)");
+    expect(onPage.message).toBe(
+      "Local failure: locator('.cart-row').nth(2) was not found (removes a row, local run #119)",
+    );
     const hover = (await baselineClient.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
@@ -3370,6 +3614,13 @@ describe('a branch with no run yet', () => {
       const page = pathToFileURL(path.join(other, 'tests/pages/checkout.page.ts')).href;
       const onPage = await waitFor(() => published.get(page));
       expect(onPage[0]?.message).toContain('run #41 on main');
+      // A test's line says which branch its failure was read on.
+      const rows = pathToFileURL(path.join(other, 'tests/rows.spec.ts')).href;
+      await branchClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: rows, languageId: 'typescript', version: 1, text: FAILING_SPEC },
+      });
+      const spec = (await branchClient.sendRequest('piwi/fileSummary', { uri: rows })) as FileSummary;
+      expect(spec.lines.find((l) => l.status === 'failed')?.title).toMatch(/^failing in run #41 on main · /);
       // Another branch's failure is a warning at most, and an information when the setting says so.
       expect(onPage[0]?.severity).toBe(2);
       const severityAfter = async (failureSeverity: string, severity: number) => {
@@ -3424,6 +3675,13 @@ describe('the severity of a failure', () => {
         uri: uri('tests/rows.spec.ts'),
       })) as FileSummary;
       expect(spec.lines.find((l) => l.line === 3)).toMatchObject({ status: 'failed', failure: { line: 6 } });
+      // With no diagnostic to say it, the line above the failing line and the hover say why the test failed.
+      expect(spec.lines.map((l) => l.title)).toContain("✗ Failed here · locator('.cart-row').nth(2) was not found");
+      const hover = (await severityClient.sendRequest('textDocument/hover', {
+        textDocument: { uri: page },
+        position: { line: 4, character: 30 },
+      })) as { contents: { value: string } };
+      expect(hover.contents.value).toContain("locator('.cart-row').nth(2) was not found");
 
       // Credentials without the setting: an error, as for a run on the checked-out branch.
       await severityClient.sendNotification('piwi/setCredentials', {});
@@ -3652,6 +3910,50 @@ describe('what keeps a context from the instance’s data', () => {
     } finally {
       stopGate();
       gateClient.dispose();
+    }
+  });
+
+  test('a desktop app that does not prove its token is told apart from one that does not answer', async () => {
+    // The app's port answers every request, as an older app or another program there does, and proves nothing.
+    const other = http.createServer((_req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end('[]');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const otherUrl = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopService = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: otherUrl,
+        PIWI_API_KEY: 'pd_desktop',
+        PIWI_DESKTOP_KEY: '1',
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    client.listen();
+    try {
+      await client.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await client.sendNotification('initialized', {});
+      const context = await waitFor(async () => {
+        const status = (await client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.problemKind ? status.contexts[0] : undefined;
+      });
+      expect(context).toMatchObject({ connected: false, problemKind: 'desktop-unproven' });
+      expect(context.problem).toContain('Restart or update the desktop app');
+    } finally {
+      stopService();
+      client.dispose();
+      other.close();
     }
   });
 
@@ -4489,12 +4791,14 @@ describe('a test the instance does not know yet', () => {
     await local.sendNotification('textDocument/didOpen', {
       textDocument: { uri: specUri(), languageId: 'typescript', version: 1, text: RECORDED },
     });
-    expect(await at(2)).toEqual({ test: null, spec: null, location: 'tests/checkout.spec.ts:3' });
+    // A spec the instance does not know: Run This Spec runs every test of it by its path.
+    const spec = { uri: specUri(), testIds: [], location: 'tests/checkout.spec.ts' };
+    expect(await at(2)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:3' });
     for (const line of [4, 6, 7]) {
-      expect(await at(line)).toEqual({ test: null, spec: null, location: 'tests/checkout.spec.ts:5' });
+      expect(await at(line)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:5' });
     }
-    expect(await at(1)).toEqual({ test: null, spec: null, location: null });
-    expect(await at(8)).toEqual({ test: null, spec: null, location: null });
+    expect(await at(1)).toEqual({ test: null, spec, location: null });
+    expect(await at(8)).toEqual({ test: null, spec, location: null });
 
     const run = await runArgs({ locations: ['tests/checkout.spec.ts:5'] });
     expect(run).toEqual({
@@ -4527,7 +4831,8 @@ describe('a test the instance does not know yet', () => {
       cwd: repo,
       args: ['tests/checkout.spec.ts:5', '--repeat-each=3', '--retries=0'],
       command: 'npx playwright test tests/checkout.spec.ts:5 --repeat-each=3 --retries=0',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref },
+      // On the run channel, nobody attending it: no breakpoint, no record channel.
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
     expect(await runArgs({ locations: ['tests/checkout.spec.ts:5'], repeat: 0 })).toBeNull();

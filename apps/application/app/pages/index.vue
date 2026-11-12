@@ -71,6 +71,8 @@ const { data: flakeLabInbox } = useFetch('/api/flake-lab/inbox', {
 });
 
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns(), refreshOpenClusters()]));
+// A running run's row shows its latest tally as it comes, with no read of the list.
+const liveRow = useLiveRunProgress();
 
 // True only before the first project-overview load resolves — drives the skeleton.
 // Gated on `overview` (which decides projects-vs-onboarding) so a slow load can't
@@ -160,7 +162,6 @@ const overviewStats = computed(() => {
 
 // ── Recent activity ───────────────────────────────────────────────────────────
 
-const RUNNING_STATUSES = new Set(['running', 'initializing', 'finalizing']);
 const ACTIVITY_PREVIEW_LIMIT = 6;
 
 const activityExpanded = useViewState('activity-expanded', () => false);
@@ -169,15 +170,15 @@ const allActivity = computed(() => {
   const runs = [...filteredRecentRuns.value];
   // Running runs first, then by start time desc
   return runs.sort((a, b) => {
-    const aR = RUNNING_STATUSES.has(a.status) ? 0 : 1;
-    const bR = RUNNING_STATUSES.has(b.status) ? 0 : 1;
+    const aR = isLiveRun(a) ? 0 : 1;
+    const bR = isLiveRun(b) ? 0 : 1;
     if (aR !== bR) return aR - bR;
     return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
   });
 });
 
 const visibleActivity = computed(() =>
-  activityExpanded.value ? allActivity.value : allActivity.value.slice(0, ACTIVITY_PREVIEW_LIMIT),
+  (activityExpanded.value ? allActivity.value : allActivity.value.slice(0, ACTIVITY_PREVIEW_LIMIT)).map(liveRow),
 );
 
 const hasMoreActivity = computed(() => allActivity.value.length > ACTIVITY_PREVIEW_LIMIT);
@@ -386,6 +387,7 @@ useViewScroll(() => dashboardPanelBody('home'));
           <SectionCard
             id="recent-activity"
             v-if="hasActivity"
+            data-shot="recent-activity"
             icon="i-lucide-activity"
             title="Recent activity"
             class="scroll-mt-4"
@@ -420,11 +422,14 @@ useViewScroll(() => dashboardPanelBody('home'));
                 :class="statusPalette(run.status).edge"
               >
                 <RunStatusBadge :status="run.status" />
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium truncate">{{ run.projectLabel || run.projectName }}</div>
-                  <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
+                <div class="flex-1 min-w-0 space-y-1">
+                  <div>
+                    <div class="font-medium truncate">{{ run.projectLabel || run.projectName }}</div>
+                    <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
+                  </div>
+                  <RunLiveProgress v-if="isLiveRun(run)" :run="run" />
                 </div>
-                <div class="text-right tabular-nums shrink-0">
+                <div v-if="!isLiveRun(run)" class="text-right tabular-nums shrink-0">
                   <div :class="passRateTextClass(runPassRate(run))">
                     {{ runPassRate(run) !== null ? `${runPassRate(run)}%` : '—' }}
                   </div>

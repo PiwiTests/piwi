@@ -13,10 +13,11 @@
  *    paired Piwi Picker holds since **Allow**, and `GET /api/desktop/live` names the hub to a request carrying it;
  *  - the app's window is a peer of that hub (`RunHub.join`) through routes behind the desktop guard: it hears what
  *    Piwi Picker hears, sends the same commands, and alone receives the code made at a stop, to copy (`stop-code`);
- *  - a failure no pause bar shows is held in a run whose **Hold failures** the window turned on (`show`), or while a
- *    Runs window of Piwi Picker follows the runs (`follow`); otherwise it goes on at once, and always in a run nobody attends (a Flake
- *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
- *    hear that they hold no failure;
+ *  - a failure no pause bar shows is held in a run whose **Hold failures** is on: the window turns it on or off
+ *    (`show`), as Piwi Picker (`hold`) and an agent may, and it goes off as the last window showing the run closes;
+ *    otherwise it goes on at once, and always in a run nobody attends (a Flake Lab, a bisect, a lab job, a run in UI
+ *    mode or repeating its tests past a failure: its ref ends in `-unattended`), whose workers hear that they hold no
+ *    failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
  *    linked folder alone, and refused once the file was written since the run's first connection opened (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
@@ -35,9 +36,17 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
+import {
+  HUB_FEATURES,
+  canStopRun,
+  parseHubCommand,
+  type HubAnswer,
+  type HubMessage,
+  type LiveHub,
+} from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
-import type { RunIntent } from '@piwitests/core/run-channel';
+import { runTargetConnection } from '@piwitests/editor/run-target';
+import { TERMINAL_REF_PREFIX, type RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
   RecordChannel,
@@ -48,10 +57,14 @@ import {
   StopActions,
   expectModuleOf,
   siblingSpecs,
+  startTraceViewer,
   type AgentWords,
   type DiskFile,
   type HubPeer,
+  type RunControlResult,
+  type RunHoldFailures,
   type StopTarget,
+  type TraceViewerLauncher,
 } from '@piwitests/editor/run-host';
 import {
   DESKTOP_PICKS_PATH,
@@ -62,6 +75,7 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { desktopPicksToken } from './desktop-access';
+import { EditorRuns, type EditorRun } from './desktop-editor-runs';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -71,12 +85,12 @@ export const DESKTOP_HUB_CLIENT = 'Piwi desktop app';
 const MAX_WINDOWS = 16;
 
 /**
- * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, and the frames of the
- * stops (`frame`) and the lanes (`lane-frame`) it watches. A joined peer hears no `welcome`, and its answers come back
- * to the command that asked.
+ * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, the frames of the
+ * stops (`frame`) and the lanes (`lane-frame`) it watches, and the layers of those lanes it asked for (`lane-layer`). A
+ * joined peer hears no `welcome`, and its answers come back to the command that asked.
  */
 function relayed(message: HubMessage): message is Extract<HubMessage, DesktopRunEvent> {
-  return ['session', 'code', 'frame', 'lane-frame'].includes(message.type);
+  return ['session', 'code', 'frame', 'lane-frame', 'lane-layer'].includes(message.type);
 }
 
 /** What the run channel's socket folder is named from, in the temporary directory: this server's alone. */
@@ -137,6 +151,7 @@ const DECLINED: Partial<Record<RunIntent, string>> = {
 /** What the agents' tools say of this app's runs: watched in its window, their code made there to copy. */
 export const DESKTOP_AGENT_WORDS: AgentWords = {
   runs: 'the desktop app',
+  host: 'desktop app',
   start: "start one from the app's window",
   watch: "The developer sees each stop in the desktop app's window, said to be the agent's.",
   view: "the desktop app's view of the run",
@@ -151,13 +166,17 @@ export const DESKTOP_AGENT_WORDS: AgentWords = {
 
 /** Why an agent is not given a run nobody attends. */
 const UNATTENDED_FOR_AGENTS =
-  'nobody attends it (a Flake Lab run, a bisect, a lab job, a run that repeats its tests or runs in UI mode), and an ' +
+  'nobody attends it (a Flake Lab run, a bisect, a lab job, a run in UI mode or one that repeats its tests past a ' +
+  'failure), and an ' +
   'agent steers only a run a person can watch.';
+
+/** The app's window as presence names it to the hub's other tools. */
+const DESKTOP_WINDOW = { kind: 'desktop', name: 'the desktop app' } as const;
 
 /** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
 const NO_WINDOW_FOR_AGENTS =
   "No window of the desktop app is open, and a headless run's stop goes on with none to show it: open the app's " +
-  'window to pause, step or run to a line.';
+  'window to pause, step, run to a line or hold a failure.';
 
 /** What a window's stream takes: the events, what it holds unsent in bytes, and its end. */
 export interface DesktopRunSink {
@@ -179,20 +198,35 @@ export interface DesktopRunsOptions {
   log?(message: string): void;
   keepaliveMs?: number;
   helloMs?: number;
-  /** The editors' discovery folder the hub names its peers from; `editorsDir()` by default. */
+  /** The editors' discovery folder the hub names its peers from, and whose runs it observes; `editorsDir()` by default. */
   editorsDir?: string;
+  /** Whether the server observes the editors' runs (`EditorRuns`); on by default. */
+  observeEditors?: boolean;
   peersMs?: number;
   lingerMs?: number;
   requestMs?: number;
   /** How long an agent follows a run after its last call on it (`RunAgent`'s `followIdleMs`). */
   agentIdleMs?: number;
+  /**
+   * Starts Playwright's trace viewer on a lane's running test's trace (the hub's `openTrace`), from the Playwright of
+   * the linked folder the run runs in: `startTraceViewer` by default.
+   */
+  traceViewer?: TraceViewerLauncher;
+  /**
+   * Whether this machine shows the trace viewer's window (`hasDisplay` by default): without one, the hub offers no
+   * trace and refuses `openTrace`.
+   */
+  traceDisplay?: () => boolean;
 }
 
 interface RunWindow {
   peer: HubPeer;
   sink: DesktopRunSink;
-  /** The runs whose Hold failures it turned on: a failure no pause bar shows is held in them. */
-  shows: Set<string>;
+  /**
+   * The runs whose Hold failures it turned on, each with the Hold failures it set: the last window showing a run turns
+   * it off as it stops showing it, unless someone set it since.
+   */
+  shows: Map<string, RunHoldFailures>;
 }
 
 function uriToPath(uri: string): string | null {
@@ -215,6 +249,25 @@ function real(file: string): string {
 /** Two paths compared as the file system does: without regard to case on Windows and macOS. */
 function samePath(a: string, b: string): boolean {
   return process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase();
+}
+
+/** The linked folder, of `links`, that is `cwd` or holds it, the most specific when several do; null for none. */
+export function linkHolding(links: readonly DesktopLink[], cwd: string): string | null {
+  const at = real(cwd);
+  const holding = links.filter((link) => samePath(real(link.path), at) || insideFolder(link.path, cwd));
+  holding.sort((a, b) => real(b.path).length - real(a.path).length);
+  return holding[0]?.path ?? null;
+}
+
+/**
+ * `cwd` as the linked folder holding it spells it: the link's path, then the rest of `cwd` below it; null outside every
+ * linked folder. A session's root names its run's working directory, in the spelling the window opens files under.
+ */
+export function linkedSpelling(links: readonly DesktopLink[], cwd: string): string | null {
+  const link = linkHolding(links, cwd);
+  if (link === null) return null;
+  const rest = path.relative(real(link), real(cwd));
+  return rest ? path.join(link, rest) : link;
 }
 
 /** Whether `file` is inside `folder`, both resolved through their links. */
@@ -249,7 +302,7 @@ class DesktopRunSessions extends RunSessions {
   override async pickAt(params: Parameters<RunSessions['pickAt']>[0]): ReturnType<RunSessions['pickAt']> {
     const picked = await super.pickAt(params);
     return picked.ok && picked.locator
-      ? { ...picked, message: `${picked.locator}: copy it in the desktop app's window.` }
+      ? { ...picked, taken: false, message: `${picked.locator}: copy it in the desktop app's window.` }
       : picked;
   }
 }
@@ -269,25 +322,37 @@ export class DesktopRuns {
   private readonly startedAt = new Date().toISOString();
   private readonly liveCountListeners = new Set<(live: number) => void>();
   private liveCount = 0;
+  /** The editors' runs, observed for the app's own surfaces and steered by none of them (`EditorRuns`). */
+  private editors: EditorRuns | null = null;
+  private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
+      // A run's page is linked on this machine (this app's server), or on the team instance whose requests it runs.
+      instances: () => [runTargetConnection().instance],
       notify: (session) => {
         this.hub?.push(session);
         this.liveCountChanged();
       },
+      presenceChanged: (session) => this.hub?.push(session),
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
-      rootOf: (cwd) => this.links().find((link) => samePath(real(link.path), real(cwd)))?.path ?? null,
+      // A teammate asks to watch a run the app follows: each window asks the person.
+      askedToWatch: (ask) => {
+        for (const window of this.windows.values()) window.sink.send({ type: 'ask-to-watch', ...ask });
+      },
+      // The run's folder as its linked folder spells it: a run the shell starts runs in the linked folder, one
+      // started in a terminal there or below.
+      rootOf: (cwd) => linkedSpelling(this.links(), cwd),
       writesCode: () => true,
       onRegion: (stop, region) =>
         'refused' in region
           ? this.actions.regionRefused(stop, region.refused)
           : this.actions.region(stop, region.locator, region.snapshot),
-      watched: (ref) => [...this.windows.values()].some((window) => window.shows.has(ref)),
-      followed: () => !!this.hub?.follows(),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
+      // A run started in a terminal in a linked folder attaches under a ref of its own (the reporter's `hub.ts`).
+      terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX),
       // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
@@ -304,6 +369,10 @@ export class DesktopRuns {
       },
       lingerMs: options.lingerMs,
       requestMs: options.requestMs,
+      // **Open the trace so far**: the viewer runs from the run's folder with none of this server's environment but
+      // what a window and Playwright need, the trace's path staying in this server.
+      traceViewer: options.traceViewer ?? startTraceViewer,
+      ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
     });
     this.actions = new StopActions({
       sessions: this.sessions,
@@ -361,11 +430,10 @@ export class DesktopRuns {
       RunHub.open({
         sessions: runs.sessions,
         actions: runs.actions,
-        runInfo: (_ref, root) => ({
-          command: null,
-          label: root ? path.basename(root) : null,
-          project: root ? runs.project(root) : null,
-        }),
+        runInfo: (_ref, root) => {
+          const link = root ? linkHolding(runs.links(), root) : null;
+          return { command: null, label: link ? path.basename(link) : null, project: link ? runs.project(link) : null };
+        },
         welcome: () => ({
           pid: process.pid,
           version: options.version,
@@ -373,6 +441,7 @@ export class DesktopRuns {
           roots: runs.links().map((link) => link.path),
         }),
         surfacesChanged: () => runs.sessions.surfacesChanged(),
+        stopRun: async (ref) => runs.stopRun(ref),
         peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
         peersMs: options.peersMs,
         token: options.token,
@@ -383,6 +452,16 @@ export class DesktopRuns {
     ]);
     runs.channel = channel;
     runs.hub = hub;
+    if (options.observeEditors !== false) {
+      runs.editors = new EditorRuns({
+        live: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        changed: () => {
+          const now = runs.editorRuns();
+          for (const listener of runs.editorRunsListeners) listener(now);
+        },
+      });
+      runs.editors.start();
+    }
     if (!channel) options.log?.('[desktop-runs] The run channel could not listen: runs start without a hub.');
     if (!hub) options.log?.('[desktop-runs] The hub could not listen: Piwi Picker and the window see no run.');
     return runs;
@@ -419,6 +498,17 @@ export class DesktopRuns {
     return () => this.liveCountListeners.delete(listener);
   }
 
+  /** The editors' live runs, as their hubs tell them (`EditorRuns`): none while the server does not observe them. */
+  editorRuns(): EditorRun[] {
+    return this.editors?.runs() ?? [];
+  }
+
+  /** Hears the editors' live runs each time they change; returns the unsubscribe. */
+  onEditorRuns(listener: (runs: EditorRun[]) => void): () => void {
+    this.editorRunsListeners.add(listener);
+    return () => this.editorRunsListeners.delete(listener);
+  }
+
   /** The hub as `GET /api/desktop/live` names it, in the shape an editor's `GET …/live` gives (`LiveAnswer`). */
   live(): LiveHub[] {
     if (!this.hub) return [];
@@ -437,6 +527,24 @@ export class DesktopRuns {
   }
 
   /**
+   * Stops the run `ref` as another tool asks through the hub (`stop`): every window's stream hears it (`stop-run`), and
+   * the window that holds the run stops it as its own Stop does, the shell's process with it. Refused for a run that
+   * ended, one started in a terminal, whose process is the terminal's, and while no window is open to stop it.
+   */
+  stopRun(ref: string): RunControlResult {
+    const session = this.sessions.current().find((s) => s.ref === ref);
+    if (session?.terminal && !session.ended) {
+      return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    }
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
+    if (this.windows.size === 0) {
+      return { ok: false, message: "No window of the desktop app is open: open the app's window to stop the run." };
+    }
+    for (const window of this.windows.values()) window.sink.send({ type: 'stop-run', ref });
+    return { ok: true, message: 'The desktop app stops the run.' };
+  }
+
+  /**
    * A window's stream opens: it is a peer of the hub, subscribed at once, and hears first the id its commands name
    * it by, then the codes and the picks kept, then each run, then that every run live was listed (`listed`). Null while
    * the hub does not listen, or past `MAX_WINDOWS`.
@@ -450,16 +558,19 @@ export class DesktopRuns {
     };
     const window: RunWindow = {
       sink,
-      shows: new Set(),
-      peer: this.hub.join({
-        send: (message) => {
-          // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
-          if (sink.buffered() > MAX_HUB_BUFFERED) return close();
-          if (relayed(message)) sink.send(message);
+      shows: new Map(),
+      peer: this.hub.join(
+        {
+          send: (message) => {
+            // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
+            if (sink.buffered() > MAX_HUB_BUFFERED) return close();
+            if (relayed(message)) sink.send(message);
+          },
+          buffered: () => sink.buffered(),
+          close,
         },
-        buffered: () => sink.buffered(),
-        close,
-      }),
+        DESKTOP_WINDOW,
+      ),
     };
     this.windows.set(viewer, window);
     sink.send({ type: 'hello', viewer });
@@ -484,19 +595,29 @@ export class DesktopRuns {
       if (typeof value.ref !== 'string' || !REF.test(value.ref))
         return answer(false, 'The command needs the ref of a run.');
       if (typeof value.on !== 'boolean') return answer(false, 'on must be true or false.');
-      const had = window.shows.has(value.ref);
-      if (value.on) window.shows.add(value.ref);
-      else window.shows.delete(value.ref);
-      if (had !== value.on) this.sessions.surfacesChanged();
       if (isUnattendedDesktopRun(value.ref)) {
         return answer(true, 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.');
+      }
+      // The window's Hold failures is the run's own: another window, Piwi Picker or an agent may change it after.
+      if (value.on) {
+        this.sessions.hold({ ref: value.ref, on: true }, 'person');
+        window.shows.set(value.ref, this.sessions.holdOf(value.ref));
+      } else {
+        this.stopShowing(window, value.ref);
       }
       return answer(
         true,
         value.on
           ? 'A failure no pause bar shows waits for an answer in this run while the window shows it.'
-          : 'A failure of this run no pause bar shows goes on unless Piwi Picker follows the runs.',
+          : 'A failure of this run no pause bar shows goes on at once.',
       );
+    }
+    if (value.type === 'answer-ask') {
+      if (!id || typeof value.ref !== 'string' || !REF.test(value.ref) || typeof value.ask !== 'string') {
+        return answer(false, 'The command needs the ref of a run and the ask it answers.');
+      }
+      const said = this.sessions.answerAsk({ ref: value.ref, id: value.ask, answer: 'not-now' });
+      return answer(said.ok, said.message);
     }
     const parsed = parseHubCommand(JSON.stringify(value));
     if (!parsed) return answer(false, 'Not a command.');
@@ -505,6 +626,8 @@ export class DesktopRuns {
 
   /** The server stops: the hub and the channel close, every worker's connection with them, and every window stream. */
   close(): void {
+    this.editors?.close();
+    this.editors = null;
     this.agent.dispose();
     this.hub?.close();
     this.hub = null;
@@ -520,7 +643,19 @@ export class DesktopRuns {
     if (!window) return;
     this.windows.delete(viewer);
     window.peer.leave();
-    if (window.shows.size) this.sessions.surfacesChanged();
+    for (const ref of [...window.shows.keys()]) this.stopShowing(window, ref);
+  }
+
+  /**
+   * The window shows the run no more: the last window showing it turns its Hold failures off, unless someone set it
+   * since the window did.
+   */
+  private stopShowing(window: RunWindow, ref: string): void {
+    const set = window.shows.get(ref);
+    if (!set) return;
+    window.shows.delete(ref);
+    if ([...this.windows.values()].some((other) => other.shows.has(ref))) return;
+    if (this.sessions.holdOf(ref) === set) this.sessions.hold({ ref, on: false }, 'person');
   }
 
   private liveCountChanged(): void {

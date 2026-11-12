@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import type { EditorDiscovery } from '../src/editor-discovery';
 import { MAX_STOP_ERROR } from '../src/run-channel';
 import {
+  canStopRun,
+  HUB_FEATURES,
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -23,6 +25,7 @@ import {
   liveUrlOf,
   parseHubCommand,
   parseHubHello,
+  MAX_HUB_PRESENCE,
   parseHubMessage,
   parseLiveAnswer,
   type HubMessage,
@@ -143,6 +146,13 @@ describe('the hub’s WebSocket', () => {
 
   test('reads each command field by field', () => {
     expect(parseHubCommand(json({ type: 'subscribe', id: 1 }))).toEqual({ type: 'subscribe', id: 1 });
+    // To observe alone: the desktop app's server reading an editor's runs. Anything else than true observes nothing.
+    expect(parseHubCommand(json({ type: 'subscribe', id: 1, observe: true }))).toEqual({
+      type: 'subscribe',
+      id: 1,
+      observe: true,
+    });
+    expect(parseHubCommand(json({ type: 'subscribe', id: 1, observe: 'yes' }))).toEqual({ type: 'subscribe', id: 1 });
     expect(parseHubCommand(json({ type: 'follow', id: 1, on: true }))).toEqual({ type: 'follow', id: 1, on: true });
     expect(parseHubCommand(json({ type: 'follow', id: 1, on: false }))).toEqual({ type: 'follow', id: 1, on: false });
     expect(parseHubCommand(json({ type: 'runControl', id: 2, ref: 'ed-1', action: 'pause' }))).toEqual({
@@ -384,6 +394,16 @@ describe('the hub’s WebSocket', () => {
       json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, by: 'me' } }] } }),
     ) as { session: HubSession };
     expect(byOther.session.workers[0]!.stop).not.toHaveProperty('by');
+    // An action that runs in the test's window at the stop says which; anything else is left out.
+    const acting = { ...session, workers: [{ ...worker, stop: { ...worker.stop!, acting: 'pick' as const } }] };
+    expect(parseHubMessage(json({ type: 'session', session: acting }))).toEqual({ type: 'session', session: acting });
+    const actingOther = parseHubMessage(
+      json({
+        type: 'session',
+        session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, acting: 'dance' } }] },
+      }),
+    ) as { session: HubSession };
+    expect(actingOther.session.workers[0]!.stop).not.toHaveProperty('acting');
     expect(
       parseHubMessage(
         json({
@@ -797,6 +817,41 @@ describe('a lane watched on the hub', () => {
     expect(parseHubMessage(json({ ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) }))).toBeNull();
   });
 
+  test('reads openTrace, naming the run and its lane, and refuses one without either or with a path', () => {
+    const open = { type: 'openTrace', id: 4, ref: 'ed-1', lane: 1 };
+    expect(parseHubCommand(json(open))).toEqual(open);
+    // A file the client names is never read: the hub asks the lane's worker where its trace grows.
+    expect(parseHubCommand(json({ ...open, file: '/etc/passwd', worker: 3 }))).toEqual(open);
+    for (const broken of [
+      { ...open, ref: 'ed 1' },
+      { ...open, ref: undefined },
+      { ...open, lane: -1 },
+      { ...open, lane: 1.5 },
+      { ...open, lane: '1' },
+      { ...open, lane: undefined },
+    ]) {
+      expect(parseHubCommand(json(broken)), JSON.stringify(broken)).toMatchObject({ type: 'invalid', id: 4 });
+    }
+  });
+
+  test('has the extension read a hub that opens a trace, and a worker whose reporter answers where it grows', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(HUB_FEATURES).toContain('trace');
+    expect(parseHubMessage(json({ ...welcome, features: ['trace', 'lanes'] }))).toEqual({
+      ...welcome,
+      features: ['lanes', 'trace'],
+    });
+    const traced = { ...session, workers: [{ ...session.workers[0]!, traces: true }] };
+    expect(parseHubMessage(json({ type: 'session', session: traced }))).toEqual({ type: 'session', session: traced });
+    // Anything but true says nothing: the worker's reporter is read as one that cannot open its trace.
+    for (const traces of [false, 'yes', 1, null]) {
+      const read = parseHubMessage(
+        json({ type: 'session', session: { ...traced, workers: [{ ...traced.workers[0]!, traces }] } }),
+      );
+      expect(read).toEqual({ type: 'session', session });
+    }
+  });
+
   test('is offered by a hub whose welcome lists lanes, for a worker whose intents list watch', () => {
     const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
     expect(parseHubMessage(json({ ...welcome, features: ['lanes', 'peers'] }))).toEqual({
@@ -840,10 +895,109 @@ describe('how far a run is, on the hub', () => {
     ]) {
       expect(read(broken), JSON.stringify(broken)).toBeUndefined();
     }
+    // How many of the skipped were ended at a stop, kept within them.
+    const skipped = { ...progress, done: 3, failed: 0, skipped: 2 };
+    expect(read({ ...skipped, endedAtStop: 2 })).toEqual({ ...skipped, endedAtStop: 2 });
+    expect(read({ ...skipped, endedAtStop: 3 })).toEqual(skipped);
+    expect(read({ ...skipped, endedAtStop: 'one' })).toEqual(skipped);
     // A session without it reads as one from a service that predates it.
     expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
       'progress',
     );
+  });
+});
+
+describe('Stop for a whole run on the hub', () => {
+  test('reads stop, naming the run, and refuses one without it', () => {
+    expect(parseHubCommand(json({ type: 'stop', id: 9, ref: 'ed-1' }))).toEqual({ type: 'stop', id: 9, ref: 'ed-1' });
+    expect(parseHubCommand(json({ type: 'stop', id: 9 }))).toEqual({
+      type: 'invalid',
+      id: 9,
+      message: 'The command needs the ref of a run.',
+    });
+    expect(parseHubCommand(json({ type: 'stop', id: 9, ref: 'ed 1' }))).toMatchObject({ type: 'invalid' });
+  });
+
+  test('stops a live run its host started, never one started in a terminal or by the editor’s runner', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(canStopRun({ ended: false })).toBe(true);
+    expect(canStopRun({ ended: true })).toBe(false);
+    expect(canStopRun({ ended: false, terminal: true })).toBe(false);
+    // A run whose own process said it ended, its session left a moment longer.
+    const progress = { done: 3, total: 3, failed: 0, flaky: 0, skipped: 0, status: 'passed' as const, failure: null };
+    expect(canStopRun({ ended: false, progress })).toBe(false);
+    expect(canStopRun({ ended: false, progress: { ...progress, status: 'running' } })).toBe(true);
+    expect(parseHubMessage(json({ ...welcome, features: ['stop'] }))).toEqual({ ...welcome, features: ['stop'] });
+  });
+});
+
+describe('Hold failures on the hub', () => {
+  test('reads hold, naming the run and whether its failures wait, and refuses one without either', () => {
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1', on: true }))).toEqual({
+      type: 'hold',
+      id: 8,
+      ref: 'ed-1',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1', on: false }))).toMatchObject({ on: false });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed 1', on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1' }))).toEqual({
+      type: 'invalid',
+      id: 8,
+      message: 'hold needs on: true to hold the failures, false to let them go on.',
+    });
+  });
+
+  test('has the extension read a run’s hold and who set it, a hub that lists hold, and leave out what it cannot read', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['hold'] }))).toEqual({ ...welcome, features: ['hold'] });
+    const read = (value: unknown) =>
+      (parseHubMessage(json({ type: 'session', session: { ...session, hold: value } })) as { session: HubSession })
+        .session.hold;
+    for (const by of ['start', 'person', 'agent'] as const) expect(read({ on: true, by })).toEqual({ on: true, by });
+    expect(read({ on: false, by: 'person' })).toEqual({ on: false, by: 'person' });
+    for (const broken of [{ on: 'yes', by: 'person' }, { on: true, by: 'robot' }, { on: true }, 'on']) {
+      expect(read(broken), JSON.stringify(broken)).toBeUndefined();
+    }
+  });
+});
+
+describe('who is present on a run, on the hub', () => {
+  test('reads drive, naming the stop and whether the connection drives it, and refuses one without either', () => {
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', worker: 0, since: 'x', on: true }))).toEqual({
+      type: 'drive',
+      id: 9,
+      ref: 'ed-1',
+      worker: 0,
+      since: 'x',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', since: 'x' }))).toEqual({
+      type: 'invalid',
+      id: 9,
+      message: 'drive needs on: true to drive the stop, false to give it back.',
+    });
+  });
+
+  test('has the extension read who has a run open, watches a worker and drives its stop, and leave out the rest', () => {
+    const picker = { kind: 'picker', name: 'Piwi Picker', self: true };
+    const agent = { kind: 'agent', name: 'an agent' };
+    const [worker] = session.workers;
+    const read = (over: object, at: object = {}) =>
+      (
+        parseHubMessage(
+          json({ type: 'session', session: { ...session, ...over, workers: [{ ...worker, ...at }] } }),
+        ) as { session: HubSession }
+      ).session;
+    expect(read({ presence: [picker, agent] }).presence).toEqual([picker, agent]);
+    expect(read({}, { watchers: [agent] }).workers[0]!.watchers).toEqual([agent]);
+    expect(read({}, { stop: { ...worker!.stop, driver: agent } }).workers[0]!.stop!.driver).toEqual(agent);
+    // A kind of a newer hub reads as other; a tool without a name, or a list too long, is left out.
+    expect(read({ presence: [{ kind: 'robot', name: 'R' }] }).presence).toEqual([{ kind: 'other', name: 'R' }]);
+    expect(read({ presence: [{ kind: 'agent' }] }).presence).toBeUndefined();
+    expect(read({ presence: Array.from({ length: MAX_HUB_PRESENCE + 1 }, () => agent) }).presence).toBeUndefined();
+    expect(read({}, { stop: { ...worker!.stop, driver: 'agent' } }).workers[0]!.stop!.driver).toBeUndefined();
   });
 });
 

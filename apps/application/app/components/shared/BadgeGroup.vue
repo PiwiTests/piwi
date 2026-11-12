@@ -29,18 +29,12 @@ function badgeClass(badge: TestRowBadge): string {
 
 <template>
   <div v-if="badges.length" class="inline-flex items-center gap-1 flex-wrap min-w-0">
-    <UBadge
-      v-for="badge in visible"
-      :key="badge.key"
-      :color="badge.color"
-      :variant="badge.variant"
-      size="xs"
-      :title="badge.title"
-      :class="badgeClass(badge)"
-    >
-      <UIcon v-if="badge.icon" :name="badge.icon" class="size-2.5 shrink-0" />
-      {{ badge.label }}
-    </UBadge>
+    <TestCaseKeyHoverCard v-for="badge in visible" :key="badge.key" kind="tag" :value="badge.tag">
+      <UBadge :color="badge.color" :variant="badge.variant" size="xs" :title="badge.title" :class="badgeClass(badge)">
+        <UIcon v-if="badge.icon" :name="badge.icon" class="size-2.5 shrink-0" />
+        {{ badge.label }}
+      </UBadge>
+    </TestCaseKeyHoverCard>
 
     <UPopover v-if="hidden.length" mode="hover" :content="{ side: 'top' }">
       <UBadge

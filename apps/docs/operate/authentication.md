@@ -63,19 +63,22 @@ administrator first. The [one-click deploy templates](./one-click-deploy) genera
 
 ## Logging in
 
-Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
+Sign in at `/login` with your username or your email address (letter case ignored, verified or not). A username wins
+over another account's email: if a provider-created account, whose username is its address, changes its email and
+another account takes the old address, that account signs in with its username.
+
+A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
 
 ## OAuth (Google, GitHub)
 
-Users can sign in with Google or GitHub instead of a username and password. There is no other provider, nor generic OpenID
-Connect or SAML sign-in.
+Users can also sign in with Google or GitHub; there is no other provider, nor generic OpenID Connect or SAML.
 
 ### Configuring OAuth
 
 1. **Register an OAuth application** with each provider you want to use:
 
-   - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add the Google callback URL below to the authorized redirect URIs.
-   - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set its callback URL to the GitHub one below.
+   - **Google**: in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID with the Google callback URL below as an authorized redirect URI.
+   - **GitHub**: under **Settings → Developer settings → OAuth Apps** on GitHub, create an OAuth app with the GitHub callback URL below.
 
    ```text
    https://your-domain.com/api/auth/oauth/google/callback
@@ -109,13 +112,13 @@ A rejected sign-in returns to the login page, saying why.
 A first provider sign-in links an existing account or creates one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
 - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an address someone typed into their own profile from capturing another person's sign-in.
-- If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
+- If the matching account has **not** verified the address, the sign-in is refused, saying why. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
 - If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
 - Otherwise, a new user is created as a **Member** with no project role and no password, so it always signs in through its provider and sees nothing until it is [granted a role](./project-access#default-is-no-access). An email the provider has not verified never links an account, so GitHub accounts with no verified primary email always get a new account.
 
 The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account already uses that address. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets a number appended (`octocat-2`).
 
-Each later sign-in updates the account's name, avatar and email from the provider. The email stays as it is when the provider sends none, or one another account already uses.
+Each later sign-in updates the account's name, avatar and email from the provider. The email stays when the provider sends none, or one another account uses.
 
 Piwi keeps no provider token: the access token serves the sign-in only, then is discarded. OAuth is not available in demo mode.
 
@@ -123,7 +126,7 @@ Piwi keeps no provider token: the access token serves the sign-in only, then is 
 
 Signed-in users link a provider from **Settings → Account → Connected accounts**:
 
-- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account instead of creating one. A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
+- **Connect** attaches the provider identity to the current account instead of creating one. A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
 - **Disconnect** removes the link, only when the account has a password, so a provider-only user can't lock themselves out.
 
 ## User management
@@ -158,7 +161,7 @@ set the other's address to one that receives mail.
 
 ### Changing a role
 
-Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github). The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+Each row's **Role** column sets the instance role, **Administrator** or **Member**, at once, revoking the user's sessions. It is the only way to make an account an administrator, [OAuth](#oauth-google-github) ones included. The **last remaining administrator cannot be demoted**.
 
 ## Disabling authentication
 

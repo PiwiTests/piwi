@@ -35,7 +35,7 @@ const { REQUEST_TOKEN_LIFETIME_MS, checkRequestToken, grantedProject, spendReque
   await import('../../server/utils/request-tokens');
 const { sanitizeMetadata } = await import('../../server/utils/sanitize');
 const { resolveRunProjectId, resolveTestRunCaseProjectId } = await import('../../server/utils/project-access');
-const { carryRequestOrigin, isLabRun, isVisibleRun, runOrigin, withRequestOrigin } =
+const { carryRequestOrigin, isLabRun, isVisibleRun, runLauncherRef, runOrigin, withRequestOrigin } =
   await import('#shared/run-eligibility');
 const { getProjectLatestRun } = await import('#shared/handlers/test-runs');
 const { getTestCase } = await import('#shared/handlers/test-cases');
@@ -317,6 +317,14 @@ describe('the request origin', () => {
     const next = sanitizeMetadata({ ci: false, piwiOrigin: { kind: 'local' } });
     expect(runOrigin(carryRequestOrigin(next, stamped))).toBe('request');
     expect(carryRequestOrigin(next, { ci: true })).toBe(next);
+  });
+
+  test('names the run by its request alone, over the name the reporter gave it', () => {
+    const request = 'b'.repeat(32);
+    const stamped = withRequestOrigin({ piwiRunRef: 'local-4242-1762400000000' }, request);
+    expect(runLauncherRef(stamped)).toBe(request);
+    const next = sanitizeMetadata({ piwiRunRef: 'local-4242-1762400000999' });
+    expect(runLauncherRef(carryRequestOrigin(next, stamped))).toBe(request);
   });
 
   test('wins over the lab stamps a reporter writes', () => {

@@ -35,6 +35,7 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   resources: 'Resources',
   'agent-diagnoses': 'Agent diagnoses',
   'machine-runs': 'Run on my machine',
+  'pass-reuse': 'Pass reuse',
 };
 
 /**

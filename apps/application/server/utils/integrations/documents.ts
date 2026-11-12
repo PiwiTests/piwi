@@ -37,8 +37,7 @@ import {
   buildRunIssue as buildRunIssueFromFacts,
   listedRunTests,
   RUN_ISSUE_MAX_CLUSTERS,
-  withComment,
-  type IssueComment,
+  type IssueFilingOpts,
   type RunIssueFacts,
   type RunTestFact,
   type RunTestResult,
@@ -76,13 +75,6 @@ export interface DocumentBuildOpts extends IssueBuildOpts {
   shareUrl?: string | null;
   /** Set when a rule files the issue: the body opens with what it counted. */
   automatic?: AutomaticFiling | null;
-  /** What the person filing it wrote: the body opens with it. */
-  comment?: IssueComment | null;
-}
-
-/** The built issue with the person's comment first, when they wrote one. */
-function commented<T extends BuiltIssue>(built: T, opts: DocumentBuildOpts): T {
-  return { ...built, document: withComment(built.document, opts.locale ?? DEFAULT_LOCALE, opts.comment) };
 }
 
 /** The cluster's share URL when the toggle is on: the one given, else one on the minter's token. */
@@ -256,9 +248,11 @@ async function relatedTrackerIssues(
   ownKeys: Set<string>,
 ): Promise<RelatedIssueFact[]> {
   if (fixedBefore.length === 0) return [];
+  // An issue body lists only the issues Piwi filed or a person pinned, never one a test named.
   const known = await clusterKnownIssues(
     db,
     fixedBefore.map((m) => m.clusterId),
+    { declared: false },
   ).catch(() => new Map());
   const related: RelatedIssueFact[] = [];
   for (const match of fixedBefore) {
@@ -283,10 +277,7 @@ export async function buildClusterIssue(
 ): Promise<BuiltClusterIssue | null> {
   const gathered = await gatherClusterFacts(db, clusterId, null, opts);
   if (!gathered) return null;
-  return commented(
-    { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl },
-    opts,
-  );
+  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
 }
 
 /**
@@ -311,10 +302,7 @@ export async function buildExecutionIssue(
   // title is the same from either entry point.
   const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, opts);
   if (!gathered) return null;
-  return commented(
-    { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl },
-    opts,
-  );
+  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
 }
 
 /**
@@ -353,18 +341,24 @@ export async function buildBugReportIssue(
       .catch(() => null),
     reportUrl: link(base, `/bug-reports/${report.id}`),
   };
-  return commented({ ...buildBugIssue(facts, { locale }), projectId: report.projectId, shareUrl: null }, opts);
+  return {
+    ...buildBugIssue(facts, {
+      locale,
+      comment: opts.comment,
+      filedBy: opts.filedBy,
+      titlePrefix: opts.titlePrefix,
+    }),
+    projectId: report.projectId,
+    shareUrl: null,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Runs, and executions with no failure cluster
 
 /** What a person adds when they file a run's or an execution's issue. */
-export interface RunIssueBuildOpts {
-  locale?: DocumentBuildOpts['locale'];
+export interface RunIssueBuildOpts extends IssueFilingOpts {
   siteUrl?: string | null;
-  comment?: IssueComment | null;
-  filedBy?: string | null;
 }
 
 export interface BuiltRunIssue extends BuiltIssue {
@@ -470,7 +464,7 @@ async function gatherRunFacts(
         .from(failureClusters)
         .where(inArray(failureClusters.id, clusterIds))
     : [];
-  const issues = await clusterKnownIssues(db, clusterIds);
+  const issues = await clusterKnownIssues(db, clusterIds, { declared: false });
 
   const facts: RunIssueFacts = {
     runId: run.id,
@@ -511,7 +505,7 @@ export async function buildRunIssue(
   const gathered = await gatherRunFacts(db, runId, null, opts);
   if (!gathered) return null;
   return {
-    ...buildRunIssueFromFacts(gathered.facts, { locale: opts.locale, comment: opts.comment }),
+    ...buildRunIssueFromFacts(gathered.facts, opts),
     projectId: gathered.projectId,
     runId,
   };
@@ -534,10 +528,9 @@ export async function buildStandaloneExecutionIssue(
   if (!row) return null;
   const gathered = await gatherRunFacts(db, row.runId, executionId, opts);
   if (!gathered) return null;
-  const built = buildRunIssueFromFacts(gathered.facts, { locale: opts.locale, comment: opts.comment });
+  const built = buildRunIssueFromFacts(gathered.facts, { ...opts, title: gathered.facts.tests[0]?.title });
   return {
     ...built,
-    title: gathered.facts.tests[0]?.title ?? built.title,
     projectId: gathered.projectId,
     runId: row.runId,
   };

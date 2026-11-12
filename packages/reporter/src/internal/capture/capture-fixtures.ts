@@ -138,7 +138,6 @@ import {
   withEndSignal,
   withInspector,
   withTestTimeoutHeld,
-  ENDED_REASON,
   type CodeIntent,
   type GoOn,
   type PauseAnswer,
@@ -149,7 +148,8 @@ import {
 import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
-import { watchCalls, watchPageEvents } from './run-events.js';
+import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
+import { layersTestBegan, layersTestEnded, layersTitleOf } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -159,6 +159,7 @@ import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeLiveView,
+  liveViewMayPause,
   liveViewOpen,
   liveViewPage,
   liveViewStopped,
@@ -166,7 +167,7 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
-import { trackCalls } from './live-call-log.js';
+import { listenCalls, trackCalls } from './live-call-log.js';
 import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
@@ -180,11 +181,14 @@ import {
   openRunChannel,
   runChannelOpen,
   runHost,
+  stopLine,
+  tellActing,
   tellHub,
   viewEnded,
   type RunControl,
 } from './run-channel.js';
 import {
+  ENDED_AT_STOP_REASON,
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
   MAX_WAITING_TITLE,
@@ -1898,7 +1902,9 @@ async function showStop(
   const handoffReason = reason === 'page-pause' ? 'pause' : 'breakpoint';
   // A stop no bar shows starts them in its page while its live view is watched.
   const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
-  const intents = page ? new BarIntents() : null;
+  // Each action that runs in the test's window at the stop is said to the editor, whose views leave its Escape to it.
+  let heldStop: number | null = null;
+  const intents = page ? new BarIntents((what) => heldStop !== null && tellActing(heldStop, what)) : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   // How long the attempt stood stopped before this stop.
   const pausedBefore = sink.stops.reduce((sum, earlier) => sum + Math.max(0, earlier.duration), 0);
@@ -1946,6 +1952,7 @@ async function showStop(
                 ? `${locator} went to the editor, in place of the locator on the stopped line.`
                 : `${locator}: no editor took it, as this run names no Send to editor pairing that answers.`,
               locator,
+              taken: sent,
             };
           } catch (error) {
             // A page's error may name the address it was at: its credentials stay in the worker.
@@ -2002,6 +2009,7 @@ async function showStop(
         },
       )
     : null;
+  heldStop = held?.stop ?? null;
   const onIntent =
     page && held
       ? (intent: CodeIntent, ended?: AbortSignal) =>
@@ -2011,11 +2019,7 @@ async function showStop(
       : undefined;
   const shown = withTestTimeoutHeld(testInfo, async (): Promise<PauseAnswer> => {
     if (!bar || !page) {
-      console.log(
-        failure
-          ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in ${runHost()} lets it end as it failed.`
-          : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in ${runHost()}.`,
-      );
+      console.log(stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()));
       if (page && intents && held) {
         const stop = held.stop;
         await internalCall(page, () =>
@@ -2114,7 +2118,7 @@ function endTest(
   }
   sink.ended = true;
   skipAtFunctionEnd(sink);
-  sink.end.abort(new Error(ENDED_REASON));
+  sink.end.abort(new Error(ENDED_AT_STOP_REASON));
   if (reason === 'page-pause' || call?.endable) {
     const what = reason === 'page-pause' ? 'nothing after its page.pause() runs' : `${title} never runs`;
     console.log(`[piwi] Ended the test at ${line}: ${what}, and the test is skipped.`);
@@ -2143,13 +2147,13 @@ function endsNow(sink: CaptureSink): boolean {
 
 /**
  * The error that skips an attempt ended at a stop: the runner's own (`testInfo.skip()`, which records the `skip`
- * annotation with `ENDED_REASON`), taken once and thrown again by each locator call after.
+ * annotation with `ENDED_AT_STOP_REASON`), taken once and thrown again by each locator call after.
  */
 function skipOf(sink: CaptureSink): unknown {
   if (sink.skip === undefined) {
     try {
-      sink.testInfo?.skip(true, ENDED_REASON);
-      sink.skip = new Error(`Test is skipped: ${ENDED_REASON}`);
+      sink.testInfo?.skip(true, ENDED_AT_STOP_REASON);
+      sink.skip = new Error(`Test is skipped: ${ENDED_AT_STOP_REASON}`);
     } catch (error) {
       sink.skip = error;
     }
@@ -2428,6 +2432,87 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
   };
   visit((testInfo as unknown as { _steps?: unknown })._steps);
   return found;
+}
+
+/** The title the runner gives the call whose step id is `id` (`stepLabel`), among the test's steps; null for none. */
+function stepTitleOf(testInfo: TestInfo, id: string): string | null {
+  const found = runnerStepOf(testInfo, id);
+  return found && typeof found.step.title === 'string' ? stepLabel(found.step) : null;
+}
+
+/** Whether the runner's step `id` of the test is inside a fixture's setup or teardown: a call the test did not make. */
+function fixtureStep(testInfo: TestInfo, id: string): boolean {
+  return runnerStepOf(testInfo, id)?.fixture ?? false;
+}
+
+/** A runner's step as its map by id holds it: its info names the step it is in (`_parentStep._stepId`). */
+type MappedStep = RunnerStep & { info?: { _parentStep?: { _stepId?: unknown } | null } };
+
+/**
+ * The runner's step `id` of the test (a Playwright internal, feature-checked), and whether a fixture's step holds it:
+ * looked up by its id in the runner's map of the test's steps (`_stepMap`, from Playwright 1.59), its parents through
+ * their ids; else found in the test's tree of steps.
+ */
+function runnerStepOf(testInfo: TestInfo, id: string): { step: RunnerStep; fixture: boolean } | null {
+  const map = (testInfo as unknown as { _stepMap?: unknown })._stepMap;
+  if (map instanceof Map) {
+    const step = map.get(id) as MappedStep | undefined;
+    if (!step) return null;
+    let fixture = false;
+    let at: MappedStep | undefined = step;
+    for (let depth = 0; at && depth < 1000 && !fixture; depth++) {
+      fixture = at.category === 'fixture';
+      const parent: unknown = at.info?._parentStep?._stepId;
+      at = typeof parent === 'string' ? (map.get(parent) as MappedStep | undefined) : undefined;
+    }
+    return { step, fixture };
+  }
+  let found: { step: RunnerStep; fixture: boolean } | null = null;
+  const visit = (steps: unknown, fixture: boolean): void => {
+    if (!Array.isArray(steps)) return;
+    for (const step of steps as Array<RunnerStep & { stepId?: unknown }>) {
+      if (found) return;
+      const inFixture = fixture || step.category === 'fixture';
+      if (step.stepId === id) {
+        found = { step, fixture: inFixture };
+        return;
+      }
+      visit(step.steps, inFixture);
+    }
+  };
+  visit((testInfo as unknown as { _steps?: unknown })._steps, false);
+  return found;
+}
+
+/**
+ * Where the runner writes the attempt's trace as it grows: `<outputDir>/.playwright-artifacts-<workerIndex>/traces`,
+ * its files named by the test's id, `-retry<k>` for a retry. Nothing is there when the runner does not trace it; null
+ * for a test whose project names no output folder.
+ */
+function attemptTrace(testInfo: TestInfo): { dir: string; base: string } | null {
+  const outputDir = (testInfo.project as Partial<TestInfo['project']> | undefined)?.outputDir;
+  if (typeof outputDir !== 'string' || !outputDir || typeof testInfo.testId !== 'string') return null;
+  const dir = path.join(outputDir, `.playwright-artifacts-${testInfo.workerIndex}`, 'traces');
+  return { dir, base: testInfo.retry ? `${testInfo.testId}-retry${testInfo.retry}` : testInfo.testId };
+}
+
+/**
+ * Whether the runner traces the attempt, as its tracing's options say once the attempt began (`_tracing.traceOptions()`,
+ * Playwright internal: the options, with their `mode`, for a traced attempt, none for another); null on a runner of
+ * another shape.
+ */
+export function runnerTraces(testInfo: TestInfo): boolean | null {
+  const tracing = (testInfo as unknown as { _tracing?: { traceOptions?: unknown } })._tracing;
+  if (typeof tracing?.traceOptions !== 'function') return null;
+  let options: unknown;
+  try {
+    options = (tracing.traceOptions as () => unknown).call(tracing);
+  } catch {
+    return null;
+  }
+  if (options === undefined) return false;
+  const mode = (options as { mode?: unknown } | null)?.mode;
+  return typeof mode === 'string' ? mode !== 'off' : null;
 }
 
 /**
@@ -3221,14 +3306,8 @@ function readResponseHeaders(
   const contentType = headers['content-type'];
   if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
 
-  const logHeader = headers['x-piwi-logs'];
-  if (logHeader) {
-    try {
-      entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
-    } catch {
-      /* ignore malformed header */
-    }
-  }
+  const serverLogs = readServerLogs(headers['x-piwi-logs']);
+  if (serverLogs !== undefined) entry.serverLogs = serverLogs;
 
   // The id the backend gave this request's server coverage, kept per
   // origin for the reporter to collect once the test ends.
@@ -3258,6 +3337,7 @@ function recordApiCall(sink: CaptureSink, call: ApiCall): void {
   try {
     const entry = apiCallEntry(call, sink.baseURL);
     if (!entry) return;
+    tellApiCall(call, String(entry.url));
     if (call.response) readResponseHeaders(sink, entry, String(entry.url), call.response.headers());
     sink.networkRequests.push(entry);
   } catch {
@@ -3320,6 +3400,8 @@ function instrumentContext(context: BrowserContext): void {
     });
   }
   observeOwnApiRequests(context);
+  // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
+  if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
 
   // Seed the probe for every document this context loads, so a capture ships a
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
@@ -3834,7 +3916,7 @@ const runControl: RunControl = {
     // Ended in place of the stop the Pause waited for: the next test does not stop for it.
     if (sink.pause) sink.pause.pause = false;
     skipAtFunctionEnd(sink);
-    sink.end.abort(new Error(ENDED_REASON));
+    sink.end.abort(new Error(ENDED_AT_STOP_REASON));
     const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
     const said = endable
       ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
@@ -3988,7 +4070,10 @@ export const piwiFixtures: Fixtures<
       openLiveView(workerInfo);
       // The selector of the locator call running, for the live view's call log.
       if (liveViewOpen()) trackCalls(playwright);
-      if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
+      if (await openRunChannel(workerInfo, runControl)) {
+        watchCalls(playwright);
+        trackCalls(playwright);
+      }
       try {
         await use();
       } finally {
@@ -4091,6 +4176,14 @@ export const piwiFixtures: Fixtures<
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
       laneTestBegan(testInfo.testId);
+      layersTestBegan({
+        id: testInfo.testId,
+        began: Date.now(),
+        titleOf: (id) => stepTitleOf(testInfo, id),
+        fixtureCall: (id) => fixtureStep(testInfo, id),
+        trace: attemptTrace(testInfo),
+        traced: () => runnerTraces(testInfo),
+      });
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
@@ -4150,6 +4243,8 @@ export const piwiFixtures: Fixtures<
           stopKeeping();
           // The lane shows the test until it ended for the editor, a failure it held while flushing included.
           await laneTestEnded();
+          layersTestEnded();
+          forgetWaitingRequests();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

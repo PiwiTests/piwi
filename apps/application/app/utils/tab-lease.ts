@@ -2,11 +2,15 @@
  * One tab of the browser at a time holds a lease, kept in `localStorage` under `key`: the holder writes its id and the
  * time every `renewMs`, and another tab takes the lease once the holder released it (as its page goes away) or has not
  * renewed it for `staleMs`. A tab that writes the lease waits `settleMs` and holds it only if its own id is still
- * there, so two tabs that take it at once agree on one. `localStorage` works in every context, a page served over
- * plain HTTP included.
+ * there. A tab can see another tab's write late, so tabs that take it at once can each pass that check: as soon as a
+ * holder sees another tab's fresh lease (a `storage` event, or its next renewal), the smaller id keeps it and writes
+ * it again, and the other loses it. An id starts with the time its tab asked for the lease, so the tab that asked first
+ * keeps it.
+ * `localStorage` works in every context, a page served over plain HTTP included.
  *
  * `staleMs` outlasts the minute a browser may wait between two timers of a tab hidden for a while, so a hidden holder
- * keeps its lease. A holder that finds another tab's fresh lease lost it, and is told so (`lost`).
+ * keeps its lease. A holder whose own lease went stale loses it to another tab's fresh one, whatever their ids. A
+ * holder that loses it is told so (`lost`).
  */
 export interface TabLeaseOptions {
   key: string;
@@ -54,6 +58,8 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
   let holding = false;
   let claiming = false;
   let stopped = false;
+  /** When this tab last wrote its lease. */
+  let wroteAt = Number.NEGATIVE_INFINITY;
 
   const read = (): Lease | null => {
     try {
@@ -66,12 +72,16 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
   /** Write this tab's lease; false when the storage refuses it. */
   const write = (): boolean => {
     try {
-      host.storage.setItem(options.key, JSON.stringify({ id, at: host.now() }));
+      const at = host.now();
+      host.storage.setItem(options.key, JSON.stringify({ id, at }));
+      wroteAt = at;
       return true;
     } catch {
       return false;
     }
   };
+  /** Whether this holder keeps the lease beside another tab's fresh `lease`: its own is fresh and its id is smaller. */
+  const keepsBeside = (lease: Lease): boolean => host.now() - wroteAt < staleMs && id < lease.id;
 
   try {
     const probe = `${options.key}:probe`;
@@ -87,7 +97,7 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
     const lease = read();
     if (holding) {
       // Another tab's stale lease is no claim on a holder, as when the storage refused this tab's own write over it.
-      if (lease && lease.id !== id && host.now() - lease.at < staleMs) {
+      if (lease && lease.id !== id && host.now() - lease.at < staleMs && !keepsBeside(lease)) {
         holding = false;
         options.lost();
         return;
@@ -114,14 +124,20 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
 
   const release = (): void => {
     try {
-      if (holding && read()?.id === id) host.storage.removeItem(options.key);
+      if (holding && read()?.id === id) {
+        // A lease this tab released is no claim beside the next holder's.
+        wroteAt = Number.NEGATIVE_INFINITY;
+        host.storage.removeItem(options.key);
+      }
     } catch {
       // The lease goes stale instead.
     }
   };
 
   host.on('storage', (event) => {
-    if (event.key === options.key && read() === null) tick();
+    if (event.key !== options.key) return;
+    const lease = read();
+    if (lease === null || (holding && lease.id !== id)) tick();
   });
   host.on('pagehide', release);
   host.on('pageshow', (event) => {

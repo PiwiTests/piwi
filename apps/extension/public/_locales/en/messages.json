@@ -277,6 +277,18 @@
     "message": "PLAY",
     "description": "Toolbar badge while a bug report is replayed. At most 4 characters."
   },
+  "badge_runsPaused": {
+    "message": "II",
+    "description": "Toolbar badge for a moment after the run shortcut paused the runs. A symbol, at most 4 characters."
+  },
+  "badge_runsResumed": {
+    "message": "▶",
+    "description": "Toolbar badge for a moment after the run shortcut resumed the stopped tests. A symbol, at most 4 characters."
+  },
+  "badge_runsNone": {
+    "message": "–",
+    "description": "Toolbar badge for a moment after the run shortcut found no run to pause or resume. A symbol, at most 4 characters."
+  },
   "popup_settings": {
     "message": "Settings",
     "description": "Popup: tooltip and accessible name of the gear button that opens the settings page."
@@ -958,7 +970,7 @@
     "description": "Options: heading of the section pairing the desktop app."
   },
   "options_desktopHint": {
-    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project. The runs it starts show in the Runs window too (Runs, in the popup).",
+    "message": "Optional. Paired with the desktop app, Piwi Desktop, Replay can ask it to run a bug report with Playwright in your project. The runs it starts show in the Runs window too (Runs, in the popup).",
     "description": "Options: what pairing the desktop app is for and where the address and token come from."
   },
   "options_desktopUrl": {
@@ -966,8 +978,8 @@
     "description": "Options: label of the desktop app's address field."
   },
   "options_desktopUrlHint": {
-    "message": "Shown on the app’s Setup page, under Connect Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
-    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Connect Piwi Picker” name the desktop app’s page and card; “Pair” is options_desktopPair."
+    "message": "Shown on the app’s Setup page, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
+    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Pair with Piwi Picker” name the desktop app’s page and card, which is in English: keep the card’s name in English; “Pair” is options_desktopPair."
   },
   "options_desktopPair": {
     "message": "Pair",
@@ -982,7 +994,7 @@
     "description": "Options: label of the desktop app's token field."
   },
   "options_desktopManualHint": {
-    "message": "The token is on the app’s Setup page, under Connect Piwi Picker, beside its address.",
+    "message": "The token is on the app’s Setup page, under Pair with Piwi Picker, beside its address.",
     "description": "Settings page, Desktop app card, Pair by hand: where the token comes from."
   },
   "options_desktopSave": {
@@ -7405,9 +7417,105 @@
       }
     }
   },
+  "popup_runsHintWaiting_one": {
+    "message": "$count$ test waits for you",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintWaiting_other": {
+    "message": "$count$ tests wait for you",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs wait at a stop for you (a breakpoint, a Pause, a failure held at its line). A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "popup_runsHintFailed_one": {
+    "message": "$count$ test failed",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHintFailed_other": {
+    "message": "$count$ tests failed",
+    "description": "Popup, the line under the Runs tile while tests of the paired editor’s or desktop app’s runs have failed and none waits for you. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_title": {
     "message": "Runs · Piwi Picker",
     "description": "Runs window, its title in the browser’s window bar."
+  },
+  "runs_titleWaiting_one": {
+    "message": "$count$ waiting · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests wait at a stop for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleWaiting_other": {
+    "message": "$count$ waiting · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests wait at a stop for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_one": {
+    "message": "$count$ failed · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests of the runs have failed and none waits for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
+  },
+  "runs_titleFailed_other": {
+    "message": "$count$ failed · $title$",
+    "description": "Runs window, its title in the browser’s window bar while tests of the runs have failed and none waits for you: how many, then the window’s name (runs_title).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Runs · Piwi Picker"
+      }
+    }
   },
   "runs_heading": {
     "message": "Your editor’s runs",
@@ -7532,6 +7640,10 @@
   "runs_openSettings": {
     "message": "Open the settings",
     "description": "Runs window, a button that opens Piwi Picker’s settings, where the editor is paired."
+  },
+  "runs_looking": {
+    "message": "Looking…",
+    "description": "Runs window, the Look again button while it asks the editor and the desktop app for their runs again, and read out as it starts."
   },
   "runs_findAgain": {
     "message": "Look again",
@@ -7697,6 +7809,312 @@
       }
     }
   },
+  "runs_layerCalls": {
+    "message": "Why it waits",
+    "description": "Runs window and the desktop app's Local runs tray, under a watched lane's page: the heading over the call the test runs and what Playwright waits for."
+  },
+  "runs_callNone": {
+    "message": "No call yet: the call the test runs shows here, with what Playwright waits for.",
+    "description": "Runs window, under runs_layerCalls while no call was heard yet."
+  },
+  "runs_callRunning": {
+    "message": "Running for $time$",
+    "description": "Runs window, under runs_layerCalls: how long the call has run so far. $time$ is a number of seconds (12s).",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callPassed": {
+    "message": "Done in $time$",
+    "description": "Runs window, under runs_layerCalls: the call ended well, and how long it took. $time$ is a number of seconds.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callFailed": {
+    "message": "Failed after $time$",
+    "description": "Runs window, under runs_layerCalls: the call failed, and how long it ran. $time$ is a number of seconds.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_targetNone": {
+    "message": "No element matches its locator yet",
+    "description": "Runs window, under runs_layerCalls: the locator of the call that waits matches nothing so far."
+  },
+  "runs_targetMatches_one": {
+    "message": "$count$ element matches its locator",
+    "description": "Runs window, under runs_layerCalls: how many elements the locator of the call that waits matches.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetMatches_other": {
+    "message": "$count$ elements match its locator",
+    "description": "Runs window, under runs_layerCalls: how many elements the locator of the call that waits matches.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetDisabled": {
+    "message": "Its element is not enabled",
+    "description": "Runs window, after runs_targetMatches: the element the call waits on is disabled, which is why a click waits."
+  },
+  "runs_layerEvents": {
+    "message": "Events",
+    "description": "Runs window, under a watched lane's page: the heading over what the page and its requests said."
+  },
+  "runs_eventsNone": {
+    "message": "Nothing yet: console errors, failed or slow requests and the backend’s errors show here.",
+    "description": "Runs window, under runs_layerEvents while no event came."
+  },
+  "runs_eventConsole": {
+    "message": "Console error",
+    "description": "Runs window, a line of runs_layerEvents: the page logged an error in its console. Short label before the error's text."
+  },
+  "runs_eventPageError": {
+    "message": "Uncaught error",
+    "description": "Runs window, a line of runs_layerEvents: the page threw an error nothing caught. Short label."
+  },
+  "runs_eventFailed": {
+    "message": "Failed request",
+    "description": "Runs window, a line of runs_layerEvents: a request of the page failed or was answered with an error status. Short label."
+  },
+  "runs_eventPending": {
+    "message": "Pending request",
+    "description": "Runs window, a line of runs_layerEvents: a request of the page still waits for its answer. Short label."
+  },
+  "runs_eventSlow": {
+    "message": "Slow request",
+    "description": "Runs window, a line of runs_layerEvents: a request that waited long was answered at last. Short label."
+  },
+  "runs_eventBackendError": {
+    "message": "Backend error",
+    "description": "Runs window, a line of runs_layerEvents: the server under test logged an error while it answered a request. Short label."
+  },
+  "runs_eventBackendWarning": {
+    "message": "Backend warning",
+    "description": "Runs window, a line of runs_layerEvents: the server under test logged a warning while it answered a request. Short label."
+  },
+  "runs_eventApi": {
+    "message": "API call",
+    "description": "Runs window, a line of runs_layerEvents: the test called its backend through Playwright's API request context. Short label."
+  },
+  "runs_eventDropped_one": {
+    "message": "$count$ more event left out",
+    "description": "Runs window, a line of runs_layerEvents: how many events the worker did not send, too many coming at once.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_eventDropped_other": {
+    "message": "$count$ more events left out",
+    "description": "Runs window, a line of runs_layerEvents: how many events the worker did not send, too many coming at once.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_requestAnswered": {
+    "message": "$request$ answered $status$",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address (POST /api/checkout), $status$ an HTTP status.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      }
+    }
+  },
+  "runs_requestAnsweredIn": {
+    "message": "$request$ answered $status$ in $time$",
+    "description": "Runs window, a line of runs_layerEvents for an API call: $request$ is a method and an address, $status$ an HTTP status, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "time": {
+        "content": "$3",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestAnsweredAfter": {
+    "message": "$request$ answered after $time$",
+    "description": "Runs window, a line of runs_layerEvents for a slow request: $request$ is a method and an address, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestPending": {
+    "message": "$request$ pending for $time$",
+    "description": "Runs window, a line of runs_layerEvents for a request still waiting: $request$ is a method and an address, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestFailed": {
+    "message": "$request$ failed: $failure$",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address, $failure$ the browser's reason, in English.",
+    "placeholders": {
+      "failure": {
+        "content": "$1",
+        "example": "net::ERR_CONNECTION_REFUSED"
+      },
+      "request": {
+        "content": "$2",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestUnanswered": {
+    "message": "$request$ got no answer",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestLogged": {
+    "message": "$request$: $text$",
+    "description": "Runs window, a line of runs_layerEvents for a backend error or warning: $request$ is a method and an address, $text$ what the backend logged.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "text": {
+        "content": "$2",
+        "example": "NullReferenceException in CartService"
+      }
+    }
+  },
+  "runs_layerText": {
+    "message": "Text",
+    "description": "Runs window, under a watched lane's page: the heading over the page's text (its ARIA snapshot)."
+  },
+  "runs_textShow": {
+    "message": "Show the page’s text",
+    "description": "Runs window, a button under runs_layerText: takes the page's text now and follows it."
+  },
+  "runs_textShowTitle": {
+    "message": "Show the page as roles and names, its secret fields hidden: taken now, then followed as the test’s trace writes it",
+    "description": "Runs window, the tooltip of runs_textShow."
+  },
+  "runs_textAgain": {
+    "message": "Take it again",
+    "description": "Runs window, a button under runs_layerText once the text shows: takes the page's text again now."
+  },
+  "runs_textHide": {
+    "message": "Hide the text",
+    "description": "Runs window, a button under runs_layerText once the text shows: stops following the page's text."
+  },
+  "runs_textWaiting": {
+    "message": "Reading the page…",
+    "description": "Runs window, under runs_layerText while the page's text is on its way."
+  },
+  "runs_textTrace": {
+    "message": "From the test’s trace",
+    "description": "Runs window, over the page's text: it came from the ARIA snapshots the test's trace writes."
+  },
+  "runs_textSnapshot": {
+    "message": "Taken as you asked",
+    "description": "Runs window, over the page's text: it was read from the page when the person asked."
+  },
+  "runs_textCut": {
+    "message": "Cut short: the page’s text is longer",
+    "description": "Runs window, after runs_textTrace or runs_textSnapshot: the page's text was too long and was cut."
+  },
+  "runs_textLabel": {
+    "message": "The page’s text, its secret fields hidden",
+    "description": "Runs window, the accessible name of the block that holds the page's text."
+  },
+  "runs_layerFilmstrip": {
+    "message": "Filmstrip",
+    "description": "Runs window, under a watched lane's page: the heading over one small image of the page for each call of the test."
+  },
+  "runs_filmstripNone": {
+    "message": "Each call’s page shows here once the call ends.",
+    "description": "Runs window, under runs_layerFilmstrip while no image came."
+  },
+  "runs_filmstripAlt": {
+    "message": "The page after $call$",
+    "description": "Runs window, the text of an image of the filmstrip: $call$ is the call's title, as Playwright names it.",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_filmstripClose": {
+    "message": "Close",
+    "description": "Runs window, the button that closes the larger image of the filmstrip and goes back to the strip."
+  },
+  "runs_progressEndedAtStop_one": {
+    "message": "$count$ ended at a stop",
+    "description": "Runs window, after runs_progress, and the desktop app’s Local runs tray, after a run’s outcome: how many of the run’s tests were ended at a stop (End the test), which are skipped and marked so.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressEndedAtStop_other": {
+    "message": "$count$ ended at a stop",
+    "description": "Runs window, after runs_progress, and the desktop app’s Local runs tray, after a run’s outcome: how many of the run’s tests were ended at a stop (End the test), which are skipped and marked so.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
   "runs_endedPassed": {
     "message": "The run passed.",
     "description": "Runs window, on a run that ended with every test passed or skipped."
@@ -7775,6 +8193,10 @@
     "message": "End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped",
     "description": "Runs window, the tooltip of End the test while a Pause waits for the call the test runs: the call is given up, or the test is skipped as it returns."
   },
+  "runs_stateFailed": {
+    "message": "Failed, held at its line",
+    "description": "Runs window, the tooltip of a worker’s tab while its failed test is held at its line."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."
@@ -7783,9 +8205,13 @@
     "message": "Between tests",
     "description": "Runs window, the state of a worker between two tests."
   },
+  "runs_workerTabs": {
+    "message": "Workers",
+    "description": "Runs window, the accessible name of the tabs of a run’s workers, one shown at a time."
+  },
   "runs_worker": {
     "message": "worker $number$",
-    "description": "Runs window, which of a run’s Playwright workers a test runs in, when there are several. Lower case.",
+    "description": "Runs window, the label of a worker’s tab in a run of several Playwright workers. Lower case.",
     "placeholders": {
       "number": {
         "content": "$1",
@@ -7861,6 +8287,72 @@
     "message": "Pick a locator in the test’s window: it replaces the one on this line",
     "description": "Runs window, the Pick button’s tooltip."
   },
+  "runs_front": {
+    "message": "Show the browser",
+    "description": "Runs window, button on a test stopped in a headed run: brings the test’s browser window to the front."
+  },
+  "runs_frontTitle": {
+    "message": "Bring the test’s browser window to the front",
+    "description": "Runs window, the Show the browser button’s tooltip."
+  },
+  "runs_openTrace": {
+    "message": "Open the trace so far",
+    "description": "Runs window and the desktop app’s Local runs tray, button in a watched lane’s view while its test runs: opens Playwright’s trace viewer on the test’s trace as it stood when the viewer opened, on the machine the run runs on. A button: keep it short."
+  },
+  "runs_openTraceTitle": {
+    "message": "Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on",
+    "description": "Runs window, the Open the trace so far button’s tooltip."
+  },
+  "runs_runControls": {
+    "message": "Run controls",
+    "description": "Runs window, the accessible name of the row of a run’s own controls (Pause all, Resume all)."
+  },
+  "runs_pauseAll": {
+    "message": "Pause all",
+    "description": "Runs window, button on a run of several workers: pauses every worker before its next call."
+  },
+  "runs_pauseAllTitle": {
+    "message": "Pause every worker of this run before its next call",
+    "description": "Runs window, the Pause all button’s tooltip."
+  },
+  "runs_stopRun": {
+    "message": "Stop the run",
+    "description": "Runs window, a button under a run’s name that ends the whole run now, through the editor or the desktop app that started it."
+  },
+  "runs_stopRunTitle": {
+    "message": "End the whole run now, as its own Stop does where it was started",
+    "description": "Runs window, tooltip of the button that ends the whole run."
+  },
+  "runs_resumeAll": {
+    "message": "Resume all",
+    "description": "Runs window, button on a run of several stopped workers: resumes each stopped test."
+  },
+  "runs_resumeAllTitle": {
+    "message": "Let every stopped test of this run go on",
+    "description": "Runs window, the Resume all button’s tooltip."
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "description": "Runs window, a control’s tooltip with its key: $title$ is the tooltip, $key$ the key (F8, Shift+F11).",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Several tests are stopped: move the focus to the one to steer with a key.",
+    "description": "Runs window, read out when Resume, Step or Finish was pressed as a key while several tests are stopped and the focus is in none of them."
+  },
+  "runs_keyOtherTab": {
+    "message": "The stopped test is behind another worker’s tab: open that tab to steer it with a key.",
+    "description": "Runs window, read out when a stop key is pressed while the only stopped tests are on worker tabs not shown."
+  },
   "runs_record": {
     "message": "Record",
     "description": "Runs window, button on a stopped test: starts the pause bar’s Record here in the test’s window."
@@ -7895,6 +8387,10 @@
     "message": "Taking an image of the page…",
     "description": "Runs window, while the image of a stopped page is on its way."
   },
+  "runs_pageCaption": {
+    "message": "The test’s page",
+    "description": "Runs window, the heading of the card that shows the test’s page: the image of a stop, or its live view."
+  },
   "runs_assert": {
     "message": "Assert",
     "description": "Runs window, button on a stopped test: starts the recorder’s Check an element in the test’s window; the editor writes the check. Short: it shares a row with Pick and Record."
@@ -7919,9 +8415,133 @@
     "message": "Choose a request the page made: a page.route() answering it as the server did goes to the editor, which writes it above this line",
     "description": "Runs window, the Mock a request button’s tooltip. page.route() is code: keep it."
   },
+  "runs_codeLabel": {
+    "message": "Code",
+    "description": "Runs window, the label before Pick, Record, Assert and More at a stop: the code this stop can write. Short."
+  },
+  "runs_more": {
+    "message": "More",
+    "description": "Runs window, the button that shows or hides Assert a region and Mock a request at a stop."
+  },
+  "runs_holdFailures": {
+    "message": "Hold failures",
+    "description": "Runs window, the toggle of a run: whether a failed test waits at its line for an answer. Short."
+  },
+  "runs_holdFailuresOn": {
+    "message": "A failed test waits at its line for an answer. Click to let failures go on at once.",
+    "description": "Runs window, the tooltip of Hold failures while it is on."
+  },
+  "runs_holdFailuresOff": {
+    "message": "A failed test goes on at once. Click to have it wait at its line for an answer.",
+    "description": "Runs window, the tooltip of Hold failures while it is off."
+  },
+  "runs_holdByAgent": {
+    "message": "Set by an agent",
+    "description": "Runs window, beside Hold failures when an AI agent set it last."
+  },
+  "runs_presenceOpen": {
+    "message": "Also open in $tools$",
+    "description": "Runs window, under a run’s name: the other tools that have the run open. $tools$ is a list of runs_presencePicker, runs_presenceDesktop or an editor’s name (Visual Studio Code), joined as the language joins a list.",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "An agent follows this run",
+    "description": "Runs window, under a run’s name: an AI agent follows the run through Piwi’s MCP tools."
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker",
+    "description": "Runs window, in runs_presenceOpen, runs_watchedBy and runs_driverTool: a Runs window of Piwi Picker in another browser. The product name: keep it."
+  },
+  "runs_presenceDesktop": {
+    "message": "the desktop app",
+    "description": "Runs window, in runs_presenceOpen and runs_watchedBy: the Piwi desktop app’s window. Lower case, inside a sentence, after “in” and “by”."
+  },
+  "runs_presenceAgent": {
+    "message": "an agent",
+    "description": "Runs window, in runs_watchedBy: an AI agent watching a test’s page. Lower case, inside a sentence, after “by”."
+  },
+  "runs_watchedBy": {
+    "message": "Watched by $who$",
+    "description": "Runs window, under a test: who watches its page now. $who$ is a list of runs_watcherYou, runs_presencePicker, runs_presenceDesktop, runs_presenceAgent or an editor’s name, joined as the language joins a list.",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "you",
+    "description": "Runs window, in runs_watchedBy: this Runs window. Lower case, after “by”."
+  },
+  "runs_driverYou": {
+    "message": "You drive this stop",
+    "description": "Runs window, under a stopped test: this window drives the stop, and an agent’s actions there wait until it gives it back."
+  },
+  "runs_driverAgent": {
+    "message": "An agent drives this stop",
+    "description": "Runs window, under a stopped test: an AI agent drives the stop, through Piwi’s MCP tools."
+  },
+  "runs_driverDesktop": {
+    "message": "The desktop app drives this stop",
+    "description": "Runs window, under a stopped test: a person in the Piwi desktop app’s window drives the stop."
+  },
+  "runs_driverTool": {
+    "message": "$tool$ drives this stop",
+    "description": "Runs window, under a stopped test: another tool drives the stop. $tool$ is runs_presencePicker or an editor’s name (Visual Studio Code).",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Take control",
+    "description": "Runs window, the button that makes this window drive a stop: an agent’s actions there wait until it is given back. Short."
+  },
+  "runs_takeControlTitle": {
+    "message": "Drive this stop yourself: an agent’s actions here wait until you give it back",
+    "description": "Runs window, the tooltip of Take control."
+  },
+  "runs_giveBack": {
+    "message": "Give back",
+    "description": "Runs window, the button that gives a stop this window drives back: an agent may act on it again. Short."
+  },
+  "runs_giveBackTitle": {
+    "message": "Give this stop back: an agent may act on it again",
+    "description": "Runs window, the tooltip of Give back."
+  },
+  "runs_stoppedByAgent": {
+    "message": "Paused by the agent",
+    "description": "Runs window, the state of a test an AI agent stopped (its Pause, Step or Run to)."
+  },
+  "runs_stoppedByAgentStep": {
+    "message": "Stopped after the agent’s step",
+    "description": "Runs window, the state of a test stopped after a step an AI agent asked for."
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Stopped at the line the agent ran it to",
+    "description": "Runs window, the state of a test stopped at the line an AI agent ran it to."
+  },
+  "runs_announceDriveTaken": {
+    "message": "You drive the stop of $test$ now: the agent waits until you give it back.",
+    "description": "Runs window, read by a screen reader when this window takes a stop from the AI agent that drove it. $test$ is the test’s name.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Code from this stop",
-    "description": "Runs window, the name screen readers give the row of Pick, Record, Assert, Assert a region and Mock a request."
+    "description": "Runs window, the name screen readers give the row of Pick, Record, Assert and More (Assert a region and Mock a request)."
   },
   "runs_codeWarnings": {
     "message": "What to review in this code",
@@ -7940,10 +8560,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Error",
-    "description": "Runs window, label before the error a failed test stopped on."
   },
   "runs_announceFailed": {
     "message": "$test$ failed at $place$.",
@@ -8028,8 +8644,16 @@
     "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
   },
   "runs_liveTitle": {
-    "message": "Show the test’s page as it paints, in place of its image: your clicks and keys on it go to the page",
+    "message": "Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it",
     "description": "Runs window, the Watch live button’s tooltip."
+  },
+  "runs_interact": {
+    "message": "Interact",
+    "description": "Runs window, a toggle in the stopped page’s card: on, the person’s clicks, wheel and keys on the live view go to the test’s page, and they drive the stop."
+  },
+  "runs_interactTitle": {
+    "message": "Send your clicks, scrolling and keys to the test’s page, driving this stop: Esc gives it back",
+    "description": "Runs window, tooltip of the Interact toggle."
   },
   "runs_liveBadge": {
     "message": "Live",
@@ -8052,15 +8676,15 @@
     "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
   },
   "runs_liveHint": {
-    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",
-    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
+    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks a locator.",
+    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; a pick or a check running on the page takes Esc itself (the picker skips on it). Shift+click a click with Shift held."
   },
   "runs_watch": {
     "message": "Watch",
     "description": "Runs window, the toggle button on a worker’s row that shows its test’s page while it runs, through its stops and its next tests. A button: keep it short."
   },
   "runs_watchTitle": {
-    "message": "Show the test’s page as it runs, through its stops and its next tests: at a stop, your clicks and keys on it go to the page",
+    "message": "Show the test’s page as it runs, through its stops and its next tests: at a stop, Interact sends your clicks and keys to it",
     "description": "Runs window, the Watch button’s tooltip."
   },
   "runs_pauseWatch": {
@@ -8170,6 +8794,76 @@
   "runs_copyRunPage": {
     "message": "Copy the run page’s link",
     "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
+  },
+  "runs_runNumber": {
+    "message": "Run #$id$",
+    "description": "Runs window, a run's line under its name: its number on the instance it reports to.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "77"
+      }
+    }
+  },
+  "runs_openRunPage": {
+    "message": "Open",
+    "description": "Runs window, button beside the run's number: opens its page on the instance."
+  },
+  "runs_copyRunPageShort": {
+    "message": "Copy link",
+    "description": "Runs window, button beside the run's number: copies the address of its page on the instance."
+  },
+  "runs_ciHeading": {
+    "message": "CI runs in progress",
+    "description": "Runs window, heading of the list of the CI runs in progress of the projects the extension maps, read from the connected instance."
+  },
+  "runs_ciRun": {
+    "message": "CI run #$id$",
+    "description": "Runs window, a CI run’s name in the list of CI runs in progress: its number on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "on $branch$",
+    "description": "Runs window, under a CI run’s name: the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, on $branch$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed: its project, then the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed and the run names no branch: its project.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
+    "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
   },
   "runs_pageAtStop": {
     "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",

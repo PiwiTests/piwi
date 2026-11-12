@@ -336,7 +336,7 @@ pub async fn notify_if_update_available(app: AppHandle) {
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("Piwi Dashboard {version} is available"))
+                .title(format!("{} {version} is available", crate::APP_NAME))
                 .body("Install it from Settings → About → Updates.")
                 .show();
         }

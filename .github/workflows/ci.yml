@@ -102,6 +102,7 @@ jobs:
               - 'packages/picker-dom/**'
               - 'packages/reporter/**'
               - 'packages/run-ui/**'
+              - 'packages/run-model/**'
               - 'packages/server/**'
               - 'integrations/nitro/**'
               - 'scripts/package-smoke.mjs'
@@ -133,12 +134,14 @@ jobs:
               - 'apps/extension/**'
               - 'packages/core/**'
               - 'packages/picker-dom/**'
+              - 'packages/run-model/**'
             # Both editor clients ship the recorder's IDE bundle, which the editor service builds from the extension.
             vscode:
               - 'apps/vscode/**'
               - 'packages/editor/**'
               - 'packages/core/**'
               - 'packages/picker-dom/**'
+              - 'packages/run-model/**'
               - 'apps/extension/src/**'
               - 'apps/extension/public/_locales/**'
               - 'apps/extension/scripts/build.mjs'
@@ -338,6 +341,7 @@ jobs:
           npm run picker-dom:format:check -w packages/picker-dom
           npm run editor:format:check -w packages/editor
           npm run run-ui:format:check -w packages/run-ui
+          npm run run-model:format:check -w packages/run-model
           npm run runner:format:check -w apps/runner
           npm run reporter:format:check -w packages/reporter
           npm run showcase:format:check --prefix apps/showcase
@@ -350,6 +354,7 @@ jobs:
           npm run picker-dom:lint -w packages/picker-dom
           npm run editor:lint -w packages/editor
           npm run run-ui:lint -w packages/run-ui
+          npm run run-model:lint -w packages/run-model
           npm run runner:lint -w apps/runner
           npm run vscode:lint -w apps/vscode
           npm run extension:lint -w apps/extension
@@ -375,6 +380,7 @@ jobs:
           npm run picker-dom:typecheck -w packages/picker-dom
           npm run editor:typecheck -w packages/editor
           npm run run-ui:typecheck -w packages/run-ui
+          npm run run-model:typecheck -w packages/run-model
           npm run runner:typecheck -w apps/runner
           npm run vscode:typecheck -w apps/vscode
           npm run extension:typecheck -w apps/extension
@@ -548,6 +554,10 @@ jobs:
       - name: Test core
         working-directory: packages/core
         run: npm run core:test
+
+      - name: Test run-model
+        working-directory: packages/run-model
+        run: npm run run-model:test
 
       - name: Test picker-dom
         working-directory: packages/picker-dom

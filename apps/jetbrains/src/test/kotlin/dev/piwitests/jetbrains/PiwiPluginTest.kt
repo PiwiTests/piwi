@@ -26,10 +26,34 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class PiwiPluginTest : BasePlatformTestCase() {
+    /** Settings search finds Piwi's page by the words its labels lack, on the page's own id. */
+    fun testSettingsSearchFindsPiwisPageByItsKeywords() {
+        val contributor = com.intellij.openapi.extensions.ExtensionPointName<com.intellij.ide.ui.search.SearchableOptionContributor>("com.intellij.search.optionContributor").extensionList
+            .filterIsInstance<PiwiSearchableOptions>().single()
+        val added = mutableListOf<Pair<String, String>>()
+        contributor.processOptions(object : com.intellij.ide.ui.search.SearchableOptionProcessor() {
+            override fun addOptions(text: String, path: String?, hit: String?, configurableId: String, configurableDisplayName: String?, applyStemming: Boolean) {
+                added += text to configurableId
+            }
+        })
+        assertTrue(added.contains("Playwright" to "dev.piwitests.piwi"))
+        assertEquals(setOf("dev.piwitests.piwi"), added.map { it.second }.toSet())
+        val page = com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
+            .single { it.instanceClass == PiwiConfigurable::class.java.name }
+        assertEquals(PiwiSearchableOptions.CONFIGURABLE_ID, page.id)
+    }
+
     fun testRegistersItsExtensionsAndActions() {
         assertTrue(LspServerSupportProvider.EP_NAME.extensionList.any { it is PiwiLspServerSupportProvider })
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList
         assertTrue(codeVision.map { it.javaClass.name }.toString(), codeVision.any { it is PiwiCodeVisionProvider })
+        // One provider per entry of a line, in one group the Code Vision settings name Piwi.
+        val slots = codeVision.filterIsInstance<PiwiCodeVisionProvider>()
+        assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), slots.map { it.id })
+        assertTrue(slots.all { it.groupId == PiwiCodeVisionProvider.GROUP_ID })
+        val group = com.intellij.codeInsight.codeVision.settings.CodeVisionGroupSettingProvider.EP.EXTENSION_POINT_NAME.extensionList
+            .single { it.groupId == PiwiCodeVisionProvider.GROUP_ID }
+        assertEquals("Piwi", group.groupName)
         assertTrue(StatusBarWidgetFactory.EP_NAME.extensionList.any { it is PiwiStatusBarWidgetFactory })
         assertTrue(
             com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
@@ -39,9 +63,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures", "Piwi.RestartService", "Piwi.OpenLog")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
+        // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
+        // extension's order: run, record, a recording's controls.
+        val actions = ActionManager.getInstance()
+        assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
+        val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
+        assertEquals(
+            listOf(
+                "Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
+                "Piwi.RecordHere", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
+            ),
+            popup.childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) },
+        )
+        val editorMenu = actions.getAction("EditorPopupMenu") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        val piwiInEditorMenu = editorMenu.childActionsOrStubs.map { actions.getId(it) }.filter { it?.startsWith("Piwi.") == true }
+        assertEquals(listOf("Piwi.EditorPopup"), piwiInEditorMenu)
         // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
         val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
         fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
@@ -51,19 +91,178 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
         // A run's controls use the debugger's shortcuts, in this keymap as in every other.
         for ((control, debugger) in listOf(
-            "Piwi.PauseRun" to "Resume", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
+            "Piwi.PauseRun" to "Pause", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
             "Piwi.RunToCaret" to "RunToCursor", "Piwi.FinishRun" to "StepOut",
         )) {
             assertEquals(control, strokes(debugger), strokes(control))
         }
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F9")), strokes("Piwi.ResumeRun"))
+        assertEquals("Pause has no key here, as the debugger's", emptyList<javax.swing.KeyStroke>(), strokes("Piwi.PauseRun"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F8")), strokes("Piwi.StepRun"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))
         for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
     }
 
+    /**
+     * Every action draws a platform icon, but a toggle (its menu row shows a check mark) and those waiting for a glyph
+     * Piwi draws; a stop's code actions draw the same in its popups (`PiwiIcons.stopAction`).
+     */
+    fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
+        val actions = ActionManager.getInstance()
+        val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
+        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
+        val awaiting = setOf(
+            "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
+            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.ShareWindowLive", "Piwi.StopSharingWindowLive",
+        )
+        val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
+        val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
+        assertEquals(toggles + awaiting, bare)
+        for (id in toggles) assertTrue(id, actions.getAction(id) is com.intellij.openapi.actionSystem.ToggleAction)
+        val registered = mapOf(
+            Glue.StopAction.PICK to "Piwi.PickAtStop", Glue.StopAction.RECORD to "Piwi.RecordAtStop",
+            Glue.StopAction.ASSERT to "Piwi.AssertAtStop", Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
+            Glue.StopAction.MOCK to "Piwi.MockAtStop",
+        )
+        for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
+        assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+    }
+
+    /**
+     * The Log tab shows the lines written before it opened, then each line as it is written, a failed request under its
+     * method once a minute; closed, it opens again with them all.
+     */
+    fun testTheLogTabShowsTheServicesLogAndTheRequestsThatFailed() {
+        val log = project.service<PiwiLog>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            log.write("The editor service stopped (exit code 1).")
+            // No other test fails `piwi/selections`, whose failures the shared log would hold back for a minute.
+            val failing = java.lang.reflect.Proxy.newProxyInstance(
+                PiwiLanguageServer::class.java.classLoader,
+                arrayOf(PiwiLanguageServer::class.java),
+            ) { _, method, _ ->
+                if (method.name == "selections") {
+                    CompletableFuture.failedFuture<SelectionsResult?>(
+                        org.eclipse.lsp4j.jsonrpc.ResponseErrorException(org.eclipse.lsp4j.jsonrpc.messages.ResponseError(-32603, "the index is gone", null)),
+                    )
+                } else {
+                    null
+                }
+            } as PiwiLanguageServer
+            val logged = PiwiLog.logged(project, failing)
+            val before = log.lines().size
+            assertNull(logged.selections(SelectionsParams(null)).orNull())
+            assertNull(logged.selections(SelectionsParams(null)).orNull())
+            assertEquals(listOf(true), log.lines().drop(before).map { it.endsWith("piwi/selections failed: the index is gone") })
+
+            log.show()
+            val tab = window.contentManager.selectedContent!!
+            assertEquals(Glue.LOG_TAB, tab.displayName)
+            assertTrue(tab.isCloseable)
+            val console = tab.component as com.intellij.execution.impl.ConsoleViewImpl
+            fun shown(): String {
+                console.flushDeferredText()
+                return console.editor!!.document.text
+            }
+            assertTrue(shown(), shown().contains("The editor service stopped (exit code 1)."))
+            log.write("Restarting the editor service.")
+            assertTrue(shown(), shown().contains("Restarting the editor service."))
+            window.contentManager.removeContent(tab, true)
+            assertNull(window.contentManager.findContent(Glue.LOG_TAB))
+            log.write("Starting the editor service.")
+            log.show()
+            val again = window.contentManager.findContent(Glue.LOG_TAB).component as com.intellij.execution.impl.ConsoleViewImpl
+            again.flushDeferredText()
+            val text = again.editor!!.document.text
+            assertTrue(text, text.contains("piwi/selections failed") && text.contains("Restarting") && text.contains("Starting the editor service."))
+        } finally {
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /** What the service's process writes to stderr reaches the log, a stack's frames under the line they continue. */
+    fun testTheServicesStderrIsLoggedUntilItsProcessEnds() {
+        val log = project.service<PiwiLog>()
+        val before = log.lines().size
+        val process = com.intellij.execution.process.OSProcessHandler(
+            com.intellij.execution.configurations.GeneralCommandLine(
+                "node", "-e", "process.stdout.write('{}'); process.stderr.write('Piwi: boom\\n    at main (server.js:1:1)\\n')",
+            ),
+        )
+        log.watch(process)
+        process.startNotify()
+        assertTrue(process.waitFor(10_000))
+        val written = log.lines().drop(before)
+        assertEquals(2, written.size)
+        assertTrue(written[0], Regex("""\d\d:\d\d:\d\d\.\d{3} Piwi: boom""").matches(written[0]))
+        assertEquals("                 at main (server.js:1:1)", written[1])
+    }
+
+    /**
+     * The tool window says the service stopped only once its latest process ended, and drops what it answered: a
+     * process that ends after another started says nothing of the running one.
+     */
+    fun testOnlyTheLatestProcessEndingSaysTheServiceStopped() {
+        val service = project.service<PiwiProjectService>()
+        fun waiting() = com.intellij.execution.process.OSProcessHandler(
+            com.intellij.execution.configurations.GeneralCommandLine("node", "-e", "setTimeout(() => {}, 60000)"),
+        ).also { it.startNotify() }
+        fun waitUntil(condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!condition()) {
+                assertTrue("timed out", System.currentTimeMillis() < deadline)
+                Thread.sleep(20)
+            }
+        }
+        val first = waiting()
+        val second = waiting()
+        try {
+            service.watchServer(first)
+            service.watchServer(second)
+            service.statusChanged(StatusResult(emptyList()))
+            first.destroyProcess()
+            assertTrue(first.waitFor(10_000))
+            assertFalse(service.serviceStopped)
+            assertNotNull(service.status)
+            second.destroyProcess()
+            assertTrue(second.waitFor(10_000))
+            waitUntil { service.serviceStopped }
+            assertNull(service.status)
+            assertEquals(
+                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES),
+                Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
+            )
+        } finally {
+            first.destroyProcess()
+            second.destroyProcess()
+        }
+    }
+
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
+    fun testTheEditorsPiwiSubmenuShowsNothingAtRestOnAFileOfNoTests() {
+        myFixture.configureByText("notes.md", "# Notes")
+        val actions = ActionManager.getInstance()
+        val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.ActionGroup
+        val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.EDITOR, myFixture.editor)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.VIRTUAL_FILE, myFixture.file.virtualFile)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PSI_FILE, myFixture.file)
+            .build()
+        // Each entry as the editor's context menu updates it, no run, no recording and no instance: none shows, so the
+        // compact submenu, which hides when empty, is not drawn.
+        val shown = popup.getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }.filter { action ->
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("EditorPopup", null, context)
+            action.update(event)
+            event.presentation.isEnabledAndVisible
+        }
+        assertEquals(emptyList<String>(), shown.map { actions.getId(it) })
+    }
+
     fun testTheServiceGetsTheIdesProxy() {
         val selector = object : java.net.ProxySelector() {
             override fun select(uri: java.net.URI): List<java.net.Proxy> =
@@ -309,6 +508,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            // Each kind has its group, the requests' sticky, a confirmation fading on its own.
+            val groups = com.intellij.notification.NotificationGroupManager.getInstance()
+            assertEquals(
+                PiwiNotice.entries.map { it.group to (if (it == PiwiNotice.REQUEST) "STICKY_BALLOON" else "BALLOON") },
+                PiwiNotice.entries.map { it.group to groups.getNotificationGroup(it.group)!!.displayType.name },
+            )
+            // A warning keeps the platform's icon.
+            assertNull(PiwiNotifier.create(PiwiNotice.PROBLEM, "x", com.intellij.notification.NotificationType.WARNING).icon)
+            // An offer: titled Piwi, with its icon, in the suggestions' group.
+            val offer = shown.single()
+            assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
+            assertNotNull(offer.icon)
+            assertTrue(offer.isSuggestionType)
             assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -352,6 +564,67 @@ class PiwiPluginTest : BasePlatformTestCase() {
             dir.deleteRecursively()
             service.searchPlaywright()
         }
+    }
+
+    /**
+     * The actions that read the instance are enabled only while a context is connected; Open in Dashboard also on the
+     * page of what the tool window has selected, and Re-run the Failing Tests while failures are listed.
+     */
+    fun testTheActionsThatReadTheInstanceWaitForAConnection() {
+        val actions = ActionManager.getInstance()
+        fun enabled(id: String, url: String? = null): Boolean {
+            val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+                .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+                .apply { if (url != null) add(DASHBOARD_URL, url) }
+                .build()
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+            actions.getAction(id).update(event)
+            return event.presentation.isEnabled
+        }
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = false))))
+        service.failuresChanged(FailuresResult(items = emptyList()))
+        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertFalse(id, enabled(id))
+        assertTrue("a selected failure's page", enabled("Piwi.OpenInDashboard", "https://piwi.example.com/test-run-cases/9"))
+        // Failures listed from a run read before the instance stopped answering re-run all the same.
+        service.failuresChanged(FailuresResult(items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9))))
+        assertTrue(enabled("Piwi.RerunFailing"))
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
+        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
+    }
+
+    /** Run Headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
+    fun testRunHeadedIsKeptForEveryRunOfTheProject() {
+        val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+            .build()
+        fun event() = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+        val action = ActionManager.getInstance().getAction("Piwi.RunHeaded") as com.intellij.openapi.actionSystem.ToggleAction
+        val local = project.service<PiwiProjectService>().local()
+        assertFalse(action.isSelected(event()))
+        action.setSelected(event(), true)
+        assertTrue(local.runHeaded)
+        assertTrue(action.isSelected(event()))
+        action.setSelected(event(), false)
+        assertFalse(local.runHeaded)
+    }
+
+    /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */
+    fun testTrustingTheProjectTellsTheViews() {
+        val service = project.getService(PiwiProjectService::class.java)
+        service.watchTrust()
+        var told = 0
+        val parent = com.intellij.openapi.util.Disposer.newDisposable()
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, parent)
+        service.onChange(parent) { told++ }
+        val trust = com.intellij.openapi.application.ApplicationManager.getApplication().messageBus
+            .syncPublisher(com.intellij.ide.trustedProjects.TrustedProjectsListener.TOPIC)
+        trust.onProjectTrusted(com.intellij.openapi.project.ProjectManager.getInstance().defaultProject)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(0, told)
+        trust.onProjectTrusted(project)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(1, told)
     }
 
     /** The answers the service pushes are kept as they come, and the listeners hear once of the changes made meanwhile. */
@@ -452,7 +725,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .map { if (it is com.intellij.openapi.actionSystem.Separator) "-" else manager.getId(it) ?: it.templateText }
             assertEquals(
                 listOf(
-                    "Read the Latest Run Again", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
+                    "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
                     "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
@@ -473,6 +746,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** The color key of a coverage mark's gutter bar, which names its kind. */
+    private fun coverageKey(highlighter: com.intellij.openapi.editor.markup.RangeHighlighter): String? =
+        (highlighter.lineMarkerRenderer as? CoverageGutterMark)?.key?.externalName
+
     /** A file's coverage answer is drawn as marks in the gutter, one per span, hidden and shown again with the action. */
     fun testCoverageMarksAreDrawnAndHidden() {
         val base = File(project.basePath!!)
@@ -483,8 +760,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val marks = project.service<PiwiCoverageMarks>()
         val wasShown = marks.shown
         fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-            .filter { it.lineMarkerRenderer != null && it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
-            .map { Triple(it.textAttributesKey?.externalName, document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset)) }
+            .filter { it.lineMarkerRenderer != null && coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
+            .map { Triple(coverageKey(it), document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset)) }
             .sortedBy { it.second }
         try {
             marks.shown = true
@@ -511,10 +788,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
             )
             // Hovered in the gutter or the scroll bar, a mark says what it marks and what the marks mean.
             val run = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-                .first { it.textAttributesKey?.externalName == "PIWI_COVERAGE_RUN" }
+                .first { coverageKey(it) == "PIWI_COVERAGE_RUN" }
             val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
             assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
-            assertEquals(tooltip, run.errorStripeTooltip)
+            // Every mark carries its key, for a background the scheme sets; the lines run draw no mark in the scroll bar.
+            val scheme = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance().globalScheme
+            assertEquals("PIWI_COVERAGE_RUN", run.textAttributesKey?.externalName)
+            assertNull(run.getErrorStripeMarkColor(scheme))
+            val notRun = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+                .first { coverageKey(it) == "PIWI_COVERAGE_NOT_RUN" }
+            assertEquals("PIWI_COVERAGE_NOT_RUN", notRun.textAttributesKey?.externalName)
+            assertNotNull(notRun.getErrorStripeMarkColor(scheme))
             assertTrue(marks.known)
             marks.shown = false
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -524,8 +808,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(3, drawn().size)
             // A new answer: only the marks it changes are taken off or drawn, the others' highlighters kept.
             fun highlighters() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-                .filter { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
-                .associateBy { it.textAttributesKey?.externalName }
+                .filter { coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
+                .associateBy { coverageKey(it) }
             val first = highlighters()
             marks.arrived(result.copy(notRun = listOf(LineSpan(2, 3))))
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -573,7 +857,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val marks = project.service<PiwiCoverageMarks>()
         val wasShown = marks.shown
         fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
-            .count { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+            .count { coverageKey(it)?.startsWith("PIWI_COVERAGE_") == true }
         fun uri() = file.toNioPath().toUri().toString()
         val dispatch = { com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue() }
         val result = CoverageResult(uri = uri(), state = "exact", executed = listOf(LineSpan(0, 1, 1)), tests = 1)
@@ -925,6 +1209,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         try {
             writeFixture(dir)
             stub.coverageOf(git(dir, "hash-object", "src/BasketService.cs").trim())
+            val logged = project.service<PiwiLog>().lines().size
             val commandLine = PiwiLspServerDescriptor(project).createCommandLine()
                 .withWorkDirectory(dir)
                 .withEnvironment(
@@ -934,6 +1219,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                         "PIWI_DESKTOP_CONFIG" to File(dir, "no-desktop.json").path,
                     ),
                 )
+            val started = project.service<PiwiLog>().lines().drop(logged)
+            assertTrue(started.toString(), started.any { "Starting the editor service with Node.js v" in it })
             val process = commandLine.createProcess()
             try {
                 val client = TestClient()
@@ -1000,7 +1287,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900", "failing"), test.failure)
                 assertEquals(
                     listOf(
-                        Triple(4, "✗ not found", "piwi.openInDashboard"),
+                        Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
                         Triple(4, "Run this test", "piwi.runTests"),
                         Triple(4, "Screenshot", "piwi.openScreenshot"),
                         Triple(4, "Trace", "piwi.openTrace"),
@@ -1096,7 +1383,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(RunTest("t1", listOf("removes a row"), spec, 3, "chromium", 1, null), worker.test)
             val stop = worker.stop!!
             assertEquals(listOf("breakpoint", "Click locator('.cart-row').nth(2)", pageObject, "4", "20", "false"), listOf(stop.reason, stop.title, stop.uri, "${stop.line}", "${stop.character}", "${stop.bar}"))
-            assertEquals("Paused · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
+            assertEquals("Stopped at a breakpoint · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
 
             assertEquals(RunControlResult(true, "Stepping to the next call."), server.runControl(RunControlParams(ref, action = "step")).get(5, TimeUnit.SECONDS))
             waitFor("the step") { heard.firstOrNull { it["type"].asString == "control" && it["action"].asString == "step" && it["stop"].asInt == 1 } }

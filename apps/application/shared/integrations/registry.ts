@@ -81,9 +81,63 @@ export const INTEGRATION_PROVIDERS = {
     ],
     docsAnchor: 'operate/integrations#connecting-jira-cloud',
   },
+  'zephyr-scale': {
+    kind: 'test-management',
+    label: 'Zephyr Scale Cloud',
+    icon: 'i-lucide-list-checks',
+    endpoint: {
+      kind: 'region',
+      regions: [
+        { id: 'us', label: 'United States', baseUrl: 'https://api.zephyrscale.smartbear.com/v2' },
+        { id: 'eu', label: 'Europe', baseUrl: 'https://eu.api.zephyrscale.smartbear.com/v2' },
+        { id: 'au', label: 'Australia', baseUrl: 'https://au.api.zephyrscale.smartbear.com/v2' },
+        { id: 'de', label: 'Germany', baseUrl: 'https://de.api.zephyrscale.smartbear.com/v2' },
+      ],
+    },
+    capabilities: ['whoami', 'list-projects', 'list-cases', 'list-statuses'],
+    credentialFields: [
+      {
+        key: 'apiToken',
+        label: 'API access token',
+        type: 'password',
+        secret: true,
+        required: true,
+        help: 'Create one in Jira: your profile picture → Zephyr API keys.',
+      },
+    ],
+    docsAnchor: 'operate/zephyr-scale',
+  },
 } as const satisfies Record<string, IntegrationProviderMeta>;
 
 export type IntegrationProviderName = keyof typeof INTEGRATION_PROVIDERS;
+
+/** The providers whose registry entry is of kind `kind`. */
+export type ProviderNameOfKind<K extends IntegrationKind> = {
+  [P in IntegrationProviderName]: (typeof INTEGRATION_PROVIDERS)[P]['kind'] extends K ? P : never;
+}[IntegrationProviderName];
+
+/** The providers that receive test results. */
+export type TestManagementProviderName = ProviderNameOfKind<'test-management'>;
+
+/** Whether a provider is of kind `kind`; false for a provider this build does not know. */
+export function isProviderOfKind(provider: string, kind: IntegrationKind): boolean {
+  return isIntegrationProvider(provider) && INTEGRATION_PROVIDERS[provider].kind === kind;
+}
+
+/** The names of the providers of kind `kind`, in registry order. */
+export function providersOfKind(kind: IntegrationKind): IntegrationProviderName[] {
+  return (Object.keys(INTEGRATION_PROVIDERS) as IntegrationProviderName[]).filter(
+    (name) => INTEGRATION_PROVIDERS[name].kind === kind,
+  );
+}
+
+/** Whether a provider's client can do `capability`; false for a provider this build does not know. */
+export function providerHasCapability(provider: string, capability: string): boolean {
+  return (
+    isIntegrationProvider(provider) &&
+    (INTEGRATION_PROVIDERS[provider].capabilities as readonly string[]).includes(capability)
+  );
+}
 
 /** The providers as an ordered list for rendering one card each. */
 export const INTEGRATION_PROVIDER_LIST = Object.entries(INTEGRATION_PROVIDERS).map(([name, meta]) => ({
