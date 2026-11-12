@@ -47,6 +47,8 @@ import {
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
 import type { TestStop } from '@piwitests/core/wire';
+import { laneKey, readLane } from '@piwitests/core/live-lane';
+import type { Lane } from '#shared/live-lanes';
 
 const route = useRoute();
 const router = useRouter();
@@ -199,6 +201,9 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 // The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
 // one offers Watch, and says Paused while its test is stopped.
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
+// The run's lanes as they stand, by `laneKey`, from the stream's `lane` events: the instance reduces them from the run's
+// events, so the page reads each lane's state, test and stop ready.
+const liveLanes = ref<Record<string, Lane>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
 // The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
@@ -417,26 +422,33 @@ watch(watchAll, (on) => !isDemoMode && live.watchAll(on));
 // A worker that left the run's live view leaves its tile.
 watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
 /**
- * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, each running lane's
- * stand-in.
+ * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, a stand-in of each lane
+ * that runs a test.
  */
 const watchAllWorkers = computed<LiveWorkerState[]>(() => {
   if (!isDemoMode) return Object.values(liveWorkers.value);
-  const lanes = new Map<string, LiveWorkerState>();
-  for (const row of dedupedDisplayCases.value) {
-    if (row.status !== 'running' || typeof row.parallelIndex !== 'number') continue;
-    const worker = { shard: row.shardIndex ?? null, worker: row.workerIndex ?? row.parallelIndex };
-    lanes.set(liveWorkerKey(worker), { ...worker, slot: row.parallelIndex, connected: true, paused: null });
-  }
-  return [...lanes.values()];
+  return Object.values(liveLanes.value).flatMap((lane) =>
+    lane.test && lane.state !== 'done'
+      ? [
+          {
+            shard: lane.id.shard,
+            worker: lane.worker ?? lane.id.lane,
+            slot: lane.id.lane,
+            connected: true,
+            paused: null,
+          },
+        ]
+      : [],
+  );
 });
+const lanesNow = computed(() => Object.values(liveLanes.value));
 /** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
 const offersWatchAll = computed(
   () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
 );
 const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
-/** What each lane needs attention for now: its rows' failures, Stuck? marks and stops, and its worker's stop. */
-const attentionNow = computed(() => attentionSignals(displayTestCases.value, Object.values(liveWorkers.value)));
+/** What each lane needs attention for now: its rows' failures and Stuck? marks, and its stop. */
+const attentionNow = computed(() => attentionSignals(displayTestCases.value, lanesNow.value));
 /** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
 const followAttention = ref(false);
 /** Why the lane panel moved where it is, while it shows that lane. */
@@ -858,6 +870,9 @@ function flushPendingEvents() {
         liveWorkerSeen.value = true;
       } else delete next[liveWorkerKey(worker)];
       liveWorkers.value = next;
+    } else if (parsed.type === 'lane') {
+      const lane = readLane(data);
+      if (lane) liveLanes.value = { ...liveLanes.value, [laneKey(lane.id)]: lane };
     } else if (parsed.type === 'live-view') {
       const state = data as unknown as LiveViewRunState;
       // A key opens the run's live view only while the project has it on.
@@ -1580,6 +1595,7 @@ const moreMenuItems = computed(() => {
               :tiles="live.images.value"
               :steps="liveSteps"
               :running="runningRows"
+              :lanes="lanesNow"
               :signals="attentionNow"
               :focused="watchOpen ? watching : null"
               :state="live.state.value"

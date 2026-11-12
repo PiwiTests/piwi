@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { LiveWorkerState } from '#shared/live-view';
+import { emptyLane, reduceLane, type LaneStop } from '@piwitests/core/live-lane';
+import type { Lane } from '#shared/live-lanes';
 import type { TestCaseResult } from '../../types/api';
 import {
   AttentionFollower,
@@ -31,14 +32,15 @@ const row = (over: Partial<TestCaseResult>): TestCaseResult =>
     ...over,
   }) as TestCaseResult;
 
-const worker = (slot: number, over: Partial<LiveWorkerState> = {}): LiveWorkerState => ({
-  shard: null,
-  worker: slot,
-  slot,
-  connected: true,
-  paused: null,
-  ...over,
-});
+/** The lane `slot` of the run as its stream sends it: running `title`, stopped at `stop` when given. */
+const runLane = (slot: number, title: string, stop?: LaneStop): Lane => {
+  const running = reduceLane(emptyLane({ run: 1, shard: null, lane: slot }), {
+    type: 'test-begin',
+    worker: slot,
+    test: { id: title, title, retry: 0 },
+  });
+  return stop ? reduceLane(running, { type: 'stopped', stop }) : running;
+};
 
 const lane = (slot: number) => ({ shard: null, slot });
 const LANES = [lane(0), lane(1), lane(2)];
@@ -50,30 +52,19 @@ const signal = (slot: number, reason: AttentionSignal['reason'], key = `${reason
 });
 
 describe('what needs attention', () => {
-  test('is read from the rows and the workers: failures, Stuck? marks and stops, each in its lane', () => {
-    const stop = {
-      reason: 'breakpoint' as const,
-      title: 'Click',
-      file: null,
-      line: null,
-      bar: true,
-      since: 5,
-      pausedMs: 0,
-    };
+  test('is read from the rows and the run’s lanes: failures, Stuck? marks and stops, each in its lane', () => {
     const signals = attentionSignals(
       [
         row({ title: 'fails', status: 'failed', parallelIndex: 1 }),
         row({ title: 'times out', status: 'timedout', parallelIndex: 2, shardIndex: 3 }),
         row({ title: 'hangs', stuck: { elapsedMs: 400_000, usualMs: 6_000 } }),
-        row({ title: 'waits', parallelIndex: 4, liveStop: stop }),
         row({ title: 'passes', status: 'passed', parallelIndex: 5 }),
         row({ title: 'old reporter', status: 'failed', parallelIndex: null }),
       ],
       [
-        worker(6, {
-          paused: { reason: 'page-pause', call: { title: 'Pause', file: null, line: null }, test: 'pauses' },
-        }),
-        worker(7),
+        runLane(4, 'waits', { id: 'stop:5', reason: 'breakpoint', title: 'Click', since: 5 }),
+        runLane(6, 'pauses', { id: 'view:page-pause:Pause', reason: 'page-pause', title: 'Pause', since: null }),
+        runLane(7, 'runs'),
       ],
     );
     expect(signals.map((s) => [s.reason, s.lane, s.test, s.stop])).toEqual([
@@ -92,6 +83,14 @@ describe('what needs attention', () => {
     const [chromium] = attentionSignals([row({ status: 'failed', browser: browser('chromium') })], []);
     const [mobile] = attentionSignals([row({ status: 'failed', browser: browser('mobile') })], []);
     expect(chromium!.key).not.toBe(mobile!.key);
+    // Each stop of a lane is an occurrence of its own, and a lane that went on needs none.
+    const at = (id: string) =>
+      attentionSignals([], [runLane(0, 'waits', { id, reason: 'pause', title: 'Click', since: 1 })]);
+    expect(at('stop:1')[0]!.key).not.toBe(at('stop:2')[0]!.key);
+    const resumed = reduceLane(runLane(0, 'waits', { id: 's', reason: 'pause', title: 'Click', since: 1 }), {
+      type: 'resumed',
+    });
+    expect(attentionSignals([], [resumed])).toEqual([]);
   });
 
   test('says why the view moved, by the worker’s number and what its test did', () => {

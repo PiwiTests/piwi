@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Lane } from '#shared/live-lanes';
 import { LIVE_VIEW_END_TEXT, liveWorkerKey, liveWorkerName, type LiveWorkerState } from '#shared/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { LiveTile } from '~/composables/useLiveWatch';
@@ -10,8 +11,9 @@ import type { LiveWatchState } from '~/utils/live-watch';
 import type { TestCaseResult } from '~~/types/api';
 
 /**
- * **Watch all**: a tile for each worker in the run's live view, its latest image one a second at most, the test it
- * runs, the step it is on and what its test needs attention for (a stop, a **Stuck?** mark). A click shows the worker
+ * **Watch all**: a tile for each worker in the run's live view, its latest image one a second at most, the test its
+ * lane runs (as the run's stream sends the lane ready), the step it is on and what its test needs attention for (a
+ * stop, a **Stuck?** mark). A click shows the worker
  * in the lane panel, from its running row when the page holds one. In the demo, which runs no browser, each running
  * lane's tile names its step alone.
  */
@@ -20,8 +22,10 @@ const props = defineProps<{
   workers: LiveWorkerState[];
   tiles: Record<string, LiveTile>;
   steps: LiveStepsByWorker;
-  /** The run's running rows, for the test each worker runs. */
+  /** The run's running rows, which a click shows a worker from. */
   running: TestCaseResult[];
+  /** The run's lanes as they stand, for the test each worker's lane runs. */
+  lanes: Lane[];
   signals: AttentionSignal[];
   /** The worker the lane panel shows. */
   focused: { shard: number | null; worker: number; slot?: number } | null;
@@ -77,7 +81,8 @@ const views = computed<TileView[]>(() =>
     const key = liveWorkerKey(worker);
     const row = rowOf(worker);
     const tile = props.tiles[key] ?? null;
-    const test = row?.title ?? tile?.test ?? null;
+    const lane = props.lanes.find((one) => one.id.shard === worker.shard && one.id.lane === worker.slot);
+    const test = lane?.test?.title ?? row?.title ?? tile?.test ?? null;
     const step = test
       ? liveStepOf(props.steps, { shard: worker.shard, worker: row?.workerIndex ?? worker.worker, test })
       : null;
