@@ -299,7 +299,7 @@ describe('renderSnapshotHtml — live state', () => {
       '<input id="name" value="Ada Lovelace">',
     );
     expect(render(body(['INPUT', { __playwright_value_: 'a "quoted" <b>', id: 'q' }]))).toContain(
-      '<input id="q" value="a &quot;quoted&quot; <b>">',
+      '<input id="q" value="a &quot;quoted&quot; &lt;b&gt;">',
     );
   });
 
@@ -451,6 +451,67 @@ describe('renderSnapshotHtml — live state', () => {
     expect(html).toContain('<style>.card { & > .inner { content: "<"; } }</style>');
     expect(html).toContain('<style>a::after { content: "<\\/style><script>x()</script>"; }</style>');
     expect(html).toContain('<svg><style>a > b &amp; c</style></svg>');
+  });
+
+  const REFRESH = '<meta http-equiv="refresh" content="0;url=https://evil.test/">';
+
+  test('escapes a style’s text inside SVG or MathML, whatever case it was recorded in, an adopted one too', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['svg', {}, ['STYLE', {}, REFRESH]],
+        ['MATH', {}, ['mi', {}, ['STYLE', {}, REFRESH]]],
+        ['SVG', {}, ['TEMPLATE', { __playwright_style_sheet_: REFRESH }]],
+        ['svg', {}, ['foreignObject', {}, ['DIV', {}, ['STYLE', {}, REFRESH]]]],
+      ],
+    ]);
+    expect(html).not.toContain('<meta');
+    expect(html).toContain(
+      '<svg><style>&lt;meta http-equiv="refresh" content="0;url=https://evil.test/"></style></svg>',
+    );
+    // Out of SVG again, a style's text is raw.
+    expect(render(['HTML', {}, ['svg', {}], ['STYLE', {}, 'a > b']])).toBe(
+      '<html><svg></svg><style>a > b</style></html>',
+    );
+  });
+
+  test('writes only the escaped text of an element whose content the browser reads as text', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'BODY',
+        {},
+        ['NOSCRIPT', {}, ['STYLE', {}, `</noscript>${REFRESH}`], `</noscript>${REFRESH}`],
+        ['TEXTAREA', {}, ['STYLE', {}, `</textarea>${REFRESH}`], 'Note'],
+        ['XMP', {}, ['B', { title: `</xmp>${REFRESH}` }], ['TEMPLATE', { __playwright_style_sheet_: REFRESH }]],
+        ['PLAINTEXT', {}, 'the rest'],
+      ],
+    ]);
+    expect(html).not.toContain('<meta');
+    expect(html).toBe(
+      '<html><body>' +
+        '<noscript>&lt;/noscript>&lt;meta http-equiv="refresh" content="0;url=https://evil.test/"></noscript>' +
+        '<textarea>Note</textarea><xmp></xmp><pre>the rest</pre></body></html>',
+    );
+  });
+
+  test('escapes the angle brackets of an attribute’s value', () => {
+    expect(render(['P', { title: `</noscript>${REFRESH}` }])).toBe(
+      '<p title="&lt;/noscript&gt;&lt;meta http-equiv=&quot;refresh&quot; content=&quot;0;url=https://evil.test/&quot;&gt;"></p>',
+    );
+  });
+
+  test('writes a doctype that names a plain type alone', () => {
+    const page = (doctype: string) =>
+      renderSnapshotHtml([snap({ snapshotName: 's1', doctype, html: ['HTML', {}] })], 's1');
+    expect(page('html')).toBe('<!DOCTYPE html>\n<html></html>');
+    expect(page('HTML')).toBe('<!DOCTYPE HTML>\n<html></html>');
+    expect(page(`html>${REFRESH}<svg`)).toBe('<html></html>');
+    expect(page('html PUBLIC "-//W3C//DTD HTML 4.01//EN"')).toBe('<html></html>');
   });
 });
 

@@ -120,7 +120,13 @@ function decodeAttr(value: string): string {
   return value
     .replace(/&quot;|&#34;|&#x22;/gi, '"')
     .replace(/&apos;|&#39;|&#x27;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
     .replace(/&amp;/g, '&');
+}
+
+function encodeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -133,7 +139,7 @@ function offlineAttr(tag: string, attr: string, name: string, value: string | un
   if (lower === 'style' && value !== undefined) {
     const css = decodeAttr(value);
     const stripped = stripCssNetworkRefs(css);
-    return stripped === css ? attr : `${name}="${stripped.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`;
+    return stripped === css ? attr : `${name}="${encodeAttr(stripped)}"`;
   }
   // Scripts, nested browsing contexts and plugins would run or load code of their own.
   if (lower === 'srcdoc') return '';
@@ -164,14 +170,25 @@ function stripMarkupNetworkRefs(html: string): string {
 }
 
 /**
+ * Every `http-equiv` left, wherever it is (a tag the patterns above did not read
+ * as one, CSS, text), with its hyphen as a character reference: as an attribute's
+ * name it no longer names one (a `<meta http-equiv="refresh">` would navigate the
+ * frame), and as text or an attribute's value it reads the same.
+ */
+function neutralizeHttpEquiv(html: string): string {
+  return html.replace(/(http)-(equiv)/gi, '$1&#45;$2');
+}
+
+/**
  * The snapshot as a document that loads nothing from the network: it renders
  * only what it carries inline — the stylesheets and images the server embedded
  * from the trace, `data:` URIs and in-document references. Every other
  * subresource would resolve against the dashboard's origin (or reach the live
  * tested app), so it is removed: leftover `<link>` elements, `<base>`,
- * `<meta http-equiv>`, nested frame/object/embed sources, `src`/`srcset`/
- * `poster`/`href` media URLs, and CSS `url(...)`/`@import` in `<style>` and
- * `style=""`. A masked `data:` URI is malformed, so it goes too.
+ * `<meta http-equiv>` (and any `http-equiv` left wherever it is),
+ * nested frame/object/embed sources, `src`/`srcset`/`poster`/`href` media URLs,
+ * and CSS `url(...)`/`@import` in `<style>` and `style=""`. A masked `data:` URI
+ * is malformed, so it goes too.
  */
 export function stripNetworkReferences(html: string): string {
   let out = '';
@@ -180,7 +197,7 @@ export function stripNetworkReferences(html: string): string {
     out += stripMarkupNetworkRefs(html.slice(last, m.index) + m[1]) + stripCssNetworkRefs(m[2]!) + m[3];
     last = m.index + m[0].length;
   }
-  return out + stripMarkupNetworkRefs(html.slice(last));
+  return neutralizeHttpEquiv(out + stripMarkupNetworkRefs(html.slice(last)));
 }
 
 /**

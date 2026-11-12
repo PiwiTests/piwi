@@ -210,9 +210,22 @@ function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value
   return out;
 }
 
+/** An attribute's value, double-quoted: its angle brackets escaped too, so no context the browser reads it in ends early. */
 function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/**
+ * Where a node is written, as the browser parses it there: HTML markup, SVG or MathML markup (`foreign`, where a
+ * `style` holds markup rather than raw text), or the text of an element whose content the browser reads as text.
+ */
+type Place = 'html' | 'foreign' | 'text';
+
+/** HTML elements whose content the browser reads as text: their markup would be text, so their text alone is written. */
+const TEXT_ELEMENTS = new Set(['TITLE', 'TEXTAREA', 'XMP', 'IFRAME', 'NOEMBED', 'NOFRAMES', 'NOSCRIPT']);
+
+/** A doctype the renderer writes: a plain name (`html`); anything else is left out. */
+const DOCTYPE_RE = /^[a-z]+$/i;
 
 /**
  * Post-order node list of one snapshot's tree — the indexing space that
@@ -306,7 +319,8 @@ export function renderSnapshotHtml(
     return ref ? textOf(ref.node, ref.snapshotIndex) : null;
   };
 
-  const render = (n: unknown, snapshotIndex: number): string => {
+  /** A node written at `place`: a reference is written where it is named, whatever it was in its own snapshot. */
+  const render = (n: unknown, snapshotIndex: number, place: Place): string => {
     visit();
     if (typeof n === 'string') return write(escapeText(n));
     if (!Array.isArray(n) || n.length === 0) return '';
@@ -314,13 +328,16 @@ export function renderSnapshotHtml(
     if (Array.isArray(n[0])) {
       const ref = deref(n[0], snapshotIndex);
       if (!ref) onUnresolved?.();
-      return ref ? render(ref.node, ref.snapshotIndex) : write('<!-- [unresolved snapshot reference] -->');
+      return ref ? render(ref.node, ref.snapshotIndex, place) : write('<!-- [unresolved snapshot reference] -->');
     }
 
+    // An element where the browser reads text would be text: it goes.
+    if (place === 'text') return '';
     if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
     // HTML tags are recorded upper case, SVG ones as authored (`svg`, `script`).
     const tagUpper = (n[0] as string).toUpperCase();
-    const tag = tagUpper.toLowerCase();
+    // `plaintext` would read the rest of the document, the frame's own script included, as text.
+    const tag = tagUpper === 'PLAINTEXT' ? 'pre' : tagUpper.toLowerCase();
     const attrs: Attrs = n[1] && typeof n[1] === 'object' && !Array.isArray(n[1]) ? (n[1] as Attrs) : {};
 
     // A script is an empty marker — no `src`, no body — so nothing the page
@@ -333,7 +350,8 @@ export function renderSnapshotHtml(
     // `template` holding its CSS, where it applies: written there as a `<style>`.
     const adopted = attrs[LIVE.styleSheet];
     if (tagUpper === 'TEMPLATE' && typeof adopted === 'string') {
-      return write(dropStyles ? '<style></style>' : `<style>${rawStyleText(adopted)}</style>`);
+      if (dropStyles) return write('<style></style>');
+      return write(`<style>${place === 'html' ? rawStyleText(adopted) : escapeText(adopted)}</style>`);
     }
 
     let open = `<${tag}`;
@@ -354,21 +372,31 @@ export function renderSnapshotHtml(
 
     // `<style>` bodies are dropped only under the lean fallback; the tag stays
     // as a marker. An HTML `<style>` holds raw text, so its CSS is written as
-    // is; an SVG `style` (recorded lower case) is parsed as markup and stays escaped.
+    // is, anything else in it left out; inside SVG or MathML a `style` is parsed
+    // as markup, whatever case it was recorded in, and stays escaped.
     if (dropStyles && tagUpper === 'STYLE') return out + write(`</${tag}>`);
-    const rawText = n[0] === 'STYLE';
-    for (let i = 2; i < n.length; i++) {
-      const text = rawText ? textOf(n[i], snapshotIndex) : null;
-      out += text !== null ? write(rawStyleText(text)) : render(n[i], snapshotIndex);
+    if (tagUpper === 'STYLE' && place === 'html') {
+      for (let i = 2; i < n.length; i++) {
+        const text = textOf(n[i], snapshotIndex);
+        if (text !== null) out += write(rawStyleText(text));
+      }
+      return out + write(`</${tag}>`);
     }
+    const inner: Place =
+      place === 'foreign' || tagUpper === 'SVG' || tagUpper === 'MATH'
+        ? 'foreign'
+        : TEXT_ELEMENTS.has(tagUpper)
+          ? 'text'
+          : 'html';
+    for (let i = 2; i < n.length; i++) out += render(n[i], snapshotIndex, inner);
     return out + write(`</${tag}>`);
   };
 
   try {
-    const body = render(target.html, targetIndex);
+    const body = render(target.html, targetIndex, 'html');
     if (!body) return null;
-    const doctype = target.doctype ? `<!DOCTYPE ${target.doctype}>\n` : '';
-    return doctype + body;
+    const doctype = typeof target.doctype === 'string' && DOCTYPE_RE.test(target.doctype) ? target.doctype : null;
+    return (doctype ? `<!DOCTYPE ${doctype}>\n` : '') + body;
   } catch (error) {
     if (error instanceof RenderTooLarge) onTooLarge?.();
     return null;
@@ -614,7 +642,11 @@ export function inlineCssUrls(css: string, replacements: Record<string, string>)
 const IMG_SRC_RE = /(<img(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*?\ssrc=")([^"]*)(")/gi;
 
 function unescapeAttr(value: string): string {
-  return value.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 /**

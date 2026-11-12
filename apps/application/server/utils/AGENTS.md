@@ -177,6 +177,10 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
 - **No rendered snapshot keeps a script**: a script's body and source, an inline handler and a `javascript:` or
   `vbscript:` URL are dropped by `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the
   page through `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
+- **Nothing the snapshot holds is written where the browser would read it as markup**: a style's text is raw only in
+  HTML (escaped inside `svg`/`math`), an element whose content is text (`TEXT_ELEMENTS`) keeps its escaped text alone,
+  attribute values escape `<` and `>`, and a doctype is a plain name. `stripNetworkReferences` also leaves no
+  `http-equiv` anywhere (`tests/unit/dom-snapshot.test.ts`, `tests/unit/snapshot-picker-script.test.ts`).
 - **A render counts what it costs as it goes**: `renderSnapshotHtml` gives up past `MAX_RENDER_NODES` visited,
   `MAX_RENDER_REFERENCES` followed or `MAX_RENDER_CHARS` written, since references can name the same nodes again and
   again; a new piece of output goes through its `write` (`tests/unit/dom-snapshot.test.ts`).
