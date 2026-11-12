@@ -21,6 +21,7 @@
  * in `app/utils/snapshot-picker-script.ts`, which re-exports these.
  */
 import { installPickerOverlay, probeElementAttrs, type PickerOverlayArg, type ProbeArg } from '@piwitests/picker-dom';
+import { cssImports, replaceCssUrls } from '#shared/css-urls';
 import {
   installSnapshotPickerExtras,
   readonlySnapshotScript,
@@ -98,8 +99,6 @@ const START_TAG_RE = /<([a-zA-Z][^\s/>]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
 const ATTR_RE = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 // A `<style>` element: its CSS is raw text, rewritten as CSS rather than markup.
 const STYLE_ELEMENT_RE = /(<style(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>)([\s\S]*?)(<\/style\s*>|$)/gi;
-const CSS_IMPORT_RE = /@import\s+(?:url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\)|"[^"]*"|'[^']*')[^;]*;?/gi;
-const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /** A URL the browser resolves without the network: a well-formed `data:` URI or an in-document `#fragment`. */
 function isInlineRef(url: string): boolean {
@@ -109,11 +108,14 @@ function isInlineRef(url: string): boolean {
 
 /** CSS with every `@import` removed and every `url(...)` that would fetch replaced by `none`. */
 function stripCssNetworkRefs(css: string): string {
-  return css
-    .replace(CSS_IMPORT_RE, '')
-    .replace(CSS_URL_RE, (full, _quote, quoted?: string, bare?: string) =>
-      isInlineRef(quoted ?? bare ?? '') ? full : 'none',
-    );
+  let kept = '';
+  let last = 0;
+  for (const rule of cssImports(css)) {
+    kept += css.slice(last, rule.start);
+    last = rule.end;
+  }
+  kept += css.slice(last);
+  return replaceCssUrls(kept, (url) => (isInlineRef(url.target) ? null : 'none'));
 }
 
 function decodeAttr(value: string): string {

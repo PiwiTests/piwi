@@ -16,6 +16,7 @@ import {
   pointerAt,
   withPageInteraction,
 } from '~~/server/utils/dom-snapshot-render';
+import { stripNetworkReferences } from '#shared/snapshot-picker-document';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
 import {
@@ -698,6 +699,63 @@ describe('parseResourceSnapshots', () => {
       sha1: '26b1a9ce.css',
       mimeType: 'text/css',
     });
+  });
+});
+
+describe('reading CSS and markup in linear time', () => {
+  /** How long `read` takes, in milliseconds. */
+  const took = (read: () => unknown) => {
+    const started = performance.now();
+    read();
+    return performance.now() - started;
+  };
+  const page = (css: string) =>
+    renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: ['HTML', {}, ['HEAD', {}, ['STYLE', {}, css]], ['BODY', {}, ['IMG', { src: '/a.png' }]]],
+        }),
+      ],
+      's1',
+    )!;
+
+  test('reads 200,000 characters of url() and @import that never close well under a second', () => {
+    for (const css of [
+      'url("'.repeat(40_000),
+      "url('".repeat(40_000),
+      'url('.repeat(50_000),
+      '@import url('.repeat(17_000),
+      '@import "'.repeat(22_000),
+    ]) {
+      expect(took(() => collectCssUrls(css))).toBeLessThan(500);
+      expect(took(() => inlineCssUrls(css, { x: 'y' }))).toBeLessThan(500);
+      expect(took(() => stripNetworkReferences(`<style>${css}</style>`))).toBeLessThan(500);
+    }
+  });
+
+  test('reads a page whose style holds 200,000 characters of tags that never close well under a second', () => {
+    for (const css of ['<img "'.repeat(33_000), `<link ${'rel=x '.repeat(33_000)}`, '<link'.repeat(40_000)]) {
+      const html = page(css);
+      expect(took(() => collectImageSources(html))).toBeLessThan(500);
+      expect(took(() => inlineImageSources(html, { '/a.png': 'data:image/png;base64,AA==' }))).toBeLessThan(500);
+      expect(took(() => collectStylesheetLinks(html))).toBeLessThan(500);
+      expect(took(() => inlineStylesheets(html, { x: 'y' }))).toBeLessThan(500);
+    }
+    // A tag in a style's text is CSS, never markup.
+    const html = page('<img src="/b.png"><link rel="stylesheet" href="/x.css">');
+    expect([...collectImageSources(html).keys()]).toEqual(['/a.png']);
+    expect(collectStylesheetLinks(html)).toEqual([]);
+  });
+
+  test('reads url() as before: quoted with the quote inside, bare, spaced, in any case', () => {
+    const css =
+      'a{background:url("a"b")} b{src:URL( \'c.woff\' )} c{x:url( d.png )} d{x:url("e\nf")} e{x:url()} f{x:url(g h)}';
+    expect([...collectCssUrls(css).keys()]).toEqual(['a"b', 'c.woff', 'd.png']);
+    expect(inlineCssUrls(css, { 'c.woff': 'data:font/woff;base64,AA==', 'd.png': 'data:image/png;base64,AA==' })).toBe(
+      'a{background:url("a"b")} b{src:url("data:font/woff;base64,AA==")} c{x:url("data:image/png;base64,AA==")}' +
+        ' d{x:url("e\nf")} e{x:url()} f{x:url(g h)}',
+    );
   });
 });
 

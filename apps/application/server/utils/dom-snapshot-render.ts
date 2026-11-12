@@ -21,6 +21,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
+import { cssUrls, replaceCssUrls } from '#shared/css-urls';
 import { sanitizePageInteraction } from '#shared/page-interaction';
 import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSnapshot } from './trace-events';
 
@@ -582,19 +583,39 @@ function parseStylesheetLink(tag: string): { href: string; media: string | null 
   return { href, media };
 }
 
+// A style element of rendered HTML, its text whole: CSS, raw, which may hold
+// anything but its closing tag, and which a pattern for markup must pass over.
+const STYLE_ELEMENT_RE = /<style(?=[\s/>])[^>]*>[\s\S]*?(?:<\/style\s*>|$)/gi;
+
+/**
+ * `html` with `edit` applied to its markup between its style elements, their
+ * text kept as it is: out of a style, the renderer writes no `<` but a tag's,
+ * so a pattern for tags reads each once.
+ */
+function editMarkup(html: string, edit: (markup: string) => string): string {
+  let out = '';
+  let last = 0;
+  for (const style of html.matchAll(STYLE_ELEMENT_RE)) {
+    out += edit(html.slice(last, style.index)) + style[0];
+    last = style.index + style[0].length;
+  }
+  return out + edit(html.slice(last));
+}
+
 /** Every `<link rel="stylesheet">` in the HTML, unique by original `href`, with its `media`. Pure. */
 export function collectStylesheetLinks(html: string): { href: string; media: string | null }[] {
   const out: { href: string; media: string | null }[] = [];
   const seen = new Set<string>();
-  const re = /<link\b[^>]*>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const link = parseStylesheetLink(m[0]);
-    if (link && !seen.has(link.href)) {
-      seen.add(link.href);
-      out.push(link);
+  editMarkup(html, (markup) => {
+    for (const m of markup.matchAll(/<link\b[^>]*>/gi)) {
+      const link = parseStylesheetLink(m[0]);
+      if (link && !seen.has(link.href)) {
+        seen.add(link.href);
+        out.push(link);
+      }
     }
-  }
+    return markup;
+  });
   return out;
 }
 
@@ -617,19 +638,18 @@ export function collectStylesheetLinks(html: string): { href: string; media: str
 export function inlineStylesheets(html: string, cssByHref: Record<string, string>, maxTotalChars = 8_000_000): string {
   if (!html || Object.keys(cssByHref).length === 0) return html;
   let budget = maxTotalChars;
-  return html.replace(/<link\b[^>]*>/gi, (tag) => {
-    const link = parseStylesheetLink(tag);
-    if (!link) return tag;
-    const css = cssByHref[link.href];
-    if (typeof css !== 'string' || css.length === 0 || css.length > budget) return tag;
-    budget -= css.length;
-    const media = link.media ? ` media="${escapeAttr(link.media)}"` : '';
-    return `<style${media}>${rawStyleText(css)}</style>`;
-  });
+  return editMarkup(html, (markup) =>
+    markup.replace(/<link\b[^>]*>/gi, (tag) => {
+      const link = parseStylesheetLink(tag);
+      if (!link) return tag;
+      const css = cssByHref[link.href];
+      if (typeof css !== 'string' || css.length === 0 || css.length > budget) return tag;
+      budget -= css.length;
+      const media = link.media ? ` media="${escapeAttr(link.media)}"` : '';
+      return `<style${media}>${rawStyleText(css)}</style>`;
+    }),
+  );
 }
-
-// A `url(...)` target: single/double quoted (group 2) or bare (group 3).
-const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
 
 /**
  * Every `url(...)` target in a CSS body worth resolving — quotes stripped, and
@@ -639,10 +659,8 @@ const CSS_URL_RE = /url\(\s*(?:(['"])(.*?)\1|([^)\s'"]+))\s*\)/gi;
  */
 export function collectCssUrls(css: string): Map<string, number> {
   const uses = new Map<string, number>();
-  const re = new RegExp(CSS_URL_RE.source, 'gi');
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(css)) !== null) {
-    const raw = (m[2] ?? m[3] ?? '').trim();
+  for (const url of cssUrls(css)) {
+    const raw = url.target.trim();
     // Skip already-inline data: URIs and any fragment ref (`#blur` filters,
     // `sprite.svg#icon`) — a data: URI can't carry the fragment that addresses
     // the resource, so inlining would break them; leaving them alone is safer.
@@ -660,10 +678,9 @@ export function collectCssUrls(css: string): Map<string, number> {
  */
 export function inlineCssUrls(css: string, replacements: Record<string, string>): string {
   if (!css || Object.keys(replacements).length === 0) return css;
-  return css.replace(new RegExp(CSS_URL_RE.source, 'gi'), (full, _q, quoted, bare) => {
-    const raw = (quoted ?? bare ?? '').trim();
-    const repl = replacements[raw];
-    return repl ? `url("${repl}")` : full;
+  return replaceCssUrls(css, (url) => {
+    const repl = replacements[url.target.trim()];
+    return repl ? `url("${repl}")` : null;
   });
 }
 
@@ -685,10 +702,13 @@ function unescapeAttr(value: string): string {
  */
 export function collectImageSources(html: string): Map<string, number> {
   const uses = new Map<string, number>();
-  for (const m of html.matchAll(IMG_SRC_RE)) {
-    const src = unescapeAttr(m[2]!).trim();
-    if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
-  }
+  editMarkup(html, (markup) => {
+    for (const m of markup.matchAll(IMG_SRC_RE)) {
+      const src = unescapeAttr(m[2]!).trim();
+      if (src && !/^data:/i.test(src)) uses.set(src, (uses.get(src) ?? 0) + 1);
+    }
+    return markup;
+  });
   return uses;
 }
 
@@ -699,10 +719,12 @@ export function collectImageSources(html: string): Map<string, number> {
  */
 export function inlineImageSources(html: string, replacements: Record<string, string>): string {
   if (!html || Object.keys(replacements).length === 0) return html;
-  return html.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
-    const repl = replacements[unescapeAttr(value).trim()];
-    return repl ? `${open}${escapeAttr(repl)}${close}` : full;
-  });
+  return editMarkup(html, (markup) =>
+    markup.replace(IMG_SRC_RE, (full, open: string, value: string, close: string) => {
+      const repl = replacements[unescapeAttr(value).trim()];
+      return repl ? `${open}${escapeAttr(repl)}${close}` : full;
+    }),
+  );
 }
 
 /** The two representations a case can be viewed as: trace-derived DOM or the ARIA tree. */

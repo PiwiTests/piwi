@@ -182,6 +182,9 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
   HTML (escaped inside `svg`/`math`), an element whose content is text (`TEXT_ELEMENTS`) keeps its escaped text alone,
   attribute values escape `<` and `>`, and a doctype is a plain name. `stripNetworkReferences` also leaves no
   `http-equiv` anywhere (`tests/unit/dom-snapshot.test.ts`, `tests/unit/snapshot-picker-script.test.ts`).
+- **What reads a snapshot's CSS or markup runs in linear time**: `url(...)` and `@import` are read by
+  `shared/css-urls.ts`, never a pattern that scans on at each start, and a pattern for tags reads the markup between
+  style elements alone (`editMarkup`), never a style's text (`tests/unit/css-urls.test.ts`, `tests/unit/dom-snapshot.test.ts`).
 - **A render counts what it costs as it goes**: `renderSnapshotHtml` gives up past `MAX_RENDER_NODES` visited,
   `MAX_RENDER_REFERENCES` followed or `MAX_RENDER_CHARS` written, since references can name the same nodes again and
   again; a new piece of output goes through its `write` (`tests/unit/dom-snapshot.test.ts`).
