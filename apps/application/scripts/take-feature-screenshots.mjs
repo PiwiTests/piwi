@@ -5150,6 +5150,8 @@ const SCENES = [
   videoMarksScene(1280, 'dark', '-dark'),
   videoFitScene(1440, 900, ''),
   videoFitScene(375, 812, '-phone'),
+  videoFitScene(1280, 720, '-laptop'),
+  videoFitScene(375, 667, '-phone-short'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
