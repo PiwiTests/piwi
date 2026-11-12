@@ -988,6 +988,7 @@ test.describe('Desktop run live view', () => {
     const image = await jpeg(page);
     await installBridge(page);
     const commands = await playHub(page);
+    await page.clock.install();
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
     await page.getByRole('button', { name: RERUN_FAILED }).click();
@@ -1073,6 +1074,30 @@ test.describe('Desktop run live view', () => {
     await expect(layers.locator('figcaption')).toHaveText('Fill Card number');
     await layers.getByRole('button', { name: 'Close' }).click();
     await expect(layers.locator('figcaption')).toHaveCount(0);
+
+    // The lane's next test begins: its text is asked for, the one before it gone.
+    const watches = () => commands.filter((c) => c.type === 'watch');
+    const before = watches().length;
+    await send({
+      type: 'lane-layer',
+      test: 't2',
+      layer: 'events',
+      at,
+      event: { kind: 'console', text: 'next test' },
+    });
+    await expect.poll(() => watches().length).toBe(before + 1);
+    expect(watches().at(-1)).toMatchObject({ on: true, layers: ['calls', 'events', 'text', 'filmstrip'] });
+    await expect(text).toHaveCount(0);
+    const reading = layers.getByText('Reading the page…');
+    await expect(reading).toBeVisible();
+    // Taken again before the first ask gave up: the window says it reads for 15 seconds from the latest ask.
+    await page.clock.fastForward(10_000);
+    await layers.getByRole('button', { name: 'Take it again' }).click();
+    await expect.poll(() => watches().length).toBe(before + 2);
+    await page.clock.fastForward(6_000);
+    await expect(reading).toBeVisible();
+    await page.clock.fastForward(10_000);
+    await expect(reading).toHaveCount(0);
 
     // Hide the text: the hub hears the layers without it.
     await layers.getByRole('button', { name: 'Hide the text' }).click();

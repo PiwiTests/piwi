@@ -73,8 +73,8 @@ the pointer: its locator shows under the test, with **Copy**.
 
 Under a watched page, from a reporter newer than 0.68.0, the tray shows what pixels cannot, as the editor does
 ([beside the image](./watch-running-test#beside-the-image)): **Why it waits**, **Events**, **Text** (**Show the page's
-text** reads it, its secret fields hidden, then follows the test's trace) and **Filmstrip** (a click shows an image
-larger, with its call), kept in memory alone.
+text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click enlarges
+an image, with its call), kept in memory alone.
 
 ## Code to copy
 
