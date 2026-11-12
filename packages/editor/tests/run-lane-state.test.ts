@@ -6,7 +6,7 @@
 import { EventEmitter } from 'node:events';
 import type * as net from 'node:net';
 import { describe, expect, test } from 'vitest';
-import { RUN_TAKES, type RunToHub } from '@piwitests/core/run-channel';
+import { RUN_TAKES, type RunMainToHub, type RunToHub } from '@piwitests/core/run-channel';
 import type { RunSession } from '../src/protocol';
 import { RunSessions } from '../src/run-sessions';
 import { last, waitFor } from './run-fixtures';
@@ -65,9 +65,26 @@ function harness() {
       });
     return { socket, read, begin };
   };
+  /** The run's own process of a run of `ed-1` connects. */
+  const main = () => {
+    const socket = fakeSocket();
+    const reader = sessions.attachMain(socket as unknown as net.Socket, {
+      type: 'run-begin',
+      token: 't',
+      ref: 'ed-1',
+      cwd: '/work/shop',
+      pid: 1,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 2,
+      workers: 1,
+      shard: null,
+    });
+    return { socket, read: (message: RunMainToHub) => reader(JSON.stringify(message)) };
+  };
   /** The workers of the session as the client heard them last. */
   const workers = () => last(sent)?.workers ?? [];
-  return { sessions, sent, join, workers };
+  return { sessions, sent, join, main, workers };
 }
 
 describe('the lane state a session says', () => {
@@ -113,5 +130,42 @@ describe('the lane state a session says', () => {
     });
     await waitFor(() => (workers()[0]?.state === 'running' ? true : undefined));
     expect(workers()[0]?.pausing).toBe(false);
+  });
+
+  describe('a second run under the ref while the first one lingers starts from fresh lanes', () => {
+    /** A first run whose lane 0 ran in worker 2, its process gone, ended (`run-end`) or not. */
+    async function firstRun(ended: boolean) {
+      const h = harness();
+      const run = h.main();
+      const worker = h.join(2, 0);
+      worker.begin('t0');
+      worker.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+      if (ended)
+        run.read({ type: 'run-end', status: 'passed', failure: null, done: 1, failed: 0, flaky: 0, skipped: 0 });
+      worker.socket.destroy();
+      run.socket.destroy();
+      await waitFor(() => (h.workers().length === 0 ? true : undefined));
+      return h;
+    }
+
+    for (const ended of [true, false]) {
+      test(`its worker 0 runs its test, after a first run that ${ended ? 'ended' : 'stopped short'}`, async () => {
+        const { main, join, workers } = await firstRun(ended);
+        main();
+        const worker = join(0, 0);
+        worker.begin('t1');
+        await waitFor(() => (workers()[0]?.state === 'running' ? true : undefined));
+        expect(workers()[0]).toMatchObject({ worker: 0, test: { id: 't1', retry: 0 } });
+      });
+    }
+
+    test('its worker that connects before its process keeps its test', async () => {
+      const { main, join, workers } = await firstRun(true);
+      const worker = join(0, 0);
+      worker.begin('t1');
+      main();
+      await waitFor(() => (workers()[0]?.state === 'running' ? true : undefined));
+      expect(workers()[0]).toMatchObject({ worker: 0, test: { id: 't1', retry: 0 } });
+    });
   });
 });

@@ -720,7 +720,9 @@ Those four are its lane's (`parallelIndex`), which the session keeps as it stand
 (`@piwitests/core/live-lane`, `RunSessions.hear`): what a worker says (`run-attach`, `test-begin`, a Pause, `waiting`,
 `stopped`, `running`, `test-end`, its connection closing) and the run's `run-end` are lane events, and a worker reads
 its lane only while it is the lane's worker. The worker Playwright starts in the lane again takes it between tests; a
-Pause sent between two tests waits for the next one. The clients receive the state ready and work none of it out.
+Pause sent between two tests waits for the next one. A run that starts under the ref while the session of the one
+before lingers (its process connecting, or a worker before it) starts its lanes from nothing heard. The clients receive
+the state ready and work none of it out.
 
 A connection naming the index of a worker connected now is closed: another process the run's environment reached (a
 test running Playwright itself) takes no worker's place.

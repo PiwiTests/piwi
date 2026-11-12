@@ -836,6 +836,7 @@ export class RunSessions {
       return () => {};
     }
     if (session.terminal && begin.runner === true) session.runner = true;
+    this.anotherRun(session);
     session.main = socket;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -887,6 +888,17 @@ export class RunSessions {
     };
   }
 
+  /**
+   * A run's process, or a worker while the session lingers, reaches a session whose run's process connected before
+   * and left: that run is over, and the run under its ref that starts holds lanes of its own, from nothing heard
+   * (Playwright counts a run's workers from 0), and no progress until its process says it.
+   */
+  private anotherRun(session: Session): void {
+    if (session.progress === null || (session.main && !session.main.destroyed)) return;
+    session.laneStates.clear();
+    session.progress = null;
+  }
+
   /** The run ends once `SESSION_LINGER_MS` passed with no worker and no run process connected. */
   private lingerOn(session: Session): void {
     if (session.linger) clearTimeout(session.linger);
@@ -913,6 +925,7 @@ export class RunSessions {
     // A run its own process announced first learns from its workers that an editor's test runner started it.
     if (session.terminal && attach.runner === true) session.runner = true;
     session.workersSeen = true;
+    if (session.linger) this.anotherRun(session);
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     const own = session;
