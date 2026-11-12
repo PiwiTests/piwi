@@ -6,11 +6,13 @@
  * stand-in Playwright CLI: the arguments it gets, without a shell, in the run's folder, and why one that stops at once
  * did not start.
  */
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import type * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import {
@@ -513,14 +515,18 @@ describe('the trace’s path', () => {
 
 describe('the launcher', () => {
   let project = '';
+  /** The temporary folder the launcher keeps each viewer's error output in. */
+  let temp = '';
 
   /**
    * A project with a stand-in `@playwright/test` whose CLI writes its arguments, folder and environment beside itself,
-   * then stays up a moment as a viewer does; or, for a trace whose name holds `fail`, says why on its error output and
-   * stops.
+   * then stays up a moment as a viewer does, writing on its error output as it starts and before it stops; or, for a
+   * trace whose name holds `fail`, says why on its error output and stops. For one whose name holds `orphan`, it writes
+   * on its error output once more after its parent is gone, then says it still runs (`alive`).
    */
   beforeAll(() => {
-    project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-viewer-')));
+    project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-project-')));
+    temp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-temp-')));
     const pkg = path.join(project, 'node_modules', '@playwright', 'test');
     fs.mkdirSync(pkg, { recursive: true });
     fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1' }));
@@ -537,18 +543,28 @@ fs.writeFileSync(
   path.join(__dirname, 'heard.json'),
   JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), env: process.env }),
 );
-setTimeout(() => {}, 1500);
+process.stderr.write('Listening\\n');
+if (trace.includes('orphan')) {
+  setTimeout(() => {
+    process.stderr.write('Still here\\n');
+    setTimeout(() => fs.writeFileSync(path.join(__dirname, 'alive'), 'yes'), 200);
+  }, 1500);
+} else {
+  setTimeout(() => process.stderr.write('Closing\\n'), 1000);
+  setTimeout(() => {}, 1500);
+}
 `,
     );
   });
 
   afterAll(() => {
     fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(temp, { recursive: true, force: true });
   });
 
   test('runs show-trace of the project’s own Playwright on the trace, in the run’s folder, without a shell', async () => {
     const trace = path.join(project, 'test-results', '$(touch pwned) "a b"', 'x.json');
-    const started = await startTraceViewer({ folder: project, trace }, 300);
+    const started = await startTraceViewer({ folder: project, trace }, { startMs: 300, tempDir: temp });
     expect(started.ok).toBe(true);
     const heard = JSON.parse(
       fs.readFileSync(path.join(project, 'node_modules', '@playwright', 'test', 'heard.json'), 'utf8'),
@@ -588,7 +604,10 @@ setTimeout(() => {}, 1500);
     Object.assign(process.env, host);
     let started: TraceViewerStarted;
     try {
-      started = await startTraceViewer({ folder: project, trace: path.join(project, 'env.json') }, 300);
+      started = await startTraceViewer(
+        { folder: project, trace: path.join(project, 'env.json') },
+        { startMs: 300, tempDir: temp },
+      );
     } finally {
       for (const name of Object.keys(host)) {
         if (before[name] === undefined) delete process.env[name];
@@ -625,13 +644,81 @@ setTimeout(() => {}, 1500);
   });
 
   test('says why a viewer that stops at once did not start, and that Playwright is missing', async () => {
-    expect(await startTraceViewer({ folder: project, trace: path.join(project, 'fail.json') }, 3000)).toEqual({
+    expect(
+      await startTraceViewer(
+        { folder: project, trace: path.join(project, 'fail.json') },
+        { startMs: 3000, tempDir: temp },
+      ),
+    ).toEqual({
       ok: false,
       reason: "browserType.launch: Executable doesn't exist at /x/chrome",
     });
-    expect(await startTraceViewer({ folder: root, trace: path.join(root, 'x.json') }, 300)).toEqual({
+    // Its error output is gone with it.
+    expect(fs.readdirSync(temp)).toEqual([]);
+    expect(
+      await startTraceViewer({ folder: root, trace: path.join(root, 'x.json') }, { startMs: 300, tempDir: temp }),
+    ).toEqual({
       ok: false,
       reason: 'Playwright is not installed in the folder the run runs in',
     });
   });
+
+  test('keeps a running viewer’s error output in a file of a folder of its own, gone once the viewer stops', async () => {
+    const started = await startTraceViewer(
+      { folder: project, trace: path.join(project, 'kept.json') },
+      { startMs: 300, tempDir: temp },
+    );
+    expect(started.ok).toBe(true);
+    const [folder, ...others] = fs.readdirSync(temp);
+    expect(others).toEqual([]);
+    const kept = path.join(temp, folder!);
+    if (process.platform !== 'win32') expect(fs.statSync(kept).mode & 0o077).toBe(0);
+    const [log] = fs.readdirSync(kept);
+    expect(
+      await waitFor(() => (fs.readFileSync(path.join(kept, log!), 'utf8') === 'Listening\n' ? true : undefined), 2000),
+    ).toBe(true);
+    if (started.ok) await started.closed;
+    expect(fs.readdirSync(temp)).toEqual([]);
+  });
+
+  test(
+    'lets a viewer that writes on its error output outlive the host that started it',
+    { timeout: 15_000 },
+    async () => {
+      // A host of its own, which starts the viewer and ends once it started.
+      const host = path.join(project, 'host.cjs');
+      await build({
+        stdin: {
+          contents: `import { startTraceViewer } from './trace-viewer';
+const [folder, trace, tempDir] = process.argv.slice(2);
+void startTraceViewer({ folder, trace }, { startMs: 200, tempDir }).then((started) => {
+  process.stdout.write(JSON.stringify({ ok: started.ok }));
+});
+`,
+          resolveDir: path.join(__dirname, '..', 'src'),
+          sourcefile: 'host.ts',
+          loader: 'ts',
+        },
+        bundle: true,
+        platform: 'node',
+        target: 'node20',
+        format: 'cjs',
+        outfile: host,
+        logLevel: 'silent',
+      });
+      const logs = fs.realpathSync.native(fs.mkdtempSync(path.join(project, 'logs-')));
+      const alive = path.join(project, 'node_modules', '@playwright', 'test', 'alive');
+      const ran = spawnSync(process.execPath, [host, project, path.join(project, 'orphan.json'), logs], {
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect({ status: ran.status, stdout: ran.stdout }).toEqual({ status: 0, stdout: '{"ok":true}' });
+      // The host is gone: the viewer writes on its error output, and still runs after.
+      expect(await waitFor(() => (fs.existsSync(alive) ? true : undefined), 5000)).toBe(true);
+      // What it wrote is in the file the host left behind.
+      const [folder] = fs.readdirSync(logs);
+      const [log] = fs.readdirSync(path.join(logs, folder!));
+      expect(fs.readFileSync(path.join(logs, folder!, log!), 'utf8')).toBe('Listening\nStill here\n');
+    },
+  );
 });

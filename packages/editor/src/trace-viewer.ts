@@ -14,7 +14,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
-import type { Socket } from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { projectNode, projectNodeEnv } from './recorder/node.js';
 import { resolvePlaywrightCli } from './recorder/playwright.js';
@@ -22,7 +22,7 @@ import { resolvePlaywrightCli } from './recorder/playwright.js';
 /** How long a viewer that has not stopped is waited for before it counts as started. */
 export const TRACE_VIEWER_START_MS = 2_000;
 
-/** The most of the viewer's error output read while it starts, in characters. */
+/** The most of the viewer's error output read for why it did not start, in bytes. */
 const MAX_START_OUTPUT = 4_000;
 
 /** The longest reason a viewer that did not start gives, in characters. */
@@ -184,56 +184,95 @@ function reasonOf(output: string, code: number | null, signal: NodeJS.Signals | 
   return code === null ? `it was stopped (${signal ?? 'no signal'})` : `it stopped with exit code ${code}`;
 }
 
+/** How `startTraceViewer` starts a viewer. */
+export interface TraceViewerStart {
+  /** How long a viewer that has not stopped is waited for before it counts as started: `TRACE_VIEWER_START_MS`. */
+  startMs?: number;
+  /** Where the folder of the viewer's error output is made: the system's temporary folder. */
+  tempDir?: string;
+}
+
+/** The start of the viewer's error output: at most `MAX_START_OUTPUT` bytes of `file`, empty when it cannot be read. */
+async function startOutput(file: string): Promise<string> {
+  let handle: fs.promises.FileHandle | undefined;
+  try {
+    handle = await fs.promises.open(file, 'r');
+    const buffer = Buffer.alloc(MAX_START_OUTPUT);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } catch {
+    return '';
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
  * Runs `show-trace` on `launch.trace` from the Playwright installed in `launch.folder`, with the project's Node, and
  * waits `startMs` for it to stop: one that does stops at once without a window (Playwright missing there, its browser
  * not installed), and says why. Detached and let go after that: its window outlives the service.
+ *
+ * The viewer's error output goes to a file, `stderr.log` in a new folder only this user reads (`piwi-trace-viewer-*` in
+ * `tempDir`, the system's temporary folder), never to a pipe of the host's, which ends with the host. The file is read
+ * for why a viewer that stops at once did not start, and removed with its folder once the viewer stops while the host
+ * runs; a viewer still open when the host exits leaves its folder in the temporary folder.
  */
 export async function startTraceViewer(
   launch: TraceViewerLaunch,
-  startMs = TRACE_VIEWER_START_MS,
+  options: TraceViewerStart = {},
 ): Promise<TraceViewerStarted> {
   const cli = resolvePlaywrightCli(launch.folder);
   if (!cli) return { ok: false, reason: 'Playwright is not installed in the folder the run runs in' };
   const node = projectNode();
+  let folder: string;
+  try {
+    // `mkdtemp` makes a new folder that only this user reads.
+    folder = await fs.promises.mkdtemp(path.join(options.tempDir ?? os.tmpdir(), 'piwi-trace-viewer-'));
+  } catch (error) {
+    return { ok: false, reason: reasonOf(messageOf(error), null, null) };
+  }
+  const remove = () => fs.promises.rm(folder, { recursive: true, force: true }).catch(() => {});
+  const log = path.join(folder, 'stderr.log');
+  let output: fs.promises.FileHandle | undefined;
   let child: ChildProcess;
   try {
+    output = await fs.promises.open(log, 'wx', 0o600);
     child = spawn(node.execPath, [cli, 'show-trace', launch.trace], {
       cwd: launch.folder,
       env: projectNodeEnv(node, viewerEnv()),
       detached: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'ignore', output.fd],
       windowsHide: true,
     });
   } catch (error) {
-    return { ok: false, reason: reasonOf(error instanceof Error ? error.message : String(error), null, null) };
+    await output?.close().catch(() => {});
+    await remove();
+    return { ok: false, reason: reasonOf(messageOf(error), null, null) };
   }
-  let output = '';
-  const stderr = child.stderr!;
-  stderr.setEncoding('utf8');
-  stderr.on('data', (chunk: string) => {
-    if (output.length < MAX_START_OUTPUT) output += chunk;
-  });
-  stderr.on('error', () => {});
-  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null; error?: Error }>((resolve) => {
+  // The viewer holds the file open itself.
+  await output.close().catch(() => {});
+  const stopped = new Promise<{ code: number | null; signal: NodeJS.Signals | null; error?: Error }>((resolve) => {
     child.once('error', (error) => resolve({ code: null, signal: null, error }));
     child.once('exit', (code, signal) => resolve({ code, signal }));
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const started = await Promise.race([
-    closed,
+    stopped,
     new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), startMs);
+      timer = setTimeout(() => resolve(null), options.startMs ?? TRACE_VIEWER_START_MS);
     }),
   ]);
   clearTimeout(timer);
-  if (started?.error) return { ok: false, reason: reasonOf(started.error.message, null, null) };
-  if (started && started.code !== 0) return { ok: false, reason: reasonOf(output, started.code, started.signal) };
-  // Running: what it writes from now on is read and dropped, and nothing of it holds the service open.
-  output = '';
-  stderr.removeAllListeners('data');
-  stderr.resume();
-  (stderr as Socket).unref?.();
+  if (started && (started.error || started.code !== 0)) {
+    const reason = started.error
+      ? reasonOf(started.error.message, null, null)
+      : reasonOf(await startOutput(log), started.code, started.signal);
+    await remove();
+    return { ok: false, reason };
+  }
+  // Running: nothing of it holds the service open.
   child.unref();
-  return { ok: true, closed: closed.then(() => undefined) };
+  return { ok: true, closed: stopped.then(remove) };
 }

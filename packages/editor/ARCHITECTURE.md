@@ -1076,9 +1076,11 @@ app's server; without one, the hub leaves `trace` out of its features and the re
   folder, detached so its window outlives the service. Its environment holds the host's variables a window and
   Playwright need alone (`viewerEnv`: the user's home, folders and temp, the locale, the display, its session bus,
   `PLAYWRIGHT_BROWSERS_PATH`, the proxy, Windows' own, in either case) and `FORCE_COLOR=0`: never a `PIWI_*` variable,
-  the database's or storage's, `NODE_OPTIONS`, `NODE_ENV` or `NODE_COMPILE_CACHE`. A viewer that stops within 2 s (`TRACE_VIEWER_START_MS`)
-  did not start: its error output's first line says why (Playwright's browser not installed, no display). Once it
-  runs, its error output is read and dropped, and nothing of it holds the service open.
+  the database's or storage's, `NODE_OPTIONS`, `NODE_ENV` or `NODE_COMPILE_CACHE`. Its error output goes to a file,
+  `stderr.log` in a new folder only this user reads (`piwi-trace-viewer-*` in the temporary folder), never to a pipe
+  the host holds, which would end with the host. A viewer that stops within 2 s (`TRACE_VIEWER_START_MS`) did not
+  start: that file's first line says why (Playwright's browser not installed). Once it runs, nothing of it holds the
+  service open; its folder goes once it stops while the host runs, and one the host did not outlive stays there.
 - **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its
   folders taken out (`withoutPaths`). No session, notice, hub message or answer carries it
   (`tests/run-trace.test.ts`).
