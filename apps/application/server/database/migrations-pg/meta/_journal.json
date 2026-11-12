@@ -1205,6 +1205,13 @@
       "when": 1794439619442,
       "tag": "0171_minor_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1794465980280,
+      "tag": "0172_hard_moira_mactaggert",
+      "breakpoints": true
     }
   ]
 }
