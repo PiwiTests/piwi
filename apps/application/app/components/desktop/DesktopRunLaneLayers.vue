@@ -7,11 +7,16 @@
  * **Text** (the page's ARIA text, its secret fields hidden, which **Show the page's text** asks for, then followed,
  * **Take it again** and **Hide the text**) and **Filmstrip** (an image for each call that ended, each a button that
  * shows it larger with its call's title). Everything the hub sends is shown as text, and an image only as a `data:`
- * JPEG whose base64 is checked again.
+ * JPEG whose base64 `takeLaneLayer` checked again, its URL made once for each image.
  */
-import { isLaneThumbData } from '@piwitests/core/live-layers';
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { callWait, englishSeconds, laneEventSaid, laneTextSource } from '@piwitests/run-model/layers';
+import {
+  callWait,
+  englishSeconds,
+  laneEventSaid,
+  laneTextSource,
+  type LaneFilmEntry,
+} from '@piwitests/run-model/layers';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import { desktopSay } from '~/utils/desktop-run-view';
 
@@ -35,14 +40,19 @@ const events = computed(() =>
     ...laneEventSaid(entry.event, englishRunSpeaker, englishSeconds),
   })),
 );
-const EVENT_TONE = {
-  error: 'text-error',
-  warning: 'text-warning',
-  waiting: 'text-warning',
-  info: 'text-info',
-} as const;
 
-const film = computed(() => (layers.value?.film ?? []).filter((entry) => isLaneThumbData(entry.data)));
+/** The filmstrip, the same list until an image of it changes. */
+const film = computed(() => layers.value?.film ?? []);
+/** Each image's `data:` URL, made once for it. */
+const filmUrls = new WeakMap<LaneFilmEntry, string>();
+function filmUrl(entry: LaneFilmEntry): string {
+  let url = filmUrls.get(entry);
+  if (!url) {
+    url = `data:image/jpeg;base64,${entry.data}`;
+    filmUrls.set(entry, url);
+  }
+  return url;
+}
 /** The image of the filmstrip shown larger, by its call's id. */
 const chosen = ref<string | null>(null);
 const shown = computed(() => film.value.find((entry) => entry.thumb.call === chosen.value) ?? null);
@@ -72,11 +82,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
             {{ ' ' }}<span class="font-mono text-muted">{{ wait.place }}</span>
           </template>
         </p>
-        <p
-          class="text-xs font-semibold"
-          :class="wait.tone === 'failed' ? 'text-error' : wait.tone === 'passed' ? 'text-success' : 'text-info'"
-          data-testid="desktop-lane-call-state"
-        >
+        <p class="text-xs" :class="getStatusTextClass(wait.tone)" data-testid="desktop-lane-call-state">
           {{ wait.state }}<template v-if="wait.target"> · {{ wait.target }}</template>
         </p>
         <p v-if="wait.error" class="text-xs text-error break-words">{{ wait.error }}</p>
@@ -95,10 +101,10 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
         class="m-0 grid max-h-44 gap-0.5 overflow-auto p-0 text-xs list-none"
         data-testid="desktop-lane-events"
       >
-        <li v-for="event in events" :key="event.key" class="break-words">
-          <span class="font-semibold" :class="EVENT_TONE[event.tone]">{{ event.label }}</span>
+        <li v-for="event in events" :key="event.key" class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-2">
+          <span class="text-muted break-words">{{ event.label }}</span>
           <template v-if="event.text">
-            {{ ' ' }}<span class="font-mono text-[11px]">{{ event.text }}</span>
+            {{ ' ' }}<span class="font-mono text-[11px] text-highlighted break-words">{{ event.text }}</span>
           </template>
         </li>
       </ul>
@@ -168,7 +174,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
           <figure class="m-0 overflow-hidden rounded-md border border-default bg-muted">
             <img
               class="block w-full h-auto"
-              :src="`data:image/jpeg;base64,${shown.data}`"
+              :src="filmUrl(shown)"
               :alt="desktopSay('runs_filmstripAlt', { call: shown.thumb.title })"
             />
             <figcaption class="px-2 py-1 font-mono text-xs break-words">{{ shown.thumb.title }}</figcaption>
@@ -179,19 +185,19 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
             </UButton>
           </div>
         </template>
-        <ul class="m-0 flex gap-1 overflow-x-auto p-0 pb-1 list-none" data-testid="desktop-lane-film">
+        <ul class="m-0 flex gap-1 overflow-x-auto p-1 list-none" data-testid="desktop-lane-film">
           <li v-for="entry in film" :key="entry.thumb.call" class="shrink-0">
             <button
               type="button"
-              class="block rounded border-2 bg-default p-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-              :class="entry === shown ? 'border-primary' : 'border-default'"
+              class="block rounded border border-default bg-default p-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              :class="entry === shown ? CURRENT_ITEM_RING_CLASS : ''"
               :title="entry.thumb.title"
               :aria-pressed="entry === shown"
               @click="chosen = entry === shown ? null : entry.thumb.call"
             >
               <img
                 class="block w-20 h-auto"
-                :src="`data:image/jpeg;base64,${entry.data}`"
+                :src="filmUrl(entry)"
                 :alt="desktopSay('runs_filmstripAlt', { call: entry.thumb.title })"
               />
             </button>
