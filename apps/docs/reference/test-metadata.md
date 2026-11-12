@@ -168,9 +168,11 @@ A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it 
 
 A pattern is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor
 it with `^` and `$` and use letters, digits, character classes and quantifiers only, with no groups or `|`:
-`^SHOP-T[0-9]+$` matches `SHOP-T123` and not `SHOP-1234`. A pattern that breaks that rule, does not compile, or matches
-an empty tag (and so every tag) is refused. Leave a field empty to turn it off; both are off by default, and neither
-needs a tracker connection. Saving needs the same role as the rest of the project's settings.
+`^SHOP-T[0-9]+$` matches `SHOP-T123` and not `SHOP-1234`. An issue key pattern must match the whole tag as an issue key
+of the tracker binding's project, such as `SHOP-1234`, so `^bug-SHOP-[0-9]+$` or a lower-case pattern links nothing.
+A pattern that breaks that rule, does not compile, or matches an empty tag (and so every tag) is refused. Leave a
+field empty to turn it off; both are off by default, and neither needs a tracker connection. Saving needs the same
+role as the rest of the project's settings.
 
 When both patterns are on, the section lists the tags of the project's last complete run (the whole suite, finished;
 partial, lab and private runs are skipped) that both patterns match, each with a test that carries it. Piwi would read
@@ -268,10 +270,10 @@ test counts by its last attempt, so one whose retry passed names nothing:
   prefix, a URL must point at the connection's site, and Jira must return the issue under that key and project, so an
   issue moved to another project is dropped. Anything else is dropped, not stored as a plain link. A binding without a
   Jira project links nothing.
-- **One lookup per run**, of at most 50 keys, the ones the most tests name first and the ones Jira did not return
-  before last, within 10 seconds for the whole step. That memory lasts a day and is kept per server process, so a
-  restart clears it. With Jira down or slow, nothing is linked, and the next failing run that names the issue tries
-  again.
+- **One lookup per run**, of at most 50 keys, the ones the most tests name first and, last, the ones Jira did not
+  return and the ones only tags name that the project's issue types dropped, within 10 seconds for the whole step.
+  That memory lasts a day and is kept per server process, so a restart clears it. With Jira down or slow, nothing is
+  linked, and the next failing run that names the issue tries again.
 - **At most 10 per cluster**, the first linked staying; links pinned by hand or filed by Piwi do not count. The other
   keys of the bound project its tests named in that run, neither linked nor removed, show as *and N more named by its
   tests* at the end of its links. A cluster already linking a key, by any route, gets no second link to it.
