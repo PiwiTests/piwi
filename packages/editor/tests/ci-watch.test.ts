@@ -1,7 +1,13 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { LIVE_HEARTBEAT, LIVE_STREAM_TYPE, encodeLiveMessage } from '@piwitests/core/live-view';
+import {
+  LIVE_HEARTBEAT,
+  LIVE_STREAM_TYPE,
+  encodeLiveMessage,
+  encodeLiveViewerMessage,
+  type LiveViewerMessage,
+} from '@piwitests/core/live-view';
 import { CI_WATCH_SIZE, CiWatch, type CiWatchTarget } from '../src/ci-watch';
 import { PiwiClient } from '../src/piwi-client';
 import type { CiFrame, CiLayer, CiSession } from '../src/protocol';
@@ -82,7 +88,7 @@ function stubInstance() {
       url,
       headers: req.headers,
       write: async (header, data) => {
-        res.write(encodeLiveMessage(header, data ?? null));
+        res.write(data ? encodeLiveMessage(header, data) : encodeLiveViewerMessage(header as LiveViewerMessage));
         await pause();
       },
       heartbeat: () => res.write(LIVE_HEARTBEAT),

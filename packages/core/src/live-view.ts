@@ -898,7 +898,7 @@ export type LiveViewerMessage =
   | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
   /**
    * The focused worker's page as text, as the watch asked for `text`, or why none goes: on the wire, the text's fields
-   * in the header and its text the data (`encodeLiveViewerMessage`); a reader takes a text in the header too.
+   * in the header and its text the data (`encodeLiveViewerMessage`).
    */
   | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
   | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
@@ -916,7 +916,7 @@ export type LiveViewerMessage =
  * The most bytes of a page's text a watch's message carries, in UTF-8: a frame's, which every reader of a watch takes
  * as its data. A longer text is cut where a character ends, and says so (`cut`).
  */
-export const MAX_LIVE_TEXT_DATA = MAX_LIVE_FRAME;
+const MAX_LIVE_TEXT_DATA = MAX_LIVE_FRAME;
 
 /**
  * The live message of a watch's message: its image, or its page's text in UTF-8 (`MAX_LIVE_TEXT_DATA` bytes at most),
@@ -997,10 +997,8 @@ export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage |
       if (typeof value.refused === 'string' && value.refused.trim()) {
         return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
       }
-      if (!isObject(value.text)) return null;
-      const text = readLaneText(
-        message.data ? { ...value.text, text: new TextDecoder().decode(message.data) } : value.text,
-      );
+      if (!isObject(value.text) || !message.data) return null;
+      const text = readLaneText({ ...value.text, text: new TextDecoder().decode(message.data) });
       return text ? { type: 'text', ...id, text, test } : null;
     }
     case 'thumb': {
