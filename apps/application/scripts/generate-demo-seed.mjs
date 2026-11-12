@@ -3588,8 +3588,8 @@ const ENTITY_LINKS = [
 // in Jira, so the cluster's links end with *and 1 more named by its tests*. DEMO-61 is Done, so the known issue is
 // DEMO-57, the oldest one still open. The PayPal and credit card checkouts name DEMO-52 and DEMO-53 in tags the
 // project's issue key pattern matches (`demoTags`) into cluster 1: DEMO-52 is a Bug, the binding's issue type, so it
-// is linked with the tag as its source, and DEMO-53 is a Task, so cluster 1 only counts it. No connection row backs
-// them, like DEMO-42.
+// is linked with the tag as its source, and DEMO-53 is a Task, so cluster 1 neither links nor counts it, since keys the
+// type filter drops stay out of the count. No connection row backs them, like DEMO-42.
 {
   const demoIssue = (key) => DEMO_JIRA_ISSUES.find((issue) => issue.key === key);
   const seedDeclaredLink = ({ clusterId, key, origin, title, source, offset }) => {
@@ -3638,7 +3638,6 @@ const ENTITY_LINKS = [
     source: { tag: '@DEMO-52' },
     offset: 0,
   });
-  FAILURE_CLUSTERS.find((c) => c.id === 1).declared_issues_more = 1;
 }
 
 // ── Users, groups & role bindings ───────────────────────────────────────────
