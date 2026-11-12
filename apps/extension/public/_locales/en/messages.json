@@ -7809,6 +7809,292 @@
       }
     }
   },
+  "runs_layerCalls": {
+    "message": "Why it waits",
+    "description": "Runs window and the desktop app's Local runs tray, under a watched lane's page: the heading over the call the test runs and what Playwright waits for."
+  },
+  "runs_callNone": {
+    "message": "No call yet: the call the test runs shows here, with what Playwright waits for.",
+    "description": "Runs window, under runs_layerCalls while no call was heard yet."
+  },
+  "runs_callRunning": {
+    "message": "Running for $time$",
+    "description": "Runs window, under runs_layerCalls: how long the call has run so far. $time$ is a number of seconds (12s).",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callPassed": {
+    "message": "Done in $time$",
+    "description": "Runs window, under runs_layerCalls: the call ended well, and how long it took. $time$ is a number of seconds.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callFailed": {
+    "message": "Failed after $time$",
+    "description": "Runs window, under runs_layerCalls: the call failed, and how long it ran. $time$ is a number of seconds.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_targetNone": {
+    "message": "No element matches its locator yet",
+    "description": "Runs window, under runs_layerCalls: the locator of the call that waits matches nothing so far."
+  },
+  "runs_targetMatches_one": {
+    "message": "$count$ element matches its locator",
+    "description": "Runs window, under runs_layerCalls: how many elements the locator of the call that waits matches.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetMatches_other": {
+    "message": "$count$ elements match its locator",
+    "description": "Runs window, under runs_layerCalls: how many elements the locator of the call that waits matches.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetDisabled": {
+    "message": "Its element is not enabled",
+    "description": "Runs window, after runs_targetMatches: the element the call waits on is disabled, which is why a click waits."
+  },
+  "runs_layerEvents": {
+    "message": "Events",
+    "description": "Runs window, under a watched lane's page: the heading over what the page and its requests said."
+  },
+  "runs_eventsNone": {
+    "message": "Nothing yet: console errors, failed or slow requests and the backend’s errors show here.",
+    "description": "Runs window, under runs_layerEvents while no event came."
+  },
+  "runs_eventConsole": {
+    "message": "Console error",
+    "description": "Runs window, a line of runs_layerEvents: the page logged an error in its console. Short label before the error's text."
+  },
+  "runs_eventPageError": {
+    "message": "Uncaught error",
+    "description": "Runs window, a line of runs_layerEvents: the page threw an error nothing caught. Short label."
+  },
+  "runs_eventFailed": {
+    "message": "Failed request",
+    "description": "Runs window, a line of runs_layerEvents: a request of the page failed or was answered with an error status. Short label."
+  },
+  "runs_eventPending": {
+    "message": "Pending request",
+    "description": "Runs window, a line of runs_layerEvents: a request of the page still waits for its answer. Short label."
+  },
+  "runs_eventSlow": {
+    "message": "Slow request",
+    "description": "Runs window, a line of runs_layerEvents: a request that waited long was answered at last. Short label."
+  },
+  "runs_eventBackendError": {
+    "message": "Backend error",
+    "description": "Runs window, a line of runs_layerEvents: the server under test logged an error while it answered a request. Short label."
+  },
+  "runs_eventBackendWarning": {
+    "message": "Backend warning",
+    "description": "Runs window, a line of runs_layerEvents: the server under test logged a warning while it answered a request. Short label."
+  },
+  "runs_eventApi": {
+    "message": "API call",
+    "description": "Runs window, a line of runs_layerEvents: the test called its backend through Playwright's API request context. Short label."
+  },
+  "runs_eventDropped_one": {
+    "message": "$count$ more event left out",
+    "description": "Runs window, a line of runs_layerEvents: how many events the worker did not send, too many coming at once.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_eventDropped_other": {
+    "message": "$count$ more events left out",
+    "description": "Runs window, a line of runs_layerEvents: how many events the worker did not send, too many coming at once.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_requestAnswered": {
+    "message": "$request$ answered $status$",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address (POST /api/checkout), $status$ an HTTP status.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      }
+    }
+  },
+  "runs_requestAnsweredIn": {
+    "message": "$request$ answered $status$ in $time$",
+    "description": "Runs window, a line of runs_layerEvents for an API call: $request$ is a method and an address, $status$ an HTTP status, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "time": {
+        "content": "$3",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestAnsweredAfter": {
+    "message": "$request$ answered after $time$",
+    "description": "Runs window, a line of runs_layerEvents for a slow request: $request$ is a method and an address, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestPending": {
+    "message": "$request$ pending for $time$",
+    "description": "Runs window, a line of runs_layerEvents for a request still waiting: $request$ is a method and an address, $time$ a number of seconds.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestFailed": {
+    "message": "$request$ failed: $failure$",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address, $failure$ the browser's reason, in English.",
+    "placeholders": {
+      "failure": {
+        "content": "$1",
+        "example": "net::ERR_CONNECTION_REFUSED"
+      },
+      "request": {
+        "content": "$2",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestUnanswered": {
+    "message": "$request$ got no answer",
+    "description": "Runs window, a line of runs_layerEvents: $request$ is a method and an address.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestLogged": {
+    "message": "$request$: $text$",
+    "description": "Runs window, a line of runs_layerEvents for a backend error or warning: $request$ is a method and an address, $text$ what the backend logged.",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "text": {
+        "content": "$2",
+        "example": "NullReferenceException in CartService"
+      }
+    }
+  },
+  "runs_layerText": {
+    "message": "Text",
+    "description": "Runs window, under a watched lane's page: the heading over the page's text (its ARIA snapshot)."
+  },
+  "runs_textShow": {
+    "message": "Show the page’s text",
+    "description": "Runs window, a button under runs_layerText: takes the page's text now and follows it."
+  },
+  "runs_textShowTitle": {
+    "message": "Show the page as roles and names, its secret fields hidden: taken now, then followed as the test’s trace writes it",
+    "description": "Runs window, the tooltip of runs_textShow."
+  },
+  "runs_textAgain": {
+    "message": "Take it again",
+    "description": "Runs window, a button under runs_layerText once the text shows: takes the page's text again now."
+  },
+  "runs_textHide": {
+    "message": "Hide the text",
+    "description": "Runs window, a button under runs_layerText once the text shows: stops following the page's text."
+  },
+  "runs_textWaiting": {
+    "message": "Reading the page…",
+    "description": "Runs window, under runs_layerText while the page's text is on its way."
+  },
+  "runs_textTrace": {
+    "message": "From the test’s trace",
+    "description": "Runs window, over the page's text: it came from the ARIA snapshots the test's trace writes."
+  },
+  "runs_textSnapshot": {
+    "message": "Taken as you asked",
+    "description": "Runs window, over the page's text: it was read from the page when the person asked."
+  },
+  "runs_textCut": {
+    "message": "Cut short: the page’s text is longer",
+    "description": "Runs window, after runs_textTrace or runs_textSnapshot: the page's text was too long and was cut."
+  },
+  "runs_textLabel": {
+    "message": "The page’s text, its secret fields hidden",
+    "description": "Runs window, the accessible name of the block that holds the page's text."
+  },
+  "runs_layerFilmstrip": {
+    "message": "Filmstrip",
+    "description": "Runs window, under a watched lane's page: the heading over one small image of the page for each call of the test."
+  },
+  "runs_filmstripNone": {
+    "message": "Each call’s page shows here once the call ends.",
+    "description": "Runs window, under runs_layerFilmstrip while no image came."
+  },
+  "runs_filmstripAlt": {
+    "message": "The page after $call$",
+    "description": "Runs window, the text of an image of the filmstrip: $call$ is the call's title, as Playwright names it.",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_filmstripClose": {
+    "message": "Close",
+    "description": "Runs window, the button that closes the larger image of the filmstrip and goes back to the strip."
+  },
   "runs_progressEndedAtStop_one": {
     "message": "$count$ ended at a stop",
     "description": "Runs window, after runs_progress, and the desktop app’s Local runs tray, after a run’s outcome: how many of the run’s tests were ended at a stop (End the test), which are skipped and marked so.",
@@ -8518,6 +8804,58 @@
   "runs_copyRunPageShort": {
     "message": "Copy link",
     "description": "Runs window, button beside the run's number: copies the address of its page on the instance."
+  },
+  "runs_ciHeading": {
+    "message": "CI runs in progress",
+    "description": "Runs window, heading of the list of the CI runs in progress of the projects the extension maps, read from the connected instance."
+  },
+  "runs_ciRun": {
+    "message": "CI run #$id$",
+    "description": "Runs window, a CI run’s name in the list of CI runs in progress: its number on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "on $branch$",
+    "description": "Runs window, under a CI run’s name: the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, on $branch$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed: its project, then the branch it runs on.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "description": "Runs window, under a CI run’s name when CI runs of several projects are listed and the run names no branch: its project.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
+    "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
   },
   "runs_pageAtStop": {
     "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",

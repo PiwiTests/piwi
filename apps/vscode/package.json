@@ -62,6 +62,11 @@
         {
           "id": "piwi.failures",
           "name": "Failures"
+        },
+        {
+          "id": "piwi.ciRuns",
+          "name": "CI Runs",
+          "when": "piwi.ciRuns"
         }
       ]
     },

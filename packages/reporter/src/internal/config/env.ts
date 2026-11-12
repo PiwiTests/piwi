@@ -258,6 +258,13 @@ export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
  */
 export const PIWI_SHARE_LIVE_ENV = 'PIWI_SHARE_LIVE';
 
+/**
+ * The terminal's own integrations of a run outside CI (`internal/support/terminal.ts`): `off` turns off the link around
+ * the run's page and the run's progress in the terminal's tab or taskbar, `on` shows the progress in any terminal.
+ * Not an option.
+ */
+export const PIWI_TERMINAL_PROGRESS_ENV = 'PIWI_TERMINAL_PROGRESS';
+
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;

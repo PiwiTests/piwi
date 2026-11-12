@@ -27,6 +27,9 @@ const login: TestSearchSubject = {
   priority: 'high',
   feature: 'sign-in',
   externalId: 'TC-12',
+  states: ['stuck'],
+  worker: 2,
+  shard: 1,
 };
 const cart: TestSearchSubject = {
   title: 'cart shows items',
@@ -40,6 +43,9 @@ const cart: TestSearchSubject = {
   priority: null,
   feature: 'checkout',
   externalId: 'TC-7',
+  states: [],
+  worker: 1,
+  shard: 2,
 };
 const home: TestSearchSubject = {
   title: 'homepage loads',
@@ -163,6 +169,33 @@ describe('compileTestSearch', () => {
     expect(titles('-tag:smoke browser:chromium')).toEqual(['homepage loads']);
   });
 
+  test('is:stuck finds the running attempts marked stuck, and -is:stuck the rest', () => {
+    expect(titles('is:stuck')).toEqual(['login via header']);
+    expect(titles('IS:STUCK')).toEqual(['login via header']);
+    expect(titles('-is:stuck')).toEqual(['cart shows items', 'homepage loads']);
+    expect(titles('is:slow')).toEqual([]);
+  });
+
+  test('worker and shard match the number from 1, and repeated they widen', () => {
+    expect(titles('worker:2')).toEqual(['login via header']);
+    expect(titles('worker:02')).toEqual(['login via header']);
+    expect(titles('worker:0')).toEqual([]);
+    expect(titles('shard:2')).toEqual(['cart shows items']);
+    expect(titles('shard:1 shard:2')).toEqual(['login via header', 'cart shows items']);
+    // A test with no lane or shard is kept by an exclusion.
+    expect(titles('-worker:2')).toEqual(['cart shows items', 'homepage loads']);
+    expect(titles('worker:1 shard:2')).toEqual(['cart shows items']);
+    expect(titles('worker:1 shard:1')).toEqual([]);
+  });
+
+  test('the catalog has no is, worker or shard, and reads them as words', () => {
+    expect(parseTestSearch('is:stuck worker:2 shard:1', CATALOG_SEARCH_FIELDS).terms.map((t) => t.field)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
   test('an empty query matches everything', () => {
     expect(titles('')).toEqual(['login via header', 'cart shows items', 'homepage loads']);
   });
@@ -266,6 +299,15 @@ describe('completion', () => {
       { value: 'firefox', count: 1 },
     ]);
     expect(values.title).toBeUndefined();
+    expect(values.is).toEqual([{ value: 'stuck', count: 1 }]);
+    expect(values.worker).toEqual([
+      { value: '1', count: 1 },
+      { value: '2', count: 1 },
+    ]);
+    expect(values.shard).toEqual([
+      { value: '1', count: 1 },
+      { value: '2', count: 1 },
+    ]);
   });
 
   test('an empty term offers every qualifier of the list', () => {

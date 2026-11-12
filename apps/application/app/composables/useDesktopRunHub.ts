@@ -17,9 +17,12 @@
  * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
  * shows now: those watched that a listener shows while the window is not hidden, said again as the stream opens again.
  * Each time the window shows a lane again, its view goes up (`laneView`): a frame of an earlier view, the one kept
- * included, is the page as it last showed. A run the stream does not list as it opens (`listed`) ended meanwhile: what
- * the window kept of it goes. **Share live** asks what it sends the first time in this session of the app
- * (`shareAsks`).
+ * included, is the page as it last showed. Each `watch` of a lane asks its layers (`@piwitests/run-model/layers`): every
+ * one but the page's text, which the person asks for (`askLaneText`, which takes it now and follows it after, and
+ * again as the lane's next test begins); the layers that come are kept by lane for the test it runs (`laneLayers`, each
+ * replaced as one comes), in memory alone, until the lane is no longer watched. A run the stream does not list as it
+ * opens (`listed`) ended meanwhile: what the window kept of it goes. **Share live** asks what it sends the first time in
+ * this session of the app (`shareAsks`).
  *
  * A live run of several workers shows one at a time behind its worker tabs, kept here by run (`tabs`) and followed as
  * each of its sessions is heard (`tabsAfter`, `@piwitests/run-model/tabs`): the worker shown stays while it stands at a
@@ -27,6 +30,13 @@
  * test there (`advanceTab`) moves it to the next stopped test. The person's choice (`chooseTab`) holds until a stop is
  * answered there, or, while that worker runs and nobody watches it, until a new stop comes.
  */
+import {
+  asksLaneTextAgain,
+  laneLayersAsked,
+  noLaneLayers,
+  takeLaneLayer,
+  type LaneLayers,
+} from '@piwitests/run-model/layers';
 import { endedAtStopOf } from '@piwitests/run-model/outcome';
 import {
   parseHubMessage,
@@ -110,6 +120,15 @@ interface HubState {
   laneRefusals: Record<string, string>;
   /** How many times the window told the hub to show each lane, by `desktopLaneKey`: the view its frames belong to. */
   laneViews: Record<string, number>;
+  /**
+   * The layers of each lane the window watches, as they came (`takeLaneLayer`), by `desktopLaneKey`, once its worker's
+   * reporter sent one: of the test the lane runs, each replaced whole as a layer comes.
+   */
+  laneLayers: Record<string, LaneLayers>;
+  /** The lanes whose page's text the person asked for, by `desktopLaneKey`: the hub takes it and follows it. */
+  laneTexts: Record<string, boolean>;
+  /** The lanes whose page's text was asked and has not come yet, by `desktopLaneKey`. */
+  laneTextAsking: Record<string, boolean>;
   /** The worker tabs of each live run of several workers, by run (ref). A stream that opens again keeps them. */
   tabs: Record<string, WorkerTabs>;
 }
@@ -131,6 +150,9 @@ const state = reactive<HubState>({
   lanes: {},
   laneRefusals: {},
   laneViews: {},
+  laneLayers: {},
+  laneTexts: {},
+  laneTextAsking: {},
   tabs: {},
 });
 
@@ -161,6 +183,8 @@ const latestLaneFrames = new Map<string, { frame: Extract<DesktopLaneFrame, { da
 let lanesTold = new Map<string, { ref: string; lane: number }>();
 /** A change of the lanes the window shows waits for the end of the tick: a listener that comes back changes none. */
 let lanesQueued: Promise<Map<string, DesktopRunAnswer>> | null = null;
+/** Ends the wait for each lane's page's text `TEXT_WAIT_MS` after its latest ask, by `desktopLaneKey`. */
+const laneTextTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** The window hears whether it is hidden: it shows no lane meanwhile. */
 let hearsVisibility = false;
 const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>();
@@ -309,6 +333,16 @@ function heard(text: string): void {
     const view = state.laneViews[key] ?? 0;
     if ('data' in frame) latestLaneFrames.set(key, { frame, view });
     for (const listener of laneListeners.get(key) ?? []) listener(frame, view);
+  } else if (message.type === 'lane-layer') {
+    const { type: _type, ref, lane, ...layer } = message;
+    if (!watchesLane(ref, lane)) return;
+    const key = desktopLaneKey(ref, lane);
+    const kept = state.laneLayers[key] ?? noLaneLayers();
+    const again = !!state.laneTexts[key] && asksLaneTextAgain(kept, layer);
+    // Kept whole and replaced as a layer comes: nothing in it is watched field by field.
+    state.laneLayers[key] = markRaw(takeLaneLayer(kept, layer));
+    if (layer.layer === 'text') endTextWait(key);
+    if (again) void askText(ref, lane, true);
   }
 }
 
@@ -405,6 +439,8 @@ function close(): void {
   latestFrames.clear();
   latestLaneFrames.clear();
   heardAt.clear();
+  for (const timer of laneTextTimers.values()) clearTimeout(timer);
+  laneTextTimers.clear();
   Object.assign(state, {
     connected: false,
     listed: false,
@@ -416,6 +452,9 @@ function close(): void {
     lanes: {},
     laneRefusals: {},
     laneViews: {},
+    laneLayers: {},
+    laneTexts: {},
+    laneTextAsking: {},
     tabs: {},
   });
 }
@@ -437,9 +476,52 @@ function watchesLane(ref: string, lane: number): boolean {
   return state.lanes[ref]?.includes(lane) ?? false;
 }
 
-/** The lane is no longer watched: its latest frame goes. */
+/** The lane is no longer watched: its latest frame goes, and its layers. */
 function forgetLane(ref: string, lane: number): void {
-  latestLaneFrames.delete(desktopLaneKey(ref, lane));
+  const key = desktopLaneKey(ref, lane);
+  latestLaneFrames.delete(key);
+  delete state.laneLayers[key];
+  delete state.laneTexts[key];
+  endTextWait(key);
+}
+
+/** The layers a lane's watch asks of the hub: every one, the page's text once the person asked for it. */
+function layersOf(key: string): ReturnType<typeof laneLayersAsked> {
+  return laneLayersAsked(!!state.laneTexts[key]);
+}
+
+/** How long the window says it reads the page's text before it gives up waiting for it. */
+const TEXT_WAIT_MS = 15_000;
+
+/** The window waits no more for a lane's page's text. */
+function endTextWait(key: string): void {
+  const timer = laneTextTimers.get(key);
+  if (timer) clearTimeout(timer);
+  laneTextTimers.delete(key);
+  delete state.laneTextAsking[key];
+}
+
+/**
+ * Shows the page's text of a lane the window watches, takes it again (`on`), or hides it: the hub hears the lane's
+ * layers again, the page's text among them taken now and followed after; a lane the hub was not told of yet asks for
+ * it as it is told. The window says it reads the text `TEXT_WAIT_MS` after the latest ask at most. Answers what the hub
+ * said.
+ */
+async function askText(ref: string, lane: number, on: boolean): Promise<DesktopRunAnswer> {
+  const key = desktopLaneKey(ref, lane);
+  state.laneTexts[key] = on;
+  endTextWait(key);
+  const timer = on ? setTimeout(() => endTextWait(key), TEXT_WAIT_MS) : null;
+  if (timer) {
+    laneTextTimers.set(key, timer);
+    state.laneTextAsking[key] = true;
+  }
+  const kept = state.laneLayers[key];
+  if (!on && kept) state.laneLayers[key] = markRaw({ ...kept, text: null, textRefused: null });
+  if (!lanesTold.has(key)) return { ok: true, message: '' };
+  const answer = await command({ type: 'watch', ref, lane, on: true, layers: layersOf(key) });
+  if (!answer.ok && timer && laneTextTimers.get(key) === timer) endTextWait(key);
+  return answer;
 }
 
 /** Watches a lane, or stops, for the window. */
@@ -493,7 +575,13 @@ async function tellLanes(): Promise<Map<string, DesktopRunAnswer>> {
   }
   await Promise.all(
     changes.map(async ({ key, ref, lane, on }) => {
-      const { answer, reached } = await send({ type: 'watch', ref, lane, on });
+      const { answer, reached } = await send({
+        type: 'watch',
+        ref,
+        lane,
+        on,
+        ...(on ? { layers: layersOf(key) } : {}),
+      });
       answers.set(key, answer);
       if (!on || answer.ok || viewer !== stream) return;
       lanesTold.delete(key);
@@ -608,6 +696,17 @@ export function useDesktopRunHub() {
       setLane(ref, lane, on);
       return (await tellLanesSoon()).get(key) ?? { ok: true, message: '' };
     },
+    /** The layers of a lane the window watches, as they came; null until its worker's reporter sent one. */
+    laneLayers(ref: string, lane: number): LaneLayers | null {
+      return state.laneLayers[desktopLaneKey(ref, lane)] ?? null;
+    },
+    /** Whether the person asked for the page's text of a lane, and whether it is on its way. */
+    laneText(ref: string, lane: number): { asked: boolean; asking: boolean } {
+      const key = desktopLaneKey(ref, lane);
+      return { asked: !!state.laneTexts[key], asking: !!state.laneTextAsking[key] };
+    },
+    /** Shows the page's text of a lane the window watches, takes it again (`on`), or hides it (`askText`). */
+    askLaneText: askText,
     /**
      * Hears the frames of a lane the window watches, each with the view it came in, the latest one at once when one
      * came; returns the unsubscribe. While a listener hears it, the window shows the lane, and the hub sends its frames.

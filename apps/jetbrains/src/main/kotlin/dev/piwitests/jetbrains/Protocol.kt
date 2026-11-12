@@ -340,6 +340,120 @@ data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
 /**
+ * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
+ * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
+ * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
+ * ended; `watchable` says a running test's lane can be watched in the IDE (`piwi/ciWatch`) or on the dashboard, from
+ * its `watch` address. The last of a run says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
+ */
+data class CiSession(
+    val runId: Int = 0,
+    val root: String? = null,
+    val url: String = "",
+    val name: String = "",
+    val branch: String? = null,
+    val startedAt: String? = null,
+    val progress: CiProgress? = null,
+    val summary: String = "",
+    val tests: List<CiTest>? = null,
+    val watchable: Boolean = false,
+    val ended: Boolean = false,
+)
+
+/** How far a CI run is: its tests (`total`), those that ended (`done`) and of them `failed`, `flaky` and `skipped`. */
+data class CiProgress(
+    val total: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val status: String = "running",
+)
+
+/**
+ * A test of a CI run: its describe blocks' titles then its own, its spec in the project and the 0-based line of its
+ * `test(…)` call (null when the project holds no such spec), its Playwright project, `running` or its result, its
+ * attempt, its worker's lane from 1 and its shard (null when the run names none); while it runs, the call it is at (`at`,
+ * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched).
+ */
+data class CiTest(
+    val title: List<String>? = null,
+    val uri: String? = null,
+    val line: Int? = null,
+    val project: String = "",
+    val status: String = "running",
+    val retry: Int = 0,
+    val lane: Int? = null,
+    val shard: Int? = null,
+    val at: CiPosition? = null,
+    val watch: String? = null,
+)
+
+/** Where a running test of a CI run is: the call it runs (`title`), its file and 0-based line, and the words to show there. */
+data class CiPosition(
+    val title: String = "",
+    val uri: String = "",
+    val line: Int = 0,
+    val character: Int? = null,
+    val text: String = "",
+)
+
+/**
+ * `piwi/ciWatch`: the IDE watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest` names
+ * them), read-only, through the team instance's watch of the run with the editor's key, until `on` is false, its
+ * session ends or the instance ends the watch; one at a time, another replacing it. Nothing it sends reaches the run.
+ */
+data class CiWatchParams(
+    val root: String?,
+    val runId: Int,
+    val shard: Int?,
+    val lane: Int,
+    val on: Boolean,
+    /** The layers the Worker tab shows beside the images (`calls`, `events`, `text`, `filmstrip`): `piwi/ciLayer`. */
+    val layers: List<String>? = null,
+    /** True asks the lane's worker for its page's text now, for a watch that takes `text`. */
+    val text: Boolean? = null,
+)
+
+/**
+ * `piwi/ciLayer`: a layer of the CI lane the IDE watches, one it asked for (`CiWatchParams.layers`), of the worker
+ * `worker` (its index, as the instance names it) and the test `test` (its title): `layer` names which, and its fields
+ * as `LaneLayerFields` says.
+ */
+data class CiLayer(
+    val root: String = "",
+    val runId: Int = 0,
+    val shard: Int? = null,
+    val lane: Int = 0,
+    override val worker: Int = 0,
+    override val test: String? = null,
+    override val layer: String = "",
+    override val log: LiveCallLog? = null,
+    override val event: PageEvent? = null,
+    override val at: Long? = null,
+    override val text: LaneText? = null,
+    override val refused: String? = null,
+    override val thumb: LaneThumb? = null,
+    override val data: String? = null,
+) : LaneLayerFields
+
+/**
+ * `piwi/ciFrame`: a JPEG of the CI lane the IDE watches (`data`, base64), as its worker masked it, with its test's title
+ * and the call it was taken at; or why no image shows now (`refused`); or why the watch ended (`ended`), its last word.
+ */
+data class CiFrame(
+    val root: String = "",
+    val runId: Int = 0,
+    val shard: Int? = null,
+    val lane: Int = 0,
+    val data: String? = null,
+    val test: String? = null,
+    val call: String? = null,
+    val refused: String? = null,
+    val ended: String? = null,
+)
+
+/**
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
@@ -810,6 +924,8 @@ data class RunWorker(
     val takes: List<String>? = null,
     /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
     val watchable: Boolean = false,
+    /** Its reporter sends the layers of its slot's view: the call log, the page's events, its text, the filmstrip. */
+    val layers: Boolean = false,
     /** Its reporter brings the test's window to the front at a stop its pause bar shows (`front`, Show the Browser). */
     val showsWindow: Boolean = false,
     /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
@@ -1012,7 +1128,97 @@ data class PageFrame(val ref: String, val worker: Int, val since: String, val da
  * `piwi/laneView`: the IDE watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or stopped,
  * through its tests and the worker Playwright starts in its place, until `on` is false or the run ends; one at a time.
  */
-data class LaneViewParams(val ref: String, val lane: Int, val on: Boolean)
+data class LaneViewParams(
+    val ref: String,
+    val lane: Int,
+    val on: Boolean,
+    /** The layers the Worker tab shows beside the frames (`calls`, `events`, `text`, `filmstrip`): `piwi/laneLayer`. */
+    val layers: List<String>? = null,
+    /** True asks the lane's worker for its page's text now, for a watch that takes `text`. */
+    val text: Boolean? = null,
+)
+
+/**
+ * A layer of a watched lane (`@piwitests/core/live-layers`), of the worker `worker` (a retry runs in another), by
+ * `layer`: the call its test is in (`calls`: `log`), something its page or its requests said (`events`: `event`, when,
+ * `at`), the page's text or why none goes (`text`: `text` or `refused`), an image of the test's filmstrip, its JPEG in
+ * base64 (`filmstrip`: `thumb`, `data`). Every text in it comes from the run: shown as plain text alone.
+ */
+interface LaneLayerFields {
+    val worker: Int?
+    val test: String?
+    val layer: String
+    val log: LiveCallLog?
+    val event: PageEvent?
+    val at: Long?
+    val text: LaneText?
+    val refused: String?
+    val thumb: LaneThumb?
+    val data: String?
+}
+
+/**
+ * `piwi/laneLayer`: a layer of the slot the IDE watches, one it asked for (`LaneViewParams.layers`), of the worker
+ * `worker` and its test `test` (Playwright's id; null for the text of a page no test shows).
+ */
+data class LaneViewLayer(
+    val ref: String = "",
+    val lane: Int = 0,
+    override val worker: Int = 0,
+    override val test: String? = null,
+    override val layer: String = "",
+    override val log: LiveCallLog? = null,
+    override val event: PageEvent? = null,
+    override val at: Long? = null,
+    override val text: LaneText? = null,
+    override val refused: String? = null,
+    override val thumb: LaneThumb? = null,
+    override val data: String? = null,
+) : LaneLayerFields
+
+/** The call a lane's test is in, as Playwright logs it: its title and place, how it stands, its log's last lines. */
+data class LiveCallLog(
+    val id: String = "",
+    val call: LiveCall? = null,
+    /** `running`, `passed` or `failed`. */
+    val status: String = "",
+    val lines: List<String>? = null,
+    /** While it waits on a locator: how many elements match, and whether the first is enabled. */
+    val target: LiveCallTarget? = null,
+    /** How long it had run, in milliseconds. */
+    val ms: Long = 0,
+    /** The first line of the error it ended with. */
+    val error: String? = null,
+)
+
+data class LiveCall(val title: String = "", val file: String? = null, val line: Int? = null)
+
+data class LiveCallTarget(val count: Int = 0, val enabled: Boolean? = null)
+
+/**
+ * Something a lane's page or its test's requests said, by `kind`: `console`, `page-error` (`text`), `request-failed`
+ * (`method`, `url`, `status`, `failure`), `request-pending` (`id`, `method`, `url`, `ms`, `done`), `backend` (`method`,
+ * `url`, `status`, `level`, `text`), `api` (`method`, `url`, `status`, `ms`, `failure`), `dropped` (`count`).
+ */
+data class PageEvent(
+    val kind: String = "",
+    val text: String? = null,
+    val method: String? = null,
+    val url: String? = null,
+    val status: Int? = null,
+    val failure: String? = null,
+    val id: Long? = null,
+    val ms: Long? = null,
+    val done: Boolean? = null,
+    val level: String? = null,
+    val count: Long? = null,
+)
+
+/** A lane's page as roles and names, masked: from the trace (`source: trace`) or read as asked; `cut` at its bound. */
+data class LaneText(val call: String? = null, val source: String = "", val text: String = "", val cut: Boolean = false, val at: Long = 0)
+
+/** An image of a lane's filmstrip: the call it ended (`call`), its title and its place in the strip (`index`, from 1). */
+data class LaneThumb(val call: String = "", val title: String = "", val index: Int = 0, val width: Int = 0, val height: Int = 0, val at: Long = 0)
 
 /**
  * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the
@@ -1266,6 +1472,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/laneView")
     fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciWatch")
+    fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>

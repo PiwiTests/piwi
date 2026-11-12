@@ -10,8 +10,10 @@ from more places. Where it revisits a decision of the [run control ADR](../adr/r
 
 **Status.** Proposed 2026-10-30. PRs 1 to 3 are built: the call log, the action point and the element count in the
 view of a CI run, **Stuck?** with `test.stuck` (Part 1, as it now describes them; how long the step a stuck test is
-in usually takes is not built), and the secret fields masked with the project's own list (Part 2). The rest is
-proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+in usually takes is not built), and the secret fields masked with the project's own list (Part 2). PR 4 is built
+without video (Part 7: images as bytes, at the size the viewer shows them), and of PR 7, **Watch all** and **Follow
+what needs attention** as [`live-runs.md`](live-runs.md) P10 revises them (one watch connection a page, 16 a run and a
+byte rate, the follow a mode of the lane view); the last passing run's image is not. The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and

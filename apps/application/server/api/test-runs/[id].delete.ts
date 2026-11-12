@@ -5,6 +5,7 @@ import { testRuns } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { holdsProjectPermission, requireProjectPermission, requireRouteId } from '../../utils/project-access';
 import { deleteRunsByIds } from '../../utils/retention';
+import { closePendingStatus } from '../../utils/scm/pending-status';
 import { isVisibleRun } from '#shared/run-eligibility';
 
 defineRouteMeta({
@@ -45,6 +46,8 @@ export default eventHandler(async (event) => {
   // files, frees any trace blob it was the last to reference, clears every
   // dependent row and recomputes affected cluster counters.
   const { deletedRuns } = await deleteRunsByIds(db, [id]);
+  // A run deleted while it runs closes its pending commit status.
+  closePendingStatus(id, null).catch((e) => console.error('[pr-feedback] closePendingStatus failed', e));
   if (deletedRuns === 0) {
     throw apiError({ statusCode: 404, message: 'Test run not found' });
   }

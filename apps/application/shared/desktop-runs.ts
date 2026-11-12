@@ -13,6 +13,7 @@ import type {
   HubCodeMessage,
   HubLaneFrameMessage,
   HubLaneFrameRefusal,
+  HubLaneLayerMessage,
   HubSession,
   HubSessionMessage,
 } from '@piwitests/core/run-hub';
@@ -91,6 +92,11 @@ export type DesktopRunEvent =
   /** A frame of a lane the window watches (`watch`), as its test runs or stands at a stop, or why none comes now. */
   | HubLaneFrameMessage
   | HubLaneFrameRefusal
+  /**
+   * A layer of a lane the window watches and asked for (`watch`'s `layers`): the call its test is in, what its page
+   * said, the page's text, an image of its filmstrip. Kept nowhere on the way.
+   */
+  | HubLaneLayerMessage
   /** What each code made at a stop came to, whichever surface started it: its sentence. */
   | HubCodeMessage
   /** The code itself, made at a stop of a run, for the window to copy; the latest ones again as the stream opens. */

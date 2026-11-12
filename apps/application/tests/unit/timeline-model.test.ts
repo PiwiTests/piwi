@@ -1,14 +1,17 @@
 import { describe, test, expect } from 'vitest';
+import { reactive } from 'vue';
 import {
   useTimelineModel,
   computeLockSummary,
   isHookKind,
+  runningTimeNotes,
   testTimeNotes,
   timelineLaneCount,
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
-import { pauseReasonText } from '../../app/utils/timeline';
+import { livePlotEnd, liveRunNow, pauseReasonText, shardsStartedText } from '../../app/utils/timeline';
+import { usualDurationKey } from '../../shared/stuck-tests';
 import type { TestCaseResult, TestStepEvent } from '../../types/api';
 
 type StepLike = Partial<TestStepEvent> & { title: string; category: string };
@@ -17,6 +20,9 @@ type CaseLike = {
   testCaseId?: number;
   location?: string;
   browser?: { projectName?: string } | null;
+  filePath?: string;
+  suitePath?: string[];
+  stuck?: { elapsedMs: number; usualMs: number } | null;
   title: string;
   status: string;
   workerIndex: number | null;
@@ -777,5 +783,183 @@ describe('computeLockSummary', () => {
     const hook: TimelineItem = { ...testItem(0, 100, ['db']), kind: 'hook' };
     const summary = computeLockSummary([hook, testItem(0, 100, [])], 1000);
     expect(summary).toHaveLength(0);
+  });
+});
+
+describe('a live run’s lanes', () => {
+  const browser = { projectName: 'chromium' };
+  const done: CaseLike = {
+    executionId: 1,
+    title: 'adds to cart',
+    status: 'passed',
+    workerIndex: 0,
+    parallelIndex: 0,
+    shardIndex: 1,
+    startedAt: 1000,
+    duration: 4000,
+    browser,
+  };
+  const running: CaseLike = {
+    executionId: -1,
+    title: 'pays with PayPal',
+    filePath: 'tests/checkout.spec.ts',
+    suitePath: ['Checkout'],
+    status: 'running',
+    workerIndex: 1,
+    parallelIndex: 0,
+    shardIndex: 2,
+    startedAt: 3000,
+    duration: null,
+    browser,
+  };
+  const usual = new Map([
+    [
+      usualDurationKey({
+        filePath: 'tests/checkout.spec.ts',
+        suitePath: ['Checkout'],
+        title: 'pays with PayPal',
+        browser: 'chromium',
+      }),
+      8000,
+    ],
+  ]);
+
+  test('draws each running attempt to now on the run’s clock, and every other bar as it is', () => {
+    const input = reactive({
+      testCases: [done, running] as unknown as TestCaseResult[],
+      live: true,
+      now: 7000 as number | null,
+      usualDurations: usual,
+    });
+    const { timelineData, maxTime, knownUntil, shardGroups } = useTimelineModel(input);
+    const bar = () => timelineData.value.find((item) => item.title === 'pays with PayPal')!;
+    const doneBar = timelineData.value.find((item) => item.title === 'adds to cart')!;
+    expect(bar()).toMatchObject({ start: 2000, duration: 4000, usualMs: 8000, stuck: false });
+    expect(shardGroups.value.map((group) => group.shardIndex)).toEqual([1, 2]);
+
+    input.now = 9500;
+    expect(bar().duration).toBe(6500);
+    // The finished bar is the same object, so it draws nothing again as the clock ticks.
+    expect(timelineData.value.find((item) => item.title === 'adds to cart')).toBe(doneBar);
+    // The plot's end and what the results tell move with the results, never with the clock.
+    expect(maxTime.value).toBe(4000);
+    expect(knownUntil.value).toBe(5000);
+
+    // A clock behind the attempt's start draws it from its start.
+    input.now = 2000;
+    expect(bar().duration).toBe(0);
+  });
+
+  test('keeps what a finished bar draws the same objects as the clock ticks', () => {
+    const hooked: CaseLike = {
+      ...done,
+      locks: ['db', 'auth'],
+      stepEvents: [
+        { title: 'Before Hooks', category: 'hook', startedAt: 1000, duration: 300, status: 'passed' },
+        { title: 'Paused', category: 'pause', startedAt: 2000, duration: 500, status: 'pause' },
+        { title: 'After Hooks', category: 'hook', startedAt: 4500, duration: 400, status: 'failed' },
+      ],
+    };
+    const input = reactive({
+      testCases: [hooked, { ...running, locks: ['db'] }] as unknown as TestCaseResult[],
+      live: true,
+      now: 7000 as number | null,
+      usualDurations: usual,
+      showHooks: true,
+    });
+    const { timelineData, settledData, hooksByTest, barLockColors, lockColorMap } = useTimelineModel(input);
+    const ticking = timelineData.value;
+    const settled = settledData.value;
+    const hooks = hooksByTest.value.get(1)!;
+    const colors = barLockColors.value.get('t1')!;
+    expect(hooks.map((item) => item.title)).toEqual(['Before Hooks', 'Paused', 'After Hooks']);
+    expect(colors).toEqual([lockColorMap.value.get('auth'), lockColorMap.value.get('db')]);
+
+    input.now = 8000;
+    // The running bar reaches now on a new array; what the finished bar draws is read from the settled items.
+    expect(timelineData.value).not.toBe(ticking);
+    expect(settledData.value).toBe(settled);
+    expect(hooksByTest.value.get(1)).toBe(hooks);
+    expect(barLockColors.value.get('t1')).toBe(colors);
+    // The running bar's lock colors are one array too, the same before and after its copy.
+    expect(barLockColors.value.get('t-1')).toEqual([lockColorMap.value.get('db')]);
+
+    // With the hooks hidden, the bar keeps its failed section and its stop.
+    input.showHooks = false;
+    expect(hooksByTest.value.get(1)!.map((item) => item.title)).toEqual(['Paused', 'After Hooks']);
+  });
+
+  test('says where the usual time of the running attempt that would end last ends', () => {
+    const input = reactive({
+      testCases: [done, running] as unknown as TestCaseResult[],
+      live: true,
+      now: 7000 as number | null,
+      usualDurations: usual as ReadonlyMap<string, number> | null,
+    });
+    const { usualUntil } = useTimelineModel(input);
+    // It began 2 s after the timeline's zero and usually takes 8 s.
+    expect(usualUntil.value).toBe(10_000);
+    input.usualDurations = null;
+    expect(usualUntil.value).toBe(0);
+    expect(model([done]).usualUntil.value).toBe(0);
+  });
+
+  test('takes the usual duration a Stuck? mark carries, marks the bar stuck, and draws no ghost on a finished bar', () => {
+    const stuck = { ...running, stuck: { elapsedMs: 200_000, usualMs: 9000 } };
+    const { timelineData, knownUntil } = model([done, stuck], { live: true, now: 10_000, usualDurations: usual });
+    // The server said how long it had run: the run's clock was at least there.
+    expect(knownUntil.value).toBe(203_000);
+    expect(timelineData.value.find((item) => item.title === 'pays with PayPal')).toMatchObject({
+      usualMs: 9000,
+      stuck: true,
+    });
+    const doneBar = timelineData.value.find((item) => item.title === 'adds to cart')!;
+    expect(doneBar.usualMs).toBeUndefined();
+    expect(doneBar.stuck).toBeUndefined();
+
+    // A test the project has no passes of draws no ghost.
+    const { timelineData: unknown } = model([{ ...running, title: 'pays with a gift card' }], {
+      live: true,
+      now: 5000,
+    });
+    expect(unknown.value[0]!.usualMs).toBeNull();
+  });
+
+  test('leaves a stored run’s bars as they are, with no clock', () => {
+    const { timelineData, knownUntil } = model([done, running]);
+    expect(timelineData.value.find((item) => item.title === 'pays with PayPal')!.duration).toBe(1000);
+    expect(knownUntil.value).toBe(5000);
+    expect(model([{ ...done, startedAt: null }]).knownUntil.value).toBeNull();
+  });
+
+  test('says how long a running test usually takes, and that it is stuck once marked', () => {
+    expect(runningTimeNotes({ usualMs: null, stuck: false })).toEqual([]);
+    expect(runningTimeNotes({ usualMs: 8000, stuck: false })).toEqual([
+      'Its last passing runs took 8.0s at most: the pale bar behind it.',
+    ]);
+    expect(runningTimeNotes({ usualMs: 8000, stuck: true })).toEqual([
+      'Stuck?: it has run far longer than its last passing runs, which took 8.0s at most.',
+    ]);
+  });
+
+  test('reads the run’s clock from the results it heard when they run ahead of the browser’s', () => {
+    expect(liveRunNow(10_000, null)).toBe(10_000);
+    // Heard at 9 s that the run reached 9.5 s: half a second ahead, one second later.
+    expect(liveRunNow(10_000, { at: 9500, seenAt: 9000 })).toBe(10_500);
+    // A run whose results lag the browser's clock reads the browser's.
+    expect(liveRunNow(10_000, { at: 4000, seenAt: 9000 })).toBe(10_000);
+  });
+
+  test('draws the plot past now, so it widens only once in a while', () => {
+    expect(livePlotEnd(5000)).toBe(15_000);
+    expect(livePlotEnd(100_000)).toBe(120_000);
+  });
+
+  test('says which shards of a sharded run have started', () => {
+    expect(shardsStartedText([1, 2, 3], 3)).toBe('all 3 shards started');
+    expect(shardsStartedText([2], 4)).toBe('shard 2 of 4 started');
+    expect(shardsStartedText([3, 1, 1], 4)).toBe('shards 1 and 3 of 4 started');
+    expect(shardsStartedText([1, 2, 4], 4)).toBe('shards 1, 2 and 4 of 4 started');
+    expect(shardsStartedText([], 2)).toBe('no shard of 2 started');
   });
 });

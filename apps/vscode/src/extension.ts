@@ -35,12 +35,14 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  CI_SESSION_NOTIFICATION,
   STOP_CODE_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
   type ApplyPickResult,
+  type CiSession,
   type CommandEndedParams,
   type CommandStartedParams,
   type CoverageParams,
@@ -205,6 +207,7 @@ import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
 import { stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
+import { registerCiRuns } from './ci-view';
 import {
   liveHubsHere,
   loopbackPort,
@@ -1074,6 +1077,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return !!execution;
   };
 
+  /** The CI runs of the branch while they run, read-only. */
+  const ciRuns = registerCiRuns();
+  context.subscriptions.push(ciRuns);
+
   /** Where the runs started here stop, and their controls. */
   const runControl = registerRunControl(context, lc, {
     breakpoints: breakpointsForRun,
@@ -1775,12 +1782,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl.heard(session);
       explorer?.sessionChanged(session);
     }),
+    // A CI run of the branch moved: the CI Runs view and the CI positions.
+    lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => {
+      ciRuns.heard(session);
+      runControl.ciChanged(ciRuns.sessions());
+    }),
     // The code made at a stop, from here or Piwi Picker: written above the stopped line.
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) {
         runControl.clear();
+        ciRuns.clear();
+        runControl.ciChanged(ciRuns.sessions());
         explorer?.sessionsCleared();
       }
       // A service started again hears the editor's breakpoints, for a run a terminal starts.

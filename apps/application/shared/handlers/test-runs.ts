@@ -426,19 +426,22 @@ const RECENT_FIELDS = {
   branch: testRuns.branch,
 };
 
+/** The recent list's fields: a run's own, and what launched it (`origin`), known once the run has begun. */
+const RECENT_LIST_FIELDS = { ...RECENT_FIELDS, origin: testRuns.origin };
+
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
   if (scope !== 'all' && scope.size === 0) return [];
   // Filtered before the limit, so runs of other projects never crowd out the caller's.
   const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const [activeRuns, recentRuns] = await Promise.all([
     db
-      .select(RECENT_FIELDS)
+      .select(RECENT_LIST_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), notPrivateRun(testRuns.origin), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
-      .select(RECENT_FIELDS)
+      .select(RECENT_LIST_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.origin), inScope))

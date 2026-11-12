@@ -172,8 +172,9 @@ fatal.
 Between the title and the link is the failure's one-line [headline](./first-failure). The per-test link opens the
 failing execution's page, even while the run is still going.
 
-**GitHub Actions (automatic)** — step outputs, a job summary listing the failed tests with their links
-(20 at most, the rest counted as "+N more"), and a `::notice::` annotation:
+**GitHub Actions (automatic)** — a `::notice::` titled **Piwi live run** as the run starts, so the job's log links the
+run while it runs; then step outputs, a job summary listing the failed tests with their links (20 at most, the rest
+counted as "+N more"), and a `::notice::` annotation titled **Piwi test run**:
 
 ```yaml
 - run: npx playwright test
@@ -252,15 +253,9 @@ of the contract:
 **0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline never passes,
 **3** [inconclusive](/features/environment-incidents).
 
-Worth knowing:
-
-- **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
-  `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
-
-- **A test that passed on retry satisfies `--require-tag`.**
-- **A required tag that matches no test is a violation**, so a typo cannot pass.
-- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
-  are counted; a read-only key gets the verdict only.
+**A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
+`--require-tag` or `--require-selection`, and the gate reports how many failures it excluded. How the rules count
+retried tests and a required tag that matches no test is in the [CLI reference](/reference/cli#gate).
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 

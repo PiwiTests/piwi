@@ -186,10 +186,14 @@ Each entry names folders under `server/api/`.
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
-    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
-    worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
-    may open the run) and `[id]/live-view/workers` (its workers and how many views are open, which `LanePanel` reads to
-    say why a view did not open). All of it is relayed in memory by
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`, a frame as a live message or, from an
+    older reporter, as JSON), `[id]/live-view/watch` (a page's one watch of the run, `GET`, to a person who may open
+    it: a stream of live messages carrying one worker's full view, of its test or of its lane, which follows the
+    lane's tests and the worker started in it again, and every worker's tile for **Watch all**; `POST` changes what it
+    shows by the id it opened with) and `[id]/live-view/workers` (its workers and how many watches are open, which
+    `LanePanel` reads to say why a view did not open). The run page holds its watch in `useLiveWatch`
+    (`app/utils/live-watch.ts`, read through `fetch`), `RunWatchAll` shows the tiles, and **Follow what needs
+    attention** moves the lane panel by `app/utils/live-attention.ts`. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key and stores its digest with the run
     (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
@@ -638,7 +642,8 @@ rule):
   `EnvManagedAlert`.
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
-    `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+    `RunLiveProgress` (a running run's row in a runs list: its count bar and "120 of 400 · 2 failed"), `TagBadge` /
+    `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
   - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
     picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
@@ -663,8 +668,9 @@ rule):
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
   `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
-- **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
-  the browser tab's favicon and title).
+- **Run streaming**: `useRunStream`, `useNotificationStream`, `useLiveRunProgress` (a runs list's running rows moved
+  on by the `run-progress` tallies of `/api/stream`, throttled per run on the server, with no read of the list), and
+  `useTabRunIndicator` (a watched run's progress on the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
 - **Timeline**: `useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline` (an execution's failure timeline
   under one key, for its Timeline and Network tabs).

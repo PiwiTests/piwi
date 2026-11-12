@@ -56,7 +56,10 @@ What the package does to a user's run, process by process.
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
   `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
   and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
-  or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+  or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`); on GitHub
+  Actions the unprefixed `::notice` lines naming the run's page as it starts and as it lands (`ci-output.ts`); outside
+  CI, in a terminal other than a dumb one, the run's page as an OSC 8 link and its progress as OSC 9;4, cleared as the
+  run or its process ends (`internal/support/terminal.ts`, `PIWI_TERMINAL_PROGRESS`).
   On Windows the private files (the setup file, the stream buffer, the recovery file, the
   workers' resource census, the run's log, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
   (`privateTempDir`), a folder of this user's alone, whatever account runs the tests; a
@@ -270,6 +273,52 @@ What the package does to a user's run, process by process.
   highest pace a sink asks, keeps each frame within the smallest size in bytes a sink takes,
   and opens again, once the one before let the page's screencast go, as the page shown or
   what the sinks ask changes. Nothing runs while no sink subscribes.
+- **The lane's layers** (`lane-layers.ts`, `@piwitests/core/live-layers`): beside the
+  frames, each sink takes the layers its viewers ask, each made only while one asks.
+  The run connection's lane view takes them by `layers` (a worker whose `features` list
+  `layers`): the call the lane's test is in, from Playwright's in-process instrumentation
+  (`followCallLog`'s `listener`), on the page the lane shows, followed again as that page
+  changes (`onLanePage`), four a second at most; the page's events, from `run-events.ts`'s
+  listeners, which tell them while any sink subscribes (`subscribePageEvents`), each
+  sink at twenty a second at most, the rest counted: a console error, an uncaught error, a
+  failed request or one answered 400 and more, each request of the page past 5 s without
+  its answer (`request-pending`, told every 5 s, then once as it is answered, a stream's as
+  its headers come, or fails: the `request` listener follows 200 at most, none while no sink
+  asks), the errors and warnings of a response's `X-Piwi-Logs` (`readServerLogs`, which the
+  capture fixtures read too, 4 MB at most once gunzipped), and
+  each call through an API request context (`tellApiCall`); the page's text (`takeLaneText`):
+  where the runner traces the attempt with ARIA snapshots, the latest it wrote of the lane's
+  page (the event's `pageId`, the page's `_guid`, by the trace's time), rendered by core's
+  `ariaTreeText`, followed once a second as it grows (`followTraceText`), else an ARIA
+  snapshot in AI mode, 8 levels deep, through an internal call, only as asked (the request
+  `text`, or the layer asked), each sink taking one at a time, once a second at most, the
+  asks that came meanwhile taken once (`LaneTexts`); and the test's filmstrip
+  (`LaneFilmstrip`), from
+  the lane view's own frames, masked as each one it sends is: while the lane view is on,
+  300 ms after each call of the test the runner names ended, outside the fixtures' setup
+  and teardown (`fixtureCall`; both looked up, by the step's id in the runner's `_stepMap`,
+  only while the lane view is on), the view's latest frame (`LaneSubscription.latest`), held
+  until it is scaled down within 320 by 200 at quality 60 with `jpeg-js` (`thumbnailOf`;
+  without it, a frame of 128 KB at most as it is), one every 500 ms at most, six frames
+  waiting at most; kept for the test alone (40 images and 1 MB at most, the oldest let go,
+  all of them as the next test begins), sent eight a second at most, all of it again to a
+  viewer that comes later (`view-lane` asked on again, which sends the latest call log and
+  takes the text again too; `layers` asking the same layers again sends nothing), those of
+  a test no longer sent once the next one began. The trace's screencast images are never
+  read: they show the page unmasked. The text is masked by core's `maskAriaSnapshot` with
+  the sink's masks and the attempt's secrets: the values the secret fields of every page of
+  the lane page's context held at each read of the attempt (`readFieldSecrets`, through
+  internal calls), and each text a call typed (`onTyped`, `trackCalls`) into a field its
+  locator names a secret or with no locator (the keyboard's, an element handle's), kept in
+  memory for the attempt alone, 256 and 64 at most; its credentials hidden, then cut by
+  core's `cutLaneText`. A mask it cannot find (`ariaMaskProblem`) sends no text, nor does a
+  page whose fields could not all be read (a frame that failed, one past 32), saying why.
+  The trace is read from where the last read stopped (`TraceTail`), every line but its ARIA
+  snapshots passed over unparsed, the files it names only under its folder
+  (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>]…`, its own
+  and the newest `-recording<N>` by number, 8 at most). The
+  instance's live view takes the same layers as its full views ask them (`view`'s
+  `layers`), its filmstrip from its own frames by the same `LaneFilmstrip` (`live-view.ts`).
 - At a headed stop, that view paints the pause bar over in each frame, for every sink, as
   the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views
   as it draws the bar and once it is down (`pauseBarShows`). The mask hands the view each
@@ -433,7 +482,7 @@ What the package does to a user's run, process by process.
 - In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
   fixture, without waiting for it, and keeps it until the worker ends. It names its shard,
   its worker index and its lane (`slot`, Playwright's `parallelIndex`, which a worker
-  started again after a failure keeps), and says how each watched test ended (`ended`,
+  started again after a failure keeps), and says how each test a viewer watched in full ended (`ended`,
   with `outcome`: its title, status as its row says it, and time), after its last frame. Outside CI, it holds
   the key and opens nothing until the run channel says `share` with `on: true` (**Share
   live**, `shareLiveView`), and closes the stream as it says `on: false`, posting `unshared`
@@ -457,21 +506,40 @@ What the package does to a user's run, process by process.
   `__stop__` message alone, as Playwright compares the environment with the one the
   worker started with and hands what changed to the projects that depend on its own,
   and takes it out again on the next tick.
-- On it the instance says how many people watch the worker (`viewers`). While anyone does,
+- On it the instance says how many people watch the worker (`viewers`), and what they ask of its
+  images (`view`: the largest size one of them shows it at, within 1280 by 800, four frames a
+  second for a full view or one for tiles alone, and whether one shows it in full, `full`, true
+  from an instance that does not say it), and asks for the latest frame and call log again as a
+  watch that showed it as a tile shows it in full (`resend`). While anyone watches,
   the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
-  the editor's views share), through internal calls: at most 640 by 400 at quality 50 unless the
+  the editor's views share, its subscription told as `view` changes, `asked`), through internal calls:
+  at the size `view` asks at quality 50, else at most 640 by 400 from an instance that never says it, unless the
   test's trace or video came first (their size and quality, 800 wide at 90), or an editor's
   view of the run is on too (the largest size and quality the views ask, 1280 by 800 at 60,
   and the stop's page while the worker stands at one), four frames a
   second and about 256 KB a second (a heavier frame holds the next one back longer, before it
-  is masked), a frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  is masked), a frame over 192 KB replaced by an image at quality 30. A frame goes as one live message (its
+  JPEG's bytes behind a JSON header, `LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside
+  JSON to an older one. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
   no screencast runs and no frame goes.
-- In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
-  `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
-  (`live-call-log.ts`): it listens to the context's call stream, then turns it on
+- While a viewer shows the worker in full (`full`), the worker also follows the call its test is in
+  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
+  `--debug`), from Playwright's in-process instrumentation: a listener added to the context's server
+  object (`context._connection.toImpl(context).instrumentation`, each member checked first) with
+  that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
+  log (`onCallLog`, the `api` log alone), act at its point (`onBeforeInputAction`) and end
+  (`onAfterCall`), Playwright 1.64's progress argument or an earlier one's metadata, synchronously,
+  pausing nothing, removed as the context closes, each hook's body in a `try` so none throws into
+  the call; what it hears is kept as heard, and hidden as a view is told it (`settle`): the title,
+  the runner's step for the call's id (`layersTitleOf`), the log's lines and the error. In a worker
+  with a run connection, or a live view key outside CI, the listener
+  is added to each context as the capture fixtures instrument it (`listenCalls`), so a view that
+  comes while a call waits shows that call at once; elsewhere, as the first view follows it. A browser the worker connected to has no in-process server: the call alone is
+  followed there, from the worker's instrumentation, without its log. In a CI run nothing may
+  pause, it listens to the context's call stream, then turns it on
   (`context.debugger._enable()` through `internalCall`, each member checked first), which
   tells the calls running then with their log so far. Once on, the stream stays on and moves
   where the debugger stops an action, so the context's calls are followed from then until it
@@ -490,12 +558,23 @@ What the package does to a user's run, process by process.
   frame) and whether it is enabled. A call on a frame's own object (`page.frame(…)`) has a
   selector of that frame: the read finds nothing then (the call's log says it found its
   element, so the read is dropped) or another element of the main frame.
+- While its full views ask for layers (`view`'s `layers`, `applyLayers`), the worker posts
+  them as the lane view does (`lane-layers.ts`): the page's events (`page-event`, eight posts in
+  flight at most, the others going nowhere), its text
+  (`text`, as the trace writes it, and taken as the instance asks, `text`, or as the layer is
+  asked anew, one take and post at a time, once a second at most, masked with the project's
+  masks too, none of a view, test or masks that changed while it was taken), and its test's
+  filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, the
+  view's own masked frames as the run channel's lane view takes them (`LaneFilmstrip`,
+  above), forgotten as the next test begins and as the project's masks change, posted
+  eight a second at most, one in flight, 40 waiting at most, all of it again on `resend`
+  and as the layer is asked anew.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
   view holds, and that view goes on with an image of the page every second, its caret as
   the page shows it, as does any later view of that page.
-- The view stops as nobody watches, as the test ends (the worker posts `ended`) and as its
+- The view stops as nobody watches, as the test ends (the worker posts `ended`, to a full view) and as its
   page closes; a viewer that joins gets the latest frame again, and one that joins while no
   test runs (a `beforeAll`, between tests) hears why no image shows. Each stop the
   fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends
@@ -804,7 +883,10 @@ src/
                 pick-at (the element under a point of an image of a stopped page),
                 agent-page (a stopped page read and acted on by a ref for an agent,
                 its browser bound for Playwright's tools), run-events (the test's
-                calls and page events, for an agent following the run),
+                calls and page events, for an agent following the run and a lane
+                view's events), lane-layers (a lane view's layers: page events,
+                the page's text, the filmstrip of the view's own frames), live-call-log (the call
+                a test is in, from the call stream or the in-process listener),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret),
@@ -819,7 +901,7 @@ src/
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
                 page, the results file; lab (the command line's side of an arm)
-    support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
+    support/    logger, limiter, ci, ci-output, terminal, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, private-file (the temp files and their
                 folder: owner-only, checked before they are read), source-snippet, worker-index, errors,

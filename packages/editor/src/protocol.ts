@@ -5,6 +5,8 @@
  * goes through these requests, and each client draws them natively: CodeLens
  * in VS Code, Code Vision in the JetBrains IDEs.
  */
+import type { LaneLayer } from '@piwitests/core/live-layers';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
@@ -800,6 +802,161 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 
 /** `piwi/runStatusChanged` (notification, server to client): a context's latest run changed; carries `RunStatusResult`. */
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
+
+/**
+ * `piwi/ciSessionChanged` (notification, server to client): a CI run of the branch a context reads, or of the
+ * checked-out branch, while it runs, as the instance tells it: read-only, so no control, share or hold reaches it, and
+ * its tests never stop. Sent when the service starts to follow it, when its progress, its tests or the calls they are
+ * at change (a burst at most every 500 ms), and last with `ended`. A client keeps the latest of each `root` and
+ * `runId` until one says `ended`.
+ */
+export interface CiSession {
+  /** The run's number on the instance (`#78`). */
+  runId: number;
+  /** The folder of the Playwright config whose project and branch it runs, as `piwi/status` names it. */
+  root: string;
+  /** Its page on the instance, which **Open** opens. */
+  url: string;
+  /** `CI run #78`: how the clients name it. */
+  name: string;
+  /** The branch it runs on; null for a run that names none. */
+  branch: string | null;
+  /** ISO 8601. */
+  startedAt: string;
+  /** How far it is, from the instance's tally. */
+  progress: CiProgress;
+  /** `12 of 40 tests · 1 failed`: its progress in words. */
+  summary: string;
+  /**
+   * Its tests: those running now, by shard and worker, then the latest that ended, newest first; at most
+   * `MAX_CI_TESTS` of them, a failure kept before a pass. The progress counts every test.
+   */
+  tests: CiTest[];
+  /**
+   * The project's live view is on and the run holds a key: a running test's lane can be watched in the editor
+   * (`piwi/ciWatch`) or on the dashboard, from its `watch` address. False until the run's stream says so.
+   */
+  watchable: boolean;
+  /**
+   * The run ended, or the service follows it no more (the context reads another branch, project or instance, or a
+   * newer CI run of the branch took its place). Its last notification.
+   */
+  ended: boolean;
+}
+
+/** The most tests a `CiSession` lists. */
+export const MAX_CI_TESTS = 60;
+
+/**
+ * How far a CI run is: how many tests it holds (`total`), how many ended (`done`, retries counted as the instance counts
+ * them, never past `total`), and of them `failed`, `flaky` and `skipped`; `running`, `finalizing`, or how it ended.
+ */
+export interface CiProgress {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  status: string;
+}
+
+/** A test of a CI run: running now, or its result. */
+export interface CiTest {
+  /** Its `test.describe` blocks' titles, then its own. */
+  title: string[];
+  /** Its spec in the workspace and the 0-based line of its `test(…)` call; null when the workspace holds no such spec. */
+  uri: string | null;
+  line: number | null;
+  /** Its Playwright project's name; empty when the run names none. */
+  project: string;
+  status: LiveTestStatus;
+  /** 0 on its first attempt, 1 on its first retry. */
+  retry: number;
+  /** Its worker's lane, from 1 in each shard (`worker 2`), and its shard, from 1; null when the run names none. */
+  lane: number | null;
+  shard: number | null;
+  /**
+   * While it runs: the call it is at, as the CI run's reporter streams its steps while someone follows the run, in a
+   * file of the workspace. A CI position, never a stop: nothing waits there. Null when the run sent no step yet or
+   * named a file the workspace does not hold.
+   */
+  at: CiPosition | null;
+  /**
+   * While it runs and the run is `watchable`: the dashboard's view of its lane (the run's page with `?watch=`), where
+   * it can be watched, as it can in the editor by its `lane` and `shard` (`piwi/ciWatch`); null otherwise.
+   */
+  watch: string | null;
+}
+
+/** Where a running test of a CI run is: the call it runs, in a file of the workspace. */
+export interface CiPosition {
+  /** The call as the run's reporter titled it: `Click getByRole('button', { name: 'Pay' })`. */
+  title: string;
+  /** The file of its line, as the workspace names it, and its 0-based line and character (null when unknown). */
+  uri: string;
+  line: number;
+  character: number | null;
+  /** `CI run #78 · worker 2: Click getByRole('button', { name: 'Pay' })`: the words the clients show at the line. */
+  text: string;
+}
+
+export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
+
+/**
+ * `piwi/ciWatch`: the client watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest`
+ * names them), read-only, through the team instance's watch of the run, opened with the editor's key: the page of the
+ * test the lane's worker runs, through its next tests and the worker Playwright starts in its place, until the client
+ * stops (`on: false`), its session ends, or the instance ends the watch. One watch per client: another replaces it.
+ * Answered once the instance opened the watch, or with why not (`ok: false`): a run the service does not follow, one
+ * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick.
+ */
+export interface CiWatchParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  on: boolean;
+  /**
+   * The layers the client shows beside the images (`calls`, `events`, `text`, `filmstrip`), none when left out: the
+   * instance's watch takes them (`piwi/ciLayer`), and a watch of the same lane asked again with others changes them.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
+}
+
+/**
+ * `piwi/ciFrame` (notification, server to client): a transient JPEG of the CI lane the client watches, as its worker
+ * masked it, with the title of its test and the call it was taken at; or why no image shows now (`refused`), the watch
+ * going on; or why the watch ended (`ended`), its last word, unless the client ended it. Never stored.
+ */
+export type CiFrame = { root: string; runId: number; shard: number | null; lane: number } & (
+  | { data: string; test: string | null; call: string | null }
+  | { refused: string }
+  | { ended: string }
+);
+
+/**
+ * `piwi/ciLayer` (notification, server to client): a layer of the CI lane the client watches, one it asked for alone
+ * (`CiWatchParams.layers`), of the worker `worker` (its index, as the instance names it: a retry runs in another) and
+ * the test `test` (its title as the instance names it), as the instance relays it and `@piwitests/core/live-layers`
+ * reads it: the call its test is in (`calls`), something its page or its requests said (`events`), the page's text or
+ * why none goes (`text`), an image of the test's filmstrip, its JPEG in base64 (`filmstrip`). Never stored, none after
+ * the watch ends.
+ */
+export type CiLayer = {
+  root: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  worker: number;
+  test: string | null;
+} & LaneLayerData;
+
+export const CI_WATCH_REQUEST = 'piwi/ciWatch';
+export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
+export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
@@ -1654,6 +1811,11 @@ export interface RunWorker {
   /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
   watchable: boolean;
   /**
+   * Its reporter sends the layers of its slot's view beside the frames (`LaneViewParams.layers`): the call log, the
+   * page's events, its text and the test's filmstrip.
+   */
+  layers: boolean;
+  /**
    * Its reporter brings the test's window to the front at a stop its pause bar shows: `piwi/stopAction` `front`
    * (**Show the browser**).
    */
@@ -2029,6 +2191,13 @@ export interface LaneViewParams {
   ref: string;
   lane: number;
   on: boolean;
+  /**
+   * The layers the client shows beside the frames (`calls`, `events`, `text`, `filmstrip`), none when left out: each
+   * goes as `piwi/laneLayer`. A watch of the lane it watches, asked again with other layers, changes them in place.
+   */
+  layers?: LaneLayer[];
+  /** `true` asks the lane's worker for its page's text now, for a watch that takes `text`. */
+  text?: boolean;
 }
 
 /**
@@ -2041,8 +2210,19 @@ export type LaneFrame = { ref: string; lane: number; worker: number; test: strin
   | { refused: string }
 );
 
+/**
+ * `piwi/laneLayer` (notification, server to client): a layer of the lane the editor watches, one it asked for alone
+ * (`LaneViewParams.layers`), of the worker `worker` and its test `test` (Playwright's id; null for the text of a page no
+ * test shows), as `@piwitests/core/live-layers` bounds and masks it: the call its test is in (`calls`), something its
+ * page or its requests said (`events`), the page's text or why none goes (`text`), an image of the test's filmstrip,
+ * its JPEG in base64 (`filmstrip`). Never stored, none after the watch ends. The worker sends the call log and the
+ * filmstrip again as the layers change: a client keeps one image of the filmstrip per call.
+ */
+export type LaneViewLayer = { ref: string; lane: number; worker: number; test: string | null } & LaneLayerData;
+
 export const LANE_VIEW_REQUEST = 'piwi/laneView';
 export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
+export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

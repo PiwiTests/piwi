@@ -28,7 +28,8 @@ import {
   testRuns,
   testRunsCases,
 } from '../../database/schema';
-import { getAppSetting } from '../app-settings';
+import { getPrFeedbackSettings } from './pr-feedback-settings';
+import { pendingStatuses, postClosingStatus, storedRunStatus } from './pending-status';
 import { createScmProvider } from './index';
 import type { ScmProvider } from './ScmProvider';
 import { normalizeGitUrl } from './git-url';
@@ -48,16 +49,12 @@ import {
   hasChangeCoverage,
   buildCommitStatus,
   buildPrComment,
-  DEFAULT_PR_FEEDBACK,
   isQuietRun,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
-  PR_FEEDBACK_KEY,
-  resolvePrFeedbackSettings,
   type PrChangeCoverage,
   type PrLocatorBreaks,
   type PrFailureEntry,
-  type PrFeedbackSettings,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage, type RunChangeCoverage } from './change-coverage';
@@ -76,12 +73,6 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
 import { runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { isLeak } from '#shared/resource-fingerprint.mjs';
-
-/** Read the resolved settings, falling back to the (disabled) defaults. */
-export async function getPrFeedbackSettings(db: DbClient): Promise<PrFeedbackSettings> {
-  const stored = await getAppSetting<Partial<PrFeedbackSettings>>(db, PR_FEEDBACK_KEY);
-  return stored ? resolvePrFeedbackSettings(stored) : { ...DEFAULT_PR_FEEDBACK };
-}
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
@@ -416,7 +407,9 @@ export async function findRunPullRequestNumber(
 
 /**
  * Resolve the pull request for a finished run and post the comment and/or the
- * commit status. Returns what it managed to do, for logs and tests.
+ * commit status. Returns what it managed to do, for logs and tests. The run's
+ * pending status (`pending-status.ts`) stops first, and lands before the final
+ * one; when no final status goes, a closing one takes its place.
  */
 export async function postRunPrFeedback(
   db: DbClient,
@@ -424,7 +417,31 @@ export async function postRunPrFeedback(
   fixedClusters: VerifiedFix[] = [],
   changeCoverage: PrChangeCoverage | null = null,
   locatorBreaks: PrLocatorBreaks | null = null,
-): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
+): Promise<FeedbackResult> {
+  const pending = await pendingStatuses.stop(runId);
+  const result = await postFinishedRunFeedback(db, runId, fixedClusters, changeCoverage, locatorBreaks);
+  if (pending && result.statusContext !== pending.context) {
+    await postClosingStatus(pending, runId, (await storedRunStatus(db, runId)) ?? 'ended');
+  }
+  return result;
+}
+
+/** What a run's feedback did: its comment, its status and the context it posted the status under. */
+interface FeedbackResult {
+  posted: boolean;
+  comment: boolean;
+  status: boolean;
+  statusContext?: string;
+  reason?: string;
+}
+
+async function postFinishedRunFeedback(
+  db: DbClient,
+  runId: number,
+  fixedClusters: VerifiedFix[],
+  changeCoverage: PrChangeCoverage | null,
+  locatorBreaks: PrLocatorBreaks | null,
+): Promise<FeedbackResult> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
   const settings = await getPrFeedbackSettings(db);
@@ -525,7 +542,12 @@ export async function postRunPrFeedback(
     }).catch((e) => console.error(`[pr-feedback] could not record the feedback of run #${runId}`, e));
   }
 
-  return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
+  return {
+    posted: commentPosted || statusPosted,
+    comment: commentPosted,
+    status: statusPosted,
+    ...(statusPosted ? { statusContext: settings.statusContext } : {}),
+  };
 }
 
 /** The leaks of a run that its base branch never showed, or null when the run sent no resource report. */

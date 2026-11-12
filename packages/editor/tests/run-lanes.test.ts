@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
+import type { LaneLayer } from '@piwitests/core/live-layers';
 import { RUN_TAKES, type HubToRun, type RunFeature, type RunToHub } from '@piwitests/core/run-channel';
 import {
   parseHubMessage,
@@ -19,7 +20,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { ClientLaneView } from '../src/client-page-view';
 import type { LaneFrame, RunSession } from '../src/protocol';
-import { RunSessions, type LaneViewFrame, type Viewer } from '../src/run-sessions';
+import { RunSessions, type LaneViewFrame, type LaneViewLayer, type Viewer } from '../src/run-sessions';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'c'.repeat(32)}`;
@@ -43,7 +44,7 @@ function fakeSocket() {
 }
 
 /** The run `ed-1` in sessions of its own, and how each of its workers joins, talks and hears. */
-function harness(requestMs = 2000) {
+function harness(requestMs = 2000, laneTextMs = 40) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
@@ -54,6 +55,7 @@ function harness(requestMs = 2000) {
     burstMs: 0,
     requestMs,
     lingerMs: 60_000,
+    laneTextMs,
   });
   const join = (workerIndex: number, parallelIndex: number, features: RunFeature[] = ['view-lane']) => {
     const socket = fakeSocket();
@@ -111,10 +113,32 @@ function harness(requestMs = 2000) {
   return { sessions, sent, join };
 }
 
-function viewer(): Viewer & { lanes: LaneViewFrame[] } {
+function viewer(): Viewer & { lanes: LaneViewFrame[]; layers: LaneViewLayer[] } {
   const lanes: LaneViewFrame[] = [];
-  return { lanes, frame: () => {}, laneFrame: (frame) => void lanes.push(frame) };
+  const layers: LaneViewLayer[] = [];
+  return {
+    lanes,
+    layers,
+    frame: () => {},
+    laneFrame: (frame) => void lanes.push(frame),
+    laneLayer: (layer) => void layers.push(layer),
+  };
 }
+
+const AT = 1_800_000_000_000;
+const pageError: RunToHub = {
+  type: 'lane-layer',
+  test: 't0',
+  layer: 'events',
+  event: { kind: 'page-error', text: 'boom' },
+  at: AT,
+};
+const pageText: RunToHub = {
+  type: 'lane-layer',
+  test: 't0',
+  layer: 'text',
+  text: { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at: AT },
+};
 
 /** What `run` answers once the worker answered the lane view requests it heard. */
 async function watch<T>(worker: { asked(): unknown[]; answerAll(): void }, run: Promise<T>): Promise<T> {
@@ -242,6 +266,134 @@ describe('a lane watched in the run sessions', () => {
     expect(sessions.intentsOf('ed-1', 0)).not.toContain('watch');
     expect(sessions.intentsOf('ed-1', 1)).toContain('watch');
     expect(await sessions.watchLane({ ref: 'ed-9', lane: 0, on: true }, viewer())).toMatchObject({ ok: false });
+  });
+});
+
+describe('the layers of a lane watched in the run sessions', () => {
+  test('go to the lane’s viewers that asked for each alone, the worker hearing what they ask together', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b, c, other] = [viewer(), viewer(), viewer(), viewer()];
+    const layersHeard = () =>
+      w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : ([] as Array<readonly string[]>)));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'calls'] }, a));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['text'] }, b));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, c));
+    // A viewer that asks for nothing more than the others leaves the worker as it was.
+    expect(layersHeard()).toEqual([
+      ['calls', 'events'],
+      ['calls', 'events', 'text'],
+    ]);
+
+    w.read(pageError);
+    w.read(pageText);
+    expect(a.layers).toEqual([
+      {
+        ref: 'ed-1',
+        lane: 0,
+        worker: 0,
+        test: 't0',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      },
+    ]);
+    expect(b.layers.map((layer) => layer.layer)).toEqual(['text']);
+    expect(c.layers).toEqual([]);
+    expect(other.layers).toEqual([]);
+
+    // A viewer that leaves takes its layers with it; the last one turns them off with the lane view.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: false }, b);
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+    sessions.unwatchAll(a);
+    sessions.unwatchAll(c);
+    expect(last(layersHeard())).toEqual([]);
+    expect(w.asked(false)).toHaveLength(1);
+    w.read(pageError);
+    expect(a.layers).toHaveLength(1);
+  });
+
+  test('never tells a worker that sends no layers about them, and forgets a lane’s layers with the run', async () => {
+    const { sessions, join } = harness();
+    const old = join(0, 0);
+    const a = viewer();
+    await watch(old, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, a));
+    expect(old.heard().some((m) => m.type === 'layers')).toBe(false);
+    // A worker Playwright starts in the lane later, which sends layers, hears what the lane's viewers ask.
+    old.socket.destroy();
+    const next = join(1, 0, ['view-lane', 'layers']);
+    await waitFor(() => (next.heard().some((m) => m.type === 'layers') ? true : undefined));
+    expect(next.heard().find((m) => m.type === 'layers')).toEqual({ type: 'layers', layers: ['events'] });
+
+    // The run ends: the viewer watches it no more, and a rerun under its ref starts with no lane watched, no layers.
+    sessions.commandEnded('ed-1');
+    expect(sessions.watchesLane(a, 'ed-1', 0)).toBe(false);
+    next.read(pageError);
+    expect(a.layers).toEqual([]);
+    const rerun = join(0, 0, ['view-lane', 'layers']);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rerun.heard().filter((m) => m.type === 'layers' || m.type === 'request')).toEqual([]);
+    rerun.read(pageError);
+    expect(a.layers).toEqual([]);
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, a)).toEqual({
+      ok: false,
+      message: 'Watch the worker first.',
+    });
+  });
+
+  test('tells the worker the layers again only as they change, or as a viewer asks anew for what it sends again', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b] = [viewer(), viewer()];
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    const both: LaneLayer[] = ['calls', 'events', 'filmstrip'];
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: both }, a));
+    // The same watch asked again changes nothing the worker hears, nor does a viewer that asks for no more than it.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: both }, a);
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
+    expect(layersHeard()).toEqual([both]);
+    // A viewer asking for the filmstrip anew has the worker send again what it keeps (its lane view asked on again),
+    // the layers as they were.
+    const lanesAsked = () => w.heard().filter((m) => m.type === 'request' && m.what === 'view-lane' && m.on).length;
+    const asked = lanesAsked();
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'filmstrip'] }, b);
+    expect(layersHeard()).toEqual([both]);
+    expect(lanesAsked()).toBe(asked + 1);
+    // Leaving it asks for nothing less: the worker hears nothing; the last viewer of it to leave turns it off.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
+    expect(layersHeard()).toHaveLength(1);
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events'] }, a);
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+  });
+
+  test('asks a worker for its page’s text once for the asks that come together, and once a moment at most', async () => {
+    const { sessions, join } = harness(2000, 60);
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b] = [viewer(), viewer()];
+    const texts = () => w.heard().filter((m) => m.type === 'request' && m.what === 'text');
+    const moment = () => new Promise((r) => setTimeout(r, 80));
+    const onItsWay = { ok: true, message: 'The page’s text is on its way.' };
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'text'] }, a));
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['text'] }, b);
+    // The layers listing the text anew had the worker take it: an ask right after is that one.
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, b)).toEqual(onItsWay);
+    expect(texts()).toHaveLength(0);
+
+    await moment();
+    // Two viewers asking together: the worker hears one request, and both get its answer.
+    const first = sessions.laneText({ ref: 'ed-1', lane: 0 }, a);
+    const second = sessions.laneText({ ref: 'ed-1', lane: 0 }, b);
+    const request = await waitFor(() => texts()[0]);
+    w.read({ type: 'answer', request: request.request, what: 'text', value: { ok: true, message: 'On its way.' } });
+    expect(await first).toEqual({ ok: true, message: 'On its way.' });
+    expect(await second).toEqual({ ok: true, message: 'On its way.' });
+    // Within a moment of it, another ask is that one too; after it, the worker is asked again.
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, a)).toEqual({ ok: true, message: 'On its way.' });
+    expect(texts()).toHaveLength(1);
+    await moment();
+    void sessions.laneText({ ref: 'ed-1', lane: 0 }, a);
+    await waitFor(() => texts()[1]);
+    expect(texts()).toHaveLength(2);
   });
 });
 
@@ -382,6 +534,79 @@ describe('a lane the editor client watches', () => {
     expect(await client.input({ ref: 'ed-1', worker: 0, since, events: [] })).toMatchObject({ ok: false });
   });
 
+  test('sends the layers it asked for alone, asks for the page’s text as asked, and none once it stops', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const told: LaneViewLayer[] = [];
+    const elsewhere: LaneViewLayer[] = [];
+    const client = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async (layer) => void told.push(layer),
+    );
+    const other = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async (layer) => void elsewhere.push(layer),
+    );
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    const texts = () => w.heard().filter((m) => m.type === 'request' && m.what === 'text');
+    await watch(w, client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'calls'] }));
+    await watch(w, other.watch({ ref: 'ed-1', lane: 0, on: true }));
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+    w.read(pageError);
+    w.read(pageText);
+    expect(told).toEqual([
+      {
+        ref: 'ed-1',
+        lane: 0,
+        worker: 0,
+        test: 't0',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      },
+    ]);
+    expect(elsewhere).toEqual([]);
+
+    // The text before the client shows it is refused; its layers then change in place, the lane view kept on.
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events'], text: true })).toEqual({
+      ok: false,
+      message: 'Show the page’s text first.',
+    });
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events', 'text'] })).toMatchObject({
+      ok: true,
+    });
+    expect(last(layersHeard())).toEqual(['calls', 'events', 'text']);
+    expect(w.asked(false)).toHaveLength(0);
+    expect(texts()).toHaveLength(0);
+    // Asked again once the text the layers took is a moment old, the text alone is taken: the worker hears no layers,
+    // so sends no call log nor filmstrip again.
+    await new Promise((r) => setTimeout(r, 50));
+    const before = layersHeard().length;
+    const asked = client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events', 'text'], text: true });
+    const request = await waitFor(() => texts()[0]);
+    expect(layersHeard()).toHaveLength(before);
+    w.read({ type: 'answer', request: request.request, what: 'text', value: { ok: true, message: 'On its way.' } });
+    expect(await asked).toEqual({ ok: true, message: 'On its way.' });
+    w.read(pageText);
+    expect(told.map((layer) => layer.layer)).toEqual(['events', 'text']);
+    expect(elsewhere).toEqual([]);
+
+    // Nothing reaches a client that stopped watching, though the lane's other viewer keeps it on.
+    client.dispose();
+    w.read(pageError);
+    w.read(pageText);
+    expect(told).toHaveLength(2);
+    expect(last(layersHeard())).toEqual([]);
+    expect(await client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['text'], text: true })).toMatchObject({
+      ok: true,
+    });
+    expect(texts()).toHaveLength(1);
+  });
+
   test('watches one lane at a time, and ends with the run', async () => {
     const { sessions, join } = harness();
     const first = join(0, 0);
@@ -472,6 +697,65 @@ describe('a lane the editor client watches, through the language server', () => 
   });
 });
 
+describe('a lane’s layers the editor client asks for, through the language server', () => {
+  let dir = '';
+  let svc: Service;
+
+  beforeAll(async () => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-lane-layers-lsp-')));
+    writeRunWorkspace(dir);
+    svc = await service(dir, true);
+  });
+
+  afterAll(() => {
+    svc?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('tells the client each layer it asked for as `piwi/laneLayer`, and none it did not', async () => {
+    const layers: LaneViewLayer[] = [];
+    svc.client.onNotification('piwi/laneLayer', (layer: LaneViewLayer) => void layers.push(layer));
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane', 'layers'],
+    });
+    try {
+      worker.begin();
+      expect(await waitFor(() => svc.latest(ref)?.workers[0])).toMatchObject({ watchable: true, layers: true });
+      const watching = svc.client.sendRequest('piwi/laneView', { ref, lane: 0, on: true, layers: ['events'] });
+      const asked = await worker.next('request');
+      worker.send({ type: 'answer', request: asked.request, what: 'view-lane', value: { ok: true, message: 'On.' } });
+      expect(await watching).toMatchObject({ ok: true });
+      expect(await worker.next('layers')).toEqual({ type: 'layers', layers: ['events'] });
+      worker.send({ ...pageText, test: 'id-adds a mug' });
+      worker.send({ ...pageError, test: 'id-adds a mug' });
+      expect(await waitFor(() => last(layers))).toEqual({
+        ref,
+        lane: 0,
+        worker: 0,
+        test: 'id-adds a mug',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      });
+      expect(layers).toHaveLength(1);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+});
+
 describe('a lane watched on the hub', () => {
   let dir = '';
   let svc: Service;
@@ -514,8 +798,78 @@ describe('a lane watched on the hub', () => {
           .filter((m): m is Extract<HubMessage, { type: 'session' }> => m.type === 'session' && m.session.ref === ref)
           .pop()?.session as HubSession | undefined,
       lanes: () => messages.filter((m): m is HubLaneFrameMessage => m.type === 'lane-frame' && 'data' in m),
+      layers: () => messages.filter((m) => m.type === 'lane-layer'),
     };
   }
+
+  test('sends a lane’s layers to the connections that asked for them alone', async () => {
+    const [a, b] = [await paired(), await paired()];
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 1,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane', 'layers'],
+    });
+    worker.begin();
+    try {
+      expect(a.welcome).toMatchObject({ features: expect.arrayContaining(['layers']) });
+      await waitFor(() => a.session(ref)?.workers[0]?.intents);
+      a.send({ type: 'watch', id: 2, ref, lane: 0, on: true, layers: ['events'] });
+      const asked = await worker.next('request');
+      worker.send({
+        type: 'answer',
+        request: (asked as { request: number }).request,
+        what: 'view-lane',
+        value: { ok: true, message: 'The live view is on.' },
+      });
+      expect(await a.answer(2)).toMatchObject({ ok: true });
+      b.send({ type: 'watch', id: 3, ref, lane: 0, on: true });
+      await b.answer(3);
+      expect(await worker.next('layers')).toEqual({ type: 'layers', layers: ['events'] });
+      worker.send({ ...pageError, test: 'id-adds a mug' });
+      const [layer] = await waitFor(() => (a.layers().length ? a.layers() : undefined));
+      expect(layer).toEqual({
+        type: 'lane-layer',
+        ref,
+        lane: 0,
+        worker: 1,
+        test: 'id-adds a mug',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      expect(b.layers()).toEqual([]);
+
+      // A watch that lists the page's text asks for it now: the layers listing it anew take it, and the worker hears
+      // no request of it for the watches that come within a moment, then one.
+      const texts = () => worker.heard.filter((m) => m.type === 'request' && m.what === 'text');
+      a.send({ type: 'watch', id: 4, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      expect(await a.answer(4)).toMatchObject({ ok: true });
+      expect(await worker.next('layers', 1)).toEqual({ type: 'layers', layers: ['events', 'text'] });
+      a.send({ type: 'watch', id: 5, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      await a.answer(5);
+      await new Promise((r) => setTimeout(r, 1100));
+      expect(texts()).toEqual([]);
+      a.send({ type: 'watch', id: 6, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      await a.answer(6);
+      await waitFor(() => texts()[0]);
+      expect(worker.heard.filter((m) => m.type === 'layers')).toHaveLength(2);
+    } finally {
+      worker.socket.destroy();
+      a.socket.close();
+      b.socket.close();
+    }
+  });
 
   test('says it shows lanes, offers watch for a worker that can, and sends its frames to its watchers alone', async () => {
     const [a, b] = [await paired(), await paired()];

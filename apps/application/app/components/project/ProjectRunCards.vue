@@ -5,7 +5,8 @@ import type { TestRunSummary } from '~~/types/api';
 /**
  * The runs list below `md`: one card per run, in place of the runs table. The
  * project page hydrates it only once it is visible, so a desktop screen never
- * builds it.
+ * builds it. A running run's card shows how far it is, from the counts the page
+ * passes.
  */
 defineProps<{
   runs: TestRunSummary[];
@@ -40,7 +41,9 @@ const emit = defineEmits<{ toggle: [runId: number] }>();
             />
             <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
           </div>
+          <RunLiveProgress v-if="isLiveRun(run)" :run="run" />
           <TestStatusBar
+            v-else
             :passed="run.passedTests"
             :failed="run.failedTests"
             :skipped="run.skippedTests"
@@ -52,7 +55,7 @@ const emit = defineEmits<{ toggle: [runId: number] }>();
           />
           <div class="flex items-center justify-between text-xs text-muted">
             <ClientDate :date="run.startTime" />
-            <DurationValue :ms="run.duration" />
+            <DurationValue v-if="!isLiveRun(run)" :ms="run.duration" />
           </div>
         </NuxtLink>
         <RunActionsMenu :label="`Run #${run.id} actions`" :items="() => menuItems(run)" />

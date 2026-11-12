@@ -1,3 +1,4 @@
+import { closePendingStatus } from './scm/pending-status';
 import { attachRunPlan } from './pass-reuse';
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
@@ -37,7 +38,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * its failing tests name, and its outbound effects
  * (AI diagnosis, the issues automatic creation files once fix verification
  * is done, the results sent to the project's test management tool, notifications, the pull-request comment and
- * commit status, auto-heal).
+ * commit status, auto-heal). A run whose outbound effects do not go closes the pending commit status it posted while
+ * it ran (`closePendingStatus`).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -127,6 +129,9 @@ export async function runFinalizeSideEffects(
         console.error('[notifications] emitIncidentNotification failed', e),
       );
     }
+    closePendingStatus(id, run.status ?? 'ended').catch((e) =>
+      console.error('[pr-feedback] closePendingStatus failed', e),
+    );
     return rollup;
   }
   const notifies = isEligibleRun(current, 'notifications');
@@ -165,7 +170,12 @@ export async function runFinalizeSideEffects(
       .then(() => runTestManagementSync(db, id))
       .catch((e) => console.error('[integrations] runTestManagementSync failed', e));
   }
-  if (!notifies) return rollup;
+  if (!notifies) {
+    closePendingStatus(id, run.status ?? 'ended').catch((e) =>
+      console.error('[pr-feedback] closePendingStatus failed', e),
+    );
+    return rollup;
+  }
   void filing.then(() =>
     emitRunNotifications(db, id, { announce }).catch((e) =>
       console.error('[notifications] emitRunNotifications failed', e),

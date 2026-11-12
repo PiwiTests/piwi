@@ -28,6 +28,14 @@ export function liveCaseKey(tc: Pick<TestCaseResult, 'title' | 'location' | 'bro
   return `${tc.title}@@${tc.location}@@${browserKey(tc.browser)}@@${tc.repeatEachIndex ?? 0}`;
 }
 
+/**
+ * Whether an attempt is running and the server said it is stuck (`#shared/stuck-tests`): its row's **Stuck?** badge,
+ * its amber bar on the Timeline and `is:stuck` in the test search.
+ */
+export function isStuckAttempt(tc: Pick<TestCaseResult, 'status' | 'stuck'>): boolean {
+  return tc.status === 'running' && tc.stuck != null;
+}
+
 /** The Playwright project an attempt ran in, the identity of its browser. */
 function browserKey(browser: TestCaseResult['browser']): string {
   return browser?.projectName ?? browser?.browserName ?? '';

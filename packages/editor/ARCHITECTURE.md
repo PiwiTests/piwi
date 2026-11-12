@@ -24,6 +24,8 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Failure lines and Flake Lab lines](#failure-lines-and-flake-lab-lines)
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
+  - [CI runs of the branch](#ci-runs-of-the-branch)
+  - [Watching a CI lane](#watching-a-ci-lane)
   - [The editor's own run](#the-editors-own-run)
 - [Breakpoints and picked locators](#breakpoints-and-picked-locators)
   - [Breakpoints](#breakpoints)
@@ -130,6 +132,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/coverage.ts`: coverage marks and uncovered changes.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
+- `src/ci-sessions.ts`: the CI runs of the branch while they run, as read-only sessions (`piwi/ciSessionChanged`).
+- `src/ci-watch.ts`: the client's watch of a CI run's lane through the instance (`piwi/ciWatch`, `piwi/ciFrame`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
@@ -198,6 +202,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
+  - CI runs: `piwi/ciWatch`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -210,8 +215,8 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`,
-  `piwi/shareWindowChanged`, `piwi/askToWatch`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
+  `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -467,6 +472,11 @@ project starts or ends. The contexts that read the instance with that key share 
 
 A connection that brings nothing for 45 s is opened again: the instance sends a heartbeat every 15 s.
 
+One run's stream (`GET /api/test-runs/:id/stream`) is one connection per instance, key and run, whoever follows the run
+(`RunStreams`): a context's run in progress, another context's, a CI session. A follower that joins a stream already
+open has it opened again, so its catch-up reaches every follower, which reads it again as after a dropped connection;
+the stream closes with its last follower.
+
 Half a second after a run ends, the context reads its latest run again; runs that end together are read once. The poll
 reads it besides:
 
@@ -508,6 +518,78 @@ that started the run while the service keeps that command (`RefWatch.carried`), 
   (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none.
 
 `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+
+### CI runs of the branch
+
+A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs
+(`src/ci-sessions.ts`, `piwi/ciSessionChanged`): the clients list it beside their own runs, and mark the call each of
+its running tests is at as a CI position, never as a stop. No request acts on it: no control, share or hold.
+
+- **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
+  progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
+  origin, else by the CI it names (`isCiRun`). A run that ended, or that a newer run took the place of, is not
+  followed again, whatever a read from before says; one whose context read another branch, key, instance or project
+  is followed again once a context reads it in progress again.
+- **Once**, whatever reads it: the first context to offer it holds it, until a test names its spec. Then the session
+  shows in the context whose folder holds that spec, by the rule a failure follows
+  ([Failures placed by one context](#failures-placed-by-one-context)): it stays when its folder holds it or no other
+  folder of a context reading the run does, else it ends in the folder it leaves and shows in the one that holds it.
+- **Bounded**: at most `MAX_CI_RUNS` (2) runs of one instance, project and branch, the newest; a newer run takes the
+  oldest's place, which ends. A session lists at most `MAX_CI_TESTS` tests (the running ones, then the latest that
+  ended, a failure before a pass), and the service keeps at most 1,000 tests of a run. It is pushed at most every
+  500 ms, only when it differs from the last one sent.
+- **Read** from the run's stream, shared with the context's run in progress: `test-begin` and `test-completed` (a
+  time-out as `timedOut` live and `timedout` from the catch-up), `live-view` (`watchable`: the project's live view is
+  on and the run holds a key), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
+  the stream needs what opening the run needs (`project:read`, a run that is not another person's private one).
+- **Positions** come from the steps the run's reporter streams while someone has the run's stream open, the service
+  among them (`step-begin`, `step-end`): each worker's innermost open step, a fixture's left out. A step names its file
+  as the CI machine does; the service learns where the run's Playwright config sits there from a step in the running
+  test's own spec (`ciBaseOf`), and places a file under it in the context's folder (`workspaceFile`), never one in
+  `node_modules`, above the folder or missing. The line is the run's commit's.
+- **Watch**: a running test of a `watchable` run can be watched in the client's worker panel, read-only
+  ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
+  `?watch=<shard>.<lane>`), which the clients offer beside it.
+- **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
+  `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
+  place: the last notification says `ended`, and the run's stream is let go.
+
+### Watching a CI lane
+
+`piwi/ciWatch { root?, runId, shard, lane, on, layers?, text? }` (`src/ci-watch.ts`, one `CiWatch` per service) shows
+the lane of a running test of a CI session in the client's worker panel, read-only, through the instance's watch of the
+run, opened with the editor's key (`PiwiClient.liveWatch`, `project:read`; the key counts as its owner in the
+instance's bound of watches per person).
+
+- **Opens** on the lane's worker in full: `worker` (the lane's running test's Playwright worker index, else its latest
+  test's: `CiSessions.watchTarget`), `slot` (`lane - 1`), `shard`, and `CI_WATCH_SIZE` (960 by 600 device pixels), so
+  the instance follows the lane through its next tests and the worker Playwright starts in it. Refused, before asking
+  the instance, for a run no session follows, one that is not `watchable`, and a lane no test ran in yet; then with the
+  instance's own words (a project with the live view off, a worker not in it, a run no longer live, too many watches),
+  and for an answer that is not `application/vnd.piwi.live-stream` (an older instance: the clients offer the
+  dashboard). The answer comes once the instance opened the stream; an instance that has not within 15 s
+  (`OPEN_MS`, under the 20 s the JetBrains plugin waits) is refused, its request let go. A client that gives up on
+  an unanswered `on: true` sends `on: false`.
+- **One at a time.** Another lane of the same run, instance and key is shown on the open watch by a POST naming it
+  (`PiwiClient.changeLiveWatch`: `watch`, `focus`, the size); any other lane is a new watch in its place. A refused
+  change ends the watch.
+- **Reads** the stream with core's `createLiveMessageReader` and `readLiveViewerMessage`: each `frame` of the lane goes
+  to the client as `piwi/ciFrame` (the JPEG in base64, the test's title, the call's title), one at a time, the newest
+  alone waiting (`FrameSender`); a `refused` as `refused`; a test's outcome goes nowhere. A frame is masked by the
+  worker before it leaves the CI machine, and the service keeps none.
+- **Layers.** The layers the client asks (`layers`: `calls`, `events`, `text`, `filmstrip`) are the watch's `layers`
+  (its query, then the POST's; the call log is the full view's own `call-log`), each `call-log`, `page-event`, `text`
+  and `thumb` of the lane going to the client as `piwi/ciLayer` as it comes, with the worker that sent it (a retry runs
+  in another), those it asked for alone. The same lane
+  asked again with other layers changes them on the open watch, and `text: true`, or the layers listing `text` anew,
+  has the POST ask the worker for its page's text (`text: true`); an ask while the last one waits for its answer, or
+  within `1000 / LANE_TEXTS_PER_SECOND` ms of it, is that one, and the instance hears none. A refusal of either leaves
+  the watch as it was.
+- **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
+  instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
+  follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
+
+Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POST.
 
 ### The editor's own run
 
@@ -712,6 +794,15 @@ sharing `RunSessions.watchLane` with the hub: one lane at a time, its frames sen
 waiting, none once `laneFrameGoes` says it no longer goes, and its watch ended with the run (`watchesLane`). At a stop
 of the lane's running test, `piwi/pageInput` naming that stop goes to the lane's viewer when the page view does not
 watch it; leaving lets go of what its input held there. `RunWorker.watchable` says which workers it takes.
+Its `layers` (`calls`, `events`, `text`, `filmstrip`) are the viewer's layers of the lane (`LaneParams.layers`), each
+`lane-layer` of them going to the client as `piwi/laneLayer` as it comes, none of a lane it stopped watching
+(`ClientLaneView.layer`). The lane it watches, asked again with other layers, changes them in place, the lane view
+kept on; `text: true`, and the layers listing `text` anew, ask the lane's worker for its page's text now
+(`RunSessions.laneText`, the run channel's `text` request), refused unless the viewer shows the text. An ask while the
+worker's last one waits for its answer, or within `1000 / LANE_TEXTS_PER_SECOND` ms of it, is that one, answered as it
+was: the worker hears no request of it. `layers` that list `text` anew count as an ask, which the worker takes as it
+hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
+send them.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
@@ -787,8 +878,8 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
-`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, and `stop` where
-its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, and
+`stop` where its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
 predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
@@ -812,7 +903,8 @@ not a boundary.
 - the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
 - `requests` and `mock` (`request`, a kept response's id), with `since` too;
 - `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view));
-- `watch` (`lane`, `on`): a lane while its tests run, with no stop ([The live view](#the-live-view)).
+- `watch` (`lane`, `on`, `layers`): a lane while its tests run, with no stop, and the layers it takes beside its frames
+  ([The live view](#the-live-view)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
@@ -930,6 +1022,21 @@ viewers alone, paced as a stop's frames are, and none once its stop ended or its
 refuses, is turned off again, and a worker that leaves before it answered leaves its viewers watching the next one. At a
 stop of its running test, which the lane's frames show, a viewer of the lane is a viewer of that stop: input, the
 intents in the window and `pick-at` are its, with no `view` of its own. At most 64 lanes of a run are watched at once.
+
+A `watch` also names the layers its connection takes of the lane beside the frames (`layers`, at a hub whose `welcome`
+lists `layers`; `@piwitests/core/live-layers`: `calls`, `events`, `text`, `filmstrip`), none when it names none, and a
+later `watch` changes them (`LaneParams.layers`, kept per viewer in `Session.laneLayers`). The lane's worker, when its
+`run-attach` lists `layers` in `features`, hears what the lane's viewers ask together as it changes (`Worker.layersSent`),
+as a worker Playwright starts in the lane does, and none as the lane's last viewer leaves (`sendLayers`, `stopLane`): it
+sends each as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`),
+and on the hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left
+more than `MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A viewer that asks for the call log or the filmstrip anew has
+the worker asked for its lane view again (`view-lane` on), which has it send again the frame, the call log, the
+filmstrip so far and the page's text; the worker hears a list of layers only when it differs from the last one, and a
+`watch` asked again with nothing new tells the worker nothing. A `watch` that lists `text` asks for the page's text now (`RunSessions.laneText`, its asks merged as
+above). The hub keeps none of them. The editor client's lane view takes the layers its
+`piwi/laneView` names, and tells them as `piwi/laneLayer`
+([Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)).
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.
@@ -1642,6 +1749,8 @@ A change is pushed against what the client holds:
   last one sent, or answered to `piwi/status`, `piwi/runStatus` or `piwi/failures`;
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it;
+- `piwi/ciSessionChanged` is sent when a CI run's session differs from the last one sent for it, at most every
+  500 ms ([CI runs of the branch](#ci-runs-of-the-branch));
 - `piwi/runSessionChanged` is sent when a run's session differs from the last one sent for it, at the pace
   [Run sessions](#run-sessions) gives.
 
