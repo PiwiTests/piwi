@@ -130,6 +130,69 @@ test.describe('Video review fit', () => {
         expect(fit.scrolling).toEqual([]);
       });
 
+      if (size.width < 1024) {
+        test('scrolls as one document while the summary is shown, and fits again when it is folded', async ({
+          page,
+        }) => {
+          await openVideoTab(page, size);
+          const show = page.getByRole('button', { name: 'Show summary' });
+          await expect(show).toBeVisible();
+          await show.click();
+          await expect(page.getByRole('button', { name: 'Hide summary' })).toBeVisible();
+
+          const open = await page.evaluate(() => {
+            const tab = document.querySelector('[data-shot="run-video-tab"]')!;
+            const scrolling: string[] = [];
+            for (let el = tab as HTMLElement | null; el; el = el.parentElement) {
+              if (getComputedStyle(el).overflowY !== 'visible' && el.scrollHeight > el.clientHeight + 1)
+                scrolling.push(`${el.tagName}.${String(el.className).slice(0, 40)}`);
+            }
+            return {
+              video: tab.querySelector('video')!.getBoundingClientRect().height,
+              scrolling,
+              list: tab.querySelector('ul')!.scrollHeight - tab.querySelector('ul')!.clientHeight,
+            };
+          });
+          // The video keeps its height and only the page (the layout's root) scrolls; the list does not scroll inside it.
+          expect(open.video).toBeGreaterThan(150);
+          expect(open.scrolling).toHaveLength(1);
+          expect(open.list).toBeLessThanOrEqual(1);
+          await bar(page).scrollIntoViewIfNeeded();
+          await expect(bar(page)).toBeInViewport();
+
+          await page.getByRole('button', { name: 'Hide summary' }).click();
+          await expect(page.getByRole('button', { name: 'Show summary' })).toBeVisible();
+          const folded = await page.evaluate(() => {
+            const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+            return {
+              video: rect('[data-shot="run-video-tab"] video').bottom,
+              bar: rect('[aria-label="Tests in this reel"]').bottom,
+            };
+          });
+          expect(folded.video).toBeLessThanOrEqual(size.height);
+          expect(folded.bar).toBeLessThanOrEqual(size.height);
+        });
+
+        test('gives the fold back when the Video tab is left', async ({ page }) => {
+          await page.setViewportSize(size);
+          await page.goto(`/test-runs/${runId}?tab=test-cases`);
+          await waitForHydration(page);
+          await page.getByRole('button', { name: 'Hide summary' }).click();
+          await expect(page.getByRole('button', { name: 'Show summary' })).toBeVisible();
+
+          const pick = async (name: RegExp) => {
+            await page.getByRole('combobox', { name: 'Select tab' }).click();
+            await page.getByRole('option', { name }).click();
+          };
+          await pick(/^Video/);
+          await expect(page.getByTestId('video-action-count')).toBeVisible({ timeout: 30_000 });
+          await page.getByRole('button', { name: 'Show summary' }).click();
+          await pick(/^Tests/);
+          // The summary was folded before the Video tab, and it is folded again, not unfolded.
+          await expect(page.getByRole('button', { name: 'Show summary' })).toBeVisible();
+        });
+      }
+
       test('gives every mark a hit area of at least 24 by 24 px', async ({ page }) => {
         await openVideoTab(page, size);
         const hit = await page.evaluate(() =>
