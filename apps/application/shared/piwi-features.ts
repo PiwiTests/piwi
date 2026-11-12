@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Run video',
+        summary:
+          'Play the videos of a finished run one test after another, grouped by worker or file, with a checklist.',
+        needs: [],
+        where: 'Test run → Video',
+        doc: 'features/run-video',
+      },
+      {
         title: 'Watch a run',
         summary:
           'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',

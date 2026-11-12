@@ -65,7 +65,7 @@ watch(group, () => (chosenKey.value = null));
       <p class="text-sm text-muted max-w-sm text-center">
         Most suites keep video only for failing tests (<span class="font-mono">video: 'retain-on-failure'</span>), so a
         run with no failure often has none.
-        <DocLink to="features/evidence#the-video-tab" />
+        <DocLink to="features/run-video" />
       </p>
     </EmptyState>
 
