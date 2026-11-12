@@ -57,9 +57,9 @@ export function useVideoActionMarks(
   const total = computed(() => answer.value?.total ?? 0);
   const capped = computed(() => answer.value?.capped === true);
 
-  /** Plays the test from the mark. */
+  /** Plays the test from the mark; a mark at the lane's end seeks just inside the test, which is still its own. */
   function seekToMark(mark: VideoMark) {
-    seek(mark.atMs);
+    seek(Math.min(mark.atMs, Math.max(0, spanMs.value - 1)));
   }
 
   return { state, marks, total, capped, seekToMark };

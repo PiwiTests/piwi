@@ -102,9 +102,10 @@ const NAMED_KEYS = new Set([
   'NumLock',
 ]);
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'ControlOrMeta', 'AltGraph']);
+const SHORTCUT_MODIFIERS = new Set(['Control', 'Meta', 'ControlOrMeta']);
 const FUNCTION_KEY = /^F(?:[1-9]|1[0-9]|2[0-4])$/;
 
-/** How a key press reads: a named key or a combo as it is, any single character as `a key`. */
+/** How a key press reads: a named key or a shortcut as it is, any single character as `a key`. */
 export function keyLabel(key: unknown): string {
   if (typeof key !== 'string' || key === '') return 'a key';
   const parts = key.length > 1 ? key.split('+') : [key];
@@ -112,8 +113,8 @@ export function keyLabel(key: unknown): string {
   const modifiers = parts.slice(0, -1);
   if (!modifiers.every((m) => MODIFIER_KEYS.has(m))) return 'a key';
   const named = NAMED_KEYS.has(last) || MODIFIER_KEYS.has(last) || FUNCTION_KEY.test(last);
-  // A letter or digit behind a modifier is a shortcut (`Control+A`); alone it is text, which stays hidden.
-  const shortcut = modifiers.length > 0 && Array.from(last).length === 1;
+  // A character behind Control or Meta is a shortcut (`Control+A`); behind Shift or Alt it types text, so it stays hidden.
+  const shortcut = modifiers.some((m) => SHORTCUT_MODIFIERS.has(m)) && Array.from(last).length === 1;
   return named || shortcut ? parts.join('+') : 'a key';
 }
 
@@ -129,11 +130,15 @@ export function originAndPath(url: unknown): string | null {
   const text = url.trim();
   try {
     const parsed = new URL(text);
-    if (parsed.origin === 'null') return `${parsed.protocol}${parsed.pathname}`.slice(0, 200);
+    if (parsed.origin === 'null') {
+      // `file:` names a path; `data:`, `javascript:` and the like carry content, so only their scheme shows.
+      return (parsed.protocol === 'file:' ? `${parsed.protocol}${parsed.pathname}` : parsed.protocol).slice(0, 200);
+    }
     return `${parsed.origin}${parsed.pathname === '/' ? '' : parsed.pathname}`.slice(0, 200);
   } catch {
-    // A relative path (`/login?next=…`) or text that is no URL.
-    return text.replace(/[?#].*$/s, '').slice(0, 200) || null;
+    // A relative path (`/login?next=…`), or text that is no URL: without a query, a fragment or credentials.
+    const bare = text.replace(/[?#].*$/s, '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
+    return bare.slice(0, 200) || null;
   }
 }
 
@@ -255,11 +260,32 @@ function renderSelectorPart(part: string): string {
   return `locator(${quoteJsString(text)})`;
 }
 
+/** The parts of a selector chain, split at each ` >> ` that is not inside a quoted string. */
+function selectorParts(selector: string): string[] {
+  const parts: string[] = [];
+  let quote: string | null = null;
+  let start = 0;
+  for (let i = 0; i < selector.length; i++) {
+    const ch = selector[i]!;
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (selector.startsWith(' >> ', i)) {
+      parts.push(selector.slice(start, i));
+      start = i + 4;
+      i += 3;
+    }
+  }
+  parts.push(selector.slice(start));
+  return parts;
+}
+
 /** A trace action's `selector` as the locator chain a test would write. Null for no selector. */
 export function renderInternalSelector(selector: unknown): string | null {
   if (typeof selector !== 'string' || selector.trim() === '') return null;
-  const calls = selector.split(' >> ').map(renderSelectorPart);
-  return calls.join('.');
+  return selectorParts(selector).map(renderSelectorPart).join('.');
 }
 
 /** The test's wall clock at a trace time: through the anchor of the browser context's header, else null. */

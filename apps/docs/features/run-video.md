@@ -58,12 +58,13 @@ The marks come from what the project already stores. A test with a [trace](./evi
 other test uses its step list, so there is nothing to switch on. A test with neither shows "No recorded actions for this
 test", and a failed load is one muted line; the video plays either way.
 
-Piwi never shows what a test typed. The server masks each action before it sends it:
+Piwi does not show what a test typed. The server masks each action before it sends it, and a locator is shown as the test
+wrote it:
 
 | Action | Shown |
 |---|---|
 | Fill, type | The locator and "typed N chars", never the text |
-| Press | A named key or a combination, such as `Enter` or `Control+A`; a single character shows as "a key" |
+| Press | A named key or a shortcut, such as `Enter` or `Control+A`; a single character, alone or behind Shift or Alt, shows as "a key" |
 | Navigate | The origin and path, without the query string, fragment or credentials |
 | Check, uncheck, select | The locator only, never the chosen option |
 

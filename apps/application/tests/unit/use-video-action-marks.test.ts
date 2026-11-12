@@ -88,7 +88,7 @@ describe('useVideoActionMarks', () => {
     l.seekToMark(l.marks.value[0]!);
     expect(l.seek).toHaveBeenLastCalledWith(0);
     l.seekToMark(l.marks.value[2]!);
-    expect(l.seek).toHaveBeenLastCalledWith(10_000);
+    expect(l.seek).toHaveBeenLastCalledWith(9_999);
   });
 
   it('merges the marks of a narrow lane and seeks to the first of the merged', async () => {

@@ -35,6 +35,11 @@ describe('keyLabel', () => {
     }
   });
 
+  it('hides a character behind Shift, Alt or AltGraph, which types text', () => {
+    for (const key of ['Shift+P', 'Alt+1', 'AltGraph+q', 'Shift+Alt+z', 'Alt+é']) expect(keyLabel(key)).toBe('a key');
+    expect(keyLabel('Control+Shift+P')).toBe('Control+Shift+P');
+  });
+
   it('hides any single printable character', () => {
     for (const key of ['a', 'Z', '7', '@', ' ', '+']) expect(keyLabel(key)).toBe('a key');
   });
@@ -42,6 +47,26 @@ describe('keyLabel', () => {
   it('hides what is no key or combo of keys', () => {
     for (const key of ['hunter2', 'Control+hunter2', 'Foo+A', '', undefined, 42, null])
       expect(keyLabel(key)).toBe('a key');
+  });
+});
+
+describe('originAndPath', () => {
+  it('drops credentials of a URL it cannot parse', () => {
+    expect(originAndPath('http://user:SECRET@host:99999/p?token=x')).toBe('http://host:99999/p');
+  });
+
+  it('shows only the scheme of a URL that carries content', () => {
+    expect(originAndPath('data:text/html,SECRET')).toBe('data:');
+    expect(originAndPath('javascript:alert("SECRET")')).toBe('javascript:');
+  });
+});
+
+describe('renderInternalSelector chains', () => {
+  it('splits a chain only outside quoted text', () => {
+    expect(renderInternalSelector('internal:text="a >> b"i')).toBe("getByText('a >> b')");
+    expect(renderInternalSelector('internal:role=list >> internal:text="a >> b"i')).toBe(
+      "getByRole('list').getByText('a >> b')",
+    );
   });
 });
 
