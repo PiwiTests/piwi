@@ -26,6 +26,8 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
   let hasFrameCallback = false;
   let moving = false;
   let token = 0;
+  /** The seek that still waits for its video or its frame, so Play pressed meanwhile can start it again playing. */
+  let pendingSeek: { token: number; index: number; ms: number; play: boolean } | null = null;
 
   /** The element on show. */
   const front = ref<Slot>(0);
@@ -167,6 +169,7 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     const entry = entries.value[index];
     if (!entry?.execution.video || failed.has(index)) return;
     const mine = ++token;
+    pendingSeek = { token: mine, index, ms, play };
     started.value = true;
     finished.value = false;
     playedFrom.value = Math.min(playedFrom.value, index);
@@ -175,7 +178,10 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     const slot: Slot = onShow ? front.value : ((1 - front.value) as Slot);
     if (!onShow && held[slot] !== index) setHeld(slot, index);
     const el = els[slot];
-    if (!el) return;
+    if (!el) {
+      pendingSeek = null;
+      return;
+    }
     try {
       if (el.readyState < 1) await once(el, 'loadedmetadata');
       if (mine !== token) return;
@@ -185,10 +191,12 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
     } catch {
       // The element's own `error` event. A newer move owns the player now, so a stale one leaves it be.
       if (mine !== token) return;
+      pendingSeek = null;
       moving = false;
       markFailed(index);
       return;
     }
+    pendingSeek = null;
     if (!onShow) {
       els[front.value]?.pause();
       front.value = slot;
@@ -298,9 +306,14 @@ export function useReelPlayer(reel: Ref<Reel | null>, startAt?: Ref<number | nul
         if (finished.value) playedFrom.value = ticksFrom(first);
         void seekTo(first, 0, true);
       }
+    } else if (pendingSeek?.token === token && !playing.value) {
+      // Play pressed while a paused reel's seek still waits for its video: that seek starts again with the other state, so
+      // it ends as the person last asked (pressed twice, paused).
+      void seekTo(pendingSeek.index, pendingSeek.ms, !pendingSeek.play);
     } else if (playing.value) {
       // A move that is still waiting (a video to load, a seek) is dropped, so it cannot start playing again.
       token++;
+      pendingSeek = null;
       moving = false;
       el.pause();
       playing.value = false;

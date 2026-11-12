@@ -414,6 +414,67 @@ describe('useReelPlayer', () => {
       expect(els[0].currentTime).toBeCloseTo(0.7);
     });
 
+    it('ends playing when Play is pressed while a paused reel waits for the video it was sought to', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0, true);
+      await flush();
+      player.togglePlay();
+      expect(player.playing.value).toBe(false);
+
+      // The third test's video loads into the element that is off show; Play is pressed before it has loaded.
+      void player.seekTo(2, 300);
+      await flush();
+      player.togglePlay();
+      await flush();
+      expect(player.playing.value).toBe(false);
+      els[1].readyState = 4;
+      els[1].dispatchEvent(new Event('loadedmetadata'));
+      await flush();
+
+      expect(player.current.value).toBe(2);
+      expect(player.playing.value).toBe(true);
+      const shown = els[player.front.value];
+      expect(shown.srcValue).toBe('/files/p/3.webm');
+      expect(shown.paused).toBe(false);
+      expect(shown.currentTime).toBeCloseTo(0.3);
+      expect(els[1 - player.front.value]!.paused).toBe(true);
+    });
+
+    it('ends paused when Play and Pause are both pressed while a seek waits for its video', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0, true);
+      await flush();
+      player.togglePlay();
+
+      void player.seekTo(2, 300);
+      await flush();
+      player.togglePlay();
+      player.togglePlay();
+      await flush();
+      els[1].readyState = 4;
+      els[1].dispatchEvent(new Event('loadedmetadata'));
+      await flush();
+
+      expect(player.current.value).toBe(2);
+      expect(player.playing.value).toBe(false);
+      expect(els[player.front.value].paused).toBe(true);
+      expect(els[player.front.value].currentTime).toBeCloseTo(0.3);
+    });
+
+    it('does not start the test on show when Play is pressed while a seek to another test waits', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0, true);
+      await flush();
+      player.togglePlay();
+      const playsBefore = els[0].plays;
+
+      void player.seekTo(2, 300);
+      await flush();
+      player.togglePlay();
+      await flush();
+      expect(els[0].plays).toBe(playsBefore);
+    });
+
     it('keeps playing when a playing reel is sought, within the test and to another test', async () => {
       const { player, els } = setup();
       void player.seekTo(0, 0, true);
