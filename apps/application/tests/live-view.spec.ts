@@ -6,7 +6,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import { join, resolve } from 'node:path';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import type { LiveStop } from '@piwitests/core/live-view';
+import { LIVE_FRAME_TYPE, encodeLiveMessage, liveThumbHeader, type LiveStop } from '@piwitests/core/live-view';
 import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
@@ -23,7 +23,8 @@ import { holdWorkerStream } from './utils/live-view';
  * where it stopped on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
  * as the project turns the live view off. **Watch all** shows a tile of each worker on one watch, and a click shows one
  * in full on it, each worker hearing what the page asks of its images; a worker that says no lane stays in full view on
- * the test it runs.
+ * the test it runs. The lane panel asks a worker for the layers it shows, and shows the page's events, its text,
+ * masked and searchable, and the test's filmstrip, one image a call, as the worker posts them.
  */
 
 const target = resolveE2ETarget();
@@ -209,7 +210,7 @@ async function liveWorkers(request: APIRequestContext, runId: number): Promise<W
 /**
  * A live run in the project with the live view on, its workers played by this spec: worker `i` runs `tests[i]`, in lane
  * `i` when the test says so, its row begun when it says so, and holds its stream, sending `shots[i]` twice a second
- * in JSON, as a reporter that predates live messages does.
+ * in JSON, as a reporter that predates live messages does. `key` is the run's live view key, for what else they post.
  */
 async function playWorkers(
   request: APIRequestContext,
@@ -217,6 +218,7 @@ async function playWorkers(
   shot: Buffer,
 ): Promise<{
   runId: number;
+  key: string;
   workers: Array<ReturnType<typeof holdWorkerStream>>;
   shots: Buffer[];
   end: () => Promise<void>;
@@ -278,6 +280,7 @@ async function playWorkers(
   const sending = setInterval(() => void send().catch(() => undefined), 500);
   return {
     runId,
+    key: liveView.key,
     workers,
     shots,
     end: async () => {
@@ -659,6 +662,8 @@ test.describe('Live view of a run', () => {
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
       // The editor hears someone watches.
       await expect.poll(() => hub.heard().at(-1)?.viewers, { timeout: 10_000 }).toBe(1);
+      // A shared run's call log, read inside the worker, says why the click waits.
+      await expect(view.getByTestId('live-call-log')).toContainText('element is not enabled', { timeout: 20_000 });
 
       hub.share(false);
       await expect(view.getByTestId('live-status')).toHaveText(
@@ -944,6 +949,141 @@ test.describe('Live view of a run', () => {
         await expect(live).toBeVisible();
         await expect(panel.getByTestId('live-status')).toHaveText('');
       }
+    } finally {
+      await run.end();
+    }
+  });
+
+  test('the lane panel asks a worker for the layers it shows, and shows its page’s events, text and filmstrip', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const title = 'pays on a slow page';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title, lane: true, row: true }], shot);
+    const worker = run.workers[0]!;
+    const asked = () =>
+      (worker
+        .heard()
+        .filter((message) => message.type === 'view')
+        .at(-1)?.layers as string[] | undefined) ?? null;
+    const id = { shard: null, worker: 0, slot: 0 };
+    const post = async (message: Record<string, unknown>) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}` },
+        data: { ...id, test: title, ...message },
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    const postThumb = async (call: string, index: number, image: Buffer) => {
+      const thumb = {
+        call,
+        title: `Click getByRole('link', { name: 'Step ${index}' })`,
+        index,
+        width: 160,
+        height: 100,
+        at: Date.now(),
+      };
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': LIVE_FRAME_TYPE },
+        data: Buffer.from(encodeLiveMessage(liveThumbHeader(id, thumb, title), image)),
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      // The events show by default and the filmstrip always: the worker is asked for both, and not for the text.
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['events', 'filmstrip']);
+      await post({
+        type: 'call-log',
+        log: {
+          id: 'call@4',
+          call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/live.spec.ts', line: 4 },
+          status: 'running',
+          lines: ["- waiting for getByRole('button', { name: 'Pay' })"],
+          point: null,
+          target: null,
+          viewport: null,
+          ms: 3_000,
+          error: null,
+        },
+      });
+
+      // The page's events, newest first: a request pending long on one line, a backend's log under its request.
+      const at = Date.now();
+      const orders = { method: 'POST', url: 'https://shop.test/api/orders' };
+      for (const event of [
+        { kind: 'console', text: 'TypeError: price is undefined' },
+        { kind: 'request-pending', id: 7, ...orders, ms: 5_000, done: false },
+        { kind: 'request-pending', id: 7, ...orders, ms: 17_000, done: false },
+        { kind: 'request-failed', ...orders, status: 500, failure: null },
+        { kind: 'backend', ...orders, status: 500, level: 'error', text: 'NullReferenceException in OrderService' },
+      ]) {
+        await post({ type: 'page-event', event, at });
+      }
+      const events = panel.getByTestId('live-event');
+      await expect(events).toHaveCount(3);
+      await expect(events.nth(0)).toContainText('Failed request');
+      await expect(events.nth(0).getByTestId('live-event-backend')).toContainText(
+        'Backend error: NullReferenceException in OrderService',
+      );
+      await expect(events.nth(1)).toContainText('Pending request');
+      await expect(events.nth(1)).toContainText('Pending for 17s');
+      await expect(events.nth(2)).toContainText('TypeError: price is undefined');
+
+      // The filmstrip: one image a call, in the order of its calls, whatever the worker sends again.
+      const small = await page.screenshot({ type: 'jpeg', quality: 40, clip: { x: 0, y: 0, width: 160, height: 100 } });
+      await postThumb('call@3', 2, small);
+      await postThumb('call@1', 1, small);
+      await postThumb('call@3', 2, small);
+      const shots = panel.getByTestId('live-filmstrip-shot');
+      await expect(shots).toHaveCount(2);
+      await expect(shots.nth(0)).toHaveAttribute('title', "Click getByRole('link', { name: 'Step 1' })");
+      await shots.nth(1).click();
+      await expect(panel.getByTestId('live-filmstrip-large')).toContainText(
+        "After Click getByRole('link', { name: 'Step 2' })",
+      );
+
+      // The text opened: the worker is asked for it and for its text now.
+      await panel.getByRole('button', { name: 'Page text' }).click();
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['events', 'text', 'filmstrip']);
+      await expect
+        .poll(() => worker.heard().some((message) => message.type === 'text'), { timeout: 10_000 })
+        .toBe(true);
+      await expect(panel.getByTestId('live-text-waiting')).toHaveText('Reading the page’s text…');
+      await post({
+        type: 'text',
+        text: {
+          call: null,
+          source: 'snapshot',
+          cut: false,
+          at: Date.now(),
+          text: [
+            '- heading "Checkout" [level=1] [ref=e2]',
+            '- textbox "Password" [ref=e3]: S3cr3t-pass',
+            '- paragraph [ref=e4]: Résumé of your order',
+            '- button "Pay €84.90" [disabled] [ref=e5]',
+          ].join('\n'),
+        },
+      });
+      const text = panel.getByTestId('live-text');
+      await expect(text).toContainText('- textbox "Password" [ref=e3]: <hidden>');
+      await expect(text).not.toContainText('S3cr3t');
+      // The call's element is marked; the search ignores case and accents.
+      await expect(text.locator('[data-target]')).toHaveText('- button "Pay €84.90" [disabled] [ref=e5]');
+      await panel.getByTestId('live-text-search').fill('resume');
+      await expect(panel.getByTestId('live-text-count')).toHaveText('1 match');
+      await expect(text.locator('mark')).toHaveText('Résumé');
+
+      // The events folded: the worker is no longer asked for them.
+      await panel.getByRole('button', { name: /^Page events/ }).click();
+      await expect.poll(asked, { timeout: 10_000 }).toEqual(['text', 'filmstrip']);
+      await expect(events).toHaveCount(0);
     } finally {
       await run.end();
     }

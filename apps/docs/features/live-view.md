@@ -34,9 +34,8 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 <<< @/snippets/live-view-on.txt
 
 A spec file that imports `test` from `@playwright/test` instead of your [capture fixtures](/guide/capture-fixtures)
-has no view: the log names the first one. A CI run without a view logs why instead: the setting is off, the run does
-not stream (`streaming: false`), `wrapConfig`'s global setup did not register it, or the instance did not register the run as
-it started, with the error it answered.
+has no view: the log names the first one. A CI run without a view logs why instead, for a reason
+[Check availability](#check-availability) lists, with the error the instance answered.
 
 Turning it off ends every view at once. Turned on again, a run that had a view and still runs gets it back within a
 minute.
@@ -63,7 +62,8 @@ On the run page's **Tests** tab, **Watch** at the end of a running test's row op
 the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
 taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
 caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
-[Watch all](./watch-all) shows every worker at once.
+Under it, the page's [events, text and filmstrip](./live-view-layers); [Watch all](./watch-all) shows every worker at
+once.
 
 The view follows that call: how long it has run, Playwright's log of it as a failed call's error prints it, and while
 it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point
@@ -114,12 +114,13 @@ never the key, so a dashboard that restarts takes it back from the workers while
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
   that person's oldest. Its workers send 4 MB of images a second at most together.
-- **One dashboard server.** The view is relayed in the memory of one server, as the run's live events are, so it needs
-  a deployment of one server ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do
-  not make up for it: the run's setup, its CI workers and the people watching are separate clients.
+- **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
+  ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
+  run's setup, its CI workers and the people watching are separate clients.
 
 ## Related
 
+- [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a run live](./share-live): let a teammate watch a run on your machine
