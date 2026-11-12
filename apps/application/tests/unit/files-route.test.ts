@@ -199,6 +199,16 @@ describe('a stored file', () => {
     expect(suffix.body.equals(VIDEO.subarray(995))).toBe(true);
   });
 
+  test('answers the probe a video element sends with 206, the whole file, and its type and range support', async () => {
+    const answer = await get('/api/files/project-1/run-7/42/video.webm', { Range: 'bytes=0-' });
+
+    expect(answer.status).toBe(206);
+    expect(answer.headers['content-type']).toBe('video/webm');
+    expect(answer.headers['accept-ranges']).toBe('bytes');
+    expect(answer.headers['content-range']).toBe(`bytes 0-${VIDEO.length - 1}/${VIDEO.length}`);
+    expect(answer.body.equals(VIDEO)).toBe(true);
+  });
+
   test('answers 416 to a range past its end, and the whole file to ranges it does not serve', async () => {
     const past = await get('/api/files/project-1/run-7/42/video.webm', { Range: 'bytes=5000-6000' });
     expect(past.status).toBe(416);
