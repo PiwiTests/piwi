@@ -152,7 +152,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
 - **The running line's inlay goes as its test ends or stops, as the run ends and as the watch does, whatever the
   service says after** (`Glue.runningLinesShown`, drawn on every draw). Checked by `GlueTest` and `PiwiRunControlTest`
-  (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`). ([Run control](ARCHITECTURE.md#run-control))
+  (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`, `testARunningLineOfASlotNoLongerWatchedIsNotTaken`).
+  ([Run control](ARCHITECTURE.md#run-control))
+- **The Worker tab's watch goes on while the Worker tab or the Page tab is in sight, and ends once neither is**
+  (`laneSightChanged`). Checked by `PiwiRunControlTest` (`testThePageTabKeepsTheWatchWhileItShows`).
+  ([Run control](ARCHITECTURE.md#run-control))
 - **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
   start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
   ([Run control](ARCHITECTURE.md#run-control))

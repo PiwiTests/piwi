@@ -139,6 +139,7 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JViewport
 import javax.swing.JCheckBox
+import javax.swing.JComponent
 import javax.swing.KeyStroke
 import javax.swing.SwingConstants
 import javax.swing.ScrollPaneConstants
@@ -240,10 +241,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageCalls = CompletableFuture.completedFuture(Unit)
 
     /**
-     * Whether the Paused Page tab is in sight, where it watches its stop's page: the tests replace it, their tool
-     * window out of sight.
+     * Whether a tab of the Piwi tool window is in sight: the Paused Page, where it watches its stop's page, and the
+     * Worker and Page tabs, which keep the slot's watch. The tests replace it, their tool window out of sight.
      */
-    internal var inSight: (PausedPagePanel) -> Boolean = { it.isShowing }
+    internal var inSight: (JComponent) -> Boolean = { it.isShowing }
 
     /** Draws again once the Paused Page tab stops waiting for a slot's next stop (`Glue.StopsShown.waitsUntil`). */
     private val waitAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
@@ -282,6 +283,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The Page tab and its console while the tool window holds it. On the event thread. */
     private var pageTab: Content? = null
     private var pageConsole: ConsoleView? = null
+    /** The person closed the Page tab: it stays closed until the next run begins. */
+    @Volatile private var pageClosed = false
 
     private val breakpointsQueued = AtomicBoolean()
 
@@ -419,11 +422,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             },
         )
         val editors = EditorFactory.getInstance()
-        // An editor opened on a stop's file gets its inlay.
+        // An editor opened on a stop's or a running line's file gets its inlay; a released editor is let go of.
         editors.addEditorFactoryListener(
             object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
-                    if (drawn.isNotEmpty() || drawnRunning.isNotEmpty()) ApplicationManager.getApplication().invokeLater({ draw() }, gone)
+                    val running = synchronized(lock) { runningLines.isNotEmpty() }
+                    if (drawn.isNotEmpty() || running) ApplicationManager.getApplication().invokeLater({ draw() }, gone)
+                }
+
+                override fun editorReleased(event: EditorFactoryEvent) {
+                    drawn.values.forEach { it.inlays.remove(event.editor) }
+                    drawnRunning.values.forEach { it.inlays.remove(event.editor) }
                 }
             },
             this,
@@ -550,8 +559,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }
             fresh
         }
-        // The breakpoints changed between the run's start and its first worker.
-        if (fresh) breakpointsChanged()
+        if (fresh) {
+            // A new run writes in the Page tab again, the person having closed it or not.
+            pageClosed = false
+            // The breakpoints changed between the run's start and its first worker.
+            breakpointsChanged()
+        }
         // Before the draws that follow, so a rerun under the ref starts with Interact off.
         if (session.ended) ApplicationManager.getApplication().invokeLater({ runGone(ref) }, gone)
         changed()
@@ -712,10 +725,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * The call a watched slot's running test is in, or none (`piwi/runningLine`): kept, and drawn on the event thread.
+     * The call a watched slot's running test is in, or none (`piwi/runningLine`): kept while the Worker tab watches that
+     * slot, and drawn on the event thread. [stopLaneView] drops it under [lock] once the watch ends.
      */
     fun runningLine(line: RunningLine) {
-        synchronized(lock) { runningLines = Glue.withRunningLine(runningLines, line) }
+        synchronized(lock) {
+            val own = watchingLane
+            if (line.call != null && (own == null || own.ref != line.ref || own.lane != line.lane)) return
+            runningLines = Glue.withRunningLine(runningLines, line)
+        }
         ApplicationManager.getApplication().invokeLater({ drawRunning() }, gone)
     }
 
@@ -738,8 +756,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val key = line.ref to line.lane
             val text = Glue.runningLineText(line)
             drawnRunning[key]?.takeIf { it.uri != call.uri || it.line != at || it.text != text }?.let { drawnRunning.remove(key)?.dispose() }
+            // A file no editor shows has no document loaded: it is drawn once an editor opens it (`editorCreated`).
             val file = fileOf(call.uri) ?: continue
-            val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
+            val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: continue
             if (at < 0 || at >= document.lineCount) continue
             val drawnLine = drawnRunning.getOrPut(key) { DrawnRunning(call.uri, at, text) }
             for (editor in EditorFactory.getInstance().getEditors(document, project)) {
@@ -750,21 +769,27 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /** How many editors the running lines' inlays are held for, which the tests read. On the event thread. */
+    internal fun runningEditors(): Int = drawnRunning.values.sumOf { it.inlays.size }
+
     /** The texts of the running lines' inlays drawn now, which the tests read. On the event thread. */
     internal fun runningShown(): List<String> =
         drawnRunning.values.flatMap { it.inlays.values }.filter { it.isValid }.map { (it.renderer as RunningLineInlay).text }
 
     /**
      * Write lines in the Page tab of the Piwi tool window, the tab added, not selected, when the tool window holds
-     * none. On any thread.
+     * none, unless the person closed it since the last run began ([pageClosed]). In sight, the tab keeps the slot's
+     * watch ([laneSightChanged]). On any thread.
      */
     private fun writePage(lines: List<String>) {
         if (lines.isEmpty()) return
         ApplicationManager.getApplication().invokeLater({
             val window = toolWindow() ?: return@invokeLater
             val open = pageTab?.takeIf { window.contentManager.getIndexOfContent(it) >= 0 }
+            if (open == null && pageClosed) return@invokeLater
             val console = pageConsole?.takeIf { open != null } ?: run {
                 val console = TextConsoleBuilderFactory.getInstance().createBuilder(project).apply { setViewer(true) }.console
+                console.component.addHierarchyListener { laneSightChanged() }
                 ContentFactory.getInstance().createContent(console.component, PAGE_TAB, false).apply {
                     isCloseable = true
                     setDisposer {
@@ -772,6 +797,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                         if (pageTab === this) {
                             pageTab = null
                             pageConsole = null
+                            pageClosed = true
+                            laneSightChanged()
                         }
                     }
                     window.contentManager.addContent(this)
@@ -1090,6 +1117,30 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         (livePage()?.component as? PausedPagePanel)?.stopInteracting()
     }
 
+    /**
+     * The Worker tab or the Page tab showed or hid: the slot's watch goes on while either is in sight, ends once neither
+     * is, and starts again as one shows while Watch is on. Decided once the tool window's change of tabs is done.
+     */
+    private fun laneSightChanged() {
+        ApplicationManager.getApplication().invokeLater({
+            val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return@invokeLater
+            if (laneTarget == null) return@invokeLater
+            if (!laneInSight(panel)) {
+                stopLaneView()
+                panel.watching(false)
+            } else if (panel.liveWanted && watchingLane == null) {
+                watchLane(true)
+            }
+        }, gone)
+    }
+
+    /** Whether the Worker tab (`panel`) or the Page tab is in sight. On the event thread. */
+    private fun laneInSight(panel: PausedPagePanel): Boolean = inSight(panel) || livePageOutput()?.let { inSight(it.component) } == true
+
+    /** The Page tab while the tool window holds it. */
+    private fun livePageOutput(): Content? =
+        pageTab?.takeIf { toolWindow()?.contentManager?.getIndexOfContent(it)?.let { i -> i >= 0 } == true }
+
     /** The Worker tab while the tool window holds it: closing it removes it. */
     private fun liveWorkerTab(): Content? =
         workerTab?.takeIf { toolWindow()?.contentManager?.getIndexOfContent(it)?.let { i -> i >= 0 } == true }
@@ -1114,12 +1165,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             panel.openTrace = { openTrace() }
             panel.traceable(Glue.canOpenTrace(shown), (ref to lane) in traceAsking)
             panel.configureLive(true, false, false) { on -> watchLane(on) }
-            panel.visibilityChanged = { visible ->
-                if (!visible) {
-                    stopLaneView()
-                    panel.watching(false)
-                } else if (panel.liveWanted && watchingLane == null) watchLane(true)
-            }
+            panel.visibilityChanged = { laneSightChanged() }
             panel.show(Glue.laneShown(sessions[ref], lane, stops()).caption, null)
         }
         panel.liveWanted = true
@@ -1478,7 +1524,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
         panel.watching(false)
         val (ref, lane) = laneTarget ?: return
-        if (!on || !panel.isShowing) return
+        if (!on || !laneInSight(panel)) return
         val asked = layersAsked()
         val params = LaneViewParams(ref, lane, true, asked)
         watchingLane = params
@@ -1678,7 +1724,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     private fun shareLiveRun(ref: String, on: Boolean) {
         val live = sessions[ref]?.live
-        if (!on && !confirmStopSharing(live)) return
+        if (!on) {
+            // Stopping asks about the run picked; a run that ended or is shared no more has nothing to stop.
+            val shared = live?.takeIf { it.shared } ?: return PiwiCommands.notify(project, Glue.SHARE_ENDED)
+            if (!confirmStopSharing(shared)) return
+        }
         if (on && live?.refused == null && !liveWarned) {
             // The first share of the project chooses its scope too: this run, or the project's runs until stopped.
             val picked = MessageDialogBuilder.yesNoCancel("Share the Run Live?", Glue.shareLiveWarning(live?.page))

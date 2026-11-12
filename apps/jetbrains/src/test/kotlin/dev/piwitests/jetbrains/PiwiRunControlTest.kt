@@ -272,6 +272,22 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
     }
 
+    /** The Worker tab watching the slot `lane` of `ref`, the tool window registered and in sight, for `block`. */
+    private fun watched(ref: String, lane: Int, block: (com.intellij.openapi.wm.ToolWindow) -> Unit) {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        sessions.inSight = { true }
+        try {
+            sessions.showWorker(ref, lane)
+            waitFor("the watch") { lanes.lastOrNull()?.takeIf { it.ref == ref && it.lane == lane && it.on } }
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            block(window)
+        } finally {
+            sessions.inSight = { it.isShowing }
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
     private fun <T> waitFor(what: String, read: () -> T?): T {
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
@@ -569,6 +585,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     fun testTheRunningLineIsMarkedUntilTheTestEndsOrStops() {
         val file = file("tests/coupon.spec.ts", coupon)
         myFixture.openFileInEditor(file)
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", test()))))
+        watched("ed-run", 1) { runningLineMarked(file) }
+    }
+
+    private fun runningLineMarked(file: VirtualFile) {
         val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
         fun mark(line: RunningLine) {
             sessions.runningLine(line)
@@ -576,7 +597,6 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
         fun inlayLine() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
             .filter { it.renderer is RunningLineInlay }.map { myFixture.editor.document.getLineNumber(it.offset) }
-        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", test()))))
         mark(RunningLine("ed-run", 1, 0, call))
         assertEquals(listOf("Piwi: Worker 2 runs Click getByRole('button', { name: 'Apply' })"), sessions.runningShown())
         assertEquals(listOf(5), inlayLine())
@@ -600,6 +620,129 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(RunSession("ed-run", ended = true))
         assertEquals(emptyList<String>(), sessions.runningShown())
         assertEquals(emptyList<Int>(), inlayLine())
+    }
+
+    /** A running line of a slot the Worker tab watches no more is not taken, however late it comes. */
+    fun testARunningLineOfASlotNoLongerWatchedIsNotTaken() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        myFixture.openFileInEditor(file)
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
+        hear(RunSession("ed-late", base.path, listOf(RunWorker(0, 1, "running", test()), RunWorker(1, 0, "running", test()))))
+        watched("ed-late", 1) {
+            sessions.runningLine(RunningLine("ed-late", 1, 0, call))
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(1, sessions.runningShown().size)
+            sessions.showWorker("ed-late", 0)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<String>(), sessions.runningShown())
+            sessions.runningLine(RunningLine("ed-late", 1, 0, call.copy(line = 4)))
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<String>(), sessions.runningShown())
+        }
+    }
+
+    /**
+     * A running line in a file no editor shows reads nothing from disk and is drawn once an editor opens the file; a
+     * closed editor is let go of.
+     */
+    fun testTheRunningLineReadsNoFileAndLetsGoOfAClosedEditor() {
+        val file = file("tests/running-unread.spec.ts", coupon)
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
+        hear(RunSession("ed-unread", base.path, listOf(RunWorker(0, 1, "running", test()))))
+        watched("ed-unread", 1) {
+            sessions.runningLine(RunningLine("ed-unread", 1, 0, call))
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertNull(FileDocumentManager.getInstance().getCachedDocument(file))
+            assertEquals(emptyList<String>(), sessions.runningShown())
+            myFixture.openFileInEditor(file)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(1, sessions.runningShown().size)
+            assertEquals(1, sessions.runningEditors())
+            FileEditorManager.getInstance(project).closeFile(file)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(0, sessions.runningEditors())
+        }
+    }
+
+    /** A page line of the watched slot, one console error saying `text`. */
+    private fun pageLine(ref: String, lane: Int, text: String) {
+        sessions.laneLayer(LaneViewLayer(ref, lane, 0, "t1", "events", event = PageEvent("console", text)))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+    }
+
+    /**
+     * The Page tab selected hides the Worker tab, and the slot's watch goes on, its lines still written; the watch ends
+     * only once neither tab is in sight.
+     */
+    fun testThePageTabKeepsTheWatchWhileItShows() {
+        hear(RunSession("ed-page", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true))))
+        watched("ed-page", 1) { window ->
+            pageLine("ed-page", 1, "first of the page tab")
+            val pageTab = waitFor("the Page tab") { window.contentManager.findContent(PiwiRunSessions.PAGE_TAB) }
+            val worker = window.contentManager.findContent("Worker 2").component as PausedPagePanel
+            sessions.inSight = { it !is PausedPagePanel }
+            worker.visibilityChanged?.invoke(false)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertTrue(lanes.none { !it.on })
+            pageLine("ed-page", 1, "second of the page tab")
+            assertEquals("  Console error: second of the page tab", sessions.pageWritten.lastOrNull())
+            // Neither tab in sight: the watch ends.
+            sessions.inSight = { false }
+            val shown = pageTab.component
+            shown.hierarchyListeners.forEach {
+                it.hierarchyChanged(java.awt.event.HierarchyEvent(shown, java.awt.event.HierarchyEvent.HIERARCHY_CHANGED, shown, shown.parent, java.awt.event.HierarchyEvent.SHOWING_CHANGED.toLong()))
+            }
+            assertEquals(LaneViewParams("ed-page", 1, false), waitFor("the watch's end") { lanes.lastOrNull()?.takeIf { !it.on } }.copy(layers = null))
+        }
+    }
+
+    /** The Page tab the person closed stays closed until the next run. */
+    fun testAClosedPageTabStaysClosedUntilTheNextRun() {
+        hear(RunSession("ed-closed", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true))))
+        watched("ed-closed", 1) { window ->
+            pageLine("ed-closed", 1, "before the close")
+            val pageTab = waitFor("the Page tab") { window.contentManager.findContent(PiwiRunSessions.PAGE_TAB) }
+            window.contentManager.removeContent(pageTab, true)
+            pageLine("ed-closed", 1, "while closed")
+            assertNull(window.contentManager.findContent(PiwiRunSessions.PAGE_TAB))
+            assertFalse(sessions.pageWritten.any { it.contains("while closed") })
+            hear(RunSession("ed-next", base.path, listOf(RunWorker(0, 0, "running", test()))))
+            pageLine("ed-closed", 1, "after the next run began")
+            assertNotNull(waitFor("the Page tab again") { window.contentManager.findContent(PiwiRunSessions.PAGE_TAB) })
+            assertEquals("  Console error: after the next run began", sessions.pageWritten.lastOrNull())
+        }
+    }
+
+    /** Stop Sharing for a run that ended or stopped being shared asks nothing, sends nothing and says so. */
+    fun testStopSharingARunNoLongerSharedSaysSoAndAsksNothing() {
+        val said = CopyOnWriteArrayList<String>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    said += com.intellij.openapi.util.text.StringUtil.unescapeXmlEntities(notification.content)
+                }
+            },
+        )
+        val page = "https://piwi.example.com/test-runs/42"
+        hear(running("ed-gone").copy(live = RunLive(true, null, page, 1)))
+        hear(RunSession("ed-gone", ended = true))
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            Messages.YES
+        }
+        try {
+            sessions.shareLive(false, "ed-gone")
+            hear(running("ed-unshared").copy(live = RunLive(false, null, page, 0)))
+            sessions.shareLive(false, "ed-unshared")
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(List(2) { Glue.SHARE_ENDED }, waitFor("both said") { said.takeIf { it.size == 2 } })
+        assertEquals(emptyList<String>(), asked)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertTrue(shares.isEmpty())
     }
 
     /**

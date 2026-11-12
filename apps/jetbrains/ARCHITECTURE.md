@@ -561,18 +561,21 @@ worker whose reporter shows its running test (`Glue.watchableWorkers`). It watch
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
 other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
-The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off.
+The watch goes on while the Worker tab or the Page tab is in sight, ends once neither is, and starts again as one
+shows (`laneSightChanged`, decided once the tool window's change of tabs is done); the run's end turns Watch off.
 
 **The running line and the Page tab.** The descriptor sends `runningLine` in the initialization options, so the
-service tells the call the watched slot's running test is in (`piwi/runningLine`, `PiwiRunSessions.runningLine`): an
-inlay after that line in each editor of its file (`RunningLineInlay`, drawn as the count at the caret is), naming the
-worker and the call (`Glue.runningLineText`), at the line the edits since the run started brought it to. The service
-takes it away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot,
-as the run ends and as the watch does (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates
-it sends none. The watched slot's console errors and uncaught errors, from the events layer the watch asks for anyway,
-go one line each into the **Page** tab of the Piwi tool window (`Glue.PageOutput`, `writePage`, a viewer
-`ConsoleView`), each test named before its first line; the tab is added, never selected, on the first line, and
-closes. Both tabs close
+service tells the call the watched slot's running test is in (`piwi/runningLine`, `PiwiRunSessions.runningLine`, taken
+only for the slot watched then): an inlay after that line in each editor of its file (`RunningLineInlay`, drawn as the
+count at the caret is), naming the worker and the call (`Glue.runningLineText`), at the line the edits since the run
+started brought it to. A file no editor shows is not read: its document is drawn in once an editor opens it
+(`getCachedDocument`, `editorCreated`), and a released editor is let go of (`editorReleased`). The service takes it
+away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot, as the
+run ends and as the watch does (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates it
+sends none. The watched slot's console errors and uncaught errors, from the events layer the watch asks for anyway, go
+one line each into the **Page** tab of the Piwi tool window (`Glue.PageOutput`, `writePage`, a viewer `ConsoleView`),
+each test named before its first line; the tab is added, never selected, on the first line, and closes: closed by the
+person, it stays closed until the next run begins (`pageClosed`). Both tabs close
 (`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
 opens it again, and the Paused Page stops its view and the next stop opens it again. **Open the Trace So Far**, beside
 Watch while the slot's worker runs a test whose reporter answers trace asks (`Glue.canOpenTrace`, as the run model's
@@ -1032,7 +1035,8 @@ offers **Copy the Run Page's Link** and **Stop Sharing…**, as does **Stop Shar
 the share's entries (`Glue.liveMenu`: **Open the Run Page**, **Copy the Run Page's Link**, **Stop Sharing the Run…**
 for each shared run, named when several are, and **Stop Sharing This Project's Runs…** while they are shared), first
 while the item shows the share, else after the run's controls. Every way to stop a share, the run's or the project's,
-asks first (`PiwiRunSessions.confirmStopSharing`, `Glue.stopSharingQuestion`).
+asks first (`PiwiRunSessions.confirmStopSharing`, `Glue.stopSharingQuestion`), about the run picked: one that ended or
+is shared no more is not asked about, and `Glue.SHARE_ENDED` says so.
 
 ## Platform compatibility
 

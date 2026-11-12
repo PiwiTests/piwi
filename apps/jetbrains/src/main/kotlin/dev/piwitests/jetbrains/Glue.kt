@@ -2418,6 +2418,9 @@ object Glue {
         return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…") else entries
     }
 
+    /** What Stop Sharing says, asking nothing, for a run that ended or is shared no more. */
+    const val SHARE_ENDED = "That run is not shared live any more: it ended, or its share was stopped."
+
     /**
      * What Stop Sharing asks before it stops: for a run (`live`), where it is shared and the views that end there; for
      * the project's runs (`live` null), that the runs to come are not shared either.
