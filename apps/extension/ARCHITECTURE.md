@@ -1059,14 +1059,17 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 ### The CI runs in progress
 
 Under the runs the hubs follow, the window lists the CI runs in progress of the projects this browser maps
-(`projectMappings` and `serverMappings`; every project the key reads when it maps none), from the instance the
-extension is connected to, read-only: no control, share or hold, since they run on CI.
+(`projectMappings` and `serverMappings`), from the instance the extension is connected to, read-only: no control,
+share or hold, since they run on CI.
 
-- **Read** by the worker (`src/background/ci-runs.ts`, `CiRunsWatch`) only while a Runs window is open: as the first
-  opens, then every 15 s (`CI_RUNS_POLL_MS`), until the last closes. A read is one list (`GET /api/test-runs/recent`,
-  its runs in progress) and, for each run it lists first, its details once (`GET /api/test-runs/:id`, four at most a
-  read), which tell a CI run's by its origin, else by the CI it names (`isCiMetadata`). Each request goes through
-  `withConnectionHealth`. A read that fails keeps the runs last read; nothing is read without connected mode.
+- **Read** by the worker (`src/background/ci-runs.ts`, `CiRunsWatch`) only while a Runs window is open and in
+  connected mode (`isConnected`: an address and a URL pattern): as the first window opens, then every 15 s
+  (`CI_RUNS_POLL_MS`), until the last closes. A read is one list (`GET /api/test-runs/recent`, its runs in progress),
+  which names what launched each run (`origin`, told by `isCiOrigin`) once it has begun; an initializing run is told
+  nothing until then. From an older instance whose list names no origin, each run's details are read once
+  (`GET /api/test-runs/:id`, four at most a read), which tell a CI run's by its origin, else by the CI it names
+  (`isCiMetadata`); details that did not come are asked again after 2, 4 and 8 reads' waits, then no more. Each
+  request goes through `withConnectionHealth`. A read that fails keeps the runs last read.
 - **Shown** as `RunsState.ci`, the newest five (`ciRunsListed`): each run's name (`CI run #78`), its branch and, when
   the runs of several projects are listed, its project (`ciRunWhere`), its page (`Run #78`, **Open** and **Copy**) and
   its tally, then one line saying nothing here steers them and that a running test is watched from the run's page.

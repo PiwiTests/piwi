@@ -64,8 +64,13 @@ export function ciTally(run: {
 export function isCiMetadata(metadata: unknown): boolean {
   const fields = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
   const origin = parseRunOrigin(fields[RUN_ORIGIN_METADATA_KEY]);
-  if (origin) return origin.kind === 'ci' || origin.kind === 'ci-rerun';
+  if (origin) return isCiOrigin(origin.kind);
   return !!fields.ci && typeof fields.ci === 'object';
+}
+
+/** Whether what launched a run (its origin, as `GET /api/test-runs/recent` lists it) makes it a CI run's. */
+export function isCiOrigin(origin: string): boolean {
+  return origin === 'ci' || origin === 'ci-rerun';
 }
 
 /** The CI runs to list: those still in progress, the newest first, `MAX_CI_RUNS_LISTED` at most. */

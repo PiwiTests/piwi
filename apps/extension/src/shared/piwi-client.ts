@@ -157,7 +157,10 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
   return listItems<ProjectOption>(await instanceJson(res));
 }
 
-/** A run in progress as the instance lists it (`GET /api/test-runs/recent`): its project, its branch and its counts. */
+/**
+ * A run in progress as the instance lists it (`GET /api/test-runs/recent`): its project, its branch, what launched it
+ * (`origin`, absent from an older instance) and its counts.
+ */
 export interface ActiveRun {
   id: number;
   projectId: number;
@@ -165,6 +168,7 @@ export interface ActiveRun {
   branch: string | null;
   status: string;
   startTime: string;
+  origin?: unknown;
   totalTests?: unknown;
   passedTests?: unknown;
   failedTests?: unknown;
@@ -201,7 +205,10 @@ export async function fetchActiveRuns(settings: ConnectionSettings): Promise<Act
   );
 }
 
-/** What launched a run, as its details keep it (`GET /api/test-runs/:id`'s `metadata`); null when it names nothing. */
+/**
+ * What launched a run, as its details keep it (`GET /api/test-runs/:id`'s `metadata`), for an instance whose list names
+ * no `origin`; null when it names nothing.
+ */
 export async function fetchRunMetadata(settings: ConnectionSettings, runId: number): Promise<unknown> {
   const headers = await authHeaders(settings);
   let res: Response;

@@ -7,6 +7,7 @@ import {
   ciRunsListed,
   ciTally,
   isCiMetadata,
+  isCiOrigin,
   type CiRun,
 } from '../src/ci';
 import { englishRunSpeaker as en } from '../src/words';
@@ -48,6 +49,15 @@ describe('the CI runs of a project in progress', () => {
     expect(isCiMetadata({ ci: { provider: 'github' } })).toBe(true);
     expect(isCiMetadata({ piwiOrigin: { kind: 'nonsense' } })).toBe(false);
     expect(isCiMetadata(null)).toBe(false);
+    // The origin the instance lists a run with.
+    expect(['ci', 'ci-rerun', 'local', 'editor', 'request', ''].map(isCiOrigin)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it('lists those still in progress, the newest first, a few at most', () => {

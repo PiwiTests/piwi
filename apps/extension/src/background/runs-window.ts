@@ -65,10 +65,7 @@ export const runHubs = new RunHubs({
 
 /** The CI runs in progress of the mapped projects, read from the connected instance while a Runs window is open. */
 export const ciRuns = new CiRunsWatch({
-  settings: async () => {
-    const settings = await getConnectionSettings();
-    return settings.instanceUrl.trim() ? settings : null;
-  },
+  settings: getConnectionSettings,
   activeRuns: (settings) => withConnectionHealth(settings.instanceUrl, () => fetchActiveRuns(settings)),
   metadata: (settings, runId) => withConnectionHealth(settings.instanceUrl, () => fetchRunMetadata(settings, runId)),
   runUrl: (settings, runId) => `${normalizeBaseUrl(settings.instanceUrl)}/test-runs/${runId}`,
