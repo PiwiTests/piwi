@@ -23,3 +23,9 @@ each drawn one. Keep every interaction proportional to what changed:
   `TimelineResourceCursor`.
 - **Every lane, band and strip is placed by `layOutTimelineRows`** (`app/utils/resource-tracks.ts`), which the viewport
   reads through `laneOffset`: anything new drawn between the lanes is added there, never offset by hand.
+
+## Live lanes
+
+- **A live lane's state, test and stop come ready from the run's `lane` events, never worked out in the browser.** The
+  instance reduces them with `@piwitests/core/live-lane` (`shared/live-lanes.ts`, in the server's and the demo's event
+  bus); a component that needs where a lane stands reads the page's lanes (`tests/unit/live-lanes.test.ts`).
