@@ -48,8 +48,11 @@ const source = computed(() => {
       :href="href ?? undefined"
       :target="href ? '_blank' : undefined"
       :rel="href ? 'noopener noreferrer' : undefined"
-      class="inline-flex min-w-0 items-center gap-1.5 outline-none"
-      :class="href ? 'hover:underline focus-visible:underline' : ''"
+      class="items-center gap-1.5 outline-none"
+      :class="[
+        link.key ? 'inline-grid grid-cols-[auto_minmax(0,1fr)]' : 'inline-flex min-w-0',
+        href ? 'hover:underline focus-visible:underline' : '',
+      ]"
       :title="href ? (link.title ? `${link.title} (${link.url})` : link.url) : (link.title ?? undefined)"
       data-testid="link-chip-open"
     >
@@ -67,7 +70,12 @@ const source = computed(() => {
       {{ link.statusText }}
     </UBadge>
 
-    <span v-if="source" class="shrink-0 whitespace-nowrap font-normal text-muted" data-testid="link-chip-source">
+    <span
+      v-if="source"
+      class="min-w-0 max-w-[50%] truncate font-normal text-muted"
+      :title="source"
+      data-testid="link-chip-source"
+    >
       {{ source }}
     </span>
 
@@ -79,7 +87,7 @@ const source = computed(() => {
       icon="i-lucide-x"
       :aria-label="`Remove ${name}`"
       :title="`Remove ${name}`"
-      class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity -my-1"
+      class="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity -my-1"
       @click="emit('remove', link.id)"
     />
   </span>
