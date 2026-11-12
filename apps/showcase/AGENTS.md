@@ -80,7 +80,9 @@ npm run showcase:format                                          # :check to ver
 
 - `showcase.mjs`: the command line; builds the set, plays the story (checked or filmed), keeps what a failure leaves,
   runs the cut.
-- `story.mjs`: the beats, their titles, lines, runs and checks.
+- `story.mjs`: the beats, their titles, lines, runs and checks; `lib/likeness.mjs` (an image of the page against a
+  screenshot of it) and `lib/watching.mjs` (a watched lane's views), what the checks read, their pure parts tested in
+  `tests/`.
 - `lib/script.mjs`: `beat`, the gestures and their log, the lines' lint, `play`.
 - `lib/take.mjs`, `lib/capture.mjs`: the virtual take (the holds, the raises, the take log), the x11grab capture and
   the sync flash.

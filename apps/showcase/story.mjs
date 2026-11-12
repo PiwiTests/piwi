@@ -1,8 +1,12 @@
 // The story, beat by beat: what the viewer reads (the lines), the windows each beat is about (`focus`), what it does
 // on the real tools (`run`, through the gestures) and what it must have left (`check`).
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { beat, expect, waitFor } from './lib/script.mjs';
 import { TILES } from './lib/set.mjs';
 import { Agent, refOf, runsServer } from './lib/agent.mjs';
+import { dataUrlBytes, decodeImage, likeness } from './lib/likeness.mjs';
+import { RUN_VERDICT, laneLogProblems, readLaneLog, recordLaneView, watchedProblems } from './lib/watching.mjs';
 import { PAGE_OBJECT, SPEC, push, read } from './lib/workspace.mjs';
 
 /** The page object's line the test fails at, and the call on it. */
@@ -59,6 +63,27 @@ const FINISHED = new Set(['passed', 'failed', 'timedout', 'skipped', 'interrupte
 
 /** The run card of the developer's checkout in the Runs window. */
 const runCard = (runs) => runs.getByRole('region', { name: 'shop' }).and(runs.locator('.run:not(.ended)'));
+
+/** What hides Piwi's pause bar from an image of the page, as the reporter hides it from the stop's image. */
+const PAUSE_BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+
+/** How long the Runs window is watched showing a running test. */
+const WATCH_MS = 5000;
+
+/**
+ * Runs `act` with `SLOW_MO` in the checkout's `.env`, which its Playwright config reads, so a run started from the
+ * editor meanwhile is slowed enough to watch, as the fix's CI run is; the `.env` is put back after.
+ */
+async function slowedDown(shop, act) {
+  const file = path.join(shop, '.env');
+  const env = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, `${env}SLOW_MO=1000\n`);
+  try {
+    return await act();
+  } finally {
+    fs.writeFileSync(file, env);
+  }
+}
 
 export const STORY = [
   beat({
@@ -222,11 +247,11 @@ export const STORY = [
     async run({ runs }) {
       await runCard(runs).getByText('Stopped at a breakpoint').waitFor({ timeout: 90_000 });
     },
-    async check({ vscode, runs, testPage }) {
+    async check({ vscode, runs, testPage, set }) {
       await waitFor(
         () =>
           vscode
-            .locator('.codelens-decoration', { hasText: `Paused · Click ${BROKEN}` })
+            .locator('.codelens-decoration', { hasText: `Stopped at a breakpoint · Click ${BROKEN}` })
             .first()
             .isVisible(),
         'the paused line in VS Code',
@@ -248,6 +273,20 @@ export const STORY = [
         'the image of the stopped page',
       );
       expect(width > 100, `the image of the stopped page is ${width} pixels wide`);
+      // The image shows the page as it stands, not tiled, cut or stretched: alike a screenshot of it, taken without the
+      // pause bar as the image is. Both are kept beside the logs when they differ.
+      const bytes = dataUrlBytes(await image.getAttribute('src'));
+      const screenshot = await page.screenshot({ scale: 'css', style: PAUSE_BAR_HIDDEN });
+      const shown = decodeImage(bytes);
+      const alike = likeness(shown, decodeImage(screenshot));
+      if (!alike.same) {
+        fs.writeFileSync(path.join(set.logs, 'stop-image.jpg'), bytes);
+        fs.writeFileSync(path.join(set.logs, 'stop-page.png'), screenshot);
+      }
+      expect(alike.same, `the image of the stopped page shows the page: ${JSON.stringify(alike)}`);
+      const drawn = await image.evaluate((img) => ({ width: img.clientWidth, height: img.clientHeight }));
+      const stretch = Math.abs(drawn.width / drawn.height / (shown.width / shown.height) - 1);
+      expect(stretch < 0.02, `the Runs window draws the image at its shape: ${JSON.stringify(drawn)}`);
     },
   }),
 
@@ -287,7 +326,7 @@ export const STORY = [
       en: ['The redesign also added a box to tick.', 'Record here: the click becomes a step above the line.'],
     },
     async run({ vscode, testPage, gesture, palette }) {
-      await gesture.click('vscode', vscode.locator('.codelens-decoration a', { hasText: /^Record$/ }).first());
+      await palette("Piwi: Record in the stopped test's page");
       const page = await testPage();
       // The recorder records once it has its first step, the page it starts on, which the editor counts.
       await vscode.locator('.statusbar-item', { hasText: 'Piwi: recording · 1 step' }).waitFor({ timeout: 30_000 });
@@ -331,7 +370,13 @@ export const STORY = [
       await gesture.press('vscode', 'F9');
       await gesture.press('vscode', 'Control+Shift+Alt+K');
       await runCard(runs).getByText(`${SPEC}:${SUMMARY_LINE}`).waitFor({ timeout: 120_000 });
-      await vscode.locator('.codelens-decoration', { hasText: 'Paused · Expect' }).first().waitFor({ timeout: 30_000 });
+      await vscode
+        .locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint · Expect' })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      // The headless stop's code tools wait for a viewer: Watch, then Assert a region, folded under More.
+      await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Watch', exact: true }));
+      await gesture.click('runs', runCard(runs).getByRole('button', { name: 'More', exact: true }));
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Assert a region' }));
       const page = await testPage();
       // The order's card, by its corner: the picker takes the element under the pointer.
@@ -390,6 +435,66 @@ export const STORY = [
   }),
 
   beat({
+    id: 'watch-running',
+    title: 'Watch it run',
+    seconds: 12,
+    focus: ['vscode', 'runs'],
+    budget: 240_000,
+    lines: {
+      en: ['Run it once more, and watch it in Piwi Picker:', 'the test’s page, live, as it runs.'],
+    },
+    async run({ vscode, runs, gesture, repo, instance, state }) {
+      const line =
+        read(repo.shop, SPEC)
+          .split('\n')
+          .findIndex((text) => text.includes("test('places an order'")) + 1;
+      state.beforeWatched = (await instance.runs()).map((r) => r.id);
+      await slowedDown(repo.shop, async () => {
+        await goTo(vscode, gesture, SPEC, line);
+        await gesture.press('vscode', 'Control+Shift+Alt+K');
+        const card = runCard(runs);
+        await gesture.click('runs', card.getByRole('button', { name: 'Watch', exact: true }), { timeout: 120_000 });
+        const live = card.getByRole('img', { name: 'Live view of the test’s page', exact: true });
+        await live.waitFor({ timeout: 30_000 });
+        // What the Runs window shows of the running test, every 250 ms for WATCH_MS.
+        const looks = [];
+        const until = Date.now() + WATCH_MS;
+        await waitFor(
+          async () => {
+            looks.push({
+              src: await live.getAttribute('src', { timeout: 1000 }).catch(() => null),
+              stopped: await card.getByText(/^Stopped /).count(),
+            });
+            return Date.now() >= until;
+          },
+          `${WATCH_MS / 1000} s of the running test in the Runs window`,
+          WATCH_MS + 10_000,
+        );
+        state.watchedRunning = looks;
+        // The test then stops at the summary check's breakpoint, and goes on.
+        const stopped = card.getByText('Stopped at a breakpoint');
+        const next = await waitFor(
+          async () => ((await stopped.isVisible()) ? 'stopped' : (await card.count()) === 0 ? 'ended' : null),
+          'the watched test to stop at the breakpoint, or its run to end',
+          90_000,
+        );
+        if (next === 'stopped') await gesture.click('runs', card.getByRole('button', { name: 'Resume' }));
+        await runEnded(runs);
+      });
+    },
+    async check({ instance, state }) {
+      const problems = watchedProblems(state.watchedRunning, { ms: WATCH_MS, every: 250 });
+      expect(!problems.length, `the Runs window showed the running test: ${problems.join('; ')}`);
+      const test = await waitFor(async () => {
+        const latest = (await instance.runs()).find((r) => !state.beforeWatched.includes(r.id));
+        const found = latest && (await instance.run(latest.id)).testCases.find((c) => c.title === 'places an order');
+        return found && FINISHED.has(found.status) ? found : null;
+      }, 'the watched run on the instance, its test ended');
+      expect(test.status === 'passed', `the watched test passed (${test.status})`);
+    },
+  }),
+
+  beat({
     id: 'back-on-the-team',
     title: 'Back on the team',
     seconds: 22,
@@ -434,8 +539,9 @@ export const STORY = [
         120_000,
       );
       expect(page === 'live', `the run page never went live, though the run was ${atLoad} as it loaded`);
+      await recordLaneView(dashboard);
       await gesture.click('dashboard', watch);
-      const frame = dashboard.getByRole('dialog').getByRole('img', { name: /^The page .* as the test sees it$/ });
+      const frame = dashboard.getByTestId('lane-panel').getByRole('img', { name: /^The page .* as the test sees it$/ });
       state.watched = await waitFor(
         () =>
           frame.evaluate((img) =>
@@ -445,11 +551,21 @@ export const STORY = [
         60_000,
       );
       state.ciExit = await state.ci;
+      // The view stays open through the run's end, and says how the run ended.
+      await waitFor(
+        async () => (await readLaneLog(dashboard)).statuses.some((said) => RUN_VERDICT.test(said.text)),
+        'the live view to say how the run ended',
+        60_000,
+      ).catch(() => null);
+      state.laneLog = await readLaneLog(dashboard);
       await gesture.press('dashboard', 'Escape');
     },
     async check({ dashboard, instance, state }) {
       expect(state.watched.width > 100, `the live view showed the page (${JSON.stringify(state.watched)})`);
       expect(state.ciExit === 0, `the fix's CI run passed (exit ${state.ciExit})`);
+      // Images kept coming, through each of the lane's tests, until the run ended and the view said it passed.
+      const problems = laneLogProblems(state.laneLog);
+      expect(!problems.length, `the live view followed the lane until the run was green: ${problems.join('; ')}`);
       const run = await waitFor(async () => {
         const r = await instance.run(state.liveRun);
         return r.status === 'running' ? null : r;
@@ -493,7 +609,10 @@ export const STORY = [
       await gesture.press('vscode', 'Control+Shift+Alt+K');
       await runCard(runs).getByText(`${SPEC}:${last}`).waitFor({ timeout: 120_000 });
       // The editor reveals the stopped line, taking the focus, before anything else is typed there.
-      await vscode.locator('.codelens-decoration', { hasText: 'Paused · Expect' }).first().waitFor({ timeout: 30_000 });
+      await vscode
+        .locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint · Expect' })
+        .first()
+        .waitFor({ timeout: 30_000 });
 
       // The command asks which agent's format: the first, VS Code's, as Claude Code reads it too.
       await gesture.press('vscode', 'F1');

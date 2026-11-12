@@ -94,7 +94,10 @@ stop's file is open or on the worker slot the person is on, a slot only watched 
 paused page keeps its stop while held, waiting 10 s at most for a slot stepped from the editor. The Windows
 thumbnail's Open restores a minimized window, and its Stop is disabled while no local run runs. A watched test's worker
 spends at most 400 ms of CPU time a second more than the same test unwatched on a page that paints all the time, and
-600 where a masked field shows (`tests/run-channel-lane-cpu.spec.ts`). P4's showcase beat is not built yet. Built from P5's run name and link: every run outside CI records a `piwiRunRef` (`PIWI_RUN_REF`, else an
+600 where a masked field shows (`tests/run-channel-lane-cpu.spec.ts`), and the showcase's `watch-running` beat watches a
+running test in the Runs window for 5 s. The showcase checks P1 and P3 too: `back-on-the-team` asserts images keep coming
+through each of the watched lane's tests until the view says the run passed, and `paused` compares the stop's image
+with a screenshot of the page. Built from P5's run name and link: every run outside CI records a `piwiRunRef` (`PIWI_RUN_REF`, else an
 editor's `PIWI_ORIGIN_REF`, else `local-<pid>-<time>`); `/setup`, `/start`, `/begin`, `/finish` and the batch routes
 answer `runUrl` under `PIWI_SITE_URL` when it is set, which the reporter prints (`View live progress`), writes to its
 output and leads its failure links under, falling back to the address it reached; a run outside CI tells each stop as
@@ -263,8 +266,7 @@ begins it, the Live item's menu with a confirmed **Stop sharing** (F10), and E10
 breakpoint makes a run headed only for a reporter that cannot stop headless (older than 0.62.0, or unknown, or no run
 channel). Left of the plan, beside the remainders named above (P5's, P7's IO6 and compact tray, P8's `run_start` on the
 desktop app, P9's window scope in the Runs window), all planned and none deferred: **Watch** on the Runs window's CI
-runs, P4's showcase beat, and the showcase checks of P1 and P3; the plan stays here until they are
-built or recorded as deferred. The bugs the analysis
+runs; the plan stays here until they are built or recorded as deferred. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
