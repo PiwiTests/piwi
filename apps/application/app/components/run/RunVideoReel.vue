@@ -187,7 +187,7 @@ function blockLabel(entry: ReelEntry): string {
         {{ tickedCount }} of {{ playedTotal }} tests · {{ reel.videoCount }}
         {{ reel.videoCount === 1 ? 'video' : 'videos' }}
       </p>
-      <ul class="min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
+      <ul class="relative min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
         <li v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
           <button
             type="button"

@@ -36,7 +36,7 @@ const activeTabIcon = computed(() => props.tabItems.find((t) => t.value === acti
 // Desktop keeps the independent-scroll panel; on mobile the panel flows into
 // the page scroll (no clipping, no nested scroll area).
 function panelClasses(value: string) {
-  if (fits(value)) return 'flex min-h-0 flex-1 flex-col overflow-y-auto max-lg:min-h-[26rem]';
+  if (fits(value)) return 'flex min-h-0 flex-1 flex-col overflow-y-auto';
   const desktop = props.tabPanelClass?.[value] ?? 'overflow-y-auto';
   return ['min-h-0', 'lg:flex-1', desktop, 'max-lg:!block', 'max-lg:!overflow-visible'].join(' ');
 }
