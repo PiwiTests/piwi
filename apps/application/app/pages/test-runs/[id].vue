@@ -1313,6 +1313,14 @@ const tabItems = computed(() => [
     value: 'workers',
     slot: 'workers',
   },
+  {
+    label: 'Video',
+    icon: 'i-lucide-video',
+    value: 'video',
+    slot: 'video',
+    disabled: isLive.value,
+    disabledReason: isLive.value ? 'available once the run finishes' : undefined,
+  },
   ...(testRun.value?.hasResources
     ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
     : []),
@@ -1683,6 +1691,10 @@ const moreMenuItems = computed(() => {
                 :project-name="testRun?.project?.name"
               />
             </div>
+          </template>
+
+          <template #tab-video>
+            <RunVideoTab data-tour="run-video" :run-id="Number(runId)" />
           </template>
 
           <template #tab-resources>
