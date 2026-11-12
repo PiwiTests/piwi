@@ -339,8 +339,7 @@ export async function enqueueStillFailingPolicy(
 /**
  * The name a description update gives the person who filed the issue: the one
  * stored with the link, else the author of the comment they wrote, else the
- * user the link was created by. A link an earlier version wrote holds only the
- * last two. A rule names nobody.
+ * user who created the link. An issue a rule filed names nobody.
  */
 async function linkFiledBy(db: DbClient, link: EntityLink, meta: FiledIssueMeta): Promise<string | null> {
   if (meta.filedBy) return meta.filedBy;

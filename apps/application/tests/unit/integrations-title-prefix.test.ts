@@ -559,9 +559,13 @@ describe('a description update of an issue a rule filed', () => {
   });
 });
 
-describe('a description update of an issue filed before the filer was stored', () => {
-  /** Files a cluster's issue by a person, then makes its link read as an earlier version wrote it. */
-  async function fileAsBefore(clusterId: number, extra: Record<string, unknown>, keep: (meta: object) => object) {
+describe('a description update of an issue whose link stores no filer', () => {
+  /** Files a cluster's issue by a person, then removes the filer from its link, keeping what `keep` leaves of the rest. */
+  async function fileWithoutStoredFiler(
+    clusterId: number,
+    extra: Record<string, unknown>,
+    keep: (meta: object) => object,
+  ) {
     await bind('[Piwi]');
     expect((await file(clusterId, { filedBy: 'Robin Shaw', ...extra }))?.status).toBe('done');
     const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, clusterId));
@@ -582,7 +586,7 @@ describe('a description update of an issue filed before the filer was stored', (
   };
 
   test('keeps the name of the author of the comment', async () => {
-    await fileAsBefore(7, { comment: 'It broke after the deploy' }, (meta) => meta);
+    await fileWithoutStoredFiler(7, { comment: 'It broke after the deploy' }, (meta) => meta);
     const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, 7));
     expect(link?.metadata).toMatchObject({ comment: { author: 'Robin Shaw' } });
     expect(link?.metadata).not.toHaveProperty('filedBy');
@@ -594,13 +598,13 @@ describe('a description update of an issue filed before the filer was stored', (
   });
 
   test('names the user the link was created by when there is no comment', async () => {
-    await fileAsBefore(8, {}, (meta) => meta);
+    await fileWithoutStoredFiler(8, {}, (meta) => meta);
     const body = await updatedBody(8, 'day:2026-11-06');
     expect(occurrences(body, 'Filed by Robin Shaw from Piwi.')).toBe(1);
   });
 
   test('names nobody when the filer cannot be found', async () => {
-    await fileAsBefore(9, {}, (meta) => meta);
+    await fileWithoutStoredFiler(9, {}, (meta) => meta);
     await db.update(schema.entityLinks).set({ createdBy: null }).where(eq(schema.entityLinks.failureClusterId, 9));
     const body = await updatedBody(9, 'day:2026-11-06');
     expect(body).toContain('Filed from Piwi.');
