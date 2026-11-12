@@ -9,17 +9,20 @@
  * image the first one outlined and the point an input action acts on; **Zoom to the element** crops the image around
  * that element, a click on the image zooms where it points. Watching only: nothing here reaches the test.
  *
- * A view of a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's
- * earlier tests listed, and goes on with the next, through the worker Playwright starts in the lane again, unless
- * **Follow the worker's next test** is off; one of an older reporter's worker ends with its test. **Follow what needs
- * attention** (`attention`, the page's) lets the page move the view to a lane whose test failed, got stuck or stopped,
- * and the view says why it moved (`movedWhy`). A view ends as the worker leaves, the run ends (saying the run's
- * verdict, `verdict`), the project turns its live view off, as it closes, and after `HIDDEN_CLOSE_MS` in a hidden tab;
- * one the instance refuses says why, and offers to try again. Nothing is kept: the latest image and call log alone are
- * in this page's memory, until the view closes.
+ * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
+ * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
+ * listed, and goes on with the next, through the worker Playwright starts in the lane again, unless **Follow the
+ * worker's next test** is off; one of an older reporter's worker ends with its test. **Follow what needs attention**
+ * (`attention`, the page's) lets the page move the view to a lane whose test failed, got stuck or stopped, and the view
+ * says why it moved (`movedWhy`). Another worker or row to show starts the view afresh in the same panel, which keeps
+ * its full screen, its **Follow the worker's next test** and the focus. A view ends as the worker leaves, the run ends
+ * (saying the run's verdict, `verdict`), the project turns its live view off, as it closes, and after
+ * `HIDDEN_CLOSE_MS` in a hidden tab; one the instance refuses says why, and offers to try again. Nothing is kept: the
+ * latest image and call log alone are in this page's memory, until the view closes.
  */
 import {
   LIVE_VIEW_END_TEXT,
+  liveWorkerKey,
   liveWorkerName,
   type LiveCall,
   type LiveCallLog,
@@ -42,8 +45,10 @@ const props = defineProps<{
   shard: number | null;
   /** The worker's lane, from a reporter that says it: the view then follows the lane through its next tests. */
   slot?: number | null;
-  /** The title of the test whose row the view was opened from, or '' when the view was opened by its address. */
+  /** The title of the test whose row the view was opened from, or '' when it was opened with no row. */
   test: string;
+  /** The execution of that row, null for none. */
+  executionId?: number | null;
   /** How the run ended, in a sentence, once the page knows it: the view says it when the run's end ends it. */
   verdict?: string | null;
   /** The step the run page last heard the worker is on, which the caption names when it began after the image. */
@@ -99,9 +104,12 @@ const watchedTest = ref(props.test);
 const outcome = ref<LiveTestOutcome | null>(null);
 /** How each test the view showed ended, the latest last. */
 const history = ref<Array<LiveTestOutcome & { test: string }>>([]);
-/** The view goes on with `test`, the lane's next one, when it follows the lane; false when it does not. */
+/**
+ * The view goes on with `test`: the first it hears when it has none, else the lane's next one when it follows the
+ * lane; false when it does not.
+ */
 function nextTest(test: string): boolean {
-  if (!follows.value || !followNext.value) return false;
+  if (watchedTest.value && (!follows.value || !followNext.value)) return false;
   watchedTest.value = test;
   outcome.value = null;
   log.value = null;
@@ -269,10 +277,19 @@ function stopClock(): void {
   clock = null;
 }
 
+/** The worker the view shows and the row it was opened from: another starts the view afresh. */
+const target = computed(
+  () => `${liveWorkerKey({ shard: props.shard, worker: props.worker })}:${props.executionId ?? ''}`,
+);
 watch(
-  open,
-  (isOpen) => {
+  [open, target],
+  ([isOpen, shown], before) => {
     if (!import.meta.client) return;
+    if (before[1] !== undefined && shown !== before[1]) {
+      watchedTest.value = props.test;
+      outcome.value = null;
+      history.value = [];
+    }
     if (isOpen) {
       connect();
       clock ??= setInterval(() => {
@@ -468,14 +485,21 @@ const { shown: dockedWidth, maxWidth } = useDockedPanelWidth(width, LANE_PANEL_W
  */
 const aside = useTemplateRef<HTMLElement>('aside');
 let focusedBefore: HTMLElement | null = null;
+function focusPanel(panel: HTMLElement): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && !panel.contains(active)) focusedBefore = active;
+  panel.focus({ preventScroll: true });
+}
 watch(aside, (panel) => {
-  if (panel && props.takeFocus) {
-    focusedBefore = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panel.focus({ preventScroll: true });
-  } else if (!panel && focusedBefore) {
+  if (panel && props.takeFocus) focusPanel(panel);
+  else if (!panel && focusedBefore) {
     if (focusedBefore.isConnected) focusedBefore.focus({ preventScroll: true });
     focusedBefore = null;
   }
+});
+// Another worker or row someone asked for while the panel is open takes the focus, as opening it does.
+watch(target, () => {
+  if (aside.value && props.takeFocus) focusPanel(aside.value);
 });
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;

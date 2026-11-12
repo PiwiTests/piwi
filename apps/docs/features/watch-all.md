@@ -39,7 +39,7 @@ In the full view, **Follow what needs attention** moves the view on its own to a
   moves nothing; nor does anything from before you last chose a worker yourself.
 
 After a failure, Playwright starts a new worker in the lane: the view shows its next test, and the line under its
-checkboxes says which test failed.
+checkboxes says which test failed. The view moves within its panel, which stays in full screen if you put it there.
 
 ## One connection
 

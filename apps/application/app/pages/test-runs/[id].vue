@@ -249,8 +249,8 @@ const editorRunsHere = computed(() =>
     : [],
 );
 // The worker someone opened Watch on, its lane, and the execution of the row they opened it from (null when the
-// page's address opened it): the view starts on that test, and follows the lane's next tests when the worker says
-// its lane.
+// page's address, a tile with no running row or Follow what needs attention opened it): the view starts on that test,
+// and follows the lane's next tests when the worker says its lane.
 const watching = ref<{
   worker: number;
   shard: number | null;
@@ -264,8 +264,8 @@ const watchAsked = ref(false);
 // The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
 const watchAddress = ref<LiveLane | null>(null);
 function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
-  // Watch on a row replaces a lane the address still waits for.
-  if (testCase) watchAddress.value = null;
+  // The worker shown replaces a lane the address still waits for.
+  watchAddress.value = null;
   watchAsked.value = testCase !== null;
   watching.value = {
     worker: worker.worker,
@@ -470,14 +470,14 @@ watch([attentionNow, liveWorkers], followWhatNeedsAttention);
 // The follower's waits end on a clock of their own: a lane holds the view a while, then the next news moves it.
 useIntervalFn(followWhatNeedsAttention, 1000);
 /**
- * The person shows a lane in the lane panel, from a tile or a row: the view stays there a while, and what needed
- * attention before moves it nowhere.
+ * The person shows a worker in the lane panel, from a tile or a row, with the test it runs when the page knows it: the
+ * view stays there a while, and what needed attention before moves it nowhere.
  */
 function chooseWorker(worker: LiveWorkerState, testCase: TestCaseResult | null): void {
   follower.chose(attentionNow.value, Date.now());
   movedWhy.value = null;
   watchWorker(worker, testCase);
-  if (!testCase) watchAsked.value = true;
+  watchAsked.value = true;
 }
 
 /** What the page shows while live: the attempts a retry followed, then each test's latest attempt. */
@@ -1584,7 +1584,7 @@ const moreMenuItems = computed(() => {
               :focused="watchOpen ? watching : null"
               :state="live.state.value"
               :demo="isDemoMode"
-              @focus="chooseWorker($event, null)"
+              @focus="chooseWorker"
               @retry="live.resume()"
             />
             <TestCasesList
@@ -1701,7 +1701,6 @@ const moreMenuItems = computed(() => {
     <ClientOnly>
       <LanePanel
         v-if="watching"
-        :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
         v-model:open="watchOpen"
         :take-focus="watchAsked"
         :run-id="Number(runId)"
@@ -1709,6 +1708,7 @@ const moreMenuItems = computed(() => {
         :shard="watching.shard"
         :slot="watching.slot"
         :test="watching.test"
+        :execution-id="watching.executionId"
         :verdict="runVerdict"
         :step="watchedStep"
         :project-key="testRun?.projectId"

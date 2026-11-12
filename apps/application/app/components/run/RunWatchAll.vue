@@ -11,8 +11,9 @@ import type { TestCaseResult } from '~~/types/api';
 
 /**
  * **Watch all**: a tile for each worker in the run's live view, its latest image one a second at most, the test it
- * runs, the step it is on and what its test needs attention for (a stop, a **Stuck?** mark). A click shows the
- * worker's lane in the lane panel. In the demo, which runs no browser, each running lane's tile names its step alone.
+ * runs, the step it is on and what its test needs attention for (a stop, a **Stuck?** mark). A click shows the worker
+ * in the lane panel, from its running row when the page holds one. In the demo, which runs no browser, each running
+ * lane's tile names its step alone.
  */
 const props = defineProps<{
   /** The workers in the run's live view; in the demo, a stand-in of each running lane. */
@@ -27,7 +28,7 @@ const props = defineProps<{
   state: LiveWatchState;
   demo: boolean;
 }>();
-const emit = defineEmits<{ focus: [worker: LiveWorkerState]; retry: [] }>();
+const emit = defineEmits<{ focus: [worker: LiveWorkerState, row: TestCaseResult | null]; retry: [] }>();
 
 /** The workers in lane order, by shard. */
 const ordered = computed(() =>
@@ -50,6 +51,7 @@ function rowOf(worker: LiveWorkerState): TestCaseResult | null {
 interface TileView {
   key: string;
   worker: LiveWorkerState;
+  row: TestCaseResult | null;
   name: string;
   tile: LiveTile | null;
   test: string | null;
@@ -88,6 +90,7 @@ const views = computed<TileView[]>(() =>
     return {
       key,
       worker,
+      row,
       name: liveWorkerName(worker),
       tile,
       test,
@@ -112,6 +115,12 @@ const canRetry = computed(() => !props.demo && props.state.kind === 'closed' && 
 
 function capitalized(text: string): string {
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+/** A tile's name as a button: what a click does, then what the tile shows in words. */
+function tileLabel(view: TileView): string {
+  const shows = [view.test, view.mark?.text, view.step, view.tile?.refused].filter(Boolean);
+  return `Show ${view.name} in full${shows.length ? `: ${shows.join(', ')}` : ''}`;
 }
 </script>
 
@@ -147,10 +156,10 @@ function capitalized(text: string): string {
             demo ? '' : 'hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary',
           ]"
           :aria-pressed="demo ? undefined : view.focused"
-          :aria-label="demo ? undefined : `Show ${view.name} in full${view.test ? `: ${view.test}` : ''}`"
+          :aria-label="demo ? undefined : tileLabel(view)"
           :data-worker="view.key"
           data-testid="watch-all-tile"
-          @click="!demo && emit('focus', view.worker)"
+          @click="!demo && emit('focus', view.worker, view.row)"
         >
           <div class="relative aspect-[16/10] w-full overflow-hidden rounded bg-elevated">
             <img
