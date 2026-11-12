@@ -236,7 +236,8 @@ function lineProgress(run: LocalRun): string {
 interface LineAction {
   label: string;
   icon: string;
-  color: 'error' | 'neutral' | 'warning';
+  /** Stop is the error tone the card's Stop has; every other action is neutral, outlined. */
+  color: 'error' | 'neutral';
   run: () => void;
 }
 
@@ -247,7 +248,7 @@ function lineAction(run: LocalRun): LineAction | null {
       return {
         label: 'Show the stop',
         icon: 'i-lucide-circle-pause',
-        color: 'warning',
+        color: 'neutral',
         run: () => {
           setExpanded(run, true);
           hub.chooseTab(stopped.session.ref, stopped.worker.parallelIndex);
@@ -379,7 +380,7 @@ function lineAction(run: LocalRun): LineAction | null {
               v-if="lineAction(run)"
               size="xs"
               :color="lineAction(run)!.color"
-              variant="soft"
+              :variant="lineAction(run)!.color === 'error' ? 'soft' : 'outline'"
               :icon="lineAction(run)!.icon"
               class="shrink-0"
               @click="lineAction(run)!.run()"
