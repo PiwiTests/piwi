@@ -41,6 +41,32 @@ Only final attempts that ran are in the file and worker reels. On an earlier att
 its own video and the other two modes are off, with the reason shown under the switch. A run lists at most 2,000 tests
 with a video, so a test past that limit also keeps only This test.
 
+## Actions under the video
+
+Under the bar, a lane of marks shows what the playing test did and when: one mark for each click, double click, fill,
+type, key press, check, uncheck, select, hover and navigation, placed on the video where it happened. It shows on the
+Video tab and in the Evidence video review.
+
+- Point at a mark, or move to it with the keyboard, to read the action and its locator, for example
+  `Click getByRole('button', { name: 'Save' })`. Choose a mark to play the test from there.
+- An action that failed has a red mark.
+- Marks too close to tell apart merge into one mark with a count. Its tooltip lists them.
+- An action outside the video is shown at the nearest edge of the lane, with a note in its tooltip.
+- A test with more than 500 actions shows the first 500, and the lane says how many there are.
+
+The marks come from what the project already stores. A test with a [trace](./evidence) uses the trace's actions, and any
+other test uses its step list, so there is nothing to switch on. A test with neither shows "No recorded actions for this
+test", and a failed load is one muted line; the video plays either way.
+
+Piwi never shows what a test typed. The server masks each action before it sends it:
+
+| Action | Shown |
+|---|---|
+| Fill, type | The locator and "typed N chars", never the text |
+| Press | A named key or a combination, such as `Enter` or `Control+A`; a single character shows as "a key" |
+| Navigate | The origin and path, without the query string, fragment or credentials |
+| Check, uncheck, select | The locator only, never the chosen option |
+
 ## When there are no videos
 
 Most suites record video only for failing tests (`video: 'retain-on-failure'`), so a run where nothing failed often has
