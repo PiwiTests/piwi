@@ -14,8 +14,9 @@
  * test's filmstrip, one image per call that ended, the whole strip coming to a view that opens late, a click showing
  * one larger; the page's events, newest first (console errors, uncaught errors, failed, pending and API requests, what
  * the backend logged under its request); and, opened, the page's text as roles and names, masked by the worker,
- * searched with case and accents ignored, the lines naming the element the shown call targets marked. Each is of the
- * test the view shows, and let go with it. Watching only: nothing here reaches the test.
+ * searched with case and accents ignored, the lines naming the element the shown call targets marked; and, opened,
+ * **Inspect** (`LaneInspect`): the page at each call as a document, the worker sending its snapshots while it is open.
+ * Each is of the test the view shows, and let go with it. Watching only: nothing here reaches the test.
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -61,6 +62,7 @@ import {
   type LaneEvents,
   type LaneTextTarget,
 } from '~/utils/live-layers';
+import { addHeardSnapshot, type HeardSnapshot } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '~/utils';
 
 const props = defineProps<{
@@ -147,11 +149,19 @@ const enlarged = ref<string | null>(null);
 const eventsOpen = useViewState('lane-events-open', () => true);
 const textOpen = useViewState('lane-text-open', () => false);
 const textQuery = useViewState('lane-text-query', () => '');
+/** Whether Inspect is open, as the reader left it. */
+const inspectOpen = useViewState('lane-inspect-open', () => false);
+/** The snapshots of the page the worker sent while Inspect is open, of the test the view shows. */
+const heardSnapshots = shallowRef<HeardSnapshot[]>([]);
+/** Why the worker sends no page to inspect, when it said so. */
+const snapshotRefused = ref<string | null>(null);
 
 /** Let go of the layers of the test the view showed: the next one's come afresh. */
 function forgetLayers(): void {
   events.value = emptyLaneEvents();
   pageText.value = null;
+  heardSnapshots.value = [];
+  snapshotRefused.value = null;
   for (const shot of strip.value) URL.revokeObjectURL(shot.url);
   strip.value = [];
   enlarged.value = null;
@@ -303,7 +313,12 @@ function onMessage(message: LiveViewerMessage): void {
     if (message.log.status !== 'running' && (before?.id !== message.log.id || before.status === 'running')) {
       endedAt.value = logAt.value;
     }
-  } else if (message.type === 'page-event' || message.type === 'text' || message.type === 'thumb') {
+  } else if (
+    message.type === 'page-event' ||
+    message.type === 'text' ||
+    message.type === 'thumb' ||
+    message.type === 'snapshot'
+  ) {
     // A layer of a test the view does not show (the lane's last, sent late; its next, before its first image) goes,
     // but a page event of the lane's next test once the view's test ended moves the view on to it, as a call log
     // does: a test with no page sends no image.
@@ -311,7 +326,13 @@ function onMessage(message: LiveViewerMessage): void {
       if (message.type !== 'page-event' || !testDone || !nextTest(message.test)) return;
     }
     if (message.type === 'page-event') events.value = addLaneEvent(events.value, message.event, message.at);
-    else if (message.type === 'text')
+    else if (message.type === 'snapshot') {
+      if ('refused' in message) snapshotRefused.value = message.refused;
+      else {
+        heardSnapshots.value = addHeardSnapshot(heardSnapshots.value, message);
+        snapshotRefused.value = null;
+      }
+    } else if (message.type === 'text')
       pageText.value = 'refused' in message ? { refused: message.refused } : { text: message.text };
     else keepShot(message.thumb, message.image);
   } else if (message.type === 'refused') {
@@ -392,6 +413,8 @@ watch(
   },
   { immediate: true },
 );
+// The worker sends its page's snapshots while Inspect is open in an open panel.
+watch([inspectOpen, open], ([on, isOpen]) => props.live.showInspect(on && isOpen), { immediate: true });
 
 /** The worker the view shows and the row it was opened from: another starts the view afresh. */
 const target = computed(
@@ -423,6 +446,7 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => {
+  props.live.showInspect(false);
   disconnect();
   stopClock();
   showImage(null);
@@ -963,6 +987,29 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
           </div>
         </div>
       </div>
+      <UCollapsible v-model:open="inspectOpen" class="border-t border-default pt-2" data-testid="live-inspect-section">
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          trailing-icon="i-lucide-chevron-down"
+          class="-ml-2.5"
+          :ui="{ trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform' }"
+          title="The page at each call of the test, as a document, with a locator picker"
+        >
+          Inspect
+        </UButton>
+        <template #content>
+          <LaneInspect
+            class="pt-1"
+            :run-id="runId"
+            :heard="heardSnapshots"
+            :refused="snapshotRefused"
+            :watch-id="live.watchId.value"
+            :ended="ended"
+          />
+        </template>
+      </UCollapsible>
       <UCollapsible v-model:open="eventsOpen" class="border-t border-default pt-2" data-testid="live-events">
         <UButton
           color="neutral"

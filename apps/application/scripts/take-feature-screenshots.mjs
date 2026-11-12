@@ -6663,6 +6663,218 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-inspect',
+    description:
+      'The lane panel of a CI run’s worker with Inspect open: the page at the test’s latest call as a document, its stylesheet inlined, the Pay button outlined at the click’s action, Before / Action / After and the calls whose page came, at 1280 px; the same in the sheet at 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1400 },
+    outputs: ['run-live-inspect.png', 'run-live-inspect-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-inspect needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: Date.now() - 21_000,
+                browser: { projectName: 'chromium', browserName: 'chromium' },
+              },
+            ],
+          },
+        });
+        const client = base.startsWith('https:') ? https : http;
+        const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=0&slot=0`, {
+          headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+        });
+        stream.on('response', (response) => response.resume());
+        stream.on('error', () => {});
+        stream.end();
+        closeStream = () => stream.destroy();
+
+        // The page the worker is on, as its image shows it, its card and password fields painted over.
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize({ width: 1280, height: 800 });
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const style = await testPage.addStyleTag({
+          content: 'label:nth-of-type(n+2) input { background: #9aa5b1 !important; color: transparent !important }',
+        });
+        const frame = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await style.evaluate((node) => node.remove());
+        await testPage.close();
+
+        const id = { shard: null, worker: 0, slot: 0 };
+        const call = {
+          title: "Click getByRole('button', { name: 'Pay €84.90' })",
+          file: 'tests/checkout.spec.ts',
+          line: 31,
+        };
+        const post = (data, headers = {}) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}`, ...headers },
+              data,
+            })
+            .catch(() => undefined);
+        const send = () => post({ ...id, test, type: 'frame', data: frame, call });
+        sending = setInterval(send, 500);
+        await goto(`/test-runs/${run.id}`);
+        await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '44'));
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        const panel = page.getByTestId('lane-panel');
+        await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+
+        // The page's stylesheet, then its snapshot at each call, as the worker posts them while Inspect is open.
+        const css = LIVE_VIEW_CHECKOUT.slice(
+          LIVE_VIEW_CHECKOUT.indexOf('<style>') + 7,
+          LIVE_VIEW_CHECKOUT.indexOf('</style>'),
+        );
+        const sha1 = `${createHash('sha1').update(css).digest('hex')}.css`;
+        const binary = { 'Content-Type': 'application/vnd.piwi.live-frame' };
+        await post(liveMessage({ type: 'resource', ...id, sha1, contentType: 'text/css' }, Buffer.from(css)), binary);
+        const field = (label, attrs) => ['LABEL', {}, `${label} `, ['INPUT', attrs]];
+        const checkout = (values, button) => [
+          'HTML',
+          {},
+          ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/assets/checkout.css' }]],
+          [
+            'BODY',
+            {},
+            ['HEADER', {}, 'Checkout'],
+            [
+              'MAIN',
+              {},
+              [
+                'SECTION',
+                {},
+                ['H2', {}, 'Payment'],
+                field('Email', { __playwright_value_: values.email ?? '' }),
+                field('Card number', { __playwright_value_: values.card ?? '' }),
+                field('Password', { type: 'password', __playwright_value_: values.password ?? '' }),
+                ['P', { class: 'note' }, values.note ?? ''],
+                ['BUTTON', button, 'Pay €84.90'],
+              ],
+              [
+                'SECTION',
+                {},
+                ['H2', {}, 'Order'],
+                ['DIV', { class: 'row' }, ['SPAN', {}, 'Running shoes'], ['SPAN', {}, '€79.90']],
+                ['DIV', { class: 'row' }, ['SPAN', {}, 'Delivery'], ['SPAN', {}, '€5.00']],
+                ['HR', {}],
+                ['DIV', { class: 'row' }, ['B', {}, 'Total'], ['B', {}, '€84.90']],
+              ],
+            ],
+          ],
+        ];
+        const filled = { email: 'jo@example.test', card: '<hidden>', password: '<hidden>' };
+        const moments = [
+          ['call@41', 'Navigate to "/checkout"', 'after', {}, { disabled: '' }],
+          [
+            'call@47',
+            'Fill "jo@example.test" getByLabel(\'Email\')',
+            'after',
+            { email: filled.email },
+            { disabled: '' },
+          ],
+          ['call@52', "Fill getByLabel('Card number')", 'after', { ...filled, password: '' }, { disabled: '' }],
+          ['call@55', "Fill getByLabel('Password')", 'after', filled, {}],
+          ['call@58', call.title, 'before', { ...filled, note: 'Checking your card…' }, {}],
+          ['call@58', call.title, 'action', { ...filled, note: 'Checking your card…' }, { __playwright_target__: '' }],
+        ];
+        for (const [index, [callId, title, phase, values, button]] of moments.entries()) {
+          const json = {
+            html: checkout(values, button),
+            frameUrl: 'https://shop.example.test/checkout',
+            viewport: { width: 1280, height: 800 },
+          };
+          const header = {
+            type: 'snapshot',
+            ...id,
+            call: callId,
+            title,
+            phase,
+            page: 'page@3',
+            frame: 'frame@4',
+            main: true,
+            full: true,
+            index,
+            at: Date.now(),
+            resources: [{ url: 'https://shop.example.test/assets/checkout.css', sha1 }],
+            test,
+          };
+          await post(liveMessage(header, Buffer.from(JSON.stringify(json))), binary);
+        }
+        if ((await panel.getByTestId('live-inspect-section').getAttribute('data-state')) !== 'open') {
+          await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+        }
+        const inspect = panel.getByTestId('live-inspect');
+        const shown = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+        await shown.getByRole('button', { name: 'Pay €84.90' }).waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await send();
+        await inspect.scrollIntoViewIfNeeded();
+        await page.mouse.move(0, 0);
+        await settle();
+        await shoot();
+
+        // At 390 px, in the sheet.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        const sheet = page.getByRole('dialog');
+        await sheet
+          .getByTestId('live-inspect-frame')
+          .locator('iframe')
+          .contentFrame()
+          .getByRole('button', { name: 'Pay €84.90' })
+          .waitFor({ timeout: 30_000 });
+        await sheet.getByTestId('live-inspect').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
     name: 'run-watch-all',
     description:
       'Watch all on a running CI run of four workers: a tile of each worker’s page with its test and step, and a click showing one in full in the lane panel, at 1280 px; the tiles alone at 390 px',

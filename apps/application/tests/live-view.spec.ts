@@ -6,7 +6,15 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import { join, resolve } from 'node:path';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import { LIVE_FRAME_TYPE, encodeLiveMessage, liveThumbHeader, type LiveStop } from '@piwitests/core/live-view';
+import {
+  LIVE_FRAME_TYPE,
+  encodeLiveMessage,
+  liveResourceHeader,
+  liveSnapshotHeader,
+  liveThumbHeader,
+  type LiveStop,
+} from '@piwitests/core/live-view';
+import type { LiveSnapshot } from '@piwitests/core/live-inspect';
 import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
@@ -24,7 +32,9 @@ import { holdWorkerStream } from './utils/live-view';
  * as the project turns the live view off. **Watch all** shows a tile of each worker on one watch, and a click shows one
  * in full on it, each worker hearing what the page asks of its images; a worker that says no lane stays in full view on
  * the test it runs. The lane panel asks a worker for the layers it shows, and shows the page's events, its text,
- * masked and searchable, and the test's filmstrip, one image a call, as the worker posts them.
+ * masked and searchable, and the test's filmstrip, one image a call, as the worker posts them. Inspect asks the worker
+ * for its page's snapshots and shows the page at the latest call, rendered by the instance with its stylesheet and
+ * without its script, follows each new call until the reader chooses an older one, and picks a locator on it.
  */
 
 const target = resolveE2ETarget();
@@ -147,9 +157,13 @@ module.exports = wrapConfig(defineConfig({
   };
 }
 
+/** End a run: its Playwright stops, 10 s at most, before its folder goes, a write still finishing tried again. */
 async function endRun(run: Run): Promise<void> {
-  if (run.child.exitCode === null) run.child.kill();
-  fs.rmSync(run.folder, { recursive: true, force: true });
+  if (run.child.exitCode === null) {
+    run.child.kill();
+    await Promise.race([run.exited, new Promise((done) => setTimeout(done, 10_000))]);
+  }
+  fs.rmSync(run.folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 /** The id of a project, made by reporting an empty run when it does not exist yet. */
@@ -1112,6 +1126,131 @@ test.describe('Live view of a run', () => {
       await panel.getByRole('button', { name: /^Page events/ }).click();
       await expect.poll(asked, { timeout: 10_000 }).toEqual(['text', 'filmstrip']);
       await expect(events).toHaveCount(0);
+    } finally {
+      await run.end();
+    }
+  });
+  test('Inspect shows the page at the latest call, follows each new one, keeps the call chosen, and picks a locator', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const title = 'pays on a slow page';
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    const run = await playWorkers(request, [{ title, lane: true, row: true }], shot);
+    const worker = run.workers[0]!;
+    const inspects = () =>
+      (worker
+        .heard()
+        .filter((message) => message.type === 'view')
+        .at(-1)?.inspect as boolean | undefined) ?? null;
+    const id = { shard: null, worker: 0, slot: 0 };
+    const CSS = `${'c'.repeat(40)}.css`;
+    const send = async (header: Record<string, unknown>, data: Uint8Array) => {
+      const response = await request.post(`/api/test-runs/${run.runId}/live-view`, {
+        headers: { Authorization: `Bearer ${run.key}`, 'Content-Type': LIVE_FRAME_TYPE },
+        data: Buffer.from(encodeLiveMessage(header, data)),
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    };
+    let index = 0;
+    /** A full snapshot of the checkout page, its heading saying where the test is, after `call`'s `phase`. */
+    const snapshot = async (call: string, phase: LiveSnapshot['phase'], heading: string) => {
+      const header: LiveSnapshot = {
+        call,
+        title: `Click getByRole('button', { name: 'Step ${call}' })`,
+        phase,
+        page: 'page@1',
+        frame: 'frame@1',
+        main: true,
+        full: true,
+        index: index++,
+        at: Date.now(),
+        resources: [{ url: 'https://shop.test/app.css', sha1: CSS }],
+      };
+      const html = [
+        'HTML',
+        {},
+        ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css' }]],
+        [
+          'BODY',
+          {},
+          ['H1', {}, heading],
+          ['SCRIPT', {}, 'document.body.dataset.ran = "yes"'],
+          ['LABEL', {}, 'Password', ['INPUT', { type: 'password', __playwright_value_: 'hunter2' }]],
+          [
+            'DIV',
+            { style: 'margin-top: 240px' },
+            ['BUTTON', { 'data-testid': 'pay', onclick: 'document.body.dataset.ran = "yes"' }, 'Pay'],
+          ],
+        ],
+      ];
+      const json = { html, frameUrl: 'https://shop.test/checkout', viewport: { width: 800, height: 500 } };
+      await send(liveSnapshotHeader(id, header, title), new TextEncoder().encode(JSON.stringify(json)));
+    };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(1);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      // Inspect opened: the worker is asked for its page's snapshots, and says there are none yet.
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(false);
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(true);
+      const inspect = panel.getByTestId('live-inspect');
+      await expect(inspect.getByTestId('live-inspect-waiting')).toContainText('Waiting for the page');
+
+      // The stylesheet, then the page at two calls: the view shows the latest, styled, its script and secret gone.
+      await send(
+        liveResourceHeader(id, { sha1: CSS, contentType: 'text/css' }),
+        Buffer.from('h1 { color: rgb(124, 58, 237) }'),
+      );
+      await snapshot('call@1', 'before', 'Cart');
+      await snapshot('call@2', 'before', 'Checkout');
+      const frame = inspect.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+      await expect(frame.getByRole('heading', { name: 'Checkout' })).toBeVisible({ timeout: 15_000 });
+      await expect(frame.getByRole('heading', { name: 'Checkout' })).toHaveCSS('color', 'rgb(124, 58, 237)');
+      // The secret field's value never reaches the page: the instance hides it again, whatever the worker sent.
+      await expect(frame.locator('input[type="password"]')).toHaveValue('');
+      expect(await frame.locator('html').innerHTML()).not.toContain('hunter2');
+      expect(await frame.locator('body').getAttribute('data-ran')).toBeNull();
+      await frame.getByTestId('pay').click();
+      expect(await frame.locator('body').getAttribute('data-ran')).toBeNull();
+      const calls = inspect.getByTestId('live-inspect-call');
+      await expect(calls).toHaveCount(2);
+      await expect(inspect.getByTestId('live-inspect-at')).toContainText('Step call@2');
+
+      // Following: the next call shows as it comes.
+      await snapshot('call@3', 'before', 'Paying');
+      await snapshot('call@3', 'after', 'Paid');
+      await expect(frame.getByRole('heading', { name: 'Paid' })).toBeVisible({ timeout: 15_000 });
+      await inspect.getByTestId('live-inspect-before').click();
+      await expect(frame.getByRole('heading', { name: 'Paying' })).toBeVisible({ timeout: 15_000 });
+
+      // An older call chosen: the view no longer follows, and stays on it as the next call comes.
+      await calls.nth(0).click();
+      await expect(inspect.getByRole('checkbox', { name: 'Follow the latest call' })).not.toBeChecked();
+      await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible({ timeout: 15_000 });
+      await snapshot('call@4', 'before', 'Receipt');
+      await expect(calls).toHaveCount(4);
+      await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible();
+
+      // A locator picked on the page shown.
+      await inspect.getByTestId('live-inspect-pick').click();
+      const picker = page.getByRole('dialog').filter({ hasText: 'Find a locator on the page at this call' });
+      await expect(picker).toBeVisible();
+      const pickFrame = picker.locator('iframe').contentFrame();
+      await pickFrame.getByRole('button', { name: 'Pay' }).click();
+      await expect(picker.getByRole('radiogroup', { name: 'Locator alternatives' })).toContainText(
+        "getByRole('button', { name: 'Pay' })",
+        { timeout: 15_000 },
+      );
+      await picker.getByRole('button', { name: 'Cancel' }).click();
+
+      // Inspect closed: the worker is no longer asked for snapshots.
+      await panel.getByRole('button', { name: 'Inspect', exact: true }).click();
+      await expect.poll(inspects, { timeout: 10_000 }).toBe(false);
     } finally {
       await run.end();
     }

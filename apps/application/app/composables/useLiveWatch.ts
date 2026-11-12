@@ -31,7 +31,9 @@ export type LiveFocusEvent =
 /**
  * The run page's one watch of its live run (`LiveWatch`): every running worker's tile while **Watch all** is on, and
  * the full view of the worker the lane panel shows (`show`), at the size it shows it (`resize`), with the layers it
- * shows beside the image (`showLayers`) and its page's text as the panel asks for it (`askText`), on one connection.
+ * shows beside the image (`showLayers`), its page's text as the panel asks for it (`askText`) and **Inspect**
+ * (`showInspect`: the worker sends its page's snapshots, whose pages the watch's id, `watchId`, names), on one
+ * connection.
  * The tiles keep each worker's latest image alone, with when it came, in this page's memory, while Watch all is on,
  * until the worker leaves (`keep`), Watch all goes off, or the watch closes or goes idle. In a tab hidden for
  * `LIVE_HIDDEN_CLOSE_MS`, the tiles are no longer asked for; they are asked again as the tab shows.
@@ -43,7 +45,11 @@ export function useLiveWatch(runId: () => number) {
   const size = shallowRef<{ width: number; height: number } | null>(null);
   /** The layers the lane panel shows beside the full view's image, asked while it shows a worker in full. */
   const layers = shallowRef<LaneLayer[]>([]);
+  /** Whether the lane panel has Inspect open on the full view. */
+  const inspect = ref(false);
   const state = shallowRef<LiveWatchState>({ kind: 'idle' });
+  /** The id the instance named the open watch by, which the address of a page Inspect shows carries; null while none. */
+  const watchId = ref<string | null>(null);
   const images = shallowRef<Record<string, LiveTile>>({});
   /** The tab has been hidden `LIVE_HIDDEN_CLOSE_MS`: the tiles are not asked for until it shows. */
   const hiddenLong = ref(false);
@@ -112,6 +118,7 @@ export function useLiveWatch(runId: () => number) {
         },
         state(next) {
           state.value = next;
+          watchId.value = next.kind === 'open' ? (live?.id ?? null) : null;
           // Nothing is watched any more: no image of it stays.
           if (next.kind === 'idle' || next.kind === 'closed') keep([]);
           listener?.hear({ kind: 'state', state: next });
@@ -129,8 +136,9 @@ export function useLiveWatch(runId: () => number) {
     tiles: tilesAsked(),
     size: size.value,
     layers: focus.value ? layers.value : [],
+    inspect: !!focus.value && inspect.value,
   });
-  watch([focus, size, tiles, hiddenLong, layers], () => live?.want(asked()));
+  watch([focus, size, tiles, hiddenLong, layers, inspect], () => live?.want(asked()));
   // Tiles no longer asked: none of them stays.
   watch(tilesAsked, (on) => {
     if (!on) keep([]);
@@ -205,6 +213,11 @@ export function useLiveWatch(runId: () => number) {
     if (held.join() !== layers.value.join()) layers.value = held;
   }
 
+  /** The lane panel opens Inspect on the full view, or closes it: the worker sends its page's snapshots while it is open. */
+  function showInspect(on: boolean): void {
+    inspect.value = on;
+  }
+
   /**
    * Ask the worker shown in full for its page's text now, for a panel that shows the text: with what the panel shows
    * now, which the watch may not have heard yet.
@@ -229,7 +242,22 @@ export function useLiveWatch(runId: () => number) {
     keep([]);
   });
 
-  return { tiles, focus, state, images, show, resize, showLayers, askText, keep, latest, resume, watchAll };
+  return {
+    tiles,
+    focus,
+    state,
+    watchId,
+    images,
+    show,
+    resize,
+    showLayers,
+    showInspect,
+    askText,
+    keep,
+    latest,
+    resume,
+    watchAll,
+  };
 }
 
 export type LiveWatchHandle = ReturnType<typeof useLiveWatch>;
