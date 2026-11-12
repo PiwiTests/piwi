@@ -28,16 +28,25 @@ export function tallyResults(tally: RunTally): number {
   return tally.passedTests + tally.failedTests + tally.skippedTests + tally.didNotRunTests;
 }
 
-/** Keep the run's latest tally in `tallies`, the oldest run's going past `MAX_KEPT_TALLIES`. */
+/**
+ * Keep the run's latest tally in `tallies`, the oldest run's going past `MAX_KEPT_TALLIES`. The latest is the one with
+ * the most results, whatever order the tallies arrive in: the counters only grow while a run runs.
+ */
 export function keepTally(tallies: Map<number, RunTally>, runId: number, tally: RunTally): void {
+  const kept = tallies.get(runId);
   tallies.delete(runId);
-  tallies.set(runId, {
-    totalTests: tally.totalTests,
-    passedTests: tally.passedTests,
-    failedTests: tally.failedTests,
-    skippedTests: tally.skippedTests,
-    didNotRunTests: tally.didNotRunTests,
-  });
+  tallies.set(
+    runId,
+    kept && tallyResults(tally) < tallyResults(kept)
+      ? kept
+      : {
+          totalTests: tally.totalTests,
+          passedTests: tally.passedTests,
+          failedTests: tally.failedTests,
+          skippedTests: tally.skippedTests,
+          didNotRunTests: tally.didNotRunTests,
+        },
+  );
   while (tallies.size > MAX_KEPT_TALLIES) tallies.delete(tallies.keys().next().value!);
 }
 

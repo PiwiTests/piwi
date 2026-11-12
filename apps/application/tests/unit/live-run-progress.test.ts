@@ -75,6 +75,16 @@ describe('keepTally', () => {
     expect([...tallies]).toEqual([[5, counts(2)]]);
   });
 
+  test('keeps the tally with more results when two shards’ tallies arrive out of order', () => {
+    const tallies = new Map<number, RunTally>();
+    keepTally(tallies, 5, counts(12));
+    keepTally(tallies, 5, counts(10));
+    expect(tallies.get(5)).toEqual(counts(12));
+    // As many results and a grown total, as the next shard starts: the newer tally.
+    keepTally(tallies, 5, counts(12, 0, 800));
+    expect(tallies.get(5)).toEqual(counts(12, 0, 800));
+  });
+
   test('lets the run heard from longest ago go past the most it keeps', () => {
     const tallies = new Map<number, RunTally>();
     for (let runId = 1; runId <= MAX_KEPT_TALLIES; runId++) keepTally(tallies, runId, counts(runId));
