@@ -17,6 +17,7 @@ import { NOTE_INTERVALS, type NoteInterval } from '#shared/integrations/automati
 import {
   autoCreateRuleFromForm,
   autoCreateRuleToForm,
+  pruneDeclaredIssueTypes,
   runScopeFromForm,
   runScopeToForm,
   type AutoCreateRuleForm,
@@ -104,11 +105,11 @@ const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value 
 /** The connection the project list was last loaded for, so an empty list is not shown while loading. */
 const projectsLoadedFor = ref(0);
 
-async function loadPickers() {
+async function loadPickers(): Promise<TrackerIssueTypeOption[] | null> {
   if (!form.connectionId) {
     jiraProjects.value = [];
     issueTypes.value = [];
-    return;
+    return null;
   }
   const connectionId = form.connectionId;
   try {
@@ -120,7 +121,7 @@ async function loadPickers() {
     jiraProjects.value = [];
   }
   projectsLoadedFor.value = connectionId;
-  await loadIssueTypes();
+  return loadIssueTypes();
 }
 
 const selectedConnection = computed(() => connections.value.find((c) => c.id === form.connectionId) ?? null);
@@ -136,19 +137,27 @@ const noProjectsHelp = computed(() =>
     : undefined,
 );
 
-async function loadIssueTypes() {
+/** Loads the chosen project's issue types; `null` when the project has none to load or the request failed. */
+async function loadIssueTypes(): Promise<TrackerIssueTypeOption[] | null> {
   if (!form.connectionId || !form.projectKey) {
     issueTypes.value = [];
-    return;
+    return null;
   }
   try {
     const { issueTypes: t } = await $fetch<{ issueTypes: TrackerIssueTypeOption[] }>(
       `/api/integrations/connections/${form.connectionId}/projects/${encodeURIComponent(form.projectKey)}/issue-types`,
     );
     issueTypes.value = t;
+    return t;
   } catch {
     issueTypes.value = [];
+    return null;
   }
+}
+
+/** The types chosen for test tags are the previous project's: keep those the new project lists, or none if its list fails. */
+function dropStaleDeclaredIssueTypes(listed: TrackerIssueTypeOption[] | null) {
+  form.declaredIssueTypes = pruneDeclaredIssueTypes(form.declaredIssueTypes, listed);
 }
 
 function fromBinding(b: ResolvedProjectIntegration) {
@@ -257,8 +266,22 @@ async function save() {
   }
 }
 
-watch(() => form.connectionId, loadPickers);
-watch(() => form.projectKey, loadIssueTypes);
+// Choosing another connection or Jira project replaces the issue types the form can list, so the types chosen for test
+// tags are checked against the new list. The first load of a saved binding keeps what it stored.
+watch(
+  () => form.connectionId,
+  async (_, previous) => {
+    const listed = await loadPickers();
+    if (previous) dropStaleDeclaredIssueTypes(listed);
+  },
+);
+watch(
+  () => form.projectKey,
+  async (_, previous) => {
+    const listed = await loadIssueTypes();
+    if (previous) dropStaleDeclaredIssueTypes(listed);
+  },
+);
 onMounted(load);
 
 // ── Jira fields: what the chosen issue type's create screen requires ──────────

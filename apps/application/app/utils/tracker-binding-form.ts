@@ -6,6 +6,7 @@
  * normalizes and clamps them again.
  */
 import { DEFAULT_AUTO_CREATE_RULE, type AutoCreateRule, type TrackerRunScope } from '#shared/integrations/automation';
+import type { TrackerIssueTypeOption } from '#shared/integrations/types';
 
 /** A run scope as the form edits it. */
 export interface RunScopeForm {
@@ -72,4 +73,16 @@ export function autoCreateRuleFromForm(form: AutoCreateRuleForm): AutoCreateRule
 /** The form of a new rule: the default one, on the default branch. */
 export function newAutoCreateRuleForm(): AutoCreateRuleForm {
   return autoCreateRuleToForm(DEFAULT_AUTO_CREATE_RULE);
+}
+
+/**
+ * The issue types a binding lists for test tags that the Jira project's own list also holds: an entry is kept when it
+ * is the id of a listed type or, ignoring case, the name of one, the two forms a binding stores. With no list, because
+ * the project has none or its types could not be loaded, none is kept.
+ */
+export function pruneDeclaredIssueTypes(selected: string[], listed: TrackerIssueTypeOption[] | null): string[] {
+  if (!listed) return [];
+  return selected.filter((entry) =>
+    listed.some((type) => type.id === entry || type.name.toLowerCase() === entry.toLowerCase()),
+  );
 }
