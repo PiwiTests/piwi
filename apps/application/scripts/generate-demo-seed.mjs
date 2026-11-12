@@ -2827,6 +2827,30 @@ for (const shot of PASSING_SCREENSHOTS) {
   }
 }
 
+// The newest run of the first project keeps its video on the short passing and failing tests, as a suite
+// that records every test does, so the run page's Video tab has reels on several worker lanes. The long
+// failing tests keep none, which shows the tests a reel steps over. Attached last for the same reason.
+{
+  const run = TEST_RUNS.find((r) => r.project_id === 1);
+  const clips = ['checkout-pay-timeout.webm', 'mobile-nav-timeout.webm', 'button-strict-mode.webm'];
+  const MAX_CLIP_TEST_MS = 6000;
+  const recorded = TEST_RUNS_CASES.filter(
+    (t) =>
+      t.test_run_id === run?.id &&
+      (t.status === 'passed' || t.status === 'failed') &&
+      (t.retries ?? 0) === 0 &&
+      t.duration <= MAX_CLIP_TEST_MS,
+  ).sort((a, b) => a.started_at - b.started_at || a.id - b.id);
+  recorded.forEach((trc, i) => {
+    attach(trc, {
+      type: 'attachment',
+      subtype: 'video',
+      label: 'video/webm',
+      relPath: `demo/videos/${clips[i % clips.length]}`,
+    });
+  });
+}
+
 // ── Build failure_clusters rows ────────────────────────────────────────────
 
 // Runs are generated newest-first (index 0 is the newest, ids descend as time
