@@ -11,7 +11,9 @@ lang: en-US
 A finished run has a **Video** tab, labelled with the number of tests that have a video (**Video (12)**). It plays the
 videos Playwright recorded for the run, one test after another, beside a checklist of the tests. A test is ticked as its
 video passes the end of the test, so you can follow a worker's run as it happened. The bar under the video has one block
-for each test, colored by its result. Click a test or the bar to jump there.
+for each test, colored by its result. Click a test or the bar to jump there: while the video is paused it shows that
+frame and stays paused, and while it plays it keeps playing from there. The video, the bar and the marks under it fit
+the screen without scrolling the page; only the list of tests scrolls.
 
 ## Group by Worker or File
 
@@ -48,7 +50,7 @@ type, key press, check, uncheck, select, hover and navigation, placed on the vid
 Video tab and in the Evidence video review.
 
 - Point at a mark, or move to it with the keyboard, to read the action and its locator, for example
-  `Click getByRole('button', { name: 'Save' })`. Choose a mark to play the test from there.
+  `Click getByRole('button', { name: 'Save' })`. Choose a mark to go there; it plays on only if the video was playing.
 - An action that failed has a red mark.
 - Marks too close to tell apart merge into one mark with a count. Its tooltip lists them.
 - An action outside the video is shown at the nearest edge of the lane, with a note in its tooltip.
