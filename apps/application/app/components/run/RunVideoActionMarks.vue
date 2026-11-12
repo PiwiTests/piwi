@@ -67,7 +67,13 @@ const countText = computed(() =>
   <div class="min-w-0 space-y-1" data-testid="video-action-marks">
     <div v-if="state === 'ready'" ref="lane" class="relative mx-1.5 h-5" role="group" aria-label="Actions of this test">
       <span class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" aria-hidden="true" />
-      <UTooltip v-for="(mark, i) in marks" :key="i" :delay-duration="0" :content="{ side: 'top' }">
+      <UTooltip
+        v-for="(mark, i) in marks"
+        :key="i"
+        :delay-duration="0"
+        :content="{ side: 'top' }"
+        :ui="{ content: 'h-auto max-w-xs py-1.5' }"
+      >
         <button
           type="button"
           :class="markClass(mark)"
