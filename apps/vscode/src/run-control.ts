@@ -1221,6 +1221,11 @@ export interface LiveMenuItem {
   ref: string | null;
   /** The run's page on the team instance, for `open` and `copy`; null otherwise. */
   url: string | null;
+  /**
+   * What `stop` and `stop-window` ask before they stop sharing (`stopSharingQuestion`), of the run as the menu showed it,
+   * whatever became of it since; null otherwise.
+   */
+  question: string | null;
 }
 
 /**
@@ -1242,6 +1247,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
             action: 'open',
             ref,
             url: live.page,
+            question: null,
           },
           {
             label: several ? `Copy ${run}’s link` : "Copy the run page's link",
@@ -1249,6 +1255,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
             action: 'copy',
             ref,
             url: live.page,
+            question: null,
           },
         ]
       : [];
@@ -1261,6 +1268,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
             action: 'stop',
             ref,
             url: null,
+            question: stopSharingQuestion(sessions.get(ref) ?? null),
           },
         ];
     return [...pageItems, ...stop];
@@ -1272,6 +1280,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
       action: 'stop-window',
       ref: null,
       url: null,
+      question: stopSharingQuestion(null),
     });
   }
   return items;

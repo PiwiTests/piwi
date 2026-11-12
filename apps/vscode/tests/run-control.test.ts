@@ -960,16 +960,27 @@ describe('the Live item’s menu', () => {
         action: 'open',
         ref: 'ed-1',
         url: page,
+        question: null,
       },
-      { label: "Copy the run page's link", detail: null, action: 'copy', ref: 'ed-1', url: page },
+      { label: "Copy the run page's link", detail: null, action: 'copy', ref: 'ed-1', url: page, question: null },
       {
         label: 'Stop sharing…',
         detail: 'Shared live on piwi.example.com: 2 views open',
         action: 'stop',
         ref: 'ed-1',
         url: null,
+        question:
+          'Piwi: stop sharing run #42 live? The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
       },
     ]);
+  });
+
+  test('asks about the run the menu showed, even once it ended while the menu was open', () => {
+    const sessions = sessionsOf(shared('ed-1', 42, 2));
+    const stop = liveMenu(sessions).find((item) => item.action === 'stop')!;
+    sessions.delete('ed-1');
+    expect(stop.question).toBe(stopSharingQuestion(shared('ed-1', 42, 2)));
+    expect(liveMenu(new Map(), true)[0]!.question).toBe(stopSharingQuestion(null));
   });
 
   test('names each run when several are shared, and the window’s share when it is on', () => {
