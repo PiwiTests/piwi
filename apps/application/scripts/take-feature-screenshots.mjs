@@ -2732,6 +2732,34 @@ function videoMarksScene(width, colorScheme, suffix) {
   };
 }
 
+/** The run's Video tab and the Evidence's video review at a viewport: the whole reel in view, and the bar's ring. */
+function videoFitScene(width, height, suffix) {
+  const name = `video-review-fit${suffix}`;
+  const bar = '[aria-label="Tests in this reel"]';
+  return {
+    name,
+    description: `The video review fitted to a ${width}x${height} screen: video, Play row, bar and marks in view without scrolling the page, the current block's ring on the bar, and the Evidence window the same`,
+    route: `/test-runs/${VIDEO_MARKS_RUN}?tab=video`,
+    viewport: { width, height },
+    outputs: [`${name}-tab.png`, `${name}-bar.png`, `${name}-evidence.png`],
+    async run({ page, goto, settle, shoot }) {
+      const ready = async (scope) => {
+        await page.locator(`${scope} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      await ready('[data-shot="run-video-tab"]');
+      await shoot('tab');
+      await page.locator(`${bar} button`).first().focus();
+      await shoot('bar', { of: bar, pad: 16 });
+
+      await goto(`/test-run-cases/${VIDEO_MARKS_EXECUTION}`);
+      await page.getByRole('button', { name: 'Open video review' }).click();
+      await ready('[role="dialog"]');
+      await shoot('evidence');
+    },
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -5120,6 +5148,8 @@ const SCENES = [
   videoMarksScene(1280, 'light', ''),
   videoMarksScene(375, 'light', '-phone'),
   videoMarksScene(1280, 'dark', '-dark'),
+  videoFitScene(1440, 900, ''),
+  videoFitScene(375, 812, '-phone'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),

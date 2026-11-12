@@ -80,9 +80,11 @@ function blockLabel(entry: ReelEntry): string {
 </script>
 
 <template>
-  <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
-    <div class="min-w-0 space-y-2">
-      <div class="relative aspect-video overflow-hidden rounded-lg border border-default bg-black">
+  <div
+    class="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)]"
+  >
+    <div class="flex min-h-0 min-w-0 flex-col gap-2">
+      <div class="relative aspect-video min-h-24 shrink overflow-hidden rounded-lg border border-default bg-black">
         <video
           v-for="slot in [0, 1] as const"
           :key="slot"
@@ -99,7 +101,7 @@ function blockLabel(entry: ReelEntry): string {
         </div>
       </div>
 
-      <div class="flex items-center gap-2 min-w-0">
+      <div class="flex shrink-0 items-center gap-2 min-w-0">
         <UButton
           :icon="playing ? 'i-lucide-pause' : 'i-lucide-play'"
           color="neutral"
@@ -119,7 +121,12 @@ function blockLabel(entry: ReelEntry): string {
         </div>
       </div>
 
-      <div ref="bar" class="flex items-stretch gap-px overflow-x-auto p-1" role="group" aria-label="Tests in this reel">
+      <div
+        ref="bar"
+        class="flex shrink-0 items-stretch gap-px overflow-x-auto p-1"
+        role="group"
+        aria-label="Tests in this reel"
+      >
         <template v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
           <button
             v-if="!entry.context"
@@ -164,6 +171,7 @@ function blockLabel(entry: ReelEntry): string {
 
       <RunVideoActionMarks
         v-if="playingEntry"
+        class="shrink-0"
         :execution-id="playingEntry.execution.executionId"
         :next-execution-id="nextEntry?.execution.executionId ?? null"
         :span-ms="player.endMs.value"
@@ -171,15 +179,15 @@ function blockLabel(entry: ReelEntry): string {
       />
     </div>
 
-    <div class="min-w-0">
-      <p v-if="hasContext" class="mb-1 text-xs text-muted tabular-nums">
+    <div class="flex min-h-24 min-w-0 flex-1 flex-col lg:min-h-0 lg:flex-none">
+      <p v-if="hasContext" class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         This test's video · {{ contextTotal }} other {{ contextTotal === 1 ? 'test' : 'tests' }} in its file, not played
       </p>
-      <p v-else class="mb-1 text-xs text-muted tabular-nums">
+      <p v-else class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         {{ tickedCount }} of {{ playedTotal }} tests · {{ reel.videoCount }}
         {{ reel.videoCount === 1 ? 'video' : 'videos' }}
       </p>
-      <ul class="max-h-96 overflow-y-auto divide-y divide-default rounded-lg border border-default lg:max-h-[28rem]">
+      <ul class="min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
         <li v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
           <button
             type="button"

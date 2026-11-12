@@ -18,6 +18,8 @@ export interface DetailTabItem {
 const props = defineProps<{
   tabItems: DetailTabItem[];
   tabPanelClass?: Record<string, string>;
+  /** Tabs that fill the height the page has left, below `lg` as well, and keep the summary folded away there. */
+  fitTabs?: string[];
 }>();
 
 const activeTab = defineModel<string>({ required: true });
@@ -27,14 +29,27 @@ const activeTab = defineModel<string>({ required: true });
 // summary is pinned and the panel scrolls independently.
 const summaryCollapsed = ref(false);
 
+const fits = (value: string) => props.fitTabs?.includes(value) ?? false;
+
 const activeTabIcon = computed(() => props.tabItems.find((t) => t.value === activeTab.value)?.icon);
 
 // Desktop keeps the independent-scroll panel; on mobile the panel flows into
 // the page scroll (no clipping, no nested scroll area).
 function panelClasses(value: string) {
+  if (fits(value)) return 'flex min-h-0 flex-1 flex-col overflow-y-auto max-lg:min-h-[26rem]';
   const desktop = props.tabPanelClass?.[value] ?? 'overflow-y-auto';
   return ['min-h-0', 'lg:flex-1', desktop, 'max-lg:!block', 'max-lg:!overflow-visible'].join(' ');
 }
+
+// A tab that fits the screen starts with the summary folded on a phone, where the summary would push it out of view.
+watch(
+  activeTab,
+  (value, before) => {
+    if (fits(value)) summaryCollapsed.value = true;
+    else if (before != null && fits(before)) summaryCollapsed.value = false;
+  },
+  { immediate: true },
+);
 
 // The strip is the Settings-style UNavigationMenu. Its active state is
 // route-driven by default; tabs are view state (no routes), so each item
