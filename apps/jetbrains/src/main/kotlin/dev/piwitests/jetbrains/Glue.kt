@@ -3630,6 +3630,16 @@ object Glue {
             (if (text.cut) " Cut at ${MAX_LANE_TEXT / 1024} K characters." else "")
     }
 
+    /** **Open the Trace So Far** in the Worker tab, and what its tooltip says it does. */
+    const val OPEN_TRACE = "Open the Trace So Far"
+    const val OPEN_TRACE_TITLE = "Open this test’s trace up to now in Playwright’s trace viewer, on this machine"
+
+    /**
+     * Whether the Worker tab offers **Open the Trace So Far** for the worker in its slot: its reporter answers a trace
+     * ask (`traces`) and it runs a test, as `canOpenTrace` of `@piwitests/run-model/stop` says for the Runs window.
+     */
+    fun canOpenTrace(worker: RunWorker?): Boolean = worker?.traces == true && worker.test != null
+
     /** The note over a lane whose reporter sends no layers; null when it sends them or the tab cannot tell. */
     fun laneLayersNote(worker: RunWorker?): String? =
         if (worker != null && !worker.layers) {

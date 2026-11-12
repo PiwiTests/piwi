@@ -12,7 +12,8 @@ A test that runs headless on your machine, or in a remote container, shows its p
 a second, through its next tests and its stops, and the worker Playwright starts in its place after a failure. Choose
 a worker in your editor, in Piwi Picker's Runs window or in the desktop app, and watch it work; **Pause and watch**
 stops it before its next call too. It needs `@piwitests/reporter` newer than 0.67.0 and the
-[capture fixtures](/guide/capture-fixtures). Nothing leaves your machine.
+[capture fixtures](/guide/capture-fixtures). Nothing leaves your machine: [what is
+sent](/guide/concepts#watch-share-live).
 
 ## Where to watch
 
@@ -48,11 +49,8 @@ nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
 - **Watch on the dashboard**, beside it, opens the lane's view on the run's page: the choice where the editor cannot
   show it (an older instance, a refused **Watch**, which offers it).
 
-The editor follows the two newest CI runs of a branch through the connection to the instance it already holds, and
-Piwi Picker reads the list every 15 seconds while its Runs window is open. While the editor follows a run, the run's
-reporter streams the call each test is at. A CI lane's images come from the team instance, read with your editor's
-key: the CI worker paints over the same fields before they leave it, the editor service keeps none, and the watch
-counts among the instance's watches of the run for the key's owner, as a dashboard tab does.
+What the editor reads for a CI run, and where a CI lane's images come from: [CI position](/guide/concepts#ci-position)
+and [Watch](/guide/concepts#watch-share-live).
 
 ## What you see
 
@@ -78,6 +76,21 @@ Under the image, the editor's view shows what the pixels cannot, a CI run's lane
 The text and the filmstrip are read only while open. The view says when an older reporter, or team instance, may send
 none of them.
 
+## Open the trace so far
+
+**Open the trace so far** opens Playwright's trace viewer on the running test's trace up to now: beside **Watch** in
+the VS Code panel (or **Piwi: Open the trace so far**) and the JetBrains **Worker** tab, in a watched page's head in
+the Runs window and the desktop app's tray, while the worker runs a test, stopped or not, with a reporter newer than
+0.68.0.
+
+The editor service or the desktop app starts the viewer from your project's own Playwright, on the machine the run
+runs on; the trace's path never leaves it, and the view hears a sentence alone, saying why when the viewer does not
+start. In Playwright 1.59 to 1.64 the viewer shows the trace as it stood when it opened: close it, then choose the
+button again, for what came since.
+
+The attempt must be traced: `trace: 'on'` or `'retain-on-failure'` (`wrapConfig`'s default when your config sets
+none) traces every attempt, `'on-first-retry'` and `'on-all-retries'` a retry alone.
+
 ## Interact
 
 At a stop, **Interact**, beside **Watch live** or **Watch** in each view once the view is on, sends your clicks, the
@@ -89,13 +102,6 @@ pick or a check runs on the page, started there or from its pause bar, `Esc` goe
 key: it skips the pick or closes the check. A recording takes no `Esc` of its own, so there `Esc` gives the stop back. A `Shift`+click
 picks a locator instead. The keys that stay the window's are listed under
 [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
-
-## What is sent, and what is kept
-
-The worker takes images only while a view watches it, and sends them to the editor service or the desktop app's
-server on your machine, which passes each to the views watching that worker and keeps none. Before an image leaves
-the worker, password fields and the fields of one-time codes and card numbers are painted over. One view of the page
-serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared live](./share-live), the team's.
 
 ## Limits
 

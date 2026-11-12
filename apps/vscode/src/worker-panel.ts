@@ -13,13 +13,16 @@
  * (`piwi/ciWatch`, `piwi/ciFrame`), read-only: Watch alone, no Interact, input or pick, its caption from the CI
  * sessions, and why the watch ended said under it. One slot, local or CI, at a time. Under the image, the lane's layers
  * (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked
- * for while their section is open, kept for the slot it shows until the panel closes. The pure half is
- * `run-control.ts`.
+ * for while their section is open, kept for the slot it shows until the panel closes. **Open the trace so far**, beside
+ * Watch and Interact while the slot's worker can open its running test's trace (`canOpenTrace`), and
+ * `piwi.openTraceSoFar`, ask the service to open Playwright's trace viewer on it (`piwi/openTrace`) and say its answer.
+ * The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
+import { canOpenTrace } from '@piwitests/run-model/stop';
 import {
   CI_FRAME_NOTIFICATION,
   CI_LAYER_NOTIFICATION,
@@ -28,6 +31,7 @@ import {
   LANE_FRAME_NOTIFICATION,
   LANE_LAYER_NOTIFICATION,
   LANE_VIEW_REQUEST,
+  OPEN_TRACE_REQUEST,
   PAGE_INPUT_REQUEST,
   PICK_AT_REQUEST,
   type CiFrame,
@@ -36,6 +40,7 @@ import {
   type LaneFrame,
   type LaneViewLayer,
   type LaneViewParams,
+  type OpenTraceParams,
   type PausedImage,
   type PickAtParams,
   type PickAtResult,
@@ -61,6 +66,7 @@ import {
   laneShown,
   layersAfterAnswer,
   NO_LANE_LAYERS,
+  openTraceParams,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
@@ -94,6 +100,11 @@ export interface WorkerPanel extends vscode.Disposable {
   view(): PausedPageView | null;
   /** A message of the panel's script: the view turned on or off, Interact, input, a pick. */
   message(message: unknown): Promise<void>;
+  /**
+   * **Open the trace so far** for the slot the panel shows (`piwi/openTrace`): the service's answer, said as a message,
+   * a warning when it is not `ok`.
+   */
+  openTrace(): Promise<RunControlResult>;
 }
 
 const NO_ANSWER = 'The editor service did not answer.';
@@ -151,6 +162,8 @@ export function createWorkerPanel(
   let textAsking = false;
   /** The layers the watch asked last, as text: a change of the sections asks again when they differ. */
   let layersSent = '';
+  /** Open the trace so far waits for the service's answer: its button is off, and another ask gets that answer. */
+  let traceAsked: Promise<RunControlResult> | null = null;
 
   const script = () =>
     panel!.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'paused-page.js')).toString();
@@ -193,6 +206,10 @@ export function createWorkerPanel(
       // An action runs in the test's window at the stop the input goes to: Escape on the view goes to the page.
       acting: !!stop?.stop.acting,
       layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
+      trace:
+        lane.worker && canOpenTrace({ test: lane.worker.test, traces: lane.worker.traces || undefined })
+          ? { asking: !!traceAsked }
+          : null,
     };
     if (!panel) return;
     if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
@@ -268,6 +285,33 @@ export function createWorkerPanel(
     if (answer?.ok || (ciTarget ? ciWatching : watching) !== own) return;
     textNote = answer?.message ?? NO_ANSWER;
     postLayers(['text']);
+  };
+
+  /**
+   * Ask the service to open Playwright's trace viewer on the slot's running test (`piwi/openTrace`), one ask at a time,
+   * and say its answer: an information message, else a warning.
+   */
+  const openTrace = (): Promise<RunControlResult> => {
+    if (traceAsked) return traceAsked;
+    const asked = openTraceParams(target, !!ciTarget);
+    if ('none' in asked) {
+      void vscode.window.showWarningMessage(`Piwi: ${asked.none}`);
+      return Promise.resolve({ ok: false, message: asked.none });
+    }
+    const params: OpenTraceParams = asked;
+    traceAsked = lc
+      .sendRequest<RunControlResult>(OPEN_TRACE_REQUEST, params)
+      .catch(() => null)
+      .then((answer) => {
+        traceAsked = null;
+        draw();
+        const said = answer ?? { ok: false, message: NO_ANSWER };
+        if (said.ok) void vscode.window.showInformationMessage(`Piwi: ${said.message}`);
+        else void vscode.window.showWarningMessage(`Piwi: ${said.message}`);
+        return said;
+      });
+    draw();
+    return traceAsked;
   };
 
   const stopWatching = () => {
@@ -411,6 +455,7 @@ export function createWorkerPanel(
       return askLayers();
     }
     if (m.type === 'text') return void askText();
+    if (m.type === 'trace') return void openTrace();
     if (m.type === 'view' && typeof m.on === 'boolean') {
       wantOn = m.on;
       return void watch(m.on);
@@ -602,6 +647,7 @@ export function createWorkerPanel(
     },
     view: () => (panel ? view : null),
     message,
+    openTrace,
     watches(ref, slot) {
       return !!panel?.visible && !!watching && watching.ref === ref && watching.lane === slot;
     },

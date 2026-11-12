@@ -76,7 +76,7 @@ Under a watched page, from a reporter newer than 0.68.0, the tray shows what pix
 text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click enlarges
 an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens Playwright's
 trace viewer on the running test's trace up to now, on your machine, with a reporter newer than 0.68.0: [Watch a
-running test](./watch-running-test).
+running test](./watch-running-test#open-the-trace-so-far).
 
 ## Code to copy
 

@@ -482,6 +482,13 @@ Interact off, and Interact goes off with the watch (Watch off, a refused watch, 
 end), at another slot's view and at a stop that takes no input; the watch ends while the panel is hidden and starts
 again as it shows (`pausedPageViewChange`).
 
+**Open the trace so far.** Beside Watch and Interact, while the slot's worker runs a test whose reporter answers trace
+asks (`canOpenTrace` of `@piwitests/run-model/stop`, the view's `trace`), the button posts `trace`; it and
+**Piwi: Open the trace so far** (`piwi.openTraceSoFar`, offered while the panel is the active editor,
+`activeWebviewPanelId`) send `piwi/openTrace` for the slot (`openTraceParams`), one ask at a time, the button off until
+the service answers, and show its sentence: an information message, a warning when it is not `ok`. The service starts
+Playwright's trace viewer on this machine; the trace's path never reaches the extension. A CI run's lane has neither.
+
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only

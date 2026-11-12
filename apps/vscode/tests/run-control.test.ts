@@ -81,6 +81,8 @@ import {
   watchableWorkers,
   liveTarget,
   liveText,
+  OPEN_TRACE_TITLE,
+  openTraceParams,
   PICK_HINT,
   RUN_COMMANDS,
   pagePoint,
@@ -2223,6 +2225,40 @@ describe('the CI runs of the branch', () => {
     expect(html).toContain('read-only');
     expect(html).toContain('alt="The page of the CI worker\'s test"');
     expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('the worker panel’s Open the trace so far', () => {
+  const view = {
+    image: null,
+    caption: 'Worker 2 · Running · checkout › pays',
+    lane: true,
+    live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+  };
+  const script = 'https://webview/paused-page.js';
+
+  test('draw the button beside Watch and Interact while the slot’s worker can open its trace, off while it is asked', () => {
+    const shown = pausedPageHtml({ ...view, trace: { asking: false } }, 'n', script);
+    expect(shown).toContain(
+      `Interact</label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toContain(
+      '>Open the trace so far</button>',
+    );
+    expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toMatch(/id="trace"[^>]* disabled>/);
+    // Held hidden for a worker that cannot open its trace: the script shows it as the worker comes to one.
+    expect(pausedPageHtml(view, 'n', script)).toMatch(/<button id="trace" type="button" title="[^"]*" hidden>/);
+    // Neither a CI run's lane nor the paused page of one stop has it.
+    expect(pausedPageHtml({ ...view, ci: true, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+    expect(pausedPageHtml({ ...view, lane: false, trace: { asking: false } }, 'n', script)).not.toContain('id="trace"');
+  });
+
+  test('ask for the slot the panel shows, and say why not without one or for a CI run’s lane', () => {
+    expect(openTraceParams({ ref: 'r1', lane: 1 }, false)).toEqual({ ref: 'r1', lane: 1 });
+    expect(openTraceParams(null, false)).toEqual({ none: "no worker panel is open: watch a worker's test first." });
+    expect(openTraceParams(null, true)).toEqual({
+      none: 'a CI run’s trace is on the machine that runs it, not on this one.',
+    });
   });
 });
 

@@ -336,3 +336,48 @@ test('the worker panel shows its slot’s next stop in its document, the strip�
   await page.getByLabel('Watch', { exact: true }).uncheck();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 8, on: false });
 });
+
+test('the worker panel offers Open the trace so far while its worker can open its trace, and asks for it once', async ({
+  page,
+}) => {
+  const image = "The page of the worker's test";
+  const { view, state } = await preview(
+    page,
+    {
+      caption: 'Worker 2 · Between tests',
+      lane: true,
+      stale: false,
+      pick: null,
+      live: { shown: 7, on: true, input: false, interacting: false, clickCounts: true },
+    },
+    image,
+  );
+  const trace = page.getByRole('button', { name: 'Open the trace so far' });
+  await expect(trace).toBeHidden();
+  // The worker runs a test its reporter can open the trace of: the button shows beside Watch and Interact.
+  view.caption = 'Worker 2 · Running · checkout › pays';
+  view.trace = { asking: false };
+  await state();
+  await expect(trace).toBeVisible();
+  await expect(trace).toHaveAttribute(
+    'title',
+    'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+  );
+  // Off from the click until the extension says the service answered.
+  await trace.click();
+  await expect(trace).toBeDisabled();
+  expect(await page.evaluate(() => window.messages.filter((m) => m.type === 'trace'))).toEqual([
+    { type: 'trace', shown: 7 },
+  ]);
+  view.trace = { asking: true };
+  await state();
+  await expect(trace).toBeDisabled();
+  view.trace = { asking: false };
+  await state();
+  await expect(trace).toBeEnabled();
+  // The test ended: the button goes until the worker's next one.
+  view.caption = 'Worker 2 · Between tests';
+  view.trace = null;
+  await state();
+  await expect(trace).toBeHidden();
+});

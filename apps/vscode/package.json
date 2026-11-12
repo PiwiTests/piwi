@@ -505,6 +505,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openTraceSoFar",
+        "title": "Open the trace so far",
+        "category": "Piwi",
+        "icon": "$(file-zip)"
+      },
+      {
         "command": "piwi.pickAtStop",
         "title": "Pick a locator in the stopped test's page",
         "icon": "$(target)",
@@ -746,6 +752,10 @@
         {
           "command": "piwi.pauseAndWatch",
           "when": "piwi.runWatchable && piwi.runPausable"
+        },
+        {
+          "command": "piwi.openTraceSoFar",
+          "when": "activeWebviewPanelId == 'piwi.workerView'"
         },
         {
           "command": "piwi.pickAtStop",

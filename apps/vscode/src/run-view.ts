@@ -1375,6 +1375,7 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.code, (arg?: unknown) => chooseAction(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.watch, (arg?: unknown) => watchWorker(arg, false)),
     vscode.commands.registerCommand(RUN_COMMANDS.pauseAndWatch, (arg?: unknown) => watchWorker(arg, true)),
+    vscode.commands.registerCommand(RUN_COMMANDS.openTrace, () => workerPanel.openTrace()),
     workerPanel,
     vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.showBrowser, (arg?: unknown) => showBrowser(arg)),

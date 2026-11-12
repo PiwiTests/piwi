@@ -248,7 +248,10 @@ out.
 
 **The call a running test of a CI run is at, in your code:** a plain mark at the end of its line in the editors,
 read-only. Never a stop: nothing waits there, and no tool answers it
-([A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch)).
+([A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch)). The editor follows the two newest
+CI runs of a branch through the connection to the instance it already holds, and Piwi Picker reads the list every 15
+seconds while its Runs window is open. While the editor follows a run, the run's reporter streams the call each test
+is at.
 
 ### Hold failures
 
@@ -275,7 +278,13 @@ person's Resume, Step and Finish always answer the stop, and the stop a person's
 
 **Watch** shows a worker's page as its test runs or stands stopped. Its frames go from the test's worker only to the
 tools that watch that page (an editor's view, the desktop app's window, Piwi Picker's Runs window), and to the team
-instance while the run is shared live; nothing on your machine keeps them. **Share live** lets a teammate watch a run on
+instance while the run is shared live; nothing on your machine keeps them. The worker takes images only while a view
+watches it, and paints over password fields and the fields of one-time codes and card numbers before an image leaves
+it; the editor service or the desktop app's server, on your machine, passes each to the views watching that worker,
+one view of the page serving every viewer at once (the editor's, Piwi Picker's and, for a run shared live, the
+team's). A CI run's lane watched in the editor comes from the team instance, read with the editor's key: the CI
+worker paints over the same fields before they leave it, the editor service keeps none, and the watch counts among
+the instance's watches of the run for the key's owner, as a dashboard tab does. **Share live** lets a teammate watch a run on
 your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
 being shared ([Live view of a run](/features/live-view)). **Watch all** shows every worker of such a run at once, a
 tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped

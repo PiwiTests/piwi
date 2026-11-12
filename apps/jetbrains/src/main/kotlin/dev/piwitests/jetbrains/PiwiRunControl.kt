@@ -249,6 +249,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var workerTab: Content? = null
     private var laneTarget: Pair<String, Int>? = null
     @Volatile private var watchingLane: LaneViewParams? = null
+    /** Open the Trace So Far waits for the service's answer: its button is off meanwhile. On the event thread. */
+    private var traceAsking = false
     private val pendingLaneFrame = AtomicReference<LaneFrame?>(null)
     private val drawingLaneFrame = AtomicBoolean(false)
     /** The CI run's lane the Worker tab shows in place of a slot (on the event thread), and its watch. */
@@ -304,6 +306,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         override fun laneView(params: LaneViewParams) = existingServer()?.laneView(params)?.orNull()
 
         override fun ciWatch(params: CiWatchParams) = existingServer()?.ciWatch(params)?.orNull()
+
+        override fun openTrace(params: OpenTraceParams) = server()?.openTrace(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -671,6 +675,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val lane = Glue.laneShown(sessions[target.first], target.second, stops)
             worker.caption(lane.caption)
             worker.layers?.note(Glue.laneLayersNote(lane.worker))
+            worker.traceable(Glue.canOpenTrace(lane.worker), traceAsking)
             // The service ends the view with the run, and Watch is off for the next.
             if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
                 watchingLane = null
@@ -763,6 +768,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             liveWorkerTab()?.displayName,
             (liveWorkerTab()?.component as? PausedPagePanel)?.liveWanted == true,
             toolWindow()?.contentManager?.selectedContent?.displayName,
+            (liveWorkerTab()?.component as? PausedPagePanel)?.let { if (!it.traceShown) null else it.traceEnabled },
         )
     }
 
@@ -782,6 +788,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val workerWatch: Boolean = false,
         /** The tab of the Piwi tool window in sight. */
         val selectedTab: String? = null,
+        /** The Worker tab's Open the Trace So Far: whether it takes a press, null while it is hidden. */
+        val workerTrace: Boolean? = null,
     )
 
     /** A click at `x`, `y` of the Paused Page tab's image, as a person's click reaches it, which the tests send. */
@@ -998,7 +1006,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             ciTarget = null
             laneTarget = ref to lane
             panel.forWorker()
-            layersFor(panel).note(Glue.laneLayersNote(Glue.laneShown(sessions[ref], lane, stops()).worker))
+            val shown = Glue.laneShown(sessions[ref], lane, stops()).worker
+            layersFor(panel).note(Glue.laneLayersNote(shown))
+            panel.openTrace = { openTrace() }
+            panel.traceable(Glue.canOpenTrace(shown), traceAsking)
             panel.configureLive(true, false, false) { on -> watchLane(on) }
             panel.visibilityChanged = { visible ->
                 if (!visible) {
@@ -1165,6 +1176,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             laneTarget = null
             ciTarget = lane
             panel.forCiWorker()
+            panel.openTrace = null
+            panel.traceable(false, false)
             layersFor(panel, ci = true)
             panel.configureLive(true, false, false) { on -> watchCi(on) }
             panel.visibilityChanged = { visible ->
@@ -1205,6 +1218,37 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
     fun giveUp(waiting: Glue.WaitingWorker) {
         control(RunControlParams(waiting.ref, waiting.worker, "give-up"))
+    }
+
+    /**
+     * **Open the Trace So Far** for the Worker tab's slot (`piwi/openTrace`): the service starts Playwright's trace
+     * viewer on this machine. One ask at a time, the button off until the service answers; its sentence is said in a
+     * balloon, a warning when it is not `ok`. On the event thread.
+     */
+    fun openTrace() {
+        val (ref, lane) = laneTarget ?: return
+        if (traceAsking) return
+        traceAsking = true
+        drawTrace()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = runCatching { remote.openTrace(OpenTraceParams(ref, lane)) }.getOrNull()
+            ApplicationManager.getApplication().invokeLater({
+                traceAsking = false
+                drawTrace()
+                when {
+                    answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                    answer.ok -> PiwiCommands.notify(project, answer.message.orEmpty())
+                    else -> PiwiCommands.notify(project, answer.message.orEmpty(), NotificationType.WARNING)
+                }
+            }, gone)
+        }
+    }
+
+    /** Open the Trace So Far as the Worker tab's slot stands: shown while its worker can open its test's trace. */
+    private fun drawTrace() {
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        val (ref, lane) = laneTarget ?: return panel.traceable(false, false)
+        panel.traceable(Glue.canOpenTrace(Glue.laneShown(sessions[ref], lane, stops()).worker), traceAsking)
     }
 
     /** Pause the worker `worker` of the run `ref` and watch its slot `lane` in the Worker tab. On the event thread. */
@@ -2037,6 +2081,9 @@ internal interface RunRemote {
     /** The Worker tab watches a CI run's lane (`on`), or stops. */
     fun ciWatch(params: CiWatchParams): RunControlResult?
 
+    /** **Open the Trace So Far** for the Worker tab's slot: the service starts Playwright's trace viewer on this machine. */
+    fun openTrace(params: OpenTraceParams): RunControlResult?
+
     fun pickAt(params: PickAtParams): PickAtResult?
 
     fun action(params: StopActionParams): RunControlResult?
@@ -2086,6 +2133,13 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private var changedLive: ((Boolean) -> Unit)? = null
     private val live = JCheckBox("Watch live").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
     private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks."; isEnabled = false }
+    /** **Open the Trace So Far**, in the Worker tab: shown while its slot's worker can open its test's trace (`traceable`). */
+    private val trace = JButton(Glue.OPEN_TRACE, AllIcons.FileTypes.Archive).apply {
+        toolTipText = Glue.OPEN_TRACE_TITLE
+        isVisible = false
+    }
+    /** **Open the Trace So Far** was pressed. */
+    var openTrace: (() -> Unit)? = null
     var liveWanted: Boolean
         get() = live.isSelected
         set(value) { live.isSelected = value }
@@ -2175,6 +2229,19 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         live.text = "Watch"
         live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Read-only: nothing here acts on CI. Nothing is stored."
     }
+
+    /**
+     * **Open the Trace So Far** shows while the slot's worker can open its test's trace (`shown`), and is off while an
+     * ask waits for the service's answer (`asking`).
+     */
+    fun traceable(shown: Boolean, asking: Boolean) {
+        trace.isVisible = shown
+        trace.isEnabled = !asking
+    }
+
+    /** Whether **Open the Trace So Far** shows, and takes a press: what the tests read. */
+    internal val traceShown: Boolean get() = trace.isVisible
+    internal val traceEnabled: Boolean get() = trace.isEnabled
 
     /** The live view of a stop: Interact stays selected only with `keepInteract`, for a stop that takes input. */
     fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, keepInteract: Boolean = false, changed: (Boolean) -> Unit) {
@@ -2322,6 +2389,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             if (!live.isSelected) stopInteracting()
             changedLive?.invoke(liveWanted)
         }
+        trace.addActionListener { openTrace?.invoke() }
         interact.addActionListener {
             release()
             drawPick()
@@ -2333,7 +2401,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.emptyBottom(4)
             add(label)
-            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply { add(live); add(interact) })
+            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply { add(live); add(interact); add(trace) })
             add(hint)
             add(noteLabel)
         }

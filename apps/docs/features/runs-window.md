@@ -86,7 +86,7 @@ Under the page, from a reporter newer than 0.68.0, the window shows what pixels 
 page's text** reads it at each test, secret fields hidden, then follows the test's trace) and **Filmstrip** (a click
 enlarges an image, with its call), kept in memory alone. **Open the trace so far**, in a watched page's head, opens
 Playwright's trace viewer on the running test's trace up to now, on the machine the run runs on, with a reporter
-newer than 0.68.0: [Watch a running test](./watch-running-test).
+newer than 0.68.0: [Watch a running test](./watch-running-test#open-the-trace-so-far).
 
 At a headless stop, which nobody sees, the picker, the recorder's panel and the check panel appear in the watched
 view, answered there as in a headed browser; their code reaches the editor the same way.

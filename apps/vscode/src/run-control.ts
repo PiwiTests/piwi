@@ -637,6 +637,7 @@ export const RUN_COMMANDS = {
   code: 'piwi.codeAtStop',
   watch: 'piwi.watchWorker',
   pauseAndWatch: 'piwi.pauseAndWatch',
+  openTrace: 'piwi.openTraceSoFar',
   share: 'piwi.shareWithPlaywright',
   shareLive: 'piwi.shareRunLive',
   stopSharing: 'piwi.stopSharingRun',
@@ -1776,6 +1777,27 @@ export interface PausedPageView {
    * whether the page's text asked again waits for its answer (`textAsking`), Take the text again off meanwhile.
    */
   layers?: LaneSections & { note: string | null; textAsking?: boolean };
+  /**
+   * The worker panel's **Open the trace so far**: shown while its slot's worker can open its running test's trace
+   * (`canOpenTrace`), off while an ask waits for the service's answer (`asking`); null or absent otherwise.
+   */
+  trace?: { asking: boolean } | null;
+}
+
+/** What **Open the trace so far** says it does, as its tooltip. */
+export const OPEN_TRACE_TITLE = 'Open this test’s trace up to now in Playwright’s trace viewer, on this machine';
+
+/**
+ * What `piwi/openTrace` asks for the worker panel's slot (`slot`); `none` says why there is nothing to ask: no slot
+ * shown, or a CI run's lane (`ci`), whose trace is on the machine that runs it.
+ */
+export function openTraceParams(
+  slot: { ref: string; lane: number } | null,
+  ci: boolean,
+): { ref: string; lane: number } | { none: string } {
+  if (ci) return { none: 'a CI run’s trace is on the machine that runs it, not on this one.' };
+  if (!slot) return { none: "no worker panel is open: watch a worker's test first." };
+  return { ref: slot.ref, lane: slot.lane };
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -1906,7 +1928,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
       ? view.ci
         ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label hidden><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
         : view.lane
-          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label><button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
           : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',

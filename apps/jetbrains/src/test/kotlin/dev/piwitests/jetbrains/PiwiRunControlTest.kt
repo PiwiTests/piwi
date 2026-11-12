@@ -65,6 +65,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val editorBreakpoints = CopyOnWriteArrayList<SetBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
     private val lanes = CopyOnWriteArrayList<LaneViewParams>()
+    private val traces = CopyOnWriteArrayList<OpenTraceParams>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
     private val listed = CopyOnWriteArrayList<StopRequestsParams>()
@@ -148,6 +149,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             }
 
             override fun ciWatch(params: CiWatchParams): RunControlResult = RunControlResult(true, "Watching.")
+
+            override fun openTrace(params: OpenTraceParams): RunControlResult {
+                traces += params
+                return RunControlResult(true, "Playwright's trace viewer opened on the trace so far.")
+            }
 
             override fun pickAt(params: PickAtParams): PickAtResult {
                 picks += params
@@ -852,6 +858,30 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("ed-7", ended = true))
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
             assertFalse(sessions.shown().workerWatch)
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Open the Trace So Far shows in the Worker tab while its slot's worker runs a test whose reporter answers trace
+     * asks, asks the service for the tab's slot, and goes as the test ends.
+     */
+    fun testOpenTheTraceSoFarAsksForTheWorkerTabsSlot() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true))))
+            sessions.showWorker("ed-7", 1)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            // An older reporter answers no trace ask: the tab offers none.
+            assertNull(sessions.shown().workerTrace)
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true, traces = true))))
+            assertEquals(true, sessions.shown().workerTrace)
+            sessions.openTrace()
+            assertEquals(OpenTraceParams("ed-7", 1), waitFor("the trace asked") { traces.singleOrNull() })
+            waitFor("the button back on") { sessions.shown().workerTrace?.takeIf { it } }
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "between", null, watchable = true, traces = true))))
+            assertNull(sessions.shown().workerTrace)
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

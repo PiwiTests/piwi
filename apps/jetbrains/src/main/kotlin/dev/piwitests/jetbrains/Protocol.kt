@@ -932,6 +932,8 @@ data class RunWorker(
     val waiting: RunWaiting? = null,
     /** The tools that watch its page now, its slot's view or its stop's, each once; null while none does. */
     val watchers: List<RunPresence>? = null,
+    /** Its reporter answers a trace ask: `piwi/openTrace` opens its running test's trace so far; null otherwise. */
+    val traces: Boolean? = null,
 )
 
 /**
@@ -1137,6 +1139,13 @@ data class LaneViewParams(
     /** True asks the lane's worker for its page's text now, for a watch that takes `text`. */
     val text: Boolean? = null,
 )
+
+/**
+ * `piwi/openTrace`: **Open the Trace So Far** for the slot `lane` of the run `ref` (its `RunWorker.parallelIndex`): the
+ * service starts Playwright's trace viewer on this machine on the running test's trace up to now. Answered with
+ * `RunControlResult`, its message said to the person; the trace's path never reaches the IDE.
+ */
+data class OpenTraceParams(val ref: String, val lane: Int)
 
 /**
  * A layer of a watched lane (`@piwitests/core/live-layers`), of the worker `worker` (a retry runs in another), by
@@ -1475,6 +1484,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/ciWatch")
     fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/openTrace")
+    fun openTrace(params: OpenTraceParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
