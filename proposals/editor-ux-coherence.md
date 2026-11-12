@@ -1961,7 +1961,8 @@ that adds a command id, action id, group id, view id or setting key registers it
 ## 14. Found since: what building the plan added
 
 The reviews at `b0ff6772` read the code that built the plan and the live-run study's phases against §2's principles.
-Each finding below is new, read in the code at that commit; Kotlin files are cited by name as above.
+Each finding below is new, read in the code at that commit; Kotlin files are cited by name as above. The defects among
+them, NF4, NF5, NF6 and NF9, are filed as #1315, with NF5's stopped-service status in #1255.
 
 <a id="nf1"></a>**NF1. The new CI views and status states give glyphs a second meaning, and draw outcomes their own
 way.** In VS Code, `$(beaker)` marks Run the tests that reach this file (`apps/vscode/package.json:236`), the run node
