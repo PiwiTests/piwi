@@ -114,11 +114,12 @@ export interface DeclaredIssuesLookup {
 /**
  * Links the run's failing tests' named issues to their clusters: one bulk lookup for at most
  * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first and the keys earlier lookups did
- * not return last, leaving out a key a cluster already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to
- * the keys it names and does not link, and to 0 for a failing cluster that names none this run.
+ * not return, or returned as issues of a type the tag source drops, last, leaving out a key a cluster already links or
+ * has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to the keys it names
+ * and does not link, and to 0 for a failing cluster that names none this run.
  *
- * The links and dismissals of the clusters with a key to link are read again once the lookup returns, so one made during
- * the lookup is respected and counts toward the cap; one made between that read and an insert is not seen.
+ * The links and dismissals of the clusters are read again once the lookup returns, so one made during the lookup is
+ * respected and counts toward the cap; one made between that read and an insert is not seen.
  * The writes come after the lookup, each only while the deadline has not fired: once it fires the lookup is aborted
  * and nothing more is written. A lookup that fails links nothing; the next failing run that names the key tries again.
  */
@@ -149,29 +150,27 @@ export async function linkNamedIssues(
     }
   }
   if (deadline.aborted) return { ...result, failed: 'deadline' };
-  if (unreturned) {
-    const returned = new Set(found.map((issue) => issue.key));
-    for (const key of keys) {
-      if (returned.has(key)) unreturned.delete(memory(key));
-      else unreturned.set(memory(key), true);
-    }
-  }
-
   // An issue counts only under the key the test named and in the bound project.
   const asked = new Set(keys);
   const byKey = new Map<string, TrackerIssue>();
   for (const issue of found) {
     if (asked.has(issue.key) && issue.projectKey === projectKey && issue.id) byKey.set(issue.key, issue);
   }
+  if (unreturned) {
+    // A key Jira did not return, or returned as an issue only tags name and the type filter drops, is asked last.
+    const returned = new Set(found.map((issue) => issue.key));
+    const onlyTagged = (key: string) => [...clusters.values()].every((state) => !state.annotated.has(key));
+    for (const key of keys) {
+      const issue = byKey.get(key);
+      const dropped = issue !== undefined && onlyTagged(key) && !isIssueTypeAccepted(issue, tagTypes ?? []);
+      if (returned.has(key) && !dropped) unreturned.delete(memory(key));
+      else unreturned.set(memory(key), true);
+    }
+  }
 
   const stopped = () => ({ ...result, failed: 'deadline' as const });
   // The clusters' links and dismissals are read again after the lookup, before the first write.
-  const ready = [...clusters].filter(([, state]) => state.candidates.some((key) => byKey.has(key)));
-  await readLinkState(
-    db,
-    clusters,
-    ready.map(([id]) => id),
-  );
+  await readLinkState(db, clusters, [...clusters.keys()]);
   if (unnamed.length > 0) {
     if (deadline.aborted) return stopped();
     await db
@@ -186,13 +185,13 @@ export async function linkNamedIssues(
       if (room <= 0) break;
       const issue = byKey.get(key);
       if (!issue) continue;
-      const annotated = state.annotated.get(key);
-      // A key only a tag names is linked for the issue types the tag source accepts; the cluster still counts it.
-      if (annotated === undefined && !isIssueTypeAccepted(issue, tagTypes ?? [])) continue;
       if (state.dismissedIds.has(issue.id as string)) {
         state.taken.add(key);
         continue;
       }
+      const annotated = state.annotated.get(key);
+      // A key only a tag names is linked for the issue types the tag source accepts; the cluster still counts it.
+      if (annotated === undefined && !isIssueTypeAccepted(issue, tagTypes ?? [])) continue;
       if (deadline.aborted) return stopped();
       const inserted = await db
         .insert(entityLinks)
@@ -219,11 +218,10 @@ export async function linkNamedIssues(
         })
         .onConflictDoNothing()
         .returning({ id: entityLinks.id });
-      if (inserted.length === 0) continue;
       state.taken.add(key);
       state.declared++;
       room--;
-      result.linked.push({ clusterId, key });
+      if (inserted.length > 0) result.linked.push({ clusterId, key });
     }
     // The keys named and still not linked or dismissed: left out at the cap, past the run's budget, or not found.
     const more = state.candidates.filter((k) => !state.taken.has(k)).length;

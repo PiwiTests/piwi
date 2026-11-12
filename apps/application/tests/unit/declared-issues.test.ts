@@ -273,6 +273,42 @@ async function setIssueTagPattern(issue: string | null) {
     .where(eq(schema.projects.id, 1));
 }
 
+/** The keys the unreturned-key memory holds now, as written. */
+function rememberedKeys(): string[] {
+  const keys: string[] = [];
+  unreturnedKeys.deleteWhere((_, key) => {
+    keys.push(key);
+    return false;
+  });
+  return keys;
+}
+
+/** The database as the step sees it, where another run links `key` to `cluster` just before the step's first insert. */
+function dbWithRacingLink(cluster: number, key: string) {
+  let raced = false;
+  return new Proxy(db, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target) as unknown;
+      if (prop !== 'insert' || typeof value !== 'function') return value;
+      return (table: unknown) => {
+        const builder = (value as (t: unknown) => any).call(target, table);
+        if (table !== schema.entityLinks || raced) return builder;
+        return {
+          values: (row: unknown) => ({
+            onConflictDoNothing: () => ({
+              returning: async (columns: unknown) => {
+                raced = true;
+                await pin(cluster, key, 'annotation');
+                return builder.values(row).onConflictDoNothing().returning(columns);
+              },
+            }),
+          }),
+        };
+      };
+    },
+  });
+}
+
 /** A Jira issue of the bound project as the lookup returns it. */
 function stubTrackerIssue(key: string) {
   return {
@@ -437,19 +473,59 @@ describe('the link step', () => {
     expect(unreturnedKeys.size).toBe(0);
   });
 
-  test('a failed lookup remembers nothing, and another project or connection is remembered apart', async () => {
+  test('a failed lookup remembers nothing, and a key is remembered under its connection and project', async () => {
     const cluster = await newCluster();
     jiraDown = true;
     const first = await failRun([{ cluster, issues: ['PROJ-31'] }]);
     await linkDeclaredIssues(dbc, first.runId);
-    expect(unreturnedKeys.size).toBe(0);
+    expect(rememberedKeys()).toEqual([]);
 
     jiraDown = false;
     const second = await failRun([{ cluster, issues: ['PROJ-31'] }]);
     await linkDeclaredIssues(dbc, second.runId);
-    expect(unreturnedKeys.get(`${connectionId}:PROJ:PROJ-31`)).toBe(true);
-    expect(unreturnedKeys.get(`${connectionId + 1}:PROJ:PROJ-31`)).toBeUndefined();
-    expect(unreturnedKeys.get(`${connectionId}:OTHER:PROJ-31`)).toBeUndefined();
+    expect(rememberedKeys()).toEqual([`${connectionId}:PROJ:PROJ-31`]);
+  });
+
+  test('a key remembered for one connection is not remembered for another', async () => {
+    const cluster = await newCluster();
+    const run = await failRun([{ cluster, issues: ['PROJ-31'] }]);
+    await linkDeclaredIssues(dbc, run.runId);
+
+    const asked = (otherConnection: number) =>
+      linkNamedIssues(db as never, run.runId, {
+        projectKey: 'PROJ',
+        connectionId: otherConnection,
+        tracker: { parseIssueUrl: () => null, getIssues: async () => ({ issues: [], missing: [] }) } as never,
+        unreturned: unreturnedKeys,
+        deadline: AbortSignal.timeout(10_000),
+      });
+    await asked(connectionId + 1);
+
+    expect(rememberedKeys().sort()).toEqual(
+      [`${connectionId + 1}:PROJ:PROJ-31`, `${connectionId}:PROJ:PROJ-31`].sort(),
+    );
+  });
+
+  test('a deadline that fires after the lookup remembers nothing', async () => {
+    const cluster = await newCluster();
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-32'] }]);
+    let reads = 0;
+    const deadline = {
+      get aborted() {
+        return ++reads > 1;
+      },
+    } as AbortSignal;
+
+    const result = await linkNamedIssues(db as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: { parseIssueUrl: () => null, getIssues: async () => ({ issues: [], missing: [] }) } as never,
+      unreturned: unreturnedKeys,
+      deadline,
+    });
+
+    expect(result.failed).toBe('deadline');
+    expect(rememberedKeys()).toEqual([]);
   });
 
   test('a passing or skipped execution names nothing', async () => {
@@ -474,6 +550,7 @@ describe('the link step', () => {
 
     expect(result.looked).toEqual(['PROJ-8', 'PROJ-9']);
     expect(await links(cluster)).toEqual([]);
+    expect(rememberedKeys()).toEqual([`${connectionId}:PROJ:PROJ-8`]);
   });
 
   test('two steps at once link the key once', async () => {
@@ -503,11 +580,15 @@ describe('the link step', () => {
     const broken = await newCluster();
     defineIssue('PROJ-15');
     defineIssue('PROJ-16');
+    const [flakyTest, brokenTest] = [nextTest++, nextTest++];
+    for (const id of [flakyTest, brokenTest]) {
+      await db.insert(schema.testCases).values({ id, projectId: 1, title: `test ${id}`, filePath: 'tests/a.spec.ts' });
+    }
     const { runId } = await failRun([
-      { cluster: flaky, issues: ['PROJ-15'], attempt: { retries: 0, finalAttempt: false } },
-      { cluster: flaky, issues: ['PROJ-15'], status: 'passed', testCaseId: nextTest - 1, attempt: { retries: 1 } },
-      { cluster: broken, issues: ['PROJ-16'], attempt: { retries: 0, finalAttempt: false } },
-      { cluster: broken, issues: ['PROJ-16'], testCaseId: nextTest, attempt: { retries: 1 } },
+      { cluster: flaky, issues: ['PROJ-15'], testCaseId: flakyTest, attempt: { retries: 0, finalAttempt: false } },
+      { cluster: flaky, issues: ['PROJ-15'], testCaseId: flakyTest, status: 'passed', attempt: { retries: 1 } },
+      { cluster: broken, issues: ['PROJ-16'], testCaseId: brokenTest, attempt: { retries: 0, finalAttempt: false } },
+      { cluster: broken, issues: ['PROJ-16'], testCaseId: brokenTest, attempt: { retries: 1 } },
     ]);
 
     await linkDeclaredIssues(dbc, runId);
@@ -633,6 +714,53 @@ describe('the link step', () => {
     const declared = (await links(cluster)).filter((l) => l.origin === 'annotation');
     expect(declared).toHaveLength(10);
     expect((await clusterRow(cluster)).declaredIssuesMore).toBe(2);
+  });
+
+  test('a dismissal recorded during the lookup counts for a key Jira did not return', async () => {
+    const cluster = await newCluster();
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-73'] }]);
+    const tracker = {
+      parseIssueUrl: () => null,
+      getIssues: async () => {
+        await db.insert(schema.entityLinkDismissals).values({ failureClusterId: cluster, key: 'PROJ-73' });
+        return { issues: [], missing: [] };
+      },
+    };
+
+    await linkNamedIssues(db as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: tracker as never,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(0);
+  });
+
+  test('a link another run wins the insert for counts as taken, declared and one of the cluster’s places', async () => {
+    const cluster = await newCluster();
+    const keys = Array.from({ length: 11 }, (_, i) => `PROJ-${i + 1}`);
+    for (const key of keys) defineIssue(key);
+    const { runId } = await failRun([
+      { cluster, issues: keys.slice(0, 10) },
+      { cluster, issues: keys.slice(10) },
+    ]);
+
+    const result = await linkNamedIssues(dbWithRacingLink(cluster, 'PROJ-1') as never, runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: {
+        parseIssueUrl: () => null,
+        getIssues: async (asked: string[]) => ({ issues: asked.map(stubTrackerIssue) }),
+      } as never,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    expect(result.linked.map((l) => l.key)).not.toContain('PROJ-1');
+    const linked = await links(cluster);
+    expect(linked).toHaveLength(10);
+    expect(linked.map((l) => l.key)).toContain('PROJ-1');
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(1);
   });
 
   test('a binding without a project key links nothing', async () => {
@@ -1225,5 +1353,64 @@ describe('the tag source', () => {
     const linked = (await links(cluster)).map((l) => l.key);
     expect(linked).toHaveLength(10);
     expect(linked).not.toContain('PROJ-1');
+  });
+
+  test('a tag in the shape of a key that the pattern rejects is not linked', async () => {
+    await setIssueTagPattern('^PROJ-[0-9]$');
+    const cluster = await newCluster();
+    defineIssue('PROJ-5');
+    defineIssue('PROJ-10');
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-5', 'PROJ-10'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(lookups).toEqual([['PROJ-5']]);
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-5']);
+  });
+
+  test('a dismissed issue of a type the tag source drops is counted as dismissed', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-2', { type: { id: '10001', name: 'Story' } });
+    await db
+      .insert(schema.entityLinkDismissals)
+      .values({ failureClusterId: cluster, key: 'PROJ-99', externalId: '20002' });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-2'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(await links(cluster)).toEqual([]);
+    expect((await clusterRow(cluster)).declaredIssuesMore).toBe(0);
+  });
+
+  test('keys returned as issues of another type are asked after the others, so a key past the budget is reached', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const stories = Array.from({ length: MAX_DECLARED_KEYS_PER_RUN }, (_, i) => `PROJ-${i + 1}`);
+    for (const key of stories) defineIssue(key, { type: { id: '10001', name: 'Story' } });
+    defineIssue('PROJ-99');
+    const tags = [...stories, 'PROJ-99'];
+
+    const first = await failRun([{ cluster, issues: [], tags }]);
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(lookups[0]).not.toContain('PROJ-99');
+    expect(await links(cluster)).toEqual([]);
+
+    const second = await failRun([{ cluster, issues: [], tags }]);
+    await linkDeclaredIssues(dbc, second.runId);
+    expect(lookups[1]![0]).toBe('PROJ-99');
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-99']);
+  });
+
+  test('an annotation’s key of another type is not remembered as one the tag source drops', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-3', { type: { id: '10001', name: 'Story' } });
+    const { runId } = await failRun([{ cluster, issues: ['PROJ-3'], tags: [] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-3']);
+    expect(rememberedKeys()).toEqual([]);
   });
 });
