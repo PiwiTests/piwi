@@ -723,9 +723,13 @@ function flushPendingEvents() {
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
-      // A failure filed under a cluster the page has not read yet: its group shows the cluster's name and triage status.
-      if (d.failureClusterId != null && d.failureCluster && !clusterMeta.value[d.failureClusterId]) {
-        clusterMeta.value = { ...clusterMeta.value, [d.failureClusterId]: { ...d.failureCluster, issue: null } };
+      // A failure filed under a cluster the page has not read yet: its group shows the event's name and triage status
+      // until the read of the run's clusters answers with its known issue.
+      if (d.failureClusterId != null && !clusterMeta.value[d.failureClusterId]) {
+        if (d.failureCluster) {
+          clusterMeta.value = { ...clusterMeta.value, [d.failureClusterId]: { ...d.failureCluster, issue: null } };
+        }
+        readNewClusterMeta();
       }
       const key = liveCaseKey(d);
       /** The attempt as the event tells it, for a row the list has not shown yet. */
@@ -1292,6 +1296,20 @@ async function fetchClusterMeta() {
     // chips fall back to plain cluster ids, headers to no triage badge
   }
 }
+
+// Clusters a live failure names first are read once, together: one read for the clusters that appear within a second.
+const NEW_CLUSTER_READ_MS = 1000;
+let newClusterTimer: ReturnType<typeof setTimeout> | null = null;
+function readNewClusterMeta() {
+  if (!import.meta.client || newClusterTimer) return;
+  newClusterTimer = setTimeout(() => {
+    newClusterTimer = null;
+    void fetchClusterMeta();
+  }, NEW_CLUSTER_READ_MS);
+}
+onUnmounted(() => {
+  if (newClusterTimer) clearTimeout(newClusterTimer);
+});
 
 watch(
   showFailureTabs,

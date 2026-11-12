@@ -425,3 +425,78 @@ test('a streamed failure joins its cluster’s group at once, a new cluster’s 
     await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 3 } });
   }
 });
+
+test('a cluster a streamed failure joins first shows its known issue without a reload', async ({ page, request }) => {
+  test.setTimeout(60_000);
+  const refund =
+    'TimeoutError: locator.click: Timeout 5000ms exceeded waiting for getByRole("button", { name: "Refund" })';
+  const tax = 'Error: strict mode violation: getByText("Tax") resolved to 3 elements';
+  const startRun = async (instanceId: string) => {
+    const started = await request.post('/api/test-runs/start', {
+      data: { projectName: PROJECT.RUN_GOES_LIVE, startTime: new Date().toISOString(), instanceId, totalTests: 2 },
+    });
+    expect(started.ok()).toBeTruthy();
+    return (await started.json()) as { runId: number; streamToken: string };
+  };
+  const fail = async (run: { runId: number; streamToken: string }, title: string, error: string) => {
+    const location = `tests/${title}.spec.ts:3:1`;
+    const sent = await request.post(`/api/test-runs/${run.runId}/events`, {
+      data: {
+        streamToken: run.streamToken,
+        testCases: [
+          { type: 'begin', title, location, workerIndex: 0, startedAt: Date.now() },
+          {
+            type: 'complete',
+            title,
+            location,
+            status: 'failed',
+            duration: 40,
+            error,
+            workerIndex: 0,
+            startedAt: Date.now(),
+          },
+        ],
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  const finish = (run: { runId: number; streamToken: string }) =>
+    request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'failed', totalTests: 2 },
+    });
+
+  // An earlier run's failure forms a cluster, which a tracker issue tracks.
+  const earlier = await startRun('run-goes-live-issue-1');
+  await fail(earlier, 'refunds the order', refund);
+  await finish(earlier);
+  const groups = (await (await request.get(`/api/test-runs/${earlier.runId}/failure-groups`)).json()) as {
+    items: Array<{ clusterId: number }>;
+  };
+  const linked = await request.post('/api/links', {
+    data: {
+      entityType: 'failure_cluster',
+      entityId: groups.items[0]!.clusterId,
+      url: 'https://example.atlassian.net/browse/LIVE-42',
+    },
+  });
+  expect(linked.ok()).toBeTruthy();
+
+  const run = await startRun('run-goes-live-issue-2');
+  try {
+    // The page opens on a red run, so it has read the cluster metadata once before the tracked cluster appears.
+    await fail(run, 'adds the tax', tax);
+    const stream = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith(`/${run.runId}/stream`),
+    );
+    await page.goto(`/test-runs/${run.runId}`);
+    await waitForHydration(page);
+    await stream;
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(1);
+
+    await fail(run, 'refunds the order', refund);
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2);
+    await expect(page.getByTestId('issue-key-chip').filter({ hasText: 'LIVE-42' }).first()).toBeVisible();
+  } finally {
+    await finish(run);
+  }
+});
