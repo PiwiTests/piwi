@@ -1421,7 +1421,7 @@ const routes: RouteEntry[] = [
       const db = await getDemoDb();
       return {
         items: await getRecentTestRuns(db, ctx?.scope, SOLE_USER),
-        runsLast24h: await countRunsLast24h(db, ctx?.scope),
+        runsLast24h: await countRunsLast24h(db, ctx?.scope, SOLE_USER),
       };
     },
   },

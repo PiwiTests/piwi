@@ -469,37 +469,51 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
   return result;
 }
 
-/** Runs started in the last 24 hours, counted per environment and run kind. */
+/** Runs started in the last 24 hours, counted per environment, run kind and whether they are the viewer's own. */
 export interface RecentRunCount {
   environment: string | null;
   isFullRun: boolean;
+  /** The viewer's own runs (`#shared/own-runs`), which home lists whatever "Full runs only" says. */
+  mine?: true;
   runs: number;
 }
 
 /**
  * The runs started in the 24 hours before `now` across the scope, lab runs
- * left out, counted per environment and run kind (full or partial): home's
- * runs today, under whichever environment filter and run kind it shows. Every
- * run counts, not only the ones the recent list holds.
+ * left out, counted per environment, run kind (full or partial) and whether
+ * they are the `viewer`'s own: home's runs today, under whichever environment
+ * filter and run kind it shows, counting the own runs its recent list shows
+ * whatever the run kind. Every run counts, not only the ones the recent list
+ * holds.
  */
 export async function countRunsLast24h(
   db: DrizzleDB,
   scope: ProjectScope = 'all',
+  viewer: RunViewer | null = null,
   now = Date.now(),
 ): Promise<RecentRunCount[]> {
   if (scope !== 'all' && scope.size === 0) return [];
   const since = new Date(now - 24 * 60 * 60 * 1000);
   const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const rows = await db
-    .select({ environment: testRuns.environment, isFullRun: testRuns.isFullRun, runs: count() })
+    .select({
+      environment: testRuns.environment,
+      isFullRun: testRuns.isFullRun,
+      runs: count(),
+      own: sql<number>`sum(${ownRunColumn(viewer)})`,
+    })
     .from(testRuns)
     .where(and(gte(testRuns.startTime, since), notLabRun(testRuns.origin), inScope))
     .groupBy(testRuns.environment, testRuns.isFullRun);
-  return rows.map((row: { environment: string | null; isFullRun: number | null; runs: number }) => ({
-    environment: row.environment ?? null,
-    isFullRun: row.isFullRun !== 0,
-    runs: Number(row.runs),
-  }));
+  return rows.flatMap((row: { environment: string | null; isFullRun: number | null; runs: number; own: unknown }) => {
+    const group = { environment: row.environment ?? null, isFullRun: row.isFullRun !== 0 };
+    const own = Number(row.own ?? 0);
+    const others = Number(row.runs) - own;
+    return [
+      ...(others > 0 ? [{ ...group, runs: others }] : []),
+      ...(own > 0 ? [{ ...group, mine: true as const, runs: own }] : []),
+    ];
+  });
 }
 
 /**

@@ -172,7 +172,8 @@ const overviewStats = computed(() => {
   }
   const avgPassRate = passRatePercent({ passed, failed });
 
-  // Every run of the last 24 hours within the filters, not only the ones the activity list holds.
+  // Every run of the last 24 hours the activity list would show (within the filters, the viewer's own runs whatever
+  // the run kind), not only the ones it holds.
   const runs24h = runsInFilters(recentAnswer.value?.runsLast24h ?? [], filters.value);
 
   return { totalProjects, failingNow, flakyNow, avgPassRate, runs24h };
