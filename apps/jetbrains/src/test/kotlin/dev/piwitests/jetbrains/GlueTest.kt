@@ -3571,6 +3571,34 @@ class GlueTest {
     }
 
     @Test
+    fun aCiLaneSaysWhyItMayShowNoneOfItsLayersUntilTheFirstComes() {
+        assertTrue(Glue.ciLaneLayersNote(Glue.NO_LANE_LAYERS)!!.endsWith("older than the IDE’s sends the images alone."))
+        fun ci(fields: String) = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays",$fields}""",
+            CiLayer::class.java,
+        )
+        // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+        val calls = Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci(""""layer":"calls","log":{"id":"c1","call":{"title":"Click"},"status":"running","lines":[],"ms":0}""")).first
+        assertTrue(Glue.ciLaneLayersNote(calls) != null)
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"events","at":1800000000000,"event":{"kind":"console","text":"Oops"}""")).first))
+        assertNull(Glue.ciLaneLayersNote(Glue.withLaneLayer(calls, ci(""""layer":"text","refused":"No page."""")).first))
+        assertNull(
+            Glue.ciLaneLayersNote(
+                Glue.withLaneLayer(calls, ci(""""layer":"filmstrip","thumb":{"call":"c1","title":"Click","index":1,"width":320,"height":200,"at":1800000000000},"data":"/9j/AA=="""")).first,
+            ),
+        )
+    }
+
+    @Test
+    fun aChangeOfTheLayersIsHeldAsAskedUnlessTheServiceRefusedThatVeryChange() {
+        val asked = listOf("calls", "events", "text")
+        assertEquals(asked, Glue.layersAfterAnswer(asked, asked, ok = true))
+        assertEquals(emptyList<String>(), Glue.layersAfterAnswer(asked, asked, ok = false))
+        // A later change asked meanwhile stays held: its own answer decides.
+        assertEquals(listOf("calls", "events"), Glue.layersAfterAnswer(listOf("calls", "events"), asked, ok = false))
+    }
+
+    @Test
     fun theTextTabsSearchFindsTheNextMatchIgnoringCaseAndWrapsToTheStart() {
         val text = "- heading \"Shop\"\n- button \"Pay\"\n- link \"pay later\""
         assertEquals(text.indexOf("\"Pay\"") + 1, Glue.findIn(text, "pay", 0))

@@ -3637,6 +3637,22 @@ object Glue {
         } else null
 
     /**
+     * The note over a CI lane while none of its page's events, its text or its filmstrip came: neither the team instance
+     * nor the CI run's reporter says whether it sends them, and an older one of either sends the images alone. Null once
+     * one came.
+     */
+    fun ciLaneLayersNote(shown: LaneLayersShown): String? =
+        if (shown.heard > 0 || shown.text != null || shown.strip.isNotEmpty()) null
+        else "The page’s events, its text and the filmstrip show here as the CI run’s worker sends them: a team instance or a @piwitests/reporter older than the IDE’s sends the images alone."
+
+    /**
+     * The layers the Worker tab holds as asked once the service answered a change of them (`asked`): those it held,
+     * unless the service refused the very change they are, which leaves none held, so the next change asks again.
+     */
+    fun layersAfterAnswer(held: List<String>, asked: List<String>, ok: Boolean): List<String> =
+        if (ok || held != asked) held else emptyList()
+
+    /**
      * Where `query` is next found in `text` from `from`, ignoring case, wrapping to the start; -1 for none or an empty
      * query. The Text tab's search.
      */

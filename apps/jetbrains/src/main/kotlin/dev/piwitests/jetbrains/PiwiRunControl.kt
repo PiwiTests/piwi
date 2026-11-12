@@ -1012,8 +1012,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (watchingLane == null) watchLane(true)
     }
 
-    /** The Worker tab's layers, started anew for another slot or CI lane, its tabs asking the watch for theirs. */
-    private fun layersFor(panel: PausedPagePanel): LaneLayersPanel = panel.withLayers().apply {
+    /**
+     * The Worker tab's layers, started anew for another slot or CI lane (`ci`, whose note says why none may come until
+     * one does), its tabs asking the watch for theirs.
+     */
+    private fun layersFor(panel: PausedPagePanel, ci: Boolean = false): LaneLayersPanel = panel.withLayers().apply {
+        ciLane = ci
         reset()
         sectionsChanged = { relayer() }
         textAsked = { askText(this) }
@@ -1034,12 +1038,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (asked == layersSent) return
         val lane = watchingLane
         val ci = watchingCi
+        // A refused change leaves the service's layers as they were: the next change of the tabs asks again.
         if (lane != null && acceptedLane === lane) {
             layersSent = asked
-            queueWorkerCall({ if (watchingLane === lane) remote.laneView(lane.copy(layers = asked)) else null }, null)
+            queueWorkerCall({ if (watchingLane === lane) remote.laneView(lane.copy(layers = asked)) else null }) { result ->
+                if (watchingLane === lane) layersSent = Glue.layersAfterAnswer(layersSent, asked, result?.ok == true)
+            }
         } else if (ci != null && acceptedLane === ci) {
             layersSent = asked
-            queueWorkerCall({ if (watchingCi === ci) remote.ciWatch(ci.copy(layers = asked)) else null }, null)
+            queueWorkerCall({ if (watchingCi === ci) remote.ciWatch(ci.copy(layers = asked)) else null }) { result ->
+                if (watchingCi === ci) layersSent = Glue.layersAfterAnswer(layersSent, asked, result?.ok == true)
+            }
         }
     }
 
@@ -1156,7 +1165,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             laneTarget = null
             ciTarget = lane
             panel.forCiWorker()
-            layersFor(panel).note(null)
+            layersFor(panel, ci = true)
             panel.configureLive(true, false, false) { on -> watchCi(on) }
             panel.visibilityChanged = { visible ->
                 if (!visible) {
@@ -2544,6 +2553,8 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
     var textAsked: (() -> Unit)? = null
     var shown: Glue.LaneLayersShown = Glue.NO_LANE_LAYERS
         private set
+    /** The lane is a CI run's: the note says why none of its layers may come until the first does. */
+    var ciLane = false
     /** Why the page's text asked again did not come, until the next text. */
     private var textRefusal: String? = null
     /** The filmstrip's images, by call: as they came, and small for the strip. */
@@ -2674,6 +2685,7 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
         drawEvents()
         drawText()
         drawStrip()
+        if (ciLane) note(Glue.ciLaneLayersNote(shown))
     }
 
     /** A layer of the lane the tab watches: `image` is the filmstrip's, decoded off the event thread. */
@@ -2691,6 +2703,7 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
             drawText()
         }
         if ("strip" in changed) drawStrip()
+        if (ciLane) note(Glue.ciLaneLayersNote(shown))
     }
 
     /** Why the page's text asked again did not come, said over the text. */

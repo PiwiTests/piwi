@@ -15,6 +15,7 @@ import type {
 import {
   ciLaneArg,
   ciLaneCaption,
+  ciLaneLayersNote,
   ciLaneRedraws,
   ciLaneTakes,
   ciLaneTitle,
@@ -25,6 +26,7 @@ import {
   laneLayersMessage,
   laneLayersNote,
   laneTextNote,
+  layersAfterAnswer,
   MAX_LANE_EVENTS,
   NO_LANE_LAYERS,
   waitsView,
@@ -2451,6 +2453,24 @@ describe('the worker panel’s layers', () => {
     expect(laneLayersNote({ layers: false })).toMatch(/^This worker’s reporter sends its images alone/);
     expect(laneLayersNote({ layers: true })).toBeNull();
     expect(laneLayersNote(null)).toBeNull();
+  });
+
+  test('say why a CI lane may show none of its layers until the first comes', () => {
+    expect(ciLaneLayersNote(NO_LANE_LAYERS)).toMatch(/older than the editor’s sends the images alone\.$/);
+    // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+    const calls = withLaneLayer(NO_LANE_LAYERS, { layer: 'calls', log: log(), test: 't1', worker: 2 }).shown;
+    expect(ciLaneLayersNote(calls)).not.toBeNull();
+    const event = { layer: 'events' as const, event: { kind: 'console' as const, text: 'Oops' }, at, test: 't1' };
+    expect(ciLaneLayersNote(withLaneLayer(calls, event).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, thumb('c1', 1)).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, { layer: 'text', refused: 'No page.', test: 't1' }).shown)).toBeNull();
+  });
+
+  test('hold a change of the layers as asked unless the service refused that very change', () => {
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', true)).toBe('calls,events,text');
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', false)).toBe('');
+    // A later change asked meanwhile stays held: its own answer decides.
+    expect(layersAfterAnswer('calls,events', 'calls,events,text', false)).toBe('calls,events');
   });
 
   test('draw the sections under a worker’s image, empty, with Text and Filmstrip open as the person left them', () => {

@@ -2485,3 +2485,22 @@ export function laneLayersNote(worker: Pick<RunWorker, 'layers'> | null): string
     ? 'This worker’s reporter sends its images alone: update @piwitests/reporter to see why it waits, the page’s events, its text and the filmstrip.'
     : null;
 }
+
+/**
+ * The note over a CI lane while none of its page's events, its text or its filmstrip came: neither the team instance
+ * nor the CI run's reporter says whether it sends them, and an older one of either sends the images alone. Null once
+ * one came.
+ */
+export function ciLaneLayersNote(layers: Pick<LaneLayersShown, 'heard' | 'text' | 'strip'>): string | null {
+  return layers.heard || layers.text || layers.strip.length
+    ? null
+    : 'The page’s events, its text and the filmstrip show here as the CI run’s worker sends them: a team instance or a @piwitests/reporter older than the editor’s sends the images alone.';
+}
+
+/**
+ * The layers the worker panel holds as asked once the service answered a change of them (`asked`, as text): those it
+ * held, unless the service refused the very change they are, which leaves none held, so the next change asks again.
+ */
+export function layersAfterAnswer(held: string, asked: string, ok: boolean): string {
+  return ok || held !== asked ? held : '';
+}

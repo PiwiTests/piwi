@@ -76,7 +76,8 @@ Under the image, the editor's view shows what the pixels cannot, a CI run's lane
 - **Filmstrip**: one image per call the test finished, starting again with each retry; click one to see it larger.
 
 The text and the filmstrip are read only while their section is open. The view says when an older reporter sends none
-of them.
+of them, and, on a CI run's lane, until the first of them comes, that an older team instance or reporter sends the
+images alone.
 
 ## Interact
 

@@ -47,6 +47,7 @@ import {
   ciKey,
   ciLaneCaption,
   ciLaneRedraws,
+  ciLaneLayersNote,
   ciLaneTakes,
   ciLaneTitle,
   frameIsCurrent,
@@ -58,6 +59,7 @@ import {
   laneLayersMessage,
   laneLayersNote,
   laneShown,
+  layersAfterAnswer,
   NO_LANE_LAYERS,
   pagePoint,
   pausedPageHtml,
@@ -164,7 +166,7 @@ export function createWorkerPanel(
         ci: true,
         pick: null,
         live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
-        layers: { ...sections, note: null, textAsking },
+        layers: { ...sections, note: ciLaneLayersNote(layers), textAsking },
       };
       if (!panel) return;
       if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
@@ -210,10 +212,13 @@ export function createWorkerPanel(
 
   /** A layer of the slot or CI lane the panel watches, kept and posted as it changes what the panel shows. */
   const heardLayer = (layer: Parameters<typeof withLaneLayer>[1]) => {
+    const noted = ciTarget ? ciLaneLayersNote(layers) : null;
     const next = withLaneLayer(layers, layer);
     layers = next.shown;
     if (next.changed.includes('text')) textNote = null;
     postLayers(next.changed);
+    // A CI lane's note goes as the first of its layers comes.
+    if (ciTarget && ciLaneLayersNote(layers) !== noted) draw();
   };
 
   /** The layers start anew for another slot or CI lane. */
@@ -230,16 +235,19 @@ export function createWorkerPanel(
    */
   const askLayers = () => {
     const asked = laneLayersAsked(sections);
-    if (asked.join() === layersSent) return;
-    if (ciTarget && ciWatching && ciAccepted) {
-      layersSent = asked.join();
-      ciWatching.layers = asked;
-      void lc.sendRequest(CI_WATCH_REQUEST, { ...ciWatching, on: true }).catch(() => undefined);
-    } else if (!ciTarget && watching && accepted) {
-      layersSent = asked.join();
-      watching.layers = asked;
-      void lc.sendRequest(LANE_VIEW_REQUEST, { ...watching, on: true }).catch(() => undefined);
-    }
+    const sent = asked.join();
+    if (sent === layersSent) return;
+    const own = ciTarget ? (ciAccepted ? ciWatching : null) : accepted ? watching : null;
+    if (!own) return;
+    layersSent = sent;
+    own.layers = asked;
+    void lc
+      .sendRequest<RunControlResult>(ciTarget ? CI_WATCH_REQUEST : LANE_VIEW_REQUEST, { ...own, on: true })
+      .catch(() => null)
+      .then((answer) => {
+        // A refused change leaves the service's layers as they were: the next change of the sections asks again.
+        if (own === (ciTarget ? ciWatching : watching)) layersSent = layersAfterAnswer(layersSent, sent, !!answer?.ok);
+      });
   };
 
   /**

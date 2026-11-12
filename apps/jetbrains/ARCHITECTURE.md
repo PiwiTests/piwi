@@ -677,8 +677,10 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   again, and starts the call log and the strip anew for another test, another worker (a retry's), or an image placed at
   or before the strip's last of a call it does not hold. The watch asks for the call log and the events, and for the text or the
   filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
-  (`relayer`); **Take the Text Again** sends `text: true`, and is off until the service answers
-  (`LaneLayersPanel.textAsking`). The layers reach the tab in the order they came, one pooled thread at a time
+  (`relayer`), a change the service refused not held as asked (`Glue.layersAfterAnswer`); **Take the Text Again**
+  sends `text: true`, and is off until the service answers (`LaneLayersPanel.textAsking`). A CI lane, whose instance and
+  reporter say nothing of it, says until its first layer but the call log comes that an older one of either sends the
+  images alone (`Glue.ciLaneLayersNote`). The layers reach the tab in the order they came, one pooled thread at a time
   (`drawLayers`), each filmstrip image decoded and scaled off the event thread, and only once its JPEG header names a
   size within twice the thumbnail's (`Glue.stripImageBytes`, `Glue.jpegSize`): the image kept for the enlarged view is
   640 by 400 pixels at most. New text keeps the Text tab's caret and scroll where the person left them; only the search

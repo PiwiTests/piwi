@@ -583,7 +583,10 @@ until one says `ended`, or the service stops (`withCiSession`).
   call it does not hold) and posts its script the parts
   that changed, each JPEG once per document, the slot's (`laneLayersMessage`); the script sets every run text with
   `textContent`.
-  A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`).
+  A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`); a CI lane, whose
+  instance and reporter say nothing of it, says until its first layer but the call log comes that an older one of
+  either sends the images alone (`ciLaneLayersNote`). A change of the layers the service refused is not held as asked
+  (`layersAfterAnswer`): the next change of the sections asks again.
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
   runs on one line share one mark.
