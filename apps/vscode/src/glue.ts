@@ -22,6 +22,7 @@ import type {
   FileEdit,
   LineSpan,
   LiveRun,
+  RunProgress,
   McpServerDefinition,
   RecordingPlacement,
   RecordingStep,
@@ -273,6 +274,18 @@ export function serviceDownView(): StatusBarView {
 }
 
 /**
+ * The editor's own run in progress counted from its own process's events (`RunSession.progress`), which come before the
+ * instance hears them and without one; any other run, or one whose events say nothing, as the instance counts it.
+ */
+function withOwnProgress(
+  live: LiveRun | null,
+  progressOf: (ref: string) => Pick<RunProgress, 'done' | 'total' | 'failed'> | undefined,
+): LiveRun | null {
+  const told = live?.own && live.ref ? progressOf(live.ref) : undefined;
+  return live && told ? { ...live, done: told.done, total: told.total, failed: told.failed } : live;
+}
+
+/**
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
@@ -285,6 +298,7 @@ export function statusBarView(
   desktopChosen = false,
   now = Date.now(),
   activeFile: string | null = null,
+  progressOf: (ref: string) => Pick<RunProgress, 'done' | 'total' | 'failed'> | undefined = () => undefined,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
@@ -353,7 +367,7 @@ export function statusBarView(
   const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
   const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
   // The editor's own run in progress stays in view whichever config the active file belongs to.
-  const live = run?.live ?? runs?.contexts.find((c) => c.live?.own)?.live ?? null;
+  const live = withOwnProgress(run?.live ?? runs?.contexts.find((c) => c.live?.own)?.live ?? null, progressOf);
   const liveUrl = live?.url ?? null;
   const progress = live ? liveLine(live) : null;
   const updated = updatedLine(run, now);

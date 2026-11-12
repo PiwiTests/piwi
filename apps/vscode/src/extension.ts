@@ -765,7 +765,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = serviceDown ? serviceDownView() : statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
+    const view = serviceDown
+      ? serviceDownView()
+      : statusBarView(
+          status,
+          runs,
+          desktopChosen,
+          Date.now(),
+          activeFile(),
+          (ref) => runSessions().find((s) => s.ref === ref)?.progress,
+        );
     statusItem.text = refreshing
       ? refreshingText(view.text)
       : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);

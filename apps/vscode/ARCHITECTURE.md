@@ -624,6 +624,11 @@ The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
 not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
 
+**The editor's own run in progress** is counted from its own process's events (`RunSession.progress`, the run
+control's sessions, `withOwnProgress`) when its run session says them, before the instance hears them; any other run
+in progress, CI's and the branch's, as the instance counts it (`RunStatus.live`). The run control's progress item
+counts the window's runs from the same events, with or without an instance.
+
 **A click** depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
@@ -832,6 +837,8 @@ test run, which:
 - follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);
 - takes each command's run in progress by its ref (`LiveRun.ref`), or by its config when the service no longer keeps
   the command;
+- shows each of its tests running as a worker of the command's run begins it, from the run sessions
+  (`sessionChanged`, `testsBegun`), so offline and before the instance names the run too;
 - ends once each command's task ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a task VS Code
   could not start) and its run was read.
 

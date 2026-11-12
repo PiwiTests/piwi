@@ -19,7 +19,7 @@ import {
   type TestItemsParams,
   type TestItemsResult,
 } from '@piwitests/editor/protocol';
-import { sessionLines } from './run-control';
+import { sessionLines, testsBegun } from './run-control';
 import {
   SPEC_FILE,
   VERIFY_REPEAT,
@@ -423,6 +423,12 @@ export class TestExplorer implements vscode.Disposable {
     if (session.ended || !run) this.sessions.delete(session.ref);
     else this.sessions.set(session.ref, session);
     if (!run) return;
+    // A profile run's tests show running as their workers begin them, an instance or not.
+    const profile = [...this.profiles].find((p) => p.run === run);
+    for (const begun of profile ? testsBegun(before, session) : []) {
+      const item = this.itemAt(begun.uri, begun.line);
+      if (item && profile!.tests.has(item) && !profile!.shown.has(item)) run.started(item);
+    }
     for (const line of sessionLines(before, session)) {
       const at = line.at
         ? new vscode.Location(vscode.Uri.parse(line.at.uri), new vscode.Position(line.at.line, 0))

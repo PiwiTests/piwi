@@ -554,6 +554,19 @@ export interface SessionLine {
 }
 
 /**
+ * The tests a run's change begins, each attempt once, by its spec and the line of its `test(…)` call: the Testing view
+ * shows them running from the run's own events, whether an instance follows the run or not.
+ */
+export function testsBegun(before: RunSession | undefined, now: RunSession): Array<{ uri: string; line: number }> {
+  return now.workers.flatMap((worker) => {
+    const was = before?.workers.find((w) => w.worker === worker.worker);
+    const test = worker.test;
+    if (!test || (test.id === was?.test?.id && test.retry === was.test.retry)) return [];
+    return [{ uri: test.uri, line: test.line }];
+  });
+}
+
+/**
  * What a run's change writes in the output of the Testing view's test run that follows it, each line naming the
  * worker's lane: a test a worker starts (`Worker 2 · cart › adds a mug · attempt 2`), a stop and why (`pausedText`),
  * and a stop answered (`Worker 2 · goes on`). Nothing for a session it already wrote.

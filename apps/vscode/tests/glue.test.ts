@@ -294,6 +294,22 @@ describe('statusBarView', () => {
       text: '$(sync~spin) Piwi: run #124 · 4/9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4/9\n\n'),
     });
+    // The editor's own run counts from its own process's events, which the instance may not have heard yet.
+    const told = (ref: string) =>
+      ref === 'ed-1'
+        ? { total: 9, done: 6, failed: 2, flaky: 0, skipped: 0, status: 'running' as const, failure: null }
+        : undefined;
+    expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, told)).toMatchObject({
+      text: '$(sync~spin) Piwi: run #124 · 6/9 · 2 failing · yours',
+      tooltip: expect.stringContaining('\n\nYour run #124 is running: 6/9 · 2 failing\n\n'),
+    });
+    // Another's run, or one the events do not count, keeps the instance's count.
+    expect(statusBarView(connected, live({ ref: 'ed-2' }), false, Date.now(), null, told).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
+    );
+    expect(statusBarView(connected, live({ ref: 'ed-1', own: false }), false, Date.now(), null, told).text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing',
+    );
     // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
     const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));
     expect(linked.liveUrl).toBe('http://piwi/test-runs/124');

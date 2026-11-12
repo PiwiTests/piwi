@@ -68,6 +68,7 @@ import {
   liveInstance,
   liveItem,
   liveMenu,
+  testsBegun,
   PageLog,
   RunningLines,
   stopSharingQuestion,
@@ -184,6 +185,25 @@ const session = (ref: string, workers: RunWorker[], ended = false): RunSession =
 });
 
 const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSession(map, s), new Map());
+
+describe('the tests a run begins, as the Testing view shows them running', () => {
+  test('each test a worker begins, each attempt once, from the run’s own events', () => {
+    const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
+    expect(testsBegun(undefined, begun)).toEqual([{ uri: spec, line: 2 }]);
+    expect(testsBegun(begun, begun)).toEqual([]);
+    // A stop of the same test begins nothing; its retry, or another worker's test, does.
+    const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
+    expect(testsBegun(begun, stopped)).toEqual([]);
+    const retried = session('ed-1', [
+      worker(0, 'running', { test: runTest(1) }),
+      worker(1, 'running', { test: { ...runTest(), id: 't2', line: 9 } }),
+    ]);
+    expect(testsBegun(stopped, retried)).toEqual([
+      { uri: spec, line: 2 },
+      { uri: spec, line: 9 },
+    ]);
+  });
+});
 
 describe('what the Testing view writes of a run', () => {
   test('a test each worker starts, each attempt, a stop and why, and the stop answered, each once', () => {

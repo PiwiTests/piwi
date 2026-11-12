@@ -63,10 +63,11 @@ gutter marks a test with no recent result with a dashed ring.
 </figure>
 
 **Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
-Playwright config with your breakpoints, and **Verify ×3 with Piwi** runs them three times. A test the run gave Piwi no
+Playwright config with your breakpoints, and **Verify ×3 with Piwi** runs them three times. Tests show running as
+they begin, offline too. A test the run gave Piwi no
 result for, such as one the instance does not know yet, passes when the command exited with 0 and is an error
 otherwise. The view shows results; it does not discover tests nor debug them: a spec the instance has not seen joins
-the tree once you open it. The `piwi.testExplorer` setting turns the view's Piwi tests off.
+the tree once you open it. `piwi.testExplorer` turns the view's Piwi tests off.
 
 ## Re-run the failing tests
 
