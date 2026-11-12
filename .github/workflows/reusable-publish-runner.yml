@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 # The release's file names: "Piwi-Runner_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…", with no
-# version, as the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs).
+# version: the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs).
 env:
   ASSET_NAME_PATTERN: 'Piwi-Runner_[arch][setup][ext]'
 

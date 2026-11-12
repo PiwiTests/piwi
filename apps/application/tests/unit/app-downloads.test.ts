@@ -10,10 +10,13 @@ import {
   DOWNLOAD_APPS,
   DOWNLOAD_PACKAGES,
   LATEST_RELEASE_URL,
+  LATEST_RELEASE_API,
+  assetName,
   detectMacChip,
   detectOs,
   downloadUrl,
   downloadsMarkdown,
+  latestReleaseFiles,
 } from '#shared/app-downloads.mjs';
 
 const root = resolve(import.meta.dirname, '../../../..');
@@ -49,24 +52,47 @@ describe('the download links', () => {
           .replace('[arch]', parts.arch)
           .replace('[setup]', parts.setup)
           .replace('[ext]', parts.ext);
-        expect(rendered).toBe(`${app.prefix}${pkg.file}`);
+        expect(rendered).toBe(assetName(app, pkg));
       }
     },
   );
 
-  test('point at the latest release', () => {
+  test('point at a file only once the latest release is known to hold it', () => {
     const desktop = DOWNLOAD_APPS.find((a) => a.id === 'desktop')!;
-    expect(downloadUrl(desktop, DOWNLOAD_PACKAGES[0]!)).toBe(
+    const exe = DOWNLOAD_PACKAGES[0]!;
+    expect(downloadUrl(desktop, exe, new Set(['Piwi-Desktop_x64-setup.exe']))).toBe(
       'https://github.com/PiwiTests/piwi/releases/latest/download/Piwi-Desktop_x64-setup.exe',
     );
+    // Not known yet, not answered, or a release without the file: the release page, which never 404s.
+    expect(downloadUrl(desktop, exe)).toBe(LATEST_RELEASE_URL);
+    expect(downloadUrl(desktop, exe, null)).toBe(LATEST_RELEASE_URL);
+    expect(downloadUrl(desktop, exe, new Set(['Piwi.Dashboard_0.68.0_x64-setup.exe']))).toBe(LATEST_RELEASE_URL);
     expect(LATEST_RELEASE_URL).toBe('https://github.com/PiwiTests/piwi/releases/latest');
   });
 
-  test('render as one Markdown line per app for agents', () => {
-    const [line] = downloadsMarkdown(['runner']);
+  test("read the latest release's file names from GitHub, and nothing when it does not answer", async () => {
+    const asked: string[] = [];
+    const answer = (ok: boolean, body: unknown) => async (url: string) => {
+      asked.push(url);
+      return { ok, json: async () => body };
+    };
+    const files = await latestReleaseFiles(answer(true, { assets: [{ name: 'Piwi-Desktop_x64.msi' }, { name: 3 }] }));
+    expect([...files!]).toEqual(['Piwi-Desktop_x64.msi']);
+    expect(asked).toEqual([LATEST_RELEASE_API]);
+    expect(await latestReleaseFiles(answer(false, { message: 'API rate limit exceeded' }))).toBeNull();
+    expect(await latestReleaseFiles(answer(true, { message: 'Not Found' }))).toBeNull();
+    expect(await latestReleaseFiles(() => Promise.reject(new Error('offline')))).toBeNull();
+  });
+
+  test('render as one Markdown line per app for agents, naming the files on the release page', () => {
     expect(downloadsMarkdown(['runner'])).toHaveLength(1);
-    expect(line).toMatch(
-      /^- Piwi Runner: \[Windows, per user \(\.exe\)\]\(https:\/\/github\.com\/.*Piwi-Runner_x64-setup\.exe\)/,
+    expect(downloadsMarkdown(['runner'])[0]).toBe(
+      '- Piwi Runner: Runs the tests a team instance asks for, without the dashboard. Not needed beside the desktop app, ' +
+        'which takes the same requests. On the [latest release](https://github.com/PiwiTests/piwi/releases/latest): ' +
+        'Windows x64, per user (.exe): `Piwi-Runner_x64-setup.exe`; Windows x64, per machine (.msi): `Piwi-Runner_x64.msi`; ' +
+        'macOS, Apple silicon (.dmg): `Piwi-Runner_aarch64.dmg`; ' +
+        'Linux x86-64, any distribution (.AppImage): `Piwi-Runner_amd64.AppImage`; ' +
+        'Debian, Ubuntu, x86-64 (.deb): `Piwi-Runner_amd64.deb`; Fedora, RHEL, x86-64 (.rpm): `Piwi-Runner_x86_64.rpm`.',
     );
     expect(downloadsMarkdown()).toHaveLength(2);
   });
@@ -104,7 +130,21 @@ describe("the visitor's system", () => {
     expect(detectOs({ userAgent: UA.mac, maxTouchPoints: 5 })).toBeNull();
     expect(detectOs({ userAgent: UA.windows, userAgentData: { mobile: true } })).toBeNull();
     expect(detectOs({ userAgent: UA.chromebook })).toBeNull();
+    expect(detectOs({ userAgent: UA.chromebook, userAgentData: { platform: 'Chrome OS', mobile: false } })).toBeNull();
     expect(detectOs({})).toBeNull();
+  });
+
+  test('offers no x86-64 installer to an ARM machine asking for the desktop site', () => {
+    // Firefox's "Desktop site" on Android: a Linux user agent, an ARM platform, a touch screen.
+    expect(detectOs({ userAgent: UA.linux, platform: 'Linux aarch64', maxTouchPoints: 5 })).toBeNull();
+    // Chrome on a tablet asks for desktop sites as Linux, and its hints still say Android.
+    expect(detectOs({ userAgent: UA.linux, userAgentData: { platform: 'Android', mobile: false } })).toBeNull();
+    expect(
+      detectOs({ userAgent: 'Mozilla/5.0 (X11; Linux aarch64; rv:132.0) Gecko/20100101 Firefox/132.0' }),
+    ).toBeNull();
+    expect(detectOs({ userAgent: UA.linux, platform: 'Linux armv7l' })).toBeNull();
+    // Windows on ARM reports x64, where the x64 installers run emulated.
+    expect(detectOs({ userAgent: UA.windows, userAgentData: { platform: 'Windows', mobile: false } })).toBe('windows');
   });
 
   test("reads a Mac's chip from Chromium's hints only", async () => {

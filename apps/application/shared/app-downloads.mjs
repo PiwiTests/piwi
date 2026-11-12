@@ -5,10 +5,15 @@
  *
  * `releases/latest/download/<file>` serves the file of that name from the latest release, so a file name carries no
  * version: each app's `ASSET_NAME_PATTERN` (`reusable-publish-desktop.yml`, `reusable-publish-runner.yml`) renders
- * `<prefix><arch><setup><ext>`, and `tests/unit/app-downloads.test.ts` holds the two together.
+ * `<prefix><arch><setup><ext>`, and `tests/unit/app-downloads.test.ts` holds the two together. A file links there only
+ * once the latest release is known to carry it (`latestReleaseFiles`); until then, and for a file it lacks, the link
+ * is the release page.
  */
 
 export const LATEST_RELEASE_URL = 'https://github.com/PiwiTests/piwi/releases/latest';
+
+/** GitHub's API answer for the latest release: its files, readable from a browser on another origin. */
+export const LATEST_RELEASE_API = 'https://api.github.com/repos/PiwiTests/piwi/releases/latest';
 
 /** The two apps whose installers the release carries. */
 export const DOWNLOAD_APPS = [
@@ -32,33 +37,59 @@ export const DOWNLOAD_APPS = [
 /** Each app's installers: the system they install on, a label, and the end of the file name. The first of a system
  * is the one its button offers. */
 export const DOWNLOAD_PACKAGES = [
-  { os: 'windows', label: 'Windows, per user (.exe)', file: 'x64-setup.exe' },
-  { os: 'windows', label: 'Windows, per machine (.msi)', file: 'x64.msi' },
+  { os: 'windows', label: 'Windows x64, per user (.exe)', file: 'x64-setup.exe' },
+  { os: 'windows', label: 'Windows x64, per machine (.msi)', file: 'x64.msi' },
   { os: 'macos', label: 'macOS, Apple silicon (.dmg)', file: 'aarch64.dmg' },
-  { os: 'linux', label: 'Linux, any distribution (.AppImage)', file: 'amd64.AppImage' },
-  { os: 'linux', label: 'Debian, Ubuntu (.deb)', file: 'amd64.deb' },
-  { os: 'linux', label: 'Fedora, RHEL (.rpm)', file: 'x86_64.rpm' },
+  { os: 'linux', label: 'Linux x86-64, any distribution (.AppImage)', file: 'amd64.AppImage' },
+  { os: 'linux', label: 'Debian, Ubuntu, x86-64 (.deb)', file: 'amd64.deb' },
+  { os: 'linux', label: 'Fedora, RHEL, x86-64 (.rpm)', file: 'x86_64.rpm' },
 ];
 
-/** The link to `pkg` of `app` in the latest release. */
-export function downloadUrl(app, pkg) {
-  return `${LATEST_RELEASE_URL}/download/${app.prefix}${pkg.file}`;
+/** The file name of `pkg` of `app` on a release. */
+export function assetName(app, pkg) {
+  return `${app.prefix}${pkg.file}`;
+}
+
+/** The link to `pkg` of `app`: the file itself when `files`, the latest release's, holds it, else the release page. */
+export function downloadUrl(app, pkg, files) {
+  const name = assetName(app, pkg);
+  return files?.has(name) ? `${LATEST_RELEASE_URL}/download/${name}` : LATEST_RELEASE_URL;
 }
 
 /**
- * The desktop system the browser runs on: `windows`, `macos` or `linux`, or `null` when it is none of them or a phone
- * or tablet (Android says Linux; an iPad in desktop mode says Macintosh, with a touch screen no Mac has).
+ * The names of the latest release's files, or `null` when GitHub does not answer (offline, its rate limit of an
+ * address).
+ *
+ * @param {(url: string, init?: object) => Promise<{ ok: boolean, json: () => Promise<any> }>} fetchFn
+ */
+export async function latestReleaseFiles(fetchFn) {
+  try {
+    const response = await fetchFn(LATEST_RELEASE_API, { headers: { accept: 'application/vnd.github+json' } });
+    if (!response.ok) return null;
+    const release = await response.json();
+    if (!Array.isArray(release?.assets)) return null;
+    return new Set(release.assets.map((asset) => asset.name).filter((name) => typeof name === 'string'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The desktop system the browser runs on, for the installers above: `windows`, `macos` or `linux`, or `null` when it
+ * is none of them, a phone or tablet, or Linux on ARM. Android asks for desktop sites as Linux, with an ARM `platform`
+ * or `Android` in its client hints; an iPad in desktop mode says Macintosh, with a touch screen no Mac has. Windows
+ * reports x64 on ARM too, where the x64 installers run emulated.
  *
  * @param {{ userAgent?: string, platform?: string, maxTouchPoints?: number, userAgentData?: { platform?: string, mobile?: boolean } }} nav
  */
 export function detectOs(nav) {
   if (nav.userAgentData?.mobile) return null;
   const ua = nav.userAgent ?? '';
-  if (/Android|iPhone|iPad|iPod/i.test(ua)) return null;
+  if (/Android|iPhone|iPad|iPod/i.test(`${ua} ${nav.userAgentData?.platform ?? ''}`)) return null;
   const said = `${nav.userAgentData?.platform ?? ''} ${nav.platform ?? ''} ${ua}`;
   if (/Windows|Win32|Win64/i.test(said)) return 'windows';
   if (/Mac/i.test(said)) return (nav.maxTouchPoints ?? 0) > 1 ? null : 'macos';
-  if (/Linux|X11|CrOS/i.test(said)) return /CrOS/i.test(said) ? null : 'linux';
+  if (/Linux|X11|CrOS/i.test(said)) return /CrOS|Chrome OS|aarch64|\barm/i.test(said) ? null : 'linux';
   return null;
 }
 
@@ -81,9 +112,13 @@ export async function detectMacChip(nav) {
   return null;
 }
 
-/** The installers as Markdown, for the docs' text rendering: one line per app. */
+/** The installers as Markdown, for the docs' text rendering: one line per app, its files named on the latest
+ * release. */
 export function downloadsMarkdown(appIds = DOWNLOAD_APPS.map((a) => a.id)) {
   return DOWNLOAD_APPS.filter((app) => appIds.includes(app.id)).map(
-    (app) => `- ${app.name}: ${DOWNLOAD_PACKAGES.map((pkg) => `[${pkg.label}](${downloadUrl(app, pkg)})`).join(', ')}`,
+    (app) =>
+      `- ${app.name}: ${app.summary} On the [latest release](${LATEST_RELEASE_URL}): ${DOWNLOAD_PACKAGES.map(
+        (pkg) => `${pkg.label}: \`${assetName(app, pkg)}\``,
+      ).join('; ')}.`,
   );
 }

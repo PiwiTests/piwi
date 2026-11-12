@@ -96,7 +96,7 @@ const inline = (body, page) =>
         .map((example) => `- [${example.title}](${SITE}/demo${example.route}): ${example.shows}`)
         .join('\n'),
     )
-    .replace(/^<DownloadApps\b([^>]*)\/>[ \t]*$/gm, (_, attrs) => {
+    .replace(/^[ \t]*<DownloadApps\b([^>]*)\/>[ \t]*$/gm, (_, attrs) => {
       const app = /\bapp="(\w+)"/.exec(attrs)?.[1];
       return downloadsMarkdown(app ? [app] : undefined).join('\n');
     })

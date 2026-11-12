@@ -89,7 +89,7 @@ describe('buildDocsCorpus', () => {
     );
     const started = docsMarkdown(findDocsPage(corpus, 'guide/getting-started')!);
     expect(started).toMatch(
-      /^- Piwi Desktop: \[Windows, per user \(\.exe\)\]\(https:\/\/github\.com\/PiwiTests\/piwi\/releases\/latest\/download\/Piwi-Desktop_x64-setup\.exe\)/m,
+      /^- Piwi Desktop: .* On the \[latest release\]\(https:\/\/github\.com\/PiwiTests\/piwi\/releases\/latest\): Windows x64, per user \(\.exe\): `Piwi-Desktop_x64-setup\.exe`/m,
     );
     expect(started).toMatch(/^- Piwi Runner: /m);
     const runner = docsMarkdown(findDocsPage(corpus, 'features/piwi-runner')!);

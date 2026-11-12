@@ -55,7 +55,7 @@ describe("Piwi Runner's update manifest", () => {
     expect(Object.keys(manifest(names, signatures).platforms).sort()).toEqual(['windows-x86_64', 'windows-x86_64-msi']);
   });
 
-  test('refuses a release with no signed package of the version', () => {
+  test("refuses a release with no signed package of Runner's", () => {
     expect(() => manifest(['Piwi-Desktop_x64.msi'])).toThrow(/no signed Piwi-Runner_ package/);
     expect(() => manifest(PACKAGES, {})).toThrow();
   });
