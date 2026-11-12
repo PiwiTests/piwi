@@ -35,7 +35,8 @@ import type {
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
-import { LANE_LAYERS, MAX_FILMSTRIP, MAX_LANE_TEXT, type LaneLayer, type PageEvent } from '@piwitests/core/live-layers';
+import { LANE_LAYERS, MAX_FILMSTRIP, MAX_LANE_TEXT, type LaneLayer } from '@piwitests/core/live-layer-bounds';
+import type { PageEvent } from '@piwitests/core/live-layers';
 import type { LiveCallLog } from '@piwitests/core/live-view';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';

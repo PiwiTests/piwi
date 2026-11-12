@@ -25,13 +25,10 @@
  *   memory (`MAX_FILMSTRIP` images and `MAX_FILMSTRIP_BYTES` at most). `MAX_LANE_THUMB` bytes each,
  *   `LANE_THUMBS_PER_SECOND` a second at most.
  */
+import { LANE_LAYERS, MAX_FILMSTRIP, MAX_LANE_TEXT, type LaneLayer } from './live-layer-bounds';
 import { hideSecretsInText, hideSecretsInUrl, hideTypedText, maskAriaSnapshot } from './mask';
 
-/** A layer of a lane's view beside its images. */
-export type LaneLayer = 'calls' | 'events' | 'text' | 'filmstrip';
-
-/** Every layer, in the order a reader lists them. */
-export const LANE_LAYERS: readonly LaneLayer[] = ['calls', 'events', 'text', 'filmstrip'];
+export { LANE_LAYERS, MAX_FILMSTRIP, MAX_LANE_TEXT, type LaneLayer };
 
 /** The longest list of layers a reader reads: a longer one is read as none. */
 const MAX_LAYER_LIST = 16;
@@ -184,8 +181,6 @@ export function isLayerCallId(value: unknown): value is string {
   return typeof value === 'string' && CALL_ID.test(value);
 }
 
-/** The longest page's text a layer carries, in characters: a longer one is cut, and says so (`cut`). */
-export const MAX_LANE_TEXT = 96 * 1024;
 /**
  * The longest page's text a layer carries in bytes, as UTF-8 inside a JSON string writes it: a text in a script of
  * several bytes a character is cut there first, and says so (`cut`), so a worker's post of it as JSON fits a live
@@ -276,8 +271,6 @@ export const MAX_LANE_THUMB_BASE64 = 4 * Math.ceil(MAX_LANE_THUMB / 3);
 /** The size an image of the team's filmstrip is made at most, in pixels. */
 export const LANE_THUMB_WIDTH = 320;
 export const LANE_THUMB_HEIGHT = 200;
-/** The most images a test's filmstrip keeps, the latest, and sends again to a viewer who comes later. */
-export const MAX_FILMSTRIP = 40;
 /** The most bytes of images a worker keeps of the team's filmstrip of its test. */
 export const MAX_FILMSTRIP_BYTES = 1024 * 1024;
 /** The most images of a filmstrip a worker sends a second on one wire. */
