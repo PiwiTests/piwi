@@ -41,6 +41,8 @@ const MAX_LET_GO = 4096;
 export const SNAPSHOT_GONE = `The page at this call is no longer kept: the instance keeps a worker’s latest ${MAX_WORKER_SNAPSHOTS / 1024 / 1024} MB of pages while the run runs.`;
 /** What it says of a call and moment the worker sent no page of. */
 export const SNAPSHOT_MISSING = 'The worker sent no page of this call at that moment.';
+/** What it says of a page that costs more to render than a render may (`MAX_RENDER_NODES` and the others). */
+export const SNAPSHOT_TOO_LARGE = 'The page at this call is too large to show: rendering it would take too long.';
 
 /** A snapshot as the store keeps it: its header, the test it is of, its JSON, and when it came among the run's. */
 interface HeldSnapshot extends LiveSnapshot {
@@ -292,13 +294,16 @@ export class RunInspect {
     const target = parsed.at(-1);
     if (!target?.snapshotName) return { status: 410, message: SNAPSHOT_GONE };
     let unresolved = false;
+    let tooLarge = false;
     const rendered = renderSanitizedSnapshot(
       parsed,
       target.snapshotName,
       DOM_SNAPSHOT_CAP_CHARS,
       { keepInlineImages: true },
       () => (unresolved = true),
+      () => (tooLarge = true),
     );
+    if (!rendered && tooLarge) return { status: 410, message: SNAPSHOT_TOO_LARGE };
     if (!rendered || unresolved) return { status: 410, message: SNAPSHOT_GONE };
     const viewport = viewportOf(target);
     const frameUrl = typeof target.frameUrl === 'string' ? target.frameUrl : undefined;

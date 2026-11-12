@@ -7,6 +7,7 @@ import {
   RunInspect,
   SNAPSHOT_GONE,
   SNAPSHOT_MISSING,
+  SNAPSHOT_TOO_LARGE,
 } from '../../server/utils/live-inspect';
 
 /**
@@ -220,6 +221,22 @@ describe('Inspect’s store of a run', () => {
     store.addSnapshot('w', snapshot('call@3', 'before', ['HTML', {}, [[3, 1]]], { full: false, index: 3 }));
     expect(await store.render('w', 'call@2', 'before')).toEqual({ status: 410, message: SNAPSHOT_GONE });
     expect(await store.render('w', 'call@3', 'before')).toMatchObject({ html: '<html><body>Cart</body></html>' });
+  });
+
+  test('refuses a page that costs more to render than a render may, in a bounded time', async () => {
+    const store = new RunInspect();
+    store.addSnapshot('w', snapshot('call@0', 'after', ['HTML', {}, 'x']));
+    // Each snapshot's two children are the whole of the snapshot before it.
+    for (let k = 1; k <= 40; k++) {
+      const root = k === 1 ? 1 : 0;
+      store.addSnapshot(
+        'w',
+        snapshot(`call@${k}`, 'after', ['B', {}, [[1, root]], [[1, root]]], { full: false, index: k }),
+      );
+    }
+    const started = performance.now();
+    expect(await store.render('w', 'call@40', 'after')).toEqual({ status: 410, message: SNAPSHOT_TOO_LARGE });
+    expect(performance.now() - started).toBeLessThan(4000);
   });
 
   test('hides again the value of a field that holds a secret, and a card’s number, whatever the worker sent', async () => {

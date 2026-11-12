@@ -241,6 +241,32 @@ describe('renderSnapshotHtml', () => {
     expect(html).toBe('<html><main><div>root text</div></main></html>');
   });
 
+  test('gives up on a chain whose references double at each snapshot, in a bounded time', () => {
+    const snapshots = [snap({ snapshotName: 's0', html: ['HTML', {}, 'x'] })];
+    // Each snapshot's two children are the whole of the snapshot before it: 2^40 nodes to write.
+    for (let k = 1; k <= 40; k++) {
+      snapshots.push(snap({ snapshotName: `s${k}`, html: ['B', {}, [[1, k === 1 ? 1 : 0]], [[1, k === 1 ? 1 : 0]]] }));
+    }
+    let tooLarge = 0;
+    const started = performance.now();
+    expect(renderSnapshotHtml(snapshots, 's40', { onTooLarge: () => tooLarge++ })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(tooLarge).toBe(1);
+    expect(extractDomSnapshot(traceData(snapshots), 1_500_000)).toEqual({ status: 'no-snapshot' });
+    expect(performance.now() - started).toBeLessThan(4000);
+  });
+
+  test('gives up on a page that writes more than it may, a long text named again and again', () => {
+    const text = 'x'.repeat(1_000_000);
+    const refs = Array.from({ length: 100 }, () => [[1, 0]]);
+    const first = snap({ snapshotName: 's0', html: ['P', {}, text] });
+    expect(renderSnapshotHtml([first, snap({ snapshotName: 's1', html: ['DIV', {}, ...refs] })], 's1')).toBeNull();
+    expect(renderSnapshotHtml([first, snap({ snapshotName: 's1', html: ['STYLE', {}, ...refs] })], 's1')).toBeNull();
+    // Named a few times, it renders.
+    const few = snap({ snapshotName: 's1', html: ['DIV', {}, [[1, 0]], [[1, 0]]] });
+    expect(renderSnapshotHtml([first, few], 's1')).toHaveLength(2_000_000 + '<div></div>'.length);
+  });
+
   test('emits a placeholder for unresolvable references instead of failing', () => {
     const html = renderSnapshotHtml([snap({ snapshotName: 's1', html: ['HTML', {}, ['BODY', {}, [[5, 99]]]] })], 's1');
     expect(html).toBe('<html><body><!-- [unresolved snapshot reference] --></body></html>');

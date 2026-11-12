@@ -31,6 +31,18 @@ import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSn
  */
 export const DOM_SNAPSHOT_CAP_CHARS = 1_500_000;
 
+/**
+ * What one render of a snapshot may cost: the nodes it visits, the back-references it follows, and the characters it
+ * writes, counted as it goes. A chain whose references name the same nodes again and again writes far more than it
+ * holds: past any of these, the render gives up (null).
+ */
+export const MAX_RENDER_NODES = 500_000;
+export const MAX_RENDER_REFERENCES = 250_000;
+export const MAX_RENDER_CHARS = 16_000_000;
+
+/** Thrown inside a render past its budget, and caught where it began. */
+class RenderTooLarge extends Error {}
+
 const VOID_ELEMENTS = new Set([
   'AREA',
   'BASE',
@@ -84,6 +96,8 @@ export interface RenderOptions {
    * placeholder in its place.
    */
   onUnresolved?: () => void;
+  /** Called when the render gives up past its budget (`MAX_RENDER_NODES` and the others), returning null. */
+  onTooLarge?: () => void;
 }
 
 function escapeText(text: string): string {
@@ -222,14 +236,15 @@ function collectNodes(html: unknown): unknown[] {
 /**
  * Render one named snapshot to an HTML string, resolving back-references
  * against the earlier snapshots of the same frame. Returns null when the
- * snapshot is missing or the tree is entirely unrenderable.
+ * snapshot is missing, the tree is entirely unrenderable, or the render costs
+ * more than its budget (`onTooLarge`).
  */
 export function renderSnapshotHtml(
   snapshots: TraceFrameSnapshot[],
   snapshotName: string,
   options: RenderOptions = {},
 ): string | null {
-  const { dropStyles = false, onUnresolved } = options;
+  const { dropStyles = false, onUnresolved, onTooLarge } = options;
   const target =
     snapshots.find((s) => s.snapshotName === snapshotName && s.isMainFrame !== false) ??
     snapshots.find((s) => s.snapshotName === snapshotName);
@@ -252,12 +267,26 @@ export function renderSnapshotHtml(
   // empty value; an id of another action is a mark an earlier snapshot left.
   const isTargetMark = (value: unknown) => value === '' || (!!target.callId && value === target.callId);
 
+  // What the render has spent: past any budget, it gives up.
+  let nodes = 0;
+  let references = 0;
+  let chars = 0;
+  const visit = () => {
+    if (++nodes > MAX_RENDER_NODES) throw new RenderTooLarge();
+  };
+  const write = (piece: string): string => {
+    chars += piece.length;
+    if (chars > MAX_RENDER_CHARS) throw new RenderTooLarge();
+    return piece;
+  };
+
   /**
    * The node a back-reference names, in the earlier snapshot's node space —
    * rendering continues in THAT snapshot's context, whose own refs go further
    * back. Null when it can't be resolved.
    */
   const deref = (ref: unknown[], snapshotIndex: number): { node: unknown; snapshotIndex: number } | null => {
+    if (++references > MAX_RENDER_REFERENCES) throw new RenderTooLarge();
     const delta = typeof ref[0] === 'number' ? ref[0] : NaN;
     const nodeIndex = typeof ref[1] === 'number' ? ref[1] : NaN;
     const refSnapshotIndex = snapshotIndex - delta;
@@ -269,6 +298,7 @@ export function renderSnapshotHtml(
 
   /** The text a child node stands for, following back-references; null for an element. */
   const textOf = (n: unknown, snapshotIndex: number): string | null => {
+    visit();
     if (typeof n === 'string') return n;
     if (!Array.isArray(n) || !Array.isArray(n[0])) return null;
     const ref = deref(n[0], snapshotIndex);
@@ -277,13 +307,14 @@ export function renderSnapshotHtml(
   };
 
   const render = (n: unknown, snapshotIndex: number): string => {
-    if (typeof n === 'string') return escapeText(n);
+    visit();
+    if (typeof n === 'string') return write(escapeText(n));
     if (!Array.isArray(n) || n.length === 0) return '';
 
     if (Array.isArray(n[0])) {
       const ref = deref(n[0], snapshotIndex);
       if (!ref) onUnresolved?.();
-      return ref ? render(ref.node, ref.snapshotIndex) : '<!-- [unresolved snapshot reference] -->';
+      return ref ? render(ref.node, ref.snapshotIndex) : write('<!-- [unresolved snapshot reference] -->');
     }
 
     if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
@@ -295,42 +326,42 @@ export function renderSnapshotHtml(
     // A script is an empty marker — no `src`, no body — so nothing the page
     // shipped ever runs in the rendered frame. Playwright drops HTML scripts when
     // recording but keeps SVG ones, whose tag is lower case.
-    if (tagUpper === 'SCRIPT') return '<script></script>';
+    if (tagUpper === 'SCRIPT') return write('<script></script>');
     if (tagUpper === 'LINK' && isResourceHint(attrs)) return '';
 
     // An adopted stylesheet (the document's or a shadow root's) is recorded as a
     // `template` holding its CSS, where it applies: written there as a `<style>`.
     const adopted = attrs[LIVE.styleSheet];
     if (tagUpper === 'TEMPLATE' && typeof adopted === 'string') {
-      return dropStyles ? '<style></style>' : `<style>${rawStyleText(adopted)}</style>`;
+      return write(dropStyles ? '<style></style>' : `<style>${rawStyleText(adopted)}</style>`);
     }
 
-    let out = `<${tag}`;
+    let open = `<${tag}`;
     // A shadow root is recorded as a `template` first in its host; as a
     // declarative shadow root, the browser attaches it while parsing.
-    if (tagUpper === 'TEMPLATE' && attrs[LIVE.shadowRoot] !== undefined) out += ' shadowrootmode="open"';
+    if (tagUpper === 'TEMPLATE' && attrs[LIVE.shadowRoot] !== undefined) open += ' shadowrootmode="open"';
     for (const [name, value] of renderedAttributes(tagUpper, attrs, isTargetMark)) {
-      out += ` ${name}="${escapeAttr(value)}"`;
+      open += ` ${name}="${escapeAttr(value)}"`;
     }
-    out += '>';
+    let out = write(`${open}>`);
     if (VOID_ELEMENTS.has(tagUpper)) return out;
 
     const value = attrs[LIVE.value];
     if (tagUpper === 'TEXTAREA' && typeof value === 'string') {
       // The parser drops one newline right after `<textarea>`.
-      return `${out}${value.startsWith('\n') ? '\n' : ''}${escapeText(value)}</${tag}>`;
+      return out + write(`${value.startsWith('\n') ? '\n' : ''}${escapeText(value)}</${tag}>`);
     }
 
     // `<style>` bodies are dropped only under the lean fallback; the tag stays
     // as a marker. An HTML `<style>` holds raw text, so its CSS is written as
     // is; an SVG `style` (recorded lower case) is parsed as markup and stays escaped.
-    if (dropStyles && tagUpper === 'STYLE') return `${out}</${tag}>`;
+    if (dropStyles && tagUpper === 'STYLE') return out + write(`</${tag}>`);
     const rawText = n[0] === 'STYLE';
     for (let i = 2; i < n.length; i++) {
       const text = rawText ? textOf(n[i], snapshotIndex) : null;
-      out += text !== null ? rawStyleText(text) : render(n[i], snapshotIndex);
+      out += text !== null ? write(rawStyleText(text)) : render(n[i], snapshotIndex);
     }
-    return `${out}</${tag}>`;
+    return out + write(`</${tag}>`);
   };
 
   try {
@@ -338,7 +369,8 @@ export function renderSnapshotHtml(
     if (!body) return null;
     const doctype = target.doctype ? `<!DOCTYPE ${target.doctype}>\n` : '';
     return doctype + body;
-  } catch {
+  } catch (error) {
+    if (error instanceof RenderTooLarge) onTooLarge?.();
     return null;
   }
 }
@@ -689,8 +721,10 @@ export function pointerAt(
  * Render one named snapshot and sanitize it within `capChars`: full fidelity
  * first (inline `<style>` kept), and, when keeping styles blows the cap and
  * would cut the real `<body>` away, lean (inline CSS dropped), which reliably
- * fits and keeps the whole DOM. Null when the snapshot does not render.
- * `onUnresolved` hears each back-reference the list cannot resolve.
+ * fits and keeps the whole DOM; lean too when the styled render costs more
+ * than its budget. Null when the snapshot does not render, or costs more than
+ * its budget lean too (`onTooLarge`). `onUnresolved` hears each back-reference
+ * the list cannot resolve.
  */
 export function renderSanitizedSnapshot(
   snapshots: TraceFrameSnapshot[],
@@ -698,12 +732,14 @@ export function renderSanitizedSnapshot(
   capChars: number,
   options: SanitizeOptions = {},
   onUnresolved?: () => void,
+  onTooLarge?: () => void,
 ): { html: string; truncated: boolean } | null {
-  const styled = renderSnapshotHtml(snapshots, snapshotName, { onUnresolved });
-  if (!styled) return null;
-  const result = sanitizeDomSnapshot(styled, capChars, options);
-  if (!result.truncated) return result;
-  const lean = renderSnapshotHtml(snapshots, snapshotName, { dropStyles: true });
+  let tooLarge = false;
+  const styled = renderSnapshotHtml(snapshots, snapshotName, { onUnresolved, onTooLarge: () => (tooLarge = true) });
+  if (!styled && !tooLarge) return null;
+  const result = styled ? sanitizeDomSnapshot(styled, capChars, options) : null;
+  if (result && !result.truncated) return result;
+  const lean = renderSnapshotHtml(snapshots, snapshotName, { dropStyles: true, onUnresolved, onTooLarge });
   return lean ? sanitizeDomSnapshot(lean, capChars, options) : result;
 }
 
