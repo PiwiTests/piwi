@@ -4,13 +4,18 @@
  * workers stream their pages to the run's page there while someone watches, and say when a test is paused, for anyone
  * who can open the run on that instance. The first share in this session of the app says what goes out and to whom,
  * and waits for a yes; shared, the run says where and how many views are open, with its page's link to copy and
- * **Stop sharing**; a sharing that stopped though nobody asked says why, Share live offered again. A run that cannot be
+ * **Stop sharing**, which asks first what closes there; a sharing that stopped though nobody asked says why, Share live offered again. A run that cannot be
  * shared (no instance, the project's live view off) says why when asked; one that reports to this app is offered
  * nothing.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
-import { desktopLiveText, desktopShareOffered, desktopShareWarning } from '../utils/run-view';
+import {
+  desktopLiveText,
+  desktopShareOffered,
+  desktopShareWarning,
+  desktopStopSharingQuestion,
+} from '../utils/run-view';
 
 const props = defineProps<{ session: HubSession }>();
 const emit = defineEmits<{ announce: [text: string] }>();
@@ -21,6 +26,11 @@ const { copy, copied } = useCopy();
 const live = computed(() => props.session.live ?? null);
 const busy = ref(false);
 const asking = ref(false);
+/** Stop sharing asks what it closes before it stops. */
+const stopAsking = ref(false);
+const stopQuestion = computed(() =>
+  live.value ? desktopStopSharingQuestion({ page: props.session.page, live: live.value }) : null,
+);
 /** What the last share or stop answered, while it says something the run does not show. */
 const answer = ref<DesktopRunAnswer | null>(null);
 
@@ -43,6 +53,11 @@ function confirm(): void {
   hub.shareWarned();
   asking.value = false;
   void send(true);
+}
+
+function stopSharing(): void {
+  stopAsking.value = false;
+  void send(false);
 }
 </script>
 
@@ -67,9 +82,9 @@ function confirm(): void {
           variant="soft"
           icon="i-lucide-circle-stop"
           :aria-disabled="busy || undefined"
-          @click="send(false)"
+          @click="!busy && (stopAsking = true)"
         >
-          Stop sharing
+          Stop sharing…
         </UButton>
       </template>
       <UTooltip v-else text="Let a teammate watch this run from its page on your Piwi instance">
@@ -96,6 +111,18 @@ function confirm(): void {
         <div class="flex justify-end gap-2 w-full">
           <UButton color="neutral" variant="ghost" @click="asking = false">Cancel</UButton>
           <UButton icon="i-lucide-radio" @click="confirm">Share live</UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="stopAsking" :title="stopQuestion?.title" :ui="{ content: 'max-w-lg' }">
+      <template #body>
+        <p class="text-sm text-muted" data-shot="desktop-run-share-stop">{{ stopQuestion?.body }}</p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton color="neutral" variant="ghost" @click="stopAsking = false">Cancel</UButton>
+          <UButton color="error" icon="i-lucide-circle-stop" @click="stopSharing">Stop sharing</UButton>
         </div>
       </template>
     </UModal>

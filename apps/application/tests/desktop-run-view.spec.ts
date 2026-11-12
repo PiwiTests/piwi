@@ -708,6 +708,44 @@ test.describe('Desktop run live view', () => {
     await expect(driver).toHaveCount(0);
   });
 
+  test('asks before Stop sharing a run shared live, and stops only once confirmed', async ({ page }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const shared = session(RUNNING);
+    Object.assign(shared.session, {
+      page: { id: runId, url: `https://piwi.example.com/test-runs/${runId}` },
+      live: {
+        shared: true,
+        refused: null,
+        stopped: null,
+        page: `https://piwi.example.com/test-runs/${runId}`,
+        viewers: 2,
+      },
+    });
+    await page.evaluate((event) => window.__hub.send(event), shared);
+    await expect(tray(page).getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
+
+    // Cancel stops nothing.
+    await tray(page).getByRole('button', { name: 'Stop sharing…' }).click();
+    const ask = page.getByRole('dialog', { name: `Stop sharing run #${runId} live?` });
+    await expect(ask).toContainText(
+      'The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    await ask.getByRole('button', { name: 'Cancel' }).click();
+    await expect(ask).toHaveCount(0);
+    expect(commands.filter((c) => c.type === 'share')).toHaveLength(0);
+
+    // Confirmed, it stops sharing.
+    await tray(page).getByRole('button', { name: 'Stop sharing…' }).click();
+    await ask.getByRole('button', { name: 'Stop sharing' }).click();
+    await expect.poll(() => commands.find((c) => c.type === 'share')).toMatchObject({ ref: REF, on: false });
+  });
+
   test('keeps the keyboard on the controls: Pause while a step runs, Step again at the next stop', async ({ page }) => {
     await installBridge(page);
     const commands = await playHub(page);

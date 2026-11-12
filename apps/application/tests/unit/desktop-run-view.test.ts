@@ -32,6 +32,7 @@ import {
   desktopSay,
   desktopShareOffered,
   desktopShareWarning,
+  desktopStopSharingQuestion,
   desktopWaitedFor,
   desktopStopSaid,
   isDesktopRunImage,
@@ -1158,6 +1159,25 @@ describe('Share live in the window', () => {
     expect(warning).toContain('on an instance with authentication off, anyone who can reach it');
     expect(warning).toMatch(/Stop sharing ends it within seconds\.$/);
     expect(desktopShareWarning({ page: null })).toContain('the Piwi instance this run reports to');
+  });
+
+  test('asks before Stop sharing: what closes on the instance, and that nothing more of the run goes there', () => {
+    const page = { id: 42, url: 'https://piwi.example.com/test-runs/42' };
+    expect(desktopStopSharingQuestion({ page, live })).toEqual({
+      title: 'Stop sharing run #42 live?',
+      body: 'Nothing more of it goes to piwi.example.com.',
+    });
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 1 } }).body).toBe(
+      'The view open on piwi.example.com closes, and nothing more of the run goes there.',
+    );
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 3 } }).body).toBe(
+      'The 3 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    // Before its process named its page, the run has no number, and an instance named by no page is the team's.
+    expect(desktopStopSharingQuestion({ live: { ...live, page: null, viewers: 2 } })).toEqual({
+      title: 'Stop sharing the run live?',
+      body: 'The 2 views open on the team instance close, and nothing more of the run goes there.',
+    });
   });
 
   test('offers no Share live for a run that reports to this app, which no teammate reaches', () => {
