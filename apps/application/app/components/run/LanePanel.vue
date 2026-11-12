@@ -128,6 +128,8 @@ const followNext = ref(true);
 const watchedTest = ref(props.test);
 /** How the test the view showed last ended, while the lane's next test has not begun. */
 const outcome = ref<LiveTestOutcome | null>(null);
+/** The view heard its test end, its lane's next test not begun: a page event of another test is of that next one. */
+let testDone = false;
 /** How each test the view showed ended, the latest last. */
 const history = ref<Array<LiveTestOutcome & { test: string }>>([]);
 
@@ -168,6 +170,7 @@ function nextTest(test: string): boolean {
   const before = watchedTest.value;
   watchedTest.value = test;
   outcome.value = null;
+  testDone = false;
   log.value = null;
   lastTarget.value = null;
   // A view that heard of no test yet keeps the layers that came before its first image: they are of this one.
@@ -200,6 +203,7 @@ function showImage(bytes: Uint8Array | null): void {
 
 function connect(): void {
   disconnect();
+  testDone = false;
   showImage(null);
   call.value = null;
   log.value = null;
@@ -276,6 +280,7 @@ function onMessage(message: LiveViewerMessage): void {
     // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
     if (outcome.value && follows.value) {
       outcome.value = null;
+      testDone = false;
       log.value = null;
       lastTarget.value = null;
       if (zoom.value?.kind === 'element') zoom.value = null;
@@ -299,8 +304,12 @@ function onMessage(message: LiveViewerMessage): void {
       endedAt.value = logAt.value;
     }
   } else if (message.type === 'page-event' || message.type === 'text' || message.type === 'thumb') {
-    // A layer of a test the view does not show (the lane's last, sent late; its next, before its first image) goes.
-    if (message.test !== null && watchedTest.value && message.test !== watchedTest.value) return;
+    // A layer of a test the view does not show (the lane's last, sent late; its next, before its first image) goes,
+    // but a page event of the lane's next test once the view's test ended moves the view on to it, as a call log
+    // does: a test with no page sends no image.
+    if (message.test !== null && watchedTest.value && message.test !== watchedTest.value) {
+      if (message.type !== 'page-event' || !testDone || !nextTest(message.test)) return;
+    }
     if (message.type === 'page-event') events.value = addLaneEvent(events.value, message.event, message.at);
     else if (message.type === 'text')
       pageText.value = 'refused' in message ? { refused: message.refused } : { text: message.text };
@@ -309,6 +318,7 @@ function onMessage(message: LiveViewerMessage): void {
     notice.value = message.message;
   } else if (message.type === 'test-ended') {
     showOutcome(message.outcome);
+    testDone = true;
     // Not following the lane: the view ends with its test.
     if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
   } else if (message.type === 'end') {

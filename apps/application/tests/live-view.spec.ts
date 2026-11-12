@@ -221,6 +221,8 @@ async function playWorkers(
   key: string;
   workers: Array<ReturnType<typeof holdWorkerStream>>;
   shots: Buffer[];
+  /** The workers send no frame from now on, as a test with no page, once the frames on their way came. */
+  stopFrames: () => Promise<void>;
   end: () => Promise<void>;
 }> {
   const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
@@ -277,12 +279,17 @@ async function playWorkers(
         }),
       ),
     );
-  const sending = setInterval(() => void send().catch(() => undefined), 500);
+  let sent: Promise<unknown> = Promise.resolve();
+  const sending = setInterval(() => void (sent = send().catch(() => undefined)), 500);
   return {
     runId,
     key: liveView.key,
     workers,
     shots,
+    stopFrames: async () => {
+      clearInterval(sending);
+      await sent;
+    },
     end: async () => {
       clearInterval(sending);
       for (const worker of workers) worker.close();
@@ -1079,6 +1086,27 @@ test.describe('Live view of a run', () => {
       await panel.getByTestId('live-text-search').fill('resume');
       await expect(panel.getByTestId('live-text-count')).toHaveText('1 match');
       await expect(text.locator('mark')).toHaveText('Résumé');
+
+      // The lane's next test calls its backend with no page: its first event moves the view on to it.
+      await run.stopFrames();
+      await post({ type: 'ended', outcome: { test: title, status: 'passed', ms: 4_000 } });
+      await expect(panel.getByTestId('live-outcome')).toBeVisible();
+      await post({
+        type: 'page-event',
+        test: 'refunds by API',
+        event: {
+          kind: 'api',
+          method: 'POST',
+          url: 'https://shop.test/api/refunds',
+          status: 201,
+          ms: 40,
+          failure: null,
+        },
+        at: Date.now(),
+      });
+      await expect(events).toHaveCount(1);
+      await expect(events.nth(0)).toContainText('POST https://shop.test/api/refunds');
+      await expect(panel.getByTestId('live-outcome')).toHaveCount(0);
 
       // The events folded: the worker is no longer asked for them.
       await panel.getByRole('button', { name: /^Page events/ }).click();
