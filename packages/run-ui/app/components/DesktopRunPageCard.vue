@@ -5,7 +5,7 @@
  * toggle (`tools`); then the image or the live view, with what it says of it (the default slot); and at its foot, who
  * drives the stop, with Take control or Give back (`foot`).
  */
-import { desktopSay } from '~/utils/desktop-run-view';
+import { desktopSay } from '../utils/run-view';
 
 defineProps<{
   /** Who watches the page, as the run model says it; none while nobody does. */

@@ -7,8 +7,8 @@
  * own Copy; a locator picked (the pause bar's Pick a locator, a pick on the image), or one an agent picked for the
  * stopped line, shows with the place of its call. What to check in the code is listed under it.
  */
-import type { DesktopKept } from '~/composables/useDesktopRunHub';
-import { desktopCodeItem, desktopPickItem, type DesktopCopyItem } from '~/utils/desktop-run-view';
+import type { DesktopKept } from '../composables/useDesktopRunHub';
+import { desktopCodeItem, desktopPickItem, type DesktopCopyItem } from '../utils/run-view';
 
 const props = defineProps<{ kept: readonly DesktopKept[]; roots: Readonly<Record<string, string | null>> }>();
 

@@ -15,7 +15,7 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
-import { PRESSED_TOGGLE_CLASS } from '~/utils';
+import { PRESSED_TOGGLE_CLASS } from '@piwitests/run-ui/ui-classes';
 import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
 import {

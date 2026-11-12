@@ -5,6 +5,8 @@
 // Responds 404 on the normal server build.
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
+import type { HubAnswer } from '@piwitests/core/run-hub';
+import { answerRunCommand, messageOf } from '@piwitests/editor/shell-runs-routes';
 import { desktopRuns } from '../../../utils/desktop-runs';
 
 defineRouteMeta({
@@ -20,11 +22,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  const runs = await desktopRuns();
-  if (!runs) throw apiError({ statusCode: 503, message: 'The desktop runs’ hub is not listening' });
-  const body = await readBody(event).catch(() => null);
-  const answer = await runs.command(body);
-  if (!answer) throw apiError({ statusCode: 404, message: 'The run stream is not open' });
-  if (answer.id === 0) throw apiError({ statusCode: 400, message: answer.message });
-  return answer;
+  const answer = await answerRunCommand(await desktopRuns(), await readBody(event).catch(() => null));
+  if (answer.status !== 200) throw apiError({ statusCode: answer.status, message: messageOf(answer) });
+  return answer.body as HubAnswer;
 });

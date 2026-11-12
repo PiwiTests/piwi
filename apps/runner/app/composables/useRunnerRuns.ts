@@ -35,5 +35,20 @@ export function useRunnerRuns() {
     return runBook().stop(run);
   }
 
-  return { runs, listen, startRequest, stopRun };
+  /** Turns a run's Hold failures on or off (`runnerShownRefs` tells the hub). */
+  function setHold(run: RunnerRun, on: boolean) {
+    const kept = runs.value.find((r) => r.key === run.key);
+    if (kept) kept.holdFailures = on;
+  }
+
+  /**
+   * Stops a run the hub still shows but this window has no entry for (it was reloaded while the run went on), by the
+   * shell's id of it.
+   */
+  function stopShellRun(shellId: number) {
+    const core = tauriCore();
+    return core ? core.invoke('desktop_stop_local_tests', { runId: shellId }).catch(() => {}) : Promise.resolve();
+  }
+
+  return { runs, listen, startRequest, stopRun, setHold, stopShellRun };
 }

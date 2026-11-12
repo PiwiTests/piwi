@@ -39,11 +39,11 @@ them.
 
 ## Reuse the shared primitives
 
-**Build from `app/components/shared/` before writing new markup.** `SectionCard` / `CollapsibleSectionCard` (headers
-and folding), `EmptyState` / `LoadingState` / `ErrorState`, `StatTile` + `StatTileGrid` (never hand-rolled tile
-markup), `FiltersBlock` + `FilterBar`, `FilterToolbar`, `TableScroller`, `NavbarActions`, `BreadcrumbNav`,
-`ChartCard`, `DurationValue`, `ErrorText` (never print a raw error string: it carries ANSI codes), `DiffPatch` /
-`DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField`, `OpenInIdeLink`. What each
+**Build from `app/components/shared/` before writing new markup.** `SectionCard` / `CollapsibleSectionCard` (headers and
+folding), `EmptyState` / `LoadingState` / `ErrorState`, `StatTile` + `StatTileGrid` (never hand-rolled tile markup),
+`FiltersBlock` + `FilterBar`, `FilterToolbar`, `TableScroller`, `NavbarActions`, `BreadcrumbNav`, `ChartCard`,
+`DurationValue`, `ErrorText` (the `run-ui` layer's; never print a raw error string: it carries ANSI codes), `DiffPatch`
+/ `DiffFile`, `HelpHint`, `DocLink`, `EnvManagedBadge` / `EnvManagedAlert`, `SettingsField`, `OpenInIdeLink`. What each
 one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 - **A detail page's title is its `BreadcrumbNav`**: the navbar never repeats it.
@@ -139,8 +139,8 @@ views are exempt only where a rule says so.
   `variant="ghost"` for a disclosure or a menu trigger; no `warning`, `success` or `soft` buttons for ordinary actions.
   A selection is neutral too: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
   `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
-  of status-colored marks), `PRESSED_TOGGLE_CLASS` (a toggle button that is on), all in `app/utils/index.ts`. The one
-  exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
+  of status-colored marks), `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and the
+  layer's `ui-classes.ts` for the last two. The one exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the
   affected tests' components (add a new one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered
   pages.
 - **A link inside a sentence keeps the sentence's color**:
@@ -199,7 +199,7 @@ views are exempt only where a rule says so.
 
 ## Test outcome colors
 
-- **Each outcome has one color everywhere**: the `--color-status-*` tokens in `app/assets/css/main.css` (passed,
+- **Each outcome has one color everywhere**: the `--color-status-*` tokens in `@piwitests/run-ui/run-ui.css` (passed,
   failed, flaky, skipped, didn't run, running, interrupted; violet is the accent, never an outcome). Timed-out counts
   as failed, a pass after a failed attempt as flaky, and a `test.fixme()` skip is the second grey `fixme`
   (`isFixmeSkip` / `fixmeSkipPredicate`, `shared/utils/skip-kind.ts`), carved out of skipped as flaky is out of passed.
@@ -208,9 +208,9 @@ views are exempt only where a rule says so.
   test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled "Interrupted" in every
   legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
 - **Never hardcode a status color** in a bar, chart, legend, dot, history cell, timeline bar or filter chip: use
-  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`app/utils/status-palette.ts`, `flaky` the execution's stored
-  `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML,
-  `var(--color-status-*)` in an SVG `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
+  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`@piwitests/run-ui/status-palette`, `flaky` the execution's
+  stored `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML, `var(--color-status-*)` in an SVG
+  `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
   a registered Nuxt UI color). A view needing another shade adds it to the palette entry, not to the component.
 - **A pass rate takes its band and color from `app/utils/pass-rate.ts`** (`passRateTone`, `passRateTextClass`,
   `PASS_RATE_TONES`, `passRateStep` for heatmap cells), never from a threshold or color written at the call site.

@@ -6,7 +6,7 @@
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
-import { statusPalette } from '~/utils/status-palette';
+import { statusPalette } from '@piwitests/run-ui/status-palette';
 
 const props = defineProps<{
   reel: Reel;

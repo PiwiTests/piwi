@@ -5,16 +5,18 @@ This file is reference material: open it when you need to understand the code.
 
 ## What it holds
 
-| Path                                                           | What                                                                                                        |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `server/host.ts`                                               | The `node:http` host: the readiness probe, `serveRunTarget`, the window's files                             |
-| `server/main.ts`                                               | The sidecar's entry: reads the shell's environment and listens on `127.0.0.1`                               |
-| `scripts/build.mjs`                                            | Bundles the host into `dist/server.cjs`, stamped with this package's version                                |
-| `nuxt.config.ts`                                               | The window: a single-page app (`ssr: false`) extending `packages/run-ui`; `npm run runner:window` builds it |
-| `app/app.vue`                                                  | The window: the connection card, the runs, and the confirmation of a run request                            |
-| `app/utils/runner-runs.ts`, `app/composables/useRunnerRuns.ts` | The runs list: start, output, stop, and the shell's `piwi:local-run` events                                 |
-| `app/components/RunnerRunList.vue`                             | One card per run: its status, its output, and Stop while it runs                                            |
-| `tests/`                                                       | The host on a real socket                                                                                   |
+| Path                                                           | What                                                                                                                                                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/host.ts`                                               | The `node:http` host: the readiness probe, `serveRunTarget`, `serveShellRuns`, the window's files                                                                                                    |
+| `server/main.ts`                                               | The sidecar's entry: reads the shell's environment, opens the runs' hub and listens on `127.0.0.1`                                                                                                   |
+| `server/runs.ts`                                               | What the runs' hub says of Runner, and its run channel's folder prefix (`piwi-runner-run-`)                                                                                                          |
+| `scripts/build.mjs`                                            | Bundles the host into `dist/server.cjs`, stamped with this package's version                                                                                                                         |
+| `nuxt.config.ts`                                               | The window: a single-page app (`ssr: false`) extending `packages/run-ui`; `npm run runner:window` builds it                                                                                          |
+| `app/app.vue`                                                  | The window: the connection card, the runs, and the confirmation of a run request                                                                                                                     |
+| `app/utils/runner-runs.ts`, `app/composables/useRunnerRuns.ts` | The runs list: start, output, stop, Hold failures, the shell's `piwi:local-run` events, and the hub's name of each run                                                                               |
+| `app/components/RunnerRunList.vue`                             | One card per run: its status, Stop, its workers live from the hub (`DesktopRunSession`, the layer's), its output                                                                                     |
+| `app/plugins/runner-run-hub.client.ts`                         | The window on the hub's stream: held from its start until the hub listed its runs, then while a run runs or the hub has one; present while visible, `show` for Hold failures, to the front at a stop |
+| `tests/`                                                       | The host on a real socket                                                                                                                                                                            |
 
 ## The shell build
 
@@ -45,6 +47,19 @@ The two apps install side by side: each has its own identifier, product name, bi
 package name, MSI upgrade code and keychain service, so neither installer replaces the other.
 
 `runner_app` is compiled with and without the feature, so `cargo test` covers both.
+
+## The runs' hub
+
+Runner's host is the hub of the runs its shell starts, as the dashboard's desktop build is of its own: the same
+`ShellRuns` of `@piwitests/editor`, in Runner's words. As a requested run starts, the shell reads
+`GET /api/desktop/run-channel` from the host that proved its token and adds `PIWI_RUN_CHANNEL`, `PIWI_EDITOR_SEND` and
+`PIWI_RUN_REF` to the run (`bundled_hub_env`), so each worker keeps a run connection to the host. The runs' folders are
+the ones the shell links to the instance's projects (`linkedFolders` of `run-target`), and the code from a stop is made
+for their files alone. The window reaches the hub through `GET /api/desktop/runs/events` and
+`POST /api/desktop/runs/commands` (`useDesktopRunHub` of the layer, held by `plugins/runner-run-hub.client.ts`) and
+shows each running run's workers live (`DesktopRunSession`); a run's picks come back on `POST /api/desktop/runs/picks` with a token for that
+route alone. The hub's WebSocket listens behind the access token, but nothing names it to another tool: Runner writes no
+discovery file, observes no editor's runs and serves no agent tools.
 
 ## Quitting
 

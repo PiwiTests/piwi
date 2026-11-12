@@ -41,7 +41,8 @@ import {
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
-import { desktopRunOf, desktopStopSaid, desktopWorkerKey } from '~/utils/desktop-run-view';
+import { desktopRunOf } from '~/utils/desktop-run-view';
+import { desktopStopSaid, desktopWorkerKey } from '@piwitests/run-ui/run-view';
 import { endedAtStopWords } from '@piwitests/run-model/outcome';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 

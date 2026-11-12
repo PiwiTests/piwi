@@ -20,7 +20,7 @@ import { runLevelControls } from '@piwitests/run-model/controls';
 import { presenceLine } from '@piwitests/run-model/presence';
 import { tabStatus } from '@piwitests/run-model/status';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { DESKTOP_RUN_ICONS, DESKTOP_TONE_COLORS, desktopRunName, desktopSay } from '~/utils/desktop-run-view';
+import { DESKTOP_RUN_ICONS, DESKTOP_TONE_COLORS, desktopRunName, desktopSay } from '../utils/run-view';
 
 const props = defineProps<{ session: HubSession; named?: boolean }>();
 const emit = defineEmits<{ announce: [text: string] }>();

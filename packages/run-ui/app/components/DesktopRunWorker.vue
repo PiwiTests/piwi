@@ -37,7 +37,8 @@ import {
   testName,
 } from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
+import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
+import { PLAIN_RUN_VIEW_HOST, RUN_VIEW_HOST } from '../utils/run-view-host';
 import {
   DESKTOP_RUN_HUB,
   DESKTOP_RUN_ICONS,
@@ -48,7 +49,7 @@ import {
   desktopSay,
   desktopWaitedFor,
   desktopWorkerKey,
-} from '~/utils/desktop-run-view';
+} from '../utils/run-view';
 
 const props = defineProps<{
   session: HubSession;
@@ -69,12 +70,14 @@ const place = computed(() => (stop.value ? stopPlace(stop.value, props.session.r
  * the editor's launcher), or a worker's window, which holds none. Outside the shell (no window), the main window's.
  */
 const mainWindow = ref(true);
-/** Open in a window: offered in the app's main window alone, whose tray shows the worker. */
+/** What the host adds: a worker's own window and the link to a stop's file (`RunViewHost`). */
+const host = inject(RUN_VIEW_HOST, PLAIN_RUN_VIEW_HOST);
+/** Open in a window: offered in the host's main window alone, whose tray shows the worker, where the host has it. */
 const windowable = ref(false);
 onMounted(() => {
   const label = tauriWindowLabel();
   mainWindow.value = label === null || label === 'main';
-  windowable.value = !!tauriCore() && label === 'main';
+  windowable.value = host.workerWindows && !!tauriCore() && label === 'main';
 });
 
 const toast = useToast();
@@ -495,8 +498,9 @@ onBeforeUnmount(() => {
         <dd class="font-mono break-words text-highlighted">{{ stop.title }}</dd>
         <dt class="text-muted">{{ desktopSay('runs_whereLabel') }}</dt>
         <dd class="min-w-0 text-highlighted">
-          <OpenInIdeLink
-            v-if="placeFile && mainWindow"
+          <component
+            :is="host.placeLink"
+            v-if="placeFile && mainWindow && host.placeLink"
             :file-path="placeFile"
             :line="stop.line + 1"
             :root="session.root"
