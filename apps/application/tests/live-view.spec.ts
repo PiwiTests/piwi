@@ -22,7 +22,8 @@ import { holdWorkerStream } from './utils/live-view';
  * its view ends, saying why, as the sharing stops. A worker of the run's live view, played by this spec, shows
  * where it stopped on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
  * as the project turns the live view off. **Watch all** shows a tile of each worker on one watch, and a click shows one
- * in full on it, each worker hearing what the page asks of its images.
+ * in full on it, each worker hearing what the page asks of its images; a worker that says no lane stays in full view on
+ * the test it runs.
  */
 
 const target = resolveE2ETarget();
@@ -203,6 +204,88 @@ type Workers = {
 
 async function liveWorkers(request: APIRequestContext, runId: number): Promise<Workers> {
   return (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Workers;
+}
+
+/**
+ * A live run in the project with the live view on, its workers played by this spec: worker `i` runs `tests[i]`, in lane
+ * `i` when the test says so, its row begun when it says so, and holds its stream, sending `shots[i]` twice a second
+ * in JSON, as a reporter that predates live messages does.
+ */
+async function playWorkers(
+  request: APIRequestContext,
+  tests: Array<{ title: string; lane: boolean; row: boolean }>,
+  shot: Buffer,
+): Promise<{
+  runId: number;
+  workers: Array<ReturnType<typeof holdWorkerStream>>;
+  shots: Buffer[];
+  end: () => Promise<void>;
+}> {
+  const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+  expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+  const setup = await request.post('/api/test-runs/setup', {
+    data: { projectName: PROJECT.LIVE_VIEW_ON, startTime: new Date().toISOString(), liveView: true },
+  });
+  expect(setup.ok()).toBeTruthy();
+  const { runId, setupToken, liveView } = (await setup.json()) as {
+    runId: number;
+    setupToken: string;
+    liveView: { key: string };
+  };
+  const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: tests.length } });
+  const { streamToken } = (await begun.json()) as { streamToken: string };
+  const now = Date.now();
+  await request.post(`/api/test-runs/${runId}/events`, {
+    data: {
+      streamToken,
+      testCases: tests.flatMap(({ title, lane, row }, worker) =>
+        row
+          ? [
+              {
+                type: 'begin',
+                title,
+                location: `tests/live.spec.ts:${worker * 5 + 3}:1`,
+                workerIndex: worker,
+                ...(lane ? { parallelIndex: worker } : {}),
+                startedAt: now - 1000,
+              },
+            ]
+          : [],
+      ),
+    },
+  });
+  const workers = tests.map(({ lane }, worker) =>
+    holdWorkerStream(target.baseUrl, runId, liveView.key, lane ? { worker, slot: worker } : { worker }),
+  );
+  const shots = tests.map(() => shot);
+  const send = () =>
+    Promise.all(
+      tests.map(({ title, lane }, worker) =>
+        request.post(`/api/test-runs/${runId}/live-view`, {
+          headers: { Authorization: `Bearer ${liveView.key}` },
+          data: {
+            type: 'frame',
+            shard: null,
+            worker,
+            ...(lane ? { slot: worker } : {}),
+            data: shots[worker]!.toString('base64'),
+            call: { title: 'Click', file: 'tests/live.spec.ts', line: worker * 5 + 4 },
+            test: title,
+          },
+        }),
+      ),
+    );
+  const sending = setInterval(() => void send().catch(() => undefined), 500);
+  return {
+    runId,
+    workers,
+    shots,
+    end: async () => {
+      clearInterval(sending);
+      for (const worker of workers) worker.close();
+      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+    },
+  };
 }
 
 /**
@@ -762,98 +845,107 @@ test.describe('Live view of a run', () => {
     request,
   }, testInfo) => {
     test.setTimeout(120_000);
-    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
-    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
-    const setup = await request.post('/api/test-runs/setup', {
-      data: { projectName: PROJECT.LIVE_VIEW_ON, startTime: new Date().toISOString(), liveView: true },
-    });
-    expect(setup.ok()).toBeTruthy();
-    const { runId, setupToken, liveView } = (await setup.json()) as {
-      runId: number;
-      setupToken: string;
-      liveView: { key: string };
-    };
-    const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 2 } });
-    const { streamToken } = (await begun.json()) as { streamToken: string };
-    const tests = ['pays on a slow page', 'searches the catalog'];
-    const now = Date.now();
-    await request.post(`/api/test-runs/${runId}/events`, {
-      data: {
-        streamToken,
-        testCases: tests.map((title, worker) => ({
-          type: 'begin',
-          title,
-          location: `tests/live.spec.ts:${worker * 5 + 3}:1`,
-          workerIndex: worker,
-          parallelIndex: worker,
-          startedAt: now - 1000,
-        })),
-      },
-    });
-    // Two workers, each in its lane, each sending an image of its page as an older reporter does, in JSON.
-    const workers = [0, 1].map((worker) =>
-      holdWorkerStream(target.baseUrl, runId, liveView.key, { worker, slot: worker }),
-    );
     const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
-    const send = () =>
-      Promise.all(
-        tests.map((test, worker) =>
-          request.post(`/api/test-runs/${runId}/live-view`, {
-            headers: { Authorization: `Bearer ${liveView.key}` },
-            data: {
-              type: 'frame',
-              shard: null,
-              worker,
-              slot: worker,
-              data: shot.toString('base64'),
-              call: { title: 'Click', file: 'tests/live.spec.ts', line: worker * 5 + 4 },
-              test,
-            },
-          }),
-        ),
-      );
-    const sending = setInterval(() => void send().catch(() => undefined), 500);
-    const lastView = (worker: number) =>
-      workers[worker]!.heard()
-        .filter((message) => message.type === 'view')
+    const run = await playWorkers(
+      request,
+      [
+        { title: 'pays on a slow page', lane: true, row: true },
+        { title: 'searches the catalog', lane: true, row: true },
+      ],
+      shot,
+    );
+    const last = (worker: number, type: string) =>
+      run.workers[worker]!.heard()
+        .filter((message) => message.type === type)
         .at(-1) ?? null;
     try {
-      await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(2);
-      await page.goto(`/test-runs/${runId}`);
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(2);
+      await page.goto(`/test-runs/${run.runId}`);
       await page.getByTestId('watch-all-toggle').click({ timeout: 30_000 });
       // A tile of each worker, its image, its test: the workers send tiles, one a second.
       const images = page.getByTestId('watch-all-image');
       await expect(images).toHaveCount(2, { timeout: 30_000 });
       await expect(page.getByTestId('watch-all-tile').nth(1)).toContainText('searches the catalog');
-      await expect.poll(() => lastView(0)).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
-      expect(lastView(1)).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
+      await expect.poll(() => last(0, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect(last(1, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
       await page.screenshot({ path: testInfo.outputPath('watch-all.png') });
 
-      // A click shows the worker in full, on the same watch: that worker is asked for full images.
+      // A click shows worker 2 in full, on the same watch: that worker is asked for full images.
       await page.getByRole('button', { name: /^Show worker 2 in full/ }).click();
       const panel = page.getByTestId('lane-panel');
-      await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      const frame = panel.getByTestId('live-frame');
+      await expect(frame).toBeVisible({ timeout: 30_000 });
       await expect(panel).toContainText('searches the catalog');
-      await expect.poll(() => (lastView(1) as { fps?: number } | null)?.fps).toBe(4);
-      expect(lastView(0)).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
-      expect((await liveWorkers(request, runId)).viewers).toBe(1);
-
-      // Watch all off: the full view stays, and worker 1 is watched by nobody.
-      await page.getByTestId('watch-all-toggle').click();
-      await expect(images).toHaveCount(0);
+      await expect.poll(() => (last(1, 'view') as { fps?: number } | null)?.fps).toBe(4);
+      expect(last(0, 'view')).toEqual({ type: 'view', width: 320, height: 200, fps: 1 });
+      expect((await liveWorkers(request, run.runId)).viewers).toBe(1);
+      // Worker 2's next image, another JPEG, is the one the full view shows.
+      const before = await frame.getAttribute('src');
+      const next = await page.screenshot({ type: 'jpeg', quality: 40, clip: { x: 0, y: 0, width: 160, height: 100 } });
+      run.shots[1] = next;
       await expect
         .poll(() =>
-          workers[0]!
-            .heard()
-            .filter((message) => message.type === 'viewers')
-            .at(-1),
+          frame.evaluate(async (image: HTMLImageElement) => {
+            const response = await fetch(image.src).catch(() => null);
+            return response ? (await response.arrayBuffer()).byteLength : 0;
+          }),
         )
-        .toEqual({ type: 'viewers', count: 0 });
-      await expect(panel.getByTestId('live-frame')).toBeVisible();
+        .toBe(next.length);
+      expect(await frame.getAttribute('src')).not.toBe(before);
+
+      // Watch all off: worker 1 is watched by nobody, and worker 2's full view stays, at its size and pace.
+      await page.getByTestId('watch-all-toggle').click();
+      await expect(images).toHaveCount(0);
+      await expect.poll(() => last(0, 'viewers')).toEqual({ type: 'viewers', count: 0 });
+      expect(last(1, 'viewers')).toEqual({ type: 'viewers', count: 1 });
+      expect(last(1, 'view')).toMatchObject({ type: 'view', fps: 4 });
+      expect(last(1, 'view')).not.toMatchObject({ width: 320, height: 200 });
+      await expect(frame).toBeVisible();
+      await expect(panel.getByRole('heading', { name: 'Worker 2 · live' })).toBeVisible();
     } finally {
-      clearInterval(sending);
-      for (const worker of workers) worker.close();
-      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+      await run.end();
+    }
+  });
+
+  test('Watch all shows a worker that says no lane in full from its tile, on the test it runs', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const shot = await page.screenshot({ type: 'jpeg', quality: 40 });
+    // Two workers of a reporter that says no lane: the first's test has its row, the second's has none yet.
+    const run = await playWorkers(
+      request,
+      [
+        { title: 'pays on a slow page', lane: false, row: true },
+        { title: 'searches the catalog', lane: false, row: false },
+      ],
+      shot,
+    );
+    try {
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers.length).toBe(2);
+      await page.goto(`/test-runs/${run.runId}`);
+      await page.getByTestId('watch-all-toggle').click({ timeout: 30_000 });
+      await expect(page.getByTestId('watch-all-image')).toHaveCount(2, { timeout: 30_000 });
+      const panel = page.getByTestId('lane-panel');
+      const frame = panel.getByTestId('live-frame');
+      for (const [worker, title] of [
+        [0, 'pays on a slow page'],
+        [1, 'searches the catalog'],
+      ] as const) {
+        await page.getByRole('button', { name: new RegExp(`^Show worker ${worker} in full`) }).click();
+        const live = panel.getByRole('heading', { name: `Worker ${worker} · live` });
+        await expect(live).toBeVisible({ timeout: 30_000 });
+        await expect(panel).toContainText(title);
+        await expect(frame).toBeVisible({ timeout: 30_000 });
+        // The worker's next images show, and the view stays live on its test.
+        const before = await frame.getAttribute('src');
+        await expect.poll(() => frame.getAttribute('src'), { timeout: 10_000 }).not.toBe(before);
+        await expect(live).toBeVisible();
+        await expect(panel.getByTestId('live-status')).toHaveText('');
+      }
+    } finally {
+      await run.end();
     }
   });
 });
