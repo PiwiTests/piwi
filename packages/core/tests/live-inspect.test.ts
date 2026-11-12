@@ -800,4 +800,51 @@ describe('the resources a snapshot names', () => {
     expect(resolveResourceUrl('file:///etc/passwd', 'http://shop.test/')).toBeNull();
     expect(resolveResourceUrl('a.png', null)).toBeNull();
   });
+
+  test('of a stylesheet are read in one pass, whatever it holds, as the patterns of url() and @import read them', () => {
+    /** The patterns a stylesheet's references are defined by. */
+    const byPatterns = (css: string): string[] => {
+      const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const found = new Set<string>();
+      for (const match of text.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)/gi)) {
+        found.add((match[1] ?? match[2] ?? match[3] ?? '').trim());
+      }
+      for (const match of text.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi)) {
+        found.add((match[1] ?? match[2] ?? '').trim());
+      }
+      return [...found].filter((ref) => ref && !/^data:/i.test(ref));
+    };
+    const pieces = [
+      'url(',
+      'URL(',
+      '"',
+      "'",
+      ')',
+      ' ',
+      '\n',
+      '/*',
+      '*/',
+      '@import',
+      '@IMPORT',
+      'a.png',
+      'b c',
+      'data:x',
+    ];
+    let seed = 7;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let round = 0; round < 5000; round++) {
+      let css = '';
+      for (let i = random(24); i > 0; i--) css += pieces[random(pieces.length)];
+      expect(cssReferences(css), JSON.stringify(css)).toEqual(byPatterns(css));
+    }
+    // What made the patterns read the text again from each start takes one pass.
+    for (const repeated of ['url("', "url('", 'url(', '/*', '@import "', 'url(url( ']) {
+      const started = performance.now();
+      cssReferences(repeated.repeat(Math.ceil(400_000 / repeated.length)));
+      expect(performance.now() - started, repeated).toBeLessThan(500);
+    }
+  });
 });

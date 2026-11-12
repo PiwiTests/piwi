@@ -801,14 +801,101 @@ const MAX_CSS_SCANNED = MAX_RESOURCE_BYTES;
  * left out; `data:` addresses left out too.
  */
 export function cssReferences(css: string): string[] {
-  const text = css.slice(0, MAX_CSS_SCANNED).replace(/\/\*[\s\S]*?\*\//g, '');
+  const text = withoutCssComments(css.slice(0, MAX_CSS_SCANNED));
+  const lower = text.toLowerCase();
+  const scan = new CssScan(text);
   const found = new Set<string>();
-  for (const match of text.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)/gi)) {
-    found.add((match[1] ?? match[2] ?? match[3] ?? '').trim());
+  // Each `url(…)`: a quoted address, or one with no quote, space or `)`, then `)`; the next is looked for past it.
+  for (let at = lower.indexOf('url('); at !== -1;) {
+    const start = scan.pastSpace(at + 4);
+    const quote = text[start];
+    let value: string;
+    let end: number;
+    const close = quote === '"' || quote === "'" ? scan.next(quote, start + 1) : -1;
+    if (close !== -1) {
+      value = text.slice(start + 1, close);
+      end = close + 1;
+    } else if (quote === '"' || quote === "'") {
+      at = lower.indexOf('url(', at + 4);
+      continue;
+    } else {
+      end = scan.delimiter(start);
+      value = text.slice(start, end);
+    }
+    const after = scan.pastSpace(end);
+    if (text[after] === ')') {
+      found.add(value.trim());
+      at = lower.indexOf('url(', after + 1);
+    } else {
+      at = lower.indexOf('url(', at + 4);
+    }
   }
-  for (const match of text.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi))
-    found.add((match[1] ?? match[2] ?? '').trim());
+  // Each `@import` followed by space and a quoted address; the next is looked for past it.
+  for (let at = lower.indexOf('@import'); at !== -1;) {
+    const start = scan.pastSpace(at + 7);
+    const quote = text[start];
+    const close = start > at + 7 && (quote === '"' || quote === "'") ? scan.next(quote, start + 1) : -1;
+    if (close !== -1) found.add(text.slice(start + 1, close).trim());
+    at = lower.indexOf('@import', close !== -1 ? close + 1 : at + 7);
+  }
   return [...found].filter((ref) => ref && !/^data:/i.test(ref));
+}
+
+/** `css` with each comment that ends taken out; one that never ends is kept, as it stands. */
+function withoutCssComments(css: string): string {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = css.indexOf('/*', from);
+    const close = open === -1 ? -1 : css.indexOf('*/', open + 2);
+    if (close === -1) return out + css.slice(from);
+    out += css.slice(from, open);
+    from = close + 2;
+  }
+}
+
+/** Is `char` a space as `\s` reads one. */
+function isCssSpace(char: string | undefined): boolean {
+  return char !== undefined && /\s/.test(char);
+}
+
+/**
+ * Searches of one stylesheet whose starts only move forward: each keeps where it last ended, so the whole scan reads
+ * the text a bounded number of times, whatever it holds.
+ */
+class CssScan {
+  private readonly quotes = new Map<string, { from: number; at: number }>();
+  private delimited = { from: -1, at: -1 };
+  private spaced = { from: -1, at: -1 };
+
+  constructor(private readonly text: string) {}
+
+  /** The first `char` at or after `from`, or -1. */
+  next(char: string, from: number): number {
+    const known = this.quotes.get(char);
+    if (known && known.from <= from && (known.at === -1 || known.at >= from)) return known.at;
+    const at = this.text.indexOf(char, from);
+    this.quotes.set(char, { from, at });
+    return at;
+  }
+
+  /** The first `)`, quote or space at or after `from`, or the text's length. */
+  delimiter(from: number): number {
+    if (this.delimited.from <= from && from <= this.delimited.at) return this.delimited.at;
+    let at = from;
+    while (at < this.text.length && !')\'"'.includes(this.text[at]!) && !isCssSpace(this.text[at])) at++;
+    this.delimited = { from, at };
+    return at;
+  }
+
+  /** The first place at or after `from` that holds no space. */
+  pastSpace(from: number): number {
+    if (this.spaced.from <= from && from <= this.spaced.at) return this.spaced.at;
+    let at = from;
+    while (isCssSpace(this.text[at])) at++;
+    this.spaced = { from, at };
+    return at;
+  }
 }
 
 /** An address a page names, `ref`, read against `base`: an http(s) address alone; null for any other, or none. */
