@@ -177,7 +177,8 @@ shell and are feature-equivalent.
 - **The release's file names come from `ASSET_NAME_PATTERN`** in `reusable-publish-desktop.yml` (`Piwi-Desktop_…`) and
   `reusable-publish-runner.yml` (`Piwi-Runner_…`), never from `productName`, and carry no version: the docs link
   `releases/latest/download/<file>` (`apps/application/shared/app-downloads.mjs`, held to the patterns by
-  `tests/unit/app-downloads.test.ts`). The step that writes `latest-nsis.json` finds the `.exe` by that pattern.
+  `tests/unit/app-downloads.test.ts`). The step that writes `latest-nsis.json` finds the `.exe` by that pattern, and
+  Piwi Runner's `apps/runner/scripts/release-files.mjs` renders it for the files it uploads.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.

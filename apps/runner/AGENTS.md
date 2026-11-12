@@ -59,7 +59,8 @@ npx tauri build --features runner --config src-tauri/runner.conf.json
 ```
 
 The Release workflow builds the installers for the same platforms as the desktop app (`reusable-publish-runner.yml`)
-and attaches them to the tag's GitHub release as `Piwi-Runner_<arch>…`, beside the desktop app's, with
+and attaches them to the tag's GitHub release as `Piwi-Runner_<arch>…` (`scripts/release-files.mjs`, then
+`gh release upload`, never tauri-action's upload, which drops GitHub's error), beside the desktop app's, with
 update signatures and `latest-runner.json` when the signing key is set. They are signed ad hoc on macOS and unsigned on
 Windows. The tray's **Check for updates…** and the startup check are `updates.rs` (`check_from_tray`), with no window
 command and no settings page.
