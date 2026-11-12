@@ -125,6 +125,10 @@ How the server merges shards:
   initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
   export, and the relay holds one waiting frame per worker a watch shows at most (`tests/unit/live-view-relay.test.ts`).
+- **What Inspect keeps lives in memory, bounded, and goes with the run** (`RunInspect`, `server/utils/live-inspect.ts`):
+  a worker's snapshots, the run's resources of `inspectResourceType` alone, never a database row, a file or a log
+  line; its page is served to the person's own watch with Inspect open, as the stored trace's snapshot frame is
+  (`snapshotFrameDocument`; `tests/unit/live-inspect-store.test.ts`, `tests/unit/live-view-routes.test.ts`).
 - **A watch is changed by its own person alone**: `[id]/live-view/watch`'s `POST` names the watch by the random id its
   stream opened with (`hello`, said on that stream alone), and `changeWatch` refuses another person's or another run's
   as missing (`tests/unit/live-view-relay.test.ts`). It answers what the watch shows then (`watch`, and `data.watch` of

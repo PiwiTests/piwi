@@ -25,6 +25,7 @@ import {
   MAX_LIVE_TILE_FRAME,
   MAX_RELAYED_FPS,
   MAX_RELAYED_PAGE_EVENTS,
+  MAX_RELAYED_SNAPSHOTS,
   MAX_RELAYED_THUMBS,
   MAX_RELAYED_TILE_FPS,
   MAX_WATCH_BYTES_PER_SECOND,
@@ -62,14 +63,15 @@ afterEach(() => {
 /** Let the tellings of what each worker's watches ask go: they go `TELL_MS` apart at most. */
 const told = () => vi.advanceTimersByTime(TELL_MS);
 
-/** What the instance asks of a worker's images, and the layers its full views ask beside them. */
-const view = (width: number, height: number, fps: number, full: boolean, layers: string[] = []) => ({
+/** What the instance asks of a worker's images, the layers its full views ask beside them, and whether one inspects. */
+const view = (width: number, height: number, fps: number, full: boolean, layers: string[] = [], inspect = false) => ({
   type: 'view',
   width,
   height,
   fps,
   full,
   layers,
+  inspect,
 });
 
 /** A stream as a test reads it: what was sent, whether it is backed up, and its close. */
@@ -1149,7 +1151,14 @@ describe('watch all', () => {
     // Another lane in full: the first hears nobody watches, the second that it is watched.
     expect(live.changeWatch(7, id, 3, { focus: { shard: null, worker: 1, slot: 1 } })).toEqual({
       refused: null,
-      shown: { focus: { shard: null, worker: 1, slot: 1 }, tiles: false, width: 640, height: 400, layers: [] },
+      shown: {
+        focus: { shard: null, worker: 1, slot: 1 },
+        tiles: false,
+        width: 640,
+        height: 400,
+        layers: [],
+        inspect: false,
+      },
     });
     told();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
@@ -1178,6 +1187,7 @@ describe('watch all', () => {
       width: 900,
       height: 600,
       layers: [],
+      inspect: false,
     });
     told();
     expect(workers[1]!.sent.at(-1)).toEqual(view(LIVE_TILE_WIDTH, LIVE_TILE_HEIGHT, LIVE_TILE_FPS, false));
@@ -1225,7 +1235,7 @@ describe('watch all', () => {
       }),
     ).toEqual({
       refused: { status: 404, message: 'This worker is not in the live view of the run.' },
-      shown: { focus: null, tiles: true, width: 800, height: 500, layers: [] },
+      shown: { focus: null, tiles: true, width: 800, height: 500, layers: [], inspect: false },
     });
     // The worker shown before takes a tile now, for the same watch.
     told();
@@ -1293,7 +1303,14 @@ describe('watch all', () => {
     first.close();
     const waiting = {
       refused: null,
-      shown: { focus: { shard: null, worker: 0, slot: 0 }, tiles: true, width: 640, height: 400, layers: [] },
+      shown: {
+        focus: { shard: null, worker: 0, slot: 0 },
+        tiles: true,
+        width: 640,
+        height: 400,
+        layers: [],
+        inspect: false,
+      },
     };
     expect(live.changeWatch(7, id, null, { focus: { shard: null, worker: 0, slot: 0 } })).toEqual(waiting);
     const opened = new FakeSink();
@@ -1425,5 +1442,176 @@ describe('watch all', () => {
     expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
     live.endRun(7);
     expect(live.viewersOf(7)).toBe(0);
+  });
+});
+
+describe('Inspect', () => {
+  const AT = 1_800_000_000_000;
+  /** A snapshot of worker `worker`'s page, as the route reads it: a full one of the main frame unless said. */
+  const snapshot = (
+    worker: number,
+    call: string,
+    phase: 'before' | 'action' | 'after',
+    options: { main?: boolean; full?: boolean; bytes?: number; slot?: number } = {},
+  ): LiveRelayMessage => ({
+    type: 'snapshot',
+    shard: null,
+    worker,
+    ...(options.slot === undefined ? {} : { slot: options.slot }),
+    snapshot: {
+      call,
+      title: `Click ${call}`,
+      phase,
+      page: 'page@1',
+      frame: options.main === false ? 'frame@2' : 'frame@1',
+      main: options.main ?? true,
+      full: options.full ?? true,
+      index: options.full === false ? 1 : 0,
+      at: AT,
+      resources: [{ url: 'https://shop.test/app.css', sha1: `${'a'.repeat(40)}.css` }],
+    },
+    data: new TextEncoder().encode(
+      JSON.stringify({ html: ['HTML', {}, ['BODY', {}, options.bytes ? 'x'.repeat(options.bytes) : call]] }),
+    ),
+    test: 'pays',
+  });
+  /** What a watch hears of that snapshot: its header, without its JSON nor the resources it names. */
+  const notice = (worker: number, call: string, phase: string, slot?: number) => ({
+    type: 'snapshot',
+    shard: null,
+    worker,
+    ...(slot === undefined ? {} : { slot }),
+    call,
+    title: `Click ${call}`,
+    phase,
+    page: 'page@1',
+    frame: 'frame@1',
+    main: true,
+    full: true,
+    index: 0,
+    at: AT,
+    test: 'pays',
+  });
+  const notices = (sink: FakeSink) => got(sink).filter((m) => (m as { type: string }).type === 'snapshot');
+  const lastView = (worker: FakeSink) => worker.sent.filter((m) => (m as { type: string }).type === 'view').at(-1);
+
+  test('tells a worker whether a full view inspects it, and the watches that inspect it of each snapshot alone', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    const [inspecting, watching] = [new FakeSink(), new FakeSink()];
+    const focus = { shard: null, worker: 0 };
+    watch(live, 7, focus, watching);
+    told();
+    expect(lastView(worker)).toEqual(view(640, 400, LIVE_FRAME_FPS, true));
+    watch(live, 7, focus, inspecting, null, { inspect: true });
+    told();
+    expect(lastView(worker)).toEqual(view(640, 400, LIVE_FRAME_FPS, true, [], true));
+
+    expect(live.receive(7, snapshot(0, 'call@1', 'before'))).toBeNull();
+    // Another frame's snapshot is not told, nor kept; the same moment again is told once.
+    expect(live.receive(7, snapshot(0, 'call@1', 'before', { main: false }))).toBeNull();
+    expect(live.receive(7, snapshot(0, 'call@1', 'before'))).toBeNull();
+    expect(notices(inspecting)).toEqual([notice(0, 'call@1', 'before')]);
+    expect(notices(watching)).toEqual([]);
+    // Why the worker sends no snapshot reaches the watches that inspect it.
+    live.receive(7, {
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      refused: 'This project masks elements.',
+      test: 'pays',
+    });
+    expect(notices(inspecting).at(-1)).toEqual({
+      type: 'snapshot',
+      shard: null,
+      worker: 0,
+      refused: 'This project masks elements.',
+      test: 'pays',
+    });
+
+    // The last watch that inspects it closes Inspect: the worker hears so.
+    const id = (inspecting.sent[0] as { watch: string }).watch;
+    expect(live.changeWatch(7, id, null, { inspect: false }).shown).toMatchObject({ inspect: false });
+    told();
+    expect(lastView(worker)).toEqual(view(640, 400, LIVE_FRAME_FPS, true));
+  });
+
+  test('tells a watch that opens Inspect, or follows its lane to a new worker, the snapshots kept of that worker', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => new FakeSink());
+    live.receive(7, snapshot(0, 'call@1', 'before', { slot: 0 }));
+    live.receive(7, snapshot(0, 'call@1', 'after', { slot: 0, full: false }));
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0, slot: 0 }, page);
+    expect(notices(page)).toEqual([]);
+    const id = (page.sent[0] as { watch: string }).watch;
+    live.changeWatch(7, id, null, { inspect: true });
+    expect(notices(page)).toEqual([
+      notice(0, 'call@1', 'before', 0),
+      { ...notice(0, 'call@1', 'after', 0), full: false, index: 1 },
+    ]);
+    // The lane's worker starts again, and has sent a snapshot before the watch came to it.
+    const next = live.authorize(7, live.mintKey(7, 1))!;
+    live.receive(7, snapshot(0, 'call@1', 'before', { slot: 0 }));
+    live.connectWorker(next, { shard: null, worker: 1, slot: 0 }, () => new FakeSink());
+    live.receive(7, snapshot(1, 'call@9', 'before', { slot: 0 }));
+    expect(notices(page).at(-1)).toEqual(notice(1, 'call@9', 'before', 0));
+  });
+
+  test('holds back the notices of a backed up watch, in their order', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const page = new FakeSink();
+    watch(live, 7, { shard: null, worker: 0 }, page, null, { inspect: true });
+    page.full = true;
+    for (const call of ['call@1', 'call@2', 'call@3']) live.receive(7, snapshot(0, call, 'before'));
+    expect(notices(page)).toEqual([]);
+    page.drain();
+    expect(notices(page).map((m) => (m as { call: string }).call)).toEqual(['call@1', 'call@2', 'call@3']);
+  });
+
+  test('bounds a worker’s snapshots a second, and charges them and the resources to the run’s bytes', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    live.connectWorker(entry, { shard: null, worker: 1 }, () => new FakeSink());
+    for (let i = 0; i < MAX_RELAYED_SNAPSHOTS; i++) {
+      expect(live.receive(7, snapshot(0, `call@${i}`, 'before'))).toBeNull();
+    }
+    expect(live.receive(7, snapshot(0, 'call@99', 'before'))).toMatchObject({ status: 429 });
+    const resource: LiveRelayMessage = {
+      type: 'resource',
+      shard: null,
+      worker: 1,
+      resource: { sha1: `${'b'.repeat(40)}.png`, contentType: 'image/png' },
+      data: new Uint8Array(MAX_LIVE_BYTES_PER_RUN - 2000),
+    };
+    expect(live.receive(7, resource)).toBeNull();
+    expect(live.receive(7, snapshot(1, 'call@1', 'before', { bytes: 4096 }))).toMatchObject({ status: 429 });
+  });
+
+  test('serves what it keeps to its own person’s watch with Inspect open alone, and drops it with the run', async () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    const [inspecting, watching] = [new FakeSink(), new FakeSink()];
+    watch(live, 7, { shard: null, worker: 0 }, inspecting, 3, { inspect: true });
+    watch(live, 7, { shard: null, worker: 0 }, watching, 3);
+    const id = (sink: FakeSink) => (sink.sent[0] as { watch: string }).watch;
+    live.receive(7, snapshot(0, 'call@1', 'after'));
+    const kept = live.inspectOf(7, id(inspecting), 3);
+    if ('status' in kept) throw new Error(kept.message);
+    expect(await kept.render(':0', 'call@1', 'after')).toMatchObject({
+      html: '<html><body>call@1</body></html>',
+    });
+    expect(live.inspectOf(7, id(inspecting), 4)).toMatchObject({ status: 404 });
+    expect(live.inspectOf(8, id(inspecting), 3)).toMatchObject({ status: 404 });
+    expect(live.inspectOf(7, id(watching), 3)).toMatchObject({ status: 409 });
+    live.endRun(7);
+    expect(live.inspectOf(7, id(inspecting), 3)).toMatchObject({ status: 410 });
   });
 });

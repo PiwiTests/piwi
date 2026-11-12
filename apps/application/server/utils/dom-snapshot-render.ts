@@ -78,6 +78,12 @@ export interface RenderOptions {
    * kept, so pages with external CSS still render styled either way.
    */
   dropStyles?: boolean;
+  /**
+   * Called for each back-reference that names a snapshot the list does not
+   * hold: a list cut short of the frame's last full snapshot renders a
+   * placeholder in its place.
+   */
+  onUnresolved?: () => void;
 }
 
 function escapeText(text: string): string {
@@ -111,6 +117,16 @@ const LIVE = {
 /** What a password field shows: that it holds something, never what. */
 export const PASSWORD_MASK = '••••••••';
 
+/**
+ * A URL that runs code when followed (`javascript:`, `vbscript:`), as a browser
+ * reads it: ASCII whitespace and control characters ignored.
+ */
+function isScriptUrl(value: string): boolean {
+  let read = '';
+  for (const char of value) if (char > ' ') read += char;
+  return /^(?:javascript|vbscript):/i.test(read);
+}
+
 /** Input types whose `value` is not what the field shows: a checkbox's or radio's submitted value, a file's fake path. */
 const VALUELESS_INPUT_TYPES = new Set(['checkbox', 'radio', 'file']);
 
@@ -118,7 +134,7 @@ type Attrs = Record<string, unknown>;
 
 /**
  * One element's attributes as the renderer writes them: its recorded ones,
- * less inline handlers and unsafe names, with its live state applied. What
+ * less inline handlers, script URLs and unsafe names, with its live state applied. What
  * markup can say is written as markup: a field's value (masked in a password
  * field), a checkbox's or option's state, the image the page chose from a
  * `srcset`, an open dialog. The rest becomes a `data-piwi-*` marker the frame
@@ -130,8 +146,9 @@ function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value
   const out = new Map<string, string>();
   for (const [name, value] of Object.entries(attrs)) {
     if (name.startsWith('__playwright')) continue;
-    // Inline handlers are noise for diagnosis and unsafe to re-emit.
+    // Inline handlers and script URLs are noise for diagnosis and unsafe to re-emit.
     if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
+    if (isScriptUrl(String(value))) continue;
     out.set(name, String(value));
   }
   const live = (name: string): string | undefined => {
@@ -212,7 +229,7 @@ export function renderSnapshotHtml(
   snapshotName: string,
   options: RenderOptions = {},
 ): string | null {
-  const { dropStyles = false } = options;
+  const { dropStyles = false, onUnresolved } = options;
   const target =
     snapshots.find((s) => s.snapshotName === snapshotName && s.isMainFrame !== false) ??
     snapshots.find((s) => s.snapshotName === snapshotName);
@@ -255,6 +272,7 @@ export function renderSnapshotHtml(
     if (typeof n === 'string') return n;
     if (!Array.isArray(n) || !Array.isArray(n[0])) return null;
     const ref = deref(n[0], snapshotIndex);
+    if (!ref) onUnresolved?.();
     return ref ? textOf(ref.node, ref.snapshotIndex) : null;
   };
 
@@ -264,6 +282,7 @@ export function renderSnapshotHtml(
 
     if (Array.isArray(n[0])) {
       const ref = deref(n[0], snapshotIndex);
+      if (!ref) onUnresolved?.();
       return ref ? render(ref.node, ref.snapshotIndex) : '<!-- [unresolved snapshot reference] -->';
     }
 
@@ -667,6 +686,28 @@ export function pointerAt(
 }
 
 /**
+ * Render one named snapshot and sanitize it within `capChars`: full fidelity
+ * first (inline `<style>` kept), and, when keeping styles blows the cap and
+ * would cut the real `<body>` away, lean (inline CSS dropped), which reliably
+ * fits and keeps the whole DOM. Null when the snapshot does not render.
+ * `onUnresolved` hears each back-reference the list cannot resolve.
+ */
+export function renderSanitizedSnapshot(
+  snapshots: TraceFrameSnapshot[],
+  snapshotName: string,
+  capChars: number,
+  options: SanitizeOptions = {},
+  onUnresolved?: () => void,
+): { html: string; truncated: boolean } | null {
+  const styled = renderSnapshotHtml(snapshots, snapshotName, { onUnresolved });
+  if (!styled) return null;
+  const result = sanitizeDomSnapshot(styled, capChars, options);
+  if (!result.truncated) return result;
+  const lean = renderSnapshotHtml(snapshots, snapshotName, { dropStyles: true });
+  return lean ? sanitizeDomSnapshot(lean, capChars, options) : result;
+}
+
+/**
  * Pick and render the failure-time DOM from parsed trace data: the failing
  * action's after-snapshot (the page when the error was raised, the moment the
  * failure screenshot and the failing aria tree show), falling back to its
@@ -704,16 +745,8 @@ export function extractDomSnapshot(
   const candidates = asked ? [asked, ...failureCandidates] : failureCandidates;
 
   for (const name of candidates) {
-    // Full-fidelity first (inline <style> kept). If keeping styles blows the
-    // cap the real <body> can get truncated away, so re-render lean (inline
-    // CSS dropped) — that reliably fits and preserves the whole DOM.
-    const styled = renderSnapshotHtml(data.frameSnapshots, name);
-    if (!styled) continue;
-    let result = sanitizeDomSnapshot(styled, capChars, options);
-    if (result.truncated) {
-      const lean = renderSnapshotHtml(data.frameSnapshots, name, { dropStyles: true });
-      if (lean) result = sanitizeDomSnapshot(lean, capChars, options);
-    }
+    const result = renderSanitizedSnapshot(data.frameSnapshots, name, capChars, options);
+    if (!result) continue;
     // The viewport of the snapshot we rendered (main frame preferred, mirroring
     // renderSnapshotHtml) so the client can render it at its true proportions.
     const rendered =

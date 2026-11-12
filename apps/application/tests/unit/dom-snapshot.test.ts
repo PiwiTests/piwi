@@ -88,6 +88,43 @@ describe('renderSnapshotHtml', () => {
     expect(html).toBe('<html><body><div id="box"></div></body></html>');
   });
 
+  test('drops an attribute whose URL runs code, however the browser would read it', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'HTML',
+            {},
+            [
+              'BODY',
+              {},
+              ['A', { href: 'javascript:alert(1)', id: 'a' }, 'Pay'],
+              ['A', { href: ' JaVa\tScRiPt:alert(1)', id: 'b' }, 'Pay'],
+              ['FORM', { action: 'vbscript:msgbox(1)', id: 'c' }],
+              ['A', { href: '/cart?javascript:x', id: 'd' }, 'Cart'],
+            ],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<html><body><a id="a">Pay</a><a id="b">Pay</a><form id="c"></form><a href="/cart?javascript:x" id="d">Cart</a></body></html>',
+    );
+  });
+
+  test('says each back-reference it cannot resolve', () => {
+    let unresolved = 0;
+    const html = renderSnapshotHtml(
+      [snap({ snapshotName: 's2', html: ['HTML', {}, [[1, 0]], ['BODY', {}, [[2, 3]]]] })],
+      's2',
+      { onUnresolved: () => unresolved++ },
+    );
+    expect(unresolved).toBe(2);
+    expect(html).toContain('[unresolved snapshot reference]');
+  });
+
   test('drops tag and attribute names that would spill into the markup', () => {
     const html = renderSnapshotHtml(
       [

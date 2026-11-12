@@ -174,6 +174,9 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
   (`shared/snapshot-picker-extras.ts`) applies in the frame. That script is serialized, so both name each marker: a
   new marker goes in both, and in `tests/dom-snapshot-state.spec.ts`.
 - **A password field's value is always masked** (`PASSWORD_MASK`); every other field value is shown.
+- **No rendered snapshot keeps a script**: a script's body and source, an inline handler and a `javascript:` or
+  `vbscript:` URL are dropped by `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the
+  page through `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
 - **`restoreSnapshotState` runs first in every frame document** (picker and read-only), before anything installs over
   the page, and moves no keyboard focus out of the dashboard.
 - **The reporter's focus, hover and selection apply to the failure-time snapshot only** (`atFailure`,

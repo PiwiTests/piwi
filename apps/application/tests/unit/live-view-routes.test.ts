@@ -5,7 +5,15 @@ import { apiError } from '../../server/utils/api-error';
 import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
-import { LIVE_FRAME_TYPE, MAX_LIVE_FRAME_MESSAGE, encodeLiveMessage, liveFrameHeader } from '@piwitests/core/live-view';
+import {
+  LIVE_FRAME_TYPE,
+  MAX_LIVE_INSPECT_MESSAGE,
+  encodeLiveMessage,
+  liveFrameHeader,
+  liveResourceHeader,
+  liveSnapshotHeader,
+} from '@piwitests/core/live-view';
+import type { LiveSnapshot } from '@piwitests/core/live-inspect';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 import type { EventStreamSink } from '../../server/utils/event-stream';
 
@@ -50,6 +58,9 @@ vi.mock('h3', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getRequestHeader: (event: FakeEvent, name: string) => event.headers[name.toLowerCase()],
   getRequestWebStream: (event: FakeEvent) => event.stream,
+  setResponseHeader: (event: FakeEvent, name: string, value: string) => {
+    (event.node.res as Record<string, string>)[name.toLowerCase()] = value;
+  },
 }));
 
 type Route = (event: FakeEvent) => Promise<unknown>;
@@ -72,6 +83,10 @@ const stream = underRoutePermission(
 const post = underRoutePermission(
   state,
   (await import('../../server/api/test-runs/[id]/live-view.post')).default as unknown as Route,
+);
+const page = underRoutePermission(
+  state,
+  (await import('../../server/api/test-runs/[id]/live-view/watch/[watch]/snapshot.get')).default as unknown as Route,
 );
 const { liveViewRelay, storeLiveViewKey } = await import('../../server/utils/live-view');
 
@@ -209,7 +224,7 @@ describe('watching a worker', () => {
     const at = (body: unknown) => ({ ...event(10), body });
     expect(await change(at({ watch: id, width: 900, height: 600 }))).toEqual({
       success: true,
-      watch: { focus: null, tiles: true, width: 900, height: 600, layers: [] },
+      watch: { focus: null, tiles: true, width: 900, height: 600, layers: [], inspect: false },
     });
     let refused: { statusCode?: number; data?: Record<string, unknown> } | null = null;
     try {
@@ -218,7 +233,14 @@ describe('watching a worker', () => {
       refused = error as typeof refused;
     }
     expect(refused?.statusCode).toBe(404);
-    expect(refused?.data?.watch).toEqual({ focus: null, tiles: false, width: 900, height: 600, layers: [] });
+    expect(refused?.data?.watch).toEqual({
+      focus: null,
+      tiles: false,
+      width: 900,
+      height: 600,
+      layers: [],
+      inspect: false,
+    });
   });
 
   test('takes the layers a watch asks and its ask for the page’s text, and refuses them named wrongly', async () => {
@@ -301,7 +323,7 @@ describe("a worker's stream and posts", () => {
     expect(await refusal(post, posting(notJpeg, LIVE_FRAME_TYPE))).toBe(400);
     // Bounded: a frame's message by its own size, larger than a JSON message's.
     const over = { ...posting(frame, LIVE_FRAME_TYPE) };
-    over.headers['content-length'] = String(MAX_LIVE_FRAME_MESSAGE + 1);
+    over.headers['content-length'] = String(MAX_LIVE_INSPECT_MESSAGE + 1);
     expect(await refusal(post, over)).toBe(413);
   });
 
@@ -378,5 +400,133 @@ describe('a key its run stores, which the instance started again does not hold',
       .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
       .where(eq(schema.testRuns.id, 10));
     expect(await refusal(stream, event(10, { worker: '0' }, bearer(KEY_BEFORE_RESTART)))).toBe(401);
+  });
+});
+
+describe('Inspect’s page of a call', () => {
+  const ID = { shard: null, worker: 0 };
+  const CSS = `${'c'.repeat(40)}.css`;
+  /** A snapshot's header as worker 0 posts it, full, of its page's main frame, naming the stylesheet `CSS`. */
+  const header = (call: string, phase: LiveSnapshot['phase']): LiveSnapshot => ({
+    call,
+    title: `Click getByRole('button', { name: 'Pay' }) ${call}`,
+    phase,
+    page: 'page@1',
+    frame: 'frame@1',
+    main: true,
+    full: true,
+    index: 0,
+    at: Date.now(),
+    resources: [
+      { url: 'https://shop.test/app.css', sha1: CSS },
+      { url: 'https://shop.test/logo.svg', sha1: `${'d'.repeat(40)}.svg` },
+    ],
+  });
+  /** A page holding what must never render: a script, an inline handler, a script URL, an SVG image. */
+  const html = [
+    'HTML',
+    {},
+    ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css' }]],
+    [
+      'BODY',
+      { onload: 'steal()' },
+      ['SCRIPT', { src: 'https://evil.test/x.js' }, 'document.cookie'],
+      ['A', { href: 'javascript:steal()', onclick: 'steal()' }, 'Pay'],
+      ['IMG', { src: '/logo.svg' }],
+      ['INPUT', { type: 'password', __playwright_value_: 'hunter2' }],
+    ],
+  ];
+
+  /** A run 10's worker 0 in the live view, and person 3's watch of it with Inspect open, and what the worker posts. */
+  function inspecting(inspect = true, runId = 10) {
+    const key = liveViewRelay.mintKey(runId, 1)!;
+    liveViewRelay.connectWorker(liveViewRelay.authorize(runId, key)!, ID, () => heldStream());
+    const sink = heldStream();
+    expect(liveViewRelay.openWatch(runId, 1, { focus: ID, inspect }, () => sink, 3)).toBeNull();
+    const watchId = (sink.sent[0] as { watch: string }).watch;
+    const send = (head: Record<string, unknown>, data: Uint8Array) => {
+      const body = encodeLiveMessage(head, data);
+      const headers = { ...bearer(key), 'content-type': LIVE_FRAME_TYPE, 'content-length': String(body.length) };
+      return refusal(post, {
+        ...event(runId, {}, headers),
+        stream: new Blob([body as Uint8Array<ArrayBuffer>]).stream(),
+      });
+    };
+    const ask = (query: Record<string, string>, id = watchId) => ({
+      ...event(runId, { worker: '0', ...query }),
+      params: { id: String(runId), watch: id },
+    });
+    return { sink, send, ask, watchId };
+  }
+
+  test('serves the page of a call the worker sent in a sandboxed frame: no script, no handler, no script URL', async () => {
+    const { send, ask, sink } = inspecting();
+    const css = '.pay{background:url(/pay.png)}';
+    expect(await send(liveResourceHeader(ID, { sha1: CSS, contentType: 'text/css' }), Buffer.from(css))).toBeNull();
+    // A script, a document and an SVG are never taken.
+    for (const contentType of ['text/javascript', 'text/html', 'image/svg+xml', 'application/octet-stream']) {
+      const sha1 = `${'d'.repeat(40)}.svg`;
+      expect(await send(liveResourceHeader(ID, { sha1, contentType }), Buffer.from('<svg onload="steal()"/>'))).toBe(
+        400,
+      );
+    }
+    const data = new TextEncoder().encode(
+      JSON.stringify({ html, frameUrl: 'https://shop.test/checkout', viewport: { width: 1280, height: 720 } }),
+    );
+    expect(await send(liveSnapshotHeader(ID, header('call@4', 'action'), 'pays'), data)).toBeNull();
+    // The watch heard of it, without its JSON nor the resources it names.
+    const heard = sink.sent.find((m) => (m as { type: string }).type === 'snapshot') as Record<string, unknown>;
+    expect(heard).toMatchObject({ type: 'snapshot', call: 'call@4', phase: 'action', test: 'pays' });
+    expect(heard).not.toHaveProperty('resources');
+    expect(heard).not.toHaveProperty('data');
+
+    expect(await page(ask({ call: 'call@4', phase: 'action', format: 'json' }))).toEqual({
+      viewport: { width: 1280, height: 720 },
+    });
+    const e = ask({ call: 'call@4', phase: 'action', mode: 'readonly' });
+    const doc = (await page(e)) as string;
+    const headers = e.node.res as Record<string, string>;
+    expect(headers['content-security-policy']).toContain('sandbox allow-scripts');
+    expect(headers['content-security-policy']).toContain("default-src 'none'");
+    expect(headers['cache-control']).toBe('no-store');
+    expect(doc).toContain('.pay{background:none}');
+    expect(doc).not.toMatch(/steal|document\.cookie|evil\.test|javascript:|hunter2|<svg|logo\.svg|<link/);
+    expect(doc).toContain('<a>Pay</a>');
+  });
+
+  test('is the person’s own watch’s with Inspect open alone, of a run they may open, and says what it lacks', async () => {
+    const { ask, send, watchId } = inspecting();
+    const data = new TextEncoder().encode(JSON.stringify({ html: ['HTML', {}] }));
+    expect(await send(liveSnapshotHeader(ID, header('call@1', 'before'), 'pays'), data)).toBeNull();
+    expect(await page(ask({ call: 'call@1', phase: 'before' }))).toContain('<html>');
+    // Named wrongly.
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'during' }))).toBe(400);
+    expect(await refusal(page, ask({ call: 'call 1', phase: 'before' }))).toBe(400);
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before', worker: 'x' }))).toBe(400);
+    // A moment the worker sent no page of.
+    expect(await refusal(page, ask({ call: 'call@2', phase: 'before' }))).toBe(404);
+    // Another person's watch, a watch of another run, one without Inspect open.
+    state.caller = { ...viewerOf(1), user: { ...viewerOf(1).user!, id: 4 } as User };
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }))).toBe(404);
+    state.caller = viewerOf(1);
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }, 'w'.repeat(22)))).toBe(404);
+    const other = inspecting(false);
+    expect(await refusal(page, other.ask({ call: 'call@1', phase: 'before' }))).toBe(409);
+    // A viewer of another project, and nobody signed in.
+    state.caller = viewerOf(2);
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }))).toBe(403);
+    state.caller = null;
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }))).toBe(401);
+    state.caller = viewerOf(1);
+    expect(watchId).toBeTruthy();
+  });
+
+  test('is gone with the run', async () => {
+    await db.insert(schema.testRuns).values({ id: 13, projectId: 1, status: 'running', startTime: new Date() });
+    const { ask, send } = inspecting(true, 13);
+    const data = new TextEncoder().encode(JSON.stringify({ html: ['HTML', {}] }));
+    expect(await send(liveSnapshotHeader(ID, header('call@1', 'before'), 'pays'), data)).toBeNull();
+    liveViewRelay.endRun(13);
+    expect(await refusal(page, ask({ call: 'call@1', phase: 'before' }))).toBe(410);
   });
 });
