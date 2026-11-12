@@ -123,8 +123,8 @@ what it started a run with, `POST /api/desktop/runs/started`, DK18), and Piwi Ru
 on a run's card, its end included. The desktop tray counts a run as its own
 process does (`5 of 12 tests · 1 failed`, a test held at its failure among the failed), a failed run's end toast and
 its tray entry open its first failure (**Open the failure**, DK21), a stop's live view and a running test's are both
-**Watch** (DK17, E16), and its Stop sharing asks first (F10). Left of P5: the Runs window still words the desktop
-app's failures as the editor's. From P6,
+**Watch** (DK17, E16, the editors' paused pages too), and its Stop sharing asks first (F10); the Runs window names the
+desktop app in its runs' failures (RW18). From P6,
 D12's split: **Hold failures** is each run's own (`hold {on, by}` on the hub's session, `piwi/holdRun`, the hub's
 command `hold`, `run_follow`'s `hold`), on from the start of a run built to be watched, set from the editors, the Runs
 window, the desktop tray and by agents; the hub's `follow` holds nothing, so an open Runs window no longer holds every
@@ -210,8 +210,10 @@ any signed-in reader, both named, a project setting on by default, `projects.ask
 in memory and hands it to the run's reporter in an answer of the run's stream, which hands it to its hub (`run-ask`),
 whose tool asks the developer (`piwi/askToWatch`, the desktop app's toast) or, with no hub, prints it; **Not now** goes
 back the same way (`ask-answer`, `askAnswer`), and sharing answers it. `PIWI_SHARE_LIVE=1` shares a run from its start
-outside CI, and **Not shared live** shows once, in the run page's toolbar, with **Ask to watch**. Left of P9: Piwi
-Picker's Runs window offers no window scope. Then P10's first half, the run at a glance (RT7, DB14, DB15, DB16,
+outside CI, and **Not shared live** shows once, in the run page's toolbar, with **Ask to watch**. Piwi Picker's Runs
+window shares an editor window's runs too (the hub's feature `share-window`, `share` with `scope: 'window'`), its Stop
+sharing asking first, and its CI runs' running tests get **Watch**, read-only, through one watch of the run on the
+instance (F1, F4). Then P10's first half, the run at a glance (RT7, DB14, DB15, DB16,
 DB20, DB22, LV-12): `/api/stream` carries `run-progress`, at most one per run every 2 s and sent before the run's next
 lifecycle event, and Home, a project's runs list and the Projects page move a running run's row on from it, in the demo
 too; the live Timeline reads as lanes, grouped by shard, its header saying which shards have started, each running
@@ -267,10 +269,8 @@ VS Code's line highlight, JetBrains' inlay), the watched page's errors in VS Cod
 Page tab, the editors' own run counted from the hub's events and VS Code's Testing view showing each test as a worker
 begins it, the Live item's menu with a confirmed **Stop sharing** (F10), and E10 answered (open question 10): a
 breakpoint makes a run headed only for a reporter that cannot stop headless (older than 0.62.0, or unknown, or no run
-channel). Left of the plan, beside the remainders named above (P5's, P7's IO6, P8's `run_start` on the
-desktop app, P9's window scope in the Runs window), all planned and none deferred: **Watch** on the Runs window's CI
-runs, P4's CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here until they are
-built or recorded as deferred. The bugs the analysis
+channel). Left of the plan, all planned and none deferred: P7's IO6, P4's CPU-budget check and showcase beat, and the
+showcase checks of P1 and P3; the plan stays here until they are built or recorded as deferred. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
