@@ -112,7 +112,9 @@ responsibilities.
      the lane's one view, which the editor's views share (`lane-feed.ts`), at the size and pace the instance says its
      viewers ask (`view`, within 1280 by 800, a recording's size kept), as live messages (`LIVE_FRAME_TYPE`) to an
      instance that says `view` and in base64 JSON to an older one (`tests/live-view-binary.spec.ts`), each with its
-     call (through `hideSecretsInText`), its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     call (through `hideSecretsInText`), its test and when its page looked so, and the call's log and the test's end
+     while a viewer shows the worker in full (`view`'s `full`, as an instance that does not say it does) in a CI run
+     nothing may pause (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read

@@ -61,9 +61,11 @@ import type { PageFrame } from './page-view.js';
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
- * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches, it also posts
- * the call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest
- * again for a viewer that comes later. Every call named goes through
+ * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches it in full
+ * (`view`'s `full`; an instance that does not say it counts as one whose viewers do), it also follows and posts the
+ * call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest again
+ * for a viewer that comes later or that the instance asks for (`resend`), and only then posts the test's end
+ * (`ended`): a worker only tiles show turns no call stream on. Every call named goes through
  * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then, in a
  * CI run, every 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost and once that
  * it is back (`printRunLine`); outside CI, it is given up until a person shares the run again. A key the instance does
@@ -162,9 +164,14 @@ interface Link {
   masks: string[] | null;
   /**
    * What the viewers ask of the images, as the stream open now last said (`view`): null from an instance that never
-   * says it, which takes frames in base64 inside JSON alone.
+   * says it, which takes frames in base64 inside JSON alone, and shows the worker in full alone.
    */
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
+}
+
+/** Whether a viewer shows the worker in full: only then do its call log and its test's end go. */
+function shownInFull(own: Link): boolean {
+  return own.asked?.full ?? true;
 }
 
 let link: Link | null = null;
@@ -408,7 +415,7 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
   const own = link;
   if (!own) return;
   await own.framePost;
-  if (own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
+  if (own.viewers > 0 && active(own) && shownInFull(own)) void post(own, { type: 'ended', ...own.id, outcome });
 }
 
 /**
@@ -525,6 +532,7 @@ function connect(own: Link): void {
         const message = data ? parseInstanceToWorker(data) : null;
         if (message?.type === 'masks') setMasks(own, message.locators);
         else if (message?.type === 'view') setAsked(own, message);
+        else if (message?.type === 'resend') resendView(own);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -633,20 +641,20 @@ function setViewers(own: Link, count: number): void {
   if (own !== link) return;
   if (count !== before) changed();
   if (count === 0) return void stopView();
-  if (!active(own)) return;
-  if (!running) {
-    // Between two tests, or in a hook outside them: the one who came hears why no image shows.
-    if (count > before) void post(own, { type: 'frame', ...own.id, refused: NO_TEST });
-    return;
-  }
-  if (view) {
-    if (count > before) {
-      view.frames.resend();
-      if (own.log) postLog(own, own.log);
-    }
-    return;
-  }
-  startView();
+  if (count > before) resendView(own);
+  else if (active(own) && running && !view) startView();
+}
+
+/**
+ * A viewer came, or the instance asks again: the view starts, or sends its latest frame again and, to a full view, its
+ * call log; between two tests, or in a hook outside them, the viewers hear why no image shows.
+ */
+function resendView(own: Link): void {
+  if (own !== link || !active(own) || own.viewers === 0) return;
+  if (!running) return void post(own, { type: 'frame', ...own.id, refused: NO_TEST });
+  if (!view) return startView();
+  view.frames.resend();
+  if (own.log && shownInFull(own)) postLog(own, own.log);
 }
 
 /**
@@ -666,7 +674,9 @@ function setMasks(own: Link, locators: string[] | null): void {
 function setAsked(own: Link, asked: Link['asked']): void {
   if (JSON.stringify(asked) === JSON.stringify(own.asked)) return;
   own.asked = asked;
-  if (own === link) view?.frames.asked();
+  if (own !== link) return;
+  view?.frames.asked();
+  followCalls(own);
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */
@@ -708,14 +718,35 @@ function startView(): void {
     if (view?.page === page) void stopView();
   };
   page.once('close', onClose);
-  // The call log Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
-  const following =
-    own.ci && running && !running.mayPause && !own.logRefused
-      ? followCallLog(page, running.began, (log) => {
-          if (live()) postLog(own, log);
-        }).catch(() => null)
-      : null;
-  view = { page, frames, onClose, following };
+  view = { page, frames, onClose, following: null };
+  followCalls(own);
+}
+
+/**
+ * Follow the call log of the view's page while a viewer shows the worker in full, and stop as none does. The call log
+ * Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
+ */
+function followCalls(own: Link): void {
+  const shown = view;
+  if (!shown || own !== link) return;
+  const wanted = own.ci && !!running && !running.mayPause && !own.logRefused && shownInFull(own);
+  if (wanted && !shown.following) {
+    const { page } = shown;
+    shown.following = followCallLog(page, running!.began, (log) => {
+      if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
+    }).catch(() => null);
+  } else if (!wanted && shown.following) {
+    void shown.following.then((stop) => stop?.());
+    shown.following = null;
+    forgetLog(own);
+  }
+}
+
+/** The call log shown goes, and the one waiting to go. */
+function forgetLog(own: Link): void {
+  own.log = null;
+  if (own.logTimer) clearTimeout(own.logTimer);
+  own.logTimer = null;
 }
 
 /** Stop the view, `VIEW_END_MS` at most; one still opening is closed once it opened. */
@@ -725,12 +756,7 @@ async function stopView(): Promise<void> {
   if (!shown) return;
   shown.page.off('close', shown.onClose);
   void shown.following?.then((stop) => stop?.());
-  const own = link;
-  if (own) {
-    own.log = null;
-    if (own.logTimer) clearTimeout(own.logTimer);
-    own.logTimer = null;
-  }
+  if (link) forgetLog(link);
   const closed = shown.frames.close();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
@@ -783,7 +809,7 @@ function nextLog(own: Link): void {
     return;
   }
   const log = own.log;
-  if (!active(own) || !view || !log || own.logRefused) return;
+  if (!active(own) || !view || !log || own.logRefused || !shownInFull(own)) return;
   own.logPosting = true;
   own.logSentAt = Date.now();
   let again = false;

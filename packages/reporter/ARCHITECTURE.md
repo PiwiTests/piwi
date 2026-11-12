@@ -436,7 +436,7 @@ What the package does to a user's run, process by process.
 - In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
   fixture, without waiting for it, and keeps it until the worker ends. It names its shard,
   its worker index and its lane (`slot`, Playwright's `parallelIndex`, which a worker
-  started again after a failure keeps), and says how each watched test ended (`ended`,
+  started again after a failure keeps), and says how each test a viewer watched in full ended (`ended`,
   with `outcome`: its title, status as its row says it, and time), after its last frame. Outside CI, it holds
   the key and opens nothing until the run channel says `share` with `on: true` (**Share
   live**, `shareLiveView`), and closes the stream as it says `on: false`, posting `unshared`
@@ -461,8 +461,10 @@ What the package does to a user's run, process by process.
   worker started with and hands what changed to the projects that depend on its own,
   and takes it out again on the next tick.
 - On it the instance says how many people watch the worker (`viewers`), and what they ask of its
-  images (`view`: the largest size one of them shows it at, within 1280 by 800, and four frames a
-  second for a full view or one for tiles alone). While anyone watches,
+  images (`view`: the largest size one of them shows it at, within 1280 by 800, four frames a
+  second for a full view or one for tiles alone, and whether one shows it in full, `full`, true
+  from an instance that does not say it), and asks for the latest frame and call log again as a
+  watch that showed it as a tile shows it in full (`resend`). While anyone watches,
   the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
   the editor's views share, its subscription told as `view` changes, `asked`), through internal calls:
   at the size `view` asks at quality 50, else at most 640 by 400 from an instance that never says it, unless the
@@ -477,8 +479,8 @@ What the package does to a user's run, process by process.
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
   no screencast runs and no frame goes.
-- In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
-  `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
+- In a CI run alone, while a viewer shows the worker in full (`full`) in a test nothing may pause
+  (`mayPause`: no `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
   (`live-call-log.ts`): it listens to the context's call stream, then turns it on
   (`context.debugger._enable()` through `internalCall`, each member checked first), which
   tells the calls running then with their log so far. Once on, the stream stays on and moves
@@ -503,7 +505,7 @@ What the package does to a user's run, process by process.
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
   view holds, and that view goes on with an image of the page every second, its caret as
   the page shows it, as does any later view of that page.
-- The view stops as nobody watches, as the test ends (the worker posts `ended`) and as its
+- The view stops as nobody watches, as the test ends (the worker posts `ended`, to a full view) and as its
   page closes; a viewer that joins gets the latest frame again, and one that joins while no
   test runs (a `beforeAll`, between tests) hears why no image shows. Each stop the
   fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends

@@ -25,7 +25,8 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * package against a fake instance that says what its viewers ask (`view`). The worker posts each frame as one live
  * message (`LIVE_FRAME_TYPE`: a JSON header with its worker, call and test, then the JPEG), at the size the viewers
  * ask (the full view's, within 1280 by 800, then a tile's) and at their pace (a tile's one a second), and none once
- * nobody watches. `live-view.spec.ts` holds the run to an instance that never says `view`, which takes JSON.
+ * nobody watches. The call log and the test's end go to a full view alone: a worker only tiles show posts neither.
+ * `live-view.spec.ts` holds the run to an instance that never says `view`, which takes JSON.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -47,21 +48,33 @@ const test = extendPiwiFixtures(base);
 test('watched in full, then as a tile', async ({ page }) => {
   await page.goto('${base}/page');
   await fetch('${base}/ready');
+  await page.locator('#missing').click({ timeout: 2000 }).catch(() => {});
   await expect.poll(async () => (await (await fetch('${base}/done')).json()).done, { timeout: 30000 }).toBe(true);
+});
+test('watched as a tile to its end', async ({ page }) => {
+  await page.goto('${base}/page');
+  await fetch('${base}/tiles');
+  await page.locator('#missing').click({ timeout: 2000 }).catch(() => {});
+  await expect.poll(async () => (await (await fetch('${base}/tiled')).json()).done, { timeout: 30000 }).toBe(true);
 });
 `;
 
 interface Posted {
   at: number;
   type: string | undefined;
+  /** A frame posted as bytes, as the instance reads it; for JSON, the message's type. */
   frame: LiveWorkerFrame | string;
 }
 
 const posts: Posted[] = [];
 const streams: http.ServerResponse[] = [];
-/** When the instance asked for the full view, then for tiles alone, then said nobody watches. */
-const phases: { full?: number; tiles?: number; none?: number } = {};
+/**
+ * When the instance asked for the full view, then for tiles alone, then said nobody watches; then, in the next test,
+ * when it asked for tiles alone until that test ended.
+ */
+const phases: { full?: number; tiles?: number; none?: number; tiledFrom?: number } = {};
 let done = false;
+let tiled = false;
 let server: FakeServer;
 let exitCode: number | null = null;
 let output = '';
@@ -75,17 +88,31 @@ function say(message: Record<string, unknown>): void {
 
 /** The instance watches the test: in full at the largest size, then as a tile, then not at all. */
 async function onReady(): Promise<void> {
-  say({ type: 'view', width: 1920, height: 1200, fps: 4 });
+  say({ type: 'view', width: 1920, height: 1200, fps: 4, full: true });
   say({ type: 'viewers', count: 1 });
   phases.full = Date.now();
   await sleep(2500);
-  say({ type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS });
+  say({ type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS, full: false });
   phases.tiles = Date.now();
   await sleep(4000);
   say({ type: 'viewers', count: 0 });
   phases.none = Date.now();
   await sleep(1500);
   done = true;
+}
+
+/** The next test, watched as a tile alone until it ends, while it waits on a locator that matches nothing. */
+async function onTiles(): Promise<void> {
+  phases.tiledFrom = Date.now();
+  say({ type: 'view', width: LIVE_TILE_WIDTH, height: LIVE_TILE_HEIGHT, fps: LIVE_TILE_FPS, full: false });
+  say({ type: 'viewers', count: 1 });
+  await sleep(3500);
+  tiled = true;
+}
+
+/** The JSON messages posted from `from` on, by type. */
+function json(from: number): string[] {
+  return posts.flatMap((p) => (p.at >= from && typeof p.frame === 'string' ? [p.frame] : []));
 }
 
 /** A JPEG's size in pixels, from its first frame header; null for none. */
@@ -117,6 +144,11 @@ beforeAll(async () => {
       return res.end();
     }
     if (route === '/done') return jsonRes(res, 200, { done });
+    if (route === '/tiles') {
+      void onTiles();
+      return res.end();
+    }
+    if (route === '/tiled') return jsonRes(res, 200, { done: tiled });
     if (route === '/page') {
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end(PAGE);
@@ -151,7 +183,7 @@ beforeAll(async () => {
         return typeof frame === 'string' ? jsonRes(res, 400, { message: frame }) : jsonRes(res, 200, {});
       }
       // Every other message is JSON, as from any reporter.
-      posts.push({ at: Date.now(), type, frame: 'json' });
+      posts.push({ at: Date.now(), type, frame: String((JSON.parse(req.body) as { type?: unknown }).type) });
       return jsonRes(res, 200, { success: true });
     }
     if (route.startsWith('/api/')) return jsonRes(res, 200, { success: true });
@@ -217,7 +249,7 @@ describe('the live view’s frames as bytes, sized by the viewers', () => {
     expect(first.call?.file).toBe('tests/binary.spec.cjs');
     expect(Buffer.from(first.image.subarray(0, 2)).toString('hex')).toBe('ffd8');
     // No frame goes in base64 to an instance that takes bytes.
-    expect(posts.filter((p) => p.type !== LIVE_FRAME_TYPE && p.at >= phases.full! && p.at < phases.none!)).toEqual([]);
+    expect(json(phases.full!).filter((type) => type === 'frame')).toEqual([]);
   });
 
   it('sends the full view at the largest size the viewers ask, within 1280 by 800, the viewport’s shape kept', () => {
@@ -248,6 +280,15 @@ describe('the live view’s frames as bytes, sized by the viewers', () => {
   });
 
   it('sends no frame once nobody watches', () => {
-    expect(frames(phases.none! + 300, Infinity)).toEqual([]);
+    expect(frames(phases.none! + 300, phases.tiledFrom!)).toEqual([]);
+  });
+
+  it('sends the call log to a full view alone, and the test’s end too', () => {
+    // The full view gets the call the test waits in.
+    const fullLogs = posts.filter((p) => p.frame === 'call-log' && p.at >= phases.full! && p.at < phases.tiles!);
+    expect(fullLogs.length).toBeGreaterThan(0);
+    // A worker only tiles show follows no call log, though its test waits on a locator, and posts no end of it.
+    expect(frames(phases.tiledFrom!, Infinity).length).toBeGreaterThan(0);
+    expect(json(phases.tiledFrom!).filter((type) => type === 'call-log' || type === 'ended')).toEqual([]);
   });
 });

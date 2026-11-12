@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   LIVE_FRAME_FPS,
   LIVE_HEARTBEAT,
@@ -80,6 +80,29 @@ describe('a live message', () => {
       expect(messages[1]!.data).toEqual(first);
       expect(messages[2]!.data).toBeNull();
     }
+  });
+
+  test('holds a message that comes a byte at a time in one buffer, never a copy of each chunk', () => {
+    const image = jpeg(MAX_LIVE_FRAME);
+    const bytes = encodeLiveMessage({ type: 'frame', n: 1 }, image);
+    const read = createLiveMessageReader(LIMITS);
+    const slice = vi.spyOn(Uint8Array.prototype, 'slice');
+    try {
+      const messages: LiveMessage[] = [];
+      for (let at = 0; at < bytes.length; at++) messages.push(...read(bytes.subarray(at, at + 1)));
+      expect(messages.map((m) => m.data)).toEqual([image]);
+      // The message's data alone is copied out.
+      expect(slice.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      slice.mockRestore();
+    }
+    // Messages that come together, and one cut across two chunks, read the same.
+    const stream = joined(bytes, encodeLiveMessage({ type: 'refused', n: 2 }), bytes);
+    const again = createLiveMessageReader(LIMITS);
+    const half = bytes.length + 100;
+    expect([...again(stream.subarray(0, half)), ...again(stream.subarray(half))].map((m) => m.header.n)).toEqual([
+      1, 2, 1,
+    ]);
   });
 
   test('gives each message data of its own, which the next chunk leaves as it was', () => {
@@ -166,28 +189,44 @@ describe('what the viewers ask of a worker', () => {
     expect(readLiveViewSize(900, 560)).toEqual({ width: 900, height: 560 });
     expect(readLiveViewSize(900.5, 560)).toBeNull();
     expect(readLiveViewSize('wide', 560)).toBeNull();
-    expect(parseInstanceToWorker(JSON.stringify({ type: 'view', width: 1000, height: 640, fps: 4 }))).toEqual({
+    for (const [width, height] of [
+      [0, 560],
+      [900, -1],
+      ['-5', '600'],
+    ]) {
+      expect(readLiveViewSize(width, height), `${width} by ${height}`).toBeNull();
+    }
+    expect(
+      parseInstanceToWorker(JSON.stringify({ type: 'view', width: 1000, height: 640, fps: 4, full: true })),
+    ).toEqual({
       type: 'view',
       width: 1000,
       height: 640,
       fps: 4,
+      full: true,
     });
     expect(parseInstanceToWorker(JSON.stringify({ type: 'view', width: 4000, height: 50, fps: 30 }))).toEqual({
       type: 'view',
       width: MAX_LIVE_VIEW_WIDTH,
       height: LIVE_TILE_HEIGHT,
       fps: LIVE_FRAME_FPS,
+      full: true,
     });
     expect(
-      parseInstanceToWorker(JSON.stringify({ type: 'view', width: 320, height: 200, fps: LIVE_TILE_FPS })),
-    ).toMatchObject({ fps: 1 });
+      parseInstanceToWorker(JSON.stringify({ type: 'view', width: 320, height: 200, fps: LIVE_TILE_FPS, full: false })),
+    ).toMatchObject({ fps: 1, full: false });
     for (const view of [
       { type: 'view', width: '1000', height: 640, fps: 4 },
       { type: 'view', width: 1000, height: 640, fps: 0 },
       { type: 'view', width: 1000, height: 640 },
+      { type: 'view', width: 0, height: 640, fps: 4 },
     ]) {
       expect(parseInstanceToWorker(JSON.stringify(view)), JSON.stringify(view)).toBeNull();
     }
+  });
+
+  test('asks the worker for its latest image and call log again', () => {
+    expect(parseInstanceToWorker(JSON.stringify({ type: 'resend' }))).toEqual({ type: 'resend' });
   });
 });
 

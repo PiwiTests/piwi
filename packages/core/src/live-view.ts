@@ -6,15 +6,17 @@
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
- * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches, it posts too
- * the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
+ * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches it in full, it
+ * posts too the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
  * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
  * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
  * `readWorkerToInstance`).
  *
  * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
- * in device pixels, and the pace) takes each frame as its JPEG's bytes behind a short JSON header, one live message
- * (`LIVE_FRAME_TYPE`); an older instance takes the frame in base64 inside JSON. A viewer reads one stream of live
+ * in device pixels, the pace, and whether one of them shows the worker in full) takes each frame as its JPEG's bytes
+ * behind a short JSON header, one live message (`LIVE_FRAME_TYPE`); an older instance takes the frame in base64 inside
+ * JSON. The call log and the test's end go only to a full view: a worker that only tiles show posts neither, and
+ * follows no call log. A viewer reads one stream of live
  * messages (`LIVE_STREAM_TYPE`): the frames of the workers it watches, their images as bytes, and the JSON messages
  * of the view (`LiveViewerMessage`). A live message is a length-prefixed JSON header, then length-prefixed bytes
  * (`encodeLiveMessage`, `createLiveMessageReader`): the dashboard and any other viewer read it with this one reader.
@@ -312,24 +314,28 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * What the instance says on a worker's stream: how many people watch the worker now, the elements its project
  * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them, and
  * what its viewers ask of the images (`view`): the largest size one of them shows the image at, in device pixels,
- * within `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`, and the most images a second one of them takes
- * (`LIVE_FRAME_FPS` for the full view of the worker, `LIVE_TILE_FPS` for tiles alone). An instance that says `view`
- * takes frames as live messages (`LIVE_FRAME_TYPE`). A list this reader cannot read (`locators: null`, from an
- * instance newer than it) masks nothing it could trust.
+ * within `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`, the most images a second one of them takes
+ * (`LIVE_FRAME_FPS` for the full view of the worker, `LIVE_TILE_FPS` for tiles alone), and whether one of them shows
+ * it in full (`full`): only then does the worker follow and post its test's call log and post the test's end, and an
+ * instance that does not say it is read as one that does. An instance that says `view` takes frames as live messages
+ * (`LIVE_FRAME_TYPE`). `resend` asks the worker for its latest image and call log again: a watch that showed it as a
+ * tile shows it in full now, which changes neither the count nor what they ask. A list this reader cannot read
+ * (`locators: null`, from an instance newer than it) masks nothing it could trust.
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
   | { type: 'masks'; locators: string[] | null }
-  | { type: 'view'; width: number; height: number; fps: number };
+  | { type: 'view'; width: number; height: number; fps: number; full: boolean }
+  | { type: 'resend' };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
- * `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`; null when either is not a whole number.
+ * `MAX_LIVE_VIEW_WIDTH` by `MAX_LIVE_VIEW_HEIGHT`; null when either is not a whole number from 1.
  */
 export function readLiveViewSize(width: unknown, height: unknown): { width: number; height: number } | null {
   const w = wholeNumber(width);
   const h = wholeNumber(height);
-  if (!Number.isInteger(w) || !Number.isInteger(h)) return null;
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1) return null;
   return {
     width: Math.min(MAX_LIVE_VIEW_WIDTH, Math.max(LIVE_TILE_WIDTH, w)),
     height: Math.min(MAX_LIVE_VIEW_HEIGHT, Math.max(LIVE_TILE_HEIGHT, h)),
@@ -510,6 +516,8 @@ export function readLiveCallLog(value: unknown): LiveCallLog | null {
 
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** How a JPEG's first three bytes (`FF D8 FF`) are written in base64. */
+const JPEG_BASE64 = '/9j/';
 
 /** Whether `value` is a time in epoch milliseconds: a finite number after 2001. */
 export function isEpochMs(value: unknown): value is number {
@@ -531,7 +539,9 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       if (typeof value.refused === 'string' && value.refused.trim()) {
         return { type: 'frame', ...id, refused: value.refused.slice(0, MAX_REFUSAL) };
       }
-      if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
+      if (!isLiveFrameData(value.data) || !value.data.startsWith(JPEG_BASE64)) {
+        return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
+      }
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
       const frame = { type: 'frame' as const, ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
       return isEpochMs(value.at) ? { ...frame, at: Math.round(value.at) } : frame;
@@ -576,8 +586,10 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   if (value.type === 'view') {
     const size = typeof value.width === 'number' ? readLiveViewSize(value.width, value.height) : null;
     if (!size || !isInt(value.fps, 1, 60)) return null;
-    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps) };
+    const full = typeof value.full === 'boolean' ? value.full : true;
+    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full };
   }
+  if (value.type === 'resend') return { type: 'resend' };
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }
@@ -639,51 +651,47 @@ function readHeader(bytes: Uint8Array): Record<string, unknown> | string {
  * messages it completed, in order, heartbeats left out. A header longer than `limits.maxHeader`, data longer than
  * `limits.maxData`, data without a header, or a header that is not a JSON object throws, as soon as its length or its
  * text is read, with a sentence that says why; the reader then throws on every call, the stream being broken. A
- * message's data is a copy of its own, which the caller keeps as long as it pleases.
+ * message's data is a copy of its own, which the caller keeps as long as it pleases. The bytes not read yet wait in
+ * one buffer, as long as the message they begin needs once its lengths are read, whatever the chunks' sizes.
  */
 export function createLiveMessageReader(limits: LiveMessageLimits): (chunk: Uint8Array) => LiveMessage[] {
   const maxHeader = limits.maxHeader ?? MAX_LIVE_HEADER;
-  // The bytes not read yet, as they came, and how many bytes must have come before reading on is worth it.
-  let chunks: Uint8Array[] = [];
+  // The bytes not read yet, the first `size` of `buffer`, and how many must have come before reading on is worth it.
+  let buffer = new Uint8Array(0);
   let size = 0;
   let need = 4;
   let broken: string | null = null;
   const fail = (why: string): never => {
     broken = why;
-    chunks = [];
+    buffer = new Uint8Array(0);
     size = 0;
     throw new Error(why);
   };
   return (chunk) => {
     if (broken) throw new Error(broken);
-    if (chunk.length) {
-      chunks.push(chunk.slice());
-      size += chunk.length;
+    if (size + chunk.length > buffer.length) {
+      const grown = new Uint8Array(Math.max(need, size + chunk.length));
+      grown.set(buffer.subarray(0, size));
+      buffer = grown;
     }
+    buffer.set(chunk, size);
+    size += chunk.length;
     if (size < need) return [];
-    const buffer = chunks.length === 1 ? chunks[0]! : new Uint8Array(size);
-    if (chunks.length > 1) {
-      let offset = 0;
-      for (const part of chunks) {
-        buffer.set(part, offset);
-        offset += part.length;
-      }
-    }
-    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const view = new DataView(buffer.buffer, buffer.byteOffset, size);
     const messages: LiveMessage[] = [];
     let at = 0;
     need = 4;
-    while (buffer.length - at >= 4) {
+    while (size - at >= 4) {
       const headerLength = view.getUint32(at);
       if (headerLength > maxHeader) fail(`A live message’s header is ${maxHeader} bytes at most.`);
       need = 8 + headerLength;
-      if (buffer.length - at < need) break;
+      if (size - at < need) break;
       const dataLength = view.getUint32(at + 4 + headerLength);
       if (dataLength > limits.maxData) fail(`A live message’s data is ${limits.maxData} bytes at most.`);
       if (headerLength === 0 && dataLength > 0) fail('A live message with data has a header.');
       need = 8 + headerLength + dataLength;
       const end = at + need;
-      if (buffer.length < end) break;
+      if (size < end) break;
       if (headerLength > 0) {
         const header = readHeader(buffer.subarray(at + 4, at + 4 + headerLength));
         if (typeof header === 'string') fail(header);
@@ -695,8 +703,17 @@ export function createLiveMessageReader(limits: LiveMessageLimits): (chunk: Uint
       at = end;
       need = 4;
     }
-    chunks = at === buffer.length ? [] : [buffer.subarray(at)];
-    size = buffer.length - at;
+    // What is left begins the next message: it waits at the start of a buffer as long as that message needs.
+    const left = size - at;
+    const room = Math.max(need, left);
+    if (buffer.length > room) {
+      const kept = new Uint8Array(room);
+      kept.set(buffer.subarray(at, size));
+      buffer = kept;
+    } else if (at > 0) {
+      buffer.copyWithin(0, at, size);
+    }
+    size = left;
     return messages;
   };
 }
