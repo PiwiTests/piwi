@@ -321,6 +321,8 @@ export interface ProjectUnscopedRun {
   environment: string | null;
   branch: string | null;
   isFullRun: boolean;
+  /** The viewer's own run, which the filters never hide. */
+  mine?: true;
 }
 
 /**
@@ -429,6 +431,8 @@ export interface ProjectWithTestRuns {
   testRuns: TestRunSummary[];
   /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
   unscopedRuns?: ProjectUnscopedRun[];
+  /** With a run scope: the viewer's own most recent runs its partial-run or branch reading leaves out. */
+  ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
@@ -561,6 +565,8 @@ export interface TestRunSummary {
   keepSource?: KeepSource | null;
   keepReason?: string | null;
   createdAt: Date;
+  /** The viewer's own run (`#shared/own-runs`), which the runs lists show whatever the filters say. */
+  mine?: true;
 }
 
 /**
@@ -673,6 +679,8 @@ export interface TestRunForChart {
   isFullRun?: boolean;
   environment?: string | null;
   branch?: string | null;
+  /** The viewer's own run (`#shared/own-runs`), which the recent activity shows whatever the filters say. */
+  mine?: true;
 }
 
 // ============================================================================

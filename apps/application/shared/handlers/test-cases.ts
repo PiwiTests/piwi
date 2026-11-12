@@ -597,7 +597,13 @@ export async function getTestRunCase(
     }
   }
 
-  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun ?? {};
+  // A run's reporter is never answered: a list says `mine` of the viewer's own runs alone (`#shared/own-runs`).
+  const {
+    streamToken: _streamToken,
+    liveViewKeyDigests: _liveViewKeyDigests,
+    reporterId: _reporterId,
+    ...testRunPublic
+  } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
   // cluster and owner — built from what is already loaded above, and for a retry

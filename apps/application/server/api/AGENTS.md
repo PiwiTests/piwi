@@ -97,8 +97,8 @@ export default eventHandler(async (event) => {
 - **`requireAuth(event, permission)` overrides the meta** for a handler whose permission depends on the request
   (`integrations/actions.get.ts` needs `connections:manage` for a connection's activity, `project:read` for a
   project's); the meta then documents the usual case.
-- **No response carries `test_runs.stream_token` or `live_view_key_digests`**: a handler returning run rows selects
-  `publicRunColumns()` (`shared/handlers/public-run.ts`).
+- **No response carries `test_runs.stream_token`, `live_view_key_digests` or `reporter_id`**: a handler returning run
+  rows selects `publicRunColumns()` (`shared/handlers/public-run.ts`); a list says `mine` of the viewer's own runs.
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and, with authentication off only,
   one without that header whose `Origin` is opaque or names neither the `Host` header's host and port nor

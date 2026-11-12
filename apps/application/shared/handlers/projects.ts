@@ -60,6 +60,7 @@ import {
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
+import { mineFlag, ownRunColumn, ownRunSql, type RunViewer } from '../own-runs';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
@@ -371,7 +372,8 @@ function clampRunLimit(limit: number | undefined): number {
 
 /**
  * Shape run-list rows for the runs table: attach each run's reports and
- * browsers, and slim the metadata JSON down to the SCM branch and commit.
+ * browsers, slim the metadata JSON down to the SCM branch and commit, and say
+ * `mine` of a run its row selected as the viewer's own (`own`, `ownRunColumn`).
  */
 async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   // Fetch reports for all runs in a single query
@@ -416,11 +418,12 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
     browsersByRunId.set(row.testRunId, list);
   }
 
-  return runs.map((r: any) => {
+  return runs.map(({ own, ...r }: any) => {
     // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
     const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
     return {
       ...r,
+      ...mineFlag(own),
       isFullRun: r.isFullRun === 1,
       metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
       reports: reportsByRunId.get(r.id) ?? [],
@@ -436,12 +439,15 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
  * scope (the project page's filters) they are the newest runs within the
  * scope, and `unscopedRuns` lists the newest runs of any scope with the fields
  * the scope reads: the environments and branches the filters offer, and the
- * runs they hide.
+ * runs they hide. Each run says `mine` when it is the `viewer`'s own
+ * (`#shared/own-runs`), and `ownRuns` lists the viewer's newest own runs that
+ * the scope's partial-run or branch reading leaves out, in its environments,
+ * which the runs list shows whatever the filters say.
  */
 export async function getProject(
   db: DrizzleDB,
   id: number,
-  options?: { runLimit?: number; scope?: ProjectRunScope | null },
+  options?: { runLimit?: number; scope?: ProjectRunScope | null; viewer?: RunViewer | null },
 ) {
   // Bounds the run list (and the charts derived from it) — projects grow
   // unboundedly, so an uncapped select scales with total history.
@@ -455,18 +461,16 @@ export async function getProject(
   // The branch a project run scope reads when no branch is picked.
   const effectiveDefaultBranch = await resolveStoredDefaultBranch(db, project);
   const scope = options?.scope ?? null;
+  const viewer = options?.viewer ?? null;
+  const own = ownRunColumn(viewer);
+  // The scope's own conditions: none when it reads every run, which leaves no own run out.
+  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch)) : undefined;
 
   // Select only the columns needed for the run list — omit wide JSON columns
   const runs: any[] = await db
-    .select(RUN_SUMMARY_COLUMNS)
+    .select({ ...RUN_SUMMARY_COLUMNS, own })
     .from(testRuns)
-    .where(
-      and(
-        eq(testRuns.projectId, id),
-        notPrivateRun(),
-        ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : []),
-      ),
-    )
+    .where(and(eq(testRuns.projectId, id), notPrivateRun(), inScope))
     .orderBy(desc(testRuns.startTime))
     .limit(runLimit);
   const unscopedRuns: any[] | null = scope
@@ -477,12 +481,30 @@ export async function getProject(
           environment: testRuns.environment,
           branch: testRuns.branch,
           isFullRun: testRuns.isFullRun,
+          own,
         })
         .from(testRuns)
         .where(and(eq(testRuns.projectId, id), notPrivateRun()))
         .orderBy(desc(testRuns.startTime))
         .limit(runLimit)
     : null;
+  const ownRuns: any[] | null =
+    scope && viewer && inScope
+      ? await db
+          .select({ ...RUN_SUMMARY_COLUMNS, own })
+          .from(testRuns)
+          .where(
+            and(
+              eq(testRuns.projectId, id),
+              notPrivateRun(),
+              ownRunSql(viewer),
+              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch),
+              sql`(${inScope}) IS NOT TRUE`,
+            ),
+          )
+          .orderBy(desc(testRuns.startTime))
+          .limit(runLimit)
+      : null;
 
   // Get tags for this project
   const projectTagRows: any[] = await db
@@ -510,22 +532,34 @@ export async function getProject(
             environment: (r.environment as string | null) ?? null,
             branch: (r.branch as string | null) ?? null,
             isFullRun: r.isFullRun === 1,
+            ...mineFlag(r.own),
           })),
         }
       : {}),
+    ...(ownRuns ? { ownRuns: await toRunSummaries(db, ownRuns) } : {}),
   };
+}
+
+/** A scope's environments alone: what an own run must match to be listed despite the partial-run and branch filters. */
+function environmentsOnly(scope: ProjectRunScope): ProjectRunScope {
+  return { environments: scope.environments, branches: [], allBranches: true, fullRunsOnly: false };
 }
 
 // ─── listKeptRuns ────────────────────────────────────────────────
 
 /**
- * A project's kept runs, newest first, in the run-list shape. Kept runs are
- * mostly old ones, past the window `getProject` loads, so they list on their own.
+ * A project's kept runs, newest first, in the run-list shape, each saying `mine`
+ * when it is the `viewer`'s own. Kept runs are mostly old ones, past the window
+ * `getProject` loads, so they list on their own.
  */
-export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
+export async function listKeptRuns(
+  db: DrizzleDB,
+  projectId: number,
+  options?: { limit?: number; viewer?: RunViewer | null },
+) {
   const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt), notPrivateRun());
   const runs: any[] = await db
-    .select(RUN_SUMMARY_COLUMNS)
+    .select({ ...RUN_SUMMARY_COLUMNS, own: ownRunColumn(options?.viewer ?? null) })
     .from(testRuns)
     .where(where)
     .orderBy(desc(testRuns.startTime))

@@ -56,7 +56,10 @@ types/        Front-end API response types (`api.ts`)
   (environments, branches, the branch policy, full runs only), the scope's query keys (the analytics ones, so an
   analytics drill-down address is a scope too) and the in-browser matcher (`runInProjectScope`).
   `shared/handlers/project-run-scope.ts` turns a scope into the SQL conditions (`projectRunScopeConditions`) that every
-  project tab's handler adds.
+  project tab's handler adds. A runs list (the project page's, Home's recent activity) also shows the viewer's own runs
+  the partial-run and branch filters leave out: `shared/own-runs.ts` decides which runs are a person's (from
+  `test_runs.reporter_id` and `requester_id`), the list answers `mine`, and `app/utils/own-run-mark.ts` lists and
+  marks them ("Yours · partial run").
 - **`@piwitests/core`** (`packages/core/`) is a private package with **zero dependencies**, safe to run in the browser,
   a service worker or the server. It holds the pure logic the app shares with the reporter, Piwi Picker (the browser
   extension) and the editor service: locators (generation and scoring, ARIA role resolution, element-fingerprint

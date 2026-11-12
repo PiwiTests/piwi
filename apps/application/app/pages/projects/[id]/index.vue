@@ -13,6 +13,7 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
+import { listsRun, ownRunMark } from '~/utils/own-run-mark';
 import { ranToItsEnd } from '#shared/project-health';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
@@ -148,6 +149,8 @@ interface ScopedRun {
   branch?: string | null;
   isFullRun?: boolean;
   metadata?: { scm?: { branch?: string | null } } | null;
+  /** The viewer's own run, which the runs list shows whatever the partial-run and branch filters say. */
+  mine?: true;
 }
 
 // A run's branch reads the scalar column, falling back to the SCM metadata for
@@ -182,6 +185,21 @@ function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boole
   );
 }
 
+/** A run as the own-run rule reads it, its branch read as the filters read it. */
+function listedRun(run: ScopedRun) {
+  return { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun, mine: run.mine };
+}
+
+/** Whether the runs list shows a run: in the scope, or the viewer's own in its environments. */
+function inRunsList(run: ScopedRun): boolean {
+  return listsRun(listedRun(run), runScope.value, defaultBranch.value);
+}
+
+/** Why the runs list shows an own run the filters leave out ("Yours · partial run"), else null. */
+function ownMark(run: ScopedRun): string | null {
+  return ownRunMark(listedRun(run), runScope.value, defaultBranch.value);
+}
+
 /** The drill-down period from Analytics, which narrows the runs table and chart only. */
 function inDrillPeriod(run: Pick<ScopedRun, 'startTime'>): boolean {
   const period = drill.value?.period;
@@ -190,9 +208,15 @@ function inDrillPeriod(run: Pick<ScopedRun, 'startTime'>): boolean {
   return t >= period.from && t < period.to;
 }
 
-// The server lists the newest runs within the scope.
+// The server lists the newest runs within the scope, which the chart and the figures read.
 const scopedRuns = computed(() => project.value?.testRuns ?? []);
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
+// The runs list adds the viewer's own runs the partial-run or branch filter leaves out, in date order.
+const listedRuns = computed(() =>
+  [...filteredRuns.value, ...(project.value?.ownRuns ?? []).filter(inDrillPeriod)].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+  ),
+);
 
 function resetFilters(): void {
   filters.value = defaultProjectFilters();
@@ -215,9 +239,9 @@ const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestR
   { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
 );
 const filteredKeptRuns = computed(() =>
-  (keptRunsData.value?.items ?? []).filter((run) => inScope(run) && inDrillPeriod(run)),
+  (keptRunsData.value?.items ?? []).filter((run) => inRunsList(run) && inDrillPeriod(run)),
 );
-const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : listedRuns.value));
 
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
@@ -250,7 +274,7 @@ watch(tableRuns, (rows) => {
 
 // Runs the other filters keep but "Full runs only" or the default-branch
 // reading hides — both are on by default, so without a note those runs look
-// missing.
+// missing. The viewer's own runs are listed all the same, and not counted.
 const hiddenRuns = computed(() => {
   const runs: ScopedRun[] = (keptOnly.value ? keptRunsData.value?.items : recentRuns.value) ?? [];
   const scope = runScope.value;
@@ -259,7 +283,7 @@ const hiddenRuns = computed(() => {
   let partial = 0;
   let otherBranches = 0;
   for (const run of runs) {
-    if (!inDrillPeriod(run) || inScope(run)) continue;
+    if (!inDrillPeriod(run) || inRunsList(run)) continue;
     if (scope.fullRunsOnly && inScope(run, withPartialRuns)) partial++;
     else if (scope.branches.length === 0 && !scope.allBranches && inScope(run, withAllBranches)) otherBranches++;
   }
@@ -525,7 +549,7 @@ const failuresCount = computed(() => clustersCount.value.open + (flakyCount.valu
 
 const tabItems = computed(() =>
   [
-    { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
+    { label: `Runs (${listedRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
     {
       label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
       icon: 'i-lucide-flask-conical',
@@ -1177,6 +1201,12 @@ const moreMenuItems = computed(() => {
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
+                    <span
+                      v-if="ownMark(row.original)"
+                      class="text-xs text-muted truncate max-w-48"
+                      data-testid="own-run-mark"
+                      >{{ ownMark(row.original) }}</span
+                    >
                   </div>
                 </template>
                 <template #status-cell="{ row }">
@@ -1280,6 +1310,7 @@ const moreMenuItems = computed(() => {
               :runs="pagedRuns"
               :selected-run-ids="selectedRunIds"
               :menu-items="runMenuItems"
+              :own-mark="ownMark"
               @toggle="toggleRunSelection"
             />
 

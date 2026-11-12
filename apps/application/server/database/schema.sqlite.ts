@@ -91,6 +91,7 @@ export const testRuns = sqliteTable(
     keptAt: integer('kept_at', { mode: 'timestamp' }), // Set = kept forever: retention never deletes the run
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
     requesterId: integer('requester_id').references(() => users.id, { onDelete: 'set null' }), // The person who asked for a requested run (origin `request`), from its request token, never from the reporter; such a run is seen by them alone, and by nobody once null
+    reporterId: integer('reporter_id').references(() => users.id, { onDelete: 'set null' }), // The person whose credentials (an API key or a session) reported the run, which their runs lists show whatever the filters; null with authentication off and for a run started by a request token. Never returned by an API
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     serverCoverageGaps: text('server_coverage_gaps', { mode: 'json' }), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
@@ -112,6 +113,7 @@ export const testRuns = sqliteTable(
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
     requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
+    reporterIdx: index('idx_test_runs_reporter').on(table.reporterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );

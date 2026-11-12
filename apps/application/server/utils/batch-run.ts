@@ -29,7 +29,7 @@ import type { TestRunSubmitPayload } from '#shared/types';
  * (`cancelReplacedRun`). When the executions fail to store, the run is removed and the error goes on
  * (`storeOrDiscardRun`).
  *
- * `awaitingFiles` holds the run `finalizing` until its files are in: the status the delivery sent waits in its
+ * `reporterId` is the person whose credentials delivered it (`runReporterId`). `awaitingFiles` holds the run `finalizing` until its files are in: the status the delivery sent waits in its
  * metadata (`withPendingStatus`), and the run keeps the digest of the stream token its files go with
  * (`/case-files`). An upload with `runId` settles it (`settleFinalizingRun`), or the stale-run sweep does.
  *
@@ -39,7 +39,7 @@ export async function createBatchRun(
   db: DbClient,
   projectId: number,
   body: TestRunSubmitPayload,
-  awaitingFiles?: { streamToken: string },
+  { awaitingFiles, reporterId = null }: { awaitingFiles?: { streamToken: string }; reporterId?: number | null } = {},
 ): Promise<typeof testRuns.$inferSelect> {
   const shardTotal = body.shardTotal;
   const instanceId = body.instanceId || null;
@@ -68,6 +68,7 @@ export async function createBatchRun(
       metadata,
       origin: runOrigin(metadata),
       commit: runCommit(metadata),
+      reporterId,
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

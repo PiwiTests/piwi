@@ -35,6 +35,7 @@ import {
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { notLabRun } from './probes';
+import { mineFlag, ownRunColumn, type RunViewer } from '../own-runs';
 import { isOptInCapabilityOn, isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
 import { loadRunEnvironments } from './environment-snapshots';
@@ -311,7 +312,13 @@ export async function getTestRun(
     }
   }
 
-  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun;
+  // A run's reporter is never answered: a list says `mine` of the viewer's own runs alone (`#shared/own-runs`).
+  const {
+    streamToken: _streamToken,
+    liveViewKeyDigests: _liveViewKeyDigests,
+    reporterId: _reporterId,
+    ...testRunPublic
+  } = testRun;
 
   let keptByName: string | null = null;
   if (testRun.keptBy) {
@@ -429,19 +436,21 @@ const RECENT_FIELDS = {
 /** The recent list's fields: a run's own, and what launched it (`origin`), known once the run has begun. */
 const RECENT_LIST_FIELDS = { ...RECENT_FIELDS, origin: testRuns.origin };
 
-export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
+/** The runs of home's recent activity: the active runs, then the 30 latest ended ones; `mine` on the viewer's own. */
+export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all', viewer: RunViewer | null = null) {
+  const fields = { ...RECENT_LIST_FIELDS, own: ownRunColumn(viewer) };
   if (scope !== 'all' && scope.size === 0) return [];
   // Filtered before the limit, so runs of other projects never crowd out the caller's.
   const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const [activeRuns, recentRuns] = await Promise.all([
     db
-      .select(RECENT_LIST_FIELDS)
+      .select(fields)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), notPrivateRun(testRuns.origin), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
-      .select(RECENT_LIST_FIELDS)
+      .select(fields)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
       .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.origin), inScope))
@@ -450,11 +459,11 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
   ]);
 
   const seen = new Set<number>();
-  const result: typeof activeRuns = [];
-  for (const run of [...activeRuns, ...recentRuns]) {
+  const result: Array<Omit<(typeof activeRuns)[number], 'own'> & { mine?: true }> = [];
+  for (const { own, ...run } of [...activeRuns, ...recentRuns]) {
     if (!seen.has(run.id)) {
       seen.add(run.id);
-      result.push(run);
+      result.push({ ...run, ...mineFlag(own) });
     }
   }
   return result;

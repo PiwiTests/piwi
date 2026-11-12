@@ -213,6 +213,7 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
   listProjectMarkers,
@@ -992,7 +993,11 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawLimit = Number(q?.get('limit'));
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
+      const project = await getProject(await getDemoDb(), +m[1]!, {
+        runLimit,
+        scope: parseProjectRunScope(q),
+        viewer: SOLE_USER,
+      });
       if (!project) return project;
       const {
         scmToken: _scm,
@@ -1415,7 +1420,7 @@ const routes: RouteEntry[] = [
     handler: async (_, __, ___, ctx) => {
       const db = await getDemoDb();
       return {
-        items: await getRecentTestRuns(db, ctx?.scope),
+        items: await getRecentTestRuns(db, ctx?.scope, SOLE_USER),
         runsLast24h: await countRunsLast24h(db, ctx?.scope),
       };
     },
@@ -2731,7 +2736,7 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const limit = Number(q?.get('limit')) || undefined;
-      return listKeptRuns(await getDemoDb(), +m[1]!, { limit });
+      return listKeptRuns(await getDemoDb(), +m[1]!, { limit, viewer: SOLE_USER });
     },
   },
 
