@@ -2081,7 +2081,10 @@ internal interface RunRemote {
     /** The Worker tab watches a CI run's lane (`on`), or stops. */
     fun ciWatch(params: CiWatchParams): RunControlResult?
 
-    /** **Open the Trace So Far** for the Worker tab's slot: the service starts Playwright's trace viewer on this machine. */
+    /**
+     * **Open the Trace So Far** for the Worker tab's slot: the service starts Playwright's trace viewer on the machine the
+     * run runs on.
+     */
     fun openTrace(params: OpenTraceParams): RunControlResult?
 
     fun pickAt(params: PickAtParams): PickAtResult?

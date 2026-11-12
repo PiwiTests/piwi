@@ -1785,7 +1785,8 @@ export interface PausedPageView {
 }
 
 /** What **Open the trace so far** says it does, as its tooltip. */
-export const OPEN_TRACE_TITLE = 'Open this test’s trace up to now in Playwright’s trace viewer, on this machine';
+export const OPEN_TRACE_TITLE =
+  'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on';
 
 /**
  * What `piwi/openTrace` asks for the worker panel's slot (`slot`); `none` says why there is nothing to ask: no slot

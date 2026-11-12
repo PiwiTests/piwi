@@ -1142,8 +1142,8 @@ data class LaneViewParams(
 
 /**
  * `piwi/openTrace`: **Open the Trace So Far** for the slot `lane` of the run `ref` (its `RunWorker.parallelIndex`): the
- * service starts Playwright's trace viewer on this machine on the running test's trace up to now. Answered with
- * `RunControlResult`, its message said to the person; the trace's path never reaches the IDE.
+ * service starts Playwright's trace viewer, on the machine the run runs on, on the running test's trace up to now.
+ * Answered with `RunControlResult`, its message said to the person; the trace's path never reaches the IDE.
  */
 data class OpenTraceParams(val ref: String, val lane: Int)
 

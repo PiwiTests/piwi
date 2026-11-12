@@ -3632,7 +3632,7 @@ object Glue {
 
     /** **Open the Trace So Far** in the Worker tab, and what its tooltip says it does. */
     const val OPEN_TRACE = "Open the Trace So Far"
-    const val OPEN_TRACE_TITLE = "Open this test’s trace up to now in Playwright’s trace viewer, on this machine"
+    const val OPEN_TRACE_TITLE = "Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on"
 
     /**
      * Whether the Worker tab offers **Open the Trace So Far** for the worker in its slot: its reporter answers a trace

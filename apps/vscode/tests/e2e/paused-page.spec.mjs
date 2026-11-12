@@ -361,7 +361,7 @@ test('the worker panel offers Open the trace so far while its worker can open it
   await expect(trace).toBeVisible();
   await expect(trace).toHaveAttribute(
     'title',
-    'Open this test’s trace up to now in Playwright’s trace viewer, on this machine',
+    'Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on',
   );
   // Off from the click until the extension says the service answered.
   await trace.click();
