@@ -26,6 +26,7 @@ describe('who else has a run open', () => {
     const shouting: RunSpeaker = {
       say: (key, args) => en.say(key, args).toUpperCase(),
       count: (key, count) => en.count(key, count).toUpperCase(),
+      number: (value) => en.number(value),
       list: (items) => items.join(' + '),
     };
     expect(presenceLine([desktop, code], shouting)).toBe('ALSO OPEN IN THE DESKTOP APP + VISUAL STUDIO CODE');

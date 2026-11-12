@@ -4,6 +4,7 @@ import type { HubProgress, HubSession, HubWorker } from '@piwitests/core/run-hub
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
   attentionOf,
+  ciDashboardWatch,
   pageHintOf,
   parseRunsRequest,
   shareRefusalOf,
@@ -162,6 +163,8 @@ describe('the global shortcut’s rule', () => {
       holds,
       stops: false,
       traces: false,
+      sharesWindow: false,
+      windowShared: false,
     });
     // A run nobody attends is left to run: the shortcut pauses the run a person attends.
     expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
@@ -338,15 +341,38 @@ describe('Share live, as the worker reads it', () => {
   it('names the run alone, and whether to share it', () => {
     expect(parseRunsRequest({ ...command, what: 'share', on: true })).toEqual({ ...command, what: 'share', on: true });
     expect(parseRunsRequest({ ...command, what: 'share', on: false })).toMatchObject({ on: false });
+    // Or each run of its editor window until the person stops.
+    expect(parseRunsRequest({ ...command, what: 'share', on: true, scope: 'window' })).toEqual({
+      ...command,
+      what: 'share',
+      on: true,
+      scope: 'window',
+    });
     for (const bad of [
       { ...command, what: 'share' },
       { ...command, what: 'share', on: 'yes' },
       { ...command, what: 'share', on: true, worker: 0 },
       { ...command, what: 'share', on: true, since: 's3' },
       { ...command, what: 'share', on: true, request: 2 },
+      { ...command, what: 'share', on: true, scope: 'all' },
+      { ...command, what: 'hold', on: true, scope: 'window' },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
+  });
+
+  it('stops sharing each run of an editor window by its hub alone, naming no run', () => {
+    const hub = 'ws://127.0.0.1:1/piwi/hub';
+    expect(parseRunsRequest({ type: 'unshare-window', id: 3, hub })).toEqual({ type: 'unshare-window', id: 3, hub });
+    for (const bad of [
+      { type: 'unshare-window', id: 0, hub },
+      { type: 'unshare-window', id: 3 },
+      { type: 'unshare-window', id: 3, hub: 'x'.repeat(201) },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+    expect(parseRunsRequest({ type: 'shown', shown: false })).toEqual({ type: 'shown', shown: false });
+    expect(parseRunsRequest({ type: 'shown', shown: 'no' })).toBeNull();
   });
 
   it('reads why a run cannot be shared, as the reporter says it, and no other sentence', () => {
@@ -365,6 +391,34 @@ describe('Share live, as the worker reads it', () => {
     expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
     expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();
     expect(shareRefusalOf(`${LIVE_SHARE_MISSING.local} `)).toBeNull();
+  });
+});
+
+describe('Watch on a CI run, as the worker reads it', () => {
+  const lane = { type: 'ci-watch', id: 4, runId: 78, shard: null, lane: 1 };
+
+  it('names the run on the instance, its shard and its lane, and whether to watch it', () => {
+    expect(parseRunsRequest({ ...lane, on: true })).toEqual({ ...lane, on: true });
+    expect(parseRunsRequest({ ...lane, shard: 2, on: false })).toEqual({ ...lane, shard: 2, on: false });
+    for (const bad of [
+      { ...lane },
+      { ...lane, on: 'yes' },
+      { ...lane, id: 0, on: true },
+      { ...lane, runId: 0, on: true },
+      { ...lane, runId: '78', on: true },
+      { ...lane, shard: 0, on: true },
+      { ...lane, shard: undefined, on: true },
+      { ...lane, lane: -1, on: true },
+      { ...lane, lane: 1.5, on: true },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('opens the lane’s view on the run’s page, the worker counted from 1', () => {
+    const run = { url: 'https://piwi.example/test-runs/78' };
+    expect(ciDashboardWatch(run, { shard: null, lane: 1 })).toBe('https://piwi.example/test-runs/78?watch=2');
+    expect(ciDashboardWatch(run, { shard: 3, lane: 0 })).toBe('https://piwi.example/test-runs/78?watch=3.1');
   });
 });
 
@@ -439,6 +493,8 @@ describe('what a stop takes from the window', () => {
           holds: false,
           stops: false,
           traces: false,
+          sharesWindow: false,
+          windowShared: false,
         },
       ],
       runs: [
@@ -566,6 +622,8 @@ describe('a lane watched while it runs', () => {
           holds: false,
           stops: false,
           traces: false,
+          sharesWindow: false,
+          windowShared: false,
         },
       ],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
@@ -599,6 +657,8 @@ describe('what the runs ask of the person', () => {
       holds: false,
       stops: false,
       traces: false,
+      sharesWindow: false,
+      windowShared: false,
     },
   ];
   const progress = (status: HubProgress['status'], failed: number): HubProgress => ({

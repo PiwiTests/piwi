@@ -6377,10 +6377,20 @@
     "message": "Tastenkürzel ändern"
   },
   "runs_failOffline": {
-    "message": "Der Dienst des Editors ist nicht verbunden: Piwi Picker verbindet sich erneut."
+    "message": "Nicht mit $tool$ verbunden: Piwi Picker verbindet sich erneut.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "Der Editor hat nicht rechtzeitig geantwortet."
+    "message": "Keine rechtzeitige Antwort von $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: Der Lauf ist beendet.",
@@ -7279,12 +7289,6 @@
   "runs_requestNoSize": {
     "message": "Größe unbekannt"
   },
-  "runs_live": {
-    "message": "Live ansehen"
-  },
-  "runs_liveTitle": {
-    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Interagieren sendet dann Ihre Klicks und Tasten an sie"
-  },
   "runs_interact": {
     "message": "Interagieren"
   },
@@ -7304,7 +7308,12 @@
     "message": "Die Live-Ansicht startet…"
   },
   "runs_liveLost": {
-    "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
+    "message": "Die Verbindung mit $tool$ ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc schaltet Interagieren aus und gibt den Halt zurück, geht aber an die Seite, solange dort eine Auswahl oder eine Prüfung läuft; Umschalt+Klick wählt einen Locator."
@@ -7399,6 +7408,59 @@
   "runs_stopSharingTitle": {
     "message": "Die Ansichten dieses Laufs auf der Instanz beenden: Nichts geht mehr dorthin"
   },
+  "runs_shareWindow": {
+    "message": "Läufe dieses Editorfensters teilen"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Diesen Lauf und jeden Lauf, den dieses Editorfenster ab jetzt startet, live auf der Piwi-Instanz Ihres Teams teilen, bis Sie es beenden oder das Fenster schließen"
+  },
+  "runs_sharedByWindow": {
+    "message": "Geteilt als einer der Läufe dieses Editorfensters, bis Sie es beenden."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Teilen der Läufe dieses Fensters beenden"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Die Ansichten der Läufe dieses Editorfensters auf der Instanz beenden: Die nächsten Läufe bleiben auf diesem Rechner"
+  },
+  "runs_stopSharingAsk": {
+    "message": "Teilen dieses Laufs beenden? Seine Ansichten auf der Team-Instanz schließen sich."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Teilen der Läufe dieses Editorfensters beenden? Ihre Ansichten auf der Team-Instanz schließen sich, und die nächsten Läufe bleiben auf diesem Rechner."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden live geteilt, jeder, den es startet, bis Sie es beenden.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: live geteilt, als einer der Läufe seines Editorfensters.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden live geteilt, bis Sie es beenden.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden nicht mehr live geteilt.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Link zur Seite des Laufs kopieren"
   },
@@ -7461,13 +7523,117 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. Öffnen Sie die Seite eines Laufs, um einen laufenden Test anzusehen."
+    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
+  },
+  "runs_ciTests": {
+    "message": "Jetzt laufende Tests"
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, Worker $worker$",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Die Seite dieses Tests zeigen, während er in der CI läuft, auch über die nächsten Tests seines Workers: nur lesbar, nichts von hier erreicht ihn"
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Im Dashboard ansehen"
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Die Ansicht dieses Workers auf der Seite des Laufs öffnen"
+  },
+  "runs_ciWatching": {
+    "message": "Sie sehen CI-Lauf #$id$ an: $worker$.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Live-Ansicht der Seite des CI-Tests, nur lesbar"
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "Dieser CI-Lauf läuft nicht mehr."
+  },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker verfolgt drei CI-Läufe auf einmal, die neuesten: Die Tests dieses Laufs erscheinen wieder, sobald ein neuerer endet."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "Die Tests dieses Laufs lassen sich nicht ansehen: Die Live-Ansicht seines Projekts ist aus, oder der Lauf hat keinen Schlüssel."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "In der Spur dieses Workers lief noch kein Test."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "Die Instanz hat nicht geantwortet."
+  },
+  "runs_ciRefusedLate": {
+    "message": "Die Instanz hat die Ansicht nicht rechtzeitig geöffnet: Versuchen Sie es gleich noch einmal."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "Die Live-Ansicht dieser Instanz kann Piwi Picker nicht lesen: Sehen Sie den Test im Dashboard an."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "Die Instanz hat mit $status$ geantwortet.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "Der CI-Lauf ist beendet."
+  },
+  "runs_ciEndOff": {
+    "message": "Die Live-Ansicht des Projekts wurde ausgeschaltet."
+  },
+  "runs_ciEndReplaced": {
+    "message": "Die Instanz hat diese Ansicht geschlossen: Sie haben anderswo mehr Ansichten dieses Laufs geöffnet, als sie für eine Person behält."
+  },
+  "runs_ciEndTest": {
+    "message": "Der Test ist beendet."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "In dieser Spur läuft kein Worker mehr."
+  },
+  "runs_ciEndUnshared": {
+    "message": "Der Lauf wird nicht mehr geteilt."
+  },
+  "runs_ciEndSilent": {
+    "message": "Die Instanz antwortet nicht mehr."
+  },
+  "runs_ciEndClosed": {
+    "message": "Die Instanz hat die Ansicht geschlossen."
+  },
+  "runs_ciEndBroken": {
+    "message": "Die Verbindung zur Instanz ist abgebrochen."
+  },
+  "runs_ciEndMoved": {
+    "message": "Ein anderes Läufe-Fenster sieht jetzt einen anderen Worker an: Piwi Picker zeigt einen CI-Worker auf einmal."
   },
   "runs_pageAtStop": {
-    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },
   "runs_pageAtStopDesktop": {
-    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },
   "runs_shareRefusedLocal": {
     "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an die Piwi-Desktop-App auf diesem Rechner, die kein Teammitglied erreicht. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein, um einen Lauf dort zu teilen."

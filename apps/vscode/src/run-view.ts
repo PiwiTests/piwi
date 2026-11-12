@@ -310,7 +310,7 @@ export function registerRunControl(
   let acceptedPage: PageViewParams | null = null;
   /**
    * The stop Interact was last on for, while it is on: the paused page keeps it on for the next stops of that stop's
-   * worker slot while Watch live stays on and the run goes on, and their input goes to each once its watch is
+   * worker slot while Watch stays on and the run goes on, and their input goes to each once its watch is
    * accepted. Null while Interact is off.
    */
   let interactOn: ShownStop | null = null;

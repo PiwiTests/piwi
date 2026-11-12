@@ -344,6 +344,6 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     trace.disabled = !!event.data.view.trace?.asking;
   }
 });
-// The extension ends the watch itself when the panel hides or closes, and keeps Watch live for when it shows again.
+// The extension ends the watch itself when the panel hides or closes, and keeps Watch for when it shows again.
 window.addEventListener('pagehide', () => input.dispose());
 post({ type: 'ready' });

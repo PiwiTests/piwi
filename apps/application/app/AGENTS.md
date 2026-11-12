@@ -277,6 +277,10 @@ views are exempt only where a rule says so.
   `desktopHoldsByDefault`, and **Run again** keeps this window's choice; never for a run nobody attends, `desktopHoldRefusal`),
   each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
   `tests/unit/desktop-run-hub-plugin.test.ts`).
+- **A reload of the desktop window keeps its Local runs** (`plugins/desktop-local-runs.client.ts`): a field added to
+  `LocalRun` is plain JSON, since the store writes the runs to session storage, and a separate output window is fed by
+  `DesktopRunOutputWindows` in `app.vue`, never by the tray, so it outlives the tray and the reload
+  (`tests/unit/desktop-local-runs-reload.test.ts`, `tests/desktop-run-view.spec.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

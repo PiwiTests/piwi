@@ -15,6 +15,9 @@ import {
   desktopRunRef,
   desktopSessionsOfRun,
   desktopEditorRunOf,
+  desktopFailedExecution,
+  desktopFailedStep,
+  desktopRunProgress,
   desktopShownRefs,
   desktopStopLink,
 } from '../../app/utils/desktop-run-view';
@@ -32,12 +35,15 @@ import {
   desktopSay,
   desktopShareOffered,
   desktopShareWarning,
+  desktopStopSharingQuestion,
   desktopWaitedFor,
   desktopStopSaid,
   isDesktopRunImage,
 } from '@piwitests/run-ui/run-view';
 import { desktopEditorRuns, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
+import { hideSecretsInText } from '@piwitests/core/mask';
+import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
 
 /**
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
@@ -88,6 +94,82 @@ function workerOf(over: Partial<HubWorker> = {}): HubWorker {
 function sessionOf(ref: string, workers: HubWorker[], over: Partial<HubSession> = {}): HubSession {
   return { ref, root: ROOT, label: 'shop', command: null, project: 'Shop', workers, ended: false, ...over };
 }
+
+describe('how far a run of the tray is, and where its end leads', () => {
+  const counts = { total: 4, done: 2, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null };
+
+  test('counts what its steps’ own processes counted, and a test held at its failure as failed so far', () => {
+    const run = { hubRefs: ['desktop-6', 'desktop-7'] };
+    // No step said how far it is (a reporter that predates it): nothing to count.
+    expect(desktopRunProgress(run, [sessionOf('desktop-7', [workerOf()])], {})).toBeNull();
+    // The step that ended, as it last counted, and the step running now, with a test held at its failure.
+    const held = workerOf({ worker: 1, parallelIndex: 1, state: 'stopped', stop: stopOf({ reason: 'failure' }) });
+    const running = sessionOf('desktop-7-unattended', [workerOf(), held], { progress: { ...counts, flaky: 1 } });
+    const ended = {
+      'desktop-6': { ...counts, total: 3, done: 3, skipped: 1, endedAtStop: 1, status: 'failed' as const },
+    };
+    expect(desktopRunProgress(run, [running, sessionOf('desktop-9', [], { progress: counts })], ended)).toEqual({
+      total: 7,
+      done: 5,
+      failed: 3,
+      flaky: 1,
+      skipped: 1,
+      endedAtStop: 1,
+    });
+  });
+
+  test('leads a failed run to its first failure, by the title its process named, else its first failed test', () => {
+    const cases = [
+      { executionId: 11, title: 'lists the cart', suitePath: ['cart'], status: 'passed' },
+      { executionId: 12, title: 'pays', suitePath: ['checkout'], status: 'timedOut' },
+      { executionId: 13, title: 'pays', suitePath: ['checkout', 'with a card'], status: 'failed' },
+    ];
+    expect(desktopFailedExecution(cases, { title: 'checkout › with a card › pays', error: null })).toBe(13);
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, { title: 'refunds', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, null)).toBe(12);
+    expect(desktopFailedExecution(cases.slice(0, 1), null)).toBeNull();
+  });
+
+  test('finds a failure whose title its process sent cut or with its secrets hidden, never a test it only begins', () => {
+    const long = 'pays '.repeat(120);
+    const cases = [
+      { executionId: 21, title: 'lists the cart', suitePath: ['cart'], status: 'failed' },
+      { executionId: 22, title: 'pays', suitePath: ['checkout'], status: 'failed' },
+      { executionId: 23, title: `${long}by card`, suitePath: ['checkout'], status: 'failed' },
+      { executionId: 24, title: 'logs in with AKIAIOSFODNN7EXAMPLE', suitePath: [], status: 'failed' },
+    ];
+    // As the reporter sends them: cut at MAX_RUN_FAILURE_TEXT, its secrets hidden.
+    const cut = `checkout › ${long}by card`.slice(0, MAX_RUN_FAILURE_TEXT);
+    expect(desktopFailedExecution(cases, { title: cut, error: null })).toBe(23);
+    const hidden = hideSecretsInText('logs in with AKIAIOSFODNN7EXAMPLE');
+    expect(hidden).not.toContain('AKIA');
+    expect(desktopFailedExecution(cases, { title: hidden, error: null })).toBe(24);
+    // A title another test's only begins with names that test alone.
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(22);
+  });
+
+  test('leads a run of several steps to the first step that failed, and the failure it named', () => {
+    const progress = (failed: number, title: string | null) => ({
+      total: 2,
+      done: 2,
+      failed,
+      flaky: 0,
+      skipped: 0,
+      status: failed ? ('failed' as const) : ('passed' as const),
+      failure: title ? { title, error: null } : null,
+    });
+    const run = { hubRefs: ['desktop-1', 'desktop-2', 'desktop-3'] };
+    expect(
+      desktopFailedStep(run, {
+        'desktop-1': progress(0, null),
+        'desktop-2-unattended': progress(1, 'checkout › pays'),
+        'desktop-3': progress(1, 'cart › lists'),
+      }),
+    ).toEqual({ ref: 'desktop-2', failure: { title: 'checkout › pays', error: null } });
+    expect(desktopFailedStep(run, { 'desktop-1': progress(0, null) })).toBeNull();
+  });
+});
 
 describe('a worker of a desktop run', () => {
   test('is a run of the tray by the name its step gave the hub', () => {
@@ -526,6 +608,17 @@ describe('the window’s stream of its runs', () => {
     expect(runs.state.sessions).toEqual({});
   });
 
+  test('takes back how far the runs that ended before a reload came, without counting one again', async () => {
+    const runs = await hub();
+    const progress = { total: 2, done: 2, failed: 1, flaky: 0, skipped: 1, status: 'failed' as const, failure: null };
+    runs.takeBackEnded({ 'desktop-7': { progress, endedAtStop: 1 }, 'desktop-8': { endedAtStop: 2 } });
+    expect(runs.state.endedProgress).toEqual({ 'desktop-7': progress });
+    expect(runs.state.endedAtStop).toEqual({ 'desktop-7': 1, 'desktop-8': 2 });
+    // A run the stream tells of again keeps what the stream says.
+    runs.takeBackEnded({ 'desktop-7': { progress: { ...progress, failed: 2 } } });
+    expect(runs.state.endedProgress['desktop-7']?.failed).toBe(1);
+  });
+
   test('says which runs it shows live, again on each new stream, and names its stream in every command', async () => {
     const runs = await hub();
     runs.want(true);
@@ -585,7 +678,7 @@ describe('the window’s stream of its runs', () => {
     runs.want(false);
   });
 
-  test('keeps Watch live for each worker through a new stream, until it is turned off or its run ends', async () => {
+  test('keeps Watch for each worker through a new stream, until it is turned off or its run ends', async () => {
     const runs = await hub();
     runs.want(true);
     const source = FakeSource.last!;
@@ -596,12 +689,12 @@ describe('the window’s stream of its runs', () => {
     runs.setWatchLive('desktop-7', 1, true);
     runs.setWatchLive('desktop-7', 1, false);
     expect([runs.watchesLive('desktop-7', 0), runs.watchesLive('desktop-7', 1)]).toEqual([true, false]);
-    // The stream opens again: Watch live stays.
+    // The stream opens again: Watch stays.
     source.send({ type: 'hello', viewer: VIEWER });
     expect(runs.watchesLive('desktop-7', 0)).toBe(true);
     source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
     expect(runs.watchesLive('desktop-7', 0)).toBe(false);
-    // The window stops listening: every run it showed is over, and so is their Watch live.
+    // The window stops listening: every run it showed is over, and so is their Watch.
     runs.setWatchLive('desktop-8', 0, true);
     runs.want(false);
     expect(runs.watchesLive('desktop-8', 0)).toBe(false);
@@ -626,12 +719,12 @@ describe('the window’s stream of its runs', () => {
     runs.chooseTab('desktop-7', 0);
     run(running(0), stopped(1, 's1'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
-    // A worker whose lane is watched keeps its tab when another stops; its Watch live, which shows nothing while it
+    // A worker whose lane is watched keeps its tab when another stops; its Watch, which shows nothing while it
     // runs, does not.
     runs.setWatchLive('desktop-7', 0, true);
     run(running(0), stopped(1, 's4'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
-    // Pausing with Watch live on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
+    // Pausing with Watch on, as Pause and watch leaves it where the lane cannot be watched, it keeps its tab.
     runs.chooseTab('desktop-7', 0);
     run({ ...running(0), pausing: true }, stopped(1, 's5'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
@@ -1158,6 +1251,25 @@ describe('Share live in the window', () => {
     expect(warning).toContain('on an instance with authentication off, anyone who can reach it');
     expect(warning).toMatch(/Stop sharing ends it within seconds\.$/);
     expect(desktopShareWarning({ page: null })).toContain('the Piwi instance this run reports to');
+  });
+
+  test('asks before Stop sharing: what closes on the instance, and that nothing more of the run goes there', () => {
+    const page = { id: 42, url: 'https://piwi.example.com/test-runs/42' };
+    expect(desktopStopSharingQuestion({ page, live })).toEqual({
+      title: 'Stop sharing run #42 live?',
+      body: 'Nothing more of it goes to piwi.example.com.',
+    });
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 1 } }).body).toBe(
+      'The view open on piwi.example.com closes, and nothing more of the run goes there.',
+    );
+    expect(desktopStopSharingQuestion({ page, live: { ...live, viewers: 3 } }).body).toBe(
+      'The 3 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    // Before its process named its page, the run has no number, and an instance named by no page is the team's.
+    expect(desktopStopSharingQuestion({ live: { ...live, page: null, viewers: 2 } })).toEqual({
+      title: 'Stop sharing the run live?',
+      body: 'The 2 views open on the team instance close, and nothing more of the run goes there.',
+    });
   });
 
   test('offers no Share live for a run that reports to this app, which no teammate reaches', () => {

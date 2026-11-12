@@ -27,7 +27,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 |---|---|---|---|
 | Write the test | **Record a new test file**, or **Record here** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
 | Run it | **Run with Piwi** from the gutter, the Testing view or the test at the cursor; **Verify ×3** | the desktop app's **Re-run** of tests | [Runs from the editor](./editor-runs), [Desktop app runs](./desktop-runs) |
-| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch live** at a stop | [Live view of a run](./live-view), [Runs window](./runs-window) |
+| Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Live view of a run](./live-view), [Runs window](./runs-window) |
 | Stop it | a breakpoint, **Pause**, **Step**, **Run to cursor** | the pause bar in the test's page | [Breakpoints in the browser](./editor-breakpoints), [Pause and step from the editor](./editor-run-control) |
 | Fix it at the stop | **Pick a locator**, **Record here**, **Assert**, **Mock a request** | **Pick a locator** and **Record here** from the pause bar; all four from the Runs window | [Code from a pause](./editor-stop-code) |
 | Debug a failure | **Debug in my editor**, from the failure's page | the failure page's Locator fix | [Debug in my editor](./debug-in-editor), [Locator healing](./locator-healing) |

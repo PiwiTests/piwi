@@ -25,7 +25,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         val panel = PausedPagePanel()
         val asked = mutableListOf<Boolean>()
         panel.configureLive(true, true, true) { asked += it }
-        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch live" }
+        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch" }
         val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
         assertFalse(live.isSelected)
         assertFalse(interact.isSelected)
@@ -110,7 +110,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
         assertEmpty(heard)
         assertEmpty(sent)
-        // Watch live off, or a watch refused, turns Interact off and gives the stop back; off already, nothing more.
+        // Watch off, or a watch refused, turns Interact off and gives the stop back; off already, nothing more.
         interact.doClick()
         heard.clear()
         panel.watching(false)
@@ -139,8 +139,8 @@ class PausedPagePanelTest : BasePlatformTestCase() {
     }
 
     /**
-     * Watch live turned off with Interact on, and Interact going off as its watch ends (`letGo`), send the click held
-     * back for a second one, then the release, then give the stop back: Watch live's change is told last.
+     * Watch turned off with Interact on, and Interact going off as its watch ends (`letGo`), send the click held
+     * back for a second one, then the release, then give the stop back: Watch's change is told last.
      */
     fun testTheInputHeldGoesBeforeTheGiveBackAndTheEndOfTheWatch() {
         val heard = mutableListOf<String>()
@@ -151,7 +151,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.interactOff = { heard += "given back" }
         panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
         panel.viewport = PausedImage("image/jpeg", null, 800, 600)
-        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch live" }
+        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch" }
         val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
         val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
         fun clickHeldBack() {

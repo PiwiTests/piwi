@@ -21,6 +21,7 @@ export { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 export {
   RunAgent,
   agentTools,
+  runStartTool,
   type AgentWords,
   type RunAgentOptions,
   type ToolDefinition,

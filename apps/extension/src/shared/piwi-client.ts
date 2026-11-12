@@ -2,6 +2,7 @@ import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-p
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
 import { liveUrlOf, parseLiveAnswer, type LiveHub } from '@piwitests/core/run-hub';
 import {
   getInstanceApiKey,
@@ -29,7 +30,8 @@ import { t } from './i18n.js';
  * and the desktop app's: `piwi-desktop-repro` once the developer confirmed its
  * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
  * window, `fetchDesktopHubs`; and the CI runs in progress the Runs window lists
- * while it is open, `fetchActiveRuns` and `fetchRunMetadata`) only,
+ * while it is open, `fetchActiveRuns`, `fetchRunMetadata` and `openRunStream`, and
+ * the CI lane it watches, `openLiveWatch` and `changeLiveWatch`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -222,6 +224,54 @@ export async function fetchRunMetadata(settings: ConnectionSettings, runId: numb
   }
   if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
   return ((await instanceJson(res)) as { metadata?: unknown } | null)?.metadata ?? null;
+}
+
+/**
+ * One run's event stream (`GET /api/test-runs/:id/stream`), open until `signal` aborts: the Runs window's CI runs read
+ * whether their lanes can be watched and each lane as it stands.
+ */
+export async function openRunStream(
+  settings: ConnectionSettings,
+  runId: number,
+  signal: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/stream`, {
+    headers: { ...headers, Accept: 'text/event-stream' },
+    signal,
+  });
+}
+
+/**
+ * A watch of a live run (`GET /api/test-runs/:id/live-view/watch`), open until `signal` aborts: a CI lane the Runs
+ * window watches, read-only, its live messages read with `@piwitests/core/live-view`'s reader.
+ */
+export async function openLiveWatch(
+  settings: ConnectionSettings,
+  runId: number,
+  query: URLSearchParams,
+  signal: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch?${query}`, {
+    headers: { ...headers, Accept: LIVE_STREAM_TYPE },
+    signal,
+  });
+}
+
+/** Change what a watch of a live run shows (`POST /api/test-runs/:id/live-view/watch`): another lane of the run. */
+export async function changeLiveWatch(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
 }
 
 /**

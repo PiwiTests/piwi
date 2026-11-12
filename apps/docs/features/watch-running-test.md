@@ -22,7 +22,7 @@ sent](/guide/concepts#watch-share-live).
 | VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: **Piwi: worker 2** beside the editor | A headless stop of the worker shows there, with **Interact** and the pick on a click, instead of the paused page |
 | JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** beside it, for **Interact**, unless that tab holds another stop |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
-| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch-live) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
+| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
 **Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and Watch a
 Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
@@ -41,11 +41,12 @@ nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
 - **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
   Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
 - **Piwi Picker's Runs window** lists the CI runs in progress of the projects your
-  [connection](./extension-connection) maps, through that instance, with **Open**.
-- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane in the
-  editor, read-only: the VS Code worker panel or the JetBrains **Worker** tab, named `CI run #78 · worker 2`, with
-  **Watch** alone, no **Interact** and no pick. It follows the lane through its next tests, and ends with the run, as
-  you hide or close the view, or as the instance closes it, saying why.
+  [connection](./extension-connection) maps, through that instance, with **Open** and their running tests.
+- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane
+  read-only (the VS Code worker panel, the JetBrains **Worker** tab, named `CI run #78 · worker 2`, or under the run in
+  the Runs window): **Watch** alone, no **Interact** and no pick. It follows the lane
+  through its next tests, and ends with the run, as you hide or close the view, or as the instance closes it, saying
+  why.
 - **Watch on the dashboard**, beside it, opens the lane's view on the run's page: the choice where the editor cannot
   show it (an older instance, a refused **Watch**, which offers it).
 
@@ -95,7 +96,7 @@ The attempt must be traced: [which attempts are](/guide/concepts#trace-so-far).
 
 ## Interact
 
-At a stop, **Interact**, beside **Watch live** or **Watch** in each view once the view is on, sends your clicks, the
+At a stop, **Interact**, beside **Watch** in each view once the view is on, sends your clicks, the
 wheel and your keys on the view to the page as a person's would. The first of them takes control of the stop, so an
 agent waits until you give it back ([driving a stop](/guide/concepts#presence-driving-a-stop)). It stays on across the
 worker's next stops, where your first click or key takes the stop again. Turning it or watching off, **Give back** or

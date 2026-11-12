@@ -344,14 +344,14 @@ test.describe('the Runs window in another language', () => {
       heading: 'Les exécutions de votre éditeur',
       mock: 'Simuler une requête',
       failed: 'En échec à',
-      live: 'Voir en direct',
+      live: 'Regarder',
     },
     {
       language: 'de',
       heading: 'Die Läufe Ihres Editors',
       mock: 'Anfrage nachbilden',
       failed: 'Fehlgeschlagen bei',
-      live: 'Live ansehen',
+      live: 'Ansehen',
     },
   ];
 
@@ -388,7 +388,7 @@ test.describe('the Runs window in another language', () => {
         stopAtCheckout(run.worker, 3, { bar: false });
         const frame = await jpegOf(runs);
         await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: frame, ...VIEWPORT });
-        await runs.getByRole('button', { name: live }).click();
+        await runs.getByRole('button', { name: live, exact: true }).click();
         await answerView(run.worker);
         sendFrame(run.worker, 3, frame);
         await expect(runs.locator('img.live')).toBeVisible();

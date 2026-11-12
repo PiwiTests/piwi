@@ -14,7 +14,8 @@
  * it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
- * asks; `openTrace` opens a lane's running test's trace so far in Playwright's trace viewer, on the hub's machine,
+ * asks, or, at a hub whose features list `share-window`, each run of the editor window from then on until the person
+ * stops (`scope: 'window'`, said to every subscribed connection in `share-window`); `openTrace` opens a lane's running test's trace so far in Playwright's trace viewer, on the hub's machine,
  * from the file the lane's worker names to the hub alone. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a
  * frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on
  * both sides. Nothing a command asks evaluates code or reaches an instance, and no command names a file: for
@@ -73,14 +74,19 @@ export const MAX_HUB_PRESENCE = 16;
  * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names), sends a watched lane's
  * layers beside its frames (`layers`: `watch`'s `layers`, its messages `lane-layer`), and opens a lane's running test's
  * trace so far in Playwright's trace viewer on its machine (`trace`: the command `openTrace`, for a worker whose
- * `traces` says its reporter answers where the trace grows). A reader keeps those it knows; a hub that predates the
- * list does none of them, a hub whose host cannot stop its runs leaves `stop` out, and one whose host cannot start the
- * trace viewer leaves `trace` out.
+ * `traces` says its reporter answers where the trace grows), and shares each run of its editor window live until the
+ * person stops (`share-window`: `share` with `scope: 'window'`, its state the message `share-window`). A reader keeps
+ * those it knows; a hub that predates the list does none of them, a hub whose host cannot stop its runs leaves `stop`
+ * out, one whose host cannot start the trace viewer leaves `trace` out, and one whose host is no editor window leaves
+ * `share-window` out.
  */
-export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers' | 'trace';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop' | 'layers' | 'trace' | 'share-window';
 
 /** The features of a hub of this version whose host can stop its runs and start the trace viewer. */
 export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'];
+
+/** The features a reader of this version knows: `HUB_FEATURES`, and `share-window`, an editor window's alone. */
+const KNOWN_FEATURES: readonly HubFeature[] = [...HUB_FEATURES, 'share-window'];
 
 /**
  * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
@@ -518,9 +524,12 @@ export type HubCommand =
   /**
    * Share the run live on the team instance its reporter reports to (`on`), for whoever may open it there, or stop
    * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
-   * shared.
+   * shared. With `scope: 'window'`, at a hub whose features list `share-window`: share each run of the editor window
+   * from now on, the run of `ref` too when one is named, until the person stops or the window closes, or stop sharing
+   * every run of the window (`on: false`).
    */
-  | { type: 'share'; id: number; ref: string; on: boolean }
+  | { type: 'share'; id: number; ref: string; on: boolean; scope?: undefined }
+  | { type: 'share'; id: number; ref: string | null; on: boolean; scope: 'window' }
   /**
    * Start (`on`) or stop watching the lane `lane` (Playwright's `parallelIndex`) of the run: the page of its running
    * test, of its stop while it stands at one, through its tests, its stops and a worker Playwright starts in its place,
@@ -692,6 +701,16 @@ export interface HubPeersMessage {
   hubs: PeerHub[];
 }
 
+/**
+ * Whether the editor window shares each of its runs live until the person stops (`share` with `scope: 'window'`):
+ * sent by a hub whose features list `share-window` to a subscribed connection after the runs `subscribe` answers
+ * with, then each time it changes, whichever surface changed it.
+ */
+export interface HubShareWindowMessage {
+  type: 'share-window';
+  on: boolean;
+}
+
 /** What the hub sends. */
 export type HubMessage =
   | HubWelcome
@@ -704,6 +723,7 @@ export type HubMessage =
   | HubLaneFrameRefusal
   | HubLaneLayerMessage
   | HubPeersMessage
+  | HubShareWindowMessage
   | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
@@ -859,10 +879,16 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     return { type: 'stop', id, ref: value.ref };
   }
   if (value.type === 'share') {
-    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
-    return typeof value.on === 'boolean'
-      ? { type: 'share', id, ref: value.ref, on: value.on }
-      : invalid('share needs on: true to share the run live, false to stop.');
+    const byWindow = value.scope === 'window';
+    if (value.scope !== undefined && !byWindow) return invalid('share’s scope is window, or none for the run alone.');
+    const named = byWindow && (value.ref === undefined || value.ref === null) ? null : value.ref;
+    if (named !== null && (typeof named !== 'string' || !REF.test(named))) {
+      return invalid('The command needs the ref of a run.');
+    }
+    if (typeof value.on !== 'boolean') return invalid('share needs on: true to share the run live, false to stop.');
+    return byWindow
+      ? { type: 'share', id, ref: named, on: value.on, scope: 'window' }
+      : { type: 'share', id, ref: named as string, on: value.on };
   }
   if (value.type === 'watch') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
@@ -1318,6 +1344,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       return Array.isArray(value.hubs) && value.hubs.length <= MAX_HUB_PEERS
         ? { type: 'peers', hubs: value.hubs.flatMap((hub) => readPeer(hub) ?? []) }
         : null;
+    case 'share-window':
+      return typeof value.on === 'boolean' ? { type: 'share-window', on: value.on } : null;
     case 'keepalive':
       return { type: 'keepalive' };
     default:
@@ -1362,5 +1390,5 @@ function readPeer(hub: unknown): PeerHub | null {
 
 /** The features of a list, those this version knows, in its order; none for anything but a list. */
 function readFeatures(value: unknown): HubFeature[] {
-  return Array.isArray(value) ? HUB_FEATURES.filter((feature) => value.includes(feature)) : [];
+  return Array.isArray(value) ? KNOWN_FEATURES.filter((feature) => value.includes(feature)) : [];
 }

@@ -6,10 +6,19 @@
  * read, and from an older instance one run's details for each run it lists first, `MAX_DETAILS_READ` at most; details
  * that did not come are asked again after twice the wait before, `MAX_DETAILS_TRIES` times at most. Nothing is read
  * without connected mode (`isConnected`), and nothing here steers a run.
+ *
+ * `MAX_CI_STREAMS` runs listed are also followed through their own stream (`GET /api/test-runs/:id/stream`) while a
+ * window that listens shows (`shown`): the run a window watches (`watched`), then the newest. Followed: whether their lanes can be watched (`live-view`: the project's live view on and the run
+ * holding a key) and each lane as it stands (`lane`, read by `readLane`), whose running tests the window lists with
+ * **Watch**. A stream that ends or brings nothing for `STREAM_IDLE_MS` is opened again at the next read; the changes
+ * reach the windows at most every `PUSH_MS`.
  */
+import { laneKey, readLane, type Lane } from '@piwitests/core/live-lane';
 import { ciRunsListed, ciTally, isCiMetadata, isCiOrigin, type CiRun } from '@piwitests/run-model/ci';
 import { isConnected, type ConnectionSettings } from '../shared/connection-settings.js';
 import type { ActiveRun } from '../shared/piwi-client.js';
+import type { RunsCiRun, RunsCiTest } from '../shared/runs.js';
+import { EventParser } from './sse.js';
 
 /** How often the list is read while a Runs window is open. */
 export const CI_RUNS_POLL_MS = 15_000;
@@ -19,6 +28,21 @@ const MAX_DETAILS_READ = 4;
 const MAX_DETAILS_TRIES = 4;
 /** The verdicts and the details that did not come kept, by instance and run: past it, the oldest go. */
 const MAX_VERDICTS = 200;
+/**
+ * The most runs whose own stream is read at once, the newest listed: with a watch and a read of the list, within the
+ * six connections a browser opens to one host.
+ */
+export const MAX_CI_STREAMS = 3;
+/** The most running tests a run lists, by shard and lane. */
+export const MAX_CI_TESTS = 32;
+/** A stream that brings nothing for this long has lost the instance, which sends a heartbeat every 15 s. */
+const STREAM_IDLE_MS = 45_000;
+/** The lanes' changes reach the windows at most this often. */
+const PUSH_MS = 500;
+/** The lanes kept of one run: past it, the lanes that ended go. */
+const MAX_LANES = 256;
+/** The states of a lane whose test the window lists. */
+const RUNNING = new Set(['running', 'pausing', 'stopped']);
 
 export interface CiRunsOptions {
   /** The connection as stored: nothing is read unless it is connected mode's. */
@@ -27,7 +51,43 @@ export interface CiRunsOptions {
   metadata: (settings: ConnectionSettings, runId: number) => Promise<unknown>;
   /** The run's page on the instance. */
   runUrl: (settings: ConnectionSettings, runId: number) => string;
+  /** One run's event stream, open until `signal` aborts; absent, no run's lanes are read. */
+  stream?: (settings: ConnectionSettings, runId: number, signal: AbortSignal) => Promise<Response>;
+  /** A run left the list: it ended, or is no longer one of the mapped projects' runs in progress. */
+  left?: (runId: number) => void;
+  /** The run whose lane a window watches, followed whatever runs start after it; null for none. */
+  watched?: () => number | null;
   pollMs?: number;
+  streamIdleMs?: number;
+  pushMs?: number;
+}
+
+/** A run followed through its own stream. */
+interface Followed {
+  runId: number;
+  abort: AbortController;
+  /** Its stream is open, or being opened. */
+  open: boolean;
+  /** Closes its stream open now, its lanes kept as last heard until it opens again. */
+  close: () => void;
+  watchable: boolean;
+  lanes: Map<string, Lane>;
+}
+
+/** The tests a run's lanes run now, by shard and lane, `MAX_CI_TESTS` at most. */
+export function ciTestsOf(lanes: Iterable<Lane>): RunsCiTest[] {
+  return [...lanes]
+    .filter((lane) => RUNNING.has(lane.state) && lane.test)
+    .sort((a, b) => (a.id.shard ?? 0) - (b.id.shard ?? 0) || a.id.lane - b.id.lane)
+    .slice(0, MAX_CI_TESTS)
+    .map((lane) => ({
+      shard: lane.id.shard,
+      lane: lane.id.lane,
+      worker: lane.worker,
+      state: lane.state,
+      title: lane.test!.title,
+      retry: lane.test!.retry,
+    }));
 }
 
 /** The projects a connection maps. */
@@ -68,20 +128,46 @@ function bound(map: Map<string, unknown>): void {
 
 export class CiRunsWatch {
   private runs: CiRun[] = [];
+  /** The runs followed through their own stream, by run, of the instance `followedOn` names. */
+  private readonly followed = new Map<number, Followed>();
+  private followedOn = '';
+  private pushTimer: ReturnType<typeof setTimeout> | null = null;
+  private pushedAt = 0;
   /** Whether each run is a CI run's, by instance and run: its origin never changes once it has begun. */
   private readonly verdicts = new Map<string, boolean>();
   /** The runs whose details did not come, by instance and run: how many times, and when they may be asked again. */
   private readonly missed = new Map<string, { tries: number; next: number }>();
   private readonly listeners = new Set<() => void>();
+  /** The listeners whose window the person cannot see: while every one is, no run is followed. */
+  private readonly hidden = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private reading = false;
   private sent = '[]';
 
   constructor(private readonly options: CiRunsOptions) {}
 
-  /** The CI runs as last read. */
-  state(): CiRun[] {
-    return this.runs;
+  /** The CI runs as last read, with the tests the runs followed run now. */
+  state(): RunsCiRun[] {
+    return this.runs.map((run) => {
+      const f = this.followed.get(run.id);
+      return { ...run, tests: f ? ciTestsOf(f.lanes.values()) : [], watchable: !!f?.watchable };
+    });
+  }
+
+  /**
+   * A lane of a listed run, for a watch of it: whether the run is followed now, whether its lanes can be watched, and
+   * the worker in the lane (Playwright's worker index; null before any); null for a run not listed.
+   */
+  lane(
+    runId: number,
+    shard: number | null,
+    lane: number,
+  ): { followed: boolean; watchable: boolean; worker: number | null } | null {
+    if (!this.runs.some((run) => run.id === runId)) return null;
+    const f = this.followed.get(runId);
+    if (!f) return { followed: false, watchable: false, worker: null };
+    const kept = [...f.lanes.values()].find((l) => l.id.shard === shard && l.id.lane === lane);
+    return { followed: true, watchable: f.watchable, worker: kept?.worker ?? null };
   }
 
   /**
@@ -93,10 +179,31 @@ export class CiRunsWatch {
     if (this.listeners.size === 1) void this.read();
     return () => {
       this.listeners.delete(changed);
+      this.hidden.delete(changed);
+      if (!this.listeners.size) this.unfollowAll();
+      else if (!this.showing()) for (const f of this.followed.values()) f.close();
       if (this.listeners.size || !this.timer) return;
       clearTimeout(this.timer);
       this.timer = null;
     };
+  }
+
+  /**
+   * A listening window shows (`on`) or is hidden: the runs' streams are closed while none shows, their lanes kept as
+   * last heard, and the list read again, the streams opened again with it, as one shows.
+   */
+  shown(changed: () => void, on: boolean): void {
+    if (!this.listeners.has(changed)) return;
+    const before = this.showing();
+    if (on) this.hidden.delete(changed);
+    else this.hidden.add(changed);
+    if (before && !this.showing()) for (const f of this.followed.values()) f.close();
+    else if (!before && this.showing()) void this.read();
+  }
+
+  /** Whether a window that listens shows. */
+  private showing(): boolean {
+    return this.listeners.size > this.hidden.size;
   }
 
   /** Read the list once, then again after `pollMs` while a window listens. */
@@ -106,7 +213,9 @@ export class CiRunsWatch {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     try {
-      this.show(await this.fetch());
+      const runs = await this.fetch();
+      this.show(runs);
+      if (this.showing()) await this.follow();
     } catch {
       // The instance did not answer: the runs last read stay until it does.
     } finally {
@@ -157,10 +266,140 @@ export class CiRunsWatch {
   }
 
   private show(runs: CiRun[]): void {
-    const text = JSON.stringify(runs);
+    const gone = this.runs.filter((run) => !runs.some((r) => r.id === run.id));
+    this.runs = runs;
+    for (const run of gone) {
+      this.unfollow(run.id);
+      this.options.left?.(run.id);
+    }
+    this.tell();
+  }
+
+  /** The windows hear the state when it changed. */
+  private tell(): void {
+    const text = JSON.stringify(this.state());
     if (text === this.sent) return;
     this.sent = text;
-    this.runs = runs;
     for (const changed of this.listeners) changed();
+  }
+
+  /** A lane changed: the windows hear it, at most every `pushMs`. */
+  private tellSoon(): void {
+    if (this.pushTimer) return;
+    const wait = Math.max(0, this.pushedAt + (this.options.pushMs ?? PUSH_MS) - Date.now());
+    this.pushTimer = setTimeout(() => {
+      this.pushTimer = null;
+      this.pushedAt = Date.now();
+      this.tell();
+    }, wait);
+  }
+
+  /** Follow `MAX_CI_STREAMS` runs listed through their own stream, the run watched then the newest, and those alone. */
+  private async follow(): Promise<void> {
+    if (!this.options.stream) return;
+    const settings = await this.options.settings();
+    if (!this.showing()) return;
+    if (settings.instanceUrl !== this.followedOn) {
+      this.unfollowAll();
+      this.followedOn = settings.instanceUrl;
+    }
+    const watched = this.options.watched?.() ?? null;
+    const wanted = new Set<number>();
+    if (this.runs.some((run) => run.id === watched)) wanted.add(watched!);
+    for (const run of this.runs) if (wanted.size < MAX_CI_STREAMS) wanted.add(run.id);
+    for (const runId of this.followed.keys()) if (!wanted.has(runId)) this.unfollow(runId);
+    for (const runId of wanted) {
+      const f = this.followed.get(runId) ?? {
+        runId,
+        abort: new AbortController(),
+        open: false,
+        close: () => {},
+        watchable: false,
+        lanes: new Map<string, Lane>(),
+      };
+      this.followed.set(runId, f);
+      if (!f.open) void this.readStream(f, settings);
+    }
+  }
+
+  private unfollow(runId: number): void {
+    const f = this.followed.get(runId);
+    if (!f) return;
+    this.followed.delete(runId);
+    f.abort.abort();
+  }
+
+  private unfollowAll(): void {
+    for (const runId of this.followed.keys()) this.unfollow(runId);
+    if (this.pushTimer) clearTimeout(this.pushTimer);
+    this.pushTimer = null;
+  }
+
+  /** Read a run's stream until it ends, is let go or brings nothing for `streamIdleMs`. */
+  private async readStream(f: Followed, settings: ConnectionSettings): Promise<void> {
+    f.open = true;
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    f.close = stop;
+    f.abort.signal.addEventListener('abort', stop, { once: true });
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const alive = () => {
+      clearTimeout(idle);
+      // Aborted as a timeout: the instance's silence is recorded as its answer (`withConnectionHealth`).
+      idle = setTimeout(
+        () => abort.abort(new DOMException('The instance stopped answering.', 'TimeoutError')),
+        this.options.streamIdleMs ?? STREAM_IDLE_MS,
+      );
+    };
+    try {
+      alive();
+      const response = await this.options.stream!(settings, f.runId, abort.signal);
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => {});
+        return;
+      }
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      abort.signal.addEventListener('abort', () => void reader.cancel().catch(() => {}), { once: true });
+      const parser = new EventParser();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done || this.followed.get(f.runId) !== f) break;
+        alive();
+        for (const data of parser.push(value)) this.heard(f, data);
+      }
+    } catch {
+      // The stream dropped: it is opened again at the next read.
+    } finally {
+      clearTimeout(idle);
+      f.abort.signal.removeEventListener('abort', stop);
+      f.open = false;
+    }
+  }
+
+  /** An event of a followed run's stream: whether its lanes can be watched, or a lane as it stands. */
+  private heard(f: Followed, data: string): void {
+    if (this.followed.get(f.runId) !== f) return;
+    let event: { type?: unknown; data?: unknown };
+    try {
+      event = JSON.parse(data) as { type?: unknown; data?: unknown };
+    } catch {
+      return;
+    }
+    if (typeof event !== 'object' || event === null) return;
+    if (event.type === 'live-view') {
+      const view = event.data as { enabled?: unknown; keyed?: unknown } | null;
+      f.watchable = view?.enabled === true && view.keyed === true;
+    } else if (event.type === 'lane') {
+      const lane = readLane(event.data);
+      if (!lane) return;
+      const key = laneKey(lane.id);
+      f.lanes.delete(key);
+      f.lanes.set(key, lane);
+      for (const [oldest, kept] of f.lanes) {
+        if (f.lanes.size <= MAX_LANES) break;
+        if (!RUNNING.has(kept.state)) f.lanes.delete(oldest);
+      }
+    } else return;
+    this.tellSoon();
   }
 }

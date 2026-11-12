@@ -1845,7 +1845,7 @@ object Glue {
 
     /**
      * Whether the Paused Page tab keeps Interact on as it shows `stop`: Interact is on (`interacting`) for the stop of
-     * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch live stays on, and the new stop of
+     * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch stays on, and the new stop of
      * that slot takes input on a live view.
      */
     fun keepsInteract(interacting: Boolean, shown: Pair<String, Int>?, stop: ShownStop, watchLive: Boolean): Boolean =

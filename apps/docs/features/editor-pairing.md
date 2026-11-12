@@ -31,7 +31,7 @@ gives the image and the controls alone.
 An editor window you open later shows in the Runs window within seconds: each window's service names the others,
 without their tokens, and the worker asks the paired editor for them. While the Runs window is open, it also asks
 every minute. A run whose window stops answering stays listed, grayed and as last heard, until that window answers
-again, ten minutes at most, and a stop's **Watch live** starts again then.
+again, ten minutes at most, and a stop's **Watch** starts again then.
 
 ## When the editor does not answer
 

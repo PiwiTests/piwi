@@ -38,6 +38,18 @@ export const DESKTOP_RUN_COMMANDS_PATH = '/api/desktop/runs/commands';
  */
 export const DESKTOP_PICKS_PATH = '/api/desktop/runs/picks';
 
+/**
+ * Where the shell says what it started a run with (`{ ref, args }`, Playwright's arguments after `test`), so the hub
+ * names the run's command to Piwi Picker and to agents: for the shell alone.
+ */
+export const DESKTOP_RUN_STARTED_PATH = '/api/desktop/runs/started';
+
+/**
+ * Where the window that started a run says its process ended (`{ ref, exitCode }`), so an agent's run whose workers
+ * never connected ends too.
+ */
+export const DESKTOP_RUN_ENDED_PATH = '/api/desktop/runs/ended';
+
 /** The most codes made at stops and locators picked the host keeps, the latest, for a window that opens later. */
 export const MAX_KEPT_STOP_CODES = 20;
 

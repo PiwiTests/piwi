@@ -109,6 +109,11 @@ export class HubConnection {
    * hub that answers for its runs yet (`RunHubs` says it is not connected).
    */
   heardRuns = false;
+  /**
+   * The editor window shares each of its runs live until the person stops, as a hub whose features list
+   * `share-window` last said (`share-window`).
+   */
+  windowShared = false;
   /** Resolves once the runs live at `subscribe` were heard, or the connection closed. */
   readonly ready: Promise<void>;
 
@@ -214,6 +219,11 @@ export class HubConnection {
         return this.events.laneLayer(message);
       case 'peers':
         return this.events.peers(message.hubs);
+      case 'share-window':
+        if (this.windowShared === message.on) return;
+        this.windowShared = message.on;
+        this.events.changed();
+        return;
       case 'session': {
         const { session } = message;
         if (session.ended) {

@@ -2,11 +2,11 @@
 /**
  * Desktop shell only: the page of a stopped worker of a run the shell started, in the Local runs tray, while its lane
  * is not watched (`DesktopRunLaneView` shows it then), in its card (`DesktopRunPageCard`), as Piwi Picker's Runs window
- * draws it. Its image, asked once per stop; **Watch live**, where the stop takes it, which shows the stop's frames in
+ * draws it. Its image, asked once per stop; **Watch**, where the stop takes it, which shows the stop's frames in
  * the image's place (`DesktopRunLiveImage`) and stays on for the worker's next stops until it is turned off (the run
  * page's **Pause and watch** turns it on too, through `useDesktopRunHub`); **Interact** beside it, where the stop takes
  * the window's input, which sends the pointer, the wheel and the keys on the view to the page, stays on for the next
- * stops too, and goes off with Watch live or Escape on the view (Escape goes to the page instead while a pick or a
+ * stops too, and goes off with Watch or Escape on the view (Escape goes to the page instead while a pick or a
  * check runs there), giving the stop back as the run model says
  * (`givesBack`); **Pick on the image**, or a Shift+click on the image or the view, names the element under the
  * pointer. The view ends with the stop, as the window hides, and when it is turned off. Who watches the page shows in
@@ -88,7 +88,7 @@ const stillShown = computed(() => (still.value?.since === props.stop.since ? sti
 // ── The live view ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const canView = computed(() => props.takes.includes('view'));
-/** Watch live, as the person left it for the worker, kept by the window: on, each next stop of the worker is watched. */
+/** The stop's Watch, as the person left it for the worker, kept by the window: on, each next stop of the worker is watched. */
 const watchLive = defineModel<boolean>('watchLive', { default: false });
 /** Interact, as the person left it for the worker's lane, kept by the window. */
 const interact = defineModel<boolean>('interact', { default: false });
@@ -152,7 +152,7 @@ function endView(tell: boolean): void {
   }
 }
 
-/** Watch live is being turned off, the stop given back first. */
+/** The stop's Watch is being turned off, the stop given back first. */
 let leaving = false;
 
 async function toggleLive(): Promise<void> {
@@ -322,10 +322,10 @@ const note = computed((): { icon?: string; text: string } | null => {
         :aria-pressed="live"
         :aria-disabled="busy || undefined"
         :class="live ? PRESSED_TOGGLE_CLASS : ''"
-        :title="desktopSay('runs_liveTitle')"
+        :title="desktopSay('runs_watchTitle')"
         @click="toggleLive"
       >
-        {{ desktopSay('runs_live') }}
+        {{ desktopSay('runs_watch') }}
       </UButton>
       <UButton
         v-if="canInteract"

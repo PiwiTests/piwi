@@ -33,21 +33,35 @@ declare global {
     __notes: string[];
     /** What the page asked the shell to run its tests with, last. */
     __runArgs?: { originRef?: string };
+    /** Ends shell run 41 with `code`. */
+    __exitRun: (code: number) => void;
+    /** Prints `line` as shell run 41's output. */
+    __printLine: (line: string) => void;
+    /** The commands the page asked the shell for, each with its arguments. */
+    __invoked: Array<{ cmd: string; args?: Record<string, unknown> }>;
   }
 }
 
-/** Installs the bridge with a linked folder, whose run is shell run 41 and goes on until the spec ends it. */
+/**
+ * Installs the bridge with a linked folder, whose run is shell run 41 and goes on until the spec ends it, as the shell
+ * says to a page that reloaded (`desktop_local_runs`).
+ */
 async function installBridge(page: Page) {
   await page.addInitScript(() => {
     const listeners: ((event: { payload: unknown }) => void)[] = [];
+    const emit = (payload: unknown) => {
+      for (const cb of listeners) cb({ payload });
+    };
     Object.assign(window, {
       __notes: [],
-      __endRun: () => {
-        for (const cb of listeners) cb({ payload: { id: 41, kind: 'exit', line: null, code: 0 } });
-      },
+      __invoked: [],
+      __endRun: () => emit({ id: 41, kind: 'exit', line: null, code: 0 }),
+      __exitRun: (code: number) => emit({ id: 41, kind: 'exit', line: null, code }),
+      __printLine: (line: string) => emit({ id: 41, kind: 'stdout', line, code: null }),
       __TAURI__: {
         core: {
           invoke: async (cmd: string, args?: Record<string, unknown>) => {
+            window.__invoked.push({ cmd, args });
             switch (cmd) {
               case 'desktop_notify':
                 window.__notes.push(`${String(args?.title)} | ${String(args?.body)}`);
@@ -65,6 +79,10 @@ async function installBridge(page: Page) {
               case 'desktop_run_local_tests':
                 window.__runArgs = args;
                 return 41;
+              case 'desktop_local_runs':
+                return { running: [41], ended: [] };
+              case 'desktop_open_output_window':
+                return `output-${String(args?.name)}_1`;
               default:
                 return null;
             }
@@ -350,13 +368,13 @@ test.describe('Desktop run live view', () => {
       'Step',
       'Finish',
       'Mock a request',
-      'Watch live',
+      'Watch',
       'Pick on the image',
     ]);
 
-    // Watch live: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
-    await worker.getByRole('button', { name: 'Watch live' }).click();
-    await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+    // The stop's Watch: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect(worker.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => commands.find((c) => c.type === 'view')).toMatchObject({ since: 's1', on: true });
     await page.evaluate(
       ({ ref, data }) =>
@@ -484,7 +502,7 @@ test.describe('Desktop run live view', () => {
         since: 's1',
       });
 
-    // Watch live and Interact, left on, watch the worker's next stop too, and send it the input.
+    // The stop's Watch and Interact, left on, watch the worker's next stop too, and send it the input.
     await interact.click();
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
@@ -494,7 +512,7 @@ test.describe('Desktop run live view', () => {
     );
     await expect(worker.getByText('Stopped after a step')).toBeVisible();
     await expect.poll(() => commands.filter((c) => c.type === 'view').at(-1)).toMatchObject({ since: 's2', on: true });
-    await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(worker.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.evaluate(
       ({ ref, data }) =>
         window.__hub.send({ type: 'frame', ref, worker: 0, since: 's2', width: 640, height: 400, data }),
@@ -502,13 +520,13 @@ test.describe('Desktop run live view', () => {
     );
     await expect(interact).toHaveAttribute('aria-pressed', 'true');
     await expect(worker.getByRole('img', { name: LIVE_INPUT })).toBeVisible();
-    // Watch live off turns Interact off, and gives back the stop the window drives.
+    // The stop's Watch off turns Interact off, and gives back the stop the window drives.
     const drove = { kind: 'desktop', name: 'the desktop app', self: true };
     await page.evaluate(
       (event) => window.__hub.send(event),
       session(stopped('s2', { reason: 'step', intents: ['view', 'input', 'pick-at'], driver: drove })),
     );
-    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
     await expect(interact).toHaveCount(0);
     await expect
       .poll(() => commands.filter((c) => c.type === 'drive').at(-1))
@@ -519,7 +537,7 @@ test.describe('Desktop run live view', () => {
       .toBeGreaterThan(commands.findLastIndex((c) => c.type === 'drive'));
     // A stop another tool drives is left to it.
     const drives = commands.filter((c) => c.type === 'drive').length;
-    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
     const editor = { kind: 'editor', name: 'Visual Studio Code' };
     await page.evaluate(
       (event) => window.__hub.send(event),
@@ -585,7 +603,7 @@ test.describe('Desktop run live view', () => {
       'Finish',
       'End the test',
       'Mock a request',
-      'Watch live',
+      'Watch',
       'Pick on the image',
     ]);
     const end = worker.getByRole('button', { name: 'End the test' });
@@ -706,6 +724,44 @@ test.describe('Desktop run live view', () => {
     await expect(tray(page).getByTestId('desktop-run-presence')).toHaveCount(0);
     await expect(worker.getByTestId('desktop-worker-watchers')).toHaveCount(0);
     await expect(driver).toHaveCount(0);
+  });
+
+  test('asks before Stop sharing a run shared live, and stops only once confirmed', async ({ page }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const shared = session(RUNNING);
+    Object.assign(shared.session, {
+      page: { id: runId, url: `https://piwi.example.com/test-runs/${runId}` },
+      live: {
+        shared: true,
+        refused: null,
+        stopped: null,
+        page: `https://piwi.example.com/test-runs/${runId}`,
+        viewers: 2,
+      },
+    });
+    await page.evaluate((event) => window.__hub.send(event), shared);
+    await expect(tray(page).getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
+
+    // Cancel stops nothing.
+    await tray(page).getByRole('button', { name: 'Stop sharing…' }).click();
+    const ask = page.getByRole('dialog', { name: `Stop sharing run #${runId} live?` });
+    await expect(ask).toContainText(
+      'The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    await ask.getByRole('button', { name: 'Cancel' }).click();
+    await expect(ask).toHaveCount(0);
+    expect(commands.filter((c) => c.type === 'share')).toHaveLength(0);
+
+    // Confirmed, it stops sharing.
+    await tray(page).getByRole('button', { name: 'Stop sharing…' }).click();
+    await ask.getByRole('button', { name: 'Stop sharing' }).click();
+    await expect.poll(() => commands.find((c) => c.type === 'share')).toMatchObject({ ref: REF, on: false });
   });
 
   test('keeps the keyboard on the controls: Pause while a step runs, Step again at the next stop', async ({ page }) => {
@@ -901,7 +957,7 @@ test.describe('Desktop run live view', () => {
     await expect(lane.getByText('Live', { exact: true })).toBeVisible();
 
     // A stop: the lane's frame of the stopped page comes, and with Interact the stop takes the clicks on it through the
-    // lane, with no view of its own; Watch live is not offered, the lane shows the stop.
+    // lane, with no view of its own; the stop's Watch is not offered, the lane shows the stop.
     const atStop = { ...stopped('s1', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents };
     await page.evaluate((event) => window.__hub.send(event), session(atStop));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
@@ -1435,7 +1491,9 @@ test.describe('Desktop run live view', () => {
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
     const lane = worker.locator('[data-shot="desktop-run-lane"]');
     const watch = worker.getByRole('button', { name: 'Watch', exact: true });
-    const watchLive = worker.getByRole('button', { name: 'Watch live' });
+    const watchLive = worker
+      .locator('[data-shot="desktop-run-page"]')
+      .getByRole('button', { name: 'Watch', exact: true });
     const live = lane.getByRole('img', { name: LIVE, exact: true });
     const lastShown = lane.getByRole('img', { name: LAST_SEEN });
     const intents = ['mock', 'view', 'input', 'pick-at'];
@@ -1460,7 +1518,7 @@ test.describe('Desktop run live view', () => {
         document.dispatchEvent(new Event('visibilitychange'));
       }, hidden);
 
-    // Watch has the keyboard as the running test stops: Watch live, in its place at the stop, takes it.
+    // Watch has the keyboard as the running test stops: the stop's Watch, in its place at the stop, takes it.
     await watch.focus();
     await send(atStop('s1'));
     await expect(watchLive).toBeFocused();
@@ -1500,12 +1558,12 @@ test.describe('Desktop run live view', () => {
     await expect(live).toBeVisible();
     await expect(tooLong).toHaveCount(0);
 
-    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with Watch live.
+    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with the stop's Watch.
     await send(atStop('s2', null));
     await expect(watchLive).toBeVisible();
     await expect(lane).toHaveCount(0);
 
-    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to Watch live, which stays off.
+    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to the stop's Watch, which stays off.
     await send(session(WATCHABLE));
     await send(atStop('s3'));
     await frame('s3');
@@ -1516,7 +1574,7 @@ test.describe('Desktop run live view', () => {
     await expect(watchLive).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(lastWatch).toMatchObject({ on: false });
 
-    // A lane the hub would not show says why, while the test runs and at its next stop, where Watch live is offered.
+    // A lane the hub would not show says why, while the test runs and at its next stop, where the stop's Watch is offered.
     refuse = true;
     await send(session(WATCHABLE));
     await watch.click();
@@ -1604,7 +1662,9 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByText('The test is stopped already.').first()).toBeVisible();
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s0', { reason: 'page-pause' })));
       await expect(tray(page).getByText('Stopped at page.pause()')).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
 
       // It goes on, and the next pause reaches it.
       await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -1619,10 +1679,12 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByRole('button', { name: 'Pausing…' })).toHaveAttribute('aria-disabled', 'true');
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
       await expect(tray(page).getByText('Paused', { exact: true })).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
 
       // The row says where the test stopped. Closed, the tray ends the view; Show its page opens it on the worker,
-      // the focus there, and Watch live, left on, watches the stop again.
+      // the focus there, and the stop's Watch, left on, watches the stop again.
       await expect(page.getByTestId('desktop-stopped')).toContainText(
         /Paused\s*·\s*Click getByRole\('button', \{ name: 'Pay' \}\)\s*·\s*tests\/checkout\.spec\.ts:5/,
       );
@@ -1630,7 +1692,9 @@ test.describe('Desktop run live view', () => {
       await expect(tray(page)).toHaveCount(0);
       await page.getByRole('button', { name: 'Show its page' }).click();
       await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').map((c) => [c.ref, c.since, c.on]))
         .toEqual([
@@ -1652,7 +1716,9 @@ test.describe('Desktop run live view', () => {
         session({ ...stopped('s2', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents }),
       );
       await expect(tray(page).getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').at(-1))
         .toMatchObject({ ref: REF, since: 's2', on: true });
@@ -1877,5 +1943,252 @@ test.describe('Desktop run live view', () => {
         data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
       });
     }
+  });
+
+  test('keeps its own run, its Hold failures and its separate output window through a reload of the window', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+    await page.evaluate(() => window.__printLine('Running 1 test using 1 worker'));
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
+    const outputPage = await page.context().newPage();
+    await outputPage.goto(`/desktop/run-output?name=piwi-run-output-${key}`);
+    await waitForHydration(outputPage);
+    const output = outputPage.getByRole('region', { name: 'Run output' });
+    await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
+
+    // Reloaded: the tray opens on the run as its own, with its Stop, its Hold failures and its output still apart.
+    const shows = commands.filter((c) => c.type === 'show' && c.on).length;
+    await page.reload();
+    await waitForHydration(page);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await expect(tray(page).getByRole('region', { name: 'Other runs of the desktop app' })).toHaveCount(0);
+    // The hub's stream opens again, and the run holds its failures again.
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect.poll(() => commands.filter((c) => c.type === 'show' && c.on).length).toBeGreaterThan(shows);
+    expect(commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: true });
+
+    // The separate window was not opened again: it goes on from its last line, and ends with the run.
+    await page.evaluate(() => window.__printLine('  ✓  1 tests/checkout.spec.ts:3:1 › pays (1.0s)'));
+    await expect(output.getByText('pays (1.0s)')).toBeVisible();
+    await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
+    await page.evaluate(() => window.__endRun());
+    await expect(output.getByText('Passed', { exact: true })).toBeVisible();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+  });
+
+  test('closes a separate output window that does not answer after a reload, and keeps no other', async ({ page }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
+    const name = `piwi-run-output-${key}`;
+
+    // Reloaded, with no output page to answer: the window the run kept is closed by its name, its output back in the
+    // tray, and the shell keeps no window no run shows its output in.
+    await page.reload();
+    await waitForHydration(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.find((i) => i.cmd === 'desktop_close_other_output_windows')))
+      .toMatchObject({ args: { keep: [name] } });
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_close_output_window')), {
+        timeout: 10_000,
+      })
+      .toEqual([{ cmd: 'desktop_close_output_window', args: { name } }]);
+    await expect(tray(page).getByText('The output is in a separate window.')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_open_output_window'))).toEqual(
+      [],
+    );
+  });
+
+  test('counts a running run’s tests as its own process does, a test held at its failure among the failed', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // Its output alone does not count it: Playwright's own lines would say 0 of 9.
+    await page.evaluate(() => window.__printLine('Running 9 tests using 2 workers'));
+    const counted = (progress: Record<string, number>, workers: Record<string, unknown>[] = [RUNNING]) => {
+      const event = sessionOf(workers);
+      return {
+        ...event,
+        session: {
+          ...event.session,
+          progress: {
+            total: 9,
+            done: 0,
+            failed: 0,
+            flaky: 0,
+            skipped: 0,
+            status: 'running',
+            failure: null,
+            ...progress,
+          },
+        },
+      };
+    };
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 3 }));
+    await expect(tray(page).getByText('3 of 9 tests', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '3 of 9 tests', exact: true })).toBeVisible();
+
+    // A test held at its failure is failed so far, and stays counted once its process counts it.
+    const held = {
+      ...stopped('s1', { reason: 'failure', title: 'Failed: Error', error: 'expect failed' }),
+      worker: 1,
+      parallelIndex: 1,
+    };
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 3, flaky: 1 }, [RUNNING, held]));
+    await expect(tray(page).getByText('3 of 9 tests · 1 failed · 1 flaky', { exact: true })).toBeVisible();
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 4, failed: 1, flaky: 1 }));
+    await expect(tray(page).getByText('4 of 9 tests · 1 failed · 1 flaky', { exact: true })).toBeVisible();
+  });
+
+  test('leads a failed run’s end to its first failure, from its end toast and from the tray', async ({
+    page,
+    request,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toBeTruthy();
+    const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+
+    // The run reports to the app: its second test failed first, as its process names it.
+    const at = Date.now();
+    const testCase = (title: string, status: string) => ({
+      title,
+      status,
+      duration: 1000,
+      location: 'tests/checkout.spec.ts:3:1',
+      browser: { name: 'chromium', projectName: 'chromium' },
+      error: status === 'failed' ? 'expect failed' : undefined,
+      retries: 0,
+      workerIndex: 0,
+      startedAt: at,
+    });
+    const res = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_VIEW,
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+        status: 'failed',
+        startTime: new Date(at).toISOString(),
+        duration: 2000,
+        totalTests: 3,
+        passedTests: 1,
+        failedTests: 2,
+        skippedTests: 0,
+        testCases: [testCase('lists the cart', 'failed'), testCase('pays', 'failed'), testCase('refunds', 'passed')],
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    const { runId: reported } = await res.json();
+    await expect(tray(page).getByRole('link', { name: `Open run #${reported}` })).toBeVisible({ timeout: 15_000 });
+    const details = await (await request.get(`/api/test-runs/${reported}`)).json();
+    const pays = details.testCases.find((c: { title: string }) => c.title === 'pays').executionId;
+
+    const ended = sessionOf([], true);
+    Object.assign(ended.session, {
+      progress: {
+        total: 3,
+        done: 3,
+        failed: 2,
+        flaky: 0,
+        skipped: 0,
+        status: 'failed',
+        failure: { title: 'pays', error: 'expect failed' },
+      },
+    });
+    await page.evaluate((event) => window.__hub.send(event), ended);
+    await page.evaluate(() => window.__exitRun(1));
+    await expect(tray(page).getByText('Failed (exit 1)')).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Open the failure' })).toBeVisible();
+    const toast = page.locator('li', { hasText: 'Local run failed' });
+    await toast.getByRole('button', { name: 'Open the failure' }).click();
+    await expect(page).toHaveURL(new RegExp(`/test-run-cases/${pays}$`));
+  });
+
+  test('shows each run as one line in the compact list, with the one action it needs now, whole on a click', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const withProgress = (worker: Record<string, unknown>) => {
+      const event = session(worker);
+      return {
+        ...event,
+        session: {
+          ...event.session,
+          progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+        },
+      };
+    };
+    await page.evaluate((event) => window.__hub.send(event), withProgress(RUNNING));
+
+    const compact = tray(page).getByRole('button', { name: 'Compact list' });
+    await compact.click();
+    await expect(compact).toHaveAttribute('aria-pressed', 'true');
+    const line = tray(page).locator('[data-shot="desktop-run-line"]');
+    await expect(line).toHaveCount(1);
+    await expect(line).toContainText('Running');
+    await expect(line).toContainText('3 of 9 tests');
+    await expect(line.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toHaveCount(0);
+
+    // A stop shows the run whole, as the tray opens on it; back to one line, the line says the run waits, and its one
+    // action shows the stop again, its worker focused.
+    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
+    await expect(line).toHaveCount(0);
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
+    await expect(line).toContainText('Waiting');
+    await line.getByRole('button', { name: 'Show the stop' }).click();
+    await expect(line).toHaveCount(0);
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
+
+    // Back to one line, as the tray remembers after a reload.
+    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
+    await expect(line).toHaveCount(1);
+    await page.reload();
+    await waitForHydration(page);
+    await expect(tray(page).getByRole('button', { name: 'Compact list' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(tray(page).locator('[data-shot="desktop-run-line"]')).toHaveCount(1);
+
+    // A click on the line shows the run whole.
+    await tray(page).locator('[data-shot="desktop-run-line"]').getByRole('button', { expanded: false }).click();
+    await expect(tray(page).locator('article[data-run]')).toHaveCount(1);
   });
 });

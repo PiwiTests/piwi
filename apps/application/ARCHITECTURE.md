@@ -287,7 +287,7 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch live and each
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
   lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
   given back by `DesktopRunWorker`), and
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
@@ -310,8 +310,11 @@ Each entry names folders under `server/api/`.
   (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
-  tray or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a
-  `BroadcastChannel`, `app/utils/run-output-channel.ts`). The live view (`useDesktopRunHub`, the `DesktopRun*`
+  tray or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). A run's state and count
+  come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
+  (`plugins/desktop-local-runs.client.ts`: `keepForReload`, `takeBackAfterReload` and the shell's
+  `desktop_local_runs`). The live view (`useDesktopRunHub`, the `DesktopRun*`
   components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
   window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
   layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run

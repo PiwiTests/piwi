@@ -12,7 +12,7 @@
 export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
 
 /**
- * A toggle button that is on (`aria-pressed`), such as the Local runs tray's Watch live and Interact: the neutral
+ * A toggle button that is on (`aria-pressed`), such as the Local runs tray's Watch and Interact: the neutral
  * raised surface of a selected tab, its weight kept so the label does not move.
  */
 export const PRESSED_TOGGLE_CLASS = 'bg-elevated text-highlighted';

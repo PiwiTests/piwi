@@ -23,6 +23,8 @@ import {
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
 import type { CiRun } from '@piwitests/run-model/ci';
+import type { LaneState } from '@piwitests/core/live-lane';
+import type { LiveViewEnd } from '@piwitests/core/live-view';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
@@ -88,6 +90,13 @@ export interface RunsHub {
    * worker `canOpenTrace` names.
    */
   traces: boolean;
+  /**
+   * It shares each run of its editor window live until the person stops (`share-window` among its features): Share
+   * live offers the window's runs beside the run's own.
+   */
+  sharesWindow: boolean;
+  /** Its editor window shares each of its runs live now, until the person stops or the window closes. */
+  windowShared: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -109,8 +118,68 @@ export interface RunsState {
    * The CI runs in progress of the projects this browser maps, read-only, from the instance the extension is
    * connected to (`background/ci-runs.ts`); none without connected mode.
    */
-  ci?: CiRun[];
+  ci?: RunsCiRun[];
 }
+
+/**
+ * A test a CI run runs now, as its lane on the instance stands (`lane` of the run's stream): its shard (null for a run
+ * not sharded), its lane (Playwright's `parallelIndex`), the worker in it, where it stands and the test's title.
+ */
+export interface RunsCiTest {
+  shard: number | null;
+  lane: number;
+  worker: number | null;
+  state: LaneState;
+  title: string;
+  retry: number;
+}
+
+/**
+ * A CI run in progress as the window lists it: the instance's list, then, for a run whose own stream the worker reads
+ * (`MAX_CI_STREAMS`, the newest), the tests it runs now and whether its lanes can be watched (its project's live view
+ * on and the run holding a key).
+ */
+export interface RunsCiRun extends CiRun {
+  tests: RunsCiTest[];
+  watchable: boolean;
+}
+
+/** A lane of a CI run, as the window and the worker name it: the run on the instance, its shard and its lane. */
+export interface RunsCiLane {
+  runId: number;
+  shard: number | null;
+  lane: number;
+}
+
+/**
+ * An image of a CI lane the window watches: a JPEG as the instance sent it, base64, with the test and the call it was
+ * taken at; or the instance's sentence saying why the lane sends none now (`refused`), until an image comes again.
+ */
+export type RunsCiFrame = RunsCiLane &
+  ({ data: string; test: string | null; call: string | null } | { refused: string });
+
+/**
+ * Why a CI lane the window watched ended without its asking: as the instance said it (`LiveViewEnd`), or it stopped
+ * answering (`silent`), closed the watch (`closed`), its stream broke (`broken`), or another Runs window took the one
+ * watch to another lane (`moved`).
+ */
+export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
+
+/**
+ * Why a CI lane was not watched: the run is no longer listed (`unlisted`), it is listed but its lanes are not followed
+ * now, newer runs' being (`unfollowed`), its lanes cannot be watched (`unwatchable`), no test ran in the lane yet
+ * (`no-test`), the instance did not answer (`offline`) or not in time (`late`), its live view is not one the extension
+ * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`).
+ */
+export type CiWatchFailure =
+  | 'unlisted'
+  | 'unfollowed'
+  | 'unwatchable'
+  | 'no-test'
+  | 'offline'
+  | 'late'
+  | 'older'
+  | 'refused';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
@@ -177,6 +246,18 @@ export type RunsRequest =
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }
+  /** Whether the person can see the window: the CI runs' streams are read while one that can does. */
+  | { type: 'shown'; shown: boolean }
+  /**
+   * Stop sharing each run of the hub's editor window live (`share` with `scope: 'window'` and no run named), answered
+   * with `answer` of the same `id`.
+   */
+  | { type: 'unshare-window'; id: number; hub: string }
+  /**
+   * Watch a running test's lane of a CI run (`on`), read-only, or stop: answered with `answer` of the same `id`, then
+   * its images as `ci-frame` and its end as `ci-ended`.
+   */
+  | ({ type: 'ci-watch'; id: number; on: boolean } & RunsCiLane)
   /** A command for a run, answered with `answer` of the same `id`. */
   | {
       type: 'command';
@@ -193,6 +274,11 @@ export type RunsRequest =
        * start watching the lane, or stop; for `drive`: drive the stop, or give it back.
        */
       on?: boolean;
+      /**
+       * For `share` alone: each run of the hub's editor window from now on, the run named included, until the person
+       * stops (`window`), rather than the run alone; with `on: false`, every run of the window stops sharing.
+       */
+      scope?: 'window';
       /** For `watch` and `trace`: the lane, Playwright's `parallelIndex`. */
       lane?: number;
       /**
@@ -227,6 +313,10 @@ export interface RunsAnswer {
   locator?: string | null;
   /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
   taken?: boolean;
+  /** For `ci-watch`: why the lane was not watched; the instance's own sentence in `message` when it gave one. */
+  ci?: CiWatchFailure;
+  /** For `ci-watch` refused by the instance with no sentence: its status. */
+  status?: number;
 }
 
 /**
@@ -296,6 +386,9 @@ export type RunsEvent =
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
   | ({ type: 'lane-ended' } & RunsLane)
   | ({ type: 'lane-layer' } & RunsLaneLayer)
+  | ({ type: 'ci-frame' } & RunsCiFrame)
+  /** A CI lane the window watched ended without the window asking, and why. */
+  | ({ type: 'ci-ended'; why: CiWatchEnd } & RunsCiLane)
   /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
   | { type: 'found' };
 
@@ -316,6 +409,19 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
     case 'find':
     case 'ping':
       return { type: value.type };
+    case 'shown':
+      return typeof value.shown === 'boolean' ? { type: 'shown', shown: value.shown } : null;
+    case 'unshare-window': {
+      const { id, hub } = value;
+      if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
+      return { type: 'unshare-window', id, hub };
+    }
+    case 'ci-watch': {
+      const { id, runId, shard, lane, on } = value;
+      if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
+      if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
+      return typeof on === 'boolean' ? { type: 'ci-watch', id, runId, shard, lane, on } : null;
+    }
     case 'command': {
       const { id, hub, ref, worker, since, what } = value;
       if (!isIndex(id) || id === 0 || typeof hub !== 'string' || hub.length > 200) return null;
@@ -339,7 +445,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
-        share: ['on'],
+        share: ['on', 'scope'],
         hold: ['on'],
         drive: ['on'],
         watch: ['lane', 'on', 'layers'],
@@ -348,13 +454,17 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         'pick-at': ['x', 'y'],
       };
       const fields = own[what] ?? [];
-      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y'];
+      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y', 'scope'];
       if (named.some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
       switch (what) {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
-        case 'view':
         case 'share':
+          if (typeof value.on !== 'boolean' || (value.scope !== undefined && value.scope !== 'window')) return null;
+          return value.scope === 'window'
+            ? { ...command, on: value.on, scope: 'window' }
+            : { ...command, on: value.on };
+        case 'view':
         case 'hold':
         case 'drive':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
@@ -592,10 +702,23 @@ export function keyTargetOf(
 
 /**
  * Names a worker's slot within a run (Playwright's `parallelIndex`), which a worker started in its place after a failure
- * takes: what the window keeps Watch live by.
+ * takes: what the window keeps the stop's Watch by.
  */
 export function slotKey(hub: string, ref: string, parallelIndex: number): string {
   return `${hub}|${ref}|slot-${parallelIndex}`;
+}
+
+/** Names a lane of a CI run, for the worker's watch and the window's rows. */
+export function ciLaneKey(lane: RunsCiLane): string {
+  return `${lane.runId}|${lane.shard ?? ''}|${lane.lane}`;
+}
+
+/**
+ * A CI lane's view on the run's page (`?watch=`, the shard and the worker's number from 1, `2` or `1.2`): **Watch on
+ * the dashboard**.
+ */
+export function ciDashboardWatch(run: Pick<RunsCiRun, 'url'>, lane: Pick<RunsCiLane, 'shard' | 'lane'>): string {
+  return `${run.url}?watch=${lane.shard !== null ? `${lane.shard}.` : ''}${lane.lane + 1}`;
 }
 
 /** Names a worker within the state, for the window's focus and its images. */

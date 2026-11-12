@@ -932,7 +932,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * `select` is false (the Worker tab is in sight, and keeps the place). On the event thread.
      */
     fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
-        // The same slot's next stop keeps Interact while Watch live stays on; another slot's, or one taking no input,
+        // The same slot's next stop keeps Interact while Watch stays on; another slot's, or one taking no input,
         // turns it off before the watch ends.
         val before = livePage()?.component as? PausedPagePanel
         val keep = before != null && Glue.keepsInteract(before.interacting, pageSlot, stop, before.liveWanted)
@@ -1058,7 +1058,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun watchPage(stop: Glue.ShownStop, on: Boolean) {
         stopPageView()
         val panel = livePage()?.component as? PausedPagePanel ?: return
-        // Interact goes off with Watch live, and stays on, unusable, until the new watch is accepted.
+        // Interact goes off with Watch, and stays on, unusable, until the new watch is accepted.
         panel.watching(false, keepInteract = on)
         if (!on || !inSight(panel) || pageStop != Glue.stopKey(stop)) return
         val params = PageViewParams(stop.ref, stop.worker, stop.stop.since ?: return, true)
@@ -2297,11 +2297,11 @@ private const val CLICK_SLOP = 4.0
 /**
  * The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. Where a click
  * on the image picks, a hint says so above it and the cursor is a crosshair over it; what the pick came to shows
- * under the caption. For a stop that takes `view`, **Watch live** replaces the image with the page's frames, and
+ * under the caption. For a stop that takes `view`, **Watch** replaces the image with the page's frames, and
  * **Interact**, once the watch is accepted, sends the mouse and the keyboard to the page: a click then picks only with
- * Shift. The person's first click, key, wheel or pick drives the stop; Interact going off (unchecked, Escape, Watch live
+ * Shift. The person's first click, key, wheel or pick drives the stop; Interact going off (unchecked, Escape, Watch
  * off or refused, the tab hidden, between stops too) gives it back (`interactOff`). It stays selected for the next stop
- * of the same worker slot while Watch live stays on.
+ * of the same worker slot while Watch stays on.
  */
 internal class PausedPagePanel : JPanel(BorderLayout()) {
     var viewport: PausedImage? = null
@@ -2316,7 +2316,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
      */
     var acting = false
     private var changedLive: ((Boolean) -> Unit)? = null
-    private val live = JCheckBox("Watch live").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
+    private val live = JCheckBox("Watch").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
     private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks."; isEnabled = false }
     /** **Open the Trace So Far**, in the Worker tab: shown while its slot's worker can open its test's trace (`traceable`). */
     private val trace = JButton(Glue.OPEN_TRACE, AllIcons.FileTypes.Archive).apply {
@@ -2570,7 +2570,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     init {
         live.addActionListener {
             release()
-            // Watch live off turns Interact off before the watch ends: the stop is given back after the input let go.
+            // Watch off turns Interact off before the watch ends: the stop is given back after the input let go.
             if (!live.isSelected) stopInteracting()
             changedLive?.invoke(liveWanted)
         }

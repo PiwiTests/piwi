@@ -3,7 +3,9 @@ import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 /**
  * Desktop shell only: a local run's output in a window of its own, which the Local runs tray has the shell open on
  * this page (`DesktopRunOutputWindow`), named by `?name=`. The tray feeds it over `RUN_OUTPUT_CHANNEL`: the run's
- * header, then its new lines; Stop asks the tray to stop the run. A window of its own: no layout.
+ * header, then its new lines; Stop asks the tray to stop the run. It outlives a reload of the dashboard window, whose
+ * next page asks whether it is still there and feeds it again from the last line it has. A window of its own: no
+ * layout.
  */
 import { LOCAL_RUN_MAX_LINES, localRunDuration, type LocalRunLine } from '~/composables/useDesktopLocalRuns';
 import {
@@ -20,19 +22,26 @@ const header = shallowRef<Omit<RunOutputState, 'lines'> | null>(null);
 const lines = shallowRef<LocalRunLine[]>([]);
 let channel: BroadcastChannel | null = null;
 
-function post(type: 'ready' | 'stop') {
-  channel?.postMessage({ type, name } satisfies RunOutputMessage);
+/** Says the window is ready for the run's state, from the line after the last one it has. */
+function ready() {
+  channel?.postMessage({ type: 'ready', name, through: lines.value.at(-1)?.id ?? 0 } satisfies RunOutputMessage);
+}
+
+function stop() {
+  channel?.postMessage({ type: 'stop', name } satisfies RunOutputMessage);
 }
 
 onMounted(() => {
   channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
   channel.onmessage = ({ data }: MessageEvent<RunOutputMessage>) => {
-    if (data?.type !== 'state' || data.name !== name) return;
+    if (data?.name !== name) return;
+    if (data.type === 'ask') return ready();
+    if (data.type !== 'state') return;
     const { lines: sent, ...rest } = data;
     header.value = rest;
     lines.value = mergeRunOutputLines(lines.value, { ...rest, lines: sent }, LOCAL_RUN_MAX_LINES);
   };
-  post('ready');
+  ready();
 });
 
 onBeforeUnmount(() => channel?.close());
@@ -61,7 +70,7 @@ useHead(() => ({ title: `${header.value?.title ?? 'Run output'} · ${DESKTOP_APP
           color="error"
           :variant="header.stopRequested ? 'solid' : 'soft'"
           icon="i-lucide-square"
-          @click="post('stop')"
+          @click="stop"
         >
           {{ header.stopRequested ? 'Force stop' : 'Stop' }}
         </UButton>

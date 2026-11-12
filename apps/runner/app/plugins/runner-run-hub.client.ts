@@ -2,11 +2,11 @@
  * Piwi Runner's window on the hub of the runs its shell starts (`useDesktopRunHub`, the host's `ShellRuns`): it holds
  * the hub's stream from its start until the hub listed its live runs, then while a requested run runs or the hub still
  * has a live one, so a headless stop of those runs waits for the window, and only then. It is present on the runs while it is visible, says `show` for the running runs whose
- * **Hold failures** is on, comes to the front at each stop it hears, and stops a run as its own Stop does when another
- * tool asks through the hub.
+ * **Hold failures** is on, keeps each run's page once its process names it, comes to the front at each stop it hears,
+ * and stops a run as its own Stop does when another tool asks through the hub.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import { runnerShellIdOf, runnerShownRefs } from '~/utils/runner-runs';
+import { noteRunPages, runnerShellIdOf, runnerShownRefs } from '~/utils/runner-runs';
 
 export default defineNuxtPlugin(() => {
   if (!tauriCore()) return;
@@ -43,6 +43,9 @@ export default defineNuxtPlugin(() => {
     () => hub.show(shown.value),
     { immediate: true },
   );
+
+  // A run's page, once its process names it, stays on the run's card after the run ended.
+  watch(sessions, (live) => noteRunPages(runs.value, live), { immediate: true });
 
   hub.onStopRun((ref) => {
     const shellId = runnerShellIdOf(ref);

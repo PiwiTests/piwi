@@ -1293,7 +1293,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
- *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
+ *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
+ *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
  *   update      — desktop mode: `{ check, releaseNotes }`, an update on offer and its release notes (default none)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
@@ -7670,7 +7671,7 @@ const SCENES = [
         };
         await page.evaluate((event) => window.__hub.send(event), session({ ...running, state: 'stopped', stop }));
         const worker = tray.locator('[data-shot="desktop-run-worker"]');
-        await worker.locator('button[aria-pressed="true"]', { hasText: 'Watch live' }).waitFor();
+        await worker.locator('button[aria-pressed="true"]', { hasText: /^\s*Watch\s*$/ }).waitFor();
         await page.evaluate(
           (data) =>
             window.__hub.send({
@@ -9183,7 +9184,7 @@ const SCENES = [
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
       const shown = tray.locator('[data-shot="desktop-run-worker"]');
       await shown.getByRole('img', { name: /stopped before/ }).waitFor();
-      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
       await page.evaluate(
         (data) =>
           window.__hub.send({
@@ -9306,7 +9307,7 @@ const SCENES = [
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
       const shown = tray.locator('[data-worker="desktop-41|0"]');
-      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
       await page.evaluate(
         (data) =>
           window.__hub.send({
@@ -9330,6 +9331,181 @@ const SCENES = [
       await page.evaluate(() => document.documentElement.classList.add('dark'));
       await settle();
       await shoot('dark', { of: '[aria-label="Local runs"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-runs-tray',
+    description:
+      'Local runs tray (desktop app): three runs, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, with Open the failure; whole and as the compact list, at the tray’s width and at 390 px',
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    // The docs show the tray at its width; its 390 px shots go to .screens/.
+    outputs: ['desktop-runs-tray.png', 'desktop-runs-tray-compact.png'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: [51, 52, 53],
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const progress = (counts) => ({ flaky: 0, skipped: 0, failure: null, ...counts });
+      const send = (session) =>
+        page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), {
+          root,
+          label: 'acme-checkout',
+          command: null,
+          project: 'checkout-web',
+          workers: [],
+          ...session,
+        });
+      const exit = (id, code) =>
+        page.evaluate(({ id, code }) => window.__emitTauri('piwi:local-run', { id, kind: 'exit', line: null, code }), {
+          id,
+          code,
+        });
+
+      // The first run reports to the app and fails: its process names its first failure as it ends.
+      await page.waitForFunction(() => window.__runArgs?.originRef);
+      const originRef = await page.evaluate(() => window.__runArgs.originRef);
+      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+      const failed = (title) => ({
+        title,
+        status: 'failed',
+        duration: 4100,
+        location: 'tests/checkout.spec.ts:11:3',
+        browser: { name: 'chromium', projectName: 'chromium' },
+        error: 'expect(locator).toBeVisible() failed',
+        retries: 0,
+        workerIndex: 0,
+        startedAt: Date.now(),
+      });
+      const reported = await page.request.post(`${base}/api/test-runs/submit`, {
+        data: {
+          projectName: source.project.name,
+          metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+          status: 'failed',
+          startTime: new Date().toISOString(),
+          duration: 9000,
+          totalTests: 2,
+          passedTests: 0,
+          failedTests: 2,
+          skippedTests: 0,
+          testCases: [failed('pays with a saved card'), failed('applies a coupon')],
+        },
+      });
+      if (!reported.ok()) throw new Error(`the run did not report: ${reported.status()}`);
+      await tray.getByRole('link', { name: /^Open run #\d+$/ }).waitFor({ timeout: 60_000 });
+      await send({
+        ref: 'desktop-51',
+        ended: true,
+        progress: progress({
+          total: 12,
+          done: 12,
+          failed: 2,
+          status: 'failed',
+          failure: { title: 'checkout › pays with a saved card', error: 'expect(locator).toBeVisible() failed' },
+        }),
+      });
+      await exit(51, 1);
+      await tray.getByRole('button', { name: 'Open the failure' }).waitFor();
+
+      // Run again: it passes, once the shell started it.
+      const runAgain = async () => {
+        await page.evaluate(() => (window.__runArgs = null));
+        await tray.getByRole('button', { name: 'Run again' }).first().click();
+        await page.waitForFunction(() => window.__runArgs);
+      };
+      await runAgain();
+      await send({
+        ref: 'desktop-52',
+        ended: true,
+        progress: progress({ total: 12, done: 12, failed: 0, status: 'passed' }),
+      });
+      await exit(52, 0);
+      await tray.getByText('Passed', { exact: true }).waitFor();
+
+      // Run again: it goes on, a worker stopped at its page.pause(), another running.
+      await runAgain();
+      // The window holds the hub's stream again while the run goes on.
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
+      const test = (id, title, line) => ({ id, title, uri, line, project: 'chromium', retry: 0, cannotPause: null });
+      await send({
+        ref: 'desktop-53',
+        ended: false,
+        progress: progress({ total: 12, done: 5, failed: 1, status: 'running' }),
+        workers: [
+          {
+            worker: 0,
+            parallelIndex: 0,
+            state: 'stopped',
+            pausing: false,
+            intents,
+            test: test('t1', ['checkout', 'pays with a saved card'], 11),
+            stop: {
+              reason: 'page-pause',
+              title: "Click getByRole('button', { name: 'Pay now' })",
+              uri,
+              line: 17,
+              character: 4,
+              locator: "getByRole('button', { name: 'Pay now' })",
+              bar: false,
+              since: 's1',
+              intents,
+            },
+          },
+          {
+            worker: 1,
+            parallelIndex: 1,
+            state: 'running',
+            pausing: false,
+            intents,
+            test: test('t2', ['checkout', 'refunds a returned mug'], 31),
+            stop: null,
+          },
+        ],
+      });
+      await tray.getByText('5 of 12 tests · 1 failed', { exact: true }).waitFor();
+      await tray.getByRole('img', { name: /stopped before/ }).waitFor();
+      // The end toasts of the first two runs go, so the tray shows whole.
+      await page.mouse.move(0, 0);
+      await page.waitForFunction(
+        () =>
+          ![...document.querySelectorAll('li')].some((li) => /Local run (passed|failed)/.test(li.textContent ?? '')),
+        null,
+        { timeout: 30_000 },
+      );
+      await settle();
+      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+
+      // The compact list: one line a run, with the one action it needs now.
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await tray.getByRole('button', { name: 'Compact list' }).click();
+      await tray.getByRole('button', { name: 'Show as one line' }).click();
+      await tray.locator('[data-shot="desktop-run-line"]').nth(2).waitFor();
+      await settle();
+      await shoot('compact', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
     },
   },
   {

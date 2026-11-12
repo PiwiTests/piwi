@@ -135,6 +135,18 @@ export interface AgentRunStart {
   agent: string;
 }
 
+/**
+ * What the host answers a `run_start`: whether the agent has the run (`run`, in the folder `root`), and in a sentence;
+ * `unserved`, a run it started that is not served to agents, which counts among the runs agents started until it ends.
+ */
+export interface AgentRunStarted {
+  ok: boolean;
+  message: string;
+  run?: string;
+  root?: string | null;
+  unserved?: string;
+}
+
 export interface RunAgentOptions {
   sessions: RunSessions;
   /**
@@ -142,7 +154,7 @@ export interface RunAgentOptions {
    * where the developer sees it, labeled with the agent's name; the answer names the run and its folder (`root`).
    * Absent from a host that starts none, whose tools then offer no `run_start`.
    */
-  startRun?(start: AgentRunStart): Promise<{ ok: boolean; message: string; run?: string; root?: string | null }>;
+  startRun?(start: AgentRunStart): Promise<AgentRunStarted>;
   /** Whether `startRun` starts one now (a client that runs an agent's command): `run_start` is listed only then. */
   startsRuns?(): boolean;
   /**
@@ -780,6 +792,10 @@ export class RunAgent {
   private readonly following = new Map<string, ReturnType<typeof setTimeout>>();
   /** The runs agents started (`run_start`), by ref, the latest `MAX_ENDED_RUNS` of them. */
   private readonly started = new Set<string>();
+  /** The runs started for agents that are not served to them, by ref, each until its command ends (`commandEnded`). */
+  private readonly unserved = new Set<string>();
+  /** The starts asked of the host that it has not answered yet: each counts among the runs agents started. */
+  private startsWaiting = 0;
   /** The service stopped: every long poll answers. */
   private disposed = false;
 
@@ -848,6 +864,7 @@ export class RunAgent {
    * with the command's exit code, so its follower hears it.
    */
   commandEnded(ref: string, exitCode: number | null): void {
+    this.unserved.delete(ref);
     const log = this.logs.get(ref);
     if (!this.started.has(ref) || !log || log.ended || this.live(ref)) return;
     log.ended = true;
@@ -1019,13 +1036,22 @@ export class RunAgent {
     const headed = args.flag('headed');
     const hold = args.raw('hold') === undefined ? true : args.flag('hold');
     const agent = agentLabel(args.text('agent', false, 1000));
-    const running = this.runningStarted();
-    if (running.length >= MAX_AGENT_RUNS) {
+    const running = [...this.runningStarted(), ...this.unserved];
+    const count = running.length + this.startsWaiting;
+    if (count >= MAX_AGENT_RUNS) {
+      const named = [...running, ...(this.startsWaiting ? [`${this.startsWaiting} starting`] : [])];
       return this.error(
-        `${running.length} runs agents started have not ended (${running.join(', ')}): follow one to its end, or let its stops go on, before starting another.`,
+        `${count} runs agents started have not ended (${named.join(', ')}): follow one to its end, or let its stops go on, before starting another.`,
       );
     }
-    const started = await this.options.startRun!({ file, line, headed, hold, agent });
+    this.startsWaiting++;
+    let started: AgentRunStarted;
+    try {
+      started = await this.options.startRun!({ file, line, headed, hold, agent });
+    } finally {
+      this.startsWaiting--;
+    }
+    if (started.unserved) this.unserved.add(started.unserved);
     if (started.ok && started.run) {
       this.started.delete(started.run);
       this.started.add(started.run);

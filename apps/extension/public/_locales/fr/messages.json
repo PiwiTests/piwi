@@ -6377,10 +6377,20 @@
     "message": "Changer le raccourci"
   },
   "runs_failOffline": {
-    "message": "Le service de l’éditeur n’est pas connecté : Piwi Picker se reconnecte."
+    "message": "Pas de connexion à $tool$ : Piwi Picker se reconnecte.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "L’éditeur n’a pas répondu à temps."
+    "message": "Pas de réponse à temps de $tool$.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$ : l’exécution est terminée.",
@@ -7279,12 +7289,6 @@
   "runs_requestNoSize": {
     "message": "taille inconnue"
   },
-  "runs_live": {
-    "message": "Voir en direct"
-  },
-  "runs_liveTitle": {
-    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : Interagir y envoie alors vos clics et vos touches"
-  },
   "runs_interact": {
     "message": "Interagir"
   },
@@ -7304,7 +7308,12 @@
     "message": "Démarrage de la vue en direct…"
   },
   "runs_liveLost": {
-    "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
+    "message": "La connexion à $tool$ a été perdue : la vue en direct reprend une fois la connexion revenue.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap désactive Interagir et rend l’arrêt, mais va à la page tant qu’un choix ou une vérification s’y déroule ; Maj+clic choisit un locator."
@@ -7399,6 +7408,59 @@
   "runs_stopSharingTitle": {
     "message": "Mettre fin aux vues de cette exécution sur l’instance : plus rien n’y est envoyé"
   },
+  "runs_shareWindow": {
+    "message": "Partager les exécutions de cette fenêtre de l’éditeur"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Partager en direct sur l’instance Piwi de votre équipe cette exécution et chaque exécution que cette fenêtre de l’éditeur lance désormais, jusqu’à ce que vous arrêtiez ou fermiez cette fenêtre"
+  },
+  "runs_sharedByWindow": {
+    "message": "Partagée comme l’une des exécutions de cette fenêtre de l’éditeur, jusqu’à ce que vous arrêtiez."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Arrêter le partage des exécutions de cette fenêtre"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Mettre fin aux vues des exécutions de cette fenêtre de l’éditeur sur l’instance : les suivantes restent sur cette machine"
+  },
+  "runs_stopSharingAsk": {
+    "message": "Arrêter le partage en direct de cette exécution ? Ses vues sur l’instance de l’équipe se ferment."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Arrêter le partage en direct des exécutions de cette fenêtre de l’éditeur ? Leurs vues sur l’instance de l’équipe se ferment, et les suivantes restent sur cette machine."
+  },
+  "runs_windowShared": {
+    "message": "$editor$ : les exécutions de cette fenêtre sont partagées en direct, chacune qu’elle lance, jusqu’à ce que vous arrêtiez.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$ : partagée en direct, comme l’une des exécutions de sa fenêtre de l’éditeur.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$ : les exécutions de cette fenêtre sont partagées en direct jusqu’à ce que vous arrêtiez.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$ : les exécutions de cette fenêtre ne sont plus partagées en direct.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copier le lien de la page de l’exécution"
   },
@@ -7461,13 +7523,117 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Lecture seule : elles tournent en CI, rien ici ne les met en pause ni ne les pilote. Ouvrez la page d’une exécution pour regarder un test en cours."
+    "message": "Lecture seule : elles tournent en CI, rien ici ne les met en pause ni ne les pilote. Regarder affiche ici la page d’un test en cours."
+  },
+  "runs_ciTests": {
+    "message": "Tests en cours"
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, worker $worker$",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Afficher la page de ce test pendant qu’il tourne en CI, puis les tests suivants de son worker : en lecture seule, rien d’ici ne l’atteint"
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Regarder sur le tableau de bord"
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Ouvrir la vue de ce worker sur la page de l’exécution"
+  },
+  "runs_ciWatching": {
+    "message": "Vous regardez l’exécution de CI #$id$ : $worker$.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Vue en direct de la page du test de CI, en lecture seule"
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "Cette exécution de CI n’est plus en cours."
+  },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker suit trois exécutions de CI à la fois, les plus récentes : les tests de celle-ci réapparaissent dès qu’une plus récente se termine."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "Les tests de cette exécution ne peuvent pas être regardés : la vue en direct de son projet est désactivée, ou l’exécution n’a pas de clé."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "Aucun test n’a encore tourné dans la voie de ce worker."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "L’instance n’a pas répondu."
+  },
+  "runs_ciRefusedLate": {
+    "message": "L’instance n’a pas ouvert la vue à temps : réessayez dans un instant."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "Piwi Picker ne lit pas la vue en direct de cette instance : regardez le test sur le tableau de bord."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "L’instance a répondu $status$.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "L’exécution de CI est terminée."
+  },
+  "runs_ciEndOff": {
+    "message": "La vue en direct du projet a été désactivée."
+  },
+  "runs_ciEndReplaced": {
+    "message": "L’instance a fermé cette vue : vous avez ouvert ailleurs plus de vues de cette exécution qu’elle n’en garde pour une personne."
+  },
+  "runs_ciEndTest": {
+    "message": "Le test est terminé."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "Plus aucun worker ne tourne dans cette voie."
+  },
+  "runs_ciEndUnshared": {
+    "message": "L’exécution n’est plus partagée."
+  },
+  "runs_ciEndSilent": {
+    "message": "L’instance ne répond plus."
+  },
+  "runs_ciEndClosed": {
+    "message": "L’instance a fermé la vue."
+  },
+  "runs_ciEndBroken": {
+    "message": "La connexion à l’instance a été coupée."
+  },
+  "runs_ciEndMoved": {
+    "message": "Une autre fenêtre Exécutions regarde maintenant un autre worker : Piwi Picker montre un worker de CI à la fois."
   },
   "runs_pageAtStop": {
-    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Regarder pour la suivre telle qu’elle se dessine."
   },
   "runs_pageAtStopDesktop": {
-    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Regarder pour la suivre telle qu’elle se dessine."
   },
   "runs_shareRefusedLocal": {
     "message": "Cette exécution ne peut pas être partagée en direct : elle rend compte à l’application de bureau Piwi de cet ordinateur, que vos collègues ne peuvent pas joindre. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL pour y partager une exécution."

@@ -3,6 +3,7 @@
  * one (`desktop_run_requested_tests`) and streams its output as `piwi:local-run` events under the id the start
  * resolves with, so events that arrive before the id is known wait here and are applied once it is.
  */
+import type { RunPage } from '@piwitests/core/run-channel';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -22,6 +23,11 @@ export interface RunnerRun {
    */
   holdFailures: boolean;
   exitCode: number | null;
+  /**
+   * The run's page on the instance (**Run #78 · Open**), once its own process named it to the hub (`HubSession.page`),
+   * kept after the run ended; null until then.
+   */
+  page: RunPage | null;
   /** The last `RUNNER_MAX_LINES` lines of output. */
   lines: string[];
 }
@@ -72,6 +78,18 @@ export function runnerShownRefs(runs: readonly RunnerRun[]): string[] {
   return runs
     .filter((run) => run.status === 'running' && run.holdFailures && run.shellId !== null)
     .map((run) => `desktop-${run.shellId}`);
+}
+
+/** Keeps on each run the page the hub's live run of it names (`HubSession.page`), so it stays once the run ended. */
+export function noteRunPages(
+  runs: readonly RunnerRun[],
+  sessions: ReadonlyArray<{ ref: string; page?: RunPage }>,
+): void {
+  for (const session of sessions) {
+    if (!session.page) continue;
+    const run = runs.find((r) => isRunnerRunRef(session.ref, r.shellId));
+    if (run && (run.page?.id !== session.page.id || run.page.url !== session.page.url)) run.page = { ...session.page };
+  }
 }
 
 /** The status a run ends in: the person's stop wins, then the exit code. */
@@ -143,6 +161,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
       stopRequested: false,
       holdFailures: false,
       exitCode: null,
+      page: null,
       lines: [],
     });
     const run = runs[0]!;

@@ -12,7 +12,9 @@ import {
   DESKTOP_PICKS_PATH,
   DESKTOP_RUN_CHANNEL_PATH,
   DESKTOP_RUN_COMMANDS_PATH,
+  DESKTOP_RUN_ENDED_PATH,
   DESKTOP_RUN_EVENTS_PATH,
+  DESKTOP_RUN_STARTED_PATH,
 } from './shell-run-events';
 
 /** A route's answer: its status and its JSON body. */
@@ -22,7 +24,7 @@ export interface ShellRunsAnswer {
 }
 
 /** The route of the shell's run hub a request names, or null for any other. */
-type ShellRunsRoute = 'run-channel' | 'events' | 'commands' | 'picks';
+type ShellRunsRoute = 'run-channel' | 'events' | 'commands' | 'picks' | 'started' | 'ended';
 
 /** The route of `method` and `pathname`, or null. */
 export function matchShellRunsRoute(method: string, pathname: string): ShellRunsRoute | null {
@@ -30,6 +32,8 @@ export function matchShellRunsRoute(method: string, pathname: string): ShellRuns
   if (method === 'GET' && pathname === DESKTOP_RUN_EVENTS_PATH) return 'events';
   if (method === 'POST' && pathname === DESKTOP_RUN_COMMANDS_PATH) return 'commands';
   if (method === 'POST' && pathname === DESKTOP_PICKS_PATH) return 'picks';
+  if (method === 'POST' && pathname === DESKTOP_RUN_STARTED_PATH) return 'started';
+  if (method === 'POST' && pathname === DESKTOP_RUN_ENDED_PATH) return 'ended';
   return null;
 }
 
@@ -58,6 +62,38 @@ export function answerRunChannel(
       hub: hub ? { url: hub.url, token: hub.token } : null,
     },
   };
+}
+
+/**
+ * `POST DESKTOP_RUN_STARTED_PATH`: the shell started its run `ref` (`desktop-<id>`) with Playwright's `args`, which the
+ * hub names as the run's command (`ShellRuns.started`). Refused (403) to a request a browser sends, as the shell alone
+ * says it; 400 for another ref or arguments that are no list of words; 503 while the hub does not listen.
+ */
+export function answerRunStarted(
+  runs: ShellRuns | null,
+  request: Pick<HostRequest, 'headers'>,
+  body: unknown,
+): ShellRunsAnswer {
+  if (isBrowserRequest(request)) {
+    return { status: 403, body: { message: 'The desktop shell alone says what a run runs' } };
+  }
+  if (!runs) return NOT_LISTENING;
+  const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const refused = runs.started(value.ref, value.args);
+  if (refused) return { status: 400, body: { message: refused } };
+  return { status: 200, body: { ok: true } };
+}
+
+/**
+ * `POST DESKTOP_RUN_ENDED_PATH`: the shell's run `ref` (`desktop-<id>`) ended with `exitCode`, as the window that
+ * started it says (`ShellRuns.ended`). 400 for another ref or exit code, 503 while the hub does not listen.
+ */
+export function answerRunEnded(runs: ShellRuns | null, body: unknown): ShellRunsAnswer {
+  if (!runs) return NOT_LISTENING;
+  const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const refused = runs.ended(value.ref, value.exitCode ?? null);
+  if (refused) return { status: 400, body: { message: refused } };
+  return { status: 200, body: { ok: true } };
 }
 
 /**

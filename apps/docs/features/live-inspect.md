@@ -13,7 +13,7 @@ DOM Playwright's trace takes at each call (before the call, at its action and af
 with its stylesheets and images, and the locator picker on it. It is for a CI test that waits on an element: you see
 the page as the test sees it, at the call it is stuck on, and pick the locator to use while the test still waits. It
 works in a CI run or a run [shared from a developer's machine](./share-live), and the dashboard stores none of it. The
-[desktop app](./desktop-runs#watch-live) shows the same view of its own runs, from the test's own trace.
+[desktop app](./desktop-runs#watch) shows the same view of its own runs, from the test's own trace.
 
 ## Use it
 

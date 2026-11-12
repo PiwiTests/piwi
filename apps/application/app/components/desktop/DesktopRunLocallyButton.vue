@@ -97,6 +97,7 @@ const running = computed(() => contextRun.value?.status === 'running');
 
 /** Keep the result on the button for a moment after the run ends. */
 const FLASH_MS = 8000;
+const { count: runCount } = useDesktopRunBadge();
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 const flashRun = computed(() => {
   const run = contextRun.value;
@@ -116,7 +117,7 @@ const face = computed(() => {
   const run = contextRun.value;
   if (run && running.value) {
     return {
-      label: localRunProgressLabel(run),
+      label: localRunProgressLabel(run, runCount(run)),
       color: 'info' as const,
       variant: 'subtle' as const,
       icon: undefined,

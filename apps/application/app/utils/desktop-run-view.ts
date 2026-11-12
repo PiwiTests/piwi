@@ -1,15 +1,19 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the half the app alone has: which run of the
- * Local runs tray a hub session is (`desktopRunRef`, `desktopRunOf`), which runs hold their failures, which live runs
- * report a run's page and which worker runs each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), and
- * where a stop's file opens. The half Piwi Runner's window shares is the layer's (`@piwitests/run-ui/run-view`).
+ * Local runs tray a hub session is (`desktopRunRef`, `desktopRunOf`), how far it is and which test its end leads to
+ * (`desktopRunProgress`, `desktopFailedStep`, `desktopFailedExecution`), which runs hold their failures, which live runs report a run's
+ * page and which worker runs each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), and where a stop's
+ * file opens. The half Piwi Runner's window shares is the layer's (`@piwitests/run-ui/run-view`).
  */
-import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type { HubProgress, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import { isFailedStatus } from '#shared/utils/test-counts';
 import { runFile } from '@piwitests/run-model/stop';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
+import { hideSecretsInText } from '@piwitests/core/mask';
+import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -28,6 +32,69 @@ export function desktopRunOf(ref: string): string {
 export function desktopShellIdOf(ref: string): number | null {
   const match = /^desktop-(\d+)$/.exec(desktopRunOf(ref));
   return match ? Number(match[1]) : null;
+}
+
+/** How far a run of the tray is, as its steps' own processes count it. */
+export interface DesktopRunCount {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  endedAtStop: number;
+}
+
+/**
+ * How far a run of the tray is: the counts of each of its steps' processes (`HubProgress`), live (`sessions`) or as
+ * the step last counted once it ended (`ended`, by ref), summed, with each test that stands held at its failure now
+ * counted as failed so far. Null while no step said how far it is (one that has not begun, a reporter that predates
+ * the count).
+ */
+export function desktopRunProgress(
+  run: { hubRefs: readonly string[] },
+  sessions: readonly HubSession[],
+  ended: Readonly<Record<string, HubProgress>>,
+): DesktopRunCount | null {
+  let count: DesktopRunCount | null = null;
+  for (const ref of new Set(run.hubRefs)) {
+    const live = sessions.find((session) => desktopRunOf(session.ref) === ref);
+    const progress = live?.progress ?? ended[ref] ?? ended[`${ref}${UNATTENDED_RUN_SUFFIX}`];
+    if (!progress) continue;
+    const held = live ? live.workers.filter((worker) => worker.stop?.reason === 'failure').length : 0;
+    count ??= { total: 0, done: 0, failed: 0, flaky: 0, skipped: 0, endedAtStop: 0 };
+    count.total += progress.total;
+    count.done += progress.done;
+    count.failed += progress.failed + held;
+    count.flaky += progress.flaky;
+    count.skipped += progress.skipped;
+    count.endedAtStop += progress.endedAtStop ?? 0;
+  }
+  return count;
+}
+
+/** A test of a Piwi run, as far as finding the run's first failure goes. */
+interface DesktopRunCase {
+  executionId: number;
+  title: string;
+  suitePath?: readonly string[] | null;
+  status: string;
+}
+
+/**
+ * The execution a failed run's end leads to: its failed test the run's own process named (`failure`, its describe
+ * blocks' titles then its own, joined by ` › `, as the reporter sends it: its secrets hidden and cut at
+ * `MAX_RUN_FAILURE_TEXT` characters), the first of those it names when a cut title names several, else the first failed
+ * test of the run; null for none.
+ */
+export function desktopFailedExecution(
+  cases: readonly DesktopRunCase[],
+  failure: Pick<NonNullable<HubProgress['failure']>, 'title'> | null,
+): number | null {
+  const failed = cases.filter((test) => isFailedStatus(test.status));
+  const sent = (test: DesktopRunCase) =>
+    hideSecretsInText([...(test.suitePath ?? []), test.title].join(' › ')).slice(0, MAX_RUN_FAILURE_TEXT);
+  const named = failure ? failed.find((test) => sent(test) === failure.title) : null;
+  return (named ?? failed[0])?.executionId ?? null;
 }
 
 /**
@@ -270,4 +337,19 @@ export function desktopStopLink(
   if (!root) return null;
   const file = runFile(stop.uri, root);
   return /^(?:\/|[a-z][a-z\d+.-]*:)/i.test(file) ? null : { file, line: stop.line + 1 };
+}
+
+/**
+ * The first of a run of the tray's steps that failed, as the hub counted it once it ended (`HubProgress`, by ref in
+ * `ended`), with the failure it named first (null when it named none); null when none failed or none counted.
+ */
+export function desktopFailedStep(
+  run: { hubRefs: readonly string[] },
+  ended: Readonly<Record<string, HubProgress>>,
+): { ref: string; failure: HubProgress['failure'] } | null {
+  for (const ref of run.hubRefs) {
+    const progress = ended[ref] ?? ended[`${ref}${UNATTENDED_RUN_SUFFIX}`];
+    if (progress && (progress.failed > 0 || progress.failure)) return { ref, failure: progress.failure };
+  }
+  return null;
 }
