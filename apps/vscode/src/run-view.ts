@@ -100,6 +100,7 @@ import {
   lineEditOf,
   linesAbove,
   liveItem,
+  liveMenu,
   progressItem,
   liveTarget,
   pagePoint,
@@ -115,6 +116,8 @@ import {
   ciLaneArg,
   runTargetArg,
   shareLiveWarning,
+  STOP_SHARING,
+  stopSharingQuestion,
   askToWatchText,
   holdTarget,
   holdText,
@@ -1072,6 +1075,35 @@ export function registerRunControl(
     say(answer ? answer.message : 'the editor service did not answer.');
   };
 
+  /** Whether the person confirms **Stop sharing** a run live (`session`), or this window's runs (null). */
+  const stopSharingConfirmed = async (session: RunSession | null): Promise<boolean> =>
+    (await vscode.window.showWarningMessage(stopSharingQuestion(session), { modal: true }, STOP_SHARING)) ===
+    STOP_SHARING;
+
+  /**
+   * The Live item's menu (`liveMenu`): open a shared run's page, copy its link, or stop sharing it, or this window's
+   * runs, once the person confirms; the palette's Stop sharing commands, named for what they do, ask nothing.
+   */
+  const openLiveMenu = async () => {
+    const items = liveMenu(sessions, windowShared);
+    if (!items.length) return say('no run is shared live.');
+    const picked = await vscode.window.showQuickPick(
+      items.map((item) => ({ label: item.label, ...(item.detail ? { detail: item.detail } : {}), item })),
+      { placeHolder: 'Piwi: the run shared live' },
+    );
+    if (!picked) return;
+    const { action, ref, url } = picked.item;
+    if (action === 'open' && url) await vscode.env.openExternal(vscode.Uri.parse(url));
+    if (action === 'copy' && url) {
+      await vscode.env.clipboard.writeText(url);
+      say("the run page's link is copied.");
+    }
+    if (action === 'stop' && ref && (await stopSharingConfirmed(sessions.get(ref) ?? null))) {
+      await shareLive({ ref }, false);
+    }
+    if (action === 'stop-window' && (await stopSharingConfirmed(null))) await shareWindow(null, false);
+  };
+
   /** A teammate asks to watch a run of this window: Share live shares it, Not now tells them. */
   const askedToWatch = async (ask: AskToWatchParams) => {
     const share = 'Share live';
@@ -1385,6 +1417,7 @@ export function registerRunControl(
       shareWindow(runTargetArg(arg)?.ref ?? null, true),
     ),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharingWindow, () => shareWindow(null, false)),
+    vscode.commands.registerCommand(RUN_COMMANDS.liveMenu, () => openLiveMenu()),
     lc.onNotification(SHARE_WINDOW_NOTIFICATION, (changed: ShareWindowParams) => {
       windowShared = changed?.on === true;
       void vscode.commands.executeCommand('setContext', 'piwi.windowSharedLive', windowShared);

@@ -65,6 +65,9 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  liveMenu,
+  stopSharingQuestion,
+  STOP_SHARING,
   progressItem,
   holdTarget,
   holdText,
@@ -776,14 +779,15 @@ describe('Share live', () => {
     });
   });
 
-  test('says how a shared run stands, and stops sharing it from the status bar', () => {
+  test('says how a shared run stands, and opens its menu from the status bar', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
     expect(liveItem(shared)).toEqual({
       name: 'Piwi: Share live',
       text: '$(broadcast) Live · 2 views',
-      tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
-      command: 'piwi.stopSharingRun',
+      tooltip:
+        'Piwi: Shared live on piwi.example.com: 2 views open. Click to open the run page, copy its link or stop sharing.',
+      command: 'piwi.liveMenu',
     });
     // Two runs shared: the views open of both, as JetBrains counts them.
     expect(
@@ -791,8 +795,8 @@ describe('Share live', () => {
     ).toEqual({
       name: 'Piwi: Share live',
       text: '$(broadcast) Live · 3 views',
-      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
-      command: 'piwi.stopSharingRun',
+      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to open a run page, copy its link or stop sharing.',
+      command: 'piwi.liveMenu',
     });
     expect(liveText({ shared: true, refused: null, stopped: null, page, viewers: 0 })).toBe(
       'Shared live on piwi.example.com: nobody watches yet',
@@ -804,6 +808,78 @@ describe('Share live', () => {
     expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
     // Two runs that can be shared: the person chooses.
     expect(liveTarget(sessionsOf(live('ed-1'), live('ed-2')), true)).toEqual({ candidates: ['ed-1', 'ed-2'] });
+  });
+});
+
+describe('the Live item’s menu', () => {
+  const page = 'https://piwi.example.com/test-runs/42';
+  const shared = (ref: string, id: number | null, viewers = 0): RunSession => ({
+    ...session(ref, [worker(0, 'running', { takes: ['share'] })]),
+    ...(id ? { page: { id, url: `https://piwi.example.com/test-runs/${id}` } } : {}),
+    live: {
+      shared: true,
+      refused: null,
+      stopped: null,
+      page: id ? `https://piwi.example.com/test-runs/${id}` : page,
+      viewers,
+    },
+  });
+
+  test('offers the run page, its link and Stop sharing… for the run shared', () => {
+    expect(liveMenu(sessionsOf(shared('ed-1', 42, 2)))).toEqual([
+      {
+        label: 'Open the run page',
+        detail: 'https://piwi.example.com/test-runs/42',
+        action: 'open',
+        ref: 'ed-1',
+        url: page,
+      },
+      { label: "Copy the run page's link", detail: null, action: 'copy', ref: 'ed-1', url: page },
+      {
+        label: 'Stop sharing…',
+        detail: 'Shared live on piwi.example.com: 2 views open',
+        action: 'stop',
+        ref: 'ed-1',
+        url: null,
+      },
+    ]);
+  });
+
+  test('names each run when several are shared, and the window’s share when it is on', () => {
+    const two = sessionsOf(shared('ed-1', 42), shared('ed-2', 43, 1));
+    expect(liveMenu(two).map((item) => [item.label, item.action, item.ref])).toEqual([
+      ['Open run #42’s page', 'open', 'ed-1'],
+      ['Copy run #42’s link', 'copy', 'ed-1'],
+      ['Stop sharing run #42…', 'stop', 'ed-1'],
+      ['Open run #43’s page', 'open', 'ed-2'],
+      ['Copy run #43’s link', 'copy', 'ed-2'],
+      ['Stop sharing run #43…', 'stop', 'ed-2'],
+    ]);
+    expect(liveMenu(sessionsOf(shared('ed-1', 42)), true).map((item) => [item.label, item.action])).toEqual([
+      ['Open the run page', 'open'],
+      ["Copy the run page's link", 'copy'],
+      ["Stop sharing this window's runs…", 'stop-window'],
+    ]);
+    expect(liveMenu(new Map(), true).map((item) => item.action)).toEqual(['stop-window']);
+    // A run shared without a page on the instance offers Stop sharing alone.
+    const noPage: RunSession = {
+      ...shared('ed-1', null),
+      live: { shared: true, refused: null, stopped: null, page: null, viewers: 0 },
+    };
+    expect(liveMenu(sessionsOf(noPage)).map((item) => item.action)).toEqual(['stop']);
+  });
+
+  test('asks to confirm before it stops sharing', () => {
+    expect(stopSharingQuestion(shared('ed-1', 42, 2))).toBe(
+      'Piwi: stop sharing run #42 live? The 2 views open on piwi.example.com close, and nothing more of the run goes there.',
+    );
+    expect(stopSharingQuestion(shared('ed-1', null))).toBe(
+      'Piwi: stop sharing the run live? Nothing more of it goes to piwi.example.com.',
+    );
+    expect(stopSharingQuestion(null)).toBe(
+      "Piwi: stop sharing this window's runs live? Their views on the team instance close, and the runs you start next stay on this machine.",
+    );
+    expect(STOP_SHARING).toBe('Stop sharing');
   });
 });
 
@@ -2014,7 +2090,7 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('says the window is shared, with or without a run, and stops it on a click', () => {
     expect(liveItem(new Map(), true)).toMatchObject({
       text: '$(broadcast) Live · this window',
-      command: 'piwi.stopSharingWindowLive',
+      command: 'piwi.liveMenu',
     });
     expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
       /^Share this window's runs live, each run this window follows from now on \(those you start here, and those of a terminal it follows\) until you stop or close the window, on piwi\.example\.com\?/,

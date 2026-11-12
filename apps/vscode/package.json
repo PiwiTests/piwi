@@ -575,6 +575,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.liveMenu",
+        "title": "Shared live: open the run page, copy its link or stop sharing…",
+        "category": "Piwi",
+        "icon": "$(broadcast)"
+      },
+      {
         "command": "piwi.codeAtStop",
         "title": "Write code at the stop…",
         "category": "Piwi",
@@ -800,6 +806,10 @@
         {
           "command": "piwi.stopSharingWindowLive",
           "when": "piwi.windowSharedLive"
+        },
+        {
+          "command": "piwi.liveMenu",
+          "when": "piwi.runSharedLive || piwi.windowSharedLive"
         },
         {
           "command": "piwi.codeAtStop",

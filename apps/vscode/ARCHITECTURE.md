@@ -528,8 +528,11 @@ window warns, in a modal, what goes out and to whom (`shareLiveWarning`), and on
 have not said anything of yet included; a run known not to be shareable is asked without it, and the service says why.
 Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
 Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
-counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
-(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key). Beside it, `progressItem` counts the tests the runs ran
+counts the views open of every shared run (`$(broadcast) Live · 3 views`, the `piwi.runSharedLive` context key), whose
+click opens its menu (`piwi.liveMenu`, `liveMenu`): **Open the run page**, **Copy the run page's link** and **Stop
+sharing…** for each shared run, **Stop sharing this window's runs…** while the window's are. The menu's Stop sharing
+asks to confirm in a modal first (`stopSharingQuestion`); the palette's commands (`piwi.stopSharingRun`,
+`piwi.stopSharingWindowLive`) stop at once. Beside it, `progressItem` counts the tests the runs ran
 out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
 run's own process tells the service: so it counts offline and with the desktop app.
 

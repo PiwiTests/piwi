@@ -643,6 +643,7 @@ export const RUN_COMMANDS = {
   stopSharing: 'piwi.stopSharingRun',
   shareWindow: 'piwi.shareWindowLive',
   stopSharingWindow: 'piwi.stopSharingWindowLive',
+  liveMenu: 'piwi.liveMenu',
   openPage: 'piwi.openRunPage',
   holdFailures: 'piwi.holdFailures',
 } as const;
@@ -1047,7 +1048,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
 
 /**
  * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
- * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
+ * and open the Live menu on a click (`liveMenu`); else a run that can be shared offers it, saying why its sharing stopped when it
  * stopped though nobody asked. None while no run can be shared: the command says why.
  */
 export function liveItem(sessions: Sessions, windowShared = false): ControlItem | null {
@@ -1061,8 +1062,8 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
       text: viewers > 0 ? `$(broadcast) Live · this window · ${viewsText(viewers)}` : '$(broadcast) Live · this window',
       tooltip:
         "Piwi: this window's runs are shared live, each run you start, until you stop or close the window" +
-        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to stop sharing them.`,
-      command: RUN_COMMANDS.stopSharingWindow,
+        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to open a run page, copy its link or stop sharing.`,
+      command: RUN_COMMANDS.liveMenu,
     };
   }
   if (shared.length) {
@@ -1074,8 +1075,8 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
     return {
       name: 'Piwi: Share live',
       text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
-      tooltip: `Piwi: ${what}. Click to stop sharing ${shared.length === 1 ? 'the run' : 'one'}.`,
-      command: RUN_COMMANDS.stopSharing,
+      tooltip: `Piwi: ${what}. Click to open ${shared.length === 1 ? 'the' : 'a'} run page, copy its link or stop sharing.`,
+      command: RUN_COMMANDS.liveMenu,
     };
   }
   const shareable = runs.find((r) => !r.live.refused);
@@ -1088,6 +1089,93 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
     tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
     command: RUN_COMMANDS.shareLive,
   };
+}
+
+/** An entry of the Live item's menu: open a shared run's page, copy its link, or stop sharing it or the window's runs. */
+export interface LiveMenuItem {
+  label: string;
+  detail: string | null;
+  action: 'open' | 'copy' | 'stop' | 'stop-window';
+  /** The run it acts on; null for the window's share. */
+  ref: string | null;
+  /** The run's page on the team instance, for `open` and `copy`; null otherwise. */
+  url: string | null;
+}
+
+/**
+ * The Live item's menu: for each run shared live, **Open the run page** and **Copy the run page's link** while it has
+ * a page on the team instance, and **Stop sharing…**, which asks to confirm; each run named by its number when several
+ * are shared. While this window's runs are shared, **Stop sharing this window's runs…** in place of each run's.
+ */
+export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem[] {
+  const shared = liveRunsOf(sessions).filter((r) => r.live.shared);
+  const several = shared.length > 1;
+  const items = shared.flatMap(({ ref, live }): LiveMenuItem[] => {
+    const id = sessions.get(ref)?.page?.id;
+    const run = id ? `run #${id}` : 'the run';
+    const pageItems: LiveMenuItem[] = live.page
+      ? [
+          {
+            label: several ? `Open ${run}’s page` : 'Open the run page',
+            detail: live.page,
+            action: 'open',
+            ref,
+            url: live.page,
+          },
+          {
+            label: several ? `Copy ${run}’s link` : "Copy the run page's link",
+            detail: null,
+            action: 'copy',
+            ref,
+            url: live.page,
+          },
+        ]
+      : [];
+    const stop: LiveMenuItem[] = windowShared
+      ? []
+      : [
+          {
+            label: several ? `Stop sharing ${run}…` : 'Stop sharing…',
+            detail: liveText(live),
+            action: 'stop',
+            ref,
+            url: null,
+          },
+        ];
+    return [...pageItems, ...stop];
+  });
+  if (windowShared) {
+    items.push({
+      label: "Stop sharing this window's runs…",
+      detail: null,
+      action: 'stop-window',
+      ref: null,
+      url: null,
+    });
+  }
+  return items;
+}
+
+/** The button that confirms **Stop sharing**. */
+export const STOP_SHARING = 'Stop sharing';
+
+/**
+ * What **Stop sharing** asks before it stops sharing a run live (`session`), or this window's runs (null): what closes,
+ * and that nothing more goes to the team instance.
+ */
+export function stopSharingQuestion(session: Pick<RunSession, 'page' | 'live'> | null): string {
+  if (!session) {
+    return "Piwi: stop sharing this window's runs live? Their views on the team instance close, and the runs you start next stay on this machine.";
+  }
+  const instance = (session.live && liveInstance(session.live)) ?? 'the team instance';
+  const viewers = session.live?.viewers ?? 0;
+  if (session.page && viewers > 0) {
+    const views =
+      viewers === 1 ? `The view open on ${instance} closes` : `The ${viewsText(viewers)} open on ${instance} close`;
+    return `Piwi: stop sharing run #${session.page.id} live? ${views}, and nothing more of the run goes there.`;
+  }
+  const run = session.page ? `run #${session.page.id}` : 'the run';
+  return `Piwi: stop sharing ${run} live? Nothing more of it goes to ${instance}.`;
 }
 
 /**
