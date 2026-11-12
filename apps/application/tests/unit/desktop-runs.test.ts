@@ -428,6 +428,30 @@ describe('the hub Piwi Picker reaches', () => {
     picker.socket.close();
   });
 
+  it('names the command the shell started a run with to Piwi Picker and to an agent, as an editor names its own', async () => {
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    expect(runs.started('desktop-41', ['tests/checkout.spec.ts:3', '--headed'])).toBeNull();
+    const worker = new Worker(folder).attach('desktop-41');
+    const command = 'npx playwright test tests/checkout.spec.ts:3 --headed';
+    expect((await waitFor(() => picker.session('desktop-41')?.command)) ?? null).toBe(command);
+    const listed = await runs.agent.call('run_list', {});
+    const text = listed.content[0]!.type === 'text' ? listed.content[0]!.text : '{}';
+    const run = (JSON.parse(text) as { runs: Array<{ run: string; command: string | null }> }).runs.find(
+      (r) => r.run === 'desktop-41',
+    );
+    expect(run?.command).toBe(command);
+    // A run the shell said nothing of names no command.
+    const other = new Worker(folder).attach('desktop-42');
+    await waitFor(() => picker.session('desktop-42'));
+    expect(picker.session('desktop-42')?.command).toBeNull();
+    expect(runs.started('terminal-3', [])).toMatch(/no run the shell starts/);
+    worker.socket.destroy();
+    other.socket.destroy();
+    picker.socket.close();
+  });
+
   it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
     const picker = await paired();
     const raw: string[] = [];

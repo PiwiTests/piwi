@@ -53,7 +53,8 @@ package name, MSI upgrade code and keychain service, so neither installer replac
 Runner's host is the hub of the runs its shell starts, as the dashboard's desktop build is of its own: the same
 `ShellRuns` of `@piwitests/editor`, in Runner's words. As a requested run starts, the shell reads
 `GET /api/desktop/run-channel` from the host that proved its token and adds `PIWI_RUN_CHANNEL`, `PIWI_EDITOR_SEND` and
-`PIWI_RUN_REF` to the run (`bundled_hub_env`), so each worker keeps a run connection to the host. The runs' folders are
+`PIWI_RUN_REF` to the run (`bundled_hub_env`), so each worker keeps a run connection to the host, and once the run
+started it says what it runs (`POST /api/desktop/runs/started`), which the hub names as the run's command. The runs' folders are
 the ones the shell links to the instance's projects (`linkedFolders` of `run-target`), and the code from a stop is made
 for their files alone. The window reaches the hub through `GET /api/desktop/runs/events` and
 `POST /api/desktop/runs/commands` (`useDesktopRunHub` of the layer, held by `plugins/runner-run-hub.client.ts`) and

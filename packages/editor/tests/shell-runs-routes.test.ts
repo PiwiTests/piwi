@@ -14,6 +14,7 @@ import {
   DESKTOP_RUN_CHANNEL_PATH,
   DESKTOP_RUN_COMMANDS_PATH,
   DESKTOP_RUN_EVENTS_PATH,
+  DESKTOP_RUN_STARTED_PATH,
   type DesktopRunEvent,
 } from '../src/shell-run-events';
 import { matchShellRunsRoute } from '../src/shell-runs-routes';
@@ -139,12 +140,35 @@ async function waitFor<T>(read: () => T | undefined | null | false, ms = 5000): 
   }
 }
 
+/** A worker of the run `ref` on the hub's run channel, in the host's folder. */
+function attach(ref: string): net.Socket {
+  const [socketPath, token] = runs!.runChannel!.split('#') as [string, string];
+  const worker = net.connect(socketPath);
+  worker.on('error', () => {});
+  worker.write(
+    `${JSON.stringify({
+      type: 'run-attach',
+      token,
+      ref,
+      cwd: folder,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.62.0',
+    })}\n`,
+  );
+  return worker;
+}
+
 describe('the routes', () => {
-  test('match the four paths and methods alone', () => {
+  test('match the five paths and methods alone', () => {
     expect(matchShellRunsRoute('GET', DESKTOP_RUN_CHANNEL_PATH)).toBe('run-channel');
     expect(matchShellRunsRoute('GET', DESKTOP_RUN_EVENTS_PATH)).toBe('events');
     expect(matchShellRunsRoute('POST', DESKTOP_RUN_COMMANDS_PATH)).toBe('commands');
     expect(matchShellRunsRoute('POST', DESKTOP_PICKS_PATH)).toBe('picks');
+    expect(matchShellRunsRoute('POST', DESKTOP_RUN_STARTED_PATH)).toBe('started');
+    expect(matchShellRunsRoute('GET', DESKTOP_RUN_STARTED_PATH)).toBeNull();
     expect(matchShellRunsRoute('POST', DESKTOP_RUN_CHANNEL_PATH)).toBeNull();
     expect(matchShellRunsRoute('GET', DESKTOP_PICKS_PATH)).toBeNull();
     expect(matchShellRunsRoute('GET', '/api/desktop/live')).toBeNull();
@@ -158,6 +182,7 @@ describe('the routes', () => {
       401,
     );
     expect((await call('GET', DESKTOP_RUN_CHANNEL_PATH, { 'x-piwi-token': `pd_${'e'.repeat(64)}` })).status).toBe(401);
+    expect((await call('POST', DESKTOP_RUN_STARTED_PATH, {}, { ref: 'desktop-1', args: [] })).status).toBe(401);
   });
 
   test('name the run channel, the picks address and the hub to the shell, and nothing to a browser', async () => {
@@ -253,6 +278,7 @@ describe('the routes', () => {
     runs = null;
     expect((await call('POST', DESKTOP_RUN_COMMANDS_PATH, SHELL, { type: 'subscribe', id: 1 })).status).toBe(503);
     expect((await call('POST', DESKTOP_PICKS_PATH, SHELL, { kind: 'locator', text: 'x' })).status).toBe(503);
+    expect((await call('POST', DESKTOP_RUN_STARTED_PATH, SHELL, { ref: 'desktop-1', args: [] })).status).toBe(503);
     expect((await openStream()).status).toBe(503);
     expect(await call('GET', DESKTOP_RUN_CHANNEL_PATH, SHELL)).toEqual({
       status: 200,
@@ -307,6 +333,49 @@ describe('the hub', () => {
     stream.close();
     await waitFor(() => (runs!.stopRun('desktop-5').message === WORDS.noWindowToStop ? true : null));
     worker.destroy();
+  });
+
+  test('names the command the shell started a run with, whenever the shell says it, and from the shell alone', async () => {
+    const stream = await openStream();
+    await waitFor(() => stream.heard.some((e) => e.type === 'listed'));
+    const sessionOf = (ref: string, command: string | null) =>
+      waitFor(() =>
+        stream.heard.find(
+          (e): e is HubSessionMessage =>
+            e.type === 'session' && e.session.ref === ref && e.session.command === command && !e.session.ended,
+        ),
+      );
+    const args = ['tests/cart.spec.ts:3', '--headed', '--grep', 'pays by card'];
+    const command = 'npx playwright test tests/cart.spec.ts:3 --headed --grep "pays by card"';
+
+    // Said before the run's first worker connects, and after.
+    expect(await call('POST', DESKTOP_RUN_STARTED_PATH, SHELL, { ref: 'desktop-5', args })).toEqual({
+      status: 200,
+      body: { ok: true },
+    });
+    const early = attach('desktop-5');
+    await sessionOf('desktop-5', command);
+    const late = attach('desktop-6-unattended');
+    await sessionOf('desktop-6-unattended', null);
+    await call('POST', DESKTOP_RUN_STARTED_PATH, SHELL, { ref: 'desktop-6-unattended', args: ['--repeat-each=5'] });
+    await sessionOf('desktop-6-unattended', 'npx playwright test --repeat-each=5');
+
+    // A browser's request, a run the shell did not start and arguments that are no list of words are refused.
+    const refused = [
+      { headers: { ...SHELL, origin: 'http://127.0.0.1:3000' }, body: { ref: 'desktop-7', args }, status: 403 },
+      { headers: { ...SHELL, 'sec-fetch-site': 'same-origin' }, body: { ref: 'desktop-7', args }, status: 403 },
+      { headers: SHELL, body: { ref: 'terminal-1', args }, status: 400 },
+      { headers: SHELL, body: { ref: 'ed-1', args }, status: 400 },
+      { headers: SHELL, body: { ref: 'desktop-7', args: 'tests/cart.spec.ts' }, status: 400 },
+      { headers: SHELL, body: { ref: 'desktop-7', args: [3] }, status: 400 },
+      { headers: SHELL, body: { ref: 'desktop-7', args: ['a\nb'] }, status: 400 },
+    ];
+    for (const { headers, body, status } of refused) {
+      expect((await call('POST', DESKTOP_RUN_STARTED_PATH, headers, body)).status).toBe(status);
+    }
+    early.destroy();
+    late.destroy();
+    stream.close();
   });
 
   test('spells a run’s folder as the linked folder holding it, and none outside', () => {

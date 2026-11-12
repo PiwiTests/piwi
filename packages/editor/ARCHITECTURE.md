@@ -1388,7 +1388,10 @@ the editors' runs it observes and the agents' tools), and so does Piwi Runner's 
 Each gives it its words (`ShellRunsWords`), the folders its runs run in, and the prefix of its run channel's folder.
 Its routes (`src/shell-runs-routes.ts`) are the run channel the shell reads (`GET /api/desktop/run-channel`, refused
 to a browser), the window's stream and commands (`/api/desktop/runs/events`, `/api/desktop/runs/commands`) and the
-runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone); `tests/shell-runs-routes.test.ts` holds
+runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone) and what the shell started a run with
+(`POST /api/desktop/runs/started`, `{ ref, args }`, refused to a browser), which the hub names as the run's command
+(`npx playwright test …`) on its session and in the agents' `run_list`, as an editor names the runs it started;
+`tests/shell-runs-routes.test.ts` holds
 them on a bare `node:http` host (`src/shell-runs-http.ts`), and the app's Nitro routes call the same functions. A host
 that does more for its window extends `ShellRuns` through hooks that name no feature of its: `sessionChanged` (a run
 changed, as the hub tells its peers), `relaying` (a hub message on its way to a window's stream), `windowCommand` (a

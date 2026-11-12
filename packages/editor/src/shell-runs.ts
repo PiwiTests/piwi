@@ -83,6 +83,21 @@ const MAX_WINDOWS = 16;
 /** A run's name on the channel, as the hub's commands name it. */
 const REF = /^[\w-]{1,64}$/;
 
+/** The name the shell gives a run it starts (`PIWI_RUN_REF`): `desktop-<its id>`, marked when nobody attends it. */
+const SHELL_REF = /^desktop-\d{1,10}(?:-unattended)?$/;
+
+/** The command lines of the runs the shell started that the hub keeps, the latest. */
+const MAX_RUN_COMMANDS = 50;
+
+/** The most Playwright arguments, and characters of them, the shell names for a run. */
+const MAX_RUN_ARGS = 1000;
+const MAX_RUN_ARGS_CHARS = 24_000;
+
+/** An argument as a command line shows it: as it is when it holds no space nor quote, else in double quotes. */
+function shownArg(arg: string): string {
+  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `"${arg.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
 /**
  * A folder the host's runs run in: a project's linked folder, keyed by the project's id (the dashboard's, or the team
  * instance's for Piwi Runner).
@@ -324,6 +339,8 @@ function newPicksToken(): string {
 export class ShellRuns<HostEvent extends { type: string } = never> {
   private readonly windows = new Map<string, RunWindow<HostEvent>>();
   private readonly kept: Kept[] = [];
+  /** The command line of each run the shell started, by ref, as it said it (`started`), the latest `MAX_RUN_COMMANDS`. */
+  private readonly commands = new Map<string, string>();
   /** The project of each folder a run ran in, by project id and folder: null while its name is being read. */
   private readonly projects = new Map<string, string | null>();
   private readonly lines = new RunLines();
@@ -419,7 +436,7 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
           // The code goes to the window to copy, and back to the agent, which has no file to read it in.
           writeCode: (stop, input) => this.actions.agentCode(stop, input),
           notice: (root, message) => this.notice(root, 'information', message),
-          command: () => null,
+          command: (ref) => this.commandOf(ref),
           preferLocators: () => new Set(),
           words: agent.words,
           refuses: (ref) => (isUnattendedRef(ref) ? agent.unattended : null),
@@ -460,9 +477,13 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
       RunHub.open({
         sessions: this.sessions,
         actions: this.actions,
-        runInfo: (_ref, root) => {
+        runInfo: (ref, root) => {
           const link = root ? linkHolding(options.folders(), root) : null;
-          return { command: null, label: link ? path.basename(link) : null, project: link ? this.project(link) : null };
+          return {
+            command: this.commandOf(ref),
+            label: link ? path.basename(link) : null,
+            project: link ? this.project(link) : null,
+          };
         },
         welcome: () => ({
           pid: process.pid,
@@ -509,6 +530,37 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
   picksAddress(port: number | string): string | null {
     if (!this.channel) return null;
     return `http://127.0.0.1:${port}${DESKTOP_PICKS_PATH}#${this.picks()}`;
+  }
+
+  /**
+   * The shell started its run `ref` with Playwright's `args` (`POST DESKTOP_RUN_STARTED_PATH`): the hub names the run's
+   * command (`npx playwright test …`) to Piwi Picker and to agents, at once when the run is live. Null once kept, else
+   * why not: a ref the shell does not give, or arguments that are no list of words.
+   */
+  started(ref: unknown, args: unknown): string | null {
+    if (typeof ref !== 'string' || !SHELL_REF.test(ref)) return 'The ref names no run the shell starts.';
+    if (
+      !Array.isArray(args) ||
+      args.length > MAX_RUN_ARGS ||
+      args.some((arg) => typeof arg !== 'string' || /[\0-\x1f\x7f]/.test(arg)) ||
+      (args as string[]).reduce((chars, arg) => chars + arg.length + 1, 0) > MAX_RUN_ARGS_CHARS
+    ) {
+      return "args must be Playwright's arguments, as a list of words on one line.";
+    }
+    this.commands.delete(ref);
+    this.commands.set(ref, ['npx', 'playwright', 'test', ...(args as string[]).map(shownArg)].join(' '));
+    for (const oldest of this.commands.keys()) {
+      if (this.commands.size <= MAX_RUN_COMMANDS) break;
+      this.commands.delete(oldest);
+    }
+    const session = this.sessions.current().find((s) => s.ref === ref);
+    if (session) this.hub?.push(session);
+    return null;
+  }
+
+  /** The command line the shell said it started the run `ref` with; null for another run. */
+  private commandOf(ref: string): string | null {
+    return this.commands.get(ref) ?? null;
   }
 
   /** A locator a test of a run picked (`POST DESKTOP_PICKS_PATH`): every window hears it, to copy, and it is kept. */

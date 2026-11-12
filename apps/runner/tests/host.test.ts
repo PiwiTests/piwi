@@ -236,6 +236,18 @@ describe('the hub of the runs the shell starts', () => {
     expect((await call('GET', '/api/desktop/run-channel', picks)).status).toBe(401);
   });
 
+  test('takes what the shell started a run with from the shell alone, with the token', async () => {
+    const runs = await open();
+    const said = JSON.stringify({ ref: 'desktop-3', args: ['tests/cart.spec.ts:4'] });
+    expect((await call('POST', '/api/desktop/runs/started', { 'content-type': 'application/json' }, said)).status).toBe(
+      401,
+    );
+    const asBrowser = { ...SHELL_HEADERS, origin: 'http://127.0.0.1:1' };
+    expect((await call('POST', '/api/desktop/runs/started', asBrowser, said)).status).toBe(403);
+    expect((await call('POST', '/api/desktop/runs/started', SHELL_HEADERS, said)).status).toBe(200);
+    expect(runs.agent).toBeNull();
+  });
+
   test('takes the folders the shell links to the instance’s projects as its runs’ folders', async () => {
     const runs = await open();
     const folder = path.dirname(root);

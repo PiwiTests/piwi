@@ -60,6 +60,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/desktop/runs/events', // desktop build only; the window's stream of the runs the shell starts
   'POST /api/desktop/runs/commands', // desktop build only; the window's commands to those runs
   'POST /api/desktop/runs/picks', // desktop build only; the locators those runs' tests pick, for the window to copy
+  'POST /api/desktop/runs/started', // desktop build only; the shell says what it started a run with
   'GET /api/desktop/runs/inspect/calls', // desktop build only; the calls Inspect read of a lane's test trace
   'GET /api/desktop/runs/inspect/page', // desktop build only; a page of that trace rendered, for the window's Inspect
   'GET /api/desktop/run-target', // desktop build only; the app's connection to a team instance it takes run requests from

@@ -732,6 +732,25 @@ pub(crate) async fn bundled_hub_env(
     crate::hub_env::hub_env(channel.as_deref(), picks.flatten().as_deref(), id, attended)
 }
 
+/// Tell the bundled server what the run named `run_ref` runs
+/// (`POST /api/desktop/runs/started`, Playwright's arguments after `test`), so
+/// its hub names the run's command to Piwi Picker and to agents. On its own
+/// thread, once the server at the port proved it holds the token; nothing
+/// without a server.
+fn tell_run_started(app: &AppHandle, run_ref: String, args: Vec<String>) {
+    let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
+        return;
+    };
+    let server = crate::mcp_clients::ServerInfo {
+        port: server.port,
+        token: server.token.clone(),
+    };
+    std::thread::spawn(move || {
+        let body = json!({ "ref": run_ref, "args": args });
+        let _ = crate::run_target::local_call(&server, "POST", "/api/desktop/runs/started", Some(&body));
+    });
+}
+
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
 /// bundled Node sidecar and the folder's own Playwright package. Returns a run
 /// id; progress arrives as `piwi:local-run` events carrying that id.
@@ -776,6 +795,7 @@ pub(crate) async fn spawn_tests(
     on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
 ) -> Result<u32, String> {
     let attended = crate::hub_env::attended_args(&args);
+    let started_args = args.clone();
     let mut cmd_args: Vec<String> = vec![node_path(cli), "test".into()];
     cmd_args.extend(args);
 
@@ -809,6 +829,7 @@ pub(crate) async fn spawn_tests(
         children.insert(id, child);
     }
     crate::run_target::hand_local_runs(app);
+    tell_run_started(app, crate::hub_env::run_ref(id, attended), started_args);
 
     let emit_app = app.clone();
     let mut on_exit = Some(on_exit);
