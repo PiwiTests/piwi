@@ -220,6 +220,45 @@ describe('renderInternalSelector', () => {
     );
   });
 
+  it('reads a frame locator as the frame it enters', () => {
+    expect(renderInternalSelector('iframe >> internal:control=enter-frame >> internal:label="Card"i')).toBe(
+      "locator('iframe').contentFrame().getByLabel('Card')",
+    );
+    expect(renderInternalSelector('internal:role=button >> internal:control=enter-frame')).toBe(
+      "getByRole('button').contentFrame()",
+    );
+  });
+
+  it('reads the filters a locator narrows with', () => {
+    expect(renderInternalSelector('li >> internal:has-text="abc"i')).toBe("locator('li').filter({ hasText: 'abc' })");
+    expect(renderInternalSelector('li >> internal:has-text=/ab+c/i')).toBe(
+      "locator('li').filter({ hasText: /ab+c/i })",
+    );
+    expect(renderInternalSelector('li >> internal:has-not-text="x"i')).toBe(
+      "locator('li').filter({ hasNotText: 'x' })",
+    );
+    expect(renderInternalSelector(String.raw`li >> internal:has="internal:role=button[name=\"Go\"i]"`)).toBe(
+      "locator('li').filter({ has: getByRole('button', { name: 'Go' }) })",
+    );
+    expect(renderInternalSelector('li >> visible=true')).toBe("locator('li').filter({ visible: true })");
+  });
+
+  it('keeps the options of getByRole besides its name', () => {
+    expect(renderInternalSelector('internal:role=checkbox[name="Terms"i][checked=true]')).toBe(
+      "getByRole('checkbox', { name: 'Terms', checked: true })",
+    );
+    expect(renderInternalSelector('internal:role=heading[level=2][include-hidden]')).toBe(
+      "getByRole('heading', { level: 2, includeHidden: true })",
+    );
+    expect(renderInternalSelector('internal:role=button[disabled=false]')).toBe(
+      "getByRole('button', { disabled: false })",
+    );
+  });
+
+  it('shows an engine it does not know as a locator, readable', () => {
+    expect(renderInternalSelector('internal:something=x')).toBe("locator('internal:something=x')");
+  });
+
   it('keeps any other selector as a locator', () => {
     expect(renderInternalSelector('#save')).toBe("locator('#save')");
     expect(renderInternalSelector('')).toBeNull();
@@ -361,6 +400,26 @@ describe('actionsFromSteps', () => {
       step({ title: 'Fill "abc"', params: { locator: "getByLabel('Nickname')", value: `${'x'.repeat(199)}…` } }),
     ]);
     expect(cut!.label).toBe("Fill getByLabel('Nickname'): typed text");
+  });
+
+  it('reads a bare Fill, Type or Insert title, with the locator and the value in the params', () => {
+    const out = actionsFromSteps([
+      step({ title: 'Fill', params: { locator: "getByLabel('Nickname')", value: 'hunter2' }, startTime: T0 + 1 }),
+      step({ title: 'Type', params: { locator: "getByLabel('Nickname')", text: 'abc' }, startTime: T0 + 2 }),
+      step({ title: 'Insert', params: { locator: "getByLabel('Nickname')", text: 'ab' }, startTime: T0 + 3 }),
+      step({ title: 'Insert "xy"', params: { locator: "getByLabel('Nickname')" }, startTime: T0 + 4 }),
+      step({ title: 'Fill', params: { locator: "getByLabel('Password')", value: 'hunter2' }, startTime: T0 + 5 }),
+      step({ title: 'Type', params: { value: 'hunter2' }, startTime: T0 + 6 }),
+    ]);
+    expect(out.map((a) => [a.kind, a.label])).toEqual([
+      ['fill', "Fill getByLabel('Nickname'): typed 7 chars"],
+      ['type', "Type getByLabel('Nickname'): typed 3 chars"],
+      ['type', "Type getByLabel('Nickname'): typed 2 chars"],
+      ['type', "Type getByLabel('Nickname'): typed 2 chars"],
+      ['fill', "Fill getByLabel('Password'): typed text"],
+      ['type', 'Type: typed text'],
+    ]);
+    expect(JSON.stringify(out)).not.toContain('hunter2');
   });
 
   it('shows a named key, and hides a character, a typed value and an option', () => {

@@ -275,30 +275,88 @@ function textCall(method: string, body: string): string | null {
   return q.exact ? `${method}(${quoteJsString(q.text)}, { exact: true })` : `${method}(${quoteJsString(q.text)})`;
 }
 
+/** The `getByRole` options a selector holds besides its name, as the test wrote them. */
+const ROLE_OPTIONS: Readonly<Record<string, string>> = {
+  checked: 'checked',
+  disabled: 'disabled',
+  expanded: 'expanded',
+  'include-hidden': 'includeHidden',
+  level: 'level',
+  pressed: 'pressed',
+  selected: 'selected',
+};
+
+/** The options of `internal:role=button[name="Save"i][checked=true]`: its name first, then the others as the selector has them. */
+function roleOptions(attributes: string): string {
+  const options: string[] = [];
+  for (const attribute of attributes.matchAll(/\[([\w-]+)(?:=("(?:[^"\\]|\\.)*"[is]?|[^\]]*))?\]/g)) {
+    const key = attribute[1]!;
+    const body = attribute[2];
+    if (key === 'name') {
+      const q = body ? quoted(body) : null;
+      if (q) options.unshift(`name: ${quoteJsString(q.text)}${q.exact ? ', exact: true' : ''}`);
+    } else if (ROLE_OPTIONS[key]) {
+      const value = body === undefined ? 'true' : body;
+      if (/^(?:true|false|-?\d+)$/.test(value)) options.push(`${ROLE_OPTIONS[key]}: ${value}`);
+    }
+  }
+  return options.length ? `, { ${options.join(', ')} }` : '';
+}
+
+/** The text a `filter` takes: a quoted string, or a regular expression as it is. */
+function filterText(body: string): string | null {
+  const q = quoted(body);
+  if (q) return quoteJsString(q.text);
+  return /^\/.*\/[a-z]*$/s.test(body.trim()) ? body.trim() : null;
+}
+
+/** The selector another selector holds as JSON (`internal:has="…"`), as a locator chain; null when it is not one. */
+function nestedChain(body: string): string | null {
+  try {
+    const inner: unknown = JSON.parse(body);
+    return typeof inner === 'string' ? renderInternalSelector(inner) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** One part of an internal selector (`internal:role=button[name="Save"i]`) as the locator call that made it. */
 function renderSelectorPart(part: string): string {
   const text = part.trim();
+  const fallback = () => `locator(${quoteJsString(text)})`;
   const nth = /^nth=(-?\d+)$/.exec(text);
   if (nth) return nth[1] === '0' ? 'first()' : nth[1] === '-1' ? 'last()' : `nth(${nth[1]})`;
+  if (text === 'internal:control=enter-frame') return 'contentFrame()';
+  if (text === 'visible=true' || text === 'visible=false') return `filter({ visible: ${text.slice(8)} })`;
   const role = /^internal:role=([\w-]+)((?:\[[^\]]*\])*)$/.exec(text);
-  if (role) {
-    const name = /\[name=("(?:[^"\\]|\\.)*"[is]?)\]/.exec(role[2]!);
-    const q = name ? quoted(name[1]!) : null;
-    const options = q ? `, { name: ${quoteJsString(q.text)}${q.exact ? ', exact: true' : ''} }` : '';
-    return `getByRole(${quoteJsString(role[1]!)}${options})`;
-  }
+  if (role) return `getByRole(${quoteJsString(role[1]!)}${roleOptions(role[2]!)})`;
   const label = /^internal:label=(.+)$/.exec(text);
-  if (label) return textCall('getByLabel', label[1]!) ?? `locator(${quoteJsString(text)})`;
+  if (label) return textCall('getByLabel', label[1]!) ?? fallback();
   const plain = /^internal:text=(.+)$/.exec(text);
-  if (plain) return textCall('getByText', plain[1]!) ?? `locator(${quoteJsString(text)})`;
+  if (plain) return textCall('getByText', plain[1]!) ?? fallback();
   const attr = /^internal:attr=\[(placeholder|alt|title)=(.+)\]$/.exec(text);
   if (attr) {
     const method = { placeholder: 'getByPlaceholder', alt: 'getByAltText', title: 'getByTitle' }[attr[1]!]!;
-    return textCall(method, attr[2]!) ?? `locator(${quoteJsString(text)})`;
+    return textCall(method, attr[2]!) ?? fallback();
   }
   const testId = /^internal:testid=\[data-testid=("(?:[^"\\]|\\.)*")s?\]$/.exec(text);
-  if (testId) return textCall('getByTestId', testId[1]!) ?? `locator(${quoteJsString(text)})`;
-  return `locator(${quoteJsString(text)})`;
+  if (testId) return textCall('getByTestId', testId[1]!) ?? fallback();
+  const hasText = /^internal:(has-text|has-not-text)=(.+)$/.exec(text);
+  if (hasText) {
+    const value = filterText(hasText[2]!);
+    return value ? `filter({ ${hasText[1] === 'has-text' ? 'hasText' : 'hasNotText'}: ${value} })` : fallback();
+  }
+  const has = /^internal:(has|has-not)=(.+)$/.exec(text);
+  if (has) {
+    const chain = nestedChain(has[2]!);
+    return chain ? `filter({ ${has[1] === 'has' ? 'has' : 'hasNot'}: ${chain} })` : fallback();
+  }
+  const combined = /^internal:(and|or)=(.+)$/.exec(text);
+  if (combined) {
+    const chain = nestedChain(combined[2]!);
+    return chain ? `${combined[1]}(${chain})` : fallback();
+  }
+  return fallback();
 }
 
 /** The parts of a selector chain, split at each ` >> ` that is not inside a quoted string. */
@@ -392,8 +450,8 @@ const STEP_KINDS: ReadonlyArray<readonly [RegExp, VideoActionKind]> = [
   [/^Navigate(?: to\b|$)/, 'goto'],
   [/^Double click\b/, 'dblclick'],
   [/^Click\b/, 'click'],
-  [/^Fill "/, 'fill'],
-  [/^Type "/, 'type'],
+  [/^Fill(?: "|$)/, 'fill'],
+  [/^(?:Type|Insert)(?: "|$)/, 'type'],
   [/^Press "/, 'press'],
   [/^Uncheck\b/, 'uncheck'],
   [/^Check\b/, 'check'],
@@ -454,12 +512,19 @@ export function actionsFromSteps(steps: unknown): RawAction[] {
     if (/^Attach\s+["“]piwi-/i.test(title)) return;
     const params = record(step.params);
     const use = LOCATOR_KINDS.has(kind) ? extractStepLocatorUse(step, index) : null;
-    const locator = use && use.action === kind ? use.locator : null;
+    // A bare `Fill`, `Type` or `Insert` title names no locator, so its use reads as another action; the params hold it.
+    const bare = /^(?:Fill|Type|Insert)$/.test(title.trim());
+    const locator =
+      use && (use.action === kind || (use.action === 'other' && (bare || title.startsWith('Insert'))))
+        ? use.locator
+        : null;
     let typedChars: number | null = null;
     let key: unknown;
     if (kind === 'fill' || kind === 'type') {
-      const stored = typeof params.value === 'string' ? params.value : null;
-      const value = whole(stored ?? titleValue(title, kind === 'fill' ? 'Fill "' : 'Type "'));
+      const param = kind === 'fill' ? params.value : (params.text ?? params.value);
+      const stored = typeof param === 'string' ? param : null;
+      const prefix = kind === 'fill' ? 'Fill "' : title.startsWith('Insert') ? 'Insert "' : 'Type "';
+      const value = whole(stored ?? titleValue(title, prefix));
       typedChars = value == null ? null : Array.from(value).length;
     } else if (kind === 'press') {
       key = typeof params.key === 'string' ? params.key : titleValue(title, 'Press "');
