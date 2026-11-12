@@ -45,7 +45,7 @@ writes it (`- button "Pay €84.90" [disabled]`): what a screen reader would rea
   number, the values the page's secret fields hold, and the project's **Masked elements** read `<hidden>`. A masked
   element the snapshot cannot name sends no text, and the section says why.
 
-A text is 96 K characters at most, and says so when it is cut.
+A text is 96 K characters and 192 KB at most, and says so when it is cut.
 
 ## Filmstrip
 

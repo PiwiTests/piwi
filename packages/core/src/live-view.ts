@@ -878,7 +878,8 @@ export const LIVE_WATCH_ENDS: readonly LiveViewEnd[] = ['run-ended', 'off', 'rep
  * A message of a viewer's watch (`LIVE_STREAM_TYPE`). A watch shows one worker in full (its focus, a worker or the
  * worker of a lane, which it follows through the lane's next tests), each other worker's image as a tile while it
  * shows tiles (**Watch all**), or both; every message of a worker names it (`LiveWorkerId`), so the viewer files it. A
- * reader takes a message's data, a frame's JPEG, of `MAX_LIVE_FRAME` bytes at most.
+ * reader takes a message's data, an image's JPEG or a page's text, of `MAX_LIVE_FRAME` bytes at most, and its header
+ * of `MAX_LIVE_HEADER`, which no message's other fields reach.
  */
 export type LiveViewerMessage =
   /** The watch opened: the id its viewer names it by to change what it shows. */
@@ -895,7 +896,10 @@ export type LiveViewerMessage =
   | (LiveWorkerId & { type: 'refused'; message: string })
   /** Something the focused worker's page or its test's requests said, as the watch asked for `events`. */
   | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
-  /** The focused worker's page as text, as the watch asked for `text`, or why none goes. */
+  /**
+   * The focused worker's page as text, as the watch asked for `text`, or why none goes: on the wire, the text's fields
+   * in the header and its text the data (`encodeLiveViewerMessage`); a reader takes a text in the header too.
+   */
   | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
   | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
   /** An image of the focused worker's test filmstrip, as the watch asked for `filmstrip`: its JPEG's bytes as the data. */
@@ -908,13 +912,35 @@ export type LiveViewerMessage =
    */
   | (Partial<LiveWorkerId> & { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null });
 
-/** The live message of a watch's message: its image as the data, every other field in the header. */
+/**
+ * The most bytes of a page's text a watch's message carries, in UTF-8: a frame's, which every reader of a watch takes
+ * as its data. A longer text is cut where a character ends, and says so (`cut`).
+ */
+export const MAX_LIVE_TEXT_DATA = MAX_LIVE_FRAME;
+
+/**
+ * The live message of a watch's message: its image, or its page's text in UTF-8 (`MAX_LIVE_TEXT_DATA` bytes at most),
+ * as the data, every other field in the header.
+ */
 export function encodeLiveViewerMessage(message: LiveViewerMessage): Uint8Array {
-  if (message.type !== 'frame' && message.type !== 'thumb') {
-    return encodeLiveMessage(message as unknown as Record<string, unknown>);
+  if (message.type === 'frame' || message.type === 'thumb') {
+    const { image, ...header } = message;
+    return encodeLiveMessage(header as unknown as Record<string, unknown>, image);
   }
-  const { image, ...header } = message;
-  return encodeLiveMessage(header as unknown as Record<string, unknown>, image);
+  if (message.type === 'text' && 'text' in message) {
+    const {
+      text: { text, ...fields },
+      ...header
+    } = message;
+    let data = new TextEncoder().encode(text);
+    const cut = data.length > MAX_LIVE_TEXT_DATA;
+    if (cut) {
+      data = new Uint8Array(MAX_LIVE_TEXT_DATA);
+      data = data.subarray(0, new TextEncoder().encodeInto(text, data).written);
+    }
+    return encodeLiveMessage({ ...header, text: { ...fields, cut: fields.cut || cut } }, data);
+  }
+  return encodeLiveMessage(message as unknown as Record<string, unknown>);
 }
 
 const WATCH_ID = /^[A-Za-z0-9_-]{16,64}$/;
@@ -971,7 +997,10 @@ export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage |
       if (typeof value.refused === 'string' && value.refused.trim()) {
         return { type: 'text', ...id, refused: value.refused.slice(0, MAX_REFUSAL), test };
       }
-      const text = readLaneText(value.text);
+      if (!isObject(value.text)) return null;
+      const text = readLaneText(
+        message.data ? { ...value.text, text: new TextDecoder().decode(message.data) } : value.text,
+      );
       return text ? { type: 'text', ...id, text, test } : null;
     }
     case 'thumb': {

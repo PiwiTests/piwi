@@ -23,9 +23,10 @@ import { LANE_LAYERS, readLaneLayers, type LaneLayer } from '@piwitests/core/liv
  * layers it takes beside its images (`@piwitests/core/live-layers`: the page's events, its text, the test's filmstrip),
  * those the lane panel shows, and asks the worker shown in full for its page's text now (`text: true`) as the page asks
  * (`askText`) and as each stream that takes the text opens. It opens as soon as something is wanted, and closes once
- * nothing is. A stream that drops, or brings nothing for `STALL_MS` (the instance sends a heartbeat every 15 s), opens
- * again, waiting longer each time, `RETRY_MS.length` times in a row at most; one the instance refuses, or that ends
- * saying why, or that gave up, stays closed until the page asks again (`resume`).
+ * nothing is. A stream that drops, breaks its framing or brings nothing for `STALL_MS` (the instance sends a heartbeat
+ * every 15 s) is let go, its request aborted, and opens again, waiting longer each time, `RETRY_MS.length` times in a
+ * row at most: a stream open `STEADY_MS` counts the tries afresh. One the instance refuses, or that ends saying why, or
+ * that gave up, stays closed until the page asks again (`resume`).
  * Nothing is kept: each message goes to the page as it comes.
  */
 
@@ -65,6 +66,8 @@ const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
 const CHANGE_RETRY_MS = [500, 1000, 2000];
 /** How long a stream may bring nothing, its heartbeats included, before it counts as dropped. */
 export const STALL_MS = 45_000;
+/** How long a stream stays open before it counts as one that held: the next drop starts the tries again. */
+export const STEADY_MS = 30_000;
 
 /** Whether two workers are the same one to a full view: the same lane when it names one, else the same worker. */
 export function sameWorker(a: LiveWorkerId, b: LiveWorkerId): boolean {
@@ -145,6 +148,8 @@ export class LiveWatch {
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Counts the tries afresh once the stream open stayed so `STEADY_MS`. */
+  private steady: ReturnType<typeof setTimeout> | null = null;
   /** The watch closed saying why (refused, ended, given up): it opens again only as the page asks (`resume`). */
   private halted = false;
 
@@ -207,6 +212,8 @@ export class LiveWatch {
     this.changeFailures = 0;
     if (this.changeTimer) clearTimeout(this.changeTimer);
     this.changeTimer = null;
+    if (this.steady) clearTimeout(this.steady);
+    this.steady = null;
   }
 
   private async open(again: boolean): Promise<void> {
@@ -238,14 +245,16 @@ export class LiveWatch {
     const read = createLiveMessageReader({ maxData: MAX_LIVE_FRAME });
     const reader = response.body.getReader();
     let ended: LiveViewEnd | null = null;
+    /** Let the stream go: what it still brings is read no more, and its request ends. */
+    const letGo = (): void => {
+      void reader.cancel().catch(() => {});
+      controller.abort();
+    };
     // A stream that brings nothing, not even its heartbeat, is half open: it is dropped.
     let stall: ReturnType<typeof setTimeout> | null = null;
     const alive = (): void => {
       if (stall) clearTimeout(stall);
-      stall = setTimeout(() => {
-        void reader.cancel().catch(() => {});
-        controller.abort();
-      }, STALL_MS);
+      stall = setTimeout(letGo, STALL_MS);
     };
     try {
       alive();
@@ -258,7 +267,11 @@ export class LiveWatch {
           if (!message) continue;
           if (message.type === 'hello') {
             this.watchId = message.watch;
-            this.retries = 0;
+            if (this.steady) clearTimeout(this.steady);
+            this.steady = setTimeout(() => {
+              this.steady = null;
+              this.retries = 0;
+            }, STEADY_MS);
             this.events.state({ kind: 'open' });
             // A worker reads its page's text as the first of its full views takes it: each stream asks for it now.
             if (this.ask.layers.includes('text')) this.textAsks++;
@@ -277,7 +290,8 @@ export class LiveWatch {
         }
       }
     } catch {
-      // A stream cut short, or one that broke its framing: it opens again.
+      // A stream cut short, or one that broke its framing: it is let go, and opens again.
+      letGo();
     } finally {
       if (stall) clearTimeout(stall);
     }

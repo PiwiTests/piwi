@@ -18,8 +18,11 @@ import {
   readLiveViewSize,
   readLiveViewerMessage,
   readLiveWorkerFrame,
+  readWorkerToInstance,
   type LiveMessage,
+  type LiveViewerMessage,
 } from '../src/live-view';
+import { MAX_LANE_TEXT, type LaneText } from '../src/live-layers';
 
 /** A JPEG's first bytes, then filler: what a reader checks of an image. */
 function jpeg(length: number): Uint8Array {
@@ -253,6 +256,102 @@ describe('a viewer’s watch', () => {
       { type: 'end', ...id, reason: 'worker-left' },
       { type: 'end', reason: 'run-ended' },
     ]);
+  });
+
+  test('carries the page’s text as its data: whole while it fits a reader’s data, else cut where a character ends', () => {
+    /** A page's text of `MAX_LANE_TEXT` characters, of lines in one script. */
+    const page = (line: (i: number) => string) => {
+      let text = '';
+      for (let i = 0; text.length < MAX_LANE_TEXT; i++) text += `${line(i)}\n`;
+      return text.slice(0, MAX_LANE_TEXT);
+    };
+    const scripts = [
+      page((i) => `- row "Order ${i}": cell "Paid" link "Open ${i}"`),
+      page((i) => `- row "Commande ${i} réglée à Zürich": cell "Payée"`),
+      page((i) => `- text: 注文番号${i}の支払いは東京駅の窓口で済みました。お受け取りは明日です`),
+    ];
+    for (const text of scripts) {
+      const message = {
+        type: 'text' as const,
+        ...id,
+        text: { call: 'call@4', source: 'snapshot' as const, text, cut: false, at: 1_760_000_000_000 },
+        test: 'pays – “é”',
+      };
+      const bytes = encodeLiveViewerMessage(message);
+      expect(new DataView(bytes.buffer).getUint32(0)).toBeLessThan(1024);
+      const [read, after] = readInChunks(joined(bytes, encodeLiveViewerMessage({ type: 'end', reason: 'off' })), 4096);
+      const shown = readLiveViewerMessage(read!) as Extract<LiveViewerMessage, { type: 'text'; text: LaneText }>;
+      expect(shown).toMatchObject({ type: 'text', ...id, test: 'pays – “é”' });
+      expect(text.startsWith(shown.text.text)).toBe(true);
+      expect(shown.text.cut).toBe(shown.text.text.length < text.length);
+      expect(new TextEncoder().encode(shown.text.text).length).toBeLessThanOrEqual(MAX_LIVE_FRAME);
+      expect(readLiveViewerMessage(after!)).toEqual({ type: 'end', reason: 'off' });
+    }
+    // A text of mostly one or two bytes a character comes whole; one of three, cut.
+    const read = (text: string) =>
+      (
+        readLiveViewerMessage(
+          readInChunks(
+            encodeLiveViewerMessage({
+              type: 'text',
+              ...id,
+              test: null,
+              text: { call: null, source: 'trace', text, cut: false, at: 1_760_000_000_000 },
+            }),
+            65536,
+          )[0]!,
+        ) as Extract<LiveViewerMessage, { type: 'text'; text: LaneText }>
+      ).text;
+    expect(read(scripts[0]!)).toMatchObject({ text: scripts[0], cut: false });
+    expect(read(scripts[1]!)).toMatchObject({ text: scripts[1], cut: false });
+    expect(read(scripts[2]!).cut).toBe(true);
+    expect(read('- heading "Shop"')).toMatchObject({ text: '- heading "Shop"', cut: false });
+  });
+
+  test('writes a header a reader takes, whatever the fields a worker posted: each at its longest, all escapes', () => {
+    // A control character is six bytes of JSON: the most any character of a field takes.
+    const long = (length: number) => '\u0001'.repeat(length);
+    const worker = { shard: null, worker: 2, slot: 1 };
+    const call = { title: long(5000), file: 'x'.repeat(1024), line: 12 };
+    const posted = [
+      {
+        type: 'call-log',
+        ...worker,
+        test: long(5000),
+        log: {
+          id: 'x'.repeat(100),
+          call,
+          status: 'failed',
+          lines: Array.from({ length: 50 }, () => long(5000)),
+          point: { x: 1, y: 2 },
+          target: { count: 3, box: { x: 1, y: 2, width: 3, height: 4 }, enabled: false },
+          viewport: { width: 1280, height: 800 },
+          ms: 12,
+          error: long(5000),
+        },
+      },
+      {
+        type: 'page-event',
+        ...worker,
+        test: long(5000),
+        at: 1_760_000_000_000,
+        event: {
+          kind: 'backend',
+          method: 'POST',
+          url: `http://a.test/${long(5000)}`,
+          status: 500,
+          level: 'error',
+          text: long(5000),
+        },
+      },
+      { type: 'text', ...worker, test: long(5000), refused: long(5000) },
+    ];
+    for (const value of posted) {
+      const message = readWorkerToInstance(value);
+      expect(typeof message).toBe('object');
+      const bytes = encodeLiveViewerMessage(message as unknown as LiveViewerMessage);
+      expect(new DataView(bytes.buffer).getUint32(0)).toBeLessThanOrEqual(MAX_LIVE_HEADER);
+    }
   });
 
   test('leaves out what this version does not read', () => {

@@ -9,6 +9,7 @@ import {
 import {
   LiveWatch,
   STALL_MS,
+  STEADY_MS,
   heldLayers,
   liveWatchQuery,
   readLiveWatchShown,
@@ -36,7 +37,13 @@ const OTHER: LiveWorkerId = { shard: null, worker: 1, slot: 1 };
  * (`failPosts`: a status with no state, or `null` for no answer).
  */
 function instance() {
-  const gets: Array<{ url: string; write: (bytes: Uint8Array) => void; close: () => void }> = [];
+  const gets: Array<{
+    url: string;
+    write: (bytes: Uint8Array) => void;
+    close: () => void;
+    aborted: () => boolean;
+    cancelled: () => boolean;
+  }> = [];
   const posts: Array<Record<string, unknown>> = [];
   let getStatus = 200;
   let refuseFocus = false;
@@ -80,9 +87,19 @@ function instance() {
       layers: query.get('layers')?.split(',') ?? [],
     };
     let controller!: ReadableStreamDefaultController<Uint8Array>;
-    const body = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) });
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start: (c) => void (controller = c),
+      cancel: () => void (cancelled = true),
+    });
     init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')));
-    gets.push({ url, write: (bytes) => controller.enqueue(bytes), close: () => controller.close() });
+    gets.push({
+      url,
+      write: (bytes) => controller.enqueue(bytes),
+      close: () => controller.close(),
+      aborted: () => !!init?.signal?.aborted,
+      cancelled: () => cancelled,
+    });
     return new Response(body, { status: 200 });
   }) as unknown as typeof fetch;
   return {
@@ -354,6 +371,31 @@ describe('the run page’s watch', () => {
     expect(gets).toHaveLength(1);
   });
 
+  test('drops a stream that breaks its framing, letting it go, and gives up on one that breaks each time it opens', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { watch, gets, states } = watcher();
+    watch.want({ focus: LANE, tiles: false, size: null, layers: ['text'] });
+    await settle();
+    // A header longer than a reader takes: the stream is let go, its request aborted, and opened again.
+    const broken = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
+    gets[0]!.write(HELLO);
+    gets[0]!.write(broken);
+    await settle();
+    expect(gets[0]!.cancelled()).toBe(true);
+    expect(gets[0]!.aborted()).toBe(true);
+    expect(states.at(-1)).toEqual({ kind: 'connecting', again: true });
+    // Each stream says hello and breaks again: a hello alone counts no stream that held, and the watch gives up.
+    for (let drop = 0; drop < 5; drop++) {
+      vi.advanceTimersByTime(16_000);
+      await settle();
+      gets.at(-1)!.write(HELLO);
+      gets.at(-1)!.write(broken);
+      await settle();
+    }
+    expect(states.at(-1)).toEqual({ kind: 'closed', status: null, reason: null });
+    expect(gets).toHaveLength(6);
+  });
+
   test('opens again after a drop, waiting a little, and gives up after a few tries in a row', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { watch, gets, states } = watcher();
@@ -366,8 +408,10 @@ describe('the run page’s watch', () => {
     vi.advanceTimersByTime(1000);
     await settle();
     expect(gets).toHaveLength(2);
-    // Opened again: its tries count afresh. Five drops in a row before the instance names it give up.
+    // Opened again and held a while: its tries count afresh, five more, then it gives up.
     gets[1]!.write(HELLO);
+    await settle();
+    vi.advanceTimersByTime(STEADY_MS);
     for (let drop = 0; drop < 6; drop++) {
       gets.at(-1)!.close();
       await settle();
