@@ -2121,7 +2121,11 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         modifiers = emptyList()
         if (releaseFocus) captured = false
     }
-    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8, 0, 8) }
+    // The caption and the note are plain text: a test's title or an instance's refusal never renders as HTML.
+    private val label = JBLabel().apply {
+        border = JBUI.Borders.empty(4, 8, 0, 8)
+        putClientProperty("html.disable", true)
+    }
     private val hint = JBLabel(Glue.PICK_HINT).apply {
         border = JBUI.Borders.empty(2, 8, 0, 8)
         foreground = UIUtil.getContextHelpForeground()
@@ -2130,6 +2134,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private val noteLabel = JBLabel().apply {
         border = JBUI.Borders.empty(2, 8, 0, 8)
         isVisible = false
+        putClientProperty("html.disable", true)
     }
     private val picture = JBLabel().apply {
         horizontalAlignment = SwingConstants.LEFT
