@@ -490,9 +490,9 @@ issue on the site and show its title and status to the project's readers. Pinnin
   links only the issue types listed in its setting, which defaults to the binding's issue type (what Piwi files bugs
   as); the setting is required when the binding has none. The annotation is explicit, so it has no type filter.
   The list is a nullable column on the binding (`declared_issue_types`; null, and a list that names none, mean the
-  binding's issue type), edited as a multi-select under the issue type. An entry of digits is compared with the issue's type id and any other entry with
-  its type name, ignoring case, since the binding stores either. A key the filter drops counts like a key Jira did not
-  return.
+  binding's issue type), edited as a multi-select under the issue type. An entry of digits is compared with the
+  issue's type id and any other entry with its type name, ignoring case, since the binding stores either. A key the
+  filter drops counts like a key Jira did not return.
 
 **Links from the tests are read-only.** Run data must not drive writes through the shared account. Today the policies
 write to the cluster's tracker link (`getClusterTrackerLink`: the newest keyed link `writableLink` accepts) and the
