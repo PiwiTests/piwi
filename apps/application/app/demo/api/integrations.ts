@@ -239,6 +239,7 @@ const DEMO_TRACKER: TrackerSummary = {
   provider: 'jira',
   name: DEMO_CONNECTION.name,
   baseUrl: DEMO_CONNECTION.baseUrl,
+  titlePrefix: null,
 };
 
 export function demoTrackerStatus(): { trackers: TrackerSummary[] } {
@@ -285,6 +286,11 @@ async function demoExisting(
     }));
 }
 
+/** The prefix the demo's canned binding puts before every ticket title. */
+function demoTitlePrefix(): string | null {
+  return getDemoProjectIntegration().titlePrefix;
+}
+
 /** The draft fields every entity shares: the canned binding, and nothing that links back. */
 function demoDraftBase(locale: IssueLocale) {
   const binding = getDemoProjectIntegration();
@@ -303,8 +309,13 @@ function demoDraftBase(locale: IssueLocale) {
 }
 
 /** The draft for a bug report, as the server builds it: its own document and labels, no cluster. */
-async function demoBugReportDraft(db: DrizzleDB, bugReportId: number, locale: IssueLocale): Promise<IssueDraft | null> {
-  const built = await buildBugReportIssue(db, bugReportId, { locale });
+async function demoBugReportDraft(
+  db: DrizzleDB,
+  bugReportId: number,
+  locale: IssueLocale,
+  filedBy: string | null,
+): Promise<IssueDraft | null> {
+  const built = await buildBugReportIssue(db, bugReportId, { locale, filedBy, titlePrefix: demoTitlePrefix() });
   if (!built) return null;
   return {
     ...demoDraftBase(locale),
@@ -325,8 +336,9 @@ function demoRunIssue(
   db: DrizzleDB,
   entityType: IssueEntityType,
   entityId: number,
-  opts: { locale?: IssueLocale; comment?: IssueComment | null; filedBy?: string | null },
+  rawOpts: { locale?: IssueLocale; comment?: IssueComment | null; filedBy?: string | null },
 ) {
+  const opts = { ...rawOpts, titlePrefix: demoTitlePrefix() };
   return entityType === 'test_run'
     ? buildRunIssue(db, entityId, opts)
     : buildStandaloneExecutionIssue(db, entityId, opts);
@@ -377,16 +389,17 @@ async function demoIssueDraftFor(
   locale: IssueLocale,
   filedBy: string | null,
 ): Promise<IssueDraft | null> {
-  if (entityType === 'bug_report') return demoBugReportDraft(db, entityId, locale);
+  if (entityType === 'bug_report') return demoBugReportDraft(db, entityId, locale, filedBy);
   if (entityType === 'test_run') return demoRunDraft(db, entityType, entityId, locale, filedBy);
   const clusterId = await resolveClusterId(db, entityType, entityId);
   if (clusterId == null) {
     return entityType === 'test_runs_case' ? demoRunDraft(db, entityType, entityId, locale, filedBy) : null;
   }
+  const buildOpts = { locale, filedBy, titlePrefix: demoTitlePrefix() };
   const built =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, { locale })
-      : await buildExecutionIssue(db, entityId, { locale });
+      ? await buildClusterIssue(db, entityId, buildOpts)
+      : await buildExecutionIssue(db, entityId, buildOpts);
   if (!built) return null;
   return {
     ...demoDraftBase(locale),
@@ -418,6 +431,7 @@ export async function demoCreateIssue(
     fields?: unknown;
     comment?: string | null;
     filedBy?: string | null;
+    filedById?: number | null;
     submissionId?: string | null;
   } = {},
 ): Promise<CreateIssueResponse | null> {
@@ -447,6 +461,7 @@ export async function demoCreateIssue(
       db,
       entityType === 'test_run' ? { testRunId: entityId } : { testRunsCaseId: entityId },
       title?.trim() || built.title,
+      request.filedById ?? null,
     );
     if (submission) DEMO_SUBMISSIONS.set(submission, filed);
     return filed;
@@ -457,15 +472,19 @@ export async function demoCreateIssue(
   let linkTarget: { failureClusterId: number } | { bugReportId: number };
   let built: { title: string } | null;
   if (entityType === 'bug_report') {
-    built = await buildBugReportIssue(db, entityId, {});
+    built = await buildBugReportIssue(db, entityId, {
+      filedBy: request.filedBy ?? null,
+      titlePrefix: demoTitlePrefix(),
+    });
     if (!built) return null;
     linkTarget = { bugReportId: entityId };
   } else {
     linkTarget = { failureClusterId: clusterId ?? entityId };
+    const buildOpts = { filedBy: request.filedBy ?? null, titlePrefix: demoTitlePrefix() };
     built =
       entityType === 'failure_cluster'
-        ? await buildClusterIssue(db, entityId, {})
-        : await buildExecutionIssue(db, entityId, {});
+        ? await buildClusterIssue(db, entityId, buildOpts)
+        : await buildExecutionIssue(db, entityId, buildOpts);
   }
 
   const [filed] = await db
@@ -491,7 +510,7 @@ export async function demoCreateIssue(
     };
   }
 
-  return insertDemoIssueLink(db, linkTarget, title?.trim() || built?.title || null);
+  return insertDemoIssueLink(db, linkTarget, title?.trim() || built?.title || null, request.filedById ?? null);
 }
 
 /** What each submission of the create dialog filed in the demo, so sending it again files nothing new. */
@@ -506,6 +525,7 @@ async function insertDemoIssueLink(
     | { testRunId: number }
     | { testRunsCaseId: number },
   title: string | null,
+  createdBy: number | null,
 ): Promise<CreateIssueResponse> {
   const existing = await db.select().from(entityLinks).where(isNotNull(entityLinks.key));
   const n = 100 + existing.filter((l) => l.provider === 'jira').length + 1;
@@ -525,6 +545,7 @@ async function insertDemoIssueLink(
       connectionId: DEMO_CONNECTION.id,
       externalId: String(10000 + n),
       origin: 'created',
+      createdBy,
       unfurledAt: new Date(),
     })
     .returning({ id: entityLinks.id });
@@ -779,6 +800,7 @@ export function getDemoProjectIntegration(): ResolvedProjectIntegration {
     issueType: '1',
     labels: ['piwi'],
     locale: 'en',
+    titlePrefix: '[Piwi]',
   });
 }
 

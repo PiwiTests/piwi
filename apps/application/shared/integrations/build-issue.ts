@@ -13,6 +13,8 @@ import { doc, type DocNode, type Inline, type IssueDocument } from './document';
 import { DEFAULT_LOCALE, formatDate, formatNumber, t, type IssueLocale, type MessageKey } from './messages';
 import { en } from './messages/en';
 import type { AutomaticFiling } from './automation';
+import { filedByLine, openingCommentNodes, type IssueFilingOpts } from './run-issue';
+import { prefixedTitle } from './title-prefix';
 import {
   describeExpectation,
   describeStepInWords,
@@ -23,17 +25,17 @@ import { bugPhrases } from '@piwitests/core/bug-phrases';
 import type { PiwiSteps } from '@piwitests/core/steps';
 
 /** The include toggles the modal and the per-project policy set. */
-export interface IssueBuildOpts {
+export interface IssueBuildOpts extends IssueFilingOpts {
   includeDiagnosis?: boolean;
   includePatch?: boolean;
   includeScreenshot?: boolean;
   includeShareLink?: boolean;
   siteUrl?: string | null;
-  /** The language the ticket is written in — a property of its destination. */
-  locale?: IssueLocale;
 }
 
-export const DEFAULT_ISSUE_OPTS: Required<Omit<IssueBuildOpts, 'siteUrl' | 'locale'>> = {
+export const DEFAULT_ISSUE_OPTS: Required<
+  Pick<IssueBuildOpts, 'includeDiagnosis' | 'includePatch' | 'includeScreenshot' | 'includeShareLink'>
+> = {
   includeDiagnosis: true,
   includePatch: true,
   includeScreenshot: false,
@@ -188,6 +190,8 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
   const locale = opts.locale ?? DEFAULT_LOCALE;
   const b = doc();
 
+  for (const node of openingCommentNodes(locale, opts.comment)) b.push(node);
+
   // An issue no person filed says so first, with what made it qualify.
   if (facts.automatic) b.paragraph(...automaticFilingInlines(locale, facts.automatic));
 
@@ -322,6 +326,7 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
 
   // Trailer — a JQL filter or a human can find every Piwi-filed issue by it.
   b.rule();
+  if (!facts.automatic) b.paragraph(filedByLine(locale, opts.filedBy));
   b.paragraph(code(`Piwi-Cluster: ${facts.clusterId}`));
 
   return b.build();
@@ -330,7 +335,7 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
 /** The full built issue: title, document, and the standard labels. */
 export function buildIssue(facts: IssueFacts, opts: IssueBuildOpts = {}): BuiltIssue {
   return {
-    title: facts.title,
+    title: prefixedTitle(opts.titlePrefix, facts.title),
     document: buildIssueDocument(facts, opts),
     labels: issueLabels(facts.clusterId, facts.fingerprint),
   };
@@ -386,10 +391,11 @@ function languageName(locale: IssueLocale, codeOrTag: string): string {
  * for that language, Piwi's own parts from the message catalog, and the
  * reporter's own words (the title, the note, the values typed) as they are.
  */
-export function buildBugIssueDocument(facts: BugIssueFacts, opts: { locale?: IssueLocale } = {}): IssueDocument {
+export function buildBugIssueDocument(facts: BugIssueFacts, opts: IssueFilingOpts = {}): IssueDocument {
   const locale = opts.locale ?? DEFAULT_LOCALE;
   const phrases = bugPhrases(locale);
   const b = doc();
+  for (const node of openingCommentNodes(locale, opts.comment)) b.push(node);
 
   b.heading(2, t(locale, 'section.whatHappened'));
   const page =
@@ -480,10 +486,15 @@ export function buildBugIssueDocument(facts: BugIssueFacts, opts: { locale?: Iss
   }
 
   b.rule();
+  b.paragraph(filedByLine(locale, opts.filedBy));
   b.paragraph(code(`Piwi-Bug: ${facts.id}`));
   return b.build();
 }
 
-export function buildBugIssue(facts: BugIssueFacts, opts: { locale?: IssueLocale } = {}): BuiltIssue {
-  return { title: facts.title, document: buildBugIssueDocument(facts, opts), labels: bugIssueLabels(facts.id) };
+export function buildBugIssue(facts: BugIssueFacts, opts: IssueFilingOpts = {}): BuiltIssue {
+  return {
+    title: prefixedTitle(opts.titlePrefix, facts.title),
+    document: buildBugIssueDocument(facts, opts),
+    labels: bugIssueLabels(facts.id),
+  };
 }

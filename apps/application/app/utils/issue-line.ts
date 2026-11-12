@@ -61,6 +61,20 @@ export function filingSkippedSentence(existingKey: string, ago?: string | null):
 }
 
 /**
+ * The Issue line's sentence about who filed the tracked issue and when: a
+ * person's name, or "automatically" for a rule. It is null when the issue was
+ * linked rather than filed, so nobody is named for something they did not file.
+ */
+export function filedBySentence(
+  filer: { filedBy?: string | null; automatic?: boolean | null },
+  ago?: string | null,
+): string | null {
+  if (!filer.filedBy && !filer.automatic) return null;
+  const who = filer.filedBy ? `Filed by ${filer.filedBy}` : 'Filed automatically';
+  return ago ? `${who}, ${ago}.` : `${who}.`;
+}
+
+/**
  * Whether the Issue line offers to link the open issue a rule found carrying
  * the failure's labels: the cluster's newest filing names it and the viewer
  * may link. It holds beside a Done issue too, where filing a new one is the

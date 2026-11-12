@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, like } from 'drizzle-orm';
-import { entityLinks, integrationActions, testRunsCases } from '../../server/database/schema';
+import { entityLinks, integrationActions, testRunsCases, users } from '../../server/database/schema';
 import { isProviderOfKind } from '../integrations/registry';
 import { toEpochMs } from '../relative-time';
 import type { DrizzleDB } from './db';
@@ -28,6 +28,10 @@ export interface KnownIssueRef {
   origin: string | null;
   /** When the link was made: the filing, or the pin. */
   linkedAt: string | null;
+  /** Who filed the issue from Piwi: their display name, else their username. Null when it was not filed by a person. */
+  filedBy: string | null;
+  /** Piwi filed the issue by itself, through an automation rule. */
+  automatic: boolean;
 }
 
 /**
@@ -155,14 +159,22 @@ export async function clusterKnownIssues(
       metadata: entityLinks.metadata,
       origin: entityLinks.origin,
       createdAt: entityLinks.createdAt,
+      creatorName: users.name,
+      creatorUsername: users.username,
     })
     .from(entityLinks)
+    .leftJoin(users, eq(users.id, entityLinks.createdBy))
     .where(and(inArray(entityLinks.failureClusterId, ids), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
   const tracker = new Map<number, (typeof rows)[number]>();
   const declared = new Map<number, (typeof rows)[number]>();
   const toRef = (row: (typeof rows)[number]): KnownIssueRef => {
-    const meta = (row.metadata ?? null) as { statusCategory?: string | null; assignee?: string | null } | null;
+    const meta = (row.metadata ?? null) as {
+      statusCategory?: string | null;
+      assignee?: string | null;
+      automatic?: object | null;
+    } | null;
+    const filed = row.origin === 'created';
     return {
       key: row.key!,
       url: row.url,
@@ -174,6 +186,8 @@ export async function clusterKnownIssues(
       assignee: meta?.assignee ?? null,
       origin: row.origin ?? null,
       linkedAt: row.createdAt ? new Date(row.createdAt as unknown as string | number | Date).toISOString() : null,
+      filedBy: filed ? row.creatorName?.trim() || row.creatorUsername || null : null,
+      automatic: filed && Boolean(meta?.automatic),
     };
   };
   const isDone = (row: (typeof rows)[number]) =>

@@ -15,7 +15,7 @@
  * is built through the message catalog in the issue's language.
  */
 import { and, desc, eq, gt, isNotNull, sql } from 'drizzle-orm';
-import { entityLinks, testCases, testRuns, testRunsCases } from '../../database/schema';
+import { entityLinks, testCases, testRuns, testRunsCases, users } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
 import { t, type IssueLocale } from '#shared/integrations/messages';
@@ -52,11 +52,12 @@ import type {
   UpdateIssueActionPayload,
 } from './actions';
 import { enqueueAction, findActionByKey, runActionNow } from './actions';
-import { bindingLocale, readProjectIntegration } from './binding';
+import { bindingLocale, bindingTitlePrefix, readProjectIntegration } from './binding';
 import { getConnectionRow } from './connections';
 import { getClusterTrackerLink } from './known-issue';
 import { mergeEntityLinkMetadata } from './entity-links';
 import { buildClusterIssue } from './documents';
+import { filedByName } from './create';
 import { loadTrackerRun, runDrivesWrites, type TrackerRun } from './tracker-run';
 
 /** Everything a policy needs: the writable link, the binding, and the ticket language. */
@@ -64,6 +65,7 @@ interface PolicyContext {
   link: EntityLink;
   binding: ResolvedProjectIntegration;
   locale: IssueLocale;
+  titlePrefix: string | null;
   clusterUrl: string | null;
 }
 
@@ -93,6 +95,7 @@ async function policyContext(db: DbClient, clusterId: number, projectId: number)
     link,
     binding,
     locale: bindingLocale(binding, connection?.config ?? null),
+    titlePrefix: bindingTitlePrefix(binding, connection?.config ?? null),
     clusterUrl: base ? `${base}/failure-clusters/${clusterId}` : null,
   };
 }
@@ -334,6 +337,22 @@ export async function enqueueStillFailingPolicy(
 }
 
 /**
+ * The name a description update gives the person who filed the issue: the one
+ * stored with the link, else the author of the comment they wrote, else the
+ * user who created the link. An issue a rule filed names nobody.
+ */
+async function linkFiledBy(db: DbClient, link: EntityLink, meta: FiledIssueMeta): Promise<string | null> {
+  if (meta.filedBy) return meta.filedBy;
+  if (meta.comment?.author) return meta.comment.author;
+  if (meta.automatic || link.createdBy == null) return null;
+  const [user] = await db
+    .select({ id: users.id, username: users.username, name: users.name })
+    .from(users)
+    .where(eq(users.id, link.createdBy));
+  return user ? filedByName(user) : null;
+}
+
+/**
  * Queue a rebuild of the title and description of the issue Piwi filed for a
  * cluster, when the binding keeps descriptions current and the link holds what
  * Piwi wrote: the body in the language and with the toggles it was filed with,
@@ -361,6 +380,8 @@ export async function enqueueDescriptionUpdate(
     shareUrl: meta.shareUrl ?? null,
     automatic: meta.automatic ?? null,
     comment: meta.comment ?? null,
+    filedBy: await linkFiledBy(db, link, meta),
+    titlePrefix: ctx.titlePrefix,
   });
   if (!built) return;
   await enqueueAndKick(db, {
