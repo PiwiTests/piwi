@@ -26,6 +26,7 @@ class FakeVideo extends EventTarget {
   currentTime = 0;
   seeking = false;
   paused = true;
+  ended = false;
   duration = 5;
   playMode: PlayMode = 'resolve';
   /** Starts of a load: a `src` set, or a `load()` call. */
@@ -249,6 +250,107 @@ describe('useReelPlayer', () => {
     await flush();
     expect(player.current.value).toBe(1);
     expect(player.playing.value).toBe(true);
+  });
+
+  describe('the play button across a swap', () => {
+    /** The front video reaches its end: the element pauses itself, then fires `ended`. */
+    const ends = (el: FakeVideo) => {
+      el.currentTime = el.duration;
+      el.ended = true;
+      el.paused = true;
+      el.dispatchEvent(new Event('pause'));
+      el.dispatchEvent(new Event('ended'));
+    };
+
+    it('stays playing through the pause an ending video fires, and after the swap', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0);
+      await flush();
+      expect(player.playing.value).toBe(true);
+
+      els[1].readyState = 0;
+      ends(els[0]);
+      await flush();
+      // The next video is still loading: the reel is on its way, not paused.
+      expect(player.playing.value).toBe(true);
+      expect(player.front.value).toBe(0);
+
+      els[1].readyState = 2;
+      els[1].dispatchEvent(new Event('loadeddata'));
+      await flush();
+      expect(player.front.value).toBe(1);
+      expect(player.current.value).toBe(1);
+      expect(player.playing.value).toBe(true);
+    });
+
+    it('stays paused when Pause is pressed during a pending advance, and the advance never lands', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0);
+      await flush();
+      els[1].readyState = 0;
+      ends(els[0]);
+      await flush();
+      expect(player.playing.value).toBe(true);
+
+      player.togglePlay();
+      expect(player.playing.value).toBe(false);
+      els[1].readyState = 2;
+      els[1].dispatchEvent(new Event('loadeddata'));
+      await flush();
+      // The ended video's own late events do not start a new advance either.
+      els[0].dispatchEvent(new Event('timeupdate'));
+      els[0].dispatchEvent(new Event('ended'));
+      await flush();
+
+      expect(els[1].plays).toBe(0);
+      expect(player.front.value).toBe(0);
+      expect(player.current.value).toBe(0);
+      expect(player.playing.value).toBe(false);
+    });
+
+    it('goes on to the next video when Play is pressed after that, and never replays the one that ended', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0);
+      await flush();
+      els[1].readyState = 0;
+      ends(els[0]);
+      await flush();
+      player.togglePlay();
+      expect(player.playing.value).toBe(false);
+      const playsOfFirst = els[0].plays;
+
+      els[1].readyState = 4;
+      player.togglePlay();
+      await flush();
+
+      expect(els[0].plays).toBe(playsOfFirst);
+      expect(els[0].currentTime).toBe(els[0].duration);
+      expect(els[1].plays).toBe(1);
+      expect(player.front.value).toBe(1);
+      expect(player.current.value).toBe(1);
+      expect(player.playing.value).toBe(true);
+    });
+
+    it('moves on, rather than replaying, when Play is pressed on a test whose end has passed', async () => {
+      const { player, els } = setup();
+      void player.seekTo(0, 0);
+      await flush();
+      els[1].playMode = 'pending';
+      await playToTheEnd(els[0]);
+      els[1].settlePlay('reject');
+      await flush();
+      // Autoplay refused the next video: the reel holds on the finished test, paused.
+      expect(player.playing.value).toBe(false);
+      const playsOfFirst = els[0].plays;
+
+      els[1].playMode = 'resolve';
+      player.togglePlay();
+      await flush();
+
+      expect(els[0].plays).toBe(playsOfFirst);
+      expect(player.current.value).toBe(1);
+      expect(player.playing.value).toBe(true);
+    });
   });
 
   describe('a test with no start time', () => {

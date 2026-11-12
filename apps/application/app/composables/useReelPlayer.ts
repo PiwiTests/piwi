@@ -240,9 +240,20 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     els[front.value]?.pause();
     front.value = hidden;
     current.value = next;
+    // The reel kept playing across the swap: the element that was on show paused itself on the way out.
+    playing.value = true;
     moving = false;
     preloadNext(next);
     onFrame();
+  }
+
+  /** Whether the test on show is over: its video ended, or its test's end has passed. */
+  function frontIsOver() {
+    const el = els[front.value];
+    const index = held[front.value];
+    if (!el || index == null || index !== current.value) return false;
+    const end = lengthOf(index);
+    return el.ended || (end > 0 && positionMs.value >= end);
   }
 
   function onFrame() {
@@ -252,7 +263,7 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     positionMs.value = el.currentTime * 1000;
     // A test whose span in its video is unknown has no end until the video's length is, so it is not over before.
     const end = lengthOf(index);
-    if (!moving && end > 0 && positionMs.value >= end) void advance(index);
+    if (!moving && playing.value && end > 0 && positionMs.value >= end) void advance(index);
   }
 
   function togglePlay() {
@@ -261,18 +272,23 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     if (finished.value || (!started.value && el.paused)) {
       const first = finished.value ? playable()[0] : current.value;
       if (first != null) void seekTo(first, 0);
-    } else if (el.paused) {
-      started.value = true;
-      el.play().then(
-        () => (playing.value = !el.paused),
-        () => (playing.value = false),
-      );
-    } else {
+    } else if (playing.value) {
       // A move that is still waiting (a video to load, a seek) is dropped, so it cannot start playing again.
       token++;
       moving = false;
       el.pause();
       playing.value = false;
+    } else if (frontIsOver()) {
+      // The test on show is done: resuming goes on to the next one and never replays this one.
+      started.value = true;
+      playing.value = true;
+      void advance(current.value);
+    } else {
+      started.value = true;
+      el.play().then(
+        () => (playing.value = !el.paused),
+        () => (playing.value = false),
+      );
     }
   }
 
@@ -309,13 +325,14 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     },
     onEnded: () => {
       const index = held[slot];
-      if (front.value !== slot || index == null || index !== current.value) return;
+      if (front.value !== slot || index == null || index !== current.value || !playing.value) return;
       // The last frame a callback saw can sit just short of the end; the video is over.
       positionMs.value = Math.max(positionMs.value, (els[slot]?.duration ?? 0) * 1000);
       void advance(index);
     },
     onPause: () => {
-      if (front.value === slot && !moving) playing.value = false;
+      // A video pauses itself just before `ended`; the reel is still playing, on its way to the next one.
+      if (front.value === slot && !moving && !frontIsOver()) playing.value = false;
     },
     onPlay: () => {
       if (front.value === slot) playing.value = true;
