@@ -310,7 +310,7 @@ describe('opening a lane’s running test’s trace', () => {
   test('says the worker’s own sentence for an attempt it does not trace, and why when it does not answer', async () => {
     const own = harness();
     own.begin();
-    const untraced = "This test's attempt is not traced: its project's `trace` option records none of it.";
+    const untraced = "This test's attempt is not traced: its project's trace option records none of it.";
     own.answer.value = { ok: false, message: untraced };
     expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: false, message: untraced });
     own.answer.value = null;
