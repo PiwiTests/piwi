@@ -40,22 +40,15 @@ test.describe('Video review fit', () => {
       retries: 0,
       workerIndex: 0,
       startedAt: t0 + i * 4000,
-      steps: [
-        {
-          title: "Click getByRole('button', { name: 'Add' })",
-          category: 'pw:api',
-          startTime: t0 + i * 4000 + 200,
-          duration: 80,
-          params: { locator: "getByRole('button', { name: 'Add' })" },
-        },
-        {
-          title: "Click getByRole('button', { name: 'Pay' })",
-          category: 'pw:api',
-          startTime: t0 + i * 4000 + 1600,
-          duration: 80,
-          params: { locator: "getByRole('button', { name: 'Pay' })" },
-        },
-      ],
+      // The first test also has a cluster and a close pair, so the lane holds a merged mark and marks that sit near
+      // one another at every width.
+      steps: [200, 1600, ...(i === 0 ? [1700, 1760, 1820, 2300, 2500] : [])].map((at, n) => ({
+        title: `Click getByRole('button', { name: 'Step ${n}' })`,
+        category: 'pw:api',
+        startTime: t0 + i * 4000 + at,
+        duration: 80,
+        params: { locator: `getByRole('button', { name: 'Step ${n}' })` },
+      })),
     }));
     const events = await request.post(`/api/test-runs/${runId}/events`, {
       data: {
@@ -193,7 +186,7 @@ test.describe('Video review fit', () => {
         });
       }
 
-      test('gives every mark a hit area of at least 24 by 24 px', async ({ page }) => {
+      test('gives every mark a hit area of at least 24 by 24 px that no neighbour covers', async ({ page }) => {
         await openVideoTab(page, size);
         const hit = await page.evaluate(() =>
           [...document.querySelectorAll('[data-testid="video-action-mark"]')].map((mark) => {
@@ -204,8 +197,17 @@ test.describe('Video review fit', () => {
             return [-11.5, 11.5].flatMap((dx) => [-11.5, 11.5].map((dy) => at(dx, dy))).every(Boolean);
           }),
         );
-        expect(hit.length).toBeGreaterThan(0);
+        expect(hit.length).toBeGreaterThan(1);
         expect(hit.every(Boolean)).toBe(true);
+
+        // Each mark's hit area is the 26 px around its center; two neighbours at least that far apart never share one.
+        const centers = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-testid="video-action-mark"]')].map((mark) => {
+            const box = mark.getBoundingClientRect();
+            return box.left + box.width / 2;
+          }),
+        );
+        for (let i = 1; i < centers.length; i++) expect(centers[i]! - centers[i - 1]!).toBeGreaterThanOrEqual(26);
       });
 
       test('shows the current block whole, with its ring, on the tab and in the Evidence window', async ({ page }) => {

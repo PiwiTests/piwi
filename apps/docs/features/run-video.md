@@ -52,7 +52,7 @@ Video tab and in the Evidence video review.
 - Point at a mark, or move to it with the keyboard, to read the action and its locator, for example
   `Click getByRole('button', { name: 'Save' })`. Choose a mark to go there; it plays on only if the video was playing.
 - An action that failed has a red mark.
-- Marks too close to tell apart merge into one mark with a count. Its tooltip lists them.
+- Marks less than 28 px apart merge into one mark with a count, so every mark keeps its own hit area. Its tooltip lists them.
 - An action outside the video is shown at the nearest edge of the lane, with a note in its tooltip.
 - A test with more than 500 actions shows the first 500, and the lane says how many there are.
 

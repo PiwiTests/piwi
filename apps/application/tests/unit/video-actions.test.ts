@@ -471,6 +471,25 @@ describe('placeMarks', () => {
     expect(placeMarks([act(1_000), act(1_000 + gapMs - 1)], 10_000, 1000)).toHaveLength(1);
   });
 
+  it('keeps the centers of two marks at least a hit area apart, so no mark covers its neighbour', () => {
+    // 300 px for 3 s: 10 ms is 1 px; an action every 55 ms.
+    const actions = Array.from({ length: 60 }, (_, i) => act(i * 55));
+    const marks = placeMarks(actions, 3_000, 300);
+    expect(marks.length).toBeGreaterThan(1);
+    for (let i = 1; i < marks.length; i++)
+      expect((marks[i]!.position - marks[i - 1]!.position) * 300).toBeGreaterThanOrEqual(MARK_MERGE_PX);
+    expect(MARK_MERGE_PX).toBeGreaterThanOrEqual(26);
+  });
+
+  it('flags a merged mark as outside the video only when every one of its actions is', () => {
+    // Two actions before the first frame merge at the left edge; one just inside it, merged with one outside, is not.
+    const [outside] = placeMarks([act(-500), act(-100)], 10_000, 1000);
+    expect(outside!.clamped).toBe(true);
+    const [partly] = placeMarks([act(-100), act(50)], 10_000, 1000);
+    expect(partly!.actions).toHaveLength(2);
+    expect(partly!.clamped).toBe(false);
+  });
+
   it('turns a merged mark red when one of its actions failed, and keeps the order', () => {
     const [mark] = placeMarks([act(500), act(510, { failed: true }), act(505)], 10_000, 1000);
     expect(mark!.failed).toBe(true);

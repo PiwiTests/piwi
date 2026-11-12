@@ -20,8 +20,11 @@ import { videoTimingMap, type VideoTimingInput } from './video-reel';
 
 /** The most marks an execution's answer holds. */
 export const MAX_VIDEO_ACTIONS = 500;
-/** Marks closer than this on the lane merge into one. */
-export const MARK_MERGE_PX = 6;
+/**
+ * Marks closer than this on the lane merge into one. A mark's hit area is 26 px wide around its 10 px dot
+ * (`RunVideoActionMarks`) and a merged badge's a little more, so neighbours this far apart never share a hit area.
+ */
+export const MARK_MERGE_PX = 28;
 
 export type VideoActionKind =
   | 'goto'
@@ -512,7 +515,7 @@ export interface VideoMark {
   actions: VideoAction[];
   /** One of them failed. */
   failed: boolean;
-  /** One of them started before the first frame or after the end of the test and sits at that edge. */
+  /** All of them started before the first frame or after the end of the test and sit at that edge. */
   clamped: boolean;
 }
 
@@ -542,7 +545,7 @@ export function placeMarks(
     if (first && widthPx > 0 && x - first.x < gapPx) {
       first.mark.actions.push(action);
       first.mark.failed ||= action.failed;
-      first.mark.clamped ||= clamped;
+      first.mark.clamped &&= clamped;
       continue;
     }
     const mark: VideoMark = { atMs, position: atMs / spanMs, actions: [action], failed: action.failed, clamped };
