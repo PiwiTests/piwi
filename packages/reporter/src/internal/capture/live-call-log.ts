@@ -11,8 +11,9 @@ import {
 import { internalCall } from './quiet-capture.js';
 
 /**
- * The call a test is in, as Playwright logs it while it runs, for the run page's live view of a CI run
- * (`@piwitests/core/live-view`'s `call-log`). Three sources, each checked before use:
+ * The call a test is in, as Playwright logs it while it runs, for a live view (`@piwitests/core/live-view`'s
+ * `call-log`, and the `calls` layer of `@piwitests/core/live-layers`). Its calls come from one of two sources, each
+ * checked before use (`CallSource`):
  *
  * - Playwright's call stream (`context.debugger`'s internal `_enable` and its `apicallsupdated` event): each running
  *   call's title, place, status, call log lines, the point an input action acts on, and its error, every half second.
@@ -20,6 +21,12 @@ import { internalCall } from './quiet-capture.js';
  *   where the debugger stops an action (before its input rather than before its wait), so `live-view.ts` turns it on
  *   only in a CI run nothing pauses; its calls are followed from then until the context goes, so a viewer who comes
  *   later sees the call shown at once.
+ * - In a run Piwi may pause, Playwright's in-process instrumentation (`listener`): a listener on the context's server
+ *   object (`context._connection.toImpl(context).instrumentation`, each member checked first), which hears each call of
+ *   the context begin, log, act on its point and end, synchronously, as Playwright's own tracer does, pausing nothing
+ *   and moving no stop. It is added as the first view of the context follows it and removed as the context closes. A
+ *   browser the worker connected to has no in-process server: there, and on a Playwright of another shape, the call
+ *   alone is followed, as the worker's instrumentation below hears it, without its log.
  * - The worker's Playwright instrumentation (`trackCalls`): when each call began and the selector of a locator call,
  *   which the call stream does not give, matched to the stream's calls by the id the runner gives each call.
  * - While a call has waited a second, the elements its selector matches, read once a second through `internalCall`:
@@ -73,9 +80,27 @@ function callStreamOf(context: BrowserContext): CallStream | null {
 /** A call of the worker's Playwright as its instrumentation heard it begin. */
 interface HeardCall {
   /** The call's zone, on which the runner writes the id the call stream names it by (`callId`). */
-  zone: { callId?: unknown };
+  zone: { callId?: unknown; apiName?: unknown; title?: unknown };
   selector: string | null;
   began: number;
+}
+
+/** Where a view follows a context's calls from: the call stream, or the in-process instrumentation. */
+export type CallSource = 'stream' | 'listener';
+
+/** How a view follows the calls: from which source, and the title the runner gives a call by its id. */
+export interface FollowOptions {
+  source?: CallSource;
+  titleOf?: (id: string) => string | null;
+}
+
+/** Who hears each call of the worker's Playwright end (`onCallEnded`): its id, once the runner gave it one. */
+const endListeners = new Set<(id: string | null) => void>();
+
+/** Hear each call of the worker's Playwright end, internal calls aside; returns what stops hearing them. */
+export function onCallEnded(listener: (id: string | null) => void): () => void {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
 }
 
 /** The calls of the worker's Playwright running now, by their zone. */
@@ -103,8 +128,16 @@ export function trackCalls(playwright: unknown): void {
       });
       if (heard.size > MAX_HEARD) heard.delete(heard.keys().next().value!);
     },
-    onApiCallEnd: (zone: object) => {
+    onApiCallEnd: (zone: { callId?: unknown }) => {
       heard.delete(zone);
+      const id = typeof zone?.callId === 'string' ? zone.callId : null;
+      for (const listener of endListeners) {
+        try {
+          listener(id);
+        } catch {
+          // A listener never breaks the test's call.
+        }
+      }
     },
   });
 }
@@ -147,9 +180,12 @@ interface ContextCalls {
   told: number;
   /** Each view that follows them, told of each change. */
   views: Set<() => void>;
+  /** The calls come from the worker's instrumentation alone, without their log: refreshed as a view tells them. */
+  heardOnly?: boolean;
 }
 
 const followed = new WeakMap<BrowserContext, Promise<ContextCalls | null>>();
+const listened = new WeakMap<BrowserContext, ContextCalls>();
 
 /** Take one update of the call stream into its call. */
 function take(state: ContextCalls, update: CallUpdate): void {
@@ -244,6 +280,200 @@ async function followContext(context: BrowserContext): Promise<ContextCalls | nu
   return state;
 }
 
+/** The part of Playwright's server-side instrumentation a listener needs. */
+interface ServerInstrumentation {
+  addListener(listener: object, context: unknown): void;
+  removeListener(listener: object): void;
+}
+
+/** A call's metadata, as Playwright's server keeps it while the call runs. */
+interface CallMetadata {
+  id: string;
+  method: string;
+  type?: unknown;
+  title?: unknown;
+  internal?: unknown;
+  location?: { file?: unknown; line?: unknown } | null;
+  params?: { selector?: unknown } | null;
+  point?: { x?: unknown; y?: unknown } | null;
+  error?: { error?: { message?: unknown } } | null;
+}
+
+function isMetadata(value: unknown): value is CallMetadata {
+  const meta = value as Partial<CallMetadata> | null;
+  return !!meta && typeof meta === 'object' && typeof meta.id === 'string' && typeof meta.method === 'string';
+}
+
+/**
+ * A hook's call metadata, and the point an input action acts on: Playwright 1.64 hands a hook the call's progress, which
+ * holds its metadata, then the object called and the point; an earlier one hands it the object called and the metadata,
+ * which holds the point.
+ */
+function hookCall(args: unknown[]): { meta: CallMetadata; point: unknown } | null {
+  const progress = args[0] as { metadata?: unknown } | null;
+  if (progress && typeof progress === 'object' && isMetadata(progress.metadata)) {
+    return { meta: progress.metadata, point: args[2] };
+  }
+  return isMetadata(args[1]) ? { meta: args[1], point: args[1].point } : null;
+}
+
+/** The in-process server object of a context, and its instrumentation; null for a connected browser's, or another shape. */
+function serverInstrumentationOf(
+  context: BrowserContext,
+): { impl: object; instrumentation: ServerInstrumentation } | null {
+  const connection = (context as unknown as { _connection?: { toImpl?: unknown } })._connection;
+  if (typeof connection?.toImpl !== 'function') return null;
+  let impl: unknown;
+  try {
+    impl = (connection.toImpl as (object: unknown) => unknown)(context);
+  } catch {
+    return null;
+  }
+  const instrumentation = (impl as { instrumentation?: Partial<ServerInstrumentation> } | null)?.instrumentation;
+  if (
+    !impl ||
+    typeof instrumentation?.addListener !== 'function' ||
+    typeof instrumentation.removeListener !== 'function'
+  ) {
+    return null;
+  }
+  return { impl: impl as object, instrumentation: instrumentation as ServerInstrumentation };
+}
+
+/** A call's title as its metadata names it, when the runner gives it none: Playwright's title, else its method. */
+function metadataTitle(meta: CallMetadata): string {
+  if (typeof meta.title === 'string' && meta.title) return meta.title;
+  const selector = typeof meta.params?.selector === 'string' ? ` ${meta.params.selector}` : '';
+  return `${typeof meta.type === 'string' ? `${meta.type}.` : ''}${meta.method}${selector}`;
+}
+
+/**
+ * Follow a context's calls through Playwright's in-process instrumentation, from now until the context closes, which
+ * removes the listener; null for a context without one. Each hook is synchronous and only reads the call.
+ */
+function listenContext(context: BrowserContext, titleOf: (id: string) => string | null): ContextCalls | null {
+  const known = listened.get(context);
+  if (known) return known;
+  const server = serverInstrumentationOf(context);
+  if (!server) return null;
+  const state: ContextCalls = { calls: new Map(), told: 0, views: new Set() };
+  const changed = (): void => {
+    prune(state);
+    for (const view of state.views) view();
+  };
+  const listener = {
+    onBeforeCall: (...args: unknown[]): void => {
+      const call = hookCall(args);
+      if (!call || call.meta.internal || call.meta.method === '__waitInfo__') return;
+      const { meta } = call;
+      const selector = typeof meta.params?.selector === 'string' && meta.params.selector ? meta.params.selector : null;
+      state.calls.set(meta.id, {
+        id: meta.id,
+        title: hideSecretsInText(hideTypedText(titleOf(meta.id) ?? metadataTitle(meta))).slice(0, MAX_TITLE),
+        file: userFile(meta.location?.file),
+        line: typeof meta.location?.line === 'number' ? meta.location.line : null,
+        status: 'running',
+        lines: [],
+        point: null,
+        error: null,
+        began: Date.now(),
+        ended: null,
+        order: ++state.told,
+        selector,
+        secretField: selector ? isSecretLocator(selector) : false,
+      });
+      if (state.calls.size > MAX_HEARD) state.calls.delete(state.calls.keys().next().value!);
+      changed();
+    },
+    onCallLog: (_object: unknown, meta: unknown, logName: unknown, message: unknown): void => {
+      if (logName !== 'api' || !isMetadata(meta) || typeof message !== 'string') return;
+      const call = state.calls.get(meta.id);
+      if (!call) return;
+      call.secretField ||= namesSecretField(message);
+      call.lines.push(hideSecretsInText(hideSecretsInLog(message, call.secretField)).slice(0, MAX_LINE));
+      if (call.lines.length > KEPT_LINES) call.lines.splice(0, call.lines.length - KEPT_LINES);
+      changed();
+    },
+    onBeforeInputAction: (...args: unknown[]): void => {
+      const hooked = hookCall(args);
+      const call = hooked ? state.calls.get(hooked.meta.id) : undefined;
+      const point = hooked?.point as { x?: unknown; y?: unknown } | null | undefined;
+      if (!call || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      call.point = { x: point.x as number, y: point.y as number };
+      changed();
+    },
+    onAfterCall: (...args: unknown[]): void => {
+      const hooked = hookCall(args);
+      const call = hooked ? state.calls.get(hooked.meta.id) : undefined;
+      if (!hooked || !call) return;
+      const message = hooked.meta.error?.error?.message;
+      if (typeof message === 'string' && message) {
+        call.error = hideSecretsInText(hideSecretsInLog(message.split('\n')[0]!, call.secretField)).slice(0, MAX_LINE);
+      }
+      call.status = hooked.meta.error ? 'failed' : 'passed';
+      call.ended = Date.now();
+      changed();
+    },
+  };
+  try {
+    server.instrumentation.addListener(listener, server.impl);
+  } catch {
+    return null;
+  }
+  context.once('close', () => {
+    try {
+      server.instrumentation.removeListener(listener);
+    } catch {
+      // The context's server object went with it.
+    }
+  });
+  listened.set(context, state);
+  return state;
+}
+
+/**
+ * The calls of a context as the worker's instrumentation hears them, for a context with no in-process server: each
+ * running call, its title the runner's, without its log. The calls of every context of the worker are heard alike.
+ */
+function heardCalls(): ContextCalls {
+  return { calls: new Map(), told: 0, views: new Set(), heardOnly: true };
+}
+
+/** Refresh a context's calls from the calls the worker's instrumentation hears running now. */
+function refreshHeard(state: ContextCalls, titleOf: (id: string) => string | null): void {
+  const running = new Set<string>();
+  for (const one of heard.values()) {
+    const id = typeof one.zone.callId === 'string' ? one.zone.callId : null;
+    if (!id) continue;
+    running.add(id);
+    if (state.calls.has(id)) continue;
+    const named =
+      typeof one.zone.title === 'string' && one.zone.title ? one.zone.title : String(one.zone.apiName ?? 'call');
+    state.calls.set(id, {
+      id,
+      title: hideSecretsInText(hideTypedText(titleOf(id) ?? named)).slice(0, MAX_TITLE),
+      file: null,
+      line: null,
+      status: 'running',
+      lines: [],
+      point: null,
+      error: null,
+      began: one.began,
+      ended: null,
+      order: ++state.told,
+      selector: one.selector,
+      secretField: one.selector ? isSecretLocator(one.selector) : false,
+    });
+  }
+  for (const call of state.calls.values()) {
+    if (call.status === 'running' && !running.has(call.id)) {
+      call.status = 'passed';
+      call.ended = Date.now();
+    }
+  }
+  prune(state);
+}
+
 /** The part of an element of the page the read below uses, as the page sees it. */
 interface PageElement {
   getBoundingClientRect(): { x: number; y: number; width: number; height: number };
@@ -260,21 +490,29 @@ interface Matches {
 
 /**
  * Follow the calls of `page`'s context as Playwright logs them, telling `onLog` the call shown (`shownCall`) at once
- * and at each change, none that ended before `since` (when the view's test began). Resolves with what stops following,
- * or null on a Playwright without the call stream.
+ * and at each change, none that ended before `since` (when the view's test began). From the call stream (`stream`,
+ * the default), else from the in-process instrumentation (`listener`), or the calls alone where it has none. Resolves
+ * with what stops following, or null on a Playwright without the call stream.
  */
 export async function followCallLog(
   page: Page,
   since: number,
   onLog: (log: LiveCallLog) => void,
+  options: FollowOptions = {},
 ): Promise<(() => void) | null> {
   const context = page.context();
-  let state = followed.get(context);
-  if (!state) {
-    state = followContext(context);
-    followed.set(context, state);
+  const titleOf = options.titleOf ?? (() => null);
+  let calls: ContextCalls | null;
+  if (options.source === 'listener') {
+    calls = listenContext(context, titleOf) ?? heardCalls();
+  } else {
+    let state = followed.get(context);
+    if (!state) {
+      state = followContext(context);
+      followed.set(context, state);
+    }
+    calls = await state;
   }
-  const calls = await state;
   if (!calls) return null;
   let stopped = false;
   let reading = false;
@@ -285,6 +523,7 @@ export async function followCallLog(
   const onThisPage = (): boolean => !page.isClosed() && context.pages().length === 1;
 
   const tell = (): void => {
+    if (calls.heardOnly) refreshHeard(calls, titleOf);
     const shown = shownCall(calls, since);
     if (stopped || !shown) return;
     const here = onThisPage();
@@ -305,6 +544,7 @@ export async function followCallLog(
 
   // While the call shown has waited a second, the elements its locator matches.
   const timer = setInterval(() => {
+    if (calls.heardOnly) tell();
     const shown = shownCall(calls, since);
     const selector = shown?.selector;
     if (stopped || reading || !shown || shown.status !== 'running' || !selector || !onThisPage()) return;

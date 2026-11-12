@@ -1,6 +1,8 @@
 import * as net from 'node:net';
 import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
+import { LIVE_CALL_LOGS_PER_SECOND, type LiveCallLog } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
@@ -15,6 +17,7 @@ import {
   type BindAnswer,
   type HubToRun,
   type IntentAnswer,
+  type LaneLayerData,
   type LocatorAnswer,
   type PausedImage,
   type PickAtAnswer,
@@ -37,6 +40,7 @@ import {
   MAX_VIEW_FRAME,
   MAX_VIEW_HEIGHT,
   MAX_VIEW_WIDTH,
+  LatestPacer,
   RateWindow,
   VIEW_QUALITY,
   type ViewButton,
@@ -53,12 +57,24 @@ import { keptRequests, keptResponse } from './kept-responses.js';
 import {
   laneAt,
   laneBarBand,
+  lanePageNow,
   laneStopped,
   laneWentOn,
+  onLanePage,
   subscribeLane,
   type LaneSink,
   type LaneSubscription,
 } from './lane-feed.js';
+import {
+  followTraceText,
+  layersTest,
+  layersTitleOf,
+  subscribePageEvents,
+  takeLaneText,
+  traceThumbs,
+  type TraceThumb,
+} from './lane-layers.js';
+import { followCallLog } from './live-call-log.js';
 import { jpegSize, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { holdBarFrom, newBarHoldToken, pauseBarUp, viewportOf } from './page-view.js';
@@ -90,7 +106,12 @@ import { internalCall } from './quiet-capture.js';
  * (`events`, `run-events.ts`) while the editor asks, at most `MAX_RUN_EVENT_RATE` a second; and it binds its browser for
  * Playwright's own tools at a stop on request (`bind`), until the test ends. For the team instance, it shares the run's
  * live view as a person asks (`share`, `live-view.ts`), and says how that stands (`live`) after its attach and as it
- * changes; a run this connection shared stops being shared as the connection closes. A test never waits on it but
+ * changes; a run this connection shared stops being shared as the connection closes. While its lane view is on, it sends
+ * the layers the editor asks of it (`layers`, `lane-layers.ts`, each as `lane-layer`): the call the test is in as
+ * Playwright's in-process instrumentation logs it (`calls`, `LIVE_CALL_LOGS_PER_SECOND` at most), the page's events
+ * (`events`), its text (`text`: as the trace writes it, and taken as asked, the request `text`), and the test's
+ * filmstrip from its trace (`filmstrip`, `LANE_THUMBS_PER_SECOND` at most), the call log and the filmstrip again as
+ * asked again; none of them outlives the lane view. A test never waits on it but
  * while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
  * answer then goes on at once.
  */
@@ -226,6 +247,15 @@ interface View {
 let view: View | null = null;
 /** The lane view, while the editor's viewers watch the worker's lane (`view-lane`). */
 let laneView: LaneSubscription | null = null;
+/** The layers the editor asks of the lane view (`layers`), which run while it is on. */
+let layersAsked = new Set<LaneLayer>();
+/** What runs for each layer of the lane view now. */
+const layerRuns: {
+  events: (() => void) | null;
+  calls: { stop(): void; pacer: LatestPacer<LiveCallLog>; latest: LiveCallLog | null } | null;
+  text: (() => void) | null;
+  strip: { stop(): void; sent: Set<string>; queue: Array<TraceThumb & { test: string }> } | null;
+} = { events: null, calls: null, text: null, strip: null };
 /** A view on its way, for the stop it is of. */
 let viewStarting: { stop: number; started: Promise<IntentAnswer> } | null = null;
 /** The editor's requests to start and stop a view, one after the other, in the order they came. */
@@ -335,6 +365,7 @@ export async function openRunChannel(
   shown = new Set();
   runName = `piwi-${ref}-w${worker.workerIndex}`;
   eventsOn = false;
+  layersAsked = new Set();
   host = null;
   opening.unref();
   opening.on(
@@ -688,6 +719,7 @@ function startLaneView(): IntentAnswer {
     },
     refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
   });
+  applyLayers(layersAsked);
   return { ok: true, message: 'The live view is on.' };
 }
 
@@ -695,9 +727,162 @@ function startLaneView(): IntentAnswer {
 async function stopLaneView(): Promise<IntentAnswer> {
   const shown = laneView;
   laneView = null;
+  applyLayers(new Set());
   endDriven();
   if (shown) await within(shown.close(), VIEW_END_MS);
   return { ok: true, message: 'The live view is off.' };
+}
+
+/** Send the editor a layer of the lane view, of the test `test` (the lane's now when left out). */
+function tellLayer(data: LaneLayerData, test: string | null = laneAt().test): void {
+  if (laneView && runChannelOpen()) tellHub({ type: 'lane-layer', test, ...data });
+}
+
+/**
+ * Run the layers asked while the lane view is on, and stop the others: each layer `again` lists, asked again by a
+ * viewer that came later, sends its call log and its filmstrip again, and takes the page's text again.
+ */
+function applyLayers(again: ReadonlySet<LaneLayer>): void {
+  const on = (layer: LaneLayer): boolean => !!laneView && runChannelOpen() && layersAsked.has(layer);
+  if (on('events') && !layerRuns.events) {
+    layerRuns.events = subscribePageEvents((event, at) => tellLayer({ layer: 'events', event, at }));
+  } else if (!on('events') && layerRuns.events) {
+    layerRuns.events();
+    layerRuns.events = null;
+  }
+  if (!on('calls')) stopLaneCalls();
+  else if (!layerRuns.calls) startLaneCalls();
+  else if (again.has('calls') && layerRuns.calls.latest) layerRuns.calls.pacer.offer(layerRuns.calls.latest);
+  if (!on('text')) {
+    layerRuns.text?.();
+    layerRuns.text = null;
+  } else {
+    layerRuns.text ??= followTraceText(
+      () => [],
+      lanePageNow,
+      (text) => tellLayer('refused' in text ? { layer: 'text', refused: text.refused } : { layer: 'text', text }),
+    );
+    if (again.has('text')) void sendLaneText();
+  }
+  if (!on('filmstrip')) stopLaneStrip();
+  else if (!layerRuns.strip) startLaneStrip();
+  else if (again.has('filmstrip')) {
+    layerRuns.strip.sent.clear();
+    layerRuns.strip.queue = [];
+  }
+}
+
+/** Send the page's text now: the trace's latest, else an ARIA snapshot taken now. */
+async function sendLaneText(): Promise<void> {
+  const text = await takeLaneText(lanePageNow(), [], true);
+  if (!text || !layersAsked.has('text')) return;
+  tellLayer('refused' in text ? { layer: 'text', refused: text.refused } : { layer: 'text', text });
+}
+
+/**
+ * Follow the call the lane's test is in, on the page the lane shows, from Playwright's in-process instrumentation,
+ * which pauses nothing: each change goes as `lane-layer` (`calls`), `LIVE_CALL_LOGS_PER_SECOND` at most, the latest
+ * alone waiting, and the page followed changes with the page the lane shows.
+ */
+function startLaneCalls(): void {
+  const pacer = new LatestPacer<LiveCallLog>({
+    intervalMs: 1000 / LIVE_CALL_LOGS_PER_SECOND,
+    busy: framesBackedUp,
+    send: (log) => tellLayer({ layer: 'calls', log }),
+  });
+  let page: Page | null = null;
+  let following: Promise<(() => void) | null> | null = null;
+  const run = { stop: () => undefined as void, pacer, latest: null as LiveCallLog | null };
+  const follow = (): void => {
+    const now = lanePageNow();
+    if (now === page) return;
+    void following?.then((stop) => stop?.());
+    page = now;
+    run.latest = null;
+    following = now
+      ? followCallLog(
+          now,
+          layersTest()?.began ?? Date.now(),
+          (log) => {
+            run.latest = log;
+            pacer.offer(log);
+          },
+          { source: 'listener', titleOf: layersTitleOf },
+        ).catch(() => null)
+      : null;
+  };
+  const unhear = onLanePage(follow);
+  run.stop = () => {
+    unhear();
+    void following?.then((stop) => stop?.());
+    pacer.close();
+  };
+  layerRuns.calls = run;
+  follow();
+}
+
+function stopLaneCalls(): void {
+  layerRuns.calls?.stop();
+  layerRuns.calls = null;
+}
+
+/** How often the trace is read for the filmstrip's new images. */
+const STRIP_READ_MS = 1000;
+
+/**
+ * Send the lane's test filmstrip from its trace: each image as its call ended, `LANE_THUMBS_PER_SECOND` at most, the
+ * test's whole strip again as it is asked again (`MAX_FILMSTRIP` images at most), none of a test that ended.
+ */
+function startLaneStrip(): void {
+  let reading = false;
+  let test: string | null = null;
+  const strip = {
+    stop: () => undefined as void,
+    sent: new Set<string>(),
+    queue: [] as Array<TraceThumb & { test: string }>,
+  };
+  const read = setInterval(() => {
+    const now = layersTest()?.id ?? null;
+    if (now !== test) {
+      test = now;
+      strip.sent.clear();
+      strip.queue = [];
+    }
+    if (reading || !now) return;
+    reading = true;
+    void traceThumbs(strip.sent)
+      .then((thumbs) => {
+        if (layerRuns.strip !== strip || layersTest()?.id !== now) return;
+        for (const thumb of thumbs) {
+          strip.sent.add(thumb.thumb.call);
+          strip.queue.push({ ...thumb, test: now });
+        }
+        strip.queue.splice(0, Math.max(0, strip.queue.length - MAX_FILMSTRIP));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        reading = false;
+      });
+  }, STRIP_READ_MS);
+  const send = setInterval(() => {
+    if (framesBackedUp()) return;
+    const next = strip.queue.shift();
+    if (next && next.test === layersTest()?.id) {
+      tellLayer({ layer: 'filmstrip', thumb: next.thumb, data: next.data.toString('base64') }, next.test);
+    }
+  }, 1000 / LANE_THUMBS_PER_SECOND);
+  read.unref?.();
+  send.unref?.();
+  strip.stop = () => {
+    clearInterval(read);
+    clearInterval(send);
+  };
+  layerRuns.strip = strip;
+}
+
+function stopLaneStrip(): void {
+  layerRuns.strip?.stop();
+  layerRuns.strip = null;
 }
 
 /** Whether the run connection is backed up: the latest frame alone waits. */
@@ -1017,6 +1202,10 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
       droppedEvents = 0;
       return;
+    case 'layers':
+      layersAsked = new Set(message.layers);
+      applyLayers(layersAsked);
+      return;
     case 'share':
       sharedHere = message.on;
       // A worker without a key, or one the instance refused, stays as it was: its `live` says why.
@@ -1050,6 +1239,18 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         const answered = viewTurn.then(() => (on ? startLaneView() : stopLaneView()));
         viewTurn = answered.catch(() => undefined);
         void answered.then((value) => tellHub({ type: 'answer', request, what: 'view-lane', value }));
+        return;
+      }
+      if (message.what === 'text') {
+        const value = laneView
+          ? { ok: true, message: "The page's text is on its way." }
+          : { ok: false, message: 'The lane view is off: watch the lane first.' };
+        tellHub({ type: 'answer', request, what: 'text', value });
+        if (laneView) {
+          void takeLaneText(lanePageNow(), [], true).then((text) => {
+            if (text) tellLayer('refused' in text ? { layer: 'text', refused: text.refused } : { layer: 'text', text });
+          });
+        }
         return;
       }
       const at = message.what !== 'image' && held?.stop === message.stop ? held : null;

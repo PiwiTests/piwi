@@ -220,7 +220,7 @@ async function onMessage(message: RunToHub): Promise<void> {
         headed.clicks.push(answer.message);
       }
       // A press on the band, never let go there, then a press and its release on the page below the band.
-      const play = async (events: unknown[]) => ((await ask({ what: 'input', stop, events })) as { message: string });
+      const play = async (events: unknown[]) => (await ask({ what: 'input', stop, events })) as { message: string };
       headed.pressOnBand = (
         await play([{ type: 'mouse', action: 'down', x: 680, y: BUTTONS_Y, button: 'left' }])
       ).message;
@@ -412,7 +412,7 @@ describe('the lane view of a worker', () => {
       ['headed', 'passed'],
     ]);
     const attach = heard.find(({ message: m }) => m.type === 'run-attach')?.message;
-    expect(attach).toMatchObject({ features: ['view-lane', 'give-up', 'front'] });
+    expect(attach).toMatchObject({ features: ['view-lane', 'give-up', 'front', 'layers'] });
   });
 
   it('sends the frames of each test it runs from one request, each naming its test, at the view’s pace', () => {

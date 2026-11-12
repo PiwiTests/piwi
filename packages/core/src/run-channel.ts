@@ -10,7 +10,8 @@
  * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
  * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
  * the input played on it) and the locator of the element under a point of an image of it; for a viewer of the
- * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`);
+ * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`),
+ * and the layers of that view its viewers ask beside the images (`layers`, `lane-layer`: `@piwitests/core/live-layers`);
  * and, for an agent (the
  * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
@@ -21,7 +22,26 @@
  * Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
  * sides. A side ignores a message it cannot read.
  */
-import { parseLiveAsk, parseLiveAskAnswer, type LiveAsk, type LiveAskAnswer } from './live-view';
+import {
+  isLaneThumbData,
+  isLayerTime,
+  readLaneLayers,
+  readLaneText,
+  readLaneThumb,
+  readPageEvent,
+  type LaneLayer,
+  type LaneText,
+  type LaneThumb,
+  type PageEvent,
+} from './live-layers';
+import {
+  parseLiveAsk,
+  parseLiveAskAnswer,
+  readLiveCallLog,
+  type LiveAsk,
+  type LiveAskAnswer,
+  type LiveCallLog,
+} from './live-view';
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
@@ -140,13 +160,56 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
  * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
  * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
  * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
- * (`waiting`) and end the test there as asked (`give-up`); and bring the test's window to the front at a stop its pause
- * bar shows (`front`, **Show the browser**).
+ * (`waiting`) and end the test there as asked (`give-up`); bring the test's window to the front at a stop its pause
+ * bar shows (`front`, **Show the browser**); and send the layers of its lane view a viewer asks beside the images
+ * (`layers`: the message `layers`, the request `text`, its `lane-layer` messages).
  */
-export type RunFeature = 'view-lane' | 'give-up' | 'front';
+export type RunFeature = 'view-lane' | 'give-up' | 'front' | 'layers';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front', 'layers'];
+
+/**
+ * A layer of a worker's lane view as it goes to the lane's viewers (`@piwitests/core/live-layers`): the call its test
+ * is in as Playwright logs it (`calls`), something its page or its requests said (`events`, when, `at`), the page's
+ * text (`text`), or why no text goes (`refused`), and an image of its filmstrip with its JPEG in base64 (`filmstrip`).
+ */
+export type LaneLayerData =
+  | { layer: 'calls'; log: LiveCallLog }
+  | { layer: 'events'; event: PageEvent; at: number }
+  | { layer: 'text'; text: LaneText }
+  | { layer: 'text'; refused: string }
+  | { layer: 'filmstrip'; thumb: LaneThumb; data: string };
+
+/** The longest sentence a layer's refusal carries, in characters. */
+const MAX_LAYER_REFUSAL = 500;
+
+/** A layer's data, checked field by field as `@piwitests/core/live-layers` reads each; null when it is not one. */
+export function readLaneLayerData(value: Record<string, unknown>): LaneLayerData | null {
+  switch (value.layer) {
+    case 'calls': {
+      const log = readLiveCallLog(value.log);
+      return log ? { layer: 'calls', log } : null;
+    }
+    case 'events': {
+      const event = readPageEvent(value.event);
+      return event && isLayerTime(value.at) ? { layer: 'events', event, at: value.at } : null;
+    }
+    case 'text': {
+      if (typeof value.refused === 'string' && value.refused.trim()) {
+        return { layer: 'text', refused: value.refused.slice(0, MAX_LAYER_REFUSAL) };
+      }
+      const text = readLaneText(value.text);
+      return text ? { layer: 'text', text } : null;
+    }
+    case 'filmstrip': {
+      const thumb = readLaneThumb(value.thumb);
+      return thumb && isLaneThumbData(value.data) ? { layer: 'filmstrip', thumb, data: value.data } : null;
+    }
+    default:
+      return null;
+  }
+}
 
 /** The longest title a `waiting` carries, in characters: a longer one is cut. */
 export const MAX_WAITING_TITLE = 500;
@@ -472,10 +535,10 @@ export type RunToHub =
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
   /**
-   * The answer to `view`, `view-lane`, `input` and `front`: whether the view started or stopped, the input was played,
-   * the test's window came to the front, or why not.
+   * The answer to `view`, `view-lane`, `input`, `front` and `text`: whether the view started or stopped, the input was
+   * played, the test's window came to the front, the page's text is on its way, or why not.
    */
-  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input' | 'front'; value: IntentAnswer }
+  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input' | 'front' | 'text'; value: IntentAnswer }
   /** The answer to `pick-at`. */
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
@@ -514,6 +577,13 @@ export type RunToHub =
    * again; nothing is said of a test with no page to show.
    */
   | { type: 'lane-frame'; test: string | null; stop: number | null; refused: string }
+  /**
+   * A layer of the worker's lane view (`LaneLayerData`), while its lane view is on and `layers` asked for it, for the
+   * test `test` (Playwright's id; null for the text of a page no test shows): never stored, each layer bounded as
+   * `@piwitests/core/live-layers` says, the latest call log alone sent again as `layers` asks for `calls` again, and a
+   * test's filmstrip again as it asks for `filmstrip` again (a viewer that comes later).
+   */
+  | ({ type: 'lane-layer'; test: string | null } & LaneLayerData)
   /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
@@ -596,6 +666,18 @@ export type HubToRun =
    * latest frame again.
    */
   | { type: 'request'; request: number; what: 'view-lane'; on: boolean }
+  /**
+   * The layers of the lane view from now on, to a worker whose `run-attach` lists `layers` in `features`, while its
+   * lane view is on (`LaneLayer`, none turning them off; they end with the lane view): each goes as `lane-layer`, the
+   * call log and the filmstrip of the running test sent again for a layer asked again.
+   */
+  | { type: 'layers'; layers: LaneLayer[] }
+  /**
+   * The page's text now, to a worker that lists `layers`, while its lane view is on, at a stop or not: the trace's
+   * latest of its running test where the trace writes one, else an ARIA snapshot taken now, sent as `lane-layer`
+   * (`text`); answered at once, saying whether it is on its way.
+   */
+  | { type: 'request'; request: number; what: 'text' }
   /**
    * At the stop `stop`, while its view or the lane view shows its page: play a viewer's input on its page, in order, as trusted input
    * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
@@ -1021,7 +1103,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (outlined !== undefined) value.outlined = outlined;
         return { type: 'answer', request, what, value };
       }
-      if (what === 'view' || what === 'view-lane' || what === 'input' || what === 'front') {
+      if (what === 'view' || what === 'view-lane' || what === 'input' || what === 'front' || what === 'text') {
         const said = readAnswer(answered);
         return said ? { type: 'answer', request, what, value: said } : null;
       }
@@ -1076,6 +1158,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       }
       if (!shown || !isViewSize(width, height) || !isViewFrameData(data)) return null;
       return { type: 'lane-frame', test: shown, stop, width: width as number, height: height as number, data };
+    }
+    case 'lane-layer': {
+      const { test } = value;
+      if (test !== null && (typeof test !== 'string' || !test || test.length > 256)) return null;
+      const data = readLaneLayerData(value);
+      return data ? { type: 'lane-layer', test: test as string | null, ...data } : null;
     }
     case 'region': {
       const { stop, locator, snapshot, refused } = value;
@@ -1168,6 +1256,7 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       if (what === 'view-lane') {
         return typeof value.on === 'boolean' ? { type: 'request', request, what, on: value.on } : null;
       }
+      if (what === 'text') return { type: 'request', request, what };
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;
@@ -1207,6 +1296,10 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'events':
       return typeof value.on === 'boolean' ? { type: 'events', on: value.on } : null;
+    case 'layers': {
+      const layers = readLaneLayers(value.layers);
+      return layers ? { type: 'layers', layers } : null;
+    }
     case 'share': {
       if (typeof value.on !== 'boolean') return null;
       return isInt(value.after, 1)

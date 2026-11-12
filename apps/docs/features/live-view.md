@@ -65,10 +65,11 @@ taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). 
 caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
 [Watch all](./watch-all) shows every worker at once.
 
-In a CI run, the view follows that call: how long it has run, Playwright's log of it as a failed call's error
-prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
-image, with the point a click acts on; **Zoom to the element** crops the image around it. A shared run shows the call
-alone. Following the call needs Playwright 1.64: 1.63 shows its log without the matches, an older one the call alone.
+The view follows that call: how long it has run, Playwright's log of it as a failed call's error prints it, and while
+it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point
+a click acts on; **Zoom to the element** crops the image around it. In a CI run this needs Playwright 1.64 (1.63
+shows the log without the matches, an older one the call alone); a shared run reads it inside the worker, pausing
+nothing.
 
 A view follows its worker's lane: it says how each test ended, lists the lane's earlier tests and goes on, across
 worker restarts; untick **Follow the worker's next test** to end it with its test. The page's address names the lane
@@ -89,8 +90,8 @@ shared or not ([its stops](./share-live#stops-shared-or-not)).
   one to a [Watch all](./watch-all) tile, and about 256 KB a second, a heavier image holding the next one back longer.
   A test whose trace or video already films the page shares that recording's images, 800 pixels wide at quality 90.
   The recording stays whole. A test that starts its own `page.screencast` gets it, and the view
-  goes on with an image a second. A CI run's view also gets the call's log. Nothing of the view is a step of the
-  test or an action of its trace.
+  goes on with an image a second. A view also gets the call's log. Nothing of the view is a step of the test or an
+  action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
   [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: never written

@@ -273,6 +273,34 @@ What the package does to a user's run, process by process.
   highest pace a sink asks, keeps each frame within the smallest size in bytes a sink takes,
   and opens again, once the one before let the page's screencast go, as the page shown or
   what the sinks ask changes. Nothing runs while no sink subscribes.
+- **The lane's layers** (`lane-layers.ts`, `@piwitests/core/live-layers`): beside the
+  frames, each sink takes the layers its viewers ask, each made only while one asks.
+  The run connection's lane view takes them by `layers` (a worker whose `features` list
+  `layers`): the call the lane's test is in, from Playwright's in-process instrumentation
+  (`followCallLog`'s `listener`), on the page the lane shows, followed again as that page
+  changes (`onLanePage`), four a second at most; the page's events, from `run-events.ts`'s
+  listeners, which tell them while any sink subscribes (`subscribePageEvents`), each
+  sink at twenty a second at most, the rest counted: a console error, an uncaught error, a
+  failed request or one answered 400 and more, each request of the page past 5 s without
+  its answer (`request-pending`, told every 5 s, then once as it ends: the `request`
+  listener follows 200 at most, none while no sink asks), the errors and warnings of a
+  response's `X-Piwi-Logs` (`readServerLogs`, which the capture fixtures read too), and
+  each call through an API request context (`tellApiCall`); the page's text (`takeLaneText`):
+  where the runner traces the attempt with ARIA snapshots, the latest it wrote, rendered
+  by core's `ariaTreeText`, followed once a second as it grows (`followTraceText`), else an
+  ARIA snapshot in AI mode, 8 levels deep, through an internal call, only as asked (the
+  request `text`, or the layer asked); and the test's filmstrip from its trace
+  (`traceThumbs`): one screencast image for each call the runner names that ended, the
+  latest one by 300 ms after it, read from the trace's own files, eight a second at
+  most, all of it again as `layers` asks again. The text is masked by core's
+  `maskAriaSnapshot` with the values the page's secret fields hold now
+  (`fieldSecrets`, through an internal call) and the sink's masks, its credentials hidden;
+  a mask it cannot find by name (`ariaMaskProblem`) sends no text, saying why. The trace
+  is read from where the last read stopped (`TraceTail`), its DOM snapshots passed over
+  unparsed, the files it names only under its folder
+  (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/<testId>[-retry<k>]…`). The
+  instance's live view takes the same layers as its full views ask them (`view`'s
+  `layers`), and makes its filmstrip from its own frames instead (`live-view.ts`).
 - At a headed stop, that view paints the pause bar over in each frame, for every sink, as
   the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views
   as it draws the bar and once it is down (`pauseBarShows`). The mask hands the view each
@@ -479,9 +507,17 @@ What the package does to a user's run, process by process.
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
   no screencast runs and no frame goes.
-- In a CI run alone, while a viewer shows the worker in full (`full`) in a test nothing may pause
-  (`mayPause`: no `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
-  (`live-call-log.ts`): it listens to the context's call stream, then turns it on
+- While a viewer shows the worker in full (`full`), the worker also follows the call its test is in
+  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
+  `--debug`), from Playwright's in-process instrumentation: a listener added to the context's server
+  object (`context._connection.toImpl(context).instrumentation`, each member checked first) with
+  that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
+  log (`onCallLog`, the `api` log alone), act at its point (`onBeforeInputAction`) and end
+  (`onAfterCall`), Playwright 1.64's progress argument or an earlier one's metadata, synchronously,
+  pausing nothing, removed as the context closes; the title is the runner's step for the call's id
+  (`layersTitleOf`). A browser the worker connected to has no in-process server: the call alone is
+  followed there, from the worker's instrumentation, without its log. In a CI run nothing may
+  pause, it listens to the context's call stream, then turns it on
   (`context.debugger._enable()` through `internalCall`, each member checked first), which
   tells the calls running then with their log so far. Once on, the stream stays on and moves
   where the debugger stops an action, so the context's calls are followed from then until it
@@ -500,6 +536,16 @@ What the package does to a user's run, process by process.
   frame) and whether it is enabled. A call on a frame's own object (`page.frame(…)`) has a
   selector of that frame: the read finds nothing then (the call's log says it found its
   element, so the read is dropped) or another element of the main frame.
+- While its full views ask for layers (`view`'s `layers`, `applyLayers`), the worker posts
+  them as the lane view does (`lane-layers.ts`): the page's events (`page-event`), its text
+  (`text`, as the trace writes it, and taken as the instance asks, `text`, or as the layer is
+  asked anew, one a second at most, masked with the project's masks too), and its test's
+  filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, 300 ms
+  after each call of the test the runner names ended, the view's latest masked frame
+  (`LaneSubscription.latest`) scaled down within 320 by 200 at quality 60 with `jpeg-js`
+  (`thumbnailOf`; without it, a frame of 128 KB at most as it is), two a second at most,
+  kept for the test alone (40 images and 1 MB at most, the oldest let go), posted eight a
+  second at most, one in flight, all of it again on `resend` and as the layer is asked anew.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
@@ -814,7 +860,10 @@ src/
                 pick-at (the element under a point of an image of a stopped page),
                 agent-page (a stopped page read and acted on by a ref for an agent,
                 its browser bound for Playwright's tools), run-events (the test's
-                calls and page events, for an agent following the run),
+                calls and page events, for an agent following the run and a lane
+                view's events), lane-layers (a lane view's layers: page events,
+                the page's text, the trace's filmstrip), live-call-log (the call
+                a test is in, from the call stream or the in-process listener),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret),

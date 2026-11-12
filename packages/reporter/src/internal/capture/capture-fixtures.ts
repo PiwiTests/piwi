@@ -148,7 +148,8 @@ import {
 import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
-import { watchCalls, watchPageEvents } from './run-events.js';
+import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
+import { layersTestBegan, layersTestEnded } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -2432,6 +2433,35 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
   return found;
 }
 
+/** The title the runner gives the call whose step id is `id` (`stepLabel`), among the test's steps; null for none. */
+function stepTitleOf(testInfo: TestInfo, id: string): string | null {
+  let found: string | null = null;
+  const visit = (steps: unknown): void => {
+    if (!Array.isArray(steps) || found !== null) return;
+    for (const step of steps as Array<RunnerStep & { stepId?: unknown }>) {
+      if (step.stepId === id && typeof step.title === 'string') {
+        found = stepLabel(step);
+        return;
+      }
+      visit(step.steps);
+    }
+  };
+  visit((testInfo as unknown as { _steps?: unknown })._steps);
+  return found;
+}
+
+/**
+ * Where the runner writes the attempt's trace as it grows: `<outputDir>/.playwright-artifacts-<workerIndex>/traces`,
+ * its files named by the test's id, `-retry<k>` for a retry. Nothing is there when the runner does not trace it; null
+ * for a test whose project names no output folder.
+ */
+function attemptTrace(testInfo: TestInfo): { dir: string; base: string } | null {
+  const outputDir = (testInfo.project as Partial<TestInfo['project']> | undefined)?.outputDir;
+  if (typeof outputDir !== 'string' || !outputDir || typeof testInfo.testId !== 'string') return null;
+  const dir = path.join(outputDir, `.playwright-artifacts-${testInfo.workerIndex}`, 'traces');
+  return { dir, base: testInfo.retry ? `${testInfo.testId}-retry${testInfo.retry}` : testInfo.testId };
+}
+
 /**
  * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
  * failed; any other status as Playwright tells it.
@@ -3223,14 +3253,8 @@ function readResponseHeaders(
   const contentType = headers['content-type'];
   if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
 
-  const logHeader = headers['x-piwi-logs'];
-  if (logHeader) {
-    try {
-      entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
-    } catch {
-      /* ignore malformed header */
-    }
-  }
+  const serverLogs = readServerLogs(headers['x-piwi-logs']);
+  if (serverLogs !== undefined) entry.serverLogs = serverLogs;
 
   // The id the backend gave this request's server coverage, kept per
   // origin for the reporter to collect once the test ends.
@@ -3260,6 +3284,7 @@ function recordApiCall(sink: CaptureSink, call: ApiCall): void {
   try {
     const entry = apiCallEntry(call, sink.baseURL);
     if (!entry) return;
+    tellApiCall(call, String(entry.url));
     if (call.response) readResponseHeaders(sink, entry, String(entry.url), call.response.headers());
     sink.networkRequests.push(entry);
   } catch {
@@ -3990,7 +4015,10 @@ export const piwiFixtures: Fixtures<
       openLiveView(workerInfo);
       // The selector of the locator call running, for the live view's call log.
       if (liveViewOpen()) trackCalls(playwright);
-      if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
+      if (await openRunChannel(workerInfo, runControl)) {
+        watchCalls(playwright);
+        trackCalls(playwright);
+      }
       try {
         await use();
       } finally {
@@ -4093,6 +4121,12 @@ export const piwiFixtures: Fixtures<
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
       laneTestBegan(testInfo.testId);
+      layersTestBegan({
+        id: testInfo.testId,
+        began: Date.now(),
+        titleOf: (id) => stepTitleOf(testInfo, id),
+        trace: attemptTrace(testInfo),
+      });
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
@@ -4152,6 +4186,8 @@ export const piwiFixtures: Fixtures<
           stopKeeping();
           // The lane shows the test until it ended for the editor, a failure it held while flushing included.
           await laneTestEnded();
+          layersTestEnded();
+          forgetWaitingRequests();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

@@ -919,7 +919,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front', 'layers']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });

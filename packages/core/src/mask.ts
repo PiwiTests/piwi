@@ -814,3 +814,227 @@ export function holdsPersonalData(text: string): boolean {
     /["'&?]?\b(?:e-?mail|phone|phone_?number|mobile|tel|telephone)["']?\s*[:=]/i.test(text)
   );
 }
+
+/** The characters a value quoted in an ARIA snapshot escapes, as Playwright writes them. */
+const ARIA_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '"': '\\"',
+  '\b': '\\b',
+  '\f': '\\f',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+};
+
+/** A value as a quoted value of an ARIA snapshot escapes it, quotes aside, as Playwright writes it. */
+function escapedInQuotes(value: string): string {
+  let out = '';
+  for (const c of value) {
+    const code = c.charCodeAt(0);
+    const control = code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    out += ARIA_ESCAPES[c] ?? (control ? `\\x${code.toString(16).padStart(2, '0')}` : c);
+  }
+  return out;
+}
+
+/** A node of an ARIA snapshot with a value: its role, name and flags, then the value after the colon. */
+const VALUED_NODE = /^(\s*- [\w-]+(?: "(?:[^"\\]|\\.)*")?(?: \[[^\]]*\])*): (.+)$/;
+
+/**
+ * An ARIA snapshot with the values of the page's secret fields (`secrets`, as the page holds them now) written as
+ * {@link HIDDEN_VALUE}: where a node's line shows one as its value, plain or quoted (`- textbox "PIN" [ref=e8]:
+ * "123456"`), and anywhere else for a value of 8 characters or more, as written and as a quoted value escapes it
+ * (`\"`, `\\`). Pure.
+ */
+export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]): string {
+  const values = [...new Set(secrets.filter(Boolean))];
+  if (!values.length) return snapshot;
+  const shown = new Set(values.flatMap((value) => [value, `"${escapedInQuotes(value)}"`]));
+  let out = snapshot
+    .split('\n')
+    .map((line) => {
+      const node = VALUED_NODE.exec(line);
+      return node && shown.has(node[2]!.trim()) ? `${node[1]}: ${HIDDEN_VALUE}` : line;
+    })
+    .join('\n');
+  for (const value of values) {
+    if (value.length < 8) continue;
+    for (const written of new Set([value, escapedInQuotes(value)])) out = out.split(written).join(HIDDEN_VALUE);
+  }
+  return out;
+}
+
+/** The roles of an ARIA snapshot's nodes whose value is what a person typed or chose: a field's. */
+const FIELD_ROLES: ReadonlySet<string> = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton']);
+
+/** The words that name a payment card, and those that name its number. */
+const CARD_WORDS: ReadonlySet<string> = new Set(['card', 'cc', 'credit', 'debit', 'kreditkarte', 'carte', 'tarjeta']);
+const NUMBER_WORDS: ReadonlySet<string> = new Set(['number', 'no', 'num', 'nr', 'numero', 'nummer']);
+
+/**
+ * Whether a field's accessible name, as an ARIA snapshot writes it, names one that holds a secret: what
+ * {@link isSecretLocator} reads as one (`Password`, `PIN`, `Code`, `Verification code`, `Mot de passe`, `CVC`), or a
+ * card's number (`Card number`, `Credit card no`). Pure.
+ */
+export function isSecretFieldName(name: string): boolean {
+  if (!name.trim()) return false;
+  if (isSecretLocator(JSON.stringify(name))) return true;
+  const words = nameWords(name.normalize('NFD').replace(/[̀-ͯ]/g, ''));
+  return words.some((word) => CARD_WORDS.has(word)) && words.some((word) => NUMBER_WORDS.has(word));
+}
+
+/** Whether `value` reads as a payment card's number: 13 to 19 digits, spaces or dashes between them, Luhn's check true. */
+export function looksLikeCardNumber(value: string): boolean {
+  if (!/^\d[\d -]{11,30}\d$/.test(value)) return false;
+  const digits = value.replace(/[ -]/g, '');
+  if (!/^\d{13,19}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let digit = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+  }
+  return sum % 10 === 0;
+}
+
+/** A project's masked element as an ARIA snapshot can find it: a role (any for null), and its accessible name. */
+interface AriaMask {
+  role: string | null;
+  name: string | RegExp;
+  exact: boolean;
+}
+
+/** The methods whose argument is the accessible name an ARIA snapshot writes. */
+const NAMING_METHODS: ReadonlySet<string> = new Set(['getByLabel', 'getByPlaceholder', 'getByTitle', 'getByAltText']);
+
+/** A masked element's locator as an ARIA snapshot can find it, or why not, as a sentence. */
+function ariaMaskOf(locator: string): AriaMask | string {
+  const cannot = `\`${locator.trim()}\` names no element by its accessible name, which is all the page's text shows: mask it by its label, its placeholder or its role and name, such as getByLabel('IBAN').`;
+  const chain = tryParseLocatorChain(locator.trim());
+  const call = chain?.calls.length === 1 ? chain.calls[0]! : null;
+  if (!call) return cannot;
+  const optionsOf = (arg: (typeof call.args)[number] | undefined): Map<string, (typeof call.args)[number]> =>
+    new Map(arg?.type === 'object' ? arg.entries : []);
+  const nameOf = (arg: (typeof call.args)[number] | undefined): string | RegExp | null => {
+    if (arg?.type === 'string') return arg.value;
+    if (arg?.type !== 'regex') return null;
+    try {
+      return new RegExp(arg.source, arg.flags.replace(/[gy]/g, ''));
+    } catch {
+      return null;
+    }
+  };
+  const exactOf = (options: Map<string, (typeof call.args)[number]>): boolean => {
+    const exact = options.get('exact');
+    return exact?.type === 'boolean' && exact.value;
+  };
+  if (NAMING_METHODS.has(call.method)) {
+    const name = nameOf(call.args[0]);
+    return name === null ? cannot : { role: null, name, exact: exactOf(optionsOf(call.args[1])) };
+  }
+  if (call.method === 'getByRole' && call.args[0]?.type === 'string') {
+    const options = optionsOf(call.args[1]);
+    const name = nameOf(options.get('name'));
+    return name === null ? cannot : { role: call.args[0].value, name, exact: exactOf(options) };
+  }
+  return cannot;
+}
+
+/**
+ * Why the page's text (an ARIA snapshot) cannot hide a project's masked element `locator`, as a person reads it; null
+ * when it can: a locator that names the element by the accessible name the snapshot writes (`getByLabel`,
+ * `getByPlaceholder`, `getByTitle`, `getByAltText`, or `getByRole` with a `name`). Pure.
+ */
+export function ariaMaskProblem(locator: string): string | null {
+  const mask = ariaMaskOf(locator);
+  return typeof mask === 'string' ? mask : null;
+}
+
+/** Whether a node's name and role match a mask, as Playwright matches a name: whole and in case with `exact`. */
+function matchesMask(mask: AriaMask, role: string, name: string): boolean {
+  if (mask.role !== null && mask.role !== role) return false;
+  if (mask.name instanceof RegExp) return mask.name.test(name);
+  const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+  if (mask.exact) return collapse(name) === collapse(mask.name);
+  return collapse(name).toLowerCase().includes(collapse(mask.name).toLowerCase());
+}
+
+/** A line of an ARIA snapshot: its indent, its role, its quoted name, its flags, and its value after the colon. */
+const ARIA_LINE = /^(\s*)- ([\w-]+)(?: ("(?:[^"\\]|\\.)*"))?((?: \[[^\]]*\])*)(?::(?: (.*))?)?$/;
+
+/** A value as an ARIA snapshot writes it, its quotes read; the text as it is when it is not quoted. */
+function ariaValue(written: string): string {
+  if (!written.startsWith('"') || !written.endsWith('"') || written.length < 2) return written;
+  try {
+    const read: unknown = JSON.parse(written);
+    return typeof read === 'string' ? read : written;
+  } catch {
+    return written.slice(1, -1);
+  }
+}
+
+/** What {@link maskAriaSnapshot} knows of the page beside the snapshot. */
+export interface AriaMaskOptions {
+  /** The values the page's secret fields hold now, read from the page (`SECRET_FIELD_SELECTOR`). */
+  secrets?: readonly string[];
+  /**
+   * The project's masked elements, as locators: a node one names by its accessible name (`ariaMaskProblem`) has its
+   * value hidden, and the names and values of the nodes inside it.
+   */
+  masks?: readonly string[];
+}
+
+/**
+ * An ARIA snapshot (Playwright's text form, AI mode or not, or the trace's rendered by `ariaTreeText`) with what a
+ * field that holds a secret shows written as {@link HIDDEN_VALUE}. Playwright 1.64 writes a field's value after its
+ * node (`- textbox "Password" [ref=e4]: S3cr3t`), and a snapshot says nothing of a field's type or `autocomplete`, so a
+ * value is hidden when:
+ *
+ * - its node is a field (`textbox`, `searchbox`, `combobox`, `spinbutton`) whose name names a secret
+ *   (`isSecretFieldName`: a password, a PIN, a code, a card's number or security code);
+ * - it reads as a card's number (`looksLikeCardNumber`), whatever its node;
+ * - it is one the page's secret fields hold now (`secrets`, as `withoutFieldSecrets` hides them);
+ * - its node is one of the project's masked elements (`masks`), and then so is every name and value inside it.
+ *
+ * A mask the snapshot cannot find (`ariaMaskProblem`) hides nothing here: the caller does not send the text. Credentials
+ * in the rest (an address's token) are `hideSecretsInText`'s to hide. Linear in the snapshot's length. Pure.
+ */
+export function maskAriaSnapshot(snapshot: string, options: AriaMaskOptions = {}): string {
+  const masks = (options.masks ?? []).map(ariaMaskOf).filter((mask): mask is AriaMask => typeof mask !== 'string');
+  /** The indent of the masked node whose inside the lines are in; null outside one. */
+  let inside: number | null = null;
+  const lines = snapshot.split('\n').map((line) => {
+    const node = ARIA_LINE.exec(line);
+    if (!node) return inside !== null && /^\s*/.exec(line)![0].length > inside ? hideAfterColon(line) : line;
+    const indent = node[1]!;
+    const role = node[2]!;
+    const quoted = node[3];
+    const flags = node[4] ?? '';
+    const written = node[5];
+    if (inside !== null && indent.length <= inside) inside = null;
+    if (inside !== null) {
+      return `${indent}- ${role}${quoted ? ` "${HIDDEN_VALUE}"` : ''}${flags}${written ? `: ${HIDDEN_VALUE}` : line.endsWith(':') ? ':' : ''}`;
+    }
+    const name = quoted ? ariaValue(quoted) : '';
+    const masked = masks.some((mask) => matchesMask(mask, role, name));
+    if (masked) inside = indent.length;
+    if (!written) return line;
+    const value = ariaValue(written.trim());
+    const secret =
+      masked ||
+      (FIELD_ROLES.has(role) && isSecretFieldName(name)) ||
+      looksLikeCardNumber(value) ||
+      (options.secrets ?? []).includes(value);
+    return secret ? `${indent}- ${role}${quoted ? ` ${quoted}` : ''}${flags}: ${HIDDEN_VALUE}` : line;
+  });
+  return withoutFieldSecrets(lines.join('\n'), options.secrets ?? []);
+}
+
+/** A line inside a masked node that is no node (a property, `- /url: …`), its value hidden. */
+function hideAfterColon(line: string): string {
+  const colon = line.indexOf(': ');
+  return colon < 0 ? line : `${line.slice(0, colon)}: ${HIDDEN_VALUE}`;
+}
