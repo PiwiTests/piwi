@@ -416,14 +416,16 @@ data class CiWatchParams(
 )
 
 /**
- * `piwi/ciLayer`: a layer of the CI lane the IDE watches, one it asked for (`CiWatchParams.layers`), of the test `test`
- * (its title): `layer` names which, and its fields as `LaneLayerFields` says.
+ * `piwi/ciLayer`: a layer of the CI lane the IDE watches, one it asked for (`CiWatchParams.layers`), of the worker
+ * `worker` (its index, as the instance names it) and the test `test` (its title): `layer` names which, and its fields
+ * as `LaneLayerFields` says.
  */
 data class CiLayer(
     val root: String = "",
     val runId: Int = 0,
     val shard: Int? = null,
     val lane: Int = 0,
+    override val worker: Int = 0,
     override val test: String? = null,
     override val layer: String = "",
     override val log: LiveCallLog? = null,
@@ -1137,12 +1139,13 @@ data class LaneViewParams(
 )
 
 /**
- * A layer of a watched lane (`@piwitests/core/live-layers`), by `layer`: the call its test is in (`calls`: `log`),
- * something its page or its requests said (`events`: `event`, when, `at`), the page's text or why none goes (`text`:
- * `text` or `refused`), an image of the test's filmstrip, its JPEG in base64 (`filmstrip`: `thumb`, `data`). Every text
- * in it comes from the run: shown as plain text alone.
+ * A layer of a watched lane (`@piwitests/core/live-layers`), of the worker `worker` (a retry runs in another), by
+ * `layer`: the call its test is in (`calls`: `log`), something its page or its requests said (`events`: `event`, when,
+ * `at`), the page's text or why none goes (`text`: `text` or `refused`), an image of the test's filmstrip, its JPEG in
+ * base64 (`filmstrip`: `thumb`, `data`). Every text in it comes from the run: shown as plain text alone.
  */
 interface LaneLayerFields {
+    val worker: Int?
     val test: String?
     val layer: String
     val log: LiveCallLog?
@@ -1161,7 +1164,7 @@ interface LaneLayerFields {
 data class LaneViewLayer(
     val ref: String = "",
     val lane: Int = 0,
-    val worker: Int = 0,
+    override val worker: Int = 0,
     override val test: String? = null,
     override val layer: String = "",
     override val log: LiveCallLog? = null,
@@ -1208,7 +1211,7 @@ data class PageEvent(
     val ms: Long? = null,
     val done: Boolean? = null,
     val level: String? = null,
-    val count: Int? = null,
+    val count: Long? = null,
 )
 
 /** A lane's page as roles and names, masked: from the trace (`source: trace`) or read as asked; `cut` at its bound. */

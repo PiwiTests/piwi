@@ -673,7 +673,9 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
 - **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
   `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
   (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
-  `Glue.findIn` for the Text tab's search). The watch asks for the call log and the events, and for the text or the
+  `Glue.findIn` for the Text tab's search). `Glue.withLaneLayer` keeps one image per call as the worker sends the strip
+  again, and starts the call log and the strip anew for another test, another worker (a retry's), or an image placed at
+  or before the strip's last of a call it does not hold. The watch asks for the call log and the events, and for the text or the
   filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
   (`relayer`); **Take the Text Again** sends `text: true`. A filmstrip image is decoded and scaled off the event
   thread. Every text from the run goes into a `JBTextArea`, an `html.disable` label or a `ColoredListCellRenderer`,

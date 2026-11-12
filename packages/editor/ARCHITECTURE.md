@@ -579,7 +579,8 @@ instance's bound of watches per person).
   worker before it leaves the CI machine, and the service keeps none.
 - **Layers.** The layers the client asks (`layers`: `calls`, `events`, `text`, `filmstrip`) are the watch's `layers`
   (its query, then the POST's; the call log is the full view's own `call-log`), each `call-log`, `page-event`, `text`
-  and `thumb` of the lane going to the client as `piwi/ciLayer` as it comes, those it asked for alone. The same lane
+  and `thumb` of the lane going to the client as `piwi/ciLayer` as it comes, with the worker that sent it (a retry runs
+  in another), those it asked for alone. The same lane
   asked again with other layers changes them on the open watch, and `text: true` has the POST ask the worker for its
   page's text; a refusal of either leaves the watch as it was.
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the

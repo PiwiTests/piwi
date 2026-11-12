@@ -115,6 +115,7 @@ import {
   writtenLines,
   type CaretQuery,
   type CaretShown,
+  type LaneLayersShown,
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
@@ -2359,9 +2360,10 @@ describe('the worker panel’s layers', () => {
       shown = next.shown;
       return next.changed;
     };
-    expect(hear(thumb('c2', 2))).toEqual(['strip']);
     expect(hear(thumb('c1', 1))).toEqual(['strip']);
+    expect(hear(thumb('c2', 2))).toEqual(['strip']);
     // The strip sent again, as a viewer asks for it again, changes nothing.
+    expect(hear(thumb('c1', 1))).toEqual([]);
     expect(hear(thumb('c2', 2))).toEqual([]);
     expect(hear({ ...thumb('c9', 9), data: 'iVBORw0KGgo=' })).toEqual([]);
     expect(shown.strip.map((image) => image.call)).toEqual(['c1', 'c2']);
@@ -2381,6 +2383,49 @@ describe('the worker panel’s layers', () => {
     expect(laneTextNote({ text: 'x', cut: true, source: 'trace', at })).toBe(
       'From the test’s trace. Cut at 96 K characters.',
     );
+  });
+
+  test('start the filmstrip and the call log anew for a retry of the test, in another worker or from its first call', () => {
+    const attempt = (worker: number | undefined, call: string, index: number) => ({
+      layer: 'filmstrip' as const,
+      test: 'same-test-id',
+      ...(worker === undefined ? {} : { worker }),
+      thumb: { call, title: `Attempt ${worker ?? '?'} call ${index}`, index, width: 320, height: 200, at },
+      data: `/9j/${call.replace(/[^A-Za-z0-9]/g, '')}${worker ?? 9}==`,
+    });
+    const strip = (shown: LaneLayersShown) => shown.strip.map((image) => `${image.call} ${image.title}`);
+    let shown = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['abcd@1', 1],
+      ['abcd@2', 2],
+      ['abcd@3', 3],
+    ] as const) {
+      shown = withLaneLayer(shown, attempt(0, call, index)).shown;
+    }
+    shown = withLaneLayer(shown, { layer: 'calls', log: log(), test: 'same-test-id', worker: 0 }).shown;
+    // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+    const retry = withLaneLayer(shown, attempt(1, 'wxyz@1', 1));
+    expect(retry.changed.sort()).toEqual(['strip', 'waits']);
+    expect(retry.shown.waits).toBeNull();
+    shown = withLaneLayer(retry.shown, attempt(1, 'wxyz@2', 2)).shown;
+    expect(strip(shown)).toEqual(['wxyz@1 Attempt 1 call 1', 'wxyz@2 Attempt 1 call 2']);
+
+    // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+    let restarted = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['pw:api@1', 1],
+      ['pw:api@2', 2],
+      ['pw:api@3', 3],
+    ] as const) {
+      restarted = withLaneLayer(restarted, attempt(0, call, index)).shown;
+    }
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@1', 1)).shown;
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['pw:api@1 Attempt 1 call 1', 'pw:api@2 Attempt 1 call 2']);
+    // A layer that names no worker: an image placed at or before the strip's last, of a call it does not hold, is
+    // another attempt's.
+    restarted = withLaneLayer(restarted, attempt(undefined, 'qq@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['qq@2 Attempt ? call 2']);
   });
 
   test('post the parts that changed, each image of the strip once, and every part to a view drawn anew', () => {

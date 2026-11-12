@@ -245,7 +245,7 @@ describe('watching a CI run’s lane on the instance', () => {
     await open.write({ type: 'thumb', ...of, thumb }, JPEG);
     const text = { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at };
     await open.write({ type: 'text', ...of, text });
-    const where = { ...lane2, test: 'checkout › pays' };
+    const where = { ...lane2, worker: 4, test: 'checkout › pays' };
     expect(layers).toEqual([
       { ...where, layer: 'calls', log: expect.objectContaining({ id: 'c1', status: 'running' }) },
       { ...where, layer: 'events', event: { kind: 'console', text: 'Oops' }, at },

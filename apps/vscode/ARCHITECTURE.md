@@ -576,7 +576,9 @@ until one says `ended`, or the service stops (`withCiSession`).
   per call, a click showing it larger with its call's title). The watch asks for the call log and the events, and for
   the text and the filmstrip while their `<details>` is open (`laneLayersAsked`), changing them on the open watch once
   it was accepted; **Take the text again** sends `text: true`. The extension keeps them for the slot it shows
-  (`withLaneLayer`, which keeps one image per call as the worker sends the strip again) and posts its script the parts
+  (`withLaneLayer`, which keeps one image per call as the worker sends the strip again, and starts the call log and
+  the strip anew for another test, another worker, a retry's, or an image placed at or before the strip's last of a
+  call it does not hold) and posts its script the parts
   that changed, each JPEG once per document (`laneLayersMessage`); the script sets every run text with `textContent`.
   A worker whose reporter sends no layers (`RunWorker.layers`) says so over them (`laneLayersNote`).
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,

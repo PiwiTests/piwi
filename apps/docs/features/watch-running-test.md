@@ -73,7 +73,7 @@ Under the image, the editor's view shows what the pixels cannot, a CI run's lane
 - **Events**: console and uncaught errors, failed requests, requests pending long (`POST /api/checkout pending 17 s`)
   and the errors the backend logged, newest first.
 - **Text**: the page as roles and names, its secret fields hidden. Find searches it.
-- **Filmstrip**: one image per call the test finished; click one to see it larger.
+- **Filmstrip**: one image per call the test finished, starting again with each retry; click one to see it larger.
 
 The text and the filmstrip are read only while their section is open. The view says when an older reporter sends none
 of them.

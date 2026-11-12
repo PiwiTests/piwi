@@ -467,10 +467,13 @@ export class CiWatch {
     }
   }
 
-  /** A layer of the lane watched, to the client when it asked for it: each as it comes, none of another lane. */
-  private layer(watch: Watch, message: Partial<LiveWorkerId> & { test: string | null }, data: LaneLayerData): void {
+  /**
+   * A layer of the lane watched, to the client when it asked for it, with the worker that sent it: each as it comes,
+   * none of another lane.
+   */
+  private layer(watch: Watch, message: LiveWorkerId & { test: string | null }, data: LaneLayerData): void {
     if (!ofLane(watch, message) || !watch.layers.includes(data.layer) || !this.options.sendLayer) return;
-    this.options.sendLayer({ ...where(watch), test: message.test, ...data }).catch(() => {});
+    this.options.sendLayer({ ...where(watch), worker: message.worker, test: message.test, ...data }).catch(() => {});
   }
 }
 

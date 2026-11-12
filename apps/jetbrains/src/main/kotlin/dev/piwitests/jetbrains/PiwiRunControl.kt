@@ -1056,21 +1056,21 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     fun laneLayer(layer: LaneViewLayer) {
         val own = watchingLane ?: return
         if (own.ref != layer.ref || own.lane != layer.lane) return
-        hearLayer(layer, layer.worker) { watchingLane?.let { it.ref == layer.ref && it.lane == layer.lane } == true }
+        hearLayer(layer) { watchingLane?.let { it.ref == layer.ref && it.lane == layer.lane } == true }
     }
 
     /** A layer of the CI lane the Worker tab watches, one it asked for. */
     fun ciLayer(layer: CiLayer) {
         val own = watchingCi ?: return
         if (!Glue.sameCiLane(own, CiFrame(layer.root, layer.runId, layer.shard, layer.lane))) return
-        hearLayer(layer, 0) { watchingCi?.let { Glue.sameCiLane(it, CiFrame(layer.root, layer.runId, layer.shard, layer.lane)) } == true }
+        hearLayer(layer) { watchingCi?.let { Glue.sameCiLane(it, CiFrame(layer.root, layer.runId, layer.shard, layer.lane)) } == true }
     }
 
     /** A layer handed to the Worker tab on the event thread, a filmstrip image decoded and scaled off it first. */
-    private fun hearLayer(layer: LaneLayerFields, worker: Int, current: () -> Boolean) {
+    private fun hearLayer(layer: LaneLayerFields, current: () -> Boolean) {
         val show = { image: Pair<BufferedImage, BufferedImage>? ->
             ApplicationManager.getApplication().invokeLater({
-                if (current()) (liveWorkerTab()?.component as? PausedPagePanel)?.layers?.heard(layer, worker, image)
+                if (current()) (liveWorkerTab()?.component as? PausedPagePanel)?.layers?.heard(layer, image)
             }, gone)
         }
         if (layer.layer != "filmstrip") return show(null)
@@ -2638,8 +2638,8 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
     }
 
     /** A layer of the lane the tab watches: `image` is the filmstrip's, decoded off the event thread. */
-    fun heard(layer: LaneLayerFields, worker: Int, image: Pair<BufferedImage, BufferedImage>?) {
-        val (next, changed) = Glue.withLaneLayer(shown, layer, worker)
+    fun heard(layer: LaneLayerFields, image: Pair<BufferedImage, BufferedImage>?) {
+        val (next, changed) = Glue.withLaneLayer(shown, layer)
         shown = next
         // The images of calls the strip no longer holds go first: a later test's call of the same id is another image.
         images.keys.retainAll(next.strip.map { it.call }.toSet())

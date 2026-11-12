@@ -2343,8 +2343,12 @@ export type LaneTextShown =
 
 /** The layers the worker panel shows of its lane, as they came. */
 export interface LaneLayersShown {
-  /** The test they are of (its id, or its title on a CI lane): another test's call log and filmstrip start anew. */
+  /**
+   * The test they are of (its id, or its title on a CI lane) and the worker that runs it: another test's call log and
+   * filmstrip start anew, and so do those of another worker, a retry of the same test.
+   */
   test: string | null;
+  worker: number | null;
   waits: WaitsView | null;
   /** The newest first, {@link MAX_LANE_EVENTS} at most. */
   events: EventLine[];
@@ -2355,7 +2359,15 @@ export interface LaneLayersShown {
   strip: StripImage[];
 }
 
-export const NO_LANE_LAYERS: LaneLayersShown = { test: null, waits: null, events: [], heard: 0, text: null, strip: [] };
+export const NO_LANE_LAYERS: LaneLayersShown = {
+  test: null,
+  worker: null,
+  waits: null,
+  events: [],
+  heard: 0,
+  text: null,
+  strip: [],
+};
 
 /** A part of the worker panel a layer changes. */
 export type LaneLayerPart = 'waits' | 'events' | 'text' | 'strip';
@@ -2365,9 +2377,10 @@ const THUMB_DATA = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
 
 /**
  * The layers shown with `layer` heard, and the parts it changed (none for an image of a call the strip holds, as the
- * worker sends the filmstrip again when the layers change). A layer of another test than the one shown starts its call
- * log and its filmstrip anew; the events and the text stay until newer ones come. A request's pending time replaces
- * its line, which comes first again.
+ * worker sends the filmstrip again when the layers change). A layer of another test than the one shown, or of another
+ * worker (a retry runs in a new one), starts the call log and the filmstrip anew; so does an image placed at or before
+ * the strip's last of a call it does not hold, another attempt's. The events and the text stay until newer ones come.
+ * A request's pending time replaces its line, which comes first again.
  */
 export function withLaneLayer(
   shown: LaneLayersShown,
@@ -2375,10 +2388,11 @@ export function withLaneLayer(
 ): { shown: LaneLayersShown; changed: LaneLayerPart[] } {
   const changed = new Set<LaneLayerPart>();
   let next = shown;
-  if (layer.test !== null && layer.test !== shown.test) {
+  const worker = layer.worker ?? shown.worker;
+  if ((layer.test !== null && layer.test !== shown.test) || worker !== shown.worker) {
     if (shown.waits) changed.add('waits');
     if (shown.strip.length) changed.add('strip');
-    next = { ...next, test: layer.test, waits: null, strip: [] };
+    next = { ...next, test: layer.test ?? shown.test, worker, waits: null, strip: [] };
   }
   switch (layer.layer) {
     case 'calls':
@@ -2405,7 +2419,9 @@ export function withLaneLayer(
     case 'filmstrip': {
       if (!THUMB_DATA.test(layer.data) || next.strip.some((image) => image.call === layer.thumb.call)) break;
       const image = { call: layer.thumb.call, title: layer.thumb.title, index: layer.thumb.index, data: layer.data };
-      const strip = [...next.strip, image].sort((a, b) => a.index - b.index).slice(-MAX_FILMSTRIP);
+      const last = next.strip[next.strip.length - 1];
+      const kept = last && image.index <= last.index ? [] : next.strip;
+      const strip = [...kept, image].slice(-MAX_FILMSTRIP);
       next = { ...next, strip };
       changed.add('strip');
       break;

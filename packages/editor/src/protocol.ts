@@ -939,16 +939,18 @@ export type CiFrame = { root: string; runId: number; shard: number | null; lane:
 
 /**
  * `piwi/ciLayer` (notification, server to client): a layer of the CI lane the client watches, one it asked for alone
- * (`CiWatchParams.layers`), of the test `test` (its title as the instance names it), as the instance relays it and
- * `@piwitests/core/live-layers` reads it: the call its test is in (`calls`), something its page or its requests said
- * (`events`), the page's text or why none goes (`text`), an image of the test's filmstrip, its JPEG in base64
- * (`filmstrip`). Never stored, none after the watch ends.
+ * (`CiWatchParams.layers`), of the worker `worker` (its index, as the instance names it: a retry runs in another) and
+ * the test `test` (its title as the instance names it), as the instance relays it and `@piwitests/core/live-layers`
+ * reads it: the call its test is in (`calls`), something its page or its requests said (`events`), the page's text or
+ * why none goes (`text`), an image of the test's filmstrip, its JPEG in base64 (`filmstrip`). Never stored, none after
+ * the watch ends.
  */
 export type CiLayer = {
   root: string;
   runId: number;
   shard: number | null;
   lane: number;
+  worker: number;
   test: string | null;
 } & LaneLayerData;
 

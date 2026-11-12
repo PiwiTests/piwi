@@ -3447,7 +3447,7 @@ class GlueTest {
     fun theNewestEventsComeFirstCappedOneLinePerPendingRequestItsLastTimeInPlace() {
         var shown = Glue.NO_LANE_LAYERS
         fun event(json: String): Set<String> {
-            val (next, changed) = Glue.withLaneLayer(shown, layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"events","at":1800000000000,"event":$json}"""), 0)
+            val (next, changed) = Glue.withLaneLayer(shown, layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"events","at":1800000000000,"event":$json}"""))
             shown = next
             return changed
         }
@@ -3474,9 +3474,10 @@ class GlueTest {
         }
         fun thumb(call: String, index: Int, data: String = "/9j/$call==") =
             """{"ref":"ed-1","lane":0,"worker":0,"test":"t1","layer":"filmstrip","thumb":{"call":"$call","title":"Call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"$data"}"""
-        assertEquals(setOf("strip"), hear(thumb("c2", 2)))
         assertEquals(setOf("strip"), hear(thumb("c1", 1)))
+        assertEquals(setOf("strip"), hear(thumb("c2", 2)))
         // The strip sent again, as the tab asks for it again, changes nothing; nor does an image that is no JPEG.
+        assertEquals(emptySet<String>(), hear(thumb("c1", 1)))
         assertEquals(emptySet<String>(), hear(thumb("c2", 2)))
         assertEquals(emptySet<String>(), hear(thumb("c9", 9, "iVBORw0KGgo=")))
         assertEquals(listOf("c1", "c2"), shown.strip.map { it.call })
@@ -3494,11 +3495,42 @@ class GlueTest {
     }
 
     @Test
+    fun aRetryOfTheTestInAnotherWorkerOrFromItsFirstCallStartsTheFilmstripAndTheCallLogAnew() {
+        fun attempt(worker: Int, call: String, index: Int) = layer(
+            """{"ref":"ed-1","lane":0,"worker":$worker,"test":"same-test-id","layer":"filmstrip","thumb":{"call":"$call","title":"Attempt $worker call $index","index":$index,"width":320,"height":200,"at":1800000000000},"data":"/9j/${call.filter { it.isLetterOrDigit() }}$worker=="}""",
+        )
+        fun strip(shown: Glue.LaneLayersShown) = shown.strip.map { "${it.call} ${it.title}" }
+        var shown = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("abcd@1" to 1, "abcd@2" to 2, "abcd@3" to 3)) shown = Glue.withLaneLayer(shown, attempt(0, call, index)).first
+        shown = Glue.withLaneLayer(
+            shown,
+            layer("""{"ref":"ed-1","lane":0,"worker":0,"test":"same-test-id","layer":"calls","log":{"id":"c3","call":{"title":"Click"},"status":"running","lines":[],"ms":0}}"""),
+        ).first
+        // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+        val (retry, changed) = Glue.withLaneLayer(shown, attempt(1, "wxyz@1", 1))
+        assertEquals(setOf("strip", "waits"), changed)
+        assertNull(retry.waits)
+        shown = Glue.withLaneLayer(retry, attempt(1, "wxyz@2", 2)).first
+        assertEquals(listOf("wxyz@1 Attempt 1 call 1", "wxyz@2 Attempt 1 call 2"), strip(shown))
+
+        // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+        var restarted = Glue.NO_LANE_LAYERS
+        for ((call, index) in listOf("pw:api@1" to 1, "pw:api@2" to 2, "pw:api@3" to 3)) restarted = Glue.withLaneLayer(restarted, attempt(0, call, index)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@1", 1)).first
+        restarted = Glue.withLaneLayer(restarted, attempt(1, "pw:api@2", 2)).first
+        assertEquals(listOf("pw:api@1 Attempt 1 call 1", "pw:api@2 Attempt 1 call 2"), strip(restarted))
+        // An image placed at or before the strip's last, of a call it does not hold, is another attempt's, whatever
+        // worker names it.
+        assertEquals(listOf("qq@2 Attempt 1 call 2"), strip(Glue.withLaneLayer(restarted, attempt(1, "qq@2", 2)).first))
+    }
+
+    @Test
     fun aCiLayerReadsAsTheServiceSendsItAndAnOlderReporterIsNamed() {
         val ci = Gson().fromJson(
-            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"test":"checkout › pays","layer":"events","event":{"kind":"console","text":"Oops"},"at":1800000000000}""",
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"worker":4,"test":"checkout › pays","layer":"events","event":{"kind":"console","text":"Oops"},"at":1800000000000}""",
             CiLayer::class.java,
         )
+        assertEquals(4, ci.worker)
         assertEquals("Console error: Oops", Glue.withLaneLayer(Glue.NO_LANE_LAYERS, ci).first.events.single().text)
         assertTrue(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = false))!!.startsWith("This worker’s reporter sends its images alone"))
         assertNull(Glue.laneLayersNote(RunWorker(0, 0, "running", layers = true)))

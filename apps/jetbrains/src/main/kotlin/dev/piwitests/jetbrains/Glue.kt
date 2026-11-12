@@ -3501,11 +3501,13 @@ object Glue {
     data class LaneTextShown(val text: String?, val cut: Boolean, val source: String, val refused: String?)
 
     /**
-     * The layers the Worker tab shows of its lane, as they came: of the test `test` (its id, or its title on a CI lane),
-     * the newest events first, how many were heard, the page's text, the filmstrip in the order of the test's calls.
+     * The layers the Worker tab shows of its lane, as they came: of the test `test` (its id, or its title on a CI lane)
+     * and the worker `worker` that runs it, the newest events first, how many were heard, the page's text, the filmstrip
+     * in the order of the test's calls.
      */
     data class LaneLayersShown(
         val test: String?,
+        val worker: Int?,
         val waits: WaitsView?,
         val events: List<EventLine>,
         val heard: Int,
@@ -3513,23 +3515,26 @@ object Glue {
         val strip: List<StripImage>,
     )
 
-    val NO_LANE_LAYERS = LaneLayersShown(null, null, emptyList(), 0, null, emptyList())
+    val NO_LANE_LAYERS = LaneLayersShown(null, null, null, emptyList(), 0, null, emptyList())
 
     private val THUMB_DATA = Regex("^/9j/[A-Za-z0-9+/]*={0,2}$")
 
     /**
      * The layers shown with `layer` heard, and the parts it changed (`waits`, `events`, `text`, `strip`; none for an
      * image of a call the strip holds, as the worker sends the filmstrip again when the layers change). A layer of
-     * another test starts the call log and the filmstrip anew; a request's pending time replaces its line, first again.
+     * another test, or of another worker (a retry runs in a new one), starts the call log and the filmstrip anew; so does
+     * an image placed at or before the strip's last of a call it does not hold, another attempt's. A request's pending
+     * time replaces its line, first again.
      */
-    fun withLaneLayer(shown: LaneLayersShown, layer: LaneLayerFields, worker: Int = 0): Pair<LaneLayersShown, Set<String>> {
+    fun withLaneLayer(shown: LaneLayersShown, layer: LaneLayerFields): Pair<LaneLayersShown, Set<String>> {
         val changed = linkedSetOf<String>()
         var next = shown
         val test = layer.test
-        if (test != null && test != shown.test) {
+        val worker = layer.worker ?: shown.worker
+        if ((test != null && test != shown.test) || worker != shown.worker) {
             if (shown.waits != null) changed += "waits"
             if (shown.strip.isNotEmpty()) changed += "strip"
-            next = next.copy(test = test, waits = null, strip = emptyList())
+            next = next.copy(test = test ?: shown.test, worker = worker, waits = null, strip = emptyList())
         }
         when (layer.layer) {
             "calls" -> layer.log?.let {
@@ -3537,7 +3542,7 @@ object Glue {
                 changed += "waits"
             }
             "events" -> layer.event?.let {
-                val line = eventLine(it, layer.at ?: 0, worker, next.heard + 1)
+                val line = eventLine(it, layer.at ?: 0, worker ?: 0, next.heard + 1)
                 next = next.copy(
                     events = (listOf(line) + next.events.filter { e -> e.key != line.key }).take(MAX_LANE_EVENTS),
                     heard = next.heard + 1,
@@ -3556,7 +3561,8 @@ object Glue {
                 val data = layer.data
                 if (thumb != null && data != null && THUMB_DATA.matches(data) && next.strip.none { it.call == thumb.call }) {
                     val image = StripImage(thumb.call, thumb.title, thumb.index, data)
-                    next = next.copy(strip = (next.strip + image).sortedBy { it.index }.takeLast(MAX_FILMSTRIP))
+                    val kept = next.strip.takeIf { it.isEmpty() || image.index > it.last().index }.orEmpty()
+                    next = next.copy(strip = (kept + image).takeLast(MAX_FILMSTRIP))
                     changed += "strip"
                 }
             }
