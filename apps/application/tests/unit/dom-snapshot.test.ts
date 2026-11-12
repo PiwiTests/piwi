@@ -760,17 +760,20 @@ describe('reading CSS and markup in linear time', () => {
 });
 
 describe('collectCssUrls / inlineCssUrls', () => {
-  test('counts each url() target, skipping data:, #fragment and fragment-addressed refs', () => {
+  test('counts each url() target, skipping data: and in-document refs', () => {
     const css =
       '@font-face{src:url("/f/inter.woff2") format("woff2")}' +
       '.a{background:url(/img/bg.png)}' +
       ".b{background:url('/img/bg.png')}" + // dupe of the same target
       '.c{background:url(data:image/gif;base64,AAAA)}' + // already inline
       '.d{filter:url(#blur)}' + // in-document ref
-      '.e{background:url(/img/sprite.svg#star)}'; // fragment-addressed — can't inline faithfully
+      '.e{background:url(/img/sprite.svg#star)}' + // fragment-addressed: an SVG one is not inlined
+      '@font-face{src:url(/f/old.eot?#iefix)}';
     expect([...collectCssUrls(css)]).toEqual([
       ['/f/inter.woff2', 1],
       ['/img/bg.png', 2],
+      ['/img/sprite.svg#star', 1],
+      ['/f/old.eot?#iefix', 1],
     ]);
   });
 

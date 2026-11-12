@@ -580,7 +580,8 @@ function parseStylesheetLink(tag: string): { href: string; media: string | null 
   const href = quoted ? quoted[2]! : (/\bhref\s*=\s*([^\s"'>]+)/i.exec(tag)?.[1] ?? null);
   if (!href) return null;
   const media = /\bmedia\s*=\s*("|')(.*?)\1/i.exec(tag)?.[2] ?? null;
-  return { href, media };
+  // The values as the browser reads them, their characters escaped by the renderer put back.
+  return { href: unescapeAttr(href), media: media === null ? null : unescapeAttr(media) };
 }
 
 // A style element of rendered HTML, its text whole: CSS, raw, which may hold
@@ -661,10 +662,10 @@ export function collectCssUrls(css: string): Map<string, number> {
   const uses = new Map<string, number>();
   for (const url of cssUrls(css)) {
     const raw = url.target.trim();
-    // Skip already-inline data: URIs and any fragment ref (`#blur` filters,
-    // `sprite.svg#icon`) — a data: URI can't carry the fragment that addresses
-    // the resource, so inlining would break them; leaving them alone is safer.
-    if (!raw || raw.startsWith('data:') || raw.includes('#')) continue;
+    // Skip already-inline data: URIs and in-document refs (`#blur` filters).
+    // One addressed by a fragment is resolved without it (`font.eot?#iefix`),
+    // and an SVG one is left as it is (`assetDataUri`).
+    if (!raw || raw.startsWith('data:') || raw.startsWith('#')) continue;
     uses.set(raw, (uses.get(raw) ?? 0) + 1);
   }
   return uses;

@@ -10,6 +10,7 @@ import {
   SNAPSHOT_MISSING,
   SNAPSHOT_TEST_ENDED,
   SNAPSHOT_TOO_LARGE,
+  SNAPSHOT_UNREADABLE,
   SNAPSHOT_UNSENT,
   InspectBudget,
   MAX_RUN_RESOURCE_COUNT,
@@ -139,6 +140,48 @@ describe('Inspect’s store of a run', () => {
     expect(page.html).toContain(`url("data:image/png;base64,${Buffer.from('PNG').toString('base64')}")`);
     expect(page.html).toContain(`url("data:font/woff2;base64,${Buffer.from('WOFF').toString('base64')}")`);
     expect(page.html).toContain(`<img src="data:image/png;base64,${Buffer.from('PNG').toString('base64')}">`);
+  });
+
+  test('finds a resource by its address as the worker names it: no fragment, a hidden token written as an address', async () => {
+    const store = new RunInspect();
+    const sha1 = (c: string, ext: string) => `${c.repeat(40)}.${ext}`;
+    const css =
+      '@font-face{font-family:Old;src:url(old.eot?#iefix) format("embedded-opentype")}.i{background:url(i.svg#a)}';
+    store.addResource({ sha1: sha1('a', 'css'), contentType: 'text/css', data: Buffer.from(css) });
+    store.addResource({
+      sha1: sha1('b', 'eot'),
+      contentType: 'application/vnd.ms-fontobject',
+      data: Buffer.from('EOT'),
+    });
+    store.addResource({ sha1: sha1('c', 'svg'), contentType: 'image/svg+xml', data: Buffer.from('<svg/>') });
+    // The worker hid the stylesheet's token in its link, and names it by the address a browser reads that as.
+    const head = ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css?token=<hidden>' }]];
+    store.addSnapshot(
+      'w',
+      snapshot('call@1', 'before', ['HTML', {}, head, ['BODY', {}]], {
+        resources: [
+          { url: 'https://shop.test/app.css?token=%3Chidden%3E', sha1: sha1('a', 'css') },
+          { url: 'https://shop.test/old.eot?', sha1: sha1('b', 'eot') },
+          { url: 'https://shop.test/i.svg', sha1: sha1('c', 'svg') },
+        ],
+      }),
+    );
+    const page = await store.render('w', 'call@1', 'before');
+    if ('status' in page) throw new Error(page.message);
+    expect(page.html).toContain('font-family:Old');
+    expect(page.html).toContain(
+      `url("data:application/vnd.ms-fontobject;base64,${Buffer.from('EOT').toString('base64')}")`,
+    );
+    // An SVG addressed by a fragment is not inlined: a data: address cannot name the element it shows.
+    expect(page.html).not.toContain('image/svg+xml');
+  });
+
+  test('refuses a page it cannot read whole, saying so', async () => {
+    const store = new RunInspect();
+    let deep: unknown = 'x';
+    for (let i = 0; i < 600; i++) deep = ['DIV', {}, deep];
+    store.addSnapshot('w', snapshot('call@1', 'after', ['HTML', {}, ['BODY', {}, deep]]));
+    expect(await store.render('w', 'call@1', 'after')).toEqual({ status: 410, message: SNAPSHOT_UNREADABLE });
   });
 
   test('masks what a stored trace’s page masks: a token in its text and its attributes, a secret in its stylesheet', async () => {

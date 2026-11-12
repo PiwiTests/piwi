@@ -56,10 +56,15 @@ const EXT_MIME: Record<string, string> = {
   bmp: 'image/bmp',
 };
 
-/** Resolve a `<link href>` / CSS `url(...)` (possibly relative) against a base URL. */
+/**
+ * Resolve a `<link href>` / CSS `url(...)` (possibly relative) against a base URL, as the browser requests it: its
+ * fragment left out, as a trace's resources and a live worker's name them.
+ */
 function resolveResourceUrl(href: string, base: string | undefined): string | null {
   try {
-    return new URL(href, base).href;
+    const url = new URL(href, base);
+    url.hash = '';
+    return url.href;
   } catch {
     return null;
   }
@@ -114,7 +119,8 @@ async function assetDataUri(
   const res = (abs ? assets.urlToRes.get(abs) : undefined) ?? assets.urlToRes.get(ref);
   if (!res) return null;
   const mime = assetMimeType(res, ref);
-  if (!mime) return null;
+  // A `data:` URI can't carry the fragment that names an element of an SVG (`sprite.svg#icon`).
+  if (!mime || (ref.includes('#') && /svg/i.test(mime))) return null;
   const bytes = await assets.read(res);
   const cost = (bytes?.length ?? 0) * uses;
   if (!bytes || bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || cost > assets.budget.value) return null;

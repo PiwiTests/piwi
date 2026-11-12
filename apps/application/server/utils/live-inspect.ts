@@ -1,7 +1,8 @@
 import {
   MAX_SNAPSHOT_BACKLOG,
   MAX_SNAPSHOT_BYTES,
-  hideSnapshotSecrets,
+  hideFrameSnapshotSecrets,
+  resolveResourceUrl,
   type LiveResource,
   type LiveSnapshot,
   type SnapshotPhase,
@@ -30,7 +31,8 @@ import type { TraceFrameSnapshot, TraceResource } from './trace-events';
  * the frame's chains before it whose full one the store does not hold (let go, or never sent) go, an earlier
  * navigation's whole chain stays. A snapshot whose chain lacks a snapshot it refers to does not render, saying why: the
  * instance let it go (`SNAPSHOT_GONE`), or the worker never sent it (`SNAPSHOT_UNSENT`). Each page rendered goes
- * through `hideSnapshotSecrets` again, after the worker's own pass, and is kept rendered (`MAX_CACHED_PAGES`) until
+ * through `hideFrameSnapshotSecrets` again, after the worker's own pass, one it cannot read whole refused
+ * (`SNAPSHOT_UNREADABLE`), and is kept rendered (`MAX_CACHED_PAGES`) until
  * its chain lets a snapshot go or a resource goes: what comes later never changes it.
  */
 
@@ -73,6 +75,8 @@ export const SNAPSHOT_MASKED =
 export const SNAPSHOT_MASKED_GONE = 'The page at this call was let go as the project began masking elements.';
 /** What it says of a call and moment the worker sent no page of. */
 export const SNAPSHOT_MISSING = 'The worker sent no page of this call at that moment.';
+/** What it says of a page the instance cannot read whole, to hide its secrets again. */
+export const SNAPSHOT_UNREADABLE = 'The worker sent the page at this call in a form the instance cannot read whole.';
 /** What it says of a page that costs more to render than a render may (`MAX_RENDER_NODES` and the others). */
 export const SNAPSHOT_TOO_LARGE = 'The page at this call is too large to show: rendering it would take too long.';
 
@@ -179,8 +183,9 @@ class WorkerSnapshots {
 }
 
 /**
- * The snapshot's JSON as the renderer reads it, named and placed by its header, the values of the fields that hold a
- * secret hidden again; null when it is not an object.
+ * The snapshot's JSON as the renderer reads it, named and placed by its header, what its secrets show hidden again
+ * (`hideFrameSnapshotSecrets`: its HTML, its frame's address and its stylesheets' changed in the page); null when it
+ * is not an object, or cannot be read whole.
  */
 function parsedSnapshot(held: HeldSnapshot): TraceFrameSnapshot | null {
   let value: unknown;
@@ -190,10 +195,11 @@ function parsedSnapshot(held: HeldSnapshot): TraceFrameSnapshot | null {
     return null;
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const snapshot = value as TraceFrameSnapshot;
+  const shown = hideFrameSnapshotSecrets(value as Record<string, unknown>, { secrets: [] });
+  if (!shown) return null;
+  const snapshot = shown as TraceFrameSnapshot;
   return {
     ...snapshot,
-    html: hideSnapshotSecrets(snapshot.html, { secrets: [] }),
     callId: held.call,
     phase: held.phase,
     snapshotName: `${held.phase}@${held.call}`,
@@ -544,16 +550,15 @@ export class RunInspect {
     for (let index = first; index <= target.index; index++) {
       parsed.push({ frameId: target.frame, isMainFrame: true, html: undefined });
     }
+    const rendered = parsedSnapshot(target);
+    if (!rendered?.snapshotName) return { status: 410, message: SNAPSHOT_UNREADABLE };
     const named: HeldSnapshot[] = [];
     for (const held of chain.snapshots.values()) {
       if (held.index < first || held.index > target.index) continue;
       named.push(held);
-      const snapshot = held === target ? parsedSnapshot(held) : lazySnapshot(held);
-      if (snapshot) parsed[held.index - first] = snapshot;
+      parsed[held.index - first] = held === target ? rendered : lazySnapshot(held);
     }
-    const rendered = parsed.at(-1);
     const gap = { status: 410 as const, message: chain.start === 'let-go' ? SNAPSHOT_GONE : SNAPSHOT_UNSENT };
-    if (!rendered?.snapshotName) return gap;
     let unresolved = false;
     let tooLarge = false;
     const sanitized = renderSanitizedSnapshot(
@@ -583,15 +588,15 @@ export class RunInspect {
   }
 
   /**
-   * The resources the snapshots of a chain name, by address, the later snapshots' first, each the store holds; their
-   * bytes read from the store, used again.
+   * The resources the snapshots of a chain name, by address as a browser resolves it (`resolveResourceUrl`: no
+   * fragment), the later snapshots' first, each the store holds; their bytes read from the store, used again.
    */
   private assets(chain: HeldSnapshot[]): SnapshotAssets {
     const byUrl = new Map<string, TraceResource>();
     for (const held of chain) {
       for (const { url, sha1 } of held.resources) {
         const entry = this.resources.get(sha1);
-        if (entry) byUrl.set(url, { sha1, mimeType: entry.contentType });
+        if (entry) byUrl.set(resolveResourceUrl(url, null) ?? url, { sha1, mimeType: entry.contentType });
       }
     }
     return {
