@@ -267,7 +267,10 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     },
     onEnded: () => {
       const index = held[slot];
-      if (front.value === slot && index != null && index === current.value) void advance(index);
+      if (front.value !== slot || index == null || index !== current.value) return;
+      // The last frame a callback saw can sit just short of the end; the video is over.
+      positionMs.value = Math.max(positionMs.value, (els[slot]?.duration ?? 0) * 1000);
+      void advance(index);
     },
     onPause: () => {
       if (front.value === slot && !moving) playing.value = false;
