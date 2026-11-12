@@ -4,9 +4,7 @@ import { describe, test } from 'node:test';
 import { dataUrlBytes, decodeImage, likeness } from '../lib/likeness.mjs';
 
 const require = createRequire(import.meta.url);
-const { PNG, jpegjs } = createRequire(require.resolve('playwright-core/package.json'))(
-  'playwright-core/lib/utilsBundle',
-);
+const { PNG, jpegjs } = createRequire(require.resolve('playwright'))('playwright-core/lib/utilsBundle');
 
 /** A page-like image at `width` by `height`: a dark header, a column of fields and a button on white. */
 function pageImage(width, height) {

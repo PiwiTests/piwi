@@ -5,9 +5,8 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { PNG, jpegjs } = createRequire(require.resolve('playwright-core/package.json'))(
-  'playwright-core/lib/utilsBundle',
-);
+/** The image codecs Playwright bundles, from the Playwright this folder runs on. */
+const { PNG, jpegjs } = createRequire(require.resolve('playwright'))('playwright-core/lib/utilsBundle');
 
 /** The grid two images are compared on, in cells across and down. */
 export const GRID = { cols: 40, rows: 25 };
