@@ -154,7 +154,7 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
 
     /**
      * The connection, that the plugin shows where the runs it started stop, answers those stops, writes the code made
-     * there and stops a run as another tool asks, whether the service serves those runs to the agents of this
+     * there, stops a run as another tool asks and marks the running line of the slot it watches, whether the service serves those runs to the agents of this
      * machine, at which port and token, and where a run started in a terminal that follows the IDE posts its picks.
      */
     override fun createInitializationOptions(): Any {
@@ -165,6 +165,7 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "stopCode" to true,
             "stopsRuns" to true,
             "startsRuns" to true,
+            "runningLine" to true,
             "agents" to service.agentsOptions(),
         )
         PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
@@ -294,6 +295,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/laneLayer")
     fun laneLayer(layer: LaneViewLayer) {
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneLayer(layer)
+    }
+
+    /** The call the running test of the slot the Worker tab watches is in, or none. */
+    @JsonNotification("piwi/runningLine")
+    fun runningLine(line: RunningLine) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.runningLine(line)
     }
 
     /** A CI run's lane the Worker tab watches, read-only: an image, why none shows, or why the watch ended. */

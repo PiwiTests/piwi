@@ -655,6 +655,57 @@ class GlueTest {
     private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
 
     @Test
+    fun `the running line of a watched slot is marked until its test ends or stops, or its run ends`() {
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Pay' })", specUri, 7)
+        val line = RunningLine("ed-1", 1, 3, call)
+        val lines = Glue.withRunningLine(emptyMap(), line)
+        assertEquals(mapOf(("ed-1" to 1) to line), lines)
+        // A line with no call goes; another slot's stays.
+        val other = RunningLine("ed-1", 0, 2, call.copy(line = 9))
+        assertEquals(mapOf(("ed-1" to 0) to other), Glue.withRunningLine(lines + (("ed-1" to 0) to other), line.copy(call = null)))
+        assertEquals("Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })", Glue.runningLineText(line))
+        assertEquals("Piwi: Worker 2 runs ${"x".repeat(59)}…", Glue.runningLineText(line.copy(call = call.copy(title = "x".repeat(80)))))
+
+        val running = mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest())))
+        assertEquals(listOf(line), Glue.runningLinesShown(lines, running))
+        // The test ended: its worker runs another, or none.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest().copy(id = "t2"))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "between")))))
+        // Another worker took the slot (a retry), the test stopped, or the run ended.
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(4, 1, "running", runTest())))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "stopped", runTest(), stopAt(specUri, 7))))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest()), ended = true))))
+        assertEquals(emptyList<RunningLine>(), Glue.runningLinesShown(lines, emptyMap()))
+    }
+
+    @Test
+    fun `the Page tab says what the watched slot's page says, each test named before its first line`() {
+        val output = Glue.PageOutput()
+        output.watching("ed-1", 1)
+        fun event(kind: String, text: String? = null, test: String? = "t1", worker: Int = 3) =
+            LaneViewLayer("ed-1", 1, worker, test, "events", event = PageEvent(kind, text))
+        assertEquals(
+            listOf("Worker 2 · checkout › pays", "  Console error: TypeError: x is undefined"),
+            output.layer(event("console", "TypeError: x is undefined"), runTest()),
+        )
+        assertEquals(listOf("  Uncaught error: boom"), output.layer(event("page-error", "boom"), runTest()))
+        // A request's lines and the other layers are not the page's own words.
+        assertEquals(emptyList<String>(), output.layer(event("request-failed"), runTest()))
+        assertEquals(emptyList<String>(), output.layer(LaneViewLayer("ed-1", 1, 3, "t1", "calls"), runTest()))
+        // The next test is named, by its id while the session does not name it yet.
+        assertEquals(listOf("Worker 2 · t2", "  Console error: again"), output.layer(event("console", "again", test = "t2"), runTest()))
+        assertEquals(
+            listOf("  12 more events were not sent: too many at once."),
+            output.layer(LaneViewLayer("ed-1", 1, 3, "t2", "events", event = PageEvent("dropped", count = 12)), null),
+        )
+        // A watch of the same slot keeps going; another slot's names its test again.
+        output.watching("ed-1", 1)
+        assertEquals(listOf("  Console error: still"), output.layer(event("console", "still", test = "t2"), null))
+        output.watching("ed-1", 0)
+        assertEquals("Worker 1 · t2", output.layer(event("console", "other", test = "t2"), null).first())
+    }
+
+    @Test
     fun `a run's session is kept until it ends`() {
         val running = session("ed-1", RunWorker(0, 0, "running", runTest()))
         val stopped = session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))

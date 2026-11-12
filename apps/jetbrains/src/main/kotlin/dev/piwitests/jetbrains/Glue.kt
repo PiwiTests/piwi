@@ -2174,6 +2174,71 @@ object Glue {
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
 
+    /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
+    fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {
+        val key = line.ref to line.lane
+        return if (line.call == null) lines - key else lines + (key to line)
+    }
+
+    /**
+     * The running lines to mark: each of a run still live whose slot's worker still runs that test and stands at no
+     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after.
+     */
+    fun runningLinesShown(lines: Map<Pair<String, Int>, RunningLine>, sessions: Map<String, RunSession>): List<RunningLine> =
+        lines.values.filter { line ->
+            val call = line.call ?: return@filter false
+            val session = sessions[line.ref]?.takeIf { !it.ended } ?: return@filter false
+            val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == line.lane } ?: return@filter false
+            val test = worker.test ?: return@filter false
+            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test)
+        }
+
+    /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */
+    fun runningLineText(line: RunningLine): String =
+        "Piwi: ${workerName(line.lane)} runs ${clipped(line.call?.title.orEmpty())}"
+
+    /**
+     * The Page tab of the Piwi tool window: what the page of the watched slot says, one line each, as the lane's events
+     * carry them (its console errors and its uncaught errors), each test named before its first line. A watch of
+     * another slot starts it anew ([watching]).
+     */
+    class PageOutput {
+        private var slot: Pair<String, Int>? = null
+        private var named: Pair<Int, String>? = null
+
+        /** A watch of the slot `lane` of the run `ref` begins: its next test is named again. */
+        fun watching(ref: String, lane: Int) {
+            if (slot == ref to lane) return
+            slot = ref to lane
+            named = null
+        }
+
+        /**
+         * A layer of the watched slot: the page's line it carries, after the name of its test (`test`, the slot's test
+         * as the run's session says it, its title) when that test said nothing before.
+         */
+        fun layer(layer: LaneLayerFields, test: RunTest?): List<String> {
+            if (layer.layer != "events") return emptyList()
+            val event = layer.event ?: return emptyList()
+            val text = when (event.kind) {
+                "console" -> "Console error: ${event.text.orEmpty()}"
+                "page-error" -> "Uncaught error: ${event.text.orEmpty()}"
+                "dropped" -> "${event.count ?: 0} more events were not sent: too many at once."
+                else -> return emptyList()
+            }
+            val id = layer.test ?: test?.id
+            val worker = layer.worker ?: named?.first ?: 0
+            val name = if (id == null || named == worker to id) {
+                emptyList()
+            } else {
+                named = worker to id
+                val title = test?.takeIf { it.id == id }?.title.orEmpty().joinToString(" › ").ifEmpty { id }
+                listOf("${workerName(slot?.second ?: 0)} · $title")
+            }
+            return name + "  $text"
+        }
+    }
+
     /**
      * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
      * stopped there (`· stopped`), or between tests; each run's name before them when several run. Null while no worker

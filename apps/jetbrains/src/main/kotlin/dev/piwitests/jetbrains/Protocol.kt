@@ -1231,6 +1231,20 @@ data class LaneText(val call: String? = null, val source: String = "", val text:
 data class LaneThumb(val call: String = "", val title: String = "", val index: Int = 0, val width: Int = 0, val height: Int = 0, val at: Long = 0)
 
 /**
+ * `piwi/runningLine`, to a client that takes it (`runningLine` in its initialization options): the call the running
+ * test of the slot the IDE watches (`piwi/laneView`) is in, of the worker `worker`; or none (`call` null) once the line
+ * goes: the test ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run
+ * did. Sent only when it differs from the last one sent for the slot.
+ */
+data class RunningLine(val ref: String = "", val lane: Int = 0, val worker: Int = 0, val call: RunningCall? = null)
+
+/**
+ * The call a slot's running test (`test`, Playwright's id) is in: its title, and its place in the run's code (`uri` and
+ * the 0-based `line`, as a stop's: mapped through the edits since the run started).
+ */
+data class RunningCall(val test: String = "", val title: String = "", val uri: String = "", val line: Int = 0)
+
+/**
  * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the
  * stop `since` names; or why it has none now (`refused`).
  */

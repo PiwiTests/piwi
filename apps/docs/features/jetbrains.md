@@ -83,6 +83,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
+- **[A running test](./watch-running-test)**: while the **Worker** tab watches one, an inlay after the line of
+  the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first.
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line

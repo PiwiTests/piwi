@@ -5,10 +5,13 @@ import com.intellij.execution.ExecutionListener
 import com.intellij.execution.ExecutionManager
 import com.intellij.execution.configurations.RunProfile
 import com.intellij.execution.configurations.WrappingRunConfiguration
+import com.intellij.execution.filters.TextConsoleBuilderFactory
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
+import com.intellij.execution.ui.ConsoleView
+import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -269,6 +272,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val pendingLayers = ConcurrentLinkedQueue<Pair<LaneLayerFields, () -> Boolean>>()
     private val drawingLayers = AtomicBoolean(false)
 
+    /** The call each watched slot's running test is in, by run and slot (`Glue.withRunningLine`); under [lock]. */
+    private var runningLines: Map<Pair<String, Int>, RunningLine> = emptyMap()
+    /** What is drawn of each running line, by run and slot. On the event thread. */
+    private val drawnRunning = HashMap<Pair<String, Int>, DrawnRunning>()
+
+    /** What the Page tab writes of the watched slot (`Glue.PageOutput`); under its own lock. */
+    private val pageOutput = Glue.PageOutput()
+    /** The Page tab and its console while the tool window holds it. On the event thread. */
+    private var pageTab: Content? = null
+    private var pageConsole: ConsoleView? = null
+
     private val breakpointsQueued = AtomicBoolean()
 
     /** The IDE's breakpoints as the service last heard them (`piwi/setBreakpoints`), as text; under [lock]. */
@@ -386,6 +400,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /** A running line as drawn: its file, its line now, its text, and its inlay in each editor of the file. */
+    private class DrawnRunning(val uri: String, val line: Int, val text: String, val inlays: MutableMap<Editor, Inlay<*>> = HashMap()) {
+        fun dispose() {
+            inlays.values.forEach { if (it.isValid) Disposer.dispose(it) }
+        }
+    }
+
     init {
         project.messageBus.connect(this).subscribe(
             XBreakpointListener.TOPIC,
@@ -402,7 +423,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         editors.addEditorFactoryListener(
             object : EditorFactoryListener {
                 override fun editorCreated(event: EditorFactoryEvent) {
-                    if (drawn.isNotEmpty()) ApplicationManager.getApplication().invokeLater({ draw() }, gone)
+                    if (drawn.isNotEmpty() || drawnRunning.isNotEmpty()) ApplicationManager.getApplication().invokeLater({ draw() }, gone)
                 }
             },
             this,
@@ -687,7 +708,86 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 worker.liveWanted = false
             }
         }
+        drawRunning()
     }
+
+    /**
+     * The call a watched slot's running test is in, or none (`piwi/runningLine`): kept, and drawn on the event thread.
+     */
+    fun runningLine(line: RunningLine) {
+        synchronized(lock) { runningLines = Glue.withRunningLine(runningLines, line) }
+        ApplicationManager.getApplication().invokeLater({ drawRunning() }, gone)
+    }
+
+    /**
+     * Mark each running line (`Glue.runningLinesShown`) at the line it stands on now with an inlay after it in each
+     * editor of its file, naming the worker and the call; a line whose test ended or stopped, or whose run ended,
+     * goes. On the event thread.
+     */
+    private fun drawRunning() {
+        val shown = synchronized(lock) {
+            runningLines = runningLines.filterKeys { it.first in sessions }
+            Glue.runningLinesShown(runningLines, sessions).mapNotNull { line ->
+                line.call?.let { line to edits.forward(Glue.fileKey(it.uri), it.line, sinceOf(line.ref)) }
+            }
+        }
+        val keys = shown.map { (line, _) -> line.ref to line.lane }.toSet()
+        for (key in drawnRunning.keys - keys) drawnRunning.remove(key)?.dispose()
+        for ((line, at) in shown) {
+            val call = line.call ?: continue
+            val key = line.ref to line.lane
+            val text = Glue.runningLineText(line)
+            drawnRunning[key]?.takeIf { it.uri != call.uri || it.line != at || it.text != text }?.let { drawnRunning.remove(key)?.dispose() }
+            val file = fileOf(call.uri) ?: continue
+            val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
+            if (at < 0 || at >= document.lineCount) continue
+            val drawnLine = drawnRunning.getOrPut(key) { DrawnRunning(call.uri, at, text) }
+            for (editor in EditorFactory.getInstance().getEditors(document, project)) {
+                if (drawnLine.inlays[editor]?.isValid == true) continue
+                editor.inlayModel.addAfterLineEndElement(document.getLineEndOffset(at), false, RunningLineInlay(text))
+                    ?.let { drawnLine.inlays[editor] = it }
+            }
+        }
+    }
+
+    /** The texts of the running lines' inlays drawn now, which the tests read. On the event thread. */
+    internal fun runningShown(): List<String> =
+        drawnRunning.values.flatMap { it.inlays.values }.filter { it.isValid }.map { (it.renderer as RunningLineInlay).text }
+
+    /**
+     * Write lines in the Page tab of the Piwi tool window, the tab added, not selected, when the tool window holds
+     * none. On any thread.
+     */
+    private fun writePage(lines: List<String>) {
+        if (lines.isEmpty()) return
+        ApplicationManager.getApplication().invokeLater({
+            val window = toolWindow() ?: return@invokeLater
+            val open = pageTab?.takeIf { window.contentManager.getIndexOfContent(it) >= 0 }
+            val console = pageConsole?.takeIf { open != null } ?: run {
+                val console = TextConsoleBuilderFactory.getInstance().createBuilder(project).apply { setViewer(true) }.console
+                ContentFactory.getInstance().createContent(console.component, PAGE_TAB, false).apply {
+                    isCloseable = true
+                    setDisposer {
+                        Disposer.dispose(console)
+                        if (pageTab === this) {
+                            pageTab = null
+                            pageConsole = null
+                        }
+                    }
+                    window.contentManager.addContent(this)
+                    pageTab = this
+                }
+                pageConsole = console
+                console
+            }
+            console.print(lines.joinToString("\n", postfix = "\n"), ConsoleViewContentType.NORMAL_OUTPUT)
+            pageWritten.addAll(lines)
+            while (pageWritten.size > PAGE_LINES_KEPT) pageWritten.removeFirst()
+        }, gone)
+    }
+
+    /** The lines the Page tab was given last, the newest last, which the tests read. On the event thread. */
+    internal val pageWritten = ArrayDeque<String>()
 
     /**
      * Open a stop's file at its line; whether the file is in sight then. With the focus, as the debugger does. Without
@@ -1093,6 +1193,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val own = watchingLane ?: return
         if (own.ref != layer.ref || own.lane != layer.lane) return
         hearLayer(layer) { watchingLane?.let { it.ref == layer.ref && it.lane == layer.lane } == true }
+        val test = sessions[layer.ref]?.workers.orEmpty().firstOrNull { it.parallelIndex == layer.lane }?.test
+        writePage(synchronized(pageOutput) { pageOutput.layer(layer, test) })
     }
 
     /** A layer of the CI lane the Worker tab watches, one it asked for. */
@@ -1363,7 +1465,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         watchingLane = null
         if (acceptedLane === previous) acceptedLane = null
         pendingLaneFrame.set(null)
-        if (previous != null) requestLaneView(previous.copy(on = false))
+        if (previous != null) {
+            requestLaneView(previous.copy(on = false))
+            // The running line goes with the watch.
+            synchronized(lock) { runningLines = runningLines - (previous.ref to previous.lane) }
+            ApplicationManager.getApplication().invokeLater({ drawRunning() }, gone)
+        }
     }
 
     private fun watchLane(on: Boolean) {
@@ -1376,6 +1483,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val params = LaneViewParams(ref, lane, true, asked)
         watchingLane = params
         layersSent = asked
+        synchronized(pageOutput) { pageOutput.watching(ref, lane) }
         requestLaneView(params) { result ->
             if (watchingLane !== params) return@requestLaneView
             if (result?.ok == true) {
@@ -2008,10 +2116,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         processes.clear()
         val shown = drawn.values.toList()
         drawn.clear()
+        val running = drawnRunning.values.toList()
+        drawnRunning.clear()
         val count = caretInlay
         caretInlay = null
         val remove = {
             shown.forEach { it.dispose() }
+            running.forEach { it.dispose() }
             count?.let { if (it.isValid) Disposer.dispose(it) }
         }
         if (ApplicationManager.getApplication().isDispatchThread) remove() else ApplicationManager.getApplication().invokeLater { remove() }
@@ -2023,6 +2134,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             TextAttributesKey.createTextAttributesKey("PIWI_EXECUTION_POINT", DebuggerColors.EXECUTIONPOINT_ATTRIBUTES)
 
         const val PAUSED_PAGE = "Paused Page"
+        /** The tab of the Piwi tool window where the watched slot's page says what it says. */
+        const val PAGE_TAB = "Page"
+
+        /** The Page tab's last lines kept for the tests to read. */
+        private const val PAGE_LINES_KEPT = 200
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
         const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
         const val SHOW_THE_BROWSER = "Show the Browser"
@@ -2964,6 +3080,9 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
     override fun getContextMenuGroup(inlay: Inlay<*>): ActionGroup? =
         inlay.editor.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.stopActions(stop)
 }
+
+/** The call a watched slot's test is in, at the end of its line, drawn as the count at the caret is. */
+internal class RunningLineInlay(val text: String) : EditorCustomElementRenderer by CaretCountInlay(text)
 
 /** The count at the end of the caret's line, in the inlay hints' color. */
 internal class CaretCountInlay(val text: String) : EditorCustomElementRenderer {

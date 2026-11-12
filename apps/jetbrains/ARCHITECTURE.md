@@ -561,7 +561,18 @@ worker whose reporter shows its running test (`Glue.watchableWorkers`). It watch
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
 other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
-The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off. Both tabs close
+The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off.
+
+**The running line and the Page tab.** The descriptor sends `runningLine` in the initialization options, so the
+service tells the call the watched slot's running test is in (`piwi/runningLine`, `PiwiRunSessions.runningLine`): an
+inlay after that line in each editor of its file (`RunningLineInlay`, drawn as the count at the caret is), naming the
+worker and the call (`Glue.runningLineText`), at the line the edits since the run started brought it to. The service
+takes it away (`call` null), and the plugin does too as the slot's test ends or stops, as another worker takes the slot,
+as the run ends and as the watch does (`Glue.runningLinesShown`, `drawRunning` on every draw). A service that predates
+it sends none. The watched slot's console errors and uncaught errors, from the events layer the watch asks for anyway,
+go one line each into the **Page** tab of the Piwi tool window (`Glue.PageOutput`, `writePage`, a viewer
+`ConsoleView`), each test named before its first line; the tab is added, never selected, on the first line, and
+closes. Both tabs close
 (`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
 opens it again, and the Paused Page stops its view and the next stop opens it again. **Open the Trace So Far**, beside
 Watch while the slot's worker runs a test whose reporter answers trace asks (`Glue.canOpenTrace`, as the run model's

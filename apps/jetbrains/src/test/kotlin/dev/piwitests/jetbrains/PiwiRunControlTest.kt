@@ -563,6 +563,46 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
+     * The running call's line of a watched slot carries an inlay naming the worker and the call, follows the edits
+     * above it, and goes as the service says, as the test ends, at a stop and as the run ends.
+     */
+    fun testTheRunningLineIsMarkedUntilTheTestEndsOrStops() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        myFixture.openFileInEditor(file)
+        val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
+        fun mark(line: RunningLine) {
+            sessions.runningLine(line)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+        fun inlayLine() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
+            .filter { it.renderer is RunningLineInlay }.map { myFixture.editor.document.getLineNumber(it.offset) }
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", test()))))
+        mark(RunningLine("ed-run", 1, 0, call))
+        assertEquals(listOf("Piwi: Worker 2 runs Click getByRole('button', { name: 'Apply' })"), sessions.runningShown())
+        assertEquals(listOf(5), inlayLine())
+        // The next call moves it; the service's none takes it away.
+        mark(RunningLine("ed-run", 1, 0, call.copy(line = 4, title = "Fill \"MORNING10\" getByLabel('Coupon code')")))
+        assertEquals(listOf(4), inlayLine())
+        mark(RunningLine("ed-run", 1, 0, null))
+        assertEquals(emptyList<String>(), sessions.runningShown())
+        // The test ended or stopped, the run ended: it goes whatever the service says after.
+        mark(RunningLine("ed-run", 1, 0, call))
+        assertEquals(1, sessions.runningShown().size)
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", RunTest("t2", listOf("next"))))))
+        assertEquals(emptyList<String>(), sessions.runningShown())
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", test()))))
+        assertEquals(1, sessions.runningShown().size)
+        val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(file), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop))))
+        assertEquals(emptyList<String>(), sessions.runningShown())
+        hear(RunSession("ed-run", base.path, listOf(RunWorker(0, 1, "running", test()))))
+        assertEquals(1, sessions.runningShown().size)
+        hear(RunSession("ed-run", ended = true))
+        assertEquals(emptyList<String>(), sessions.runningShown())
+        assertEquals(emptyList<Int>(), inlayLine())
+    }
+
+    /**
      * With no instance, the status bar counts the run as its own process tells the hub: done of total, the failed in the
      * error color, until the run ends.
      */
