@@ -206,10 +206,7 @@ export function createWorkerPanel(
       // An action runs in the test's window at the stop the input goes to: Escape on the view goes to the page.
       acting: !!stop?.stop.acting,
       layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
-      trace:
-        lane.worker && canOpenTrace({ test: lane.worker.test, traces: lane.worker.traces || undefined })
-          ? { asking: !!traceAsked }
-          : null,
+      trace: lane.worker && canOpenTrace(lane.worker) ? { asking: !!traceAsked } : null,
     };
     if (!panel) return;
     if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());

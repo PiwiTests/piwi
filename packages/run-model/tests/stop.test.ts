@@ -123,6 +123,12 @@ describe('the trace so far of a lane’s running test', () => {
     expect(canOpenTrace(worker({ test }))).toBe(false);
   });
 
+  it('reads the editor’s worker too, which says whether its reporter answers as true or false', () => {
+    expect(canOpenTrace({ traces: true, test })).toBe(true);
+    expect(canOpenTrace({ traces: false, test })).toBe(false);
+    expect(canOpenTrace({ traces: true, test: null })).toBe(false);
+  });
+
   it('has its button’s words, and its title says where the viewer opens', () => {
     expect(englishRunSpeaker.say('runs_openTrace')).toBe('Open the trace so far');
     expect(englishRunSpeaker.say('runs_openTraceTitle')).toBe(

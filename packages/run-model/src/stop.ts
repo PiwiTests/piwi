@@ -55,11 +55,12 @@ export function laneWatchOf(
 
 /**
  * Whether **Open the trace so far** opens the worker's running test's trace in Playwright's trace viewer (the hub's
- * `openTrace`): its reporter says where the trace grows (`traces`, which a hub without the `trace` feature never
- * sends), and it runs a test, stopped at one of its calls or not.
+ * `openTrace`, the editor's `piwi/openTrace`): its reporter says where the trace grows (`traces`, which a hub without
+ * the `trace` feature never sends, and the editor's `RunWorker` says as a boolean), and it runs a test, stopped at one
+ * of its calls or not.
  */
-export function canOpenTrace(worker: Pick<HubWorker, 'traces' | 'test'>): boolean {
-  return worker.traces === true && worker.test !== null;
+export function canOpenTrace(worker: { traces?: boolean; test: unknown }): boolean {
+  return worker.traces === true && worker.test !== null && worker.test !== undefined;
 }
 
 /**
