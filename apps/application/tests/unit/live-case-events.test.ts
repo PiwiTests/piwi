@@ -87,6 +87,25 @@ describe('testCompletedData', () => {
     });
   });
 
+  test('carries the failure cluster the attempt joined and its label, else none', () => {
+    const complete: StreamEventPayload = { ...begin, type: 'complete', status: 'failed', duration: 900, error: 'boom' };
+    const stored = { id: 41, testCaseId: 7, attempts: null, passedAfterFailure: false };
+    const label = { name: 'Pay button times out', status: 'open' };
+    expect(
+      testCompletedData(complete, mapWireCaseToRunCase(complete), {
+        ...stored,
+        failureClusterId: 3,
+        failureCluster: label,
+      }),
+    ).toMatchObject({ failureClusterId: 3, failureCluster: label });
+    for (const persisted of [undefined, { ...stored, failureClusterId: null, failureCluster: label }]) {
+      expect(testCompletedData(complete, mapWireCaseToRunCase(complete), persisted)).toMatchObject({
+        failureClusterId: null,
+        failureCluster: null,
+      });
+    }
+  });
+
   test('carries the attempt’s annotations, so its row reads a test ended at a stop', () => {
     const ended: StreamEventPayload = {
       ...begin,

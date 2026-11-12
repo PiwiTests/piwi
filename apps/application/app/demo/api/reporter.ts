@@ -118,6 +118,7 @@ import {
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
   assignFailureClusters,
+  clusterLabels,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
 import type {
@@ -657,6 +658,7 @@ export async function persistRunCases(
     inputIndex: number;
     passedAfterFailure: boolean;
     attempts: unknown;
+    failureClusterId: number | null;
   }>
 > {
   if (input.length === 0) return [];
@@ -937,6 +939,7 @@ export async function persistRunCases(
     inputIndex: rowInputIndices[r.rowIndex]!,
     passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
     attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
+    failureClusterId: runCasesRows[r.rowIndex]!.failureClusterId ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
@@ -1054,15 +1057,19 @@ export async function apiPostRunEvents(
 
   const updatedRun = updatedRuns[0] ?? testRun;
 
-  // The persisted execution id rides along so the live run page can deep-link
-  // each row to its real case page instead of a fabricated id (mirrors the
-  // server's events handler).
+  // The persisted execution id and the failure cluster the attempt joined ride along, so the live run page deep-links
+  // each row to its real case page and files a failure under its cluster (mirrors the server's events handler).
   const persistedByInputIndex = new Map(
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
+  const labels = await clusterLabels(
+    db,
+    insertedRunCases.map((r) => r.failureClusterId),
+  );
 
   for (const [index, tc] of completeEvents.entries()) {
-    const persisted = persistedByInputIndex.get(index);
+    const stored = persistedByInputIndex.get(index);
+    const persisted = stored && { ...stored, failureCluster: labels.get(stored.failureClusterId!) ?? null };
     publishDemoRunEvent(id, { type: 'test-completed', data: testCompletedData(tc, cases[index]!, persisted) });
   }
 

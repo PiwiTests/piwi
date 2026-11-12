@@ -716,11 +716,17 @@ function flushPendingEvents() {
         locks?: string[] | null;
         testMeta?: TestCaseResult['testMeta'];
         testAnnotations?: TestCaseResult['testAnnotations'];
+        failureClusterId?: number | null;
+        failureCluster?: { name: string; status: string } | null;
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
+      // A failure filed under a cluster the page has not read yet: its group shows the cluster's name and triage status.
+      if (d.failureClusterId != null && d.failureCluster && !clusterMeta.value[d.failureClusterId]) {
+        clusterMeta.value = { ...clusterMeta.value, [d.failureClusterId]: { ...d.failureCluster, issue: null } };
+      }
       const key = liveCaseKey(d);
       /** The attempt as the event tells it, for a row the list has not shown yet. */
       const completedRow = (): TestCaseResult => ({
@@ -749,6 +755,7 @@ function flushPendingEvents() {
         locks: d.locks ?? null,
         testMeta: d.testMeta ?? null,
         testAnnotations: d.testAnnotations ?? null,
+        failureClusterId: d.failureClusterId ?? null,
       });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
@@ -805,6 +812,8 @@ function flushPendingEvents() {
             testMeta: d.testMeta ?? existing.testMeta,
             // The attempt's annotations: a skip ended at a stop reads so on its row and in the header's count.
             testAnnotations: d.testAnnotations !== undefined ? d.testAnnotations : existing.testAnnotations,
+            // The cluster the attempt's failure joined, so the row is filed under it at once.
+            failureClusterId: d.failureClusterId !== undefined ? d.failureClusterId : existing.failureClusterId,
           };
           liveTestCases.value = copy;
           showLive();
@@ -1269,12 +1278,16 @@ async function fetchClusterMeta() {
   if (!import.meta.client) return;
   try {
     const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
-    clusterMeta.value = Object.fromEntries(
-      r.items.map((g) => [
-        g.clusterId,
-        { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
-      ]),
-    );
+    // Over what the live events named, so a cluster a failure joined after the read began keeps its label.
+    clusterMeta.value = {
+      ...clusterMeta.value,
+      ...Object.fromEntries(
+        r.items.map((g) => [
+          g.clusterId,
+          { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
+        ]),
+      ),
+    };
   } catch {
     // chips fall back to plain cluster ids, headers to no triage badge
   }

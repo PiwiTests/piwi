@@ -94,6 +94,31 @@ export async function assignFailureClusters(
   });
 }
 
+/** What the run page shows of a failure cluster: its name (its title, else `Cluster #<id>`) and its triage status. */
+export interface ClusterLabel {
+  name: string;
+  status: string;
+}
+
+/** The label of a stored cluster. */
+export function clusterLabel(cluster: { id: number; title: string | null; status: string | null }): ClusterLabel {
+  return { name: cluster.title || `Cluster #${cluster.id}`, status: cluster.status ?? 'open' };
+}
+
+/** The label of each cluster of `ids` that exists, by id; a null id is left out. */
+export async function clusterLabels(
+  db: DrizzleDB,
+  ids: Iterable<number | null | undefined>,
+): Promise<Map<number, ClusterLabel>> {
+  const wanted = [...new Set([...ids].filter((id): id is number => id != null))];
+  if (wanted.length === 0) return new Map();
+  const rows: Array<{ id: number; title: string | null; status: string | null }> = await db
+    .select({ id: failureClusters.id, title: failureClusters.title, status: failureClusters.status })
+    .from(failureClusters)
+    .where(inArray(failureClusters.id, wanted));
+  return new Map(rows.map((row) => [row.id, clusterLabel(row)]));
+}
+
 /** The start time of run `runId`, as a SQL subquery. */
 function runStart(runId: SQL | AnyColumn | number): SQL {
   return sql`(select ${testRuns.startTime} from ${testRuns} where ${testRuns.id} = ${runId})`;
