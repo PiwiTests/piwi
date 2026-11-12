@@ -26,10 +26,11 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 }
 
 /**
- * The window's stream, written straight to the response so what it has not read is the response's own backlog
- * (`writableLength`): past 1 MB a frame waits for it, and past 32 MB the stream is cut, as the hub does with a WebSocket.
+ * `GET DESKTOP_RUN_EVENTS_PATH` once the access token was checked: the window's stream, written straight to the
+ * response so what it has not read is the response's own backlog (`writableLength`): past 1 MB a frame waits for it, and
+ * past 32 MB the stream is cut, as the hub does with a WebSocket. The dashboard's Nitro route serves it too.
  */
-async function serveEvents(req: IncomingMessage, res: ServerResponse, runs: ShellRuns | null): Promise<void> {
+export async function serveRunEvents(req: IncomingMessage, res: ServerResponse, runs: ShellRuns | null): Promise<void> {
   req.resume();
   let gone = false;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -108,7 +109,7 @@ export async function serveShellRuns(
   }
   try {
     if (route === 'events') {
-      await serveEvents(req, res, runs);
+      await serveRunEvents(req, res, runs);
       return true;
     }
     if (route === 'run-channel') {

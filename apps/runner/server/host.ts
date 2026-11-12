@@ -3,7 +3,8 @@
  * It answers the shell's readiness probe (`/api/health`, proving it holds the access token), the run-target routes, the
  * window's session and its two event streams (`serveRunTarget` of `@piwitests/editor`, the same routes and guard the
  * dashboard's desktop build serves), the hub of the runs the shell starts (`serveShellRuns`: the run channel the shell
- * names in each run, the window's stream and commands, and the runs' picks), and the window's own files. It has no database, no account and no other route.
+ * names in each run, the window's stream and commands, and the runs' picks), and the window's own files. It has no
+ * database, no account and no other route.
  */
 import * as fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';

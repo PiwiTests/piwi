@@ -281,7 +281,7 @@ function lineKey(file: string): string {
 /** A file's text, without the byte order mark it may start with, and its modification time; null when unreadable. */
 function diskFile(file: string): DiskFile {
   try {
-    return { text: fs.readFileSync(file, 'utf8').replace(/^﻿/, ''), mtime: fs.statSync(file).mtimeMs };
+    return { text: fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''), mtime: fs.statSync(file).mtimeMs };
   } catch {
     return null;
   }
@@ -315,7 +315,7 @@ function newPicksToken(): string {
 export class ShellRuns {
   private readonly windows = new Map<string, RunWindow>();
   private readonly kept: Kept[] = [];
-  /** The project of each folder a run ran in, by folder: null until its name is read. */
+  /** The project of each folder a run ran in, by project id and folder: null while its name is being read. */
   private readonly projects = new Map<string, string | null>();
   private readonly lines = new RunLines();
   readonly sessions: RunSessions;
@@ -669,17 +669,24 @@ export class ShellRuns {
     for (const listener of this.liveCountListeners) listener(live);
   }
 
-  /** The name of the project a folder belongs to, read once: null until then. */
+  /**
+   * The name of the project a folder belongs to, read once it is known: null until then, and asked again while the
+   * host has none, keyed by the project the folder is linked to now.
+   */
   private project(root: string): string | null {
-    if (this.projects.has(root)) return this.projects.get(root) ?? null;
-    this.projects.set(root, null);
     const link = this.options.folders().find((l) => l.path === root);
-    if (link && this.options.projectName) {
-      void this.options
-        .projectName(link.id)
-        .then((name) => this.projects.set(root, name))
-        .catch(() => {});
-    }
+    if (!link) return null;
+    const key = `${link.id}\n${root}`;
+    if (this.projects.has(key)) return this.projects.get(key) ?? null;
+    if (!this.options.projectName) return null;
+    this.projects.set(key, null);
+    void this.options
+      .projectName(link.id)
+      .then((name) => {
+        if (name) this.projects.set(key, name);
+        else this.projects.delete(key);
+      })
+      .catch(() => this.projects.delete(key));
     return null;
   }
 

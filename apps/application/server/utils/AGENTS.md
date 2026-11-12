@@ -272,5 +272,5 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
-  copy (`pick`), and a pick on the image answers that it goes there (`DesktopRunSessions`). The guard takes that token
+  copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).

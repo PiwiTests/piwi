@@ -680,27 +680,30 @@ mod tests {
 
     #[test]
     fn a_requested_run_names_the_hosts_hub_and_nothing_else() {
-        // A requested run starts through `spawn_tests`, which adds the host's run channel (`bundled_hub_env`), read
-        // from the route Runner's host serves; Runner names its hub to no other tool.
-        let run_target = include_str!("run_target.rs");
-        let requested = run_target
-            .split("pub async fn desktop_run_requested_tests")
-            .nth(1)
-            .and_then(|rest| rest.split("\n}\n").next())
-            .expect("the requested run's command");
+        // A requested run starts through `spawn_tests`, which adds the hub's environment (`bundled_hub_env`): the run
+        // channel it reads from the host this launch spawned, whose port and token Runner keeps (`ServerInfo`).
+        // Without them every run starts with its name alone.
+        let body_of = |source: &'static str, start: &str| {
+            source
+                .split(start)
+                .nth(1)
+                .and_then(|rest| rest.split("\n}\n").next())
+                .unwrap_or_else(|| panic!("{start} not found"))
+        };
+        let requested = body_of(
+            include_str!("run_target.rs"),
+            "pub async fn desktop_run_requested_tests",
+        );
         assert!(requested.contains("crate::runner::spawn_tests("));
         let runner = include_str!("runner.rs");
-        let spawn = runner
-            .split("pub(crate) async fn spawn_tests(")
-            .nth(1)
-            .and_then(|rest| rest.split("\n}\n").next())
-            .expect("spawn_tests");
-        assert!(spawn.contains("bundled_hub_env(app, id, attended)"));
-        assert!(runner.contains("\"/api/desktop/run-channel\""));
+        assert!(body_of(runner, "pub(crate) async fn spawn_tests(").contains("bundled_hub_env("));
+        assert!(body_of(runner, "fn bundled_run_channel(").contains("\"/api/desktop/run-channel\""));
         let code = include_str!("runner_app.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
+        assert!(code.contains("app.manage(ServerInfo {"));
+        // The hub is this app's alone: it is published to no discovery file or other tool.
         assert!(!code.contains("publish_discovery_hub"));
         assert!(!code.contains("DiscoveryHub"));
     }

@@ -65,7 +65,7 @@ process.on('unhandledRejection', (reason) => {
 
 function stop(): void {
   shutdownRunTarget();
-  // Closed now: the server's close ends the process on the next tick, before a promise's callback would run.
+  // Closed before the process exits: the run channel's folder goes with it.
   runs?.close();
   server.closeAllConnections();
   server.close(() => process.exit(0));
