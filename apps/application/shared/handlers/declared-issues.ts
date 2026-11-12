@@ -56,18 +56,19 @@ export function declaredIssueKey(value: string, projectKey: string, tracker: Pic
 }
 
 /**
- * Whether a looked-up issue is of one of the types in `accepted`. An entry of digits is a type id and is compared with
- * the issue's type id; any other entry is a type name, compared with the issue's type name ignoring case. A binding
- * stores either, since the tracker takes both. An issue whose type the tracker did not say is of no type.
+ * Whether a looked-up issue is of one of the types in `accepted`. An entry of digits matches the issue's type id or its
+ * type name, since a type can be named with digits; any other entry is a type name, compared with the issue's type name
+ * ignoring case. A binding stores either, since the tracker takes both. An issue whose type the tracker did not say is
+ * of no type.
  */
 export function isIssueTypeAccepted(
   issue: Pick<TrackerIssue, 'issueType' | 'issueTypeId'>,
   accepted: string[],
 ): boolean {
-  return accepted.some((entry) =>
-    /^\d+$/.test(entry)
-      ? issue.issueTypeId === entry
-      : issue.issueType != null && issue.issueType.toLowerCase() === entry.toLowerCase(),
+  return accepted.some(
+    (entry) =>
+      (/^\d+$/.test(entry) && issue.issueTypeId === entry) ||
+      (issue.issueType != null && issue.issueType.toLowerCase() === entry.toLowerCase()),
   );
 }
 

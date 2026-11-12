@@ -1262,17 +1262,19 @@ describe('the tag source', () => {
     expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 1 });
   });
 
-  test('an id in the list is compared with the type id only, a name with the type name only', async () => {
+  test('an entry of digits matches the type id or a type named with those digits; a name matches the name only', async () => {
     await setIssueTagPattern(ISSUE_PATTERN);
     const cluster = await newCluster();
-    // A type named like another type's id must not match it.
-    defineIssue('PROJ-1', { type: { id: '10001', name: '10004' } });
-    await bind({ declaredIssueTypes: ['10004'] });
-    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+    defineIssue('PROJ-1', { type: { id: '10001', name: '2024' } });
+    defineIssue('PROJ-2', { type: { id: '2024', name: 'Story' } });
+    defineIssue('PROJ-3', { type: { id: '10003', name: 'Task' } });
+    defineIssue('PROJ-4', { type: { id: '10004', name: 'Bug' } });
+    await bind({ declaredIssueTypes: ['2024', 'bug'] });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1', 'PROJ-2', 'PROJ-3', 'PROJ-4'] }]);
 
     await linkDeclaredIssues(dbc, runId);
 
-    expect(await links(cluster)).toEqual([]);
+    expect((await links(cluster)).map((l) => l.key).sort()).toEqual(['PROJ-1', 'PROJ-2', 'PROJ-4']);
   });
 
   test('links nothing, and looks nothing up, with no issue type on the binding and no list', async () => {
