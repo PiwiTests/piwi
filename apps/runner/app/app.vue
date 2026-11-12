@@ -25,6 +25,7 @@ onMounted(() => {
         <DesktopTeamInstance app-name="Piwi Runner" />
       </UCard>
       <RunnerRunList />
+      <RunnerBackgroundSettings />
     </main>
     <DesktopTeamRunRequestModal @start="startRequest" />
   </UApp>

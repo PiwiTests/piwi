@@ -186,7 +186,34 @@ impl RunInBackground {
     }
 }
 
-/// Turn Run in background on or off, and save the choice.
+/// The tray's Run in background and Start on login, kept checked as the settings stand whichever side changes them:
+/// the tray or the window.
+struct BackgroundMenu {
+    run_bg: tauri::menu::CheckMenuItem<tauri::Wry>,
+    login: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+/// Event the shell sends the windows when Run in background or Start on login changes, with both as they stand
+/// (`BackgroundSettings`), so a window shows what the tray set.
+const BACKGROUND_SETTINGS_EVENT: &str = "piwi:background-settings";
+
+#[derive(Clone, serde::Serialize)]
+struct BackgroundSettings {
+    run_in_background: bool,
+    start_on_login: bool,
+}
+
+fn announce_background_settings(app: &AppHandle) {
+    let _ = app.emit(
+        BACKGROUND_SETTINGS_EVENT,
+        BackgroundSettings {
+            run_in_background: app.try_state::<RunInBackground>().is_some_and(|s| s.is_on()),
+            start_on_login: app.autolaunch().is_enabled().unwrap_or(false),
+        },
+    );
+}
+
+/// Turn Run in background on or off, save the choice, and check the tray's item to match.
 pub(crate) fn set_run_in_background(app: &AppHandle, enabled: bool) {
     if let Some(state) = app.try_state::<RunInBackground>() {
         state.0.store(enabled, Ordering::SeqCst);
@@ -195,6 +222,21 @@ pub(crate) fn set_run_in_background(app: &AppHandle, enabled: bool) {
         store.set(RUN_BG_KEY, json!(enabled));
         let _ = store.save();
     }
+    if let Some(menu) = app.try_state::<BackgroundMenu>() {
+        let _ = menu.run_bg.set_checked(enabled);
+    }
+    announce_background_settings(app);
+}
+
+/// Turn Start on login on or off, and check the tray's item as the system now holds it.
+pub(crate) fn set_start_on_login(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let mgr = app.autolaunch();
+    let result = if enabled { mgr.enable() } else { mgr.disable() }.map_err(|e| e.to_string());
+    if let Some(menu) = app.try_state::<BackgroundMenu>() {
+        let _ = menu.login.set_checked(mgr.is_enabled().unwrap_or(false));
+    }
+    announce_background_settings(app);
+    result
 }
 
 /// The tray's Run in background and Start on login, checked as they stand.
@@ -208,6 +250,10 @@ pub(crate) fn background_menu_items(
     let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, "Start on login")
         .checked(app.autolaunch().is_enabled().unwrap_or(false))
         .build(app)?;
+    app.manage(BackgroundMenu {
+        run_bg: run_bg_item.clone(),
+        login: login_item.clone(),
+    });
     Ok((run_bg_item, login_item))
 }
 
@@ -215,19 +261,16 @@ pub(crate) fn background_menu_items(
 pub(crate) const TRAY_RUN_BG_ID: &str = "run_bg";
 pub(crate) const TRAY_START_ON_LOGIN_ID: &str = "autostart";
 
-/// Flip Run in background from the tray, and its check.
-pub(crate) fn toggle_run_in_background(app: &AppHandle, item: &tauri::menu::CheckMenuItem<tauri::Wry>) {
+/// Flip Run in background from the tray.
+pub(crate) fn toggle_run_in_background(app: &AppHandle) {
     let next = !app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
     set_run_in_background(app, next);
-    let _ = item.set_checked(next);
 }
 
-/// Flip Start on login from the tray, and check it as the system now holds it.
-pub(crate) fn toggle_start_on_login(app: &AppHandle, item: &tauri::menu::CheckMenuItem<tauri::Wry>) {
-    let mgr = app.autolaunch();
-    let enabled = mgr.is_enabled().unwrap_or(false);
-    let _ = if enabled { mgr.disable() } else { mgr.enable() };
-    let _ = item.set_checked(mgr.is_enabled().unwrap_or(!enabled));
+/// Flip Start on login from the tray.
+pub(crate) fn toggle_start_on_login(app: &AppHandle) {
+    let enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    let _ = set_start_on_login(app, !enabled);
 }
 
 /// Hide the main window instead of closing it while Run in background is on: the app stays in the tray. Returns
@@ -2043,12 +2086,7 @@ fn desktop_set_run_in_background(app: tauri::AppHandle, enabled: bool) {
 
 #[tauri::command]
 fn desktop_set_start_on_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let mgr = app.autolaunch();
-    if enabled {
-        mgr.enable().map_err(|e| e.to_string())
-    } else {
-        mgr.disable().map_err(|e| e.to_string())
-    }
+    set_start_on_login(&app, enabled)
 }
 
 // ── Webview-shell affordances the loopback dashboard drives over IPC ────────────
@@ -2959,12 +2997,28 @@ pub(crate) fn confirm_stopping_local_runs(
     confirm_label: &str,
     proceed: impl FnOnce() + Send + 'static,
 ) {
+    ask_stopping_local_runs(app, title, verb, confirm_label, move |go| {
+        if go {
+            proceed();
+        }
+    });
+}
+
+/// `confirm_stopping_local_runs`, with the answer: `true` when nothing runs or the person confirmed, `false` on
+/// Cancel.
+pub(crate) fn ask_stopping_local_runs(
+    app: &AppHandle,
+    title: &str,
+    verb: &str,
+    confirm_label: &str,
+    answer: impl FnOnce(bool) + Send + 'static,
+) {
     let active = app
         .try_state::<runner::LocalRuns>()
         .map(|runs| runs.active_count())
         .unwrap_or(0);
     if active == 0 {
-        proceed();
+        answer(true);
         return;
     }
     app.dialog()
@@ -2977,11 +3031,7 @@ pub(crate) fn confirm_stopping_local_runs(
             confirm_label.into(),
             "Cancel".into(),
         ))
-        .show(move |confirmed| {
-            if confirmed {
-                proceed();
-            }
-        });
+        .show(answer);
 }
 
 /// The question asked before quitting stops local runs, titled with the app's name.
@@ -3276,8 +3326,8 @@ pub fn run() {
     // The app's context, made once: the macro embeds the bundle's Info.plist, which one crate holds a single copy of.
     let context = tauri::generate_context!();
 
-    // Piwi Runner is this same crate built with the `runner` feature: it has its own entry, with no server, tray or
-    // reporter discovery file (`runner_app`).
+    // Piwi Runner is this same crate built with the `runner` feature: it has its own entry, with no server or reporter
+    // discovery file (`runner_app`).
     if cfg!(feature = "runner") {
         runner_app::run(context);
         return;
@@ -3727,8 +3777,8 @@ pub fn run() {
                             .opener()
                             .open_path(dir.to_string_lossy().to_string(), None::<&str>);
                     }
-                    TRAY_RUN_BG_ID => toggle_run_in_background(app, &bg_i),
-                    TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app, &login_i),
+                    TRAY_RUN_BG_ID => toggle_run_in_background(app),
+                    TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
                     "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
                     TRAY_SHOW_STOP_ID => {
                         if let Some(w) = app.get_webview_window("main") {

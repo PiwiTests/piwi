@@ -309,6 +309,14 @@ keeps the previous release the latest when it creates one, and the `latest` job 
 a release builds, or when one of its legs failed, the app keeps finding the
 previous release and its complete manifests.
 
+**Piwi Runner** updates from a manifest of its own, `latest-runner.json`, in the
+same release. One manifest serves every Runner install, since the updater looks
+for `{os}-{arch}-{installer}` before `{os}-{arch}`: the `manifest` job of
+`reusable-publish-runner.yml` writes an entry per package from the signatures the
+legs uploaded (`apps/runner/scripts/update-manifest.mjs`). Runner's build merges
+`runner.updater.conf.json`, which holds the same public key, and its tray's
+**Check for updates…** drives the same plugin (`updates::check_from_tray`).
+
 When a check finds an update, the card asks the shell for the notes of every
 release after the installed version up to the offered one
 (`desktop_get_release_notes`): the shell reads GitHub's public releases API
