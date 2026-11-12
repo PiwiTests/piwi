@@ -273,6 +273,10 @@ runs (`@piwitests/editor/run-host`), plus these:
   it is read, before any is let go) and resource allow list, served by `snapshotFrameDocument`; nothing is kept past
   the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`). Its event and command are the app's
   (`shared/desktop-runs.ts`); Piwi Runner's host has no Inspect.
+- **An agent's run starts only in the main window, as a person's run of a spec of a linked folder.** `ShellRuns`
+  checks the spec and builds what the run is (`ShellRunStart`), `desktop-agent-runs.ts` hands it to the windows on the
+  desktop event stream (`agent-run`) and waits for the ref the window answers, refusing at once with no window open;
+  the window's tray starts it through the shell (`plugins/desktop-agent-runs.client.ts`). `tests/unit/desktop-runs.test.ts`.
 - **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
   editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
   it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)

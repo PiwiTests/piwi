@@ -46,6 +46,8 @@ import {
   presentsDesktopPicksToken,
 } from '../../server/utils/desktop-access';
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
+import type { DesktopAgentRun } from '#shared/desktop-agent-runs';
+import { answerAgentRun, askWindowToStart, subscribeAgentRuns } from '../../server/utils/desktop-agent-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 /** How long an agent follows a run after its last call, short for the test that waits it out. */
@@ -1550,6 +1552,61 @@ describe("the agents' tools for the desktop app's runs", () => {
     worker.socket.destroy();
     picker.socket.close();
     window.close();
+  });
+
+  it('start a spec of a linked folder in the window as a person’s run, labeled with the agent, and none without a window', async () => {
+    expect((await call('run_start', { file: 'tests/checkout.spec.ts', agent: 'Claude Code' })).piwi).toEqual({
+      ok: false,
+      message: "No window of the desktop app is open: open the app's window, then start the run again.",
+    });
+    const heard: DesktopAgentRun[] = [];
+    const stop = subscribeAgentRuns((run) => {
+      heard.push(run);
+      expect(answerAgentRun({ id: run.id, ref: 'desktop-61' })).toBe(true);
+    });
+    try {
+      const started = await call('run_start', { file: 'tests/checkout.spec.ts', line: 4, agent: 'Claude Code' });
+      expect(started.piwi).toEqual({
+        ok: true,
+        message:
+          'tests/checkout.spec.ts:3 started in the desktop app\'s window, as "Started by Claude Code". Follow it with run_follow.',
+        run: 'desktop-61',
+      });
+      expect(heard).toEqual([
+        {
+          id: expect.stringMatching(/^[0-9a-f]{32}$/),
+          projectId: 3,
+          file: 'tests/checkout.spec.ts',
+          line: 3,
+          headed: false,
+          hold: true,
+          title: 'Started by Claude Code',
+        },
+      ]);
+      // An answer comes once: a second, or one for a run never asked, is not taken.
+      expect(answerAgentRun({ id: heard[0]!.id, ref: 'desktop-62' })).toBe(false);
+      // Listed from its start, before its workers connect.
+      const listed = await call('run_list');
+      expect(listed.piwi.runs).toContainEqual(expect.objectContaining({ run: 'desktop-61', starting: true }));
+      // A spec outside the linked folders is refused before the window hears of it.
+      const outside = await call('run_start', { file: path.join(worktree, 'tests', 'checkout.spec.ts') });
+      expect(outside.piwi.message).toBe(
+        `${path.join(worktree, 'tests', 'checkout.spec.ts')} is in no folder linked to a project: the desktop app runs the specs of its linked folders alone.`,
+      );
+      expect(heard).toHaveLength(1);
+    } finally {
+      stop();
+    }
+    // The window that does not answer, and one that refuses, are said.
+    const quiet = subscribeAgentRuns(() => {});
+    const start = { projectId: 3, file: 'tests/checkout.spec.ts', line: null, headed: false, hold: true, title: 'x' };
+    expect(await askWindowToStart(start, 20)).toEqual({
+      refused: "The desktop app's window did not start the run: open its main window, then start the run again.",
+    });
+    quiet();
+    const refusing = subscribeAgentRuns((run) => answerAgentRun({ id: run.id, error: 'The project has no folder.' }));
+    expect(await askWindowToStart(start, 1000)).toEqual({ refused: 'The project has no folder.' });
+    refusing();
   });
 
   it('pause a run only while a window can show its stop, which goes on once the agent calls no more', async () => {

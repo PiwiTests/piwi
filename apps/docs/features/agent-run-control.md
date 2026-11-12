@@ -103,15 +103,9 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
 ## In the desktop app
 
 The [desktop app](./desktop-runs#for-agents)'s MCP server serves the same tools for the runs it starts; there,
-`code_write` writes no file and a run nobody attends is not served.
-
-## Share with Playwright tools
-
-At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
-Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
-Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
-It is off until you ask, every time, and asks first: a shared browser is open to any process of yours, which can read
-its pages and run code in them. It is shared until the test ends, and no agent can share it.
+`code_write` writes no file and a run nobody attends is not served. `run_start` takes a spec of a linked folder,
+which the app's window starts as you would from its Local runs tray, titled `Started by <agent>`, while a window is
+open; `npx @piwitests/reporter mcp` sends it a spec no editor's workspace holds.
 
 ## Limits
 
@@ -125,3 +119,4 @@ its pages and run code in them. It is shared until the test ends, and no agent c
 - [Code from a pause](./editor-stop-code)
 - [MCP server](./mcp)
 - [Runs window](./runs-window)
+- [Share a stop with Playwright tools](./watch-a-run#share-with-playwright-tools)

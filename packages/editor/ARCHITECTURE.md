@@ -1398,7 +1398,13 @@ changed, as the hub tells its peers), `relaying` (a hub message on its way to a 
 window command of a type the hub does not know, answered before `parseHubCommand` reads it), `windowLeft` (a window's
 stream closed) and `sendToWindow` (an event of the host's own, `HostEvent`, to one window), with `close` overridden
 for what it opened. The desktop app's server reads a lane's trace for its window's **Inspect** through them
-(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. The
+(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. A
+host whose window starts runs for agents passes `startRun`: `run_start` then takes a spec of a linked folder, absolute
+or relative to one of them (the test at a line read as the editor reads it), refuses any other file in a sentence,
+and hands the host a `ShellRunStart` (the project, the spec relative to its folder, the line, headed, Hold failures and
+the title `Started by <agent>`); the host answers with the ref the shell gave the run, whose Hold failures the agent
+then holds, or why it did not start it (no window open). The desktop app's server asks its window
+(`desktop-agent-runs.ts`); Piwi Runner passes none, and its agents have no tools. `tests/shell-runs-start.test.ts`. The
 pieces it wires:
 
 - `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No

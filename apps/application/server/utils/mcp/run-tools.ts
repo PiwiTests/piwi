@@ -1,13 +1,13 @@
 /**
- * Desktop build: the agents' tools for the Playwright runs the desktop shell starts (`run_list`, `run_follow`,
- * `run_control`, `page_snapshot`, `page_act`, `page_locator`, `code_write`). They are the editor service's own
+ * Desktop build: the agents' tools for the Playwright runs the desktop shell starts (`run_start`, `run_list`,
+ * `run_follow`, `run_control`, `page_snapshot`, `page_act`, `page_locator`, `code_write`). They are the editor service's own
  * (`RunAgent`, `agentTools`), in this app's words, on the hub of those runs (`server/utils/desktop-runs.ts`), and
  * `/mcp` serves them beside the catalog in the desktop build alone, to whoever holds the desktop token. A tool's answer
  * goes to the agent as `RunAgent` makes it: Piwi's JSON, then what came from the page apart, between the markers of a
  * page-content block, then an image said to be the page's too; never JSON of a catalog tool's data. Nothing they do
  * reaches the database, so nothing is logged with the write tools' calls.
  */
-import { agentTools, type ToolResult } from '@piwitests/editor/run-host';
+import { agentTools, runStartTool, type ToolResult } from '@piwitests/editor/run-host';
 import type { CapabilityModule } from '#shared/capabilities';
 import { DESKTOP_AGENT_WORDS, desktopRuns } from '../desktop-runs';
 
@@ -19,7 +19,9 @@ export interface DesktopRunTool {
   module: CapabilityModule;
 }
 
-const RUN_TOOLS: DesktopRunTool[] = agentTools(DESKTOP_AGENT_WORDS).map((tool) => ({ ...tool, module: 'agents' }));
+const RUN_TOOLS: DesktopRunTool[] = [runStartTool(DESKTOP_AGENT_WORDS), ...agentTools(DESKTOP_AGENT_WORDS)].map(
+  (tool) => ({ ...tool, module: 'agents' }),
+);
 const RUN_TOOL_NAMES = new Set(RUN_TOOLS.map((tool) => tool.name));
 
 /** The run tools a surface serves: the desktop app's, none on any other. */

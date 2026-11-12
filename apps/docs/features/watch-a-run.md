@@ -81,6 +81,14 @@ as your system lets a window come forward: **Piwi: Show the stopped test's brows
 **Tools → Piwi → Show the Stopped Test's Browser** in a JetBrains IDE, and a button in the Runs window and the desktop
 app's tray. A headless run has no window to show, and an older reporter offers none: update it.
 
+## Share with Playwright tools
+
+At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
+Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
+Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
+It is off until you ask, every time, and asks first: a shared browser is open to any process of yours, which can read
+its pages and run code in them. It is shared until the test ends, and no agent can share it.
+
 ## The terminal's lines
 
 A run prints one line for its page, and one when it follows an editor or the desktop app

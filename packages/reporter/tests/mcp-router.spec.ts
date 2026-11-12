@@ -11,12 +11,14 @@ import { McpRouter, machineHosts, type RouterHost } from '../src/cli/mcp.js';
 
 /**
  * `piwi mcp`, the agents' router: one set of run tools for every host of the machine, each call routed to the host of
- * its run, run_start to the editor whose workspace holds the spec. Two fake hosts stand in for two editors: each
- * answers MCP over HTTP as an editor's agents' server does, with its runs and the calls it heard.
+ * its run, run_start to the editor whose workspace holds the spec, else to the desktop app. Two fake hosts stand in for
+ * two editors, and a third for the desktop app: each answers MCP over HTTP as an editor's agents' server does, with its
+ * runs and the calls it heard.
  */
 
 const TOKEN_A = 'a'.repeat(32);
 const TOKEN_B = 'b'.repeat(32);
+const TOKEN_C = 'c'.repeat(32);
 
 interface FakeHost {
   url: string;
@@ -91,6 +93,8 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(folder, 'shop', 'tests'), { recursive: true });
   fs.mkdirSync(path.join(folder, 'admin', 'tests'), { recursive: true });
   fs.writeFileSync(path.join(folder, 'admin', 'tests', 'users.spec.ts'), '');
+  fs.mkdirSync(path.join(folder, 'lab', 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'lab', 'tests', 'stock.spec.ts'), '');
   a = await fakeHost(TOKEN_A, ['ed-a1'], true);
   b = await fakeHost(TOKEN_B, ['ed-b1', 'terminal-1-2'], true);
   hosts = [
@@ -205,6 +209,54 @@ describe('the agents’ router', () => {
     // A spec no editor's workspace holds starts nothing.
     const elsewhere = await call(router, 'run_start', { file: path.join(os.tmpdir(), 'x.spec.ts') });
     expect(elsewhere.result.isError).toBe(true);
+  });
+
+  it('starts a run no editor’s workspace holds on the desktop app, which checks its own linked folders', async () => {
+    const desktop = await fakeHost(TOKEN_C, ['desktop-4'], true);
+    try {
+      const withDesktop: RouterHost[] = [
+        ...hosts,
+        {
+          key: 'desktop',
+          name: 'the desktop app',
+          url: desktop.url,
+          headers: { authorization: `Bearer ${desktop.token}` },
+          roots: [path.join(folder, 'lab')],
+          startsElsewhere: true,
+        },
+      ];
+      const router = new McpRouter({ hosts: async () => withDesktop, cwd: os.tmpdir() });
+      await router.handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', clientInfo: { name: 'Claude Code' } },
+      });
+      // An editor's workspace still comes first.
+      b.calls.length = 0;
+      expect((await call(router, 'run_start', { file: 'tests/users.spec.ts' })).body).toMatchObject({
+        run: 'started-b',
+      });
+      expect(desktop.calls).toEqual([]);
+      // A spec of a folder the desktop app links, relative to it, and one no host holds, which it refuses itself.
+      const lab = await call(router, 'run_start', { file: 'tests/stock.spec.ts', line: 2 });
+      expect(lab.body).toMatchObject({ ok: true, run: 'started-c' });
+      const elsewhere = path.join(os.tmpdir(), 'x.spec.ts');
+      await call(router, 'run_start', { file: elsewhere });
+      expect(desktop.calls).toEqual([
+        {
+          name: 'run_start',
+          arguments: { agent: 'Claude Code', file: path.join(folder, 'lab', 'tests', 'stock.spec.ts'), line: 2 },
+        },
+        { name: 'run_start', arguments: { agent: 'Claude Code', file: elsewhere } },
+      ]);
+      // The run it started is followed there.
+      desktop.calls.length = 0;
+      await call(router, 'run_follow', { run: 'started-c' });
+      expect(desktop.calls.map((one) => one.name)).toEqual(['run_follow']);
+    } finally {
+      await desktop.close();
+    }
   });
 
   it('reads a relative spec against the editors’ folders when the working directory does not hold it', async () => {
