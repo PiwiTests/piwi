@@ -1292,6 +1292,9 @@ const timelineCases = computed(() => (isLive.value ? throttledTestCases.value : 
 /** The Timeline tab's count: the lanes the timeline lays out, the workers its header counts. */
 const timelineLanes = computed(() => timelineLaneCount(timelineCases.value));
 
+/** The run's final attempts with a video: the Video tab's count, and it stays off when there are none. */
+const videoCount = computed(() => testRun.value?.videoCount ?? 0);
+
 const tabItems = computed(() => [
   {
     label: `Tests (${dedupedDisplayCases.value.length})`,
@@ -1314,12 +1317,16 @@ const tabItems = computed(() => [
     slot: 'workers',
   },
   {
-    label: 'Video',
+    label: !isLive.value && videoCount.value > 0 ? `Video (${videoCount.value})` : 'Video',
     icon: 'i-lucide-video',
     value: 'video',
     slot: 'video',
-    disabled: isLive.value,
-    disabledReason: isLive.value ? 'available once the run finishes' : undefined,
+    disabled: isLive.value || videoCount.value === 0,
+    disabledReason: isLive.value
+      ? 'available once the run finishes'
+      : videoCount.value === 0
+        ? 'no videos in this run'
+        : undefined,
   },
   ...(testRun.value?.hasResources
     ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]

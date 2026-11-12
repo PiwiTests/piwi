@@ -2,7 +2,7 @@
  * A run's executions for the Video tab: each final attempt with its recorded video, when it has one. Served by
  * `GET /api/test-runs/:id/videos` and its demo mirror.
  */
-import { and, asc, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, like, sql } from 'drizzle-orm';
 import { files, testCases, testRunsCases } from '../../server/database/schema';
 import {
   MAX_LISTED_EXECUTIONS as MAX_LISTED,
@@ -27,11 +27,26 @@ export interface RunVideos {
 /** Playwright's own recording attaches under this name; a test can attach other videos under others. */
 const PLAYWRIGHT_VIDEO_NAME = 'video';
 
+/**
+ * True for an execution with a recorded video: a `video/*` attachment. The Video tab's list and the run payload's
+ * `videoCount` both use it, so they cannot disagree. It is one lookup on `idx_files_test_runs_case_id` per execution.
+ */
+export const executionHasVideo = sql`exists (
+  select 1 from ${files}
+  where ${files.testRunsCaseId} = ${testRunsCases.id} and ${files.type} = 'attachment' and ${files.label} like 'video/%'
+)`;
+
+/** How many of a run's final attempts have a video, however many videos each has. */
+export async function countRunVideos(db: DrizzleDB, runId: number): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.finalAttempt, true), executionHasVideo));
+  return Number(row?.n ?? 0);
+}
+
 export async function getRunVideos(db: DrizzleDB, runId: number): Promise<RunVideos> {
-  const hasVideo = sql`exists (
-    select 1 from ${files}
-    where ${files.testRunsCaseId} = ${testRunsCases.id} and ${files.type} = 'attachment' and ${files.label} like 'video/%'
-  )`;
+  const hasVideo = executionHasVideo;
   const select = {
     executionId: testRunsCases.id,
     testCaseId: testRunsCases.testCaseId,

@@ -592,6 +592,8 @@ export interface TestRunDetails {
   planId?: number | null;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** How many of the run's final attempts have a video (the Video tab's count; 0 disables the tab). */
+  videoCount?: number;
   /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
   machineRuns?: boolean;
   filterDetails?: FilterDetails | null;

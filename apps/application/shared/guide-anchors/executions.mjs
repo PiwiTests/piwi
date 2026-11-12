@@ -105,6 +105,19 @@ export const EXECUTIONS_ANCHORS = [
     sample: { route: '/test-run-cases/37', expect: CHECKOUT_FAILURE },
   },
   {
+    id: 'open-video-review',
+    kind: 'action',
+    pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
+    describes:
+      'The Evidence card’s Open video review button, which opens the execution’s video with the run’s test-case list, as This test, the whole file or its worker.',
+    shownWhen: 'When the execution has a video and its run has finished.',
+    doc: 'features/run-video#open-a-video-review-from-evidence',
+    sample: {
+      route: '/test-run-cases/12',
+      expect: { execution: { id: 12, title: 'should validate required address fields' } },
+    },
+  },
+  {
     id: 'execution-test-history',
     kind: 'action',
     pages: ['/test-run-cases/[id]'],
