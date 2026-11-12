@@ -1502,15 +1502,16 @@ export class RunSessions {
     const before = layered.get(viewer);
     const asked = new Set(LANE_LAYERS.filter((layer) => params.layers?.includes(layer)));
     layered.set(viewer, asked);
-    // The layers a worker sends again as they are asked: the latest call log and the filmstrip kept.
+    // A viewer that newly asks for the call log or the filmstrip needs the latest call log and the filmstrip kept.
     const again = (['calls', 'filmstrip'] as const).some((layer) => asked.has(layer) && !before?.has(layer));
     const next = { ok: true, message: `You watch worker ${lane + 1} from its next test.` };
     if (!worker) return next;
     const own = worker.lane;
-    // A viewer that comes to a lane view on: the worker sends the frame it sent last again.
-    if (own?.on && came) void this.ask(worker, 'view-lane', undefined, { on: true });
+    // A viewer that comes to a lane view on, or newly asks for those layers: the worker sends again what it sent last,
+    // the frame and the layers it keeps.
+    if (own?.on && (came || again)) void this.ask(worker, 'view-lane', undefined, { on: true });
     const starting = own ? own.started : this.startLane(worker);
-    this.sendLayers(session, worker, again);
+    this.sendLayers(session, worker);
     const answer = await starting;
     if (answer.ok || !session.lanes.get(lane)?.has(viewer)) return answer;
     // A worker that left before it answered: the viewer watches the next one Playwright starts in the lane.
@@ -1551,10 +1552,10 @@ export class RunSessions {
 
   /**
    * Tell a worker that sends layers which its lane's viewers ask, together, in `LANE_LAYERS`' order, when that changed
-   * since it last heard it, or `again` as a viewer asks for the call log or the filmstrip anew: it sends them again, and
-   * takes the page's text as the list names it anew, which counts as that worker's latest ask of it (`textAsk`).
+   * since it last heard it: it takes the page's text as the list names it anew, which counts as that worker's latest ask
+   * of it (`textAsk`).
    */
-  private sendLayers(session: Session, worker: Worker, again = false): void {
+  private sendLayers(session: Session, worker: Worker): void {
     if (!worker.features.has('layers') || worker.socket.destroyed) return;
     const asked = new Set<LaneLayer>();
     for (const layers of session.laneLayers.get(worker.parallelIndex)?.values() ?? []) {
@@ -1562,7 +1563,7 @@ export class RunSessions {
     }
     const layers = LANE_LAYERS.filter((layer) => asked.has(layer));
     const sent = worker.layersSent;
-    if (layers.join() === sent && !again) return;
+    if (layers.join() === sent) return;
     worker.layersSent = layers.join();
     if (asked.has('text') && !sent.split(',').includes('text')) {
       worker.textAsk = { at: Date.now(), answer: Promise.resolve(TEXT_ON_ITS_WAY), pending: false };

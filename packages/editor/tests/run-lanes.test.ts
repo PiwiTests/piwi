@@ -352,12 +352,16 @@ describe('the layers of a lane watched in the run sessions', () => {
     await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: both }, a);
     await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
     expect(layersHeard()).toEqual([both]);
-    // A viewer asking for the filmstrip anew has the worker send it again, the layers as they were.
+    // A viewer asking for the filmstrip anew has the worker send again what it keeps (its lane view asked on again),
+    // the layers as they were.
+    const lanesAsked = () => w.heard().filter((m) => m.type === 'request' && m.what === 'view-lane' && m.on).length;
+    const asked = lanesAsked();
     await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'filmstrip'] }, b);
-    expect(layersHeard()).toEqual([both, both]);
+    expect(layersHeard()).toEqual([both]);
+    expect(lanesAsked()).toBe(asked + 1);
     // Leaving it asks for nothing less: the worker hears nothing; the last viewer of it to leave turns it off.
     await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
-    expect(layersHeard()).toHaveLength(2);
+    expect(layersHeard()).toHaveLength(1);
     await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events'] }, a);
     expect(last(layersHeard())).toEqual(['calls', 'events']);
   });

@@ -1031,8 +1031,9 @@ as a worker Playwright starts in the lane does, and none as the lane's last view
 sends each as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`),
 and on the hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left
 more than `MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A viewer that asks for the call log or the filmstrip anew has
-the worker hear the same list again, which has it send them again; a `watch` asked again with nothing new tells the
-worker nothing. A `watch` that lists `text` asks for the page's text now (`RunSessions.laneText`, its asks merged as
+the worker asked for its lane view again (`view-lane` on), which has it send again the frame, the call log, the
+filmstrip so far and the page's text; the worker hears a list of layers only when it differs from the last one, and a
+`watch` asked again with nothing new tells the worker nothing. A `watch` that lists `text` asks for the page's text now (`RunSessions.laneText`, its asks merged as
 above). The hub keeps none of them. The editor client's lane view takes the layers its
 `piwi/laneView` names, and tells them as `piwi/laneLayer`
 ([Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)).
