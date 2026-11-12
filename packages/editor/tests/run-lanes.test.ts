@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
+import type { LaneLayer } from '@piwitests/core/live-layers';
 import { RUN_TAKES, type HubToRun, type RunFeature, type RunToHub } from '@piwitests/core/run-channel';
 import {
   parseHubMessage,
@@ -43,7 +44,7 @@ function fakeSocket() {
 }
 
 /** The run `ed-1` in sessions of its own, and how each of its workers joins, talks and hears. */
-function harness(requestMs = 2000) {
+function harness(requestMs = 2000, laneTextMs = 40) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
@@ -54,6 +55,7 @@ function harness(requestMs = 2000) {
     burstMs: 0,
     requestMs,
     lingerMs: 60_000,
+    laneTextMs,
   });
   const join = (workerIndex: number, parallelIndex: number, features: RunFeature[] = ['view-lane']) => {
     const socket = fakeSocket();
@@ -277,9 +279,9 @@ describe('the layers of a lane watched in the run sessions', () => {
     await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'calls'] }, a));
     await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['text'] }, b));
     await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, c));
+    // A viewer that asks for nothing more than the others leaves the worker as it was.
     expect(layersHeard()).toEqual([
       ['calls', 'events'],
-      ['calls', 'events', 'text'],
       ['calls', 'events', 'text'],
     ]);
 
@@ -322,6 +324,72 @@ describe('the layers of a lane watched in the run sessions', () => {
     const next = join(1, 0, ['view-lane', 'layers']);
     await waitFor(() => (next.heard().some((m) => m.type === 'layers') ? true : undefined));
     expect(next.heard().find((m) => m.type === 'layers')).toEqual({ type: 'layers', layers: ['events'] });
+
+    // The run ends: the viewer watches it no more, and a rerun under its ref starts with no lane watched, no layers.
+    sessions.commandEnded('ed-1');
+    expect(sessions.watchesLane(a, 'ed-1', 0)).toBe(false);
+    next.read(pageError);
+    expect(a.layers).toEqual([]);
+    const rerun = join(0, 0, ['view-lane', 'layers']);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rerun.heard().filter((m) => m.type === 'layers' || m.type === 'request')).toEqual([]);
+    rerun.read(pageError);
+    expect(a.layers).toEqual([]);
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, a)).toEqual({
+      ok: false,
+      message: 'Watch the worker first.',
+    });
+  });
+
+  test('tells the worker the layers again only as they change, or as a viewer asks anew for what it sends again', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b] = [viewer(), viewer()];
+    const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    const both: LaneLayer[] = ['calls', 'events', 'filmstrip'];
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: both }, a));
+    // The same watch asked again changes nothing the worker hears, nor does a viewer that asks for no more than it.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: both }, a);
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
+    expect(layersHeard()).toEqual([both]);
+    // A viewer asking for the filmstrip anew has the worker send it again, the layers as they were.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'filmstrip'] }, b);
+    expect(layersHeard()).toEqual([both, both]);
+    // Leaving it asks for nothing less: the worker hears nothing; the last viewer of it to leave turns it off.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, b);
+    expect(layersHeard()).toHaveLength(2);
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events'] }, a);
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+  });
+
+  test('asks a worker for its page’s text once for the asks that come together, and once a moment at most', async () => {
+    const { sessions, join } = harness(2000, 60);
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b] = [viewer(), viewer()];
+    const texts = () => w.heard().filter((m) => m.type === 'request' && m.what === 'text');
+    const moment = () => new Promise((r) => setTimeout(r, 80));
+    const onItsWay = { ok: true, message: 'The page’s text is on its way.' };
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'text'] }, a));
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['text'] }, b);
+    // The layers listing the text anew had the worker take it: an ask right after is that one.
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, b)).toEqual(onItsWay);
+    expect(texts()).toHaveLength(0);
+
+    await moment();
+    // Two viewers asking together: the worker hears one request, and both get its answer.
+    const first = sessions.laneText({ ref: 'ed-1', lane: 0 }, a);
+    const second = sessions.laneText({ ref: 'ed-1', lane: 0 }, b);
+    const request = await waitFor(() => texts()[0]);
+    w.read({ type: 'answer', request: request.request, what: 'text', value: { ok: true, message: 'On its way.' } });
+    expect(await first).toEqual({ ok: true, message: 'On its way.' });
+    expect(await second).toEqual({ ok: true, message: 'On its way.' });
+    // Within a moment of it, another ask is that one too; after it, the worker is asked again.
+    expect(await sessions.laneText({ ref: 'ed-1', lane: 0 }, a)).toEqual({ ok: true, message: 'On its way.' });
+    expect(texts()).toHaveLength(1);
+    await moment();
+    void sessions.laneText({ ref: 'ed-1', lane: 0 }, a);
+    await waitFor(() => texts()[1]);
+    expect(texts()).toHaveLength(2);
   });
 });
 
@@ -510,7 +578,9 @@ describe('a lane the editor client watches', () => {
     expect(last(layersHeard())).toEqual(['calls', 'events', 'text']);
     expect(w.asked(false)).toHaveLength(0);
     expect(texts()).toHaveLength(0);
-    // Asked again, the text alone is taken: the worker hears no layers, so sends no call log nor filmstrip again.
+    // Asked again once the text the layers took is a moment old, the text alone is taken: the worker hears no layers,
+    // so sends no call log nor filmstrip again.
+    await new Promise((r) => setTimeout(r, 50));
     const before = layersHeard().length;
     const asked = client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['calls', 'events', 'text'], text: true });
     const request = await waitFor(() => texts()[0]);
@@ -775,6 +845,21 @@ describe('a lane watched on the hub', () => {
       });
       await new Promise((r) => setTimeout(r, 150));
       expect(b.layers()).toEqual([]);
+
+      // A watch that lists the page's text asks for it now: the layers listing it anew take it, and the worker hears
+      // no request of it for the watches that come within a moment, then one.
+      const texts = () => worker.heard.filter((m) => m.type === 'request' && m.what === 'text');
+      a.send({ type: 'watch', id: 4, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      expect(await a.answer(4)).toMatchObject({ ok: true });
+      expect(await worker.next('layers', 1)).toEqual({ type: 'layers', layers: ['events', 'text'] });
+      a.send({ type: 'watch', id: 5, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      await a.answer(5);
+      await new Promise((r) => setTimeout(r, 1100));
+      expect(texts()).toEqual([]);
+      a.send({ type: 'watch', id: 6, ref, lane: 0, on: true, layers: ['events', 'text'] });
+      await a.answer(6);
+      await waitFor(() => texts()[0]);
+      expect(worker.heard.filter((m) => m.type === 'layers')).toHaveLength(2);
     } finally {
       worker.socket.destroy();
       a.socket.close();

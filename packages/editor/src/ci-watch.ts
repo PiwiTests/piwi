@@ -21,7 +21,7 @@ import {
   type LiveViewerMessage,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
-import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
+import { LANE_TEXTS_PER_SECOND, readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import { FrameSender } from './client-page-view.js';
 import type { PiwiClient } from './piwi-client.js';
@@ -67,6 +67,8 @@ export interface CiWatchOptions {
   idleMs?: number;
   /** How long the instance may take to answer a new watch before it is refused. */
   openMs?: number;
+  /** How long after the page's text was asked another ask of it is merged with that one. */
+  textMs?: number;
 }
 
 /** A lane of a CI run, as the client names it (`lane` from 1, as `CiTest.lane`), and the worker that ran there last. */
@@ -87,6 +89,11 @@ interface Watch extends Lane {
   asked: number;
   /** The layers the client shows, in `LANE_LAYERS`' order. */
   layers: LaneLayer[];
+  /**
+   * The page's text as last asked of the instance: when, its answer, and whether that answer is still to come. Another
+   * ask meanwhile, or within `textMs` of it, shares its answer.
+   */
+  textAsk: { at: number; answer: Promise<RunControlResult>; pending: boolean } | null;
 }
 
 /** A client's params, checked field by field; why not, as a sentence. */
@@ -161,6 +168,10 @@ async function refusal(response: Response): Promise<string> {
 
 const SUPERSEDED: RunControlResult = { ok: false, message: 'Another CI watch took the place of this one.' };
 const LATE = 'The instance did not open the watch in time: try again in a moment.';
+
+/** How long after the page's text was asked another ask shares that one's answer. */
+const TEXT_MS = 1000 / LANE_TEXTS_PER_SECOND;
+const TEXT_ON_ITS_WAY: RunControlResult = { ok: true, message: 'The page’s text is on its way.' };
 
 /** One per service: the client's one watch of a CI lane. */
 export class CiWatch {
@@ -258,7 +269,7 @@ export class CiWatch {
 
   /** Open the instance's watch of the run on the lane's worker, and read it until it ends. */
   private async open(client: PiwiClient, lane: Lane, layers: LaneLayer[]): Promise<RunControlResult> {
-    const watch: Watch = { ...lane, client, abort: new AbortController(), id: null, asked: 0, layers };
+    const watch: Watch = { ...lane, client, abort: new AbortController(), id: null, asked: 0, layers, textAsk: null };
     this.current = watch;
     const query = new URLSearchParams({
       worker: String(lane.worker),
@@ -309,8 +320,9 @@ export class CiWatch {
   }
 
   /**
-   * Change the layers of the lane the watch shows (`layers`), or ask its worker for its page's text now (`text`): the
-   * instance sends the filmstrip again to a watch that takes it anew.
+   * Change the layers of the lane the watch shows (`layers`), or ask its worker for its page's text now (`text`, and as
+   * the layers list it anew): the instance sends the filmstrip again to a watch that takes it anew. An ask of the text
+   * while the last one is answered, or within `textMs` of it, is that one: the instance hears none.
    */
   private async relayer(watch: Watch, layers: LaneLayer[], text: boolean): Promise<RunControlResult> {
     const said = { ok: true, message: `You watch ${laneName(watch)} of CI run #${watch.runId}.` };
@@ -318,18 +330,31 @@ export class CiWatch {
     // The call log comes with the full view: the instance hears of the other layers alone.
     const changed = watchLayers(layers).join() !== watchLayers(watch.layers).join();
     const before = watch.layers;
+    const last = watch.textAsk;
+    const now = Date.now();
+    const recent = !!last && (last.pending || now - last.at < (this.options.textMs ?? TEXT_MS));
+    const asks = (text || (layers.includes('text') && !before.includes('text'))) && !recent;
     watch.layers = layers;
-    if (!changed && !text) return said;
+    if (!changed && !asks) return text ? last!.answer : said;
     const body: Record<string, unknown> = { watch: watch.id };
     if (changed) body.layers = watchLayers(layers);
-    if (text) body.text = true;
-    const answer = await this.post(watch, body, watch.asked, false);
-    if (!answer.ok) {
+    if (asks) body.text = true;
+    const posted = this.post(watch, body, watch.asked, false).then((answer) => {
       // Refused, the watch takes the layers it took before, which the client may ask to change again.
-      if (watch.layers === layers) watch.layers = before;
+      if (!answer.ok && watch.layers === layers) watch.layers = before;
       return answer;
+    });
+    const ask = asks ? { at: now, pending: true, answer: posted } : null;
+    if (ask) {
+      watch.textAsk = ask;
+      ask.answer = posted.then((answer) => {
+        ask.pending = false;
+        return answer.ok ? TEXT_ON_ITS_WAY : answer;
+      });
     }
-    return text ? { ok: true, message: 'The page’s text is on its way.' } : said;
+    const answer = await posted;
+    if (!answer.ok || !text) return answer.ok ? said : answer;
+    return (ask ?? last)!.answer;
   }
 
   /** Show another lane of the run on the watch open: its images go from now on, the lane before's no more. */

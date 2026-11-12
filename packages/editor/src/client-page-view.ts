@@ -229,12 +229,18 @@ export class ClientLaneView {
     }
     const layers = readLaneLayers(params.layers ?? []) ?? [];
     const own = this.current;
-    // The lane it watches: its layers change in place, and the page's text is asked for as the client asks.
+    // The lane it watches: its layers change in place, and the page's text is asked for as the client asks or first
+    // shows it; the run sessions merge the asks that come together.
     if (own && this.matches(params) && this.sessions.watchesLane(this.viewer, own.ref, own.lane)) {
       if (layers.join() !== own.layers.join()) {
+        const shows = layers.includes('text') && !own.layers.includes('text');
         own.layers = layers;
         const answer = await this.sessions.watchLane({ ref: own.ref, lane: own.lane, on: true, layers }, this.viewer);
-        if (!answer.ok || params.text !== true) return answer;
+        if (!answer.ok || (params.text !== true && !shows)) return answer;
+        if (params.text !== true) {
+          if (this.current === own) void this.sessions.laneText(own, this.viewer);
+          return answer;
+        }
       } else if (params.text !== true) {
         return { ok: true, message: `You watch worker ${own.lane + 1}.` };
       }
@@ -248,6 +254,7 @@ export class ClientLaneView {
     const answer = await this.sessions.watchLane({ ref: params.ref, lane: params.lane, on: true, layers }, this.viewer);
     if (this.current !== watched) return { ok: false, message: 'The worker view changed.' };
     if (!answer.ok) this.dispose();
+    else if (layers.includes('text')) void this.sessions.laneText(watched, this.viewer);
     return answer;
   }
 

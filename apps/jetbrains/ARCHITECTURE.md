@@ -677,7 +677,8 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   again, and starts the call log and the strip anew for another test, another worker (a retry's), or an image placed at
   or before the strip's last of a call it does not hold. The watch asks for the call log and the events, and for the text or the
   filmstrip while its tab is selected (`Glue.laneLayersAsked`), changing them on the open watch once it was accepted
-  (`relayer`); **Take the Text Again** sends `text: true`. A filmstrip image is decoded and scaled off the event
+  (`relayer`); **Take the Text Again** sends `text: true`, and is off until the service answers
+  (`LaneLayersPanel.textAsking`). A filmstrip image is decoded and scaled off the event
   thread. Every text from the run goes into a `JBTextArea`, an `html.disable` label or a `ColoredListCellRenderer`,
   never HTML; a tooltip holds a web address or starts with the image's number.
 - **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no

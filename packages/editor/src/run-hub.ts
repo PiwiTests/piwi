@@ -690,7 +690,10 @@ export class RunHub {
         }
         case 'watch': {
           const { ref, lane, on, layers } = command;
-          reply(await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer));
+          const answer = await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer);
+          reply(answer);
+          // A watch that lists the page's text asks for it now, merged with an ask the run sessions just made.
+          if (answer.ok && on && layers?.includes('text')) void sessions.laneText({ ref, lane }, connection.viewer);
           return this.resend(connection, ref);
         }
         default:

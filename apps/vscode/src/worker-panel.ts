@@ -144,6 +144,8 @@ export function createWorkerPanel(
   let posted = new Set<string>();
   /** Why the page's text asked again did not come, until the next text. */
   let textNote: string | null = null;
+  /** The page's text asked again waits for the service's answer: Take the text again is off meanwhile. */
+  let textAsking = false;
   /** The layers the watch asked last, as text: a change of the sections asks again when they differ. */
   let layersSent = '';
 
@@ -161,7 +163,7 @@ export function createWorkerPanel(
         ci: true,
         pick: null,
         live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
-        layers: { ...sections, note: null },
+        layers: { ...sections, note: null, textAsking },
       };
       if (!panel) return;
       if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
@@ -187,7 +189,7 @@ export function createWorkerPanel(
       },
       // An action runs in the test's window at the stop the input goes to: Escape on the view goes to the page.
       acting: !!stop?.stop.acting,
-      layers: { ...sections, note: laneLayersNote(lane.worker) },
+      layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
     };
     if (!panel) return;
     if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
@@ -239,14 +241,21 @@ export function createWorkerPanel(
     }
   };
 
-  /** Ask the lane's worker for its page's text now; why not shows over the text. */
+  /**
+   * Ask the lane's worker for its page's text now, one ask at a time, Take the text again off until it is answered;
+   * why not shows over the text.
+   */
   const askText = async () => {
     const own = ciTarget ? ciWatching : watching;
-    if (!own || !sections.text || !(ciTarget ? ciAccepted : accepted)) return;
+    if (textAsking || !own || !sections.text || !(ciTarget ? ciAccepted : accepted)) return draw();
+    textAsking = true;
+    draw();
     const params = { ...own, on: true, layers: laneLayersAsked(sections), text: true };
     const answer = await lc
       .sendRequest<RunControlResult>(ciTarget ? CI_WATCH_REQUEST : LANE_VIEW_REQUEST, params)
       .catch(() => null);
+    textAsking = false;
+    draw();
     if (answer?.ok || (ciTarget ? ciWatching : watching) !== own) return;
     textNote = answer?.message ?? NO_ANSWER;
     postLayers(['text']);

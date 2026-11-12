@@ -220,7 +220,12 @@ const JPEG_BASE64 = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
 const sections = () => post({ type: 'layers', text: !!textSection?.open, filmstrip: !!stripSection?.open });
 textSection?.addEventListener('toggle', sections);
 stripSection?.addEventListener('toggle', sections);
-byId<HTMLButtonElement>('text-again')?.addEventListener('click', () => post({ type: 'text' }));
+const textAgain = byId<HTMLButtonElement>('text-again');
+// Off from the click until the extension says the text it asked came or was refused.
+textAgain?.addEventListener('click', () => {
+  textAgain.disabled = true;
+  post({ type: 'text' });
+});
 
 /** Show the image of the strip `call` larger, with its call's title; null hides it. */
 function enlarge(call: string | null, title = '') {
@@ -313,6 +318,7 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     note.textContent = event.data.view.layers?.note ?? '';
     note.hidden = !event.data.view.layers?.note;
   }
+  if (textAgain) textAgain.disabled = !!event.data.view.layers?.textAsking;
 });
 // The extension ends the watch itself when the panel hides or closes, and keeps Watch live for when it shows again.
 window.addEventListener('pagehide', () => input.dispose());

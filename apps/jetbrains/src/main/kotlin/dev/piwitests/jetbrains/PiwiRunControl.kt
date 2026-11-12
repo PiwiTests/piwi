@@ -1038,16 +1038,24 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
-    /** Take the Text Again: the watched lane's worker reads its page's text now; why not shows over the text. */
+    /**
+     * Take the Text Again: the watched lane's worker reads its page's text now, one ask at a time, the button off until
+     * it is answered; why not shows over the text.
+     */
     private fun askText(layers: LaneLayersPanel) {
-        if (!layers.textOpen) return
+        if (!layers.textOpen || layers.textAsking) return
         val lane = watchingLane
         val ci = watchingCi
-        val answered = { result: RunControlResult? -> if (result != null && !result.ok) layers.textRefused(result.message ?: NOT_RUNNING) }
-        val asked = layersSent
+        val answered = { result: RunControlResult? ->
+            layers.textAsking = false
+            if (result != null && !result.ok) layers.textRefused(result.message ?: NOT_RUNNING)
+        }
+        val asked = layersAsked()
         if (lane != null && acceptedLane === lane) {
+            layers.textAsking = true
             queueWorkerCall({ if (watchingLane === lane) remote.laneView(lane.copy(layers = asked, text = true)) else null }, answered)
         } else if (ci != null && acceptedLane === ci) {
+            layers.textAsking = true
             queueWorkerCall({ if (watchingCi === ci) remote.ciWatch(ci.copy(layers = asked, text = true)) else null }, answered)
         }
     }
@@ -2554,6 +2562,17 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
         accessibleContext.accessibleName = "The page as roles and names"
     }
     private val search = SearchTextField(false).apply { toolTipText = "Find in the page's text" }
+    private val textAgain = JButton("Take the Text Again").apply {
+        toolTipText = "Read the page's text now, its secret fields hidden"
+        addActionListener { textAsked?.invoke() }
+    }
+
+    /** The page's text asked again waits for its answer: Take the Text Again is off meanwhile. */
+    var textAsking: Boolean = false
+        set(value) {
+            field = value
+            textAgain.isEnabled = !value
+        }
     private val strip = JPanel(FlowLayout(FlowLayout.LEFT, 4, 4))
     private val stripEmpty = plainLabel("One image for each call of the test that ended: click one to see it larger.").apply {
         foreground = UIUtil.getContextHelpForeground()
@@ -2578,10 +2597,7 @@ internal class LaneLayersPanel : JPanel(BorderLayout()) {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 add(JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
                     add(search)
-                    add(JButton("Take the Text Again").apply {
-                        toolTipText = "Read the page's text now, its secret fields hidden"
-                        addActionListener { textAsked?.invoke() }
-                    })
+                    add(textAgain)
                 })
                 add(textNote)
             }, BorderLayout.NORTH)

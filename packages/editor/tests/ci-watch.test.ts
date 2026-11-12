@@ -141,6 +141,7 @@ describe('watching a CI run’s lane on the instance', () => {
       },
       idleMs: options.idleMs,
       openMs: options.openMs,
+      textMs: 40,
     });
     return { frames, layers, ended, asked, stub: stub!, watch: watch! };
   }
@@ -252,29 +253,43 @@ describe('watching a CI run’s lane on the instance', () => {
       { ...where, layer: 'filmstrip', thumb, data: base64(JPEG) },
     ]);
 
-    // The layers change on the watch open, and the text is asked for once it is shown.
+    // The layers change on the watch open, and the text is asked for as it is first shown, then as the client asks:
+    // an ask within a moment of the last is that one, and the instance hears none.
     expect(await watch.watch({ ...lane2, on: true, layers: ['events'], text: true })).toEqual({
       ok: false,
       message: 'Show the page’s text first.',
     });
     expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'] })).toMatchObject({ ok: true });
-    expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'], text: true })).toEqual({
-      ok: true,
-      message: 'The page’s text is on its way.',
-    });
-    expect(stub.posts.map((post) => post.body)).toEqual([
-      { watch: WATCH_ID, layers: ['events', 'text'] },
-      { watch: WATCH_ID, text: true },
-    ]);
+    const onItsWay = { ok: true, message: 'The page’s text is on its way.' };
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'], text: true })).toEqual(onItsWay);
+    expect(stub.posts.map((post) => post.body)).toEqual([{ watch: WATCH_ID, layers: ['events', 'text'], text: true }]);
+    await pause(60);
+    const asks = [1, 2].map(() => watch!.watch({ ...lane2, on: true, layers: ['events', 'text'], text: true }));
+    expect(await Promise.all(asks)).toEqual([onItsWay, onItsWay]);
+    expect(stub.posts.map((post) => post.body).slice(1)).toEqual([{ watch: WATCH_ID, text: true }]);
     await open.write({ type: 'text', ...of, text });
     await open.write({ type: 'thumb', ...of, thumb }, JPEG);
     expect(layers.slice(3)).toEqual([{ ...where, layer: 'text', text }]);
 
-    // A change the instance refuses leaves the watch as it was.
+    // A change the instance refuses leaves the watch as it was: the text still comes, and the same change is asked
+    // again.
     stub.state.changeStatus = 429;
     expect(await watch.watch({ ...lane2, on: true, layers: ['events'] })).toMatchObject({ ok: false });
     expect(open.closed).toBe(false);
     expect(stub.opened).toHaveLength(1);
+    await open.write({ type: 'text', ...of, text });
+    expect(layers.slice(4)).toEqual([{ ...where, layer: 'text', text }]);
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events'] })).toMatchObject({ ok: false });
+    expect(stub.posts.map((post) => post.body).slice(2)).toEqual([
+      { watch: WATCH_ID, layers: ['events'] },
+      { watch: WATCH_ID, layers: ['events'] },
+    ]);
+    // A refused ask of the text is answered so, and the next is asked of the instance.
+    await pause(60);
+    expect(await watch.watch({ ...lane2, on: true, layers: ['events', 'text'], text: true })).toMatchObject({
+      ok: false,
+    });
+    expect(stub.posts).toHaveLength(5);
   });
 
   test('gives one watch at a time: another run’s takes its place, and stopping says nothing', async () => {

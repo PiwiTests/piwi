@@ -581,8 +581,10 @@ instance's bound of watches per person).
   (its query, then the POST's; the call log is the full view's own `call-log`), each `call-log`, `page-event`, `text`
   and `thumb` of the lane going to the client as `piwi/ciLayer` as it comes, with the worker that sent it (a retry runs
   in another), those it asked for alone. The same lane
-  asked again with other layers changes them on the open watch, and `text: true` has the POST ask the worker for its
-  page's text; a refusal of either leaves the watch as it was.
+  asked again with other layers changes them on the open watch, and `text: true`, or the layers listing `text` anew,
+  has the POST ask the worker for its page's text (`text: true`); an ask while the last one waits for its answer, or
+  within `1000 / LANE_TEXTS_PER_SECOND` ms of it, is that one, and the instance hears none. A refusal of either leaves
+  the watch as it was.
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
   instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
   follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
@@ -795,8 +797,12 @@ watch it; leaving lets go of what its input held there. `RunWorker.watchable` sa
 Its `layers` (`calls`, `events`, `text`, `filmstrip`) are the viewer's layers of the lane (`LaneParams.layers`), each
 `lane-layer` of them going to the client as `piwi/laneLayer` as it comes, none of a lane it stopped watching
 (`ClientLaneView.layer`). The lane it watches, asked again with other layers, changes them in place, the lane view
-kept on; `text: true` asks the lane's worker for its page's text now (`RunSessions.laneText`, the run channel's `text`
-request), refused unless the viewer shows the text. `RunWorker.layers` says which workers send them.
+kept on; `text: true`, and the layers listing `text` anew, ask the lane's worker for its page's text now
+(`RunSessions.laneText`, the run channel's `text` request), refused unless the viewer shows the text. An ask while the
+worker's last one waits for its answer, or within `1000 / LANE_TEXTS_PER_SECOND` ms of it, is that one, answered as it
+was: the worker hears no request of it. `layers` that list `text` anew count as an ask, which the worker takes as it
+hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
+send them.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
@@ -1020,12 +1026,14 @@ intents in the window and `pick-at` are its, with no `view` of its own. At most 
 A `watch` also names the layers its connection takes of the lane beside the frames (`layers`, at a hub whose `welcome`
 lists `layers`; `@piwitests/core/live-layers`: `calls`, `events`, `text`, `filmstrip`), none when it names none, and a
 later `watch` changes them (`LaneParams.layers`, kept per viewer in `Session.laneLayers`). The lane's worker, when its
-`run-attach` lists `layers` in `features`, hears what the lane's viewers ask together at each `watch`, as a worker
-Playwright starts in the lane does, and none as the lane's last viewer leaves (`sendLayers`, `stopLane`): it sends each
-as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`), and on the
-hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left more than
-`MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A `watch` asked again has the worker send its call log and filmstrip
-again and take the page's text anew. The hub keeps none of them. The editor client's lane view takes the layers its
+`run-attach` lists `layers` in `features`, hears what the lane's viewers ask together as it changes (`Worker.layersSent`),
+as a worker Playwright starts in the lane does, and none as the lane's last viewer leaves (`sendLayers`, `stopLane`): it
+sends each as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`),
+and on the hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left
+more than `MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A viewer that asks for the call log or the filmstrip anew has
+the worker hear the same list again, which has it send them again; a `watch` asked again with nothing new tells the
+worker nothing. A `watch` that lists `text` asks for the page's text now (`RunSessions.laneText`, its asks merged as
+above). The hub keeps none of them. The editor client's lane view takes the layers its
 `piwi/laneView` names, and tells them as `piwi/laneLayer`
 ([Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)).
 

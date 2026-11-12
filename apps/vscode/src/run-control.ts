@@ -1771,9 +1771,10 @@ export interface PausedPageView {
   acting?: boolean;
   /**
    * The worker panel's sections beside the image (Why it waits, Events, Text, Filmstrip): which of the two that ask
-   * for their layer while open are open, and why the lane shows none (`note`: a reporter that sends its images alone).
+   * for their layer while open are open, why the lane shows none (`note`: a reporter that sends its images alone), and
+   * whether the page's text asked again waits for its answer (`textAsking`), Take the text again off meanwhile.
    */
-  layers?: LaneSections & { note: string | null };
+  layers?: LaneSections & { note: string | null; textAsking?: boolean };
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -1938,13 +1939,13 @@ const LAYERS_STYLE =
  * of the run set as text. Why it waits shows while a call log came; Events is open; Text and Filmstrip ask for their
  * layer while open.
  */
-function layersHtml(layers: LaneSections & { note: string | null }): string {
+function layersHtml(layers: LaneSections & { note: string | null; textAsking?: boolean }): string {
   return [
     `<p id="layers-note" class="note"${layers.note ? '' : ' hidden'}>${escapeHtml(layers.note ?? '')}</p>`,
     '<section id="layers" aria-label="Beside the image">',
     '<div id="waits" class="waits" role="status" hidden><p><strong>Why it waits</strong></p><p id="waits-head"></p><p id="waits-target" class="hint"></p><pre id="waits-lines"></pre></div>',
     '<details id="events-section" class="layer" open><summary>Events <span id="events-count" class="hint"></span></summary><p id="events-empty" class="hint">Nothing yet: console errors, the page’s uncaught errors, failed and slow requests, and the errors its backend logged show here, the newest first.</p><ol id="events" class="events"></ol></details>',
-    `<details id="text-section" class="layer"${layers.text ? ' open' : ''}><summary>Text</summary><p class="hint">The page as roles and names, the secret fields hidden: Find (Ctrl+F) searches it.</p><button id="text-again" type="button">Take the text again</button><p id="text-note" class="note"></p><pre id="text" class="text"></pre></details>`,
+    `<details id="text-section" class="layer"${layers.text ? ' open' : ''}><summary>Text</summary><p class="hint">The page as roles and names, the secret fields hidden: Find (Ctrl+F) searches it.</p><button id="text-again" type="button"${layers.textAsking ? ' disabled' : ''}>Take the text again</button><p id="text-note" class="note"></p><pre id="text" class="text"></pre></details>`,
     `<details id="strip-section" class="layer"${layers.filmstrip ? ' open' : ''}><summary>Filmstrip</summary><p id="strip-empty" class="hint">One image for each call of the test that ended: click one to see it larger.</p><div id="strip" class="strip"></div><figure id="thumb" hidden><img id="thumb-image" alt=""><figcaption id="thumb-title"></figcaption></figure></details>`,
     '</section>',
   ].join('');
