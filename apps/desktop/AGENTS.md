@@ -153,13 +153,18 @@ shell and are feature-equivalent.
 - **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
   product, the sidecar's script, the keychain service and the request folders' prefix, and shares the rest of
   `run_target.rs`, the window guards and the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
-- **Piwi Runner has no updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
-  `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
+- **Piwi Runner has no hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in `runner_app.rs` adds
+  either, and `runner_app` compiles with and without the feature so `cargo test` covers both.
   Its tray shares the desktop app's Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
-  with Run in background on until the person turns it off.
+  with Run in background on until the person turns it off, and its window holds the same two toggles: a desktop with
+  no tray host must still be able to turn it off and quit.
 - **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config): the `.deb`
   and the `.rpm` install the sidecar in `/usr/bin`, so the two apps' packages would otherwise clash.
   `apps/runner/tests/bundle-config.test.ts` holds the constant and both configs together.
+- **Piwi Runner updates from `latest-runner.json` alone**, one manifest keyed by installer (`windows-x86_64-msi`,
+  `-nsis`, `darwin-aarch64-app`, `linux-x86_64-deb`…), written by the `manifest` job of `reusable-publish-runner.yml`
+  (`apps/runner/scripts/update-manifest.mjs`); it never writes or reads `latest.json`. `runner.updater.conf.json`
+  holds the desktop app's public key, and `apps/runner/tests/bundle-config.test.ts` checks both.
 - **The release's file names come from `ASSET_NAME_PATTERN`** in `reusable-publish-desktop.yml` (`Piwi-Desktop_…`) and
   `reusable-publish-runner.yml` (`Piwi-Runner_…`), never from `productName`; the step that writes `latest-nsis.json`
   finds the `.exe` by that pattern.

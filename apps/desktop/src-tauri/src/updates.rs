@@ -24,13 +24,20 @@
 // At startup `notify_if_update_available` runs the same check once and
 // announces a found update with a native notification, unless the user turned
 // that off (`desktop_set_update_notification`, stored in the settings file).
+//
+// Piwi Runner has no settings page: its tray's Check for updates runs the same
+// check and asks in native dialogs (`check_from_tray`), then installs and
+// restarts. It reads one manifest, `latest-runner.json`, keyed by installer
+// (`runner.updater.conf.json`), so each install takes its own kind of package.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use semver::Version;
 use serde_json::json;
 use tauri::{AppHandle, Emitter as _, Manager as _};
+use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt as _;
 use tauri_plugin_store::StoreExt as _;
 use tauri_plugin_updater::UpdaterExt as _;
@@ -58,6 +65,19 @@ const RELEASES_PER_PAGE: usize = 100;
 /// At most this many pages are read: the notes of the 200 newest releases.
 const MAX_RELEASE_PAGES: usize = 2;
 const NOTES_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The name the app goes by in the update notification and dialogs.
+const APP: &str = if cfg!(feature = "runner") { "Piwi Runner" } else { crate::APP_NAME };
+
+/// Where the startup notification sends the person to install the update.
+const INSTALL_FROM: &str = if cfg!(feature = "runner") {
+    "Install it from the tray icon's menu: Check for updates."
+} else {
+    "Install it from Settings → About → Updates."
+};
+
+/// The releases page, for what is new in a version the tray offers.
+const RELEASES_PAGE: &str = "https://github.com/PiwiTests/piwi/releases";
 
 /// Whether this build carries updater config (set at startup from the
 /// compiled Tauri config).
@@ -336,8 +356,8 @@ pub async fn notify_if_update_available(app: AppHandle) {
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("{} {version} is available", crate::APP_NAME))
-                .body("Install it from Settings → About → Updates.")
+                .title(format!("{APP} {version} is available"))
+                .body(INSTALL_FROM)
                 .show();
         }
         Ok(_) => {}
@@ -418,6 +438,152 @@ pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Set while the tray's check or install runs, so a second click starts nothing.
+#[derive(Default)]
+pub struct TrayUpdateBusy(AtomicBool);
+
+/// What the tray's Check for updates says once the check answers.
+#[derive(Debug, PartialEq)]
+enum TrayAnswer {
+    /// Nothing newer: the installed version.
+    UpToDate(String),
+    /// A newer version: the installed one and the offered one.
+    Available { installed: String, offered: String },
+    /// A build that cannot update itself.
+    Unsupported,
+}
+
+fn tray_answer(status: &UpdateStatus, installed: &str) -> TrayAnswer {
+    match (status.state, status.version.as_deref()) {
+        ("available", Some(offered)) => TrayAnswer::Available {
+            installed: installed.to_string(),
+            offered: offered.to_string(),
+        },
+        ("unsupported", _) => TrayAnswer::Unsupported,
+        _ => TrayAnswer::UpToDate(installed.to_string()),
+    }
+}
+
+/// The tray's Check for updates: check, say what was found, and on the
+/// person's yes install the update and restart. Progress shows in the tray
+/// icon's tooltip; `idle_tooltip` is put back when the install fails.
+pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
+    let Some(busy) = app.try_state::<TrayUpdateBusy>() else {
+        return;
+    };
+    if busy.0.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let installed = app.package_info().version.to_string();
+        let answer = check(&app).await.map(|status| tray_answer(&status, &installed));
+        let done = || app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+        match answer {
+            Err(error) => {
+                done();
+                tell(&app, MessageDialogKind::Error, &format!("Could not check for updates: {error}"));
+            }
+            Ok(TrayAnswer::Unsupported) => {
+                done();
+                tell(
+                    &app,
+                    MessageDialogKind::Info,
+                    &format!("This build of {APP} cannot update itself. Get new versions from {RELEASES_PAGE}."),
+                );
+            }
+            Ok(TrayAnswer::UpToDate(version)) => {
+                done();
+                tell(&app, MessageDialogKind::Info, &format!("{APP} {version} is the latest version."));
+            }
+            Ok(TrayAnswer::Available { installed, offered }) => {
+                let handle = app.clone();
+                app.dialog()
+                    .message(format!(
+                        "{APP} {offered} is available (you have {installed}). It installs now, then {APP} \
+                         restarts.\n\nWhat's new: {RELEASES_PAGE}"
+                    ))
+                    .title(format!("Update {APP}"))
+                    .kind(MessageDialogKind::Info)
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        "Install and restart".into(),
+                        "Not now".into(),
+                    ))
+                    .show(move |install| {
+                        if !install {
+                            handle.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+                            return;
+                        }
+                        let after = handle.clone();
+                        crate::confirm_stopping_local_runs(
+                            &handle,
+                            &format!("Update {APP}?"),
+                            "updating",
+                            "Update",
+                            move || {
+                                tauri::async_runtime::spawn(install_and_restart(after, idle_tooltip));
+                            },
+                        );
+                        // While runs go, that question waits for the person, and a Cancel leaves the
+                        // update for the next click.
+                        let runs_going = handle
+                            .try_state::<crate::runner::LocalRuns>()
+                            .is_some_and(|runs| runs.active_count() > 0);
+                        if runs_going {
+                            handle.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+                        }
+                    });
+            }
+        }
+    });
+}
+
+/// Download and install the update the last check found, its progress in the
+/// tray's tooltip, then restart. On Windows the install never returns: the
+/// plugin hands over to the installer, which starts the app again.
+async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
+    app.state::<TrayUpdateBusy>().0.store(true, Ordering::SeqCst);
+    let tooltip = |text: &str| {
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_tooltip(Some(text));
+        }
+    };
+    tooltip(&format!("{APP}: downloading the update"));
+    let progress_app = app.clone();
+    let mut downloaded: u64 = 0;
+    let pending = app.state::<PendingUpdate>().0.lock().unwrap().take();
+    let installed = match pending {
+        Some(update) => {
+            update
+                .download_and_install(
+                    move |chunk, total| {
+                        downloaded += chunk as u64;
+                        if let (Some(total), Some(tray)) = (total, progress_app.tray_by_id("main")) {
+                            let percent = (downloaded * 100 / total.max(1)).min(100);
+                            let _ = tray.set_tooltip(Some(format!("{APP}: downloading the update, {percent}%")));
+                        }
+                    },
+                    || {},
+                )
+                .await
+        }
+        None => Err(tauri_plugin_updater::Error::ReleaseNotFound),
+    };
+    match installed {
+        Ok(()) => app.restart(),
+        Err(error) => {
+            tooltip(idle_tooltip);
+            app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+            tell(&app, MessageDialogKind::Error, &format!("The update failed: {error}"));
+        }
+    }
+}
+
+/// A native message with an OK button.
+fn tell(app: &AppHandle, kind: MessageDialogKind, message: &str) {
+    app.dialog().message(message).title(APP).kind(kind).show(|_| {});
+}
+
 #[tauri::command]
 pub fn desktop_restart_app(app: AppHandle) {
     let handle = app.clone();
@@ -428,7 +594,28 @@ pub fn desktop_restart_app(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_releases, GithubRelease};
+    use super::{select_releases, tray_answer, GithubRelease, TrayAnswer, UpdateStatus};
+
+    #[test]
+    fn the_tray_says_what_the_check_found() {
+        let status = |state, version: Option<&str>| UpdateStatus {
+            state,
+            version: version.map(str::to_string),
+            date: None,
+        };
+        assert_eq!(
+            tray_answer(&status("available", Some("0.70.0")), "0.69.0"),
+            TrayAnswer::Available {
+                installed: "0.69.0".into(),
+                offered: "0.70.0".into()
+            }
+        );
+        assert_eq!(
+            tray_answer(&status("uptodate", None), "0.69.0"),
+            TrayAnswer::UpToDate("0.69.0".into())
+        );
+        assert_eq!(tray_answer(&status("unsupported", None), "0.69.0"), TrayAnswer::Unsupported);
+    }
     use semver::Version;
 
     /// A page of the releases API, reduced to the fields the shell reads.

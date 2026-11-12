@@ -24,8 +24,10 @@ shared with the desktop app:
 
 - **The entry**: `runner_app::run`, which refuses to start unless the identifier is `io.piwitests.runner`.
 - **The product**: the name "Piwi Runner", the identifier, the binary `piwi-runner`, one window, no file associations
-  and no installer hooks. `bundle.windows.nsis.installerHooks` is `null` in `runner.conf.json`, which is merged over
-  `tauri.conf.json` as a JSON merge patch (`apps/runner/tests/bundle-config.test.ts` checks the merge).
+  and installer hooks of its own: `windows/runner-installer-hooks.nsh`, which stop its host before the `.exe`
+  installer writes a file, with the macro the desktop app's hooks use (`windows/stop-sidecar.nsh`), and none of the
+  desktop app's port page. `runner.conf.json` is merged over `tauri.conf.json` as a JSON merge patch
+  (`apps/runner/tests/bundle-config.test.ts` checks the merge).
 - **The link**: `piwi-runner://connect` only, which brings the window forward.
 - **The sidecar**: Node bundled as `piwi-runner-node` (`NODE_SIDECAR`), so the Linux packages of the two apps do not
   both install `/usr/bin/node`, and its script, `resources/runner-host`, staged by `npm run runner:stage`.
@@ -49,7 +51,10 @@ Closing the window and the app menu's Quit (Cmd+Q on macOS) ask for confirmation
 (`hold_close_for_local_runs`, `quit_after_confirming`), and so does the tray's Quit. While Run in background is on
 (the default: Runner is how the team instance reaches this machine), closing the window hides it to the tray instead,
 and a request that arrives brings it back (`desktop_bring_to_front`). Start on login launches it with `--hidden`, in the
-tray. Runner has no updater. The ways out that cannot be
+tray. The window's `RunnerBackgroundSettings` holds the same two toggles, through `desktop_get_service_settings`,
+`desktop_set_run_in_background` and `desktop_set_start_on_login`, for a desktop with no tray host; the shell keeps
+the tray's checks in step (`BackgroundMenu`). The tray's **Check for updates…** asks in native dialogs before it installs, and restarts through the same
+question about runs going (`updates::check_from_tray`). The ways out that cannot be
 held, Quit from the Dock on macOS and logging out or shutting down on macOS and Windows, reach only `RunEvent::Exit`,
 with no hook before it: they stop Runner's runs without asking (`shut_down` still runs). On Linux the
 session's end stops the app without `shut_down`. The desktop app has the same exits

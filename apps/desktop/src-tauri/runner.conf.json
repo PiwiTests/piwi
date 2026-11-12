@@ -22,7 +22,7 @@
     "fileAssociations": null,
     "windows": {
       "nsis": {
-        "installerHooks": null,
+        "installerHooks": "windows/runner-installer-hooks.nsh",
         "installerIcon": "icons-runner/icon.ico",
         "uninstallerIcon": "icons-runner/icon.ico"
       }

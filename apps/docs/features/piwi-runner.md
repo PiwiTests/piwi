@@ -25,8 +25,16 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pi
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
 The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
-Windows, **More info** then **Run anyway** in SmartScreen. Piwi Runner has no in-app updates yet: install a new version
-over the old one, which keeps your connection and linked folders.
+Windows, **More info** then **Run anyway** in SmartScreen.
+
+## Updates
+
+Piwi Runner checks the latest release when it starts, and a notification says when a newer version is out. **Check for
+updates…** in the tray menu checks again; when one is found, **Install and restart** downloads it, checks its
+signature, installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb` or `.rpm`) and starts
+the new version, after asking to stop the runs still going. Your connection and linked folders stay. A new release's
+Piwi Runner files can reach the release a few minutes after the desktop app's; until then the check finds nothing new
+or fails, and the next one finds them.
 
 ## Beside the desktop app
 
@@ -46,11 +54,15 @@ system's keychain. Each project's folder is linked on the first request for it. 
 Closing the window leaves Piwi Runner in the tray, still connected, so the instance can reach it; a request brings the
 window forward. The tray menu has:
 
-- **Open Piwi Runner** (a click on the icon does the same) and **Show logs**;
+- **Open Piwi Runner** (on Windows and macOS, a click on the icon does the same) and **Show logs**;
 - **Run in background**, on by default: turned off, closing the window quits the app, once you agree to stop the runs
   still going;
 - **Start on login**, which launches it in the tray when you sign in;
+- **Check for updates…**;
 - **Quit Piwi Runner**, which stops its runs, after asking.
+
+The window has the same two settings, for a desktop that shows no tray icon (GNOME without an AppIndicator
+extension): turn **Keep running in the tray when the window closes** off there, and closing the window quits.
 
 Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
 taskbar.

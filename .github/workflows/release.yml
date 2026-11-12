@@ -140,15 +140,17 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
 
-  # Takes no secret: Runner has no updater. The release becomes the latest once the desktop app's installers are on
-  # it, whatever Runner's legs do.
+  # The release becomes the latest once the desktop app's installers are on it, whatever Runner's legs do.
   runner:
     name: Piwi Runner installers
     if: github.event_name != 'workflow_dispatch' || inputs.runner
     permissions:
-      # Uploads the installers to the release.
+      # Uploads the installers and latest-runner.json to the release.
       contents: write
     uses: ./.github/workflows/reusable-publish-runner.yml
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
 
   vscode:
     name: VS Code extension

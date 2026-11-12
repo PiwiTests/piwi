@@ -3,10 +3,16 @@ name: Publish Piwi Runner installers
 # Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and attaches the installers to the
 # GitHub Release release-please created for the tag, beside the desktop app's (release.yml calls it). Runner is the
 # desktop crate built with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and
-# window. It has no updater and is signed ad hoc on macOS only, so the workflow takes no secrets and writes no updater
-# manifest. Off a tag it builds the installers and keeps them as the run's artifacts.
+# window. On a tag with the update signing key, the packages carry update signatures and the `manifest` job writes
+# `latest-runner.json` from them, Runner's own update manifest beside the desktop app's `latest.json`. Off a tag it
+# builds the installers and keeps them as the run's artifacts.
 on:
   workflow_call:
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -25,14 +31,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One leg for both Windows installers: neither has an updater channel to keep apart, as the desktop app's do.
+          # One leg for both Windows installers: one manifest names each by its kind (`windows-x86_64-msi`,
+          # `windows-x86_64-nsis`), so a build serves both, as the desktop app's two channels cannot.
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: msi,nsis
-          # Ad hoc signed by the base config's signingIdentity "-", like the desktop app.
+          # Ad hoc signed by the base config's signingIdentity "-", like the desktop app. `app` alongside the dmg: the
+          # bundler makes the macOS update file (.app.tar.gz) from the app bundle only.
           - runner: macos-15
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           # Ubuntu 22.04 (not latest) for the same reason as the desktop app: AppImage bundles the host's glibc, and
           # 22.04 is the last runner carrying webkit2gtk-4.1.
           - runner: ubuntu-22.04
@@ -123,12 +131,16 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
       # The action reads the product name and version from the base config with runner.conf.json merged over it
-      # (utils.ts getInfo). No TAURI_SIGNING_* is set, and the updater manifest is never written, so the desktop app's
+      # (utils.ts getInfo). With the signing key, a tag's build also merges runner.updater.conf.json (its endpoint is
+      # latest-runner.json) and uploads each package's .sig; uploadUpdaterJson stays false, so the desktop app's
       # latest.json stays its own. Off a tag releaseId is empty, and tauri-action only builds.
       - name: Build & release Piwi Runner
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The desktop app's key: one key signs both apps' updates, and runner.updater.conf.json holds its public half.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
           # Linux AppImage bundling runs linuxdeploy, a self-mounting AppImage; GitHub runners have no libfuse2, so it
           # extracts and runs instead. No-op on Windows/macOS.
           APPIMAGE_EXTRACT_AND_RUN: 1
@@ -137,7 +149,7 @@ jobs:
           retryAttempts: 3
           uploadUpdaterJson: false
           releaseAssetNamePattern: ${{ env.ASSET_NAME_PATTERN }}
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/runner.updater.conf.json' || '' }}
           releaseId: ${{ steps.release.outputs.id }}
 
       # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
@@ -196,3 +208,58 @@ jobs:
             apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
           if-no-files-found: warn
           retention-days: 7
+
+  # latest-runner.json, from the signed packages the legs uploaded (apps/runner/scripts/update-manifest.mjs): one entry
+  # per kind of install. Written once every leg has ended, and from the legs that passed when one failed: a rerun of
+  # that leg runs this job again. A release built without the signing key has no signature, and gets no manifest.
+  manifest:
+    name: Runner update manifest
+    needs: runner
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # upload the manifest to the release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: apps/runner/scripts
+
+      - name: Publish latest-runner.json
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { runnerUpdateManifest } = await import(`${process.env.GITHUB_WORKSPACE}/apps/runner/scripts/update-manifest.mjs`);
+            const { owner, repo } = context.repo;
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = tag.replace(/^v/, '');
+            const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const listed = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: release.data.id, per_page: 100,
+            });
+            const sigs = listed.filter((a) => a.name.startsWith(`Piwi-Runner_${version}_`) && a.name.endsWith('.sig'));
+            if (sigs.length === 0) {
+              core.info('No Piwi Runner update signature on the release (no signing key): no latest-runner.json');
+              return;
+            }
+            const signatures = {};
+            for (const sig of sigs) {
+              const { data } = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: sig.id, headers: { accept: 'application/octet-stream' },
+              });
+              signatures[sig.name.slice(0, -'.sig'.length)] = Buffer.from(data).toString('utf8');
+            }
+            const manifest = runnerUpdateManifest({
+              version,
+              pubDate: new Date().toISOString(),
+              assets: listed.map((a) => ({ name: a.name, url: a.browser_download_url })),
+              signatures,
+            });
+            const name = 'latest-runner.json';
+            const prior = listed.find((a) => a.name === name);
+            if (prior) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: prior.id });
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: release.data.id, name, data: JSON.stringify(manifest, null, 2),
+            });
+            core.info(`Published ${name}: ${Object.keys(manifest.platforms).join(', ')}`);

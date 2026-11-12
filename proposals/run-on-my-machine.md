@@ -74,11 +74,14 @@ connection card, the confirmation of a request, the stream of the host's events)
 with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of
 its own in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or
 watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Of PR 4c, publishing is built: the Release workflow attaches Runner's installers to the tag's release, for the
-desktop app's platforms, as `Piwi-Runner_…` beside the desktop app's `Piwi-Desktop_…`; the feature page has a Piwi
-Runner section; Runner bundles Node as `piwi-runner-node`, so its `.deb` and `.rpm` clash neither with the desktop
+desktop app's platforms, as `Piwi-Runner_…` beside the desktop app's `Piwi-Desktop_…`; Piwi Runner has a docs
+page of its own; Runner bundles Node as `piwi-runner-node`, so its `.deb` and `.rpm` clash neither with the desktop
 app's nor with the distribution's `nodejs` (the desktop app's own `/usr/bin/node` still clashes with `nodejs`); it has
 an icon of its own (the Piwi mark on a teal tile, with a play sign) and a tray with **Run in background**, on by
-default, and **Start on login**. What remains of 4c: signing, the updater, and Runner's own installer art. The instance's side of PR 2 is done. The
+default, and **Start on login**. Runner updates itself from
+`latest-runner.json`, one manifest keyed by installer, signed with the desktop app's key, from its tray's **Check for
+updates…** and a startup check. What remains of 4c: signing the installers (a Developer ID on macOS, a certificate on
+Windows) and Runner's own installer art. The instance's side of PR 2 is done. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner
 take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
 confirmed in the target (D2); a request carries resolved tests and is

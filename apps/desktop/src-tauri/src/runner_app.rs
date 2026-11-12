@@ -5,9 +5,10 @@
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
 //   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
 //   4. points the window at the host through a single-use session code (`/__piwi/session?code=…`).
-// There is no database, updater or reporter discovery file: Runner is not a Piwi server, and nothing on this machine
+// There is no database or reporter discovery file: Runner is not a Piwi server, and nothing on this machine
 // may take it for one. Everything binds 127.0.0.1. Its tray icon keeps it reachable by the team instance once the
-// window closes, while Run in background is on (the default), and Start on login launches it hidden in the tray.
+// window closes, while Run in background is on (the default), and Start on login launches it hidden in the tray. A build
+// made with the update signing key checks for updates at startup and from the tray (`updates::check_from_tray`).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,7 +35,10 @@ use crate::{
     TRAY_START_ON_LOGIN_ID,
 };
 use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
-use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
+use crate::{
+    desktop_bring_to_front, desktop_get_service_settings, desktop_open_external, desktop_set_run_in_background,
+    desktop_set_start_on_login, run_target, runner, updates,
+};
 
 /// The app's name, in its menu and in the questions it asks.
 const APP_NAME: &str = "Piwi Runner";
@@ -44,10 +48,10 @@ const TRAY_TOOLTIP: &str = "Piwi Runner (click to open)";
 /// The argument Start on login launches the app with: it starts in the tray, its window hidden.
 const HIDDEN_ARG: &str = "--hidden";
 
-/// Whether this launch starts in the tray: Start on login passes `--hidden` as the only argument, and a link that
-/// launched the app is an argument of its own.
+/// Whether this launch starts in the tray: Start on login passes `--hidden`. A link that launched the app is one
+/// argument of its own, never `--hidden`, and Windows may hand the unquoted path of the Run entry over in pieces.
 fn launched_hidden(args: &[String]) -> bool {
-    args.len() == 2 && args[1] == HIDDEN_ARG
+    args.iter().skip(1).any(|a| a == HIDDEN_ARG)
 }
 
 /// The log of the shell and of the host's output, in the app's data folder.
@@ -201,21 +205,24 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
 }
 
 /// The tray icon: a click opens the window, and its menu holds Open, Show logs, Run in background, Start on login and
-/// Quit.
-fn tray(app: &tauri::App) -> tauri::Result<()> {
+/// Quit, and Check for updates in a build that can update itself.
+fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
     let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
     let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
     let (bg_i, login_i) = background_menu_items(app)?;
+    let update_i = MenuItemBuilder::with_id("check_update", "Check for updates…").build(app)?;
     let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
-    let menu = MenuBuilder::new(app)
+    let mut menu = MenuBuilder::new(app)
         .item(&open_i)
         .item(&logs_i)
         .separator()
         .item(&bg_i)
         .item(&login_i)
-        .separator()
-        .item(&quit_i)
-        .build()?;
+        .separator();
+    if can_update {
+        menu = menu.item(&update_i);
+    }
+    let menu = menu.item(&quit_i).build()?;
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip(TRAY_TOOLTIP)
         .menu(&menu)
@@ -239,8 +246,9 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
                 }
             }
             "show_logs" => reveal_log(app),
-            TRAY_RUN_BG_ID => toggle_run_in_background(app, &bg_i),
-            TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app, &login_i),
+            TRAY_RUN_BG_ID => toggle_run_in_background(app),
+            TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
+            "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP),
             "quit" => quit_after_confirming(app, APP_NAME),
             _ => {}
         });
@@ -256,7 +264,9 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         eprintln!("{refusal}");
         std::process::exit(2);
     }
-    #[allow(unused_mut)]
+    // A release built with the update signing key carries `runner.updater.conf.json`, which puts an `updater` entry
+    // in the compiled config; without it the plugin stays out and the tray offers no update.
+    let can_update = context.config().plugins.0.contains_key("updater");
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // A second launch focuses the running window and starts no second host.
@@ -306,11 +316,17 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
     {
         builder = builder.plugin(tauri_plugin_playwright::init());
     }
+    if can_update {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
 
     builder
         .invoke_handler(tauri::generate_handler![
             desktop_bring_to_front,
             desktop_open_external,
+            desktop_get_service_settings,
+            desktop_set_run_in_background,
+            desktop_set_start_on_login,
             runner::desktop_stop_local_tests,
             run_target::desktop_keep_run_target_key,
             run_target::desktop_forget_run_target,
@@ -325,7 +341,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
         .manage(QuitConfirmed::default())
-        .setup(|app| {
+        .manage(updates::UpdaterSupport(can_update))
+        .manage(updates::PendingUpdate::default())
+        .manage(updates::TrayUpdateBusy::default())
+        .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
             private_fs::create_private_dir(&app_data_dir)?;
             let log_dir = app_data_dir.join("logs");
@@ -435,6 +454,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 }
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
+                tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 let server = ServerSession {
                     port,
                     token: token.clone(),
@@ -450,10 +470,9 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 }
             });
 
-            // Runner is how the team instance reaches this machine, so closing its window leaves it in the tray
-            // until the person turns Run in background off.
+            // Run in background is on until the person turns it off, in the tray or the window.
             app.manage(RunInBackground::from_saved(app.handle(), true));
-            tray(app)?;
+            tray(app, can_update)?;
             if launched_hidden(&std::env::args().collect::<Vec<_>>()) {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
@@ -561,10 +580,11 @@ mod tests {
     fn only_start_on_logins_launch_starts_in_the_tray() {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         assert!(launched_hidden(&args(&["piwi-runner", "--hidden"])));
+        assert!(launched_hidden(&args(&[r"C:\Users\dana\AppData\Local\Piwi", r"Runner\piwi-runner.exe", "--hidden"])));
         assert!(!launched_hidden(&args(&["piwi-runner"])));
         assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect"])));
-        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect", "--hidden"])));
-        assert!(!launched_hidden(&args(&["piwi-runner", "--hidden", "--hidden"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect?--hidden"])));
+        assert!(!launched_hidden(&args(&["--hidden"])));
     }
 
     #[test]
