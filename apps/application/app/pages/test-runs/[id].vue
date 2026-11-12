@@ -448,9 +448,13 @@ watch(followAttention, (on) => {
   if (!on) movedWhy.value = null;
   else followWhatNeedsAttention();
 });
-/** Move the lane panel where the follower says, when Follow what needs attention is on. */
+/**
+ * Move the lane panel where the follower says, when Follow what needs attention is on. While the panel is closed, the
+ * follower notes what needs attention, and nothing moves.
+ */
 function followWhatNeedsAttention(): void {
-  if (!followAttention.value || !watchOpen.value) return;
+  if (!followAttention.value) return;
+  if (!watchOpen.value) return follower.note(attentionNow.value, Date.now());
   const shown = watching.value;
   const lane = shown?.slot !== undefined ? { shard: shown.shard, slot: shown.slot } : null;
   const inView = Object.values(liveWorkers.value).flatMap((worker) =>
@@ -465,9 +469,12 @@ function followWhatNeedsAttention(): void {
 watch([attentionNow, liveWorkers], followWhatNeedsAttention);
 // The follower's waits end on a clock of their own: a lane holds the view a while, then the next news moves it.
 useIntervalFn(followWhatNeedsAttention, 1000);
-/** The person shows a lane in the lane panel, from a tile or a row: the view stays there a while. */
+/**
+ * The person shows a lane in the lane panel, from a tile or a row: the view stays there a while, and what needed
+ * attention before moves it nowhere.
+ */
 function chooseWorker(worker: LiveWorkerState, testCase: TestCaseResult | null): void {
-  follower.chose(Date.now());
+  follower.chose(attentionNow.value, Date.now());
   movedWhy.value = null;
   watchWorker(worker, testCase);
   if (!testCase) watchAsked.value = true;

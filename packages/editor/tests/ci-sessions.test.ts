@@ -17,6 +17,8 @@ import { MAX_CI_TESTS, type CiSession } from '../src/protocol';
 import type { RunEvent } from '../src/run-stream';
 
 const ROOT = path.resolve('/work/shop');
+/** The folder of another Playwright config of the repository, reading the same project. */
+const ADMIN = path.resolve('/work/shop/admin');
 const uri = (file: string) => pathToFileURL(path.join(ROOT, file)).href;
 /** The files the workspace holds, relative to the config's folder. */
 const FILES = new Set(['tests/checkout.spec.ts', 'tests/pages/checkout.page.ts'].map((f) => path.join(ROOT, f)));
@@ -90,12 +92,19 @@ describe('what a CI session says', () => {
 });
 
 describe('the CI sessions', () => {
-  /** The run streams followed, each with its listener, and whether it was let go. */
-  const followed = new Map<number, { listener: (event: RunEvent) => void; stopped: boolean }>();
+  /** The run streams followed, each with its listener, its key, and whether it was let go. */
+  const followed = new Map<number, { listener: (event: RunEvent) => void; key: string; stopped: boolean }>();
+  /** How many times a stream of each run was followed. */
+  const follows = new Map<number, number>();
   const streams = {
-    follow: (_client: unknown, runId: number, listener: (event: RunEvent) => void) => {
-      const entry = { listener, stopped: false };
+    follow: (
+      client: { connection: { apiKey?: string | null } },
+      runId: number,
+      listener: (event: RunEvent) => void,
+    ) => {
+      const entry = { listener, key: client.connection.apiKey ?? '', stopped: false };
       followed.set(runId, entry);
+      follows.set(runId, (follows.get(runId) ?? 0) + 1);
       return () => {
         entry.stopped = true;
       };
@@ -108,15 +117,18 @@ describe('the CI sessions', () => {
   afterEach(() => {
     sessions?.dispose();
     followed.clear();
+    follows.clear();
   });
 
-  function context(branch = 'feature/pay'): PiwiContext {
+  const client = (apiKey = 'pd_key') => ({
+    connection: { serverUrl: 'https://piwi.example', apiKey },
+    runUrl: (id: number) => `https://piwi.example/test-runs/${id}`,
+  });
+
+  function context(branch = 'feature/pay', root = ROOT): PiwiContext {
     return {
-      root: ROOT,
-      client: {
-        connection: { serverUrl: 'https://piwi.example', apiKey: 'pd_key' },
-        runUrl: (id: number) => `https://piwi.example/test-runs/${id}`,
-      },
+      root,
+      client: client(),
       project: { id: 7, name: 'Shop' },
       runBranch: branch,
       checkedOutBranch: branch,
@@ -335,8 +347,9 @@ describe('the CI sessions', () => {
     expect([...followed.values()].every((f) => f.stopped)).toBe(true);
   });
 
-  test('find a CI run the context reads in progress, and follow it once whatever reads it', async () => {
-    const c = context();
+  test('find a CI run the context reads in progress, and follow it once, in the folder that holds its specs', async () => {
+    // Two configs of the repository read the project; the run is the one under ROOT's.
+    const c = context('feature/pay', ADMIN);
     const other = context();
     (c as { failures: unknown }).failures = {
       run: { ...ciRun(95), origin: 'ci', flakyTests: 0, metadata: undefined },
@@ -357,6 +370,84 @@ describe('the CI sessions', () => {
     sessions!.sync();
     await settle();
     expect(heard).toHaveLength(1);
-    expect(heard[0]).toMatchObject({ runId: 95, root: ROOT, ended: false });
+    expect(heard[0]).toMatchObject({ runId: 95, root: ADMIN, ended: false });
+
+    // Its first test names a spec ROOT holds, ADMIN not: the session moves there, its stream kept.
+    send(95, 'test-begin', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 0,
+      parallelIndex: 0,
+      retries: 0,
+    });
+    await settle();
+    expect(heard.slice(1)).toMatchObject([
+      { runId: 95, root: ADMIN, ended: true },
+      { runId: 95, root: ROOT, ended: false, tests: [{ uri: uri('tests/checkout.spec.ts'), line: 2 }] },
+    ]);
+    expect(follows.get(95)).toBe(1);
+    expect(followed.get(95)!.stopped).toBe(false);
+    expect(sessions!.watchTarget(ROOT, 95, null, 1)).toMatchObject({ root: ROOT, worker: 0 });
+    expect(sessions!.watchTarget(ADMIN, 95, null, 1)).toBeNull();
+
+    // Placed: a later test in a spec no folder holds moves it no more, and reading it again changes nothing.
+    send(95, 'test-begin', { title: 'lists', filePath: 'admin/users.spec.ts', workerIndex: 1, parallelIndex: 1 });
+    sessions!.sync();
+    await settle();
+    expect(heard.filter((s) => s.ended)).toHaveLength(1);
+    expect(heard[heard.length - 1]).toMatchObject({ root: ROOT, ended: false });
+  });
+
+  test('keep a run in the folder of the context that offered it when no other folder holds its spec', async () => {
+    const c = context();
+    const other = context('feature/pay', ADMIN);
+    const heard = start([c, other]);
+    sessions!.offer(c, ciRun(96));
+    send(96, 'test-begin', { title: 'gone', filePath: 'tests/gone.spec.ts', workerIndex: 0, parallelIndex: 0 });
+    await settle();
+    expect(heard.every((s) => s.root === ROOT && !s.ended)).toBe(true);
+  });
+
+  test('follow a run again once its context reads its branch again, never one that ended or a newer run replaced', async () => {
+    const c = context();
+    const heard = start([c]);
+    sessions!.offer(c, ciRun(90, '2026-11-12T10:00:00.000Z'));
+    sessions!.offer(c, ciRun(91, '2026-11-12T10:05:00.000Z'));
+    sessions!.offer(c, ciRun(92, '2026-11-12T10:10:00.000Z'));
+    sessions!.offer(c, ciRun(93, '2026-11-12T10:15:00.000Z'));
+    send(93, 'run-finished', { status: 'passed' });
+    await settle();
+    expect(sessions!.sessions().map((s) => s.runId)).toEqual([92]);
+
+    // Checking out main and back: the run still running is followed again, on a stream of its own.
+    (c as { runBranch: string | null }).runBranch = 'main';
+    (c as { checkedOutBranch: string | null }).checkedOutBranch = 'main';
+    sessions!.sync();
+    expect(sessions!.sessions()).toEqual([]);
+    (c as { runBranch: string | null }).runBranch = 'feature/pay';
+    (c as { checkedOutBranch: string | null }).checkedOutBranch = 'feature/pay';
+    sessions!.sync();
+    for (const runId of [90, 91, 92, 93]) sessions!.offer(c, ciRun(runId, `2026-11-12T10:${runId - 80}:00.000Z`));
+    await settle();
+    expect(sessions!.sessions().map((s) => s.runId)).toEqual([92]);
+    expect(follows.get(92)).toBe(2);
+    expect(heard[heard.length - 1]).toMatchObject({ runId: 92, ended: false });
+  });
+
+  test('end a session whose context reads the instance with another key, and follow it with the new one', async () => {
+    const c = context();
+    const heard = start([c]);
+    sessions!.offer(c, ciRun(97));
+    await settle();
+    (c as { client: unknown }).client = client('pd_new');
+    sessions!.sync();
+    expect(heard[heard.length - 1]).toMatchObject({ runId: 97, ended: true });
+    expect(followed.get(97)!.stopped).toBe(true);
+    sessions!.offer(c, ciRun(97));
+    await settle();
+    expect(heard[heard.length - 1]).toMatchObject({ runId: 97, ended: false });
+    expect(followed.get(97)).toMatchObject({ key: 'pd_new', stopped: false });
+    expect(sessions!.watchTarget(ROOT, 97, null, 1)?.client.connection.apiKey).toBe('pd_new');
   });
 });

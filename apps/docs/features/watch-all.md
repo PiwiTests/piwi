@@ -35,7 +35,8 @@ In the full view, **Follow what needs attention** moves the view on its own to a
 - It stays at least 5 seconds after it moved or you chose a worker yourself (a tile, a row's **Watch**).
 - It stays on a worker that needs attention itself: one stopped or marked **Stuck?**, for as long as it lasts, and one
   whose test failed, for 10 seconds.
-- A failure from before you turned it on, or older than 30 seconds, moves nothing.
+- A failure from before you turned it on, or that the run page saw more than 30 seconds ago, the view open or closed,
+  moves nothing; nor does anything from before you last chose a worker yourself.
 
 After a failure, Playwright starts a new worker in the lane: the view shows its next test, and the line under its
 checkboxes says which test failed.

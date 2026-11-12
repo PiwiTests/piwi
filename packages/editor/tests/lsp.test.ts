@@ -232,7 +232,9 @@ function openEvents(res: http.ServerResponse): void {
 const sendEvent = (res: http.ServerResponse, data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
 /** An event on the instance's stream. */
-function pushInstanceEvent(event: { type: string; runId: number; projectId: number; status?: string }): void {
+function pushInstanceEvent(
+  event: { type: string; runId: number; projectId: number; status?: string } & Record<string, unknown>,
+): void {
   for (const res of instanceStreams) sendEvent(res, event);
 }
 
@@ -2794,6 +2796,15 @@ describe('runs as they happen', () => {
     await waitFor(() => (runStreams.get(60)?.size === 1 ? true : undefined));
     await new Promise((r) => setTimeout(r, 50));
     expect(runStreams.get(60)?.size).toBe(1);
+
+    // What leaves the session as the client holds it tells the client nothing: the same tally, the same live view.
+    const told = ciHeard.length;
+    const tally = { totalTests: 3, passedTests: 0, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
+    pushInstanceEvent({ type: 'run-progress', runId: 60, projectId: 7, ...tally });
+    pushRunEvent(60, 'run-progress', { status: 'running', ...tally });
+    pushRunEvent(60, 'live-view', { enabled: false, keyed: false });
+    await new Promise((r) => setTimeout(r, 700));
+    expect(ciHeard.slice(told)).toEqual([]);
 
     pushRunEvent(60, 'live-view', { enabled: true, keyed: true });
     pushRunEvent(60, 'test-begin', {

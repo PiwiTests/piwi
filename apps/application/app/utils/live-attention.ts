@@ -1,6 +1,7 @@
 import { liveWorkerName, type LiveLane, type LiveWorkerState } from '#shared/live-view';
 import type { TestCaseResult } from '~~/types/api';
 import { stopWords } from './stop-words';
+import { liveCaseKey } from './test-attempts';
 
 /**
  * **Follow what needs attention**: the lane view of the run page moves on its own to a lane whose test failed, got
@@ -9,8 +10,9 @@ import { stopWords } from './stop-words';
  * the workers in the run's live view. `AttentionFollower` turns them into moves: a signal seen for the first time is
  * news, and the newest news of another lane in the live view is where the view goes, no sooner than `DWELL_MS` after
  * it last moved or the person chose a lane, and not while the lane it shows needs attention itself (a stop or a
- * **Stuck?** mark that lasts, a failure for `HOLD_MS`). A failure is news for `FRESH_MS`; a stop or a mark while it
- * lasts. The failures the page held as the mode turned on are not news.
+ * **Stuck?** mark that lasts, a failure for `HOLD_MS`). A failure is news for `FRESH_MS` from when it was first seen,
+ * the view open or not (`note`); a stop or a mark while it lasts. The failures the page held as the mode turned on are
+ * not news, nor anything from before the person chose a lane.
  */
 
 /** What a lane needs attention for. */
@@ -48,9 +50,9 @@ function rowLane(row: TestCaseResult): LiveLane | null {
   return typeof row.parallelIndex === 'number' ? { shard: row.shardIndex ?? null, slot: row.parallelIndex } : null;
 }
 
-/** An attempt's key: its test, its retry and its repetition, in its lane. */
+/** An attempt's key: its test, its browser project, its repetition and its retry, in its lane. */
 function attemptKey(row: TestCaseResult, lane: LiveLane): string {
-  return `${lane.shard ?? ''}#${lane.slot}|${row.location}|${row.title}|${row.retries ?? 0}|${row.repeatEachIndex ?? 0}`;
+  return `${lane.shard ?? ''}#${lane.slot}|${liveCaseKey(row)}|${row.retries ?? 0}`;
 }
 
 /**
@@ -96,22 +98,11 @@ export class AttentionFollower {
   /** The lane the view moved to for a failure, which holds it until `until`. */
   private failedHere: { lane: LiveLane; until: number } | null = null;
 
-  /** The person chose the lane the view shows: it stays there `DWELL_MS` at least. */
-  chose(now: number): void {
-    this.settledAt = now;
-  }
-
   /**
-   * Note `signals` (all of them, as the page reads them now), and say where the view should move: the newest news of
-   * another lane in `inView`, the lanes of the workers in the run's live view; null to stay where it is (`shown`, null
-   * for no lane).
+   * Note `signals` (all of them, as the page reads them now) without moving the view: a signal seen for the first time
+   * is news from `now`.
    */
-  update(
-    signals: readonly AttentionSignal[],
-    shown: LiveLane | null,
-    inView: readonly LiveLane[],
-    now: number,
-  ): AttentionMove | null {
+  note(signals: readonly AttentionSignal[], now: number): void {
     if (!this.started) {
       this.started = true;
       // A failure from before the mode turned on is not news; a stop or a mark that lasts is.
@@ -126,6 +117,29 @@ export class AttentionFollower {
     this.news = this.news.filter((news) =>
       news.reason === 'failed' ? now - news.at < FRESH_MS : lasting.has(news.key),
     );
+  }
+
+  /**
+   * The person chose the lane the view shows: all the news so far, `signals` included, is acted on, and the view stays
+   * there `DWELL_MS` at least.
+   */
+  chose(signals: readonly AttentionSignal[], now: number): void {
+    this.note(signals, now);
+    this.news = [];
+    this.settledAt = now;
+  }
+
+  /**
+   * Note `signals`, and say where the view should move: the newest news of another lane in `inView`, the lanes of the
+   * workers in the run's live view; null to stay where it is (`shown`, null for no lane).
+   */
+  update(
+    signals: readonly AttentionSignal[],
+    shown: LiveLane | null,
+    inView: readonly LiveLane[],
+    now: number,
+  ): AttentionMove | null {
+    this.note(signals, now);
     if (now - this.settledAt < DWELL_MS) return null;
     if (shown && this.holds(shown, signals, now)) return null;
     const candidates = this.news.filter(

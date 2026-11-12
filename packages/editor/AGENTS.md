@@ -26,7 +26,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
   `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered,
   `piwi/runSessionChanged` and `piwi/ciSessionChanged` with the last session sent, and each carries the whole new
-  answer, so a client can keep it without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  answer. Checked by `tests/lsp.test.ts` ("a change pushed to the client", "a CI run of the branch in progress …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))

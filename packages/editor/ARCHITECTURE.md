@@ -527,8 +527,13 @@ its running tests is at as a CI position, never as a stop. No request acts on it
 
 - **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
   progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
-  origin, else by the CI it names (`isCiRun`). A run whose session ended is not followed again, whatever a read from
-  before its end says.
+  origin, else by the CI it names (`isCiRun`). A run that ended, or that a newer run took the place of, is not
+  followed again, whatever a read from before says; one whose context read another branch, key, instance or project
+  is followed again once a context reads it in progress again.
+- **Once**, whatever reads it: the first context to offer it holds it, until a test names its spec. Then the session
+  shows in the context whose folder holds that spec, by the rule a failure follows
+  ([Failures placed by one context](#failures-placed-by-one-context)): it stays when its folder holds it or no other
+  folder of a context reading the run does, else it ends in the folder it leaves and shows in the one that holds it.
 - **Bounded**: at most `MAX_CI_RUNS` (2) runs of one instance, project and branch, the newest; a newer run takes the
   oldest's place, which ends. A session lists at most `MAX_CI_TESTS` tests (the running ones, then the latest that
   ended, a failure before a pass), and the service keeps at most 1,000 tests of a run. It is pushed at most every
@@ -546,8 +551,8 @@ its running tests is at as a CI position, never as a stop. No request acts on it
   ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
   `?watch=<shard>.<lane>`), which the clients offer beside it.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
-  `run-cancelled`), when its context reads another instance, project or branch, or when a newer run takes its place:
-  the last notification says `ended`, and the run's stream is let go.
+  `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
+  place: the last notification says `ended`, and the run's stream is let go.
 
 ### Watching a CI lane
 

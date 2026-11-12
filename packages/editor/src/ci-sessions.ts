@@ -5,7 +5,8 @@
  * followed through its own stream, the connection `RunStreams` shares with the context's run in progress: its tests,
  * whether its live view can be watched, and the call each running test is at, from the steps its reporter streams
  * while someone follows the run. Its tally also comes from the instance's stream (`run-progress`). At most
- * `MAX_CI_RUNS` runs of one branch are followed, the newest. Nothing here steers a run: no control, share or hold.
+ * `MAX_CI_RUNS` runs of one branch are followed, the newest, each once whatever reads it, in the context whose folder
+ * holds its specs. Nothing here steers a run: no control, share or hold.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +25,10 @@ const PUSH_MS = 500;
 const MAX_KEPT_TESTS = 1_000;
 /** The steps kept open per worker: a step inside a step inside a step. */
 const MAX_OPEN_STEPS = 32;
-/** The runs whose session ended that are kept, so a read of a run that ended since never follows it again. */
+/**
+ * The runs that ended, or that a newer run of their branch took the place of, kept so a read from before never follows
+ * them again.
+ */
 const MAX_ENDED_KEPT = 200;
 /** The longest call title a position carries. */
 const MAX_TITLE = 200;
@@ -94,6 +98,8 @@ interface Followed {
    */
   ciBase: string | null;
   watchable: boolean;
+  /** Whether a test of the run named a spec its context's folder holds: the session stays with that context. */
+  placed: boolean;
   seq: number;
   unfollow: () => void;
   timer: ReturnType<typeof setTimeout> | null;
@@ -206,7 +212,10 @@ export function listedTests<
 /** One per service: the CI sessions of every context. */
 export class CiSessions {
   private readonly followed = new Map<string, Followed>();
-  /** The runs whose session ended, by instance and run, the latest `MAX_ENDED_KEPT`: never followed again. */
+  /**
+   * The runs that ended or that a newer run took the place of, by instance and run, the latest `MAX_ENDED_KEPT`: never
+   * followed again.
+   */
   private readonly endedRuns = new Set<string>();
   private disposed = false;
 
@@ -236,7 +245,7 @@ export class CiSessions {
     if (same.length >= MAX_CI_RUNS) {
       const oldest = same[0]!;
       if (Date.parse(run.startTime) <= Date.parse(oldest.startedAt)) return;
-      this.end(oldest);
+      this.end(oldest, true);
     }
     const followed: Followed = {
       key,
@@ -253,6 +262,7 @@ export class CiSessions {
       steps: new Map(),
       ciBase: null,
       watchable: false,
+      placed: false,
       seq: 0,
       unfollow: () => {},
       timer: null,
@@ -267,19 +277,14 @@ export class CiSessions {
 
   /**
    * The contexts' runs were read again: a CI run each reads in progress (its latest run, its run in progress) is
-   * offered, and a session whose context reads another instance, project or branch ends.
+   * offered, and a session whose context reads another instance, key, project or branch ends; a context that reads its
+   * run again follows it again.
    */
   sync(): void {
     if (this.disposed) return;
     const contexts = this.options.contexts();
     for (const f of Array.from(this.followed.values())) {
-      const c = f.context;
-      const current =
-        contexts.includes(c) &&
-        c.client?.connection.serverUrl === f.serverUrl &&
-        c.project?.id === f.projectId &&
-        this.onBranch(c, f.branch);
-      if (!current) this.end(f);
+      if (!contexts.includes(f.context) || !this.reads(f.context, f)) this.end(f, false);
     }
     for (const c of contexts) {
       const run = c.failures?.run;
@@ -314,7 +319,7 @@ export class CiSessions {
       case 'run-submitted':
       case 'run-cancelled':
         if (event.status) f.status = event.status;
-        this.end(f);
+        this.end(f, true);
         break;
     }
   }
@@ -358,6 +363,16 @@ export class CiSessions {
     return !!branch && (branch === context.runBranch || branch === context.checkedOutBranch);
   }
 
+  /** Whether a context reads a session's run: its instance with the session's key, its project and its branch. */
+  private reads(context: PiwiContext, f: Followed): boolean {
+    return (
+      context.client?.connection.serverUrl === f.serverUrl &&
+      context.client.connection.apiKey === f.client.connection.apiKey &&
+      context.project?.id === f.projectId &&
+      this.onBranch(context, f.branch)
+    );
+  }
+
   /** The run's counts from an event that carries them: its stream's `init`, `run-progress`, or the instance's tally. */
   private count(f: Followed, data: Record<string, unknown>): void {
     const counts = countsOf(data);
@@ -382,7 +397,7 @@ export class CiSessions {
         this.count(f, data);
         if (typeof data.status === 'string' && !ACTIVE.has(data.status)) {
           f.status = data.status;
-          this.end(f);
+          this.end(f, true);
           return;
         }
         break;
@@ -435,6 +450,28 @@ export class CiSessions {
     // A worker that begins or ends a test leaves the steps of the one before.
     if (worker !== null) f.steps.delete(workerKey(shard, worker));
     if (status !== 'running') this.prune(f);
+    if (!f.placed) this.place(f, data.filePath as string);
+  }
+
+  /**
+   * A test of the run names its spec: the session shows in the context whose folder holds it, by the rule a failure
+   * follows (`placedElsewhere` in `server.ts`). It stays where it is when its context's folder holds the spec, or when no
+   * other context that reads the run holds it; else it moves to one that does, the client hearing it end in the folder
+   * it leaves.
+   */
+  private place(f: Followed, spec: string): void {
+    const exists = this.options.exists ?? fs.existsSync;
+    const holds = (c: PiwiContext) => workspaceFile(c.root, spec.replace(/^\.\//, ''), exists) !== null;
+    if (holds(f.context)) {
+      f.placed = true;
+      return;
+    }
+    const other = this.options.contexts().find((c) => c !== f.context && this.reads(c, f) && holds(c));
+    if (!other) return;
+    this.send(f, this.sessionOf(f, true));
+    f.context = other;
+    f.client = other.client!;
+    f.placed = true;
   }
 
   /** Past `MAX_KEPT_TESTS`, the oldest tests that passed or were skipped go, then the oldest that ended. */
@@ -502,11 +539,15 @@ export class CiSessions {
     this.options.changed(session);
   }
 
-  /** The session ends: the client hears it last, with `ended`, and the run's stream is let go. */
-  private end(f: Followed): void {
+  /**
+   * The session ends: the client hears it last, with `ended`, and the run's stream is let go. A run that ended, or that
+   * a newer run of its branch took the place of (`settled`), is never followed again; one its context left is followed
+   * again once a context offers it.
+   */
+  private end(f: Followed, settled: boolean): void {
     if (this.followed.get(f.key) !== f) return;
     this.followed.delete(f.key);
-    this.endedRuns.add(f.key);
+    if (settled) this.endedRuns.add(f.key);
     for (const oldest of this.endedRuns) {
       if (this.endedRuns.size <= MAX_ENDED_KEPT) break;
       this.endedRuns.delete(oldest);

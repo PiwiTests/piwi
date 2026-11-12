@@ -87,6 +87,11 @@ describe('what needs attention', () => {
     const [first] = attentionSignals([row({ status: 'failed' })], []);
     const [retry] = attentionSignals([row({ status: 'failed', retries: 1 })], []);
     expect(first!.key).not.toBe(retry!.key);
+    // So is the same test's failure in another browser project of the lane.
+    const browser = (projectName: string) => ({ browserName: 'chromium', projectName }) as TestCaseResult['browser'];
+    const [chromium] = attentionSignals([row({ status: 'failed', browser: browser('chromium') })], []);
+    const [mobile] = attentionSignals([row({ status: 'failed', browser: browser('mobile') })], []);
+    expect(chromium!.key).not.toBe(mobile!.key);
   });
 
   test('says why the view moved, by the worker’s number and what its test did', () => {
@@ -134,13 +139,47 @@ describe('the view that follows what needs attention', () => {
     const follower = new AttentionFollower();
     let now = 100_000;
     follower.update([], lane(0), LANES, now);
-    follower.chose(now);
+    follower.chose([], now);
     now += 1000;
     expect(follower.update([signal(1, 'stuck')], lane(0), LANES, now)).toBeNull();
     now += DWELL_MS;
     expect(follower.update([signal(1, 'stuck')], lane(0), LANES, now)).toMatchObject({ lane: lane(1) });
     now += 1000;
     expect(follower.update([signal(1, 'stuck'), signal(2, 'failed')], lane(1), LANES, now)).toBeNull();
+  });
+
+  test('takes nothing from before the person chose a lane as news', () => {
+    const follower = new AttentionFollower();
+    let now = 100_000;
+    follower.update([], lane(0), LANES, now);
+    now += 1000;
+    // A failure and a stop, then the person chooses a lane: neither moves the view once the wait is over.
+    const before = [signal(1, 'failed'), signal(2, 'stopped')];
+    follower.chose(before, now);
+    now += DWELL_MS;
+    expect(follower.update(before, lane(0), LANES, now)).toBeNull();
+    // What comes after the choice does.
+    expect(follower.update([...before, signal(1, 'stuck')], lane(0), LANES, now)).toMatchObject({
+      lane: lane(1),
+      reason: 'stuck',
+    });
+  });
+
+  test('times a failure from when it was noted, the view moving or not', () => {
+    const follower = new AttentionFollower();
+    let now = 100_000;
+    follower.update([], lane(0), LANES, now);
+    // Noted while the view is closed: a failure stays news for its while, from then.
+    now += 1000;
+    follower.note([signal(1, 'failed')], now);
+    now += FRESH_MS;
+    expect(follower.update([signal(1, 'failed')], lane(0), LANES, now)).toBeNull();
+    now += 1000;
+    follower.note([signal(1, 'failed'), signal(2, 'failed')], now);
+    now += 1000;
+    expect(follower.update([signal(1, 'failed'), signal(2, 'failed')], lane(0), LANES, now)).toMatchObject({
+      lane: lane(2),
+    });
   });
 
   test('stays on a lane that needs attention itself: a stop or a mark while it lasts, a failure a while', () => {
@@ -166,7 +205,7 @@ describe('the view that follows what needs attention', () => {
     const follower = new AttentionFollower();
     let now = 100_000;
     follower.update([], lane(0), LANES, now);
-    follower.chose(now);
+    follower.chose([], now);
     expect(follower.update([signal(1, 'failed'), signal(2, 'stopped')], lane(0), LANES, now)).toBeNull();
     now += FRESH_MS;
     // The failure went stale while the view waited; the stop ended.
