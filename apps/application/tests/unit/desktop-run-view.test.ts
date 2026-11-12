@@ -15,6 +15,8 @@ import {
   desktopRunRef,
   desktopSessionsOfRun,
   desktopEditorRunOf,
+  desktopFailedExecution,
+  desktopRunProgress,
   desktopShownRefs,
   desktopStopLink,
 } from '../../app/utils/desktop-run-view';
@@ -89,6 +91,43 @@ function workerOf(over: Partial<HubWorker> = {}): HubWorker {
 function sessionOf(ref: string, workers: HubWorker[], over: Partial<HubSession> = {}): HubSession {
   return { ref, root: ROOT, label: 'shop', command: null, project: 'Shop', workers, ended: false, ...over };
 }
+
+describe('how far a run of the tray is, and where its end leads', () => {
+  const counts = { total: 4, done: 2, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null };
+
+  test('counts what its steps’ own processes counted, and a test held at its failure as failed so far', () => {
+    const run = { hubRefs: ['desktop-6', 'desktop-7'] };
+    // No step said how far it is (a reporter that predates it): nothing to count.
+    expect(desktopRunProgress(run, [sessionOf('desktop-7', [workerOf()])], {})).toBeNull();
+    // The step that ended, as it last counted, and the step running now, with a test held at its failure.
+    const held = workerOf({ worker: 1, parallelIndex: 1, state: 'stopped', stop: stopOf({ reason: 'failure' }) });
+    const running = sessionOf('desktop-7-unattended', [workerOf(), held], { progress: { ...counts, flaky: 1 } });
+    const ended = {
+      'desktop-6': { ...counts, total: 3, done: 3, skipped: 1, endedAtStop: 1, status: 'failed' as const },
+    };
+    expect(desktopRunProgress(run, [running, sessionOf('desktop-9', [], { progress: counts })], ended)).toEqual({
+      total: 7,
+      done: 5,
+      failed: 3,
+      flaky: 1,
+      skipped: 1,
+      endedAtStop: 1,
+    });
+  });
+
+  test('leads a failed run to its first failure, by the title its process named, else its first failed test', () => {
+    const cases = [
+      { executionId: 11, title: 'lists the cart', suitePath: ['cart'], status: 'passed' },
+      { executionId: 12, title: 'pays', suitePath: ['checkout'], status: 'timedOut' },
+      { executionId: 13, title: 'pays', suitePath: ['checkout', 'with a card'], status: 'failed' },
+    ];
+    expect(desktopFailedExecution(cases, { title: 'checkout › with a card › pays', error: null })).toBe(13);
+    expect(desktopFailedExecution(cases, { title: 'checkout › pays', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, { title: 'refunds', error: null })).toBe(12);
+    expect(desktopFailedExecution(cases, null)).toBe(12);
+    expect(desktopFailedExecution(cases.slice(0, 1), null)).toBeNull();
+  });
+});
 
 describe('a worker of a desktop run', () => {
   test('is a run of the tray by the name its step gave the hub', () => {

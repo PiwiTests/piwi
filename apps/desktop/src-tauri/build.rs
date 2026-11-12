@@ -39,6 +39,7 @@ fn main() {
             "desktop_set_project_link",
             "desktop_run_local_tests",
             "desktop_stop_local_tests",
+            "desktop_local_runs",
             "desktop_keep_run_target_key",
             "desktop_forget_run_target",
             "desktop_request_folders",

@@ -1834,6 +1834,7 @@ fn finish_job(
         cleaned,
     );
     if let Some(runs) = app.try_state::<LocalRuns>() {
+        runs.note_exit(id, code.or(Some(1)));
         runs.drop_job(id);
     }
     emit(app, RunEventPayload::exit(id, code.or(Some(1))));

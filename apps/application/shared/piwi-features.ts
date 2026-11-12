@@ -720,6 +720,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop-runs',
       },
       {
+        title: 'Local runs tray',
+        summary:
+          "Every run the desktop app starts, counted as its own process counts its tests, a failed run's end leading to its first failure, one line a run in the compact list, and all of it kept through a reload.",
+        needs: ['desktop'],
+        where: 'Desktop app → Local runs',
+        doc: 'features/local-runs-tray',
+      },
+      {
         title: 'Run on my machine',
         summary:
           'Ask the desktop app or Piwi Runner on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',

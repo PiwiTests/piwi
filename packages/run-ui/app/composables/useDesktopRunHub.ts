@@ -8,11 +8,11 @@
  * a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, how many tests of each run that ended were ended at a stop
- * (`endedAtStop`, as its own process counted them), what each code made at a stop came to, the codes and the
- * locators picked, to copy, the workers whose stop's **Watch** is on, and the lanes the window watches (**Watch**: the
- * page of a worker's running test, and of its stops). The frames of a
- * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
- * lane (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
+ * (`endedAtStop`, as its own process counted them) and how far it came (`endedProgress`), what each code made at a
+ * stop came to, the codes and the locators picked, to copy, the workers whose stop's **Watch** is on, and the lanes the
+ * window watches (**Watch**: the page of a worker's running test, and of its stops). The frames of a stop's live view
+ * go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that lane
+ * (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
  * in memory, until the view ends or the lane is no longer watched. Commands go to `POST /api/desktop/runs/commands`,
  * naming the stream (`viewer`); `show` says which runs hold their failures (**Hold failures**), so a failure
  * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
@@ -52,6 +52,7 @@ import {
   type HubFrameRefusal,
   type HubLaneFrameMessage,
   type HubLaneFrameRefusal,
+  type HubProgress,
   type HubSession,
   type HubWorker,
 } from '@piwitests/core/run-hub';
@@ -104,6 +105,12 @@ interface HubState {
    * the tray marks its outcome with them. Only runs that ended any.
    */
   endedAtStop: Record<string, number>;
+  /**
+   * How far each run that ended came, by ref, as its own process last counted it (`HubProgress`, its first failure
+   * included): the tray counts a run of several steps and leads its end to its failure with it. The latest
+   * `MAX_ENDED_PROGRESS` runs that sent one.
+   */
+  endedProgress: Record<string, HubProgress>;
   /** What the latest code made at a worker's stop came to, by worker (`desktopWorkerKey`). */
   outcomes: Record<string, DesktopCodeOutcome>;
   kept: DesktopKept[];
@@ -152,6 +159,9 @@ interface HubState {
   inspectRefusals: Record<string, { message: string; serial: number }>;
 }
 
+/** How many ended runs' progress the window keeps (`endedProgress`). */
+const MAX_ENDED_PROGRESS = 50;
+
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
 const REOPEN_MS = 5000;
 
@@ -162,6 +172,7 @@ const state = reactive<HubState>({
   sessions: {},
   roots: {},
   endedAtStop: {},
+  endedProgress: {},
   outcomes: {},
   kept: [],
   epoch: 0,
@@ -467,6 +478,7 @@ function heardSession(session: HubSession): void {
   if (session.ended) {
     const endedAtStop = endedAtStopOf(session.progress);
     if (endedAtStop > 0) state.endedAtStop[session.ref] = endedAtStop;
+    if (session.progress) keepEndedProgress(session.ref, session.progress);
     delete state.sessions[session.ref];
     forgetRun(session.ref);
     return;
@@ -496,6 +508,14 @@ function followTabs(session: HubSession): void {
   const tabs = tabsAfter(state.tabs[ref], session.workers, watched);
   if (tabs) state.tabs[ref] = tabs;
   else delete state.tabs[ref];
+}
+
+/** Keeps how far a run that ended came, the latest `MAX_ENDED_PROGRESS` alone. */
+function keepEndedProgress(ref: string, progress: HubProgress): void {
+  delete state.endedProgress[ref];
+  state.endedProgress[ref] = progress;
+  const refs = Object.keys(state.endedProgress);
+  for (const old of refs.slice(0, Math.max(0, refs.length - MAX_ENDED_PROGRESS))) delete state.endedProgress[old];
 }
 
 /** A run ended: what the window kept to watch it goes, its lanes' frames and refusals with them. */

@@ -17,6 +17,12 @@
  * A project's default options are kept per project (localStorage) and edited
  * in its Local folder settings; a run button's own choices apply to the runs it
  * starts, never to those defaults.
+ *
+ * A reload of the window keeps its runs: as the page goes (`keepForReload`) it
+ * writes them to the window's session storage, with each one's Hold failures
+ * and separate output, and the next page takes them back
+ * (`takeBackAfterReload`), asking the shell which of their processes still run
+ * and how those that ended meanwhile exited (`desktop_local_runs`).
  */
 import {
   buildBisectArgs,
@@ -33,7 +39,15 @@ import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
-import { desktopRunRef } from '~/utils/desktop-run-view';
+import {
+  desktopFailedExecution,
+  desktopRunFailure,
+  desktopRunRef,
+  type DesktopRunCount,
+} from '~/utils/desktop-run-view';
+import type { TestRunDetails } from '~~/types/api';
+import { progressWords } from '@piwitests/run-model/outcome';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 import { stripAnsi } from '@piwitests/run-ui/ansi';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
@@ -198,6 +212,8 @@ export interface LocalRun {
   options: SavedLocalRunOptions;
   steps: LocalRunStep[];
   stepIndex: number;
+  /** The worst exit code of its test steps that ended (kind === 'tests'), 0 while each passed. */
+  stepsExit: number | null;
   /** The phase a reproduce/bisect run is in, for the tray header. */
   phase: LocalRunPhase | null;
   /** Browser to install for a reproduce/bisect run. */
@@ -265,8 +281,11 @@ const PHASE_LABEL: Record<LocalRunPhase, string> = {
   lab: 'Running the lab',
 };
 
-/** Live label for a running run — test counts when Playwright announced them. */
-export function localRunProgressLabel(run: LocalRun): string {
+/**
+ * Live label for a running run: how far it is as its own process counts it (`count`, `desktopRunProgress`), else the
+ * tests Playwright's output announced and finished.
+ */
+export function localRunProgressLabel(run: LocalRun, count: DesktopRunCount | null = null): string {
   if (run.stopRequested) return 'Stopping…';
   if (run.kind === 'bisect' && run.bisect) {
     const { step, stepsEstimate, candidates } = run.bisect;
@@ -276,6 +295,7 @@ export function localRunProgressLabel(run: LocalRun): string {
     return `Bisecting${short}…`;
   }
   if (run.phase && run.phase !== 'test') return `${PHASE_LABEL[run.phase]}…`;
+  if (count) return progressWords(count, englishRunSpeaker).join(' · ');
   if (run.progressTotal) return `Running ${run.progressDone}/${run.progressTotal}…`;
   return run.steps.length > 1 ? `Running ${run.stepIndex + 1}/${run.steps.length}…` : 'Running…';
 }
@@ -314,6 +334,13 @@ export function localRunTitle(
     default:
       return casesTitle(run.cases);
   }
+}
+
+/** A run's second line: its project, then the command its current step runs, when it has one. */
+export function localRunDetail(run: Pick<LocalRun, 'projectLabel' | 'projectId' | 'steps' | 'stepIndex'>): string {
+  const project = run.projectLabel || `Project ${run.projectId}`;
+  const command = run.steps[run.stepIndex]?.display;
+  return command ? `${project} · ${command}` : project;
 }
 
 /**
@@ -413,6 +440,24 @@ const MAX_FINISHED = 15;
 /** The names on the hub kept per run: one per step of its plan. */
 const MAX_HUB_REFS = 20;
 const OPTIONS_STORAGE_KEY = 'piwi:desktop-local-run-options';
+/** Where a window keeps its runs across a reload of its page: its own session storage. */
+const RELOAD_STORAGE_KEY = 'piwi:desktop-local-runs';
+/** The output lines of each run a reload keeps: its last ones. */
+const RELOAD_LINES = 300;
+
+/** What a page keeps for the next one, after a reload (`keepForReload`). */
+interface KeptForReload {
+  runs: LocalRun[];
+  holds: Record<number, boolean>;
+  separate: Record<number, boolean>;
+  trayOpen: boolean;
+}
+
+/** The shell's runs as `desktop_local_runs` answers: those still going, and the latest that ended, each with its code. */
+interface ShellLocalRuns {
+  running: number[];
+  ended: Array<{ id: number; code: number | null }>;
+}
 
 // Client-only plumbing shared by every composable instance. Runs are driven
 // from event handlers after mount, so none of this exists on the server.
@@ -443,6 +488,10 @@ export function useDesktopLocalRuns() {
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   /** Each run's Hold failures choice, by its key; unset falls back to how it started (`desktopHoldsByDefault`). */
   const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
+  /** The runs whose output shows in a separate window instead of the tray, by key (`DesktopRunOutputWindows`). */
+  const separate = useState<Record<number, boolean>>('desktop-local-runs-separate', () => ({}));
+  /** The runs whose separate output window the page before a reload had open: it is asked for, never opened again. */
+  const keptWindows = useState<number[]>('desktop-local-runs-kept-windows', () => []);
   /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
   const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
   if (import.meta.client) {
@@ -570,28 +619,50 @@ export function useDesktopLocalRuns() {
     }
     // Same tick as the invoke resolution: register the id, replay buffered
     // events for it, then release the buffer — no event can slip through.
-    const exit = new Promise<number | null>((resolve) => exitResolvers.set(shellId, resolve));
-    runByShellId.set(shellId, run);
-    run.shellId = shellId;
     run.hubRefs = [...run.hubRefs.filter((ref) => ref !== desktopRunRef(shellId)), desktopRunRef(shellId)].slice(
       -MAX_HUB_REFS,
     );
-    const mine = pendingEvents.filter((p) => p.id === shellId);
-    pendingEvents = startingSteps > 1 ? pendingEvents.filter((p) => p.id !== shellId) : [];
-    startingSteps -= 1;
-    for (const payload of mine) dispatch(run, payload);
-    const code = await exit;
-    runByShellId.delete(shellId);
-    exitResolvers.delete(shellId);
-    run.shellId = null;
-    return code;
+    const exit = adopt(run, shellId);
+    releaseBuffer();
+    return exit;
   }
 
-  async function drive(run: LocalRun) {
+  /**
+   * Take the shell's process `shellId` as the run's step: its buffered events are replayed now, the next ones come to
+   * the run, and the promise resolves with its exit code once it ends. Called in the tick the id became known.
+   */
+  function adopt(run: LocalRun, shellId: number): Promise<number | null> {
+    const exit = new Promise<number | null>((resolve) => exitResolvers.set(shellId, resolve));
+    runByShellId.set(shellId, run);
+    run.shellId = shellId;
+    const mine = pendingEvents.filter((p) => p.id === shellId);
+    pendingEvents = pendingEvents.filter((p) => p.id !== shellId);
+    for (const payload of mine) dispatch(run, payload);
+    return exit.then((code) => {
+      runByShellId.delete(shellId);
+      exitResolvers.delete(shellId);
+      run.shellId = null;
+      return code;
+    });
+  }
+
+  /**
+   * Drive a run to its end. `resumed`, for a run a reload took back, is the end of the step its process ran as the page
+   * reloaded: the run goes on from there.
+   */
+  /** A start, or a reload's take-back, no longer waits for its process's id: the buffer goes once none waits. */
+  function releaseBuffer() {
+    startingSteps -= 1;
+    if (startingSteps === 0) pendingEvents = [];
+  }
+
+  async function drive(run: LocalRun, resumed?: Promise<number | null>) {
     try {
       await ensureListener();
       let worst: number | null = null;
-      if (!run.stopRequested) worst = run.kind === 'tests' ? await driveTests(run) : await driveSingle(run);
+      if (run.kind === 'tests') worst = await driveTests(run, resumed);
+      else if (resumed) worst = await resumed;
+      else if (!run.stopRequested) worst = await driveSingle(run);
       if (run.stopRequested) {
         run.status = 'stopped';
       } else {
@@ -619,10 +690,22 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  /** The multi-step test plan: one spawn per Playwright project, worst code wins. */
-  async function driveTests(run: LocalRun): Promise<number | null> {
-    let worst: number | null = 0;
+  /**
+   * The multi-step test plan: one spawn per Playwright project, worst code wins. A run a reload took back goes on
+   * after the step it ran (`resumed`).
+   */
+  async function driveTests(run: LocalRun, resumed?: Promise<number | null>): Promise<number | null> {
+    const ended = (code: number | null) => {
+      if (code !== 0) run.stepsExit = code ?? 1;
+    };
+    let first = 0;
+    if (resumed) {
+      const code = await resumed;
+      if (!run.stopRequested) ended(code);
+      first = run.stepIndex + 1;
+    }
     for (const [index, step] of run.steps.entries()) {
+      if (index < first) continue;
       if (run.stopRequested) break;
       run.stepIndex = index;
       if (run.steps.length > 1) pushLine(run, `$ ${step.display}`, false);
@@ -632,9 +715,9 @@ export function useDesktopLocalRuns() {
         originRef: run.originRef,
       });
       if (run.stopRequested) break;
-      if (code !== 0) worst = code ?? 1;
+      ended(code);
     }
-    return worst;
+    return run.stepsExit;
   }
 
   /**
@@ -852,7 +935,24 @@ export function useDesktopLocalRuns() {
                   },
                 },
           ];
-    if (run.status === 'passed') {
+    if (run.status === 'failed' && run.piwiRunId != null) {
+      // A failed run's end leads to its failure, its run's page when none can be named.
+      const openFailure = {
+        label: 'Open the failure',
+        color: 'neutral' as const,
+        variant: 'outline' as const,
+        onClick: () => {
+          void failurePage(run).then((page) => routerApi?.push(page));
+        },
+      };
+      toastApi?.add({
+        title: 'Local run failed',
+        description: `${label} — ${tests}: exit ${run.exitCode ?? 1} after ${seconds}s`,
+        icon: 'i-lucide-x',
+        color: 'error',
+        actions: [viewOutput, openFailure],
+      });
+    } else if (run.status === 'passed') {
       toastApi?.add({
         title: 'Local run passed',
         description: `${label} — ${tests} in ${seconds}s`,
@@ -990,6 +1090,7 @@ export function useDesktopLocalRuns() {
       options: input.options,
       steps: input.steps,
       stepIndex: 0,
+      stepsExit: 0,
       phase: null,
       browserName: input.browserName ?? null,
       commit: input.commit ?? null,
@@ -1403,6 +1504,99 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /**
+   * Write the window's runs to its session storage as its page goes, for the next page to take back
+   * (`takeBackAfterReload`): each run with its last `RELOAD_LINES` output lines, else without its lines when the
+   * storage is full, its Hold failures and whether its output is in a separate window.
+   */
+  function keepForReload() {
+    const kept = (lines: number): KeptForReload => ({
+      runs: runs.value.map((run) => ({ ...run, lines: lines > 0 ? run.lines.slice(-lines) : [] })),
+      holds: holds.value,
+      separate: separate.value,
+      trayOpen: trayOpen.value,
+    });
+    for (const lines of [RELOAD_LINES, 0]) {
+      try {
+        sessionStorage.setItem(RELOAD_STORAGE_KEY, JSON.stringify(kept(lines)));
+        return;
+      } catch {
+        // Full or unavailable storage: tried again without the output, else the next page starts empty.
+      }
+    }
+  }
+
+  /**
+   * Take back the runs the page before kept (`keepForReload`), once: those that had ended as they were, and each
+   * running one where the shell has it: a step whose process still runs is followed again, one that ended meanwhile
+   * ends with its exit code, and the run goes on from there. A run whose process the shell does not know (it was
+   * starting as the page reloaded) ends, saying so.
+   */
+  async function takeBackAfterReload() {
+    let kept: KeptForReload | null = null;
+    try {
+      const raw = sessionStorage.getItem(RELOAD_STORAGE_KEY);
+      sessionStorage.removeItem(RELOAD_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as KeptForReload) : null;
+      if (parsed && Array.isArray(parsed.runs)) kept = parsed;
+    } catch {
+      // Unavailable or unreadable storage: the page starts with no run.
+    }
+    if (!kept || kept.runs.length === 0) return;
+    runs.value = [...runs.value, ...kept.runs];
+    holds.value = { ...kept.holds, ...holds.value };
+    separate.value = { ...kept.separate, ...separate.value };
+    keptWindows.value = Object.entries(kept.separate)
+      .filter(([, on]) => on)
+      .map(([key]) => Number(key));
+    if (kept.trayOpen) trayOpen.value = true;
+    nextKey = Math.max(nextKey, ...kept.runs.map((run) => run.key + 1));
+    const running = runs.value.filter((run) => kept!.runs.some((k) => k.key === run.key) && run.status === 'running');
+    if (running.length === 0) return;
+    // Events of a process no run holds yet wait while the shell is asked, as they do while a step starts.
+    startingSteps += 1;
+    let shell: ShellLocalRuns | null = null;
+    try {
+      await ensureListener();
+      shell = (await tauriCore()?.invoke<ShellLocalRuns>('desktop_local_runs')) ?? null;
+    } catch {
+      // The shell does not answer: no process can be followed again.
+    }
+    for (const run of running) {
+      const id = run.shellId;
+      const ended = shell?.ended.find((end) => end.id === id);
+      let resumed: Promise<number | null>;
+      if (id != null && ended) {
+        run.shellId = null;
+        resumed = Promise.resolve(ended.code);
+      } else if (id != null && shell?.running.includes(id)) {
+        resumed = adopt(run, id);
+      } else {
+        run.shellId = null;
+        resumed = Promise.reject(new Error('The window reloaded as this run started, and lost it: run it again.'));
+      }
+      void drive(run, resumed);
+    }
+    releaseBuffer();
+  }
+
+  /**
+   * The page a failed run's end leads to: the execution of its first failure in the Piwi run it reported, the one its
+   * steps' processes named first (`desktopRunFailure`) else the run's first failed test; the run's page when the run
+   * names none or does not answer.
+   */
+  async function failurePage(run: LocalRun): Promise<string> {
+    const runPage = `/test-runs/${run.piwiRunId}`;
+    try {
+      const details = await $fetch<TestRunDetails>(`/api/test-runs/${run.piwiRunId}`);
+      const failure = desktopRunFailure(run, useDesktopRunHub().state.endedProgress);
+      const execution = desktopFailedExecution(details.testCases ?? [], failure);
+      return execution == null ? runPage : `/test-run-cases/${execution}`;
+    } catch {
+      return runPage;
+    }
+  }
+
   /** Opens the tray on a worker of a hub's run: its run expands, and the focus moves to the worker. */
   function showWorker(ref: string, worker: number) {
     trayOpen.value = true;
@@ -1432,6 +1626,8 @@ export function useDesktopLocalRuns() {
     trayOpen,
     shownWorker,
     holds,
+    separate,
+    keptWindows,
     trayMounts,
     /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
     onRunEnded(listener: (run: LocalRun) => void): () => void {
@@ -1439,6 +1635,7 @@ export function useDesktopLocalRuns() {
       return () => endListeners.delete(listener);
     },
     showWorker,
+    failurePage,
     activeCount,
     startRun,
     startReproduce,
@@ -1454,5 +1651,7 @@ export function useDesktopLocalRuns() {
     getProjectOptions,
     saveProjectOptions,
     correlatePiwiRuns,
+    keepForReload,
+    takeBackAfterReload,
   };
 }

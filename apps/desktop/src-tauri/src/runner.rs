@@ -11,7 +11,7 @@
 // Links live in the shell's own store (`settings.json`), not the server
 // database — a folder path is a fact about this machine, not about the project.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -106,6 +106,28 @@ pub struct LocalRuns {
     /// Set once the app quits (`kill_all`): every run that ends from then on
     /// was stopped.
     quitting: AtomicBool,
+    /// The latest runs that ended, oldest first, each with its exit code
+    /// (`note_exit`): a window that reloaded reads the end of a run it missed.
+    ended: Mutex<VecDeque<EndedRun>>,
+}
+
+/// How many ended runs [`LocalRuns`] remembers for a window that reloads.
+const ENDED_KEPT: usize = 64;
+
+/// A run that ended, with its exit code ([`LocalRuns::note_exit`]).
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct EndedRun {
+    pub id: u32,
+    pub code: Option<i32>,
+}
+
+/// The shell's runs as a window that reloaded asks for them ([`desktop_local_runs`]).
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub struct LocalRunsState {
+    /// The runs still going, by id.
+    pub running: Vec<u32>,
+    /// The latest runs that ended, with their exit codes.
+    pub ended: Vec<EndedRun>,
 }
 
 /// The real path of `path`, as Windows writes it without the `\\?\` verbatim
@@ -145,6 +167,25 @@ impl LocalRuns {
         ids.into_iter()
             .map(|id| (id, labels.get(&id).cloned().unwrap_or_else(|| "a local run".to_string())))
             .collect()
+    }
+
+    /// Remember that run `id` ended with `code`, before it leaves the running
+    /// runs and its `exit` event goes to the window: a window that asks in
+    /// between finds it among the ended ones.
+    pub(crate) fn note_exit(&self, id: u32, code: Option<i32>) {
+        let mut ended = self.ended.lock().unwrap();
+        ended.push_back(EndedRun { id, code });
+        while ended.len() > ENDED_KEPT {
+            ended.pop_front();
+        }
+    }
+
+    /// The runs still going, then the latest that ended: read in that order,
+    /// a run that ends meanwhile is in one list or both, never in neither.
+    pub fn state(&self) -> LocalRunsState {
+        let running = self.listed().into_iter().map(|(id, _)| id).collect();
+        let ended = self.ended.lock().unwrap().iter().copied().collect();
+        LocalRunsState { running, ended }
     }
 
     /// Name run `id` for the tray (`run_label`).
@@ -848,7 +889,10 @@ pub(crate) async fn spawn_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
-                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| runs.end_child(id));
+                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| {
+                        runs.note_exit(id, status.code);
+                        runs.end_child(id)
+                    });
                     crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
@@ -862,6 +906,13 @@ pub(crate) async fn spawn_tests(
     });
 
     Ok(id)
+}
+
+/// The local runs still going and the latest that ended, with their exit
+/// codes: a window that reloaded follows its runs again from them.
+#[tauri::command]
+pub fn desktop_local_runs(app: AppHandle) -> LocalRunsState {
+    app.state::<LocalRuns>().state()
 }
 
 /// Stop a running local process as Ctrl+C would in a terminal (see
@@ -944,6 +995,24 @@ mod tests {
         assert!(!spec.exists());
         assert!(!specs.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_window_that_reloads_finds_each_run_running_or_ended_with_its_code() {
+        let runs = LocalRuns::default();
+        assert_eq!(runs.state(), LocalRunsState { running: vec![], ended: vec![] });
+        runs.note_exit(3, Some(1));
+        runs.note_exit(4, None);
+        assert_eq!(
+            runs.state().ended,
+            vec![EndedRun { id: 3, code: Some(1) }, EndedRun { id: 4, code: None }]
+        );
+        for id in 10..(10 + ENDED_KEPT as u32) {
+            runs.note_exit(id, Some(0));
+        }
+        let ended = runs.state().ended;
+        assert_eq!(ended.len(), ENDED_KEPT);
+        assert_eq!(ended[0].id, 10);
     }
 
     #[test]

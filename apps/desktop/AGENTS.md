@@ -31,7 +31,7 @@ shell and are feature-equivalent.
     `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
     over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
-    IPC.
+    IPC. A reload of the dashboard window closes none (its next page asks for them); the dashboard window's end does.
   - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<lane>`, the ref checked by
     `is_run_ref`) shows the dashboard's `/desktop/run-worker` page, kept above the other windows, stays on the
     sidecar's origin and holds no IPC grant: the page reads the runs' hub through the routes behind the desktop guard,

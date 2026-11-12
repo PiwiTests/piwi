@@ -71,9 +71,10 @@ same pass, a viewer's press on it not played, and while a viewer's keys play the
 the page.
 In the desktop app, a client plugin holds the hub stream from the window's start, through the TV layout and again after
 a reload while the hub says runs go on (`hub-runs`); stopping a local run takes its own progress alone off the OS bar;
-and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. P3 is built;
-the tray's own runs and its Hold failures choices are still lost on a reload, and its separate output windows still
-close with it. Built from P4: a worker keeps one live view of its lane's page (`lane-feed.ts`: the running test's page,
+and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. P3 is built,
+the tray included: a reload keeps its own runs, each with its Hold failures and its separate output window, the shell
+naming which still run and how the others exited (`desktop_local_runs`), and an output window closes only with its
+run's entry or as the person closes it. Built from P4: a worker keeps one live view of its lane's page (`lane-feed.ts`: the running test's page,
 the stop's while it stands at one), which the editor's stop view, its lane view and the instance's live view share,
 each at its own pace, masked once with every sink's masks; `run-attach` lists `view-lane` in a new `features`, `takes`
 being at its 16 entries. A hub whose `welcome` lists `lanes` takes `watch` on a lane and sends its `lane-frame`s to its
@@ -119,10 +120,11 @@ names a stop's line where it stands after an edit (`lineNow`), the "did not reac
 that ran from a missing one (`heardFrom`), and a pick on an image says "sent" only when an editor took it, else offers
 **Copy**. The desktop app's and Piwi Runner's runs reach Piwi Picker and agents with their command (the shell says
 what it started a run with, `POST /api/desktop/runs/started`, DK18), and Piwi Runner's window keeps **Run #78 · Open**
-on a run's card, its end included. Left of P5: the desktop app's run end still leads to the run rather than its
-failure, the Runs window still
-words the desktop app's failures as the editor's, the desktop tray counts a run's output lines rather than the run's
-own progress, **Watch** and **Watch live** still name one view twice, and Stop sharing is still one click. From P6,
+on a run's card, its end included. The desktop tray counts a run as its own
+process does (`5 of 12 tests · 1 failed`, a test held at its failure among the failed), a failed run's end toast and
+its tray entry open its first failure (**Open the failure**, DK21), a stop's live view and a running test's are both
+**Watch** (DK17, E16), and its Stop sharing asks first (F10). Left of P5: the Runs window still words the desktop
+app's failures as the editor's. From P6,
 D12's split: **Hold failures** is each run's own (`hold {on, by}` on the hub's session, `piwi/holdRun`, the hub's
 command `hold`, `run_follow`'s `hold`), on from the start of a run built to be watched, set from the editors, the Runs
 window, the desktop tray and by agents; the hub's `follow` holds nothing, so an open Runs window no longer holds every
@@ -185,7 +187,7 @@ the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page 
 to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
 reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
 worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
-be decided; and the tray as a compact list. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
+be decided. The tray's **Compact list** shows each run as one line with the one action it needs now. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
 routes an agent's calls to every host of the machine as one set of tools under one user-scope entry, with no run logic
 of its own (each editor's discovery file names its agents' server, `agents`, and the desktop app's `/mcp` is reached
 once its server proved its token): `run_list` asks every host and names each run's host, `run_start` goes to the
@@ -265,7 +267,7 @@ VS Code's line highlight, JetBrains' inlay), the watched page's errors in VS Cod
 Page tab, the editors' own run counted from the hub's events and VS Code's Testing view showing each test as a worker
 begins it, the Live item's menu with a confirmed **Stop sharing** (F10), and E10 answered (open question 10): a
 breakpoint makes a run headed only for a reporter that cannot stop headless (older than 0.62.0, or unknown, or no run
-channel). Left of the plan, beside the remainders named above (P5's, P7's IO6 and compact tray, P8's `run_start` on the
+channel). Left of the plan, beside the remainders named above (P5's, P7's IO6, P8's `run_start` on the
 desktop app, P9's window scope in the Runs window), all planned and none deferred: **Watch** on the Runs window's CI
 runs, P4's CPU-budget check and showcase beat, and the showcase checks of P1 and P3; the plan stays here until they are
 built or recorded as deferred. The bugs the analysis

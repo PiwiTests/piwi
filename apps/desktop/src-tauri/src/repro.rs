@@ -374,6 +374,7 @@ pub async fn desktop_run_repro(
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                        runs.note_exit(id, status.code);
                         runs.forget_child(id);
                         runs.remove_spec(id);
                     }

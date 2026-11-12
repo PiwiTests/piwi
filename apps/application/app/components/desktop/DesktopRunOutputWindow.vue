@@ -2,13 +2,16 @@
 /**
  * Desktop shell only: a local run's output in a window of its own, for as long as this component is mounted. It has
  * the shell open the window (`desktop_open_output_window`) on the dashboard's `/desktop/run-output` page and feeds
- * that page over `RUN_OUTPUT_CHANNEL`: the run's header, then the lines the page does not have yet. It renders
- * nothing here. Emits `stop` when the window's Stop is pressed, and `closed` once the window is gone, with `opened`
- * false when it could not open; unmounting it closes the window.
+ * that page over `RUN_OUTPUT_CHANNEL`: the run's header, then the lines the page does not have yet. A window the page
+ * before a reload had open (`kept`) is asked whether it is still there and fed again from its last line, never opened
+ * again; one that does not answer within `KEPT_ANSWER_MS` was closed meanwhile. It renders nothing here. Emits `stop`
+ * when the window's Stop is pressed, and `closed` once the window is gone, with `opened` false when it could not
+ * open; unmounting it closes the window.
  */
 import type { LocalRun, LocalRunLine } from '~/composables/useDesktopLocalRuns';
 import type { BadgeColor } from '~/utils';
 import {
+  outputWindowNameOf,
   RUN_OUTPUT_CHANNEL,
   runOutputWindowName,
   type RunOutputMessage,
@@ -20,14 +23,21 @@ const props = defineProps<{
   title: string;
   status: { label: string; color: BadgeColor };
   detail: string;
+  /** The page before a reload had the window open: it is asked for, not opened again. */
+  kept?: boolean;
 }>();
 const emit = defineEmits<{ stop: []; closed: [opened: boolean] }>();
 
 /** The event the shell emits with a run output window's label once it is gone. */
 const OUTPUT_WINDOW_CLOSED_EVENT = 'piwi:output-window-closed';
 
+/** How long a window the page before had open has to answer before it counts as closed. */
+const KEPT_ANSWER_MS = 3000;
+
 const name = runOutputWindowName(props.run.key);
-let label: string | null = null;
+/** The window is open: opened here, or a kept one that answered. */
+let open = false;
+let keptWait: ReturnType<typeof setTimeout> | null = null;
 let unmounted = false;
 let channel: BroadcastChannel | null = null;
 let stopListening: (() => void) | null = null;
@@ -81,7 +91,10 @@ onMounted(async () => {
   channel.onmessage = ({ data }: MessageEvent<RunOutputMessage>) => {
     if (data?.name !== name) return;
     if (data.type === 'ready') {
-      sentThrough = 0;
+      open = true;
+      if (keptWait) clearTimeout(keptWait);
+      keptWait = null;
+      sentThrough = data.through ?? 0;
       send();
     } else if (data.type === 'stop') {
       emit('stop');
@@ -89,8 +102,8 @@ onMounted(async () => {
   };
   const unlisten = await tauriEvent()
     ?.listen<string>(OUTPUT_WINDOW_CLOSED_EVENT, ({ payload }) => {
-      if (payload !== label) return;
-      label = null;
+      if (outputWindowNameOf(payload) !== name) return;
+      open = false;
       emit('closed', true);
     })
     .catch(() => null);
@@ -99,11 +112,21 @@ onMounted(async () => {
     stopListening?.();
     return;
   }
+  if (props.kept) {
+    channel.postMessage({ type: 'ask', name } satisfies RunOutputMessage);
+    keptWait = setTimeout(() => {
+      keptWait = null;
+      if (!open && !unmounted) emit('closed', true);
+    }, KEPT_ANSWER_MS);
+    return;
+  }
+  let label: string | null = null;
   try {
     label = (await tauriCore()?.invoke<string>('desktop_open_output_window', { name })) ?? null;
   } catch {
     label = null;
   }
+  open = !!label;
   if (unmounted) {
     closeWindow();
     stopListening?.();
@@ -113,16 +136,17 @@ onMounted(async () => {
 });
 
 function closeWindow() {
-  if (label)
+  if (open)
     tauriCore()
       ?.invoke('desktop_close_output_window', { name })
       .catch(() => {});
-  label = null;
+  open = false;
 }
 
 onBeforeUnmount(() => {
   unmounted = true;
   if (pending) clearTimeout(pending);
+  if (keptWait) clearTimeout(keptWait);
   channel?.close();
   stopListening?.();
   closeWindow();

@@ -33,18 +33,28 @@ declare global {
     __notes: string[];
     /** What the page asked the shell to run its tests with, last. */
     __runArgs?: { originRef?: string };
+    /** Ends shell run 41 with `code`. */
+    __exitRun: (code: number) => void;
+    /** Prints `line` as shell run 41's output. */
+    __printLine: (line: string) => void;
   }
 }
 
-/** Installs the bridge with a linked folder, whose run is shell run 41 and goes on until the spec ends it. */
+/**
+ * Installs the bridge with a linked folder, whose run is shell run 41 and goes on until the spec ends it, as the shell
+ * says to a page that reloaded (`desktop_local_runs`).
+ */
 async function installBridge(page: Page) {
   await page.addInitScript(() => {
     const listeners: ((event: { payload: unknown }) => void)[] = [];
+    const emit = (payload: unknown) => {
+      for (const cb of listeners) cb({ payload });
+    };
     Object.assign(window, {
       __notes: [],
-      __endRun: () => {
-        for (const cb of listeners) cb({ payload: { id: 41, kind: 'exit', line: null, code: 0 } });
-      },
+      __endRun: () => emit({ id: 41, kind: 'exit', line: null, code: 0 }),
+      __exitRun: (code: number) => emit({ id: 41, kind: 'exit', line: null, code }),
+      __printLine: (line: string) => emit({ id: 41, kind: 'stdout', line, code: null }),
       __TAURI__: {
         core: {
           invoke: async (cmd: string, args?: Record<string, unknown>) => {
@@ -65,6 +75,10 @@ async function installBridge(page: Page) {
               case 'desktop_run_local_tests':
                 window.__runArgs = args;
                 return 41;
+              case 'desktop_local_runs':
+                return { running: [41], ended: [] };
+              case 'desktop_open_output_window':
+                return `output-${String(args?.name)}_1`;
               default:
                 return null;
             }
@@ -1644,10 +1658,9 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByText('The test is stopped already.').first()).toBeVisible();
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s0', { reason: 'page-pause' })));
       await expect(tray(page).getByText('Stopped at page.pause()')).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
 
       // It goes on, and the next pause reaches it.
       await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -1662,10 +1675,9 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByRole('button', { name: 'Pausing…' })).toHaveAttribute('aria-disabled', 'true');
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
       await expect(tray(page).getByText('Paused', { exact: true })).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
 
       // The row says where the test stopped. Closed, the tray ends the view; Show its page opens it on the worker,
       // the focus there, and the stop's Watch, left on, watches the stop again.
@@ -1676,10 +1688,9 @@ test.describe('Desktop run live view', () => {
       await expect(tray(page)).toHaveCount(0);
       await page.getByRole('button', { name: 'Show its page' }).click();
       await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').map((c) => [c.ref, c.since, c.on]))
         .toEqual([
@@ -1701,10 +1712,9 @@ test.describe('Desktop run live view', () => {
         session({ ...stopped('s2', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents }),
       );
       await expect(tray(page).getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
-      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await expect(
+        tray(page).locator('[data-shot="desktop-run-page"]').getByRole('button', { name: 'Watch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').at(-1))
         .toMatchObject({ ref: REF, since: 's2', on: true });
@@ -1929,5 +1939,223 @@ test.describe('Desktop run live view', () => {
         data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
       });
     }
+  });
+
+  test('keeps its own run, its Hold failures and its separate output window through a reload of the window', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+    await page.evaluate(() => window.__printLine('Running 1 test using 1 worker'));
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
+    const outputPage = await page.context().newPage();
+    await outputPage.goto(`/desktop/run-output?name=piwi-run-output-${key}`);
+    await waitForHydration(outputPage);
+    const output = outputPage.getByRole('region', { name: 'Run output' });
+    await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
+
+    // Reloaded: the tray opens on the run as its own, with its Stop, its Hold failures and its output still apart.
+    const shows = commands.filter((c) => c.type === 'show' && c.on).length;
+    await page.reload();
+    await waitForHydration(page);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await expect(tray(page).getByRole('region', { name: 'Other runs of the desktop app' })).toHaveCount(0);
+    // The hub's stream opens again, and the run holds its failures again.
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect.poll(() => commands.filter((c) => c.type === 'show' && c.on).length).toBeGreaterThan(shows);
+    expect(commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: true });
+
+    // The separate window was not opened again: it goes on from its last line, and ends with the run.
+    await page.evaluate(() => window.__printLine('  ✓  1 tests/checkout.spec.ts:3:1 › pays (1.0s)'));
+    await expect(output.getByText('pays (1.0s)')).toBeVisible();
+    await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
+    await page.evaluate(() => window.__endRun());
+    await expect(output.getByText('Passed', { exact: true })).toBeVisible();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+  });
+
+  test('counts a running run’s tests as its own process does, a test held at its failure among the failed', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // Its output alone does not count it: Playwright's own lines would say 0 of 9.
+    await page.evaluate(() => window.__printLine('Running 9 tests using 2 workers'));
+    const counted = (progress: Record<string, number>, workers: Record<string, unknown>[] = [RUNNING]) => {
+      const event = sessionOf(workers);
+      return {
+        ...event,
+        session: {
+          ...event.session,
+          progress: {
+            total: 9,
+            done: 0,
+            failed: 0,
+            flaky: 0,
+            skipped: 0,
+            status: 'running',
+            failure: null,
+            ...progress,
+          },
+        },
+      };
+    };
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 3 }));
+    await expect(tray(page).getByText('3 of 9 tests', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '3 of 9 tests', exact: true })).toBeVisible();
+
+    // A test held at its failure is failed so far, and stays counted once its process counts it.
+    const held = {
+      ...stopped('s1', { reason: 'failure', title: 'Failed: Error', error: 'expect failed' }),
+      worker: 1,
+      parallelIndex: 1,
+    };
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 3, flaky: 1 }, [RUNNING, held]));
+    await expect(tray(page).getByText('3 of 9 tests · 1 failed · 1 flaky', { exact: true })).toBeVisible();
+    await page.evaluate((event) => window.__hub.send(event), counted({ done: 4, failed: 1, flaky: 1 }));
+    await expect(tray(page).getByText('4 of 9 tests · 1 failed · 1 flaky', { exact: true })).toBeVisible();
+  });
+
+  test('leads a failed run’s end to its first failure, from its end toast and from the tray', async ({
+    page,
+    request,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toBeTruthy();
+    const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+
+    // The run reports to the app: its second test failed first, as its process names it.
+    const at = Date.now();
+    const testCase = (title: string, status: string) => ({
+      title,
+      status,
+      duration: 1000,
+      location: 'tests/checkout.spec.ts:3:1',
+      browser: { name: 'chromium', projectName: 'chromium' },
+      error: status === 'failed' ? 'expect failed' : undefined,
+      retries: 0,
+      workerIndex: 0,
+      startedAt: at,
+    });
+    const res = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_VIEW,
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+        status: 'failed',
+        startTime: new Date(at).toISOString(),
+        duration: 2000,
+        totalTests: 3,
+        passedTests: 1,
+        failedTests: 2,
+        skippedTests: 0,
+        testCases: [testCase('lists the cart', 'failed'), testCase('pays', 'failed'), testCase('refunds', 'passed')],
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    const { runId: reported } = await res.json();
+    await expect(tray(page).getByRole('link', { name: `Open run #${reported}` })).toBeVisible({ timeout: 15_000 });
+    const details = await (await request.get(`/api/test-runs/${reported}`)).json();
+    const pays = details.testCases.find((c: { title: string }) => c.title === 'pays').executionId;
+
+    const ended = sessionOf([], true);
+    Object.assign(ended.session, {
+      progress: {
+        total: 3,
+        done: 3,
+        failed: 2,
+        flaky: 0,
+        skipped: 0,
+        status: 'failed',
+        failure: { title: 'pays', error: 'expect failed' },
+      },
+    });
+    await page.evaluate((event) => window.__hub.send(event), ended);
+    await page.evaluate(() => window.__exitRun(1));
+    await expect(tray(page).getByText('Failed (exit 1)')).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Open the failure' })).toBeVisible();
+    const toast = page.locator('li', { hasText: 'Local run failed' });
+    await toast.getByRole('button', { name: 'Open the failure' }).click();
+    await expect(page).toHaveURL(new RegExp(`/test-run-cases/${pays}$`));
+  });
+
+  test('shows each run as one line in the compact list, with the one action it needs now, whole on a click', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const withProgress = (worker: Record<string, unknown>) => {
+      const event = session(worker);
+      return {
+        ...event,
+        session: {
+          ...event.session,
+          progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+        },
+      };
+    };
+    await page.evaluate((event) => window.__hub.send(event), withProgress(RUNNING));
+
+    const compact = tray(page).getByRole('button', { name: 'Compact list' });
+    await compact.click();
+    await expect(compact).toHaveAttribute('aria-pressed', 'true');
+    const line = tray(page).locator('[data-shot="desktop-run-line"]');
+    await expect(line).toHaveCount(1);
+    await expect(line).toContainText('Running');
+    await expect(line).toContainText('3 of 9 tests');
+    await expect(line.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toHaveCount(0);
+
+    // A stop shows the run whole, as the tray opens on it; back to one line, the line says the run waits, and its one
+    // action shows the stop again, its worker focused.
+    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
+    await expect(line).toHaveCount(0);
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
+    await expect(line).toContainText('Waiting');
+    await line.getByRole('button', { name: 'Show the stop' }).click();
+    await expect(line).toHaveCount(0);
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
+
+    // Back to one line, as the tray remembers after a reload.
+    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
+    await expect(line).toHaveCount(1);
+    await page.reload();
+    await waitForHydration(page);
+    await expect(tray(page).getByRole('button', { name: 'Compact list' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(tray(page).locator('[data-shot="desktop-run-line"]')).toHaveCount(1);
+
+    // A click on the line shows the run whole.
+    await tray(page).locator('[data-shot="desktop-run-line"]').getByRole('button', { expanded: false }).click();
+    await expect(tray(page).locator('article[data-run]')).toHaveCount(1);
   });
 });
