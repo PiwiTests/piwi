@@ -175,8 +175,9 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
   new marker goes in both, and in `tests/dom-snapshot-state.spec.ts`.
 - **A password field's value is always masked** (`PASSWORD_MASK`); every other field value is shown.
 - **No rendered snapshot keeps a script**: a script's body and source, an inline handler and a `javascript:` or
-  `vbscript:` URL are dropped by `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the
-  page through `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
+  `vbscript:` URL in an attribute that holds a URL (`holdsScriptUrl`; any other attribute is text) are dropped by
+  `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the page through
+  `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
 - **Nothing the snapshot holds is written where the browser would read it as markup**: a style's text is raw only in
   HTML (escaped inside `svg`/`math`), an element whose content is text (`TEXT_ELEMENTS`) keeps its escaped text alone,
   attribute values escape `<` and `>`, and a doctype is a plain name. `stripNetworkReferences` also leaves no

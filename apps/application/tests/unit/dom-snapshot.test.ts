@@ -114,6 +114,40 @@ describe('renderSnapshotHtml', () => {
     );
   });
 
+  test('reads a script URL only in an attribute that holds a URL: text that reads like one stays', () => {
+    const html = renderSnapshotHtml(
+      [
+        snap({
+          snapshotName: 's1',
+          html: [
+            'BODY',
+            {},
+            ['IMG', { alt: 'JavaScript: The Good Parts', src: 'b.png', title: 'VBScript: legacy' }],
+            ['BUTTON', { 'aria-label': 'Javascript: run', formaction: 'javascript:x()' }, 'Run'],
+            ['IMG', { srcset: 'a.png 1x, javascript:x() 2x' }],
+            ['OBJECT', { data: 'javascript:x()' }],
+            ['VIDEO', { poster: ' javascript:x()' }],
+            ['TD', { background: 'javascript:x()' }],
+            ['Q', { cite: 'vbscript:x' }],
+            [
+              'svg',
+              {},
+              ['a', { 'xlink:href': 'javascript:x()' }],
+              ['set', { attributeName: 'href', to: 'javascript:x()' }],
+            ],
+            ['svg', {}, ['animate', { attributeName: 'href', values: '#a;javascript:x()', from: 'javascript:x()' }]],
+          ],
+        }),
+      ],
+      's1',
+    );
+    expect(html).toBe(
+      '<body><img alt="JavaScript: The Good Parts" src="b.png" title="VBScript: legacy">' +
+        '<button aria-label="Javascript: run">Run</button><img><object></object><video></video><td></td><q></q>' +
+        '<svg><a></a><set attributeName="href"></set></svg><svg><animate attributeName="href"></animate></svg></body>',
+    );
+  });
+
   test('says each back-reference it cannot resolve', () => {
     let unresolved = 0;
     const html = renderSnapshotHtml(

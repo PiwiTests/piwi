@@ -141,6 +141,36 @@ function isScriptUrl(value: string): boolean {
   return /^(?:javascript|vbscript):/i.test(read);
 }
 
+/** The attributes that hold a URL, a script URL in one of which would run when followed or loaded. */
+const URL_ATTRIBUTES = new Set([
+  'href',
+  'src',
+  'action',
+  'formaction',
+  'xlink:href',
+  'data',
+  'poster',
+  'background',
+  'cite',
+  // SVG animation, which can set `href` to its value.
+  'to',
+  'from',
+  'by',
+]);
+
+/**
+ * Whether an attribute holds a script URL: one of `URL_ATTRIBUTES`, a candidate of a `srcset`, or one of an SVG
+ * animation's `values`. Any other attribute holds text, whatever it reads like.
+ */
+function holdsScriptUrl(name: string, value: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower === 'srcset' || lower === 'imagesrcset') {
+    return value.split(',').some((candidate) => isScriptUrl(candidate.trim().split(/\s+/)[0] ?? ''));
+  }
+  if (lower === 'values') return value.split(';').some(isScriptUrl);
+  return URL_ATTRIBUTES.has(lower) && isScriptUrl(value);
+}
+
 /** Input types whose `value` is not what the field shows: a checkbox's or radio's submitted value, a file's fake path. */
 const VALUELESS_INPUT_TYPES = new Set(['checkbox', 'radio', 'file']);
 
@@ -162,7 +192,7 @@ function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value
     if (name.startsWith('__playwright')) continue;
     // Inline handlers and script URLs are noise for diagnosis and unsafe to re-emit.
     if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
-    if (isScriptUrl(String(value))) continue;
+    if (holdsScriptUrl(name, String(value))) continue;
     out.set(name, String(value));
   }
   const live = (name: string): string | undefined => {
