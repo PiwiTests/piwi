@@ -472,7 +472,6 @@ async function mockRequest(run: RunsRun, worker: number, since: string, request:
   render();
 }
 
-/** Closes a worker's list of requests; the keyboard, when it was there, goes back to Mock a request. */
 /**
  * Open the trace so far: the hub opens Playwright's trace viewer on the running test of a lane (Playwright's
  * `parallelIndex`), on its own machine, and its sentence shows under the test of the lane's worker as it answers, read
@@ -491,6 +490,7 @@ async function openTrace(run: RunsRun, lane: number): Promise<void> {
   render();
 }
 
+/** Closes a worker's list of requests; the keyboard, when it was there, goes back to Mock a request. */
 function closeRequests(key: string): void {
   requestLists.delete(key);
   if (focusKey?.startsWith(`${key}|request`)) focusKey = `${key}|mock`;
