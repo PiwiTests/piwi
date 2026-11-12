@@ -304,6 +304,8 @@ export class RunHubs {
           holds: !!this.features.get(hub.url)?.includes('hold'),
           stops: !!this.features.get(hub.url)?.includes('stop'),
           traces: !!this.features.get(hub.url)?.includes('trace'),
+          sharesWindow: !!this.features.get(hub.url)?.includes('share-window'),
+          windowShared: !!connection?.windowShared && !!this.features.get(hub.url)?.includes('share-window'),
         };
       }),
       runs: [...live, ...ended],
@@ -400,7 +402,9 @@ export class RunHubs {
         // `parseRunsRequest` takes none without whether to share the run.
         return request.on === undefined
           ? Promise.resolve(OFFLINE)
-          : connection.command({ type: 'share', ref, on: request.on });
+          : request.scope === 'window'
+            ? connection.command({ type: 'share', ref, on: request.on, scope: 'window' })
+            : connection.command({ type: 'share', ref, on: request.on });
       case 'hold':
         return request.on === undefined
           ? Promise.resolve(OFFLINE)

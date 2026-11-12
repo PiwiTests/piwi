@@ -7399,6 +7399,59 @@
   "runs_stopSharingTitle": {
     "message": "Terminar las vistas de esta ejecución en la instancia: no se envía nada más"
   },
+  "runs_shareWindow": {
+    "message": "Compartir las ejecuciones de esta ventana del editor"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Compartir en directo en la instancia de Piwi de tu equipo esta ejecución y cada ejecución que esta ventana del editor inicie a partir de ahora, hasta que lo detengas o cierres esa ventana"
+  },
+  "runs_sharedByWindow": {
+    "message": "Compartida como una de las ejecuciones de esta ventana del editor, hasta que lo detengas."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Dejar de compartir las ejecuciones de esta ventana"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Terminar las vistas de las ejecuciones de esta ventana del editor en la instancia: las siguientes se quedan en esta máquina"
+  },
+  "runs_stopSharingAsk": {
+    "message": "¿Dejar de compartir esta ejecución en directo? Sus vistas en la instancia del equipo se cierran."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "¿Dejar de compartir en directo las ejecuciones de esta ventana del editor? Sus vistas en la instancia del equipo se cierran, y las siguientes se quedan en esta máquina."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: las ejecuciones de esta ventana se comparten en directo, cada una que inicie, hasta que lo detengas.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: compartida en directo, como una de las ejecuciones de su ventana del editor.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: las ejecuciones de esta ventana se comparten en directo hasta que lo detengas.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: las ejecuciones de esta ventana ya no se comparten en directo.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copiar el enlace de la página de la ejecución"
   },

@@ -941,7 +941,13 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   (`runs_shareWarning`, the instance's host in it) with **Share live** and **Cancel** in its place, the focus on the
   first; a refusal the hub answers shows under it. Shared, the run says where and how many views are open, with **Copy
   the run page's link** and **Stop sharing**; a sharing that stopped though nobody asked says why under **Share live**
-  (`live.stopped`). A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
+  (`live.stopped`). **Stop sharing** asks to confirm every time, the question in the share's place with **Stop
+  sharing** and **Cancel**. At a hub whose features list `share-window` (an editor window's, `RunsHub.sharesWindow`),
+  **Share this editor window's runs** beside **Share live**, and in the first share's question, shares the run and each
+  run that window starts until the person stops (`share` with `scope: 'window'`); while the window shares its runs
+  (`RunsHub.windowShared`, the hub's `share-window`), a line under the heading says so, its shared runs say they are
+  one of the window's, each read out as it is shared, and their **Stop sharing this window's runs** stops them all.
+  A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
   why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
   sentence as the hub said it.
 - From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the

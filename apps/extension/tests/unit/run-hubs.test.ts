@@ -716,6 +716,28 @@ describe('a hub’s connection', () => {
     expect(await shared).toEqual({ ok: true, message: 'Sharing the run live on piwi.example.com.' });
   });
 
+  it('passes the window’s share on, and says which hubs offer it and whether their window shares its runs', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])], 20_000, ['share-window']);
+    expect(hubs.state().hubs[0]).toMatchObject({ sharesWindow: true, windowShared: false });
+    void hubs.command({ hub: HUB.url, ref: 'r1', worker: null, since: null, what: 'share', on: true, scope: 'window' });
+    expect(socket.sent.slice(2)).toEqual([{ type: 'share', id: 2, ref: 'r1', on: true, scope: 'window' }]);
+    const changed = vi.fn();
+    const stop = hubs.listen(changed, () => {});
+    socket.hear({ type: 'share-window', on: true });
+    expect(hubs.state().hubs[0]).toMatchObject({ sharesWindow: true, windowShared: true });
+    expect(changed).toHaveBeenCalled();
+    stop();
+    // A hub that does not list it says nothing of a window, whatever it sends.
+    const { hubs: older, sockets: olderSockets } = setup();
+    await older.find();
+    await welcome(olderSockets[0]!, [session([STOPPED])]);
+    olderSockets[0]!.hear({ type: 'share-window', on: true });
+    expect(older.state().hubs[0]).toMatchObject({ sharesWindow: false, windowShared: false });
+  });
+
   it('passes Open the trace so far for the lane it names, says which hubs take it, and hands back the sentence', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();
@@ -898,6 +920,8 @@ describe('connections that fail', () => {
         holds: false,
         stops: false,
         traces: false,
+        sharesWindow: false,
+        windowShared: false,
       },
     ]);
     expect(fetches).toHaveLength(1);

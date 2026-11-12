@@ -7399,6 +7399,59 @@
   "runs_stopSharingTitle": {
     "message": "Encerrar as visualizações desta execução na instância: nada mais é enviado"
   },
+  "runs_shareWindow": {
+    "message": "Compartilhar as execuções desta janela do editor"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Compartilhar ao vivo na instância do Piwi da sua equipe esta execução e cada execução que esta janela do editor iniciar a partir de agora, até você parar ou fechar essa janela"
+  },
+  "runs_sharedByWindow": {
+    "message": "Compartilhada como uma das execuções desta janela do editor, até você parar."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Parar de compartilhar as execuções desta janela"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Encerrar as visualizações das execuções desta janela do editor na instância: as próximas ficam nesta máquina"
+  },
+  "runs_stopSharingAsk": {
+    "message": "Parar de compartilhar esta execução ao vivo? As visualizações dela na instância da equipe se fecham."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Parar de compartilhar ao vivo as execuções desta janela do editor? As visualizações delas na instância da equipe se fecham, e as próximas ficam nesta máquina."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: as execuções desta janela são compartilhadas ao vivo, cada uma que ela iniciar, até você parar.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: compartilhada ao vivo, como uma das execuções da janela do editor.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: as execuções desta janela são compartilhadas ao vivo até você parar.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: as execuções desta janela não são mais compartilhadas ao vivo.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copiar o link da página da execução"
   },

@@ -130,8 +130,8 @@ each rule below ends with the section to read there.
 - **Every Runs window control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the
   trace so far (`trace`) and End the test while a Pause waits (`give-up`) names the stop shown (`since`),** so a click
   made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share live, Hold failures, Stop
-  the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window
-  (`runs.spec.ts`). (see "The Runs window")
+  the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window,
+  and Stop sharing every time (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its

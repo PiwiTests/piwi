@@ -7399,6 +7399,59 @@
   "runs_stopSharingTitle": {
     "message": "Die Ansichten dieses Laufs auf der Instanz beenden: Nichts geht mehr dorthin"
   },
+  "runs_shareWindow": {
+    "message": "Läufe dieses Editorfensters teilen"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Diesen Lauf und jeden Lauf, den dieses Editorfenster ab jetzt startet, live auf der Piwi-Instanz Ihres Teams teilen, bis Sie es beenden oder das Fenster schließen"
+  },
+  "runs_sharedByWindow": {
+    "message": "Geteilt als einer der Läufe dieses Editorfensters, bis Sie es beenden."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Teilen der Läufe dieses Fensters beenden"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Die Ansichten der Läufe dieses Editorfensters auf der Instanz beenden: Die nächsten Läufe bleiben auf diesem Rechner"
+  },
+  "runs_stopSharingAsk": {
+    "message": "Teilen dieses Laufs beenden? Seine Ansichten auf der Team-Instanz schließen sich."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Teilen der Läufe dieses Editorfensters beenden? Ihre Ansichten auf der Team-Instanz schließen sich, und die nächsten Läufe bleiben auf diesem Rechner."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden live geteilt, jeder, den es startet, bis Sie es beenden.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: live geteilt, als einer der Läufe seines Editorfensters.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden live geteilt, bis Sie es beenden.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: Die Läufe dieses Fensters werden nicht mehr live geteilt.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Link zur Seite des Laufs kopieren"
   },

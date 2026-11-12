@@ -8791,6 +8791,70 @@
     "message": "End the views of this run on the instance: nothing more goes there",
     "description": "Runs window, the Stop sharing button’s tooltip."
   },
+  "runs_shareWindow": {
+    "message": "Share this editor window’s runs",
+    "description": "Runs window, a button beside Share live (runs_shareLive) under a run an editor window started: shares this run and each run that editor window starts from then on, until the person stops or closes that window. A button: keep it short."
+  },
+  "runs_shareWindowTitle": {
+    "message": "Share this run and each run this editor window starts from now on, live on your team’s Piwi instance, until you stop or close that window",
+    "description": "Runs window, the tooltip of Share this editor window’s runs (runs_shareWindow)."
+  },
+  "runs_sharedByWindow": {
+    "message": "Shared as one of this editor window’s runs, until you stop.",
+    "description": "Runs window, under a shared run while its editor window shares each of its runs until the person stops."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Stop sharing this window’s runs",
+    "description": "Runs window, the button that stops sharing every run of an editor window that shares its runs until the person stops; it asks to confirm first. A button: keep it short."
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "End the views of this editor window’s runs on the instance: the runs it starts next stay on this machine",
+    "description": "Runs window, the tooltip of Stop sharing this window’s runs (runs_stopSharingWindow)."
+  },
+  "runs_stopSharingAsk": {
+    "message": "Stop sharing this run live? Its views on the team instance close.",
+    "description": "Runs window, the question Stop sharing asks before it stops sharing a run, with Stop sharing and Cancel under it."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Stop sharing this editor window’s runs live? Their views on the team instance close, and the runs it starts next stay on this machine.",
+    "description": "Runs window, the question Stop sharing this window’s runs asks before it stops sharing every run of the editor window, with Stop sharing and Cancel under it."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: this window’s runs are shared live, each one it starts, until you stop.",
+    "description": "Runs window, a status line under the heading while an editor window shares each of its runs live until the person stops. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: shared live, as one of its editor window’s runs.",
+    "description": "Runs window, read out as a run is shared live because its editor window shares each of its runs. $run$ is the run’s name.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: this window’s runs are shared live until you stop.",
+    "description": "Runs window, read out as an editor window starts sharing each of its runs live, turned on in the editor. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: this window’s runs are no longer shared live.",
+    "description": "Runs window, read out as an editor window stops sharing its runs live, turned off in the editor. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copy the run page’s link",
     "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."

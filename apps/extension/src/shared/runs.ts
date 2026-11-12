@@ -90,6 +90,13 @@ export interface RunsHub {
    * worker `canOpenTrace` names.
    */
   traces: boolean;
+  /**
+   * It shares each run of its editor window live until the person stops (`share-window` among its features): Share
+   * live offers the window's runs beside the run's own.
+   */
+  sharesWindow: boolean;
+  /** Its editor window shares each of its runs live now, until the person stops or the window closes. */
+  windowShared: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -252,6 +259,11 @@ export type RunsRequest =
        * start watching the lane, or stop; for `drive`: drive the stop, or give it back.
        */
       on?: boolean;
+      /**
+       * For `share` alone: each run of the hub's editor window from now on, the run named included, until the person
+       * stops (`window`), rather than the run alone; with `on: false`, every run of the window stops sharing.
+       */
+      scope?: 'window';
       /** For `watch` and `trace`: the lane, Playwright's `parallelIndex`. */
       lane?: number;
       /**
@@ -411,7 +423,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
-        share: ['on'],
+        share: ['on', 'scope'],
         hold: ['on'],
         drive: ['on'],
         watch: ['lane', 'on', 'layers'],
@@ -420,13 +432,17 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         'pick-at': ['x', 'y'],
       };
       const fields = own[what] ?? [];
-      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y'];
+      const named = ['request', 'on', 'lane', 'layers', 'events', 'x', 'y', 'scope'];
       if (named.some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
       switch (what) {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
-        case 'view':
         case 'share':
+          if (typeof value.on !== 'boolean' || (value.scope !== undefined && value.scope !== 'window')) return null;
+          return value.scope === 'window'
+            ? { ...command, on: value.on, scope: 'window' }
+            : { ...command, on: value.on };
+        case 'view':
         case 'hold':
         case 'drive':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;

@@ -7399,6 +7399,59 @@
   "runs_stopSharingTitle": {
     "message": "Mettre fin aux vues de cette exécution sur l’instance : plus rien n’y est envoyé"
   },
+  "runs_shareWindow": {
+    "message": "Partager les exécutions de cette fenêtre de l’éditeur"
+  },
+  "runs_shareWindowTitle": {
+    "message": "Partager en direct sur l’instance Piwi de votre équipe cette exécution et chaque exécution que cette fenêtre de l’éditeur lance désormais, jusqu’à ce que vous arrêtiez ou fermiez cette fenêtre"
+  },
+  "runs_sharedByWindow": {
+    "message": "Partagée comme l’une des exécutions de cette fenêtre de l’éditeur, jusqu’à ce que vous arrêtiez."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Arrêter le partage des exécutions de cette fenêtre"
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "Mettre fin aux vues des exécutions de cette fenêtre de l’éditeur sur l’instance : les suivantes restent sur cette machine"
+  },
+  "runs_stopSharingAsk": {
+    "message": "Arrêter le partage en direct de cette exécution ? Ses vues sur l’instance de l’équipe se ferment."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Arrêter le partage en direct des exécutions de cette fenêtre de l’éditeur ? Leurs vues sur l’instance de l’équipe se ferment, et les suivantes restent sur cette machine."
+  },
+  "runs_windowShared": {
+    "message": "$editor$ : les exécutions de cette fenêtre sont partagées en direct, chacune qu’elle lance, jusqu’à ce que vous arrêtiez.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$ : partagée en direct, comme l’une des exécutions de sa fenêtre de l’éditeur.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$ : les exécutions de cette fenêtre sont partagées en direct jusqu’à ce que vous arrêtiez.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$ : les exécutions de cette fenêtre ne sont plus partagées en direct.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copier le lien de la page de l’exécution"
   },

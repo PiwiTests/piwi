@@ -163,6 +163,8 @@ describe('the global shortcut’s rule', () => {
       holds,
       stops: false,
       traces: false,
+      sharesWindow: false,
+      windowShared: false,
     });
     // A run nobody attends is left to run: the shortcut pauses the run a person attends.
     expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
@@ -339,12 +341,21 @@ describe('Share live, as the worker reads it', () => {
   it('names the run alone, and whether to share it', () => {
     expect(parseRunsRequest({ ...command, what: 'share', on: true })).toEqual({ ...command, what: 'share', on: true });
     expect(parseRunsRequest({ ...command, what: 'share', on: false })).toMatchObject({ on: false });
+    // Or each run of its editor window until the person stops.
+    expect(parseRunsRequest({ ...command, what: 'share', on: true, scope: 'window' })).toEqual({
+      ...command,
+      what: 'share',
+      on: true,
+      scope: 'window',
+    });
     for (const bad of [
       { ...command, what: 'share' },
       { ...command, what: 'share', on: 'yes' },
       { ...command, what: 'share', on: true, worker: 0 },
       { ...command, what: 'share', on: true, since: 's3' },
       { ...command, what: 'share', on: true, request: 2 },
+      { ...command, what: 'share', on: true, scope: 'all' },
+      { ...command, what: 'hold', on: true, scope: 'window' },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
@@ -468,6 +479,8 @@ describe('what a stop takes from the window', () => {
           holds: false,
           stops: false,
           traces: false,
+          sharesWindow: false,
+          windowShared: false,
         },
       ],
       runs: [
@@ -595,6 +608,8 @@ describe('a lane watched while it runs', () => {
           holds: false,
           stops: false,
           traces: false,
+          sharesWindow: false,
+          windowShared: false,
         },
       ],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
@@ -628,6 +643,8 @@ describe('what the runs ask of the person', () => {
       holds: false,
       stops: false,
       traces: false,
+      sharesWindow: false,
+      windowShared: false,
     },
   ];
   const progress = (status: HubProgress['status'], failed: number): HubProgress => ({

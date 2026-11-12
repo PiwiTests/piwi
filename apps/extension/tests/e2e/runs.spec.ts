@@ -608,7 +608,16 @@ test('Share live says what it sends the first time, shares the run, says who wat
       run.worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
       await expect(card.getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
       await expect(card.getByRole('button', { name: 'Copy the run page’s link' })).toBeVisible();
+      // Stop sharing asks first, every time: Cancel keeps the run shared.
       await card.getByRole('button', { name: 'Stop sharing' }).click();
+      const stopping = card.getByRole('group', { name: 'Stop sharing' });
+      await expect(stopping).toContainText('Stop sharing this run live? Its views on the team instance close.');
+      await expect(stopping.getByRole('button', { name: 'Stop sharing' })).toBeFocused();
+      await stopping.getByRole('button', { name: 'Cancel' }).click();
+      await expect(card.getByRole('group', { name: 'Stop sharing' })).toHaveCount(0);
+      expect(shares()).toHaveLength(1);
+      await card.getByRole('button', { name: 'Stop sharing' }).click();
+      await stopping.getByRole('button', { name: 'Stop sharing' }).click();
       expect(await run.worker.next('share', 1)).toEqual({ type: 'share', on: false });
       run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
       // Asked once in this window: a second share goes at once.
@@ -646,6 +655,51 @@ test('Share live says what it sends the first time, shares the run, says who wat
       expect(refused.worker.heard.filter((m) => m.type === 'share')).toEqual([]);
     } finally {
       await endRun(refused);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('Share this editor window’s runs shares each run the window starts until stopped, said as each is shared', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  const page = 'https://piwi.example.com/test-runs/42';
+  try {
+    const runs = await openRuns(context, extensionId);
+    const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+    let next: Awaited<ReturnType<typeof startRun>> | null = null;
+    try {
+      const card = liveRun(runs);
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await card.getByRole('button', { name: 'Share this editor window’s runs' }).click();
+      // The first share in this window says what goes out, and offers both scopes.
+      const asked = card.getByRole('group', { name: 'Share live' });
+      await expect(card.locator('.share-warning')).toContainText('While this run is shared on piwi.example.com');
+      await expect(asked.getByRole('button', { name: 'Share this editor window’s runs' })).toBeFocused();
+      await asked.getByRole('button', { name: 'Share this editor window’s runs' }).click();
+      expect(await run.worker.next('share')).toEqual({ type: 'share', on: true });
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+      await expect(runs.locator('#hubs')).toContainText('this window’s runs are shared live, each one it starts');
+      await expect(card.getByText('Shared as one of this editor window’s runs, until you stop.')).toBeVisible();
+      await endRun(run);
+
+      // The next run the window starts is shared as it starts, and the window says so.
+      next = await startRun(editor, 'ships', [...RUN_TAKES]);
+      expect(await next.worker.next('share')).toMatchObject({ type: 'share', on: true });
+      next.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+      await expect(runs.locator('#announce')).toContainText('shared live, as one of its editor window’s runs');
+
+      // Stop sharing this window's runs asks first, then stops them all.
+      const nextCard = liveRun(runs);
+      await nextCard.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      const stopping = nextCard.getByRole('group', { name: 'Stop sharing this window’s runs' });
+      await expect(stopping).toContainText('the runs it starts next stay on this machine');
+      await stopping.getByRole('button', { name: 'Stop sharing' }).click();
+      expect(await next.worker.next('share', 1)).toEqual({ type: 'share', on: false });
+      await expect(runs.locator('#hubs')).not.toContainText('this window’s runs are shared live');
+    } finally {
+      if (next) await endRun(next);
+      await endRun(run).catch(() => undefined);
     }
   } finally {
     await context.close();
