@@ -515,8 +515,9 @@ describe('the launcher', () => {
   let project = '';
 
   /**
-   * A project with a stand-in `@playwright/test` whose CLI writes its arguments and folder beside itself, then stays
-   * up a moment as a viewer does; or, for a trace whose name holds `fail`, says why on its error output and stops.
+   * A project with a stand-in `@playwright/test` whose CLI writes its arguments, folder and environment beside itself,
+   * then stays up a moment as a viewer does; or, for a trace whose name holds `fail`, says why on its error output and
+   * stops.
    */
   beforeAll(() => {
     project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-viewer-')));
@@ -532,7 +533,10 @@ if (trace.includes('fail')) {
   process.stderr.write("Error: browserType.launch: Executable doesn't exist at /x/chrome\\n");
   process.exit(1);
 }
-fs.writeFileSync(path.join(__dirname, 'heard.json'), JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }));
+fs.writeFileSync(
+  path.join(__dirname, 'heard.json'),
+  JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), env: process.env }),
+);
 setTimeout(() => {}, 1500);
 `,
     );
@@ -549,9 +553,74 @@ setTimeout(() => {}, 1500);
     const heard = JSON.parse(
       fs.readFileSync(path.join(project, 'node_modules', '@playwright', 'test', 'heard.json'), 'utf8'),
     );
-    expect(heard).toEqual({ args: ['show-trace', trace], cwd: project });
+    expect(heard).toMatchObject({ args: ['show-trace', trace], cwd: project });
     expect(fs.existsSync(path.join(project, 'pwned'))).toBe(false);
     // It settles once the viewer stops.
+    if (started.ok) await started.closed;
+  });
+
+  test('gives the viewer what a window and Playwright need, and none of the host’s own settings', async () => {
+    const host: Record<string, string> = {
+      // The desktop app's server's and the service's own: never the viewer's.
+      PIWI_SECRET_KEY: 'secret-key',
+      PIWI_DESKTOP_TOKEN: `pd_${'ab'.repeat(32)}`,
+      PIWI_API_KEY: 'api-key',
+      DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      NODE_OPTIONS: '--no-warnings',
+      NODE_COMPILE_CACHE: path.join(root, 'cache'),
+      NODE_ENV: 'production',
+      // A window's and Playwright's, in either case.
+      DISPLAY: ':7',
+      WAYLAND_DISPLAY: 'wayland-1',
+      XAUTHORITY: '/home/me/.Xauthority',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      LC_ALL: 'C.UTF-8',
+      TZ: 'Europe/Paris',
+      PLAYWRIGHT_BROWSERS_PATH: '/opt/browsers',
+      http_proxy: 'http://proxy.test:3128',
+      HTTPS_PROXY: 'http://proxy.test:3129',
+      no_proxy: 'localhost',
+      SystemRoot: 'C:\\Windows',
+      FORCE_COLOR: '3',
+    };
+    const before = { ...process.env };
+    Object.assign(process.env, host);
+    let started: TraceViewerStarted;
+    try {
+      started = await startTraceViewer({ folder: project, trace: path.join(project, 'env.json') }, 300);
+    } finally {
+      for (const name of Object.keys(host)) {
+        if (before[name] === undefined) delete process.env[name];
+        else process.env[name] = before[name];
+      }
+    }
+    expect(started.ok).toBe(true);
+    const { env } = JSON.parse(
+      fs.readFileSync(path.join(project, 'node_modules', '@playwright', 'test', 'heard.json'), 'utf8'),
+    ) as { env: Record<string, string> };
+    expect(env).toMatchObject({
+      PATH: process.env.PATH,
+      DISPLAY: ':7',
+      WAYLAND_DISPLAY: 'wayland-1',
+      XAUTHORITY: '/home/me/.Xauthority',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      LC_ALL: 'C.UTF-8',
+      TZ: 'Europe/Paris',
+      PLAYWRIGHT_BROWSERS_PATH: '/opt/browsers',
+      http_proxy: 'http://proxy.test:3128',
+      HTTPS_PROXY: 'http://proxy.test:3129',
+      no_proxy: 'localhost',
+      SystemRoot: 'C:\\Windows',
+      FORCE_COLOR: '0',
+    });
+    if (process.env.HOME) expect(env.HOME).toBe(process.env.HOME);
+    for (const name of ['PIWI_SECRET_KEY', 'PIWI_DESKTOP_TOKEN', 'PIWI_API_KEY', 'DATABASE_URL']) {
+      expect(env, name).not.toHaveProperty(name);
+    }
+    // Nothing of the host's Node, its package manager or its test runner either.
+    expect(Object.keys(env).filter((name) => /^(PIWI_|NODE_|npm_|VITEST)/i.test(name))).toEqual([]);
     if (started.ok) await started.closed;
   });
 

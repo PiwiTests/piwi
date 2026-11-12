@@ -1073,7 +1073,10 @@ app's server; without one, the hub leaves `trace` out of its features and the re
   see the trace as it stands then.
 - **The launcher** (`startTraceViewer`): the Playwright CLI of the run's folder (`resolvePlaywrightCli`) with the
   project's Node (`projectNode`), `show-trace <traces>/<attempt>.json` as an argument array with no shell, in the run's
-  folder, detached so its window outlives the service. A viewer that stops within 2 s (`TRACE_VIEWER_START_MS`)
+  folder, detached so its window outlives the service. Its environment holds the host's variables a window and
+  Playwright need alone (`viewerEnv`: the user's home, folders and temp, the locale, the display, its session bus,
+  `PLAYWRIGHT_BROWSERS_PATH`, the proxy, Windows' own, in either case) and `FORCE_COLOR=0`: never a `PIWI_*` variable,
+  the database's or storage's, `NODE_OPTIONS`, `NODE_ENV` or `NODE_COMPILE_CACHE`. A viewer that stops within 2 s (`TRACE_VIEWER_START_MS`)
   did not start: its error output's first line says why (Playwright's browser not installed, no display). Once it
   runs, its error output is read and dropped, and nothing of it holds the service open.
 - **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its

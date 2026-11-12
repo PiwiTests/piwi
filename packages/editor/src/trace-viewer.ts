@@ -7,8 +7,9 @@
  * lists from the folder), as it stands when the viewer loads it: Playwright's viewer reads it once.
  *
  * `startTraceViewer` runs `show-trace` from the project's own Playwright (`recorder/playwright.ts`), with the project's
- * Node (`recorder/node.ts`), in the run's folder: an argument array and no shell, detached from the service so the
- * viewer's window outlives it, and let go once it started. A viewer that stops within `TRACE_VIEWER_START_MS` did not
+ * Node (`recorder/node.ts`) and the variables of the host's environment a window and Playwright need alone
+ * (`viewerEnv`), in the run's folder: an argument array and no shell, detached from the service so the viewer's window
+ * outlives it, and let go once it started. A viewer that stops within `TRACE_VIEWER_START_MS` did not
  * start, and says why. No path goes into what a surface hears: the run sessions answer with a sentence alone.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -26,6 +27,62 @@ const MAX_START_OUTPUT = 4_000;
 
 /** The longest reason a viewer that did not start gives, in characters. */
 const MAX_REASON = 300;
+
+/**
+ * The variables of the host's environment the viewer runs with, by their name in capitals: what a window and
+ * Playwright need (the user's home, folders and temp, the locale, the display and its session bus, Playwright's
+ * browsers, the network's proxy, and Windows' own). Never the host's own settings and secrets (`PIWI_*`, its database
+ * and storage, `NODE_OPTIONS`, `NODE_ENV`, `NODE_COMPILE_CACHE`).
+ */
+const VIEWER_ENV = new Set([
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'USERNAME',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'SYSTEMROOT',
+  'SYSTEMDRIVE',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'LANG',
+  'LANGUAGE',
+  'TZ',
+  'DISPLAY',
+  'WAYLAND_DISPLAY',
+  'XAUTHORITY',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'PLAYWRIGHT_BROWSERS_PATH',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+]);
+
+/** The prefixes of the variables the viewer runs with too: the locale's and the desktop's folders and session. */
+const VIEWER_ENV_PREFIXES = ['LC_', 'XDG_'];
+
+/** The environment the viewer runs with: the variables of `source` it needs (`VIEWER_ENV`), and no colors. */
+function viewerEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(source)) {
+    const upper = name.toUpperCase();
+    if (value === undefined) continue;
+    if (VIEWER_ENV.has(upper) || VIEWER_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix))) env[name] = value;
+  }
+  env.FORCE_COLOR = '0';
+  return env;
+}
 
 /** What a viewer opens, and where it runs. */
 export interface TraceViewerLaunch {
@@ -143,7 +200,7 @@ export async function startTraceViewer(
   try {
     child = spawn(node.execPath, [cli, 'show-trace', launch.trace], {
       cwd: launch.folder,
-      env: projectNodeEnv(node, { ...process.env, FORCE_COLOR: '0' }),
+      env: projectNodeEnv(node, viewerEnv()),
       detached: true,
       stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,

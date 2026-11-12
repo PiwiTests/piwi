@@ -22,7 +22,7 @@ import {
   type RunToHub,
 } from '@piwitests/core/run-channel';
 import { writeDiscovery } from '@piwitests/editor/discovery';
-import type { ToolResult, TraceViewerLauncher } from '@piwitests/editor/run-host';
+import { startTraceViewer, type ToolResult, type TraceViewerLauncher } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
   parseLiveAnswer,
@@ -986,6 +986,46 @@ describe('the trace so far of a desktop run', () => {
     picker.socket.close();
     window.close();
     worker.socket.destroy();
+  });
+
+  it('starts the viewer with none of the server’s own settings and secrets', async () => {
+    // The launcher the server wires, on a linked folder whose stand-in Playwright writes the environment it got.
+    const linked = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-viewer-')));
+    onTestFinished(() => fs.rmSync(linked, { recursive: true, force: true }));
+    const pkg = path.join(linked, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1' }));
+    fs.writeFileSync(
+      path.join(pkg, 'cli.js'),
+      "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'env.json'), JSON.stringify(process.env));\n" +
+        'setTimeout(() => {}, 600);\n',
+    );
+    const server: Record<string, string> = {
+      PIWI_SECRET_KEY: 'secret-key',
+      PIWI_DESKTOP_TOKEN: TOKEN,
+      PIWI_DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      PIWI_STORAGE_S3_SECRET_ACCESS_KEY: 'storage-secret',
+      DATABASE_URL: 'postgres://piwi:password@db/piwi',
+      NODE_OPTIONS: '--no-warnings',
+      NODE_COMPILE_CACHE: path.join(linked, 'cache'),
+      NODE_ENV: 'production',
+    };
+    const before = { ...process.env };
+    Object.assign(process.env, server);
+    try {
+      const started = await startTraceViewer({ folder: linked, trace: path.join(linked, 'x.json') }, 300);
+      expect(started.ok).toBe(true);
+      if (started.ok) await started.closed;
+    } finally {
+      for (const name of Object.keys(server)) {
+        if (before[name] === undefined) delete process.env[name];
+        else process.env[name] = before[name];
+      }
+    }
+    const env = JSON.parse(fs.readFileSync(path.join(pkg, 'env.json'), 'utf8')) as Record<string, string>;
+    for (const name of Object.keys(server)) expect(env, name).not.toHaveProperty(name);
+    expect(Object.keys(env).filter((name) => /^(PIWI_|NODE_)/i.test(name))).toEqual([]);
+    expect(env).toMatchObject({ PATH: process.env.PATH, FORCE_COLOR: '0' });
   });
 });
 

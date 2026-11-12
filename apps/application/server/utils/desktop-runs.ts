@@ -364,7 +364,8 @@ export class DesktopRuns {
       },
       lingerMs: options.lingerMs,
       requestMs: options.requestMs,
-      // **Open the trace so far**: the viewer runs from the run's folder, the trace's path staying in this server.
+      // **Open the trace so far**: the viewer runs from the run's folder with none of this server's environment but
+      // what a window and Playwright need, the trace's path staying in this server.
       traceViewer: options.traceViewer ?? startTraceViewer,
     });
     this.actions = new StopActions({
