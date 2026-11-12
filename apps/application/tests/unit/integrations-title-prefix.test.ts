@@ -99,7 +99,7 @@ describe('prefixedTitle', () => {
 
   test('never cuts between the halves of an emoji', () => {
     const emoji = '😀';
-    const title = `${'a'.repeat(TICKET_TITLE_MAX_LENGTH - 8)}${emoji}${emoji}${'b'.repeat(20)}`;
+    const title = `${'a'.repeat(TICKET_TITLE_MAX_LENGTH - 9)}${emoji}${emoji}${'b'.repeat(20)}`;
     const cut = prefixedTitle('[Piwi]', title);
     expect(cut.length).toBeLessThanOrEqual(TICKET_TITLE_MAX_LENGTH);
     expect(cut.endsWith('…')).toBe(true);
