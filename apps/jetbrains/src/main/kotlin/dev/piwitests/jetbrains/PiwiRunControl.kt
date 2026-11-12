@@ -236,6 +236,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     @Volatile private var watchingLane: LaneViewParams? = null
     private val pendingLaneFrame = AtomicReference<LaneFrame?>(null)
     private val drawingLaneFrame = AtomicBoolean(false)
+    /** The CI run's lane the Worker tab shows in place of a slot (on the event thread), and its watch. */
+    private var ciTarget: Glue.CiLane? = null
+    @Volatile private var watchingCi: CiWatchParams? = null
+    private val pendingCiFrame = AtomicReference<CiFrame?>(null)
+    private val drawingCiFrame = AtomicBoolean(false)
 
     private val breakpointsQueued = AtomicBoolean()
 
@@ -275,6 +280,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         override fun driveStop(params: DriveStopParams) = existingServer()?.driveStop(params)?.orNull()
 
         override fun laneView(params: LaneViewParams) = existingServer()?.laneView(params)?.orNull()
+
+        override fun ciWatch(params: CiWatchParams) = existingServer()?.ciWatch(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -959,29 +966,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun showWorker(ref: String, lane: Int) {
         val window = toolWindow() ?: return
-        val content = liveWorkerTab() ?: ContentFactory.getInstance()
-            .createContent(PausedPagePanel(), Glue.workerName(lane), false)
-            .apply {
-                isCloseable = true
-                // Closed, the tab stops watching its worker; Watch a Worker's Test opens it again.
-                setDisposer {
-                    if (workerTab === this) {
-                        stopLaneView()
-                        laneTarget = null
-                    }
-                }
-            }
-            .also {
-                window.contentManager.addContent(it)
-                workerTab = it
-                laneTarget = null
-            }
-        content.displayName = Glue.workerName(lane)
-        window.contentManager.setSelectedContent(content)
-        window.show(null)
+        val content = workerTabIn(window, Glue.workerName(lane))
         val panel = content.component as PausedPagePanel
         if (laneTarget != ref to lane) {
             stopLaneView()
+            stopCiView()
+            ciTarget = null
             laneTarget = ref to lane
             panel.forWorker()
             panel.configureLive(true, false, false) { on -> watchLane(on) }
@@ -995,6 +985,82 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
         panel.liveWanted = true
         if (watchingLane == null) watchLane(true)
+    }
+
+    /** The Worker tab named `name`, added to the tool window when it holds none, selected and in sight. */
+    private fun workerTabIn(window: com.intellij.openapi.wm.ToolWindow, name: String): Content {
+        val content = liveWorkerTab() ?: ContentFactory.getInstance()
+            .createContent(PausedPagePanel(), name, false)
+            .apply {
+                isCloseable = true
+                // Closed, the tab stops watching its worker; Watch a Worker's Test, or a CI run's Watch, opens it again.
+                setDisposer {
+                    if (workerTab === this) {
+                        stopLaneView()
+                        stopCiView()
+                        laneTarget = null
+                        ciTarget = null
+                    }
+                }
+            }
+            .also {
+                window.contentManager.addContent(it)
+                workerTab = it
+                laneTarget = null
+                ciTarget = null
+            }
+        content.displayName = name
+        window.contentManager.setSelectedContent(content)
+        window.show(null)
+        return content
+    }
+
+    /**
+     * Watch a CI run's lane in the Worker tab (`piwi/ciWatch`), read-only, in place of the slot it watched: Watch alone,
+     * no Interact and no pick, its caption from the CI sessions (`Glue.ciLaneCaption`), and why the watch ended or was
+     * refused said under it, a refusal offering the lane's view on the dashboard. On the event thread.
+     */
+    fun showCiWorker(lane: Glue.CiLane) {
+        val window = toolWindow() ?: return
+        val content = workerTabIn(window, Glue.ciLaneTitle(lane))
+        val panel = content.component as PausedPagePanel
+        if (ciTarget != lane) {
+            stopLaneView()
+            // Another CI lane takes the place of the one watched on the service's side: no word of the one before.
+            if (ciTarget != null) {
+                watchingCi = null
+                pendingCiFrame.set(null)
+            } else stopCiView()
+            laneTarget = null
+            ciTarget = lane
+            panel.forCiWorker()
+            panel.configureLive(true, false, false) { on -> watchCi(on) }
+            panel.visibilityChanged = { visible ->
+                if (!visible) {
+                    stopCiView()
+                    panel.watching(false)
+                } else if (panel.liveWanted && watchingCi == null) watchCi(true)
+            }
+            panel.show(Glue.ciLaneCaption(ciSessions(), lane), null)
+        }
+        panel.liveWanted = true
+        if (watchingCi == null) watchCi(true)
+    }
+
+    private fun ciSessions(): Map<String, CiSession> = project.getServiceIfCreated(PiwiCiRuns::class.java)?.sessions.orEmpty()
+
+    /** The CI sessions changed: what the Worker tab says of the CI lane it shows follows. On the event thread. */
+    fun ciChanged(sessions: Map<String, CiSession>) {
+        val lane = ciTarget ?: return
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        panel.caption(Glue.ciLaneCaption(sessions, lane))
+        // The service ends the watch with the run's session, and Watch is off for the next.
+        if (sessions[Glue.ciKey(lane.root, lane.runId)] == null && watchingCi != null) {
+            watchingCi = null
+            pendingCiFrame.set(null)
+            panel.watching(false)
+            panel.liveWanted = false
+        }
     }
 
     /** Whether a new page selects the Paused Page tab (`Glue.selectsPausedPage`). On the event thread. */
@@ -1015,12 +1081,91 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         control(RunControlParams(target.ref, target.worker, "pause"))
     }
 
-    @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
+    @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) =
+        queueWorkerCall({ remote.laneView(params) }, answered)
+
+    @Synchronized private fun requestCiWatch(params: CiWatchParams, answered: ((RunControlResult?) -> Unit)? = null) =
+        queueWorkerCall({ remote.ciWatch(params) }, answered)
+
+    /** A call of the Worker tab, sent once the one before was answered, its answer handed on the event thread. */
+    @Synchronized private fun queueWorkerCall(call: () -> RunControlResult?, answered: ((RunControlResult?) -> Unit)?) {
         laneCalls = laneCalls.handle { _, _ -> Unit }.thenApplyAsync({
-            val result = runCatching { remote.laneView(params) }.getOrNull()
+            val result = runCatching { call() }.getOrNull()
             if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
             Unit
         }, AppExecutorUtil.getAppExecutorService())
+    }
+
+    private fun stopCiView() {
+        val previous = watchingCi
+        watchingCi = null
+        pendingCiFrame.set(null)
+        if (previous != null) requestCiWatch(previous.copy(on = false))
+    }
+
+    private fun watchCi(on: Boolean) {
+        stopCiView()
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        panel.watching(false)
+        val lane = ciTarget ?: return
+        if (!on || !panel.isShowing) return
+        val params = CiWatchParams(lane.root, lane.runId, lane.shard, lane.lane, true)
+        watchingCi = params
+        panel.note(null)
+        requestCiWatch(params) { result ->
+            if (watchingCi !== params) return@requestCiWatch
+            if (result?.ok == true) return@requestCiWatch panel.watching(true)
+            watchingCi = null
+            val why = result?.message ?: "The editor service did not answer."
+            panel.note(why)
+            panel.liveWanted = false
+            val dashboard = lane.dashboard ?: return@requestCiWatch
+            PiwiNotifier.create(PiwiNotice.PROBLEM, StringUtil.escapeXmlEntities(why), NotificationType.WARNING)
+                .addAction(NotificationAction.createSimpleExpiring("Watch on the Dashboard") { BrowserUtil.browse(dashboard) })
+                .notify(project)
+        }
+    }
+
+    /**
+     * An image of the CI lane the Worker tab watches, why none shows, or why its watch ended: one image is decoded off
+     * the event thread, the newest alone waiting behind it.
+     */
+    fun ciFrame(frame: CiFrame) {
+        val own = watchingCi ?: return
+        if (!Glue.sameCiLane(own, frame)) return
+        pendingCiFrame.set(frame)
+        drawCiFrame()
+    }
+
+    private fun drawCiFrame() {
+        if (pendingCiFrame.get() == null || !drawingCiFrame.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val frame = pendingCiFrame.getAndSet(null)
+            val picture = frame?.takeIf { it.refused == null && it.ended == null && (it.data?.length ?: Int.MAX_VALUE) <= 524288 }
+                ?.let { Glue.pausedImageBytes(PausedImage("image/jpeg", it.data, null, null)) }
+                ?.let(::decode)
+            ApplicationManager.getApplication().invokeLater({
+                val own = watchingCi
+                val panel = liveWorkerTab()?.component as? PausedPagePanel
+                if (frame != null && own != null && panel?.isShowing == true && Glue.sameCiLane(own, frame)) {
+                    when {
+                        frame.ended != null -> {
+                            watchingCi = null
+                            panel.watching(false)
+                            panel.liveWanted = false
+                            panel.note(frame.ended)
+                        }
+                        frame.refused != null -> panel.note(frame.refused)
+                        picture != null -> {
+                            panel.note(null)
+                            panel.frame(picture)
+                        }
+                    }
+                }
+                drawingCiFrame.set(false)
+                drawCiFrame()
+            }, gone)
+        }
     }
 
     private fun stopLaneView() {
@@ -1645,6 +1790,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         watchingLane = null
         pendingLaneFrame.set(null)
         if (lane != null) requestLaneView(lane.copy(on = false))
+        val ci = watchingCi
+        watchingCi = null
+        pendingCiFrame.set(null)
+        if (ci != null) requestCiWatch(ci.copy(on = false))
         disposed = true
         listeners.clear()
         processes.clear()
@@ -1735,6 +1884,9 @@ internal interface RunRemote {
     fun driveStop(params: DriveStopParams): RunControlResult?
 
     fun laneView(params: LaneViewParams): RunControlResult?
+
+    /** The Worker tab watches a CI run's lane (`on`), or stops. */
+    fun ciWatch(params: CiWatchParams): RunControlResult?
 
     fun pickAt(params: PickAtParams): PickAtResult?
 
@@ -1867,6 +2019,12 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     fun forWorker() {
         live.text = "Watch"
         live.toolTipText = "Show the page of the test this worker runs, a few images a second, through its tests and stops. Nothing is stored or shared."
+    }
+
+    /** The panel of the Worker tab on a CI run's lane: Watch alone, read-only. */
+    fun forCiWorker() {
+        live.text = "Watch"
+        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Read-only: nothing here acts on CI. Nothing is stored."
     }
 
     /** The live view of a stop: Interact stays selected only with `keepInteract`, for a stop that takes input. */

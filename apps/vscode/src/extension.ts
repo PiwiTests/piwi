@@ -1783,7 +1783,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       explorer?.sessionChanged(session);
     }),
     // A CI run of the branch moved: the CI Runs view and the CI positions.
-    lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => ciRuns.heard(session)),
+    lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => {
+      ciRuns.heard(session);
+      runControl.ciChanged(ciRuns.sessions());
+    }),
     // The code made at a stop, from here or Piwi Picker: written above the stopped line.
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
@@ -1791,6 +1794,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (e.newState === State.Stopped) {
         runControl.clear();
         ciRuns.clear();
+        runControl.ciChanged(ciRuns.sessions());
         explorer?.sessionsCleared();
       }
       // A service started again hears the editor's breakpoints, for a run a terminal starts.

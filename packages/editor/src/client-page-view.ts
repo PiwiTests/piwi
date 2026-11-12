@@ -55,7 +55,7 @@ class HeldInput {
  * Sends a viewer's frames to the client one at a time, the latest alone while one is on its way, each only while
  * `goes` says it still does.
  */
-class FrameSender<F> {
+export class FrameSender<F> {
   private pending: F | null = null;
   private sending = false;
 

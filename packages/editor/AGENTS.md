@@ -93,8 +93,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
-- **A CI session is read-only.** No request acts on a `CiSession`, and its position is never a stop and names a file
-  of the context's folder alone (`workspaceFile`). Checked by `tests/ci-sessions.test.ts`.
+- **A CI session is read-only.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a lane), and its
+  position is never a stop and names a file of the context's folder alone (`workspaceFile`). Checked by
+  `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").
@@ -303,12 +304,12 @@ npm run editor:test         # the Vitest suites of tests/
   [what each source file holds](ARCHITECTURE.md#source-files).
 - [Protocol](ARCHITECTURE.md#protocol): before adding or changing a request, a notification, a field or a command id.
 - [Runs and failures](ARCHITECTURE.md#runs-and-failures): the latest run and the baseline, failure diagnostics, the file
-  summary, test items, run streams, runs in progress and the editor's own run.
+  summary, test items, run streams, runs in progress, CI runs and the editor's own run.
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the agents' MCP
-  server and its tools, the desktop app's server as another host, and the discovery file.
+  pause bar shows, the hub, the live view, the code from a stop, the agents' MCP server, the desktop app's server as
+  another host, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

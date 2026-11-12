@@ -831,8 +831,8 @@ export interface CiSession {
    */
   tests: CiTest[];
   /**
-   * The project's live view is on and the run holds a key: a running test can be watched on the dashboard, from its
-   * `watch` address. False until the run's stream says so.
+   * The project's live view is on and the run holds a key: a running test's lane can be watched in the editor
+   * (`piwi/ciWatch`) or on the dashboard, from its `watch` address. False until the run's stream says so.
    */
   watchable: boolean;
   /**
@@ -881,7 +881,7 @@ export interface CiTest {
   at: CiPosition | null;
   /**
    * While it runs and the run is `watchable`: the dashboard's view of its lane (the run's page with `?watch=`), where
-   * it can be watched; null otherwise.
+   * it can be watched, as it can in the editor by its `lane` and `shard` (`piwi/ciWatch`); null otherwise.
    */
   watch: string | null;
 }
@@ -899,6 +899,37 @@ export interface CiPosition {
 }
 
 export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
+
+/**
+ * `piwi/ciWatch`: the client watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest`
+ * names them), read-only, through the team instance's watch of the run, opened with the editor's key: the page of the
+ * test the lane's worker runs, through its next tests and the worker Playwright starts in its place, until the client
+ * stops (`on: false`), its session ends, or the instance ends the watch. One watch per client: another replaces it.
+ * Answered once the instance opened the watch, or with why not (`ok: false`): a run the service does not follow, one
+ * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick.
+ */
+export interface CiWatchParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  on: boolean;
+}
+
+/**
+ * `piwi/ciFrame` (notification, server to client): a transient JPEG of the CI lane the client watches, as its worker
+ * masked it, with the title of its test and the call it was taken at; or why no image shows now (`refused`), the watch
+ * going on; or why the watch ended (`ended`), its last word, unless the client ended it. Never stored.
+ */
+export type CiFrame = { root: string; runId: number; shard: number | null; lane: number } & (
+  | { data: string; test: string | null; call: string | null }
+  | { refused: string }
+  | { ended: string }
+);
+
+export const CI_WATCH_REQUEST = 'piwi/ciWatch';
+export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with

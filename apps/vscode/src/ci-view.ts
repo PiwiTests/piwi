@@ -1,16 +1,27 @@
 /**
  * The CI runs of the branch while they run (`piwi/ciSessionChanged`), read-only: the **CI Runs** view of the Piwi
  * panel, shown while one runs (`piwi.ciRuns`), and a plain mark at the end of the line each of their running tests is
- * at, a CI position: no gutter icon, no background and no control, since nothing waits there. What the view lists and
+ * at, a CI position: no gutter icon, no background and no control, since nothing waits there. A running test's
+ * **Watch** opens its lane in the worker panel (`piwi.watchWorker` with the lane), read-only. What the view lists and
  * what a line says come from `run-control.ts`, tested without an editor.
  */
 import * as vscode from 'vscode';
 import type { CiSession } from '@piwitests/editor/protocol';
-import { ciNodes, ciPositionFiles, ciPositionsIn, withCiSession, type CiNode, type CiSessions } from './run-control';
+import {
+  RUN_COMMANDS,
+  ciNodes,
+  ciPositionFiles,
+  ciPositionsIn,
+  withCiSession,
+  type CiNode,
+  type CiSessions,
+} from './run-control';
 
 export interface CiRuns extends vscode.Disposable {
   /** A session heard from the service: the view and the marks drawn again. */
   heard(session: CiSession): void;
+  /** The sessions kept, the latest of each run. */
+  sessions(): CiSessions;
   /** The service stopped: its sessions go. */
   clear(): void;
 }
@@ -61,6 +72,8 @@ export function registerCiRuns(): CiRuns {
       const open = node.open;
       if (open && 'url' in open) {
         item.command = { command: 'piwi.openInDashboard', title: node.label, arguments: [open.url] };
+      } else if (open && 'lane' in open) {
+        item.command = { command: RUN_COMMANDS.watch, title: node.label, arguments: [{ ci: open.lane }] };
       } else if (open) {
         const at = new vscode.Position(open.line, open.character);
         item.command = {
@@ -120,6 +133,7 @@ export function registerCiRuns(): CiRuns {
       sessions = withCiSession(sessions, asEditorUris(session));
       show();
     },
+    sessions: () => sessions,
     clear() {
       if (!sessions.size) return;
       sessions = new Map();

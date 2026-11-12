@@ -9,18 +9,24 @@
  * the stop, and Interact going off gives it back (`piwi/driveStop`). One slot at a time; a stop elsewhere never takes
  * it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the wheel or a
  * pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the paused page as
- * new ones (`hooks`). The pure half is `run-control.ts`.
+ * new ones (`hooks`). It also watches a CI run's lane through the team instance (`piwi/ciWatch`, `piwi/ciFrame`),
+ * read-only: Watch alone, no Interact, input or pick, its caption from the CI sessions, and why the watch ended said
+ * under it. One slot, local or CI, at a time. The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
 import {
+  CI_FRAME_NOTIFICATION,
+  CI_WATCH_REQUEST,
   DRIVE_STOP_REQUEST,
   LANE_FRAME_NOTIFICATION,
   LANE_VIEW_REQUEST,
   PAGE_INPUT_REQUEST,
   PICK_AT_REQUEST,
+  type CiFrame,
+  type CiWatchParams,
   type LaneFrame,
   type LaneViewParams,
   type PausedImage,
@@ -31,6 +37,9 @@ import {
 } from '@piwitests/editor/protocol';
 import {
   actsOnPage,
+  ciKey,
+  ciLaneCaption,
+  ciLaneTitle,
   frameIsCurrent,
   giveBackParams,
   imageClickOf,
@@ -41,6 +50,8 @@ import {
   pausedPageViewChange,
   picksOnImage,
   workerName,
+  type CiLane,
+  type CiSessions,
   type LaneShown,
   type PausedPageView,
   type ShownStop,
@@ -49,6 +60,10 @@ import {
 export interface WorkerPanel extends vscode.Disposable {
   /** Watch the slot `lane` of the run `ref` in the panel, opened beside the editor without focus; what came of it. */
   open(ref: string, lane: number): Promise<RunControlResult>;
+  /** Watch a CI run's lane in the panel, read-only, opened beside the editor without focus; what came of it. */
+  openCi(lane: CiLane): Promise<RunControlResult>;
+  /** The CI sessions changed: what the panel says of the CI lane it shows follows. */
+  ciChanged(sessions: CiSessions): void;
   /** Whether the panel shows the slot `lane` of the run `ref`, in sight, and watches it. */
   watches(ref: string, lane: number): boolean;
   /** The editor group the panel shows in while in sight; undefined otherwise. */
@@ -78,6 +93,10 @@ export function createWorkerPanel(
 ): WorkerPanel {
   let panel: vscode.WebviewPanel | null = null;
   let target: { ref: string; lane: number } | null = null;
+  /** The CI run's lane shown in place of a local slot, the CI sessions it is captioned from, and its watch. */
+  let ciTarget: CiLane | null = null;
+  let ciSessions: CiSessions = new Map();
+  let ciWatching: CiWatchParams | null = null;
   let sessions: ReadonlyMap<string, RunSession> = new Map();
   let stops: readonly ShownStop[] = [];
   let lane: LaneShown = { worker: null, stop: null, caption: '' };
@@ -106,6 +125,21 @@ export function createWorkerPanel(
 
   /** The view as it stands, posted to the panel's script, or drawn anew for a new slot (`fresh`). */
   const draw = (fresh = false) => {
+    if (ciTarget) {
+      view = {
+        image,
+        caption: ciLaneCaption(ciSessions, ciTarget),
+        note: refused ?? note,
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
+      };
+      if (!panel) return;
+      if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
+      else void panel.webview.postMessage({ type: 'state', view });
+      return;
+    }
     const stop = lane.stop;
     const input = !!stop && stop.takes.includes('input') && accepted;
     const current = !!imageOf && frameIsCurrent(imageOf, lane.worker);
@@ -136,6 +170,32 @@ export function createWorkerPanel(
     watching = null;
     accepted = false;
     if (previous) void lc.sendRequest(LANE_VIEW_REQUEST, { ...previous, on: false }).catch(() => undefined);
+    const ci = ciWatching;
+    ciWatching = null;
+    if (ci) void lc.sendRequest(CI_WATCH_REQUEST, { ...ci, on: false }).catch(() => undefined);
+  };
+
+  /** Watch the CI lane shown, or stop: the service opens the instance's watch, and says why when it cannot. */
+  const watchCi = async (on: boolean): Promise<RunControlResult> => {
+    stopWatching();
+    const ci = ciTarget;
+    if (!on || !ci || !panel?.visible) {
+      draw();
+      return { ok: true, message: 'You no longer watch the CI run’s worker.' };
+    }
+    const params: CiWatchParams = { root: ci.root, runId: ci.runId, shard: ci.shard, lane: ci.lane, on: true };
+    ciWatching = params;
+    note = null;
+    refused = null;
+    draw();
+    const answer = await lc.sendRequest<RunControlResult>(CI_WATCH_REQUEST, params).catch(() => null);
+    if (ciWatching !== params) return answer ?? { ok: false, message: NO_ANSWER };
+    if (!answer?.ok) {
+      ciWatching = null;
+      note = answer?.message ?? NO_ANSWER;
+      draw();
+    }
+    return answer ?? { ok: false, message: NO_ANSWER };
   };
 
   /**
@@ -159,6 +219,7 @@ export function createWorkerPanel(
   };
 
   const watch = async (on: boolean): Promise<RunControlResult> => {
+    if (ciTarget) return watchCi(on);
     // Each watch starts with Interact off, and Interact goes off with the watch.
     interactOff();
     stopWatching();
@@ -211,6 +272,11 @@ export function createWorkerPanel(
     if (m.type === 'view' && typeof m.on === 'boolean') {
       wantOn = m.on;
       return void watch(m.on);
+    }
+    // A CI run's lane is read-only: nothing goes to its page.
+    if (ciTarget) {
+      if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
+      return;
     }
     if (m.type === 'interact' && typeof m.on === 'boolean') {
       // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
@@ -273,6 +339,7 @@ export function createWorkerPanel(
       stopWatching();
       panel = null;
       target = null;
+      ciTarget = null;
       view = null;
       if (!disposed) hooks.changed();
     });
@@ -292,14 +359,37 @@ export function createWorkerPanel(
     draw();
   };
 
-  const subscription = lc.onNotification(LANE_FRAME_NOTIFICATION, frame);
+  /** An image of the CI lane watched, why none shows, or why its watch ended (Watch then shows off). */
+  const ciFrame = (f: CiFrame) => {
+    const ci = ciTarget;
+    const own = ciWatching;
+    if (!ci || !own || !panel?.visible) return;
+    if (f.root !== ci.root || f.runId !== ci.runId || f.shard !== ci.shard || f.lane !== ci.lane) return;
+    if ('ended' in f) {
+      ciWatching = null;
+      refused = null;
+      note = f.ended;
+    } else if ('refused' in f) refused = f.refused;
+    else {
+      if (!isViewFrameData(f.data)) return;
+      refused = null;
+      image = { mime: 'image/jpeg', data: f.data };
+    }
+    draw();
+  };
+
+  const subscriptions = [
+    lc.onNotification(LANE_FRAME_NOTIFICATION, frame),
+    lc.onNotification(CI_FRAME_NOTIFICATION, ciFrame),
+  ];
 
   return {
     async open(ref, slot) {
       if (!panel) panel = create();
       else panel.reveal(vscode.ViewColumn.Beside, true);
       panel.title = `Piwi: ${workerName(slot).toLowerCase()}`;
-      if (target?.ref !== ref || target.lane !== slot) {
+      if (ciTarget || target?.ref !== ref || target.lane !== slot) {
+        ciTarget = null;
         // Another slot's view turns Interact off.
         interactOff();
         stopWatching();
@@ -314,6 +404,40 @@ export function createWorkerPanel(
       }
       wantOn = true;
       return watching ? { ok: true, message: `You watch ${workerName(slot).toLowerCase()}.` } : watch(true);
+    },
+    async openCi(ci) {
+      if (!panel) panel = create();
+      else panel.reveal(vscode.ViewColumn.Beside, true);
+      panel.title = ciLaneTitle(ci);
+      const same =
+        ciTarget?.root === ci.root &&
+        ciTarget.runId === ci.runId &&
+        ciTarget.shard === ci.shard &&
+        ciTarget.lane === ci.lane;
+      if (!same) {
+        interactOff();
+        // Another CI lane takes the place of the one watched on the service's side: no word of the one before.
+        if (ciTarget) ciWatching = null;
+        stopWatching();
+        target = null;
+        ciTarget = ci;
+        shown++;
+        image = null;
+        imageOf = null;
+        note = null;
+        refused = null;
+        lane = { worker: null, stop: null, caption: '' };
+        draw(true);
+      }
+      wantOn = true;
+      return ciWatching ? { ok: true, message: 'You watch the CI run’s worker.' } : watch(true);
+    },
+    ciChanged(now) {
+      ciSessions = now;
+      if (!ciTarget) return;
+      // The service ends the watch with the run's session, and Watch shows off.
+      if (!now.has(ciKey(ciTarget))) ciWatching = null;
+      draw();
     },
     view: () => (panel ? view : null),
     message,
@@ -344,7 +468,7 @@ export function createWorkerPanel(
     },
     dispose() {
       disposed = true;
-      subscription.dispose();
+      for (const subscription of subscriptions) subscription.dispose();
       stopWatching();
       panel?.dispose();
     },

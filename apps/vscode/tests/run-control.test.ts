@@ -11,6 +11,9 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  ciLaneArg,
+  ciLaneCaption,
+  ciLaneTitle,
   ciNodes,
   ciPositionFiles,
   ciPositionsIn,
@@ -2090,7 +2093,22 @@ describe('the CI runs of the branch', () => {
       icon: 'sync~spin',
       open: { uri: page, line: 8, character: 21 },
     });
+    // Watch opens the lane in the worker panel; the dashboard's view is the second choice.
     expect(running!.children).toEqual([
+      expect.objectContaining({
+        label: 'Watch',
+        description: 'worker 2',
+        icon: 'eye',
+        open: {
+          lane: {
+            root: '/work/shop',
+            runId: 78,
+            shard: null,
+            lane: 2,
+            dashboard: 'https://piwi.example/test-runs/78?watch=2',
+          },
+        },
+      }),
       expect.objectContaining({
         label: 'Watch on the dashboard',
         open: { url: 'https://piwi.example/test-runs/78?watch=2' },
@@ -2106,5 +2124,62 @@ describe('the CI runs of the branch', () => {
     // Each node keeps its key as the list moves.
     const again = ciNodes(withCiSession(new Map(), ci(78, { tests: [...ci(78).tests].reverse() })));
     expect(new Set(again[0]!.children.map((n) => n.key))).toEqual(new Set(run!.children.map((n) => n.key)));
+  });
+
+  test('offer no Watch while the run cannot be watched', () => {
+    const [run] = ciNodes(
+      withCiSession(new Map(), ci(78, { watchable: false, tests: ci(78).tests.map((t) => ({ ...t, watch: null })) })),
+    );
+    expect(run!.children.flatMap((n) => n.children)).toEqual([]);
+  });
+
+  test('read the lane a Watch names, and nothing else, from a command’s argument', () => {
+    const lane = {
+      root: '/work/shop',
+      runId: 78,
+      shard: 2,
+      lane: 1,
+      dashboard: 'https://piwi.example/test-runs/78?watch=2.1',
+    };
+    expect(ciLaneArg({ ci: lane })).toEqual(lane);
+    expect(ciLaneArg({ ci: { ...lane, dashboard: 'javascript:alert(1)' } })).toEqual({ ...lane, dashboard: null });
+    expect(ciLaneArg({ ci: { ...lane, lane: 0 } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, shard: undefined } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, runId: '78' } })).toBeNull();
+    // A local run's target is no CI lane.
+    expect(ciLaneArg({ ref: 'ed-1234abcd', worker: 1 })).toBeNull();
+    expect(ciLaneArg(undefined)).toBeNull();
+  });
+
+  test('say in the worker panel which CI lane it shows, what runs there, and that it is read-only', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    expect(ciLaneTitle(lane)).toBe('Piwi: CI run #78 · worker 2');
+    expect(ciLaneTitle({ ...lane, shard: 3 })).toBe('Piwi: CI run #78 · shard 3, worker 2');
+    expect(ciLaneCaption(kept, lane)).toBe(
+      "CI run #78 · worker 2 · Running checkout › pays · Click getByRole('button') · read-only",
+    );
+    expect(ciLaneCaption(kept, { ...lane, lane: 1 })).toBe('CI run #78 · worker 1 · between tests · read-only');
+    expect(ciLaneCaption(new Map(), lane)).toBe('CI run #78 · worker 2 · the run ended.');
+  });
+
+  test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI run #78 · worker 2 · between tests · read-only',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      },
+      'n0nce',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain('<input id="live" type="checkbox"> Watch</label>');
+    expect(html).toContain('<label hidden><input id="interact" type="checkbox" disabled> Interact</label>');
+    expect(html).toContain('read-only');
+    expect(html).toContain('alt="The page of the CI worker\'s test"');
+    expect(html).not.toContain('Shift+click');
   });
 });

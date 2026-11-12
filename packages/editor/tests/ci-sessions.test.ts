@@ -267,6 +267,33 @@ describe('the CI sessions', () => {
     expect(sessions!.sessions()).toEqual([]);
   });
 
+  test('name the worker of a lane to watch: its running test’s, else its latest test’s', async () => {
+    const c = context();
+    start([c]);
+    sessions!.offer(c, ciRun(78));
+    const test = (title: string, workerIndex: number, parallelIndex: number, shardIndex: number | null = null) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex,
+      parallelIndex,
+      shardIndex,
+      retries: 0,
+    });
+    send(78, 'test-begin', test('pays', 4, 1));
+    send(78, 'test-completed', { ...test('pays', 4, 1), status: 'failed' });
+    expect(sessions!.watchTarget(undefined, 78, null, 2)).toMatchObject({ root: ROOT, watchable: false, worker: 4 });
+    // The worker Playwright starts in the lane after a failure runs the lane's next test.
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', test('refunds', 6, 1));
+    send(78, 'test-begin', test('cart', 5, 0, 2));
+    expect(sessions!.watchTarget(ROOT, 78, null, 2)).toMatchObject({ watchable: true, worker: 6 });
+    expect(sessions!.watchTarget(ROOT, 78, 2, 1)).toMatchObject({ worker: 5 });
+    expect(sessions!.watchTarget(ROOT, 78, null, 3)).toMatchObject({ worker: null });
+    expect(sessions!.watchTarget('/work/other', 78, null, 2)).toBeNull();
+    expect(sessions!.watchTarget(ROOT, 79, null, 2)).toBeNull();
+  });
+
   test('follow only a CI run of the branch read or checked out, while it runs', async () => {
     const c = context();
     const heard = start([c]);

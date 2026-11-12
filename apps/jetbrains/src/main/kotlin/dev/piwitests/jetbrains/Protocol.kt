@@ -343,8 +343,8 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
  * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
  * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
- * ended; `watchable` says a running test can be watched on the dashboard, from its `watch` address. The last of a run
- * says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
+ * ended; `watchable` says a running test's lane can be watched in the IDE (`piwi/ciWatch`) or on the dashboard, from
+ * its `watch` address. The last of a run says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
  */
 data class CiSession(
     val runId: Int = 0,
@@ -396,6 +396,29 @@ data class CiPosition(
     val line: Int = 0,
     val character: Int? = null,
     val text: String = "",
+)
+
+/**
+ * `piwi/ciWatch`: the IDE watches the lane of a running test of a CI session (`lane` and `shard` as its `CiTest` names
+ * them), read-only, through the team instance's watch of the run with the editor's key, until `on` is false, its
+ * session ends or the instance ends the watch; one at a time, another replacing it. Nothing it sends reaches the run.
+ */
+data class CiWatchParams(val root: String?, val runId: Int, val shard: Int?, val lane: Int, val on: Boolean)
+
+/**
+ * `piwi/ciFrame`: a JPEG of the CI lane the IDE watches (`data`, base64), as its worker masked it, with its test's title
+ * and the call it was taken at; or why no image shows now (`refused`); or why the watch ended (`ended`), its last word.
+ */
+data class CiFrame(
+    val root: String = "",
+    val runId: Int = 0,
+    val shard: Int? = null,
+    val lane: Int = 0,
+    val data: String? = null,
+    val test: String? = null,
+    val call: String? = null,
+    val refused: String? = null,
+    val ended: String? = null,
 )
 
 /**
@@ -1325,6 +1348,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/laneView")
     fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciWatch")
+    fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>

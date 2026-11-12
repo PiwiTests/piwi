@@ -3303,6 +3303,13 @@ class GlueTest {
                 Glue.CiRow("run", "CI run #78", "feature/pay · 1 of 4 tests · 1 failed"),
                 Glue.CiRow("open", "Open run #78", "on the dashboard", url = "https://piwi.example/test-runs/78"),
                 Glue.CiRow("test", "checkout › pays", "chromium · worker 2 · Click getByRole('button')", "running", page, 8, 21),
+                // Watch opens the lane in the Worker tab; the dashboard's view is the second choice.
+                Glue.CiRow(
+                    "ci-watch",
+                    "Watch",
+                    "worker 2 · read-only",
+                    lane = Glue.CiLane("/work/shop", 78, null, 2, "https://piwi.example/test-runs/78?watch=2"),
+                ),
                 Glue.CiRow("watch", "Watch on the dashboard", "read-only", url = "https://piwi.example/test-runs/78?watch=2"),
                 Glue.CiRow("test", "refunds", "chromium · retry 1 · failed", "failed", spec, 10),
             ),
@@ -3324,5 +3331,42 @@ class GlueTest {
         val session = Gson().fromJson(json, CiSession::class.java)
         assertEquals(listOf(Glue.CiMark(8, "CI run #78: Click")), Glue.ciMarksIn(listOf(session), page))
         assertEquals(Glue.CiRow("test", "pays", "Click", "running", page, 8, 0), Glue.ciRows(listOf(session))[2])
+    }
+
+    @Test
+    fun aCiRunsLaneInTheWorkerTabSaysWhatRunsThereAndThatItIsReadOnly() {
+        val kept = Glue.withCiSession(emptyMap(), ci(78))
+        val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
+        assertEquals("CI run #78 · worker 2", Glue.ciLaneTitle(lane))
+        assertEquals("CI run #78 · shard 3, worker 2", Glue.ciLaneTitle(lane.copy(shard = 3)))
+        assertEquals(
+            "CI run #78 · worker 2 · Running checkout › pays · Click getByRole('button') · read-only",
+            Glue.ciLaneCaption(kept, lane),
+        )
+        assertEquals("CI run #78 · worker 1 · between tests · read-only", Glue.ciLaneCaption(kept, lane.copy(lane = 1)))
+        assertEquals("CI run #78 · worker 2 · the run ended.", Glue.ciLaneCaption(emptyMap(), lane))
+        // No Watch while the run cannot be watched.
+        val unwatched = ci(78).copy(watchable = false, tests = ci(78).tests.orEmpty().map { it.copy(watch = null) })
+        assertTrue(Glue.ciRows(listOf(unwatched)).none { it.kind == "ci-watch" || it.kind == "watch" })
+    }
+
+    @Test
+    fun aCiFrameIsOfTheLaneWatchedAndReadsAsTheServiceSendsIt() {
+        val watching = CiWatchParams("/work/shop", 78, null, 2, true)
+        val frame = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"data":"/9j/","test":"pays","call":null}""",
+            CiFrame::class.java,
+        )
+        assertTrue(Glue.sameCiLane(watching, frame))
+        assertEquals("/9j/", frame.data)
+        assertFalse(Glue.sameCiLane(watching, frame.copy(lane = 1)))
+        assertFalse(Glue.sameCiLane(watching, frame.copy(runId = 79)))
+        assertFalse(Glue.sameCiLane(watching.copy(shard = 1), frame))
+        val ended = Gson().fromJson(
+            """{"root":"/work/shop","runId":78,"shard":null,"lane":2,"ended":"The CI run ended."}""",
+            CiFrame::class.java,
+        )
+        assertEquals("The CI run ended.", ended.ended)
+        assertEquals(null, ended.data)
     }
 }

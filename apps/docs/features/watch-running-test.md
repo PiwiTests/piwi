@@ -41,12 +41,18 @@ nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
   Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
 - **Piwi Picker's Runs window** lists the CI runs in progress of the projects your
   [connection](./extension-connection) maps, through that instance, with **Open**.
-- **Watch on the dashboard**, under a running test of a run whose project has the [live view](./live-view) on, opens
-  its lane's view on the run's page.
+- **Watch**, under a running test of a run whose project has the [live view](./live-view) on, opens its lane in the
+  editor, read-only: the VS Code worker panel or the JetBrains **Worker** tab, named `CI run #78 · worker 2`, with
+  **Watch** alone, no **Interact** and no pick. It follows the lane through its next tests, and ends with the run, as
+  you hide or close the view, or as the instance closes it, saying why.
+- **Watch on the dashboard**, beside it, opens the lane's view on the run's page: the choice where the editor cannot
+  show it (an older instance, a refused **Watch**, which offers it).
 
 The editor follows the two newest CI runs of a branch through the connection to the instance it already holds, and
 Piwi Picker reads the list every 15 seconds while its Runs window is open. While the editor follows a run, the run's
-reporter streams the call each test is at.
+reporter streams the call each test is at. A CI lane's images come from the team instance, read with your editor's
+key: the CI worker paints over the same fields before they leave it, the editor service keeps none, and the watch
+counts among the instance's watches of the run for the key's owner, as a dashboard tab does.
 
 ## What you see
 
@@ -79,7 +85,8 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 
 ## Limits
 
-- **One worker per editor.** The panel or tab watches one worker: watching another moves it there.
+- **One worker per editor.** The panel or tab watches one worker, a CI run's lane included: watching another moves it
+  there.
 - **The test's `page`.** A popup or a second page the test opens is not shown. A download a click on the view starts
   and a dialog the page opens go to the test as its own would: Playwright deletes the download with the test's
   context, and dismisses the dialog unless the test handles it.

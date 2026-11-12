@@ -658,13 +658,22 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
 - **The CI Run tab** of the Piwi tool window (**CI Runs (2)** for several) is added, not selected, while one runs, and
   removed once none does; closed, it opens again for a run it did not list. It lists each run as `CI run #78`, its
   branch and progress beside it, then **Open run #78**, its tests, and under a running test of a run that can be
-  watched, **Watch on the dashboard** (`Glue.ciRows`). A double click or Enter opens a test at the call it is at, else
-  its spec, and a link in the browser. No row pauses, steers, shares or holds the run.
+  watched, **Watch** and **Watch on the dashboard** (`Glue.ciRows`). A double click or Enter opens a test at the call
+  it is at, else its spec, **Watch** the lane in the Worker tab, and a link in the browser. No row pauses, steers,
+  shares or holds the run.
+- **A CI lane in the Worker tab** (`PiwiRunSessions.showCiWorker`, in place of the slot it watched) is watched with
+  `piwi/ciWatch` through `RunRemote.ciWatch` and drawn from `piwi/ciFrame` (`PiwiLsp4jClient.ciFrame`, decoded off the
+  event thread, the newest alone waiting), named `CI run #78 · worker 2` (`Glue.ciLaneTitle`) and captioned from the
+  CI sessions (`Glue.ciLaneCaption`, which `PiwiCiRuns` hands on as they change). It has Watch alone: no Interact, no
+  pick, no input. Why the watch ended (`ended`) or was refused shows under the caption, Watch then off, and a refusal
+  offers **Watch on the Dashboard** in a notification. Another CI lane takes the watch's place on the service's side
+  without an `on: false`; a local slot, the tab closed or hidden end it.
 - **The CI position** of each running test is an after-line-end inlay in the inlay hints' color, italic, with no
   gutter icon, highlight or link (`CiMarkInlay`, `Glue.ciMarksIn`), in each editor of its file, drawn again as the
   sessions change and as an editor opens. The tests of several runs on one line share one inlay.
 
-`GlueTest` checks the rows and the marks, and that a session reads as the service sends it.
+`GlueTest` checks the rows, the marks, the CI lane's title and caption, and that a session and a CI frame read as the
+service sends them.
 
 ## Finding Playwright configs
 

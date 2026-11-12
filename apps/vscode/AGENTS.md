@@ -133,7 +133,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
 - **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
   Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
-  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  messages name the view they were drawn for, a stop's at a stop; a CI run's lane takes none (`ci`): checked by `tests/run-control.test.ts`,
   `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
   for the paused page, another stop shown in it ends or restarts its watch, never a focus change
   (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).

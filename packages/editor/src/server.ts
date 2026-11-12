@@ -157,6 +157,7 @@ import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { RunStreams } from './run-stream.js';
 import { CiSessions } from './ci-sessions.js';
+import { CiWatch } from './ci-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
 import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
@@ -218,6 +219,9 @@ import {
   RUN_ENDED_NOTIFICATION,
   RUN_STATUS_NOTIFICATION,
   CI_SESSION_NOTIFICATION,
+  CI_WATCH_REQUEST,
+  CI_FRAME_NOTIFICATION,
+  type CiWatchParams,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
   RUN_ID_REQUEST,
@@ -865,11 +869,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let previewsEdits = false;
   /** The runs' streams: the contexts' runs in progress and the CI sessions read one connection per run. */
   const runStreams = new RunStreams();
+  /** The client's one watch of a CI run's lane on the instance, read-only. */
+  const ciWatch = new CiWatch({
+    target: (root, runId, shard, lane) => ciSessions.watchTarget(root, runId, shard, lane),
+    send: (frame) => connection.sendNotification(CI_FRAME_NOTIFICATION, frame),
+  });
   /** The CI runs of the contexts' branches while they run, read-only. */
   const ciSessions = new CiSessions({
     contexts: () => contexts,
     streams: runStreams,
-    changed: (session) => void connection.sendNotification(CI_SESSION_NOTIFICATION, session),
+    changed: (session) => {
+      ciWatch.sessionChanged(session);
+      void connection.sendNotification(CI_SESSION_NOTIFICATION, session);
+    },
   });
 
   const publish = (uri: string) =>
@@ -4132,6 +4144,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ? clientLaneView!.watch(params)
       : Promise.resolve({ ok: false, message: 'This client does not show running tests.' }),
   );
+  // A CI run's lane, read-only: nothing it sends reaches the run.
+  connection.onRequest(CI_WATCH_REQUEST, (params: CiWatchParams): Promise<RunControlResult> => ciWatch.watch(params));
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
     if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);
@@ -4352,6 +4366,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   return () => {
     stopped = true;
     runWatch.dispose();
+    ciWatch.dispose();
     ciSessions.dispose();
     runStreams.dispose();
     recordings.dispose();

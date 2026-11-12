@@ -226,8 +226,12 @@ test failed, was marked **Stuck?** or stopped, and says why; the demo's tiles na
 of the branch (E24) is a read-only session in the editors, from the run stream the editor already holds (one
 connection a run, the two newest a branch): VS Code's **CI Runs** view and the JetBrains **CI Run** tab list it with
 its progress and tests, the line each running test is at is marked as a CI position, and Piwi Picker's Runs window
-lists the CI runs in progress of the projects it maps; their **Watch** opens the lane's view on the dashboard until
-the lane view over the instance is built. The later phases are proposed. The bugs the analysis
+lists the CI runs in progress of the projects it maps; in the editors, a running test's **Watch** opens its lane in
+VS Code's worker panel and the JetBrains **Worker** tab, read-only (Watch alone: no Interact, input or pick), through
+one watch of the run the editor service opens on the instance with the editor's key (`piwi/ciWatch`, `piwi/ciFrame`),
+the live stream read with core's one reader, another lane of the run shown by a POST on the same watch, and its end
+said in the view (the run's end, the instance's, an error), with **Watch on the dashboard** beside it. The later
+phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

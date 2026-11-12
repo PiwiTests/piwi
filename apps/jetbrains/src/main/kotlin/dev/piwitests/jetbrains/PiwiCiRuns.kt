@@ -8,6 +8,7 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorCustomElementRenderer
@@ -44,8 +45,9 @@ import javax.swing.JList
 /**
  * The CI runs of the branch while they run (`piwi/ciSessionChanged`), read-only: the **CI Runs** tab of the Piwi tool
  * window, added while one runs, and a plain mark after the line each of their running tests is at, a CI position: no
- * gutter icon, no highlight and no control, since nothing waits there. What the tab lists and what a line says come
- * from `Glue` (`ciRows`, `ciMarksIn`), tested by `GlueTest`.
+ * gutter icon, no highlight and no control, since nothing waits there. A running test's **Watch** opens its lane in
+ * the Worker tab, read-only (`PiwiRunSessions.showCiWorker`). What the tab lists and what a line says come from `Glue`
+ * (`ciRows`, `ciMarksIn`, `ciLaneCaption`), tested by `GlueTest`.
  */
 @Service(Service.Level.PROJECT)
 class PiwiCiRuns(private val project: Project) : Disposable {
@@ -105,6 +107,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
         val now = sessions
         drawTab(now)
         drawMarks(now.values)
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciChanged(now)
     }
 
     private fun drawTab(now: Map<String, CiSession>) {
@@ -136,7 +139,10 @@ class PiwiCiRuns(private val project: Project) : Disposable {
 
     private fun tabName(now: Map<String, CiSession>): String = if (now.size == 1) "CI Run" else "CI Runs (${now.size})"
 
-    /** The tab's list: a row opens its file at its line, or its page on the dashboard, on a double click or Enter. */
+    /**
+     * The tab's list: a row opens its lane in the Worker tab, its file at its line, or its page on the dashboard, on a
+     * double click or Enter.
+     */
     private fun list(): JList<Glue.CiRow> {
         val list = JBList(rows)
         list.cellRenderer = CiRowRenderer()
@@ -159,6 +165,7 @@ class PiwiCiRuns(private val project: Project) : Disposable {
     }
 
     private fun open(row: Glue.CiRow) {
+        row.lane?.let { return project.service<PiwiRunSessions>().showCiWorker(it) }
         row.url?.let { return BrowserUtil.browse(it) }
         val file = row.uri?.let { fileOf(it) } ?: return
         OpenFileDescriptor(project, file, row.line, row.character).navigate(true)
@@ -216,8 +223,8 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
                 icon = AllIcons.Actions.Execute
                 append(value.text, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
-            "open", "watch" -> {
-                icon = if (value.kind == "watch") AllIcons.Actions.Preview else AllIcons.Ide.External_link_arrow
+            "open", "watch", "ci-watch" -> {
+                icon = if (value.kind == "ci-watch") AllIcons.Actions.Preview else AllIcons.Ide.External_link_arrow
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {
@@ -233,6 +240,6 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
         }
         if (value.detail.isNotEmpty()) append("   ${value.detail}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         // Rows under a run are indented under its name.
-        ipad.left = if (value.kind == "run") 0 else if (value.kind == "watch") 36 else 18
+        ipad.left = if (value.kind == "run") 0 else if (value.kind == "watch" || value.kind == "ci-watch") 36 else 18
     }
 }

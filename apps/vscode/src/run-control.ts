@@ -8,7 +8,7 @@
  * (Share live: what it sends, how it stands), the workers a panel can watch while their test runs and what the panel
  * says of one, and the edits of the documents since a run started, which map a line of the run's code to the document
  * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
- * nodes and the CI positions marked at a line.
+ * nodes, the CI positions marked at a line, and what the worker panel says of a CI run's lane it watches.
  */
 import type {
   CiSession,
@@ -1757,6 +1757,8 @@ export interface PausedPageView {
   live?: { shown: number; on: boolean; input: boolean; interacting: boolean; clickCounts: boolean };
   /** The panel watches a worker's slot, running or stopped, not one stop. */
   lane?: boolean;
+  /** The slot is a CI run's lane, read-only: Watch alone, no Interact and no pick. */
+  ci?: boolean;
   /** The image shows what the worker did before: a test or a stop it left, until the next image comes. */
   stale?: boolean;
   /**
@@ -1890,9 +1892,11 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
-      ? view.lane
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+      ? view.ci
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label hidden><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
+        : view.lane
+          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+          : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live
@@ -1901,7 +1905,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
         ? `<p class="note" role="status">${escapeHtml(view.note)}</p>`
         : '',
     live
-      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'}${view.stale ? ' class="stale"' : ''} alt="${view.lane ? "The page of the worker's test" : 'The page of the paused test'}" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
+      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'}${view.stale ? ' class="stale"' : ''} alt="${view.ci ? "The page of the CI worker's test" : view.lane ? "The page of the worker's test" : 'The page of the paused test'}" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
       : src
         ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">`
         : '',
@@ -1971,8 +1975,57 @@ export function ciPositionFiles(sessions: CiSessions): Set<string> {
   return new Set([...sessions.values()].flatMap((s) => s.tests.flatMap((t) => (t.at ? [t.at.uri] : []))));
 }
 
-/** What a node of the **CI Runs** view opens: a file at a line, or a page of the instance; nothing for none. */
-export type CiOpen = { uri: string; line: number; character: number } | { url: string } | null;
+/**
+ * A lane of a CI run the worker panel watches (`piwi/ciWatch`), as its `CiTest` names it, and its view on the dashboard,
+ * the second choice where the editor cannot show it.
+ */
+export interface CiLane {
+  root: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  dashboard: string | null;
+}
+
+/** What a node of the **CI Runs** view opens: a file at a line, a page of the instance, a lane in the worker panel. */
+export type CiOpen = { uri: string; line: number; character: number } | { url: string } | { lane: CiLane } | null;
+
+/** The CI lane a command's argument names (`{ ci: CiLane }`, from the **CI Runs** view); null for anything else. */
+export function ciLaneArg(arg: unknown): CiLane | null {
+  const ci = (arg as { ci?: Partial<CiLane> } | null | undefined)?.ci;
+  if (!ci || typeof ci !== 'object' || typeof ci.root !== 'string') return null;
+  const whole = (n: unknown, min: number) => typeof n === 'number' && Number.isInteger(n) && n >= min;
+  if (!whole(ci.runId, 1) || !whole(ci.lane, 1) || !(ci.shard === null || whole(ci.shard, 1))) return null;
+  const dashboard = typeof ci.dashboard === 'string' && /^https?:\/\//.test(ci.dashboard) ? ci.dashboard : null;
+  return { root: ci.root, runId: ci.runId!, shard: ci.shard!, lane: ci.lane!, dashboard };
+}
+
+/** `worker 2`, or `shard 1, worker 2`: a CI lane in words. */
+function ciLaneName(lane: Pick<CiTest, 'lane' | 'shard'>): string {
+  if (lane.lane === null) return '';
+  return lane.shard !== null ? `shard ${lane.shard}, worker ${lane.lane}` : `worker ${lane.lane}`;
+}
+
+/** The worker panel's title while it watches a CI lane: `Piwi: CI run #78 · worker 2`. */
+export function ciLaneTitle(lane: CiLane): string {
+  return `Piwi: CI run #${lane.runId} · ${ciLaneName(lane)}`;
+}
+
+/**
+ * What the worker panel says above a CI lane it watches, from the run's session: the test running in the lane and the
+ * call it is at, else that the lane is between tests, else that the run ended; always read-only.
+ */
+export function ciLaneCaption(sessions: CiSessions, lane: CiLane): string {
+  const name = `CI run #${lane.runId} · ${ciLaneName(lane)}`;
+  const session = sessions.get(ciKey(lane));
+  if (!session) return `${name} · the run ended.`;
+  const test = session.tests.find(
+    (t) => t.status === 'running' && t.lane === lane.lane && (t.shard ?? null) === lane.shard,
+  );
+  if (!test) return `${name} · between tests · read-only`;
+  const at = test.at ? ` · ${test.at.title}` : '';
+  return `${name} · Running ${ciTestName(test)}${at} · read-only`;
+}
 
 /** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 export interface CiNode {
@@ -1999,19 +2052,13 @@ function ciTestName(test: CiTest): string {
   return test.title.join(' › ').replace(/\s+/g, ' ');
 }
 
-/** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
-function ciLane(test: CiTest): string {
-  if (test.lane === null) return '';
-  return test.shard !== null ? `shard ${test.shard}, worker ${test.lane}` : `worker ${test.lane}`;
-}
-
 /** A CI test's words beside its name: its Playwright project and attempt, then where it runs and its call, or its result. */
 function ciTestDescription(test: CiTest): string {
   const running = test.status === 'running';
   const parts = [
     test.project,
     test.retry ? `retry ${test.retry}` : '',
-    running ? ciLane(test) : test.status,
+    running ? ciLaneName(test) : test.status,
     running ? (test.at?.title ?? '') : '',
   ];
   return parts.filter(Boolean).join(' · ');
@@ -2020,8 +2067,8 @@ function ciTestDescription(test: CiTest): string {
 /**
  * The **CI Runs** view: each CI run of the branch in progress, named as other runs are (`CI run #78`) with its
  * progress, then **Open** on its page and its tests: a running one opens the call it is at, else its spec, and offers
- * **Watch** on the dashboard while its run can be watched; one that ended opens its spec. Read-only: nothing here
- * steers the run.
+ * **Watch** in the worker panel and **Watch on the dashboard** while its run can be watched; one that ended opens its
+ * spec. Read-only: nothing here steers the run.
  */
 export function ciNodes(sessions: CiSessions): CiNode[] {
   return [...sessions.values()]
@@ -2045,14 +2092,31 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         keys.add(testKey);
         const spec = test.uri && test.line !== null ? { uri: test.uri, line: test.line, character: 0 } : null;
         const place = test.at ? { uri: test.at.uri, line: test.at.line, character: test.at.character ?? 0 } : spec;
+        const lane: CiLane | null =
+          test.watch && test.lane !== null
+            ? { root: session.root, runId: session.runId, shard: test.shard, lane: test.lane, dashboard: test.watch }
+            : null;
         const watch: CiNode[] = test.watch
           ? [
+              ...(lane
+                ? [
+                    {
+                      key: `${testKey}\nwatch-here`,
+                      label: 'Watch',
+                      description: ciLaneName(test),
+                      tooltip: `Watch the page of the test ${ciLaneName(test)} runs, in the editor, read-only, as the team instance relays it.`,
+                      icon: 'eye',
+                      open: { lane },
+                      children: [],
+                    },
+                  ]
+                : []),
               {
                 key: `${testKey}\nwatch`,
                 label: 'Watch on the dashboard',
                 description: '',
                 tooltip: `Watch this test’s page live on the dashboard, read-only: ${test.watch}`,
-                icon: 'eye',
+                icon: 'link-external',
                 open: { url: test.watch },
                 children: [],
               },
@@ -2078,7 +2142,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         tooltip:
           `${session.name}${session.branch ? ` on ${session.branch}` : ''}: ${session.summary}. ` +
           'Read-only: it runs on CI, so nothing here pauses or steers it.' +
-          (session.watchable ? ' Its running tests can be watched on the dashboard.' : ''),
+          (session.watchable ? ' Its running tests can be watched, here or on the dashboard.' : ''),
         icon: 'cloud',
         open: null,
         children: [open, ...tests],

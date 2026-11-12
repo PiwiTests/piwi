@@ -324,6 +324,27 @@ export class CiSessions {
     return [...this.followed.values()].map((f) => this.sessionOf(f, false));
   }
 
+  /**
+   * The run a client asks to watch a lane of (`piwi/ciWatch`): the session's root, the client of its instance, whether
+   * it can be watched, and the worker of the lane's running test, else of its latest (Playwright's worker index, null
+   * when the run named none there yet); null when no session of the run is followed, of `root` when it is named.
+   */
+  watchTarget(
+    root: string | undefined,
+    runId: number,
+    shard: number | null,
+    lane: number,
+  ): { root: string; client: PiwiClient; watchable: boolean; worker: number | null } | null {
+    const f = [...this.followed.values()].find(
+      (each) => each.runId === runId && (root === undefined || each.context.root === root),
+    );
+    if (!f) return null;
+    const [latest] = [...f.tests.values()]
+      .filter((t) => t.lane === lane && t.shard === shard && t.worker !== null)
+      .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.seq - a.seq);
+    return { root: f.context.root, client: f.client, watchable: f.watchable, worker: latest?.worker ?? null };
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const f of this.followed.values()) {

@@ -147,6 +147,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 return RunControlResult(true, "Watching.")
             }
 
+            override fun ciWatch(params: CiWatchParams): RunControlResult = RunControlResult(true, "Watching.")
+
             override fun pickAt(params: PickAtParams): PickAtResult {
                 picks += params
                 return picked

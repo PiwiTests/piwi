@@ -558,8 +558,15 @@ until one says `ended`, or the service stops (`withCiSession`).
 
 - **The CI Runs view** (`piwi.ciRuns`, in the Piwi panel while `piwi.ciRuns` holds) lists each run as `CI run #78`,
   its branch and progress beside it, then **Open run #78**, its running tests and the latest that ended (`ciNodes`). A
-  running test opens the call it is at, else its spec; one whose run can be watched holds **Watch on the dashboard**,
-  which opens its lane's view on the run's page (`piwi.openInDashboard`). No node pauses, steers, shares or holds.
+  running test opens the call it is at, else its spec; one whose run can be watched holds **Watch**, which opens its
+  lane in the worker panel (`piwi.watchWorker` with `{ ci: CiLane }`, read by `ciLaneArg`), then **Watch on the
+  dashboard**, which opens its lane's view on the run's page (`piwi.openInDashboard`), as does the warning of a Watch
+  the editor cannot show. No node pauses, steers, shares or holds.
+- **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
+  `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
+  follows) and drawn by `pausedPageHtml` with `ci`: **Watch** alone, Interact hidden, no pick, and every input refused
+  in the extension too. Why the watch ended (`ended`) or was refused shows under the caption, Watch then off. Another
+  CI lane takes the watch's place on the service's side without an `on: false`; a local slot ends it.
 - **The CI position** of each running test is a plain mark at the end of its line, in the CodeLens color, italic,
   with no gutter icon and no background (`ciPositionsIn`), its hover saying nothing waits there. The tests of several
   runs on one line share one mark.

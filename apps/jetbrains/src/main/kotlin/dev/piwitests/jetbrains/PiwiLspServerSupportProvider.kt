@@ -290,6 +290,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneFrame(frame)
     }
 
+    /** A CI run's lane the Worker tab watches, read-only: an image, why none shows, or why the watch ended. */
+    @JsonNotification("piwi/ciFrame")
+    fun ciFrame(frame: CiFrame) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.ciFrame(frame)
+    }
+
     /** The code made at a stop, from here or Piwi Picker: written above the stopped line. */
     @JsonNotification("piwi/stopCode")
     fun stopCode(code: StopCode) {

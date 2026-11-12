@@ -25,6 +25,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
   - [CI runs of the branch](#ci-runs-of-the-branch)
+  - [Watching a CI lane](#watching-a-ci-lane)
   - [The editor's own run](#the-editors-own-run)
 - [Breakpoints and picked locators](#breakpoints-and-picked-locators)
   - [Breakpoints](#breakpoints)
@@ -132,6 +133,7 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
 - `src/ci-sessions.ts`: the CI runs of the branch while they run, as read-only sessions (`piwi/ciSessionChanged`).
+- `src/ci-watch.ts`: the client's watch of a CI run's lane through the instance (`piwi/ciWatch`, `piwi/ciFrame`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
@@ -200,6 +202,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`;
+  - CI runs: `piwi/ciWatch`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -212,7 +215,7 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`,
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/stopCode`, `piwi/pageFrame`,
   `piwi/laneFrame`, `piwi/shareWindowChanged`, `piwi/askToWatch`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
@@ -539,11 +542,39 @@ its running tests is at as a CI position, never as a stop. No request acts on it
   as the CI machine does; the service learns where the run's Playwright config sits there from a step in the running
   test's own spec (`ciBaseOf`), and places a file under it in the context's folder (`workspaceFile`), never one in
   `node_modules`, above the folder or missing. The line is the run's commit's.
-- **Watch** is the dashboard's for now: a running test of a `watchable` run carries its lane's view on the run's page
-  (`watch`, `?watch=<shard>.<lane>`), which the clients open.
+- **Watch**: a running test of a `watchable` run can be watched in the client's worker panel, read-only
+  ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
+  `?watch=<shard>.<lane>`), which the clients offer beside it.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, project or branch, or when a newer run takes its place:
   the last notification says `ended`, and the run's stream is let go.
+
+### Watching a CI lane
+
+`piwi/ciWatch { root?, runId, shard, lane, on }` (`src/ci-watch.ts`, one `CiWatch` per service) shows the lane of a
+running test of a CI session in the client's worker panel, read-only, through the instance's watch of the run, opened
+with the editor's key (`PiwiClient.liveWatch`, `project:read`; the key counts as its owner in the instance's bound of
+watches per person).
+
+- **Opens** on the lane's worker in full: `worker` (the lane's running test's Playwright worker index, else its latest
+  test's: `CiSessions.watchTarget`), `slot` (`lane - 1`), `shard`, and `CI_WATCH_SIZE` (960 by 600 device pixels), so
+  the instance follows the lane through its next tests and the worker Playwright starts in it. Refused, before asking
+  the instance, for a run no session follows, one that is not `watchable`, and a lane no test ran in yet; then with the
+  instance's own words (a project with the live view off, a worker not in it, a run no longer live, too many watches),
+  and for an answer that is not `application/vnd.piwi.live-stream` (an older instance: the clients offer the
+  dashboard). The answer comes once the instance opened the stream.
+- **One at a time.** Another lane of the same run, instance and key is shown on the open watch by a POST naming it
+  (`PiwiClient.changeLiveWatch`: `watch`, `focus`, the size); any other lane is a new watch in its place. A refused
+  change ends the watch.
+- **Reads** the stream with core's `createLiveMessageReader` and `readLiveViewerMessage`: each `frame` of the lane goes
+  to the client as `piwi/ciFrame` (the JPEG in base64, the test's title, the call's title), one at a time, the newest
+  alone waiting (`FrameSender`); a `refused` as `refused`; the call log and a test's outcome go nowhere. A frame is
+  masked by the worker before it leaves the CI machine, and the service keeps none.
+- **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
+  instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
+  follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
+
+Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POST.
 
 ### The editor's own run
 

@@ -3265,7 +3265,9 @@ object Glue {
     fun testFileSuffix(name: String): String? = SPEC_FILE.find(name)?.value
 
     /** A CI session's key: its context's folder and its run. */
-    fun ciKey(session: CiSession): String = "${session.root.orEmpty()}\n${session.runId}"
+    fun ciKey(session: CiSession): String = ciKey(session.root, session.runId)
+
+    fun ciKey(root: String?, runId: Int): String = "${root.orEmpty()}\n$runId"
 
     /** The CI sessions kept, by `ciKey`, once `session` is heard: the latest of each run, one that ended dropped. */
     fun withCiSession(sessions: Map<String, CiSession>, session: CiSession): Map<String, CiSession> {
@@ -3299,8 +3301,9 @@ object Glue {
 
     /**
      * A row of the CI Runs tab: a run (`CI run #78`, its branch and progress), its **Open** on the dashboard, a test (its
-     * name, then its project, attempt, worker and call, or its result), or a running test's **Watch** on the dashboard.
-     * What a row opens: a file at a line (`uri`, `line`, `character`), else a page (`url`), else nothing.
+     * name, then its project, attempt, worker and call, or its result), or a running test's **Watch** in the Worker tab
+     * (`ci-watch`) and on the dashboard (`watch`). What a row opens: a CI lane in the Worker tab (`lane`), else a file at a
+     * line (`uri`, `line`, `character`), else a page (`url`), else nothing.
      */
     data class CiRow(
         val kind: String,
@@ -3311,19 +3314,50 @@ object Glue {
         val line: Int = 0,
         val character: Int = 0,
         val url: String? = null,
+        val lane: CiLane? = null,
     )
 
+    /**
+     * A lane of a CI run the Worker tab watches (`piwi/ciWatch`), as its `CiTest` names it (`lane` from 1, its shard),
+     * and its view on the dashboard, the second choice where the IDE cannot show it.
+     */
+    data class CiLane(val root: String, val runId: Int, val shard: Int?, val lane: Int, val dashboard: String?)
+
+    /** Whether a frame the service sent is of the CI lane the Worker tab asked to watch. */
+    fun sameCiLane(watching: CiWatchParams, frame: CiFrame): Boolean =
+        watching.root == frame.root && watching.runId == frame.runId && watching.shard == frame.shard && watching.lane == frame.lane
+
     /** Where a CI test runs: `worker 2`, `shard 1, worker 2`, or nothing for a run that names no lane. */
-    private fun ciLane(test: CiTest): String = when {
-        test.lane == null -> ""
-        test.shard != null -> "shard ${test.shard}, worker ${test.lane}"
-        else -> "worker ${test.lane}"
+    private fun ciLane(lane: Int?, shard: Int?): String = when {
+        lane == null -> ""
+        shard != null -> "shard $shard, worker $lane"
+        else -> "worker $lane"
+    }
+
+    private fun ciLane(test: CiTest): String = ciLane(test.lane, test.shard)
+
+    /** The Worker tab's name while it watches a CI lane: `CI run #78 · worker 2`. */
+    fun ciLaneTitle(lane: CiLane): String = "CI run #${lane.runId} · ${ciLane(lane.lane, lane.shard)}"
+
+    /**
+     * What the Worker tab says above a CI lane it watches, from the run's session (`sessions` by `ciKey`): the test
+     * running in the lane and the call it is at, else that the lane is between tests, else that the run ended; always
+     * read-only.
+     */
+    fun ciLaneCaption(sessions: Map<String, CiSession>, lane: CiLane): String {
+        val name = ciLaneTitle(lane)
+        val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
+        val test = session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
+            ?: return "$name · between tests · read-only"
+        val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+        val at = test.at?.let { " · ${it.title}" }.orEmpty()
+        return "$name · Running $title$at · read-only"
     }
 
     /**
      * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
-     * progress, then **Open run #78**, its tests and, under a running test of a run that can be watched, **Watch on the
-     * dashboard**. Read-only: no row pauses, steers, shares or holds the run.
+     * progress, then **Open run #78**, its tests and, under a running test of a run that can be watched, **Watch** in the
+     * Worker tab and **Watch on the dashboard**. Read-only: no row pauses, steers, shares or holds the run.
      */
     fun ciRows(sessions: Collection<CiSession>): List<CiRow> = sessions.sortedByDescending { it.runId }.flatMap { session ->
         val head = CiRow(
@@ -3347,8 +3381,18 @@ object Glue {
                 test.uri != null && test.line != null -> CiRow("test", name, detail, test.status, test.uri, test.line)
                 else -> CiRow("test", name, detail, test.status)
             }
+            val here = test.watch?.let { url ->
+                test.lane?.let { lane ->
+                    CiRow(
+                        "ci-watch",
+                        "Watch",
+                        "${ciLane(test)} · read-only",
+                        lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
+                    )
+                }
+            }
             val watch = test.watch?.let { CiRow("watch", "Watch on the dashboard", "read-only", url = it) }
-            listOfNotNull(row, watch)
+            listOfNotNull(row, here, watch)
         }
         listOf(head, open) + tests
     }
