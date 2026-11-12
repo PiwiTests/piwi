@@ -18,7 +18,7 @@ import {
   type LiveWorkerFrame,
 } from '@piwitests/core/live-view';
 import { detectCi } from '../src/internal/support/ci.js';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The live view's frames as bytes, with their size from the viewers, in a real Playwright run through the built
@@ -283,11 +283,12 @@ describe('the live view’s frames as bytes, sized by the viewers', () => {
     expect(frames(phases.none! + 300, phases.tiledFrom!)).toEqual([]);
   });
 
-  it('sends the call log to a full view alone, and the test’s end too', () => {
-    // The full view gets the call the test waits in.
+  it.runIf(playwrightAtLeast('1.64'))('sends the call log the test waits in to a full view', () => {
     const fullLogs = posts.filter((p) => p.frame === 'call-log' && p.at >= phases.full! && p.at < phases.tiles!);
     expect(fullLogs.length).toBeGreaterThan(0);
-    // A worker only tiles show follows no call log, though its test waits on a locator, and posts no end of it.
+  });
+
+  it('sends a worker only tiles show no call log, though its test waits on a locator, and no end of it', () => {
     expect(frames(phases.tiledFrom!, Infinity).length).toBeGreaterThan(0);
     expect(json(phases.tiledFrom!).filter((type) => type === 'call-log' || type === 'ended')).toEqual([]);
   });
