@@ -2,7 +2,9 @@ import {
   LIVE_STREAM_TYPE,
   MAX_LIVE_FRAME,
   createLiveMessageReader,
+  readLiveViewSize,
   readLiveViewerMessage,
+  readLiveWorkerId,
   type LiveViewEnd,
   type LiveViewerMessage,
   type LiveWorkerId,
@@ -13,10 +15,14 @@ import {
  * through `fetch` with `@piwitests/core/live-view`'s reader, which carries every image the page shows. What it shows
  * (`LiveWatchAsk`: one worker in full, at the size the page shows it, and each worker's tile) changes on the same
  * stream, by a POST that names the watch by the id it opened with (`hello`); a watch that shows tiles opens without
- * its full view and asks for it once open, so a worker that left refuses the full view alone. It opens as soon as
- * something is wanted, and closes once nothing is. A stream that drops opens again, waiting longer each time,
- * `RETRY_MS.length` times in a row at most; one the instance refuses, or that ends saying why, or that gave up, stays
- * closed until the page asks again (`resume`). Nothing is kept: each message goes to the page as it comes.
+ * its full view and asks for it once open, so a worker that left refuses the full view alone. What the watch shows is
+ * what the instance last said it shows (the stream's query as it opened, then each change's answer), never what was
+ * asked and not answered: a change that fails is asked again a little later, `CHANGE_RETRY_MS.length` times in a row,
+ * then the stream is dropped and opened again, its query asking for the whole of it. It opens as soon as something is
+ * wanted, and closes once nothing is. A stream that drops, or brings nothing for `STALL_MS` (the instance sends a
+ * heartbeat every 15 s), opens again, waiting longer each time, `RETRY_MS.length` times in a row at most; one the
+ * instance refuses, or that ends saying why, or that gave up, stays closed until the page asks again (`resume`).
+ * Nothing is kept: each message goes to the page as it comes.
  */
 
 /** What the page wants the watch to show. */
@@ -46,6 +52,10 @@ export interface LiveWatchEvents {
 
 /** How long the watch waits before it opens again after a drop, each try in a row; then it gives up. */
 const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
+/** How long the watch waits before it asks again for a change that failed, each try in a row; then it opens again. */
+const CHANGE_RETRY_MS = [500, 1000, 2000];
+/** How long a stream may bring nothing, its heartbeats included, before it counts as dropped. */
+export const STALL_MS = 45_000;
 
 /** Whether two workers are the same one to a full view: the same lane when it names one, else the same worker. */
 export function sameWorker(a: LiveWorkerId, b: LiveWorkerId): boolean {
@@ -60,6 +70,23 @@ function sameAsk(a: LiveWatchAsk['focus'], b: LiveWatchAsk['focus']): boolean {
 
 function sameSize(a: LiveWatchAsk['size'], b: LiveWatchAsk['size']): boolean {
   return a?.width === b?.width && a?.height === b?.height;
+}
+
+/** A size as the instance holds it: whole device pixels within a tile's and the largest view's; null for none. */
+function heldSize(size: LiveWatchAsk['size']): LiveWatchAsk['size'] {
+  return size ? readLiveViewSize(Math.round(size.width), Math.round(size.height)) : null;
+}
+
+/** What the watch shows, as a change's answer says it (`watch`, or `data.watch` of a refusal); null for none. */
+export function readLiveWatchShown(answer: unknown): LiveWatchAsk | null {
+  const body = answer as { watch?: unknown; data?: { watch?: unknown } } | null;
+  const value = (body?.watch ?? body?.data?.watch) as Record<string, unknown> | null | undefined;
+  if (!value || typeof value !== 'object' || typeof value.tiles !== 'boolean') return null;
+  const size = readLiveViewSize(value.width, value.height);
+  const raw = value.focus as Record<string, unknown> | null | undefined;
+  const focus = raw ? readLiveWorkerId(raw.shard, raw.worker, raw.slot) : null;
+  if (!size || (raw && !focus)) return null;
+  return { focus, tiles: value.tiles, size };
 }
 
 /** Whether a watch shows anything. */
@@ -90,6 +117,9 @@ export class LiveWatch {
   private controller: AbortController | null = null;
   private watchId: string | null = null;
   private changing = false;
+  /** The changes that failed in a row, and the wait before the next try. */
+  private changeFailures = 0;
+  private changeTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** The watch closed saying why (refused, ended, given up): it opens again only as the page asks (`resume`). */
@@ -106,7 +136,7 @@ export class LiveWatch {
    * closed saying why stays closed until `resume`.
    */
   want(ask: LiveWatchAsk): void {
-    this.ask = { ...ask, focus: ask.focus ? { ...ask.focus } : null };
+    this.ask = { ...ask, focus: ask.focus ? { ...ask.focus } : null, size: heldSize(ask.size) };
     if (!wanted(this.ask)) return this.close();
     if (this.halted) return;
     if (!this.controller && !this.timer) {
@@ -129,15 +159,23 @@ export class LiveWatch {
     this.timer = null;
     this.controller?.abort();
     this.controller = null;
+    this.forgetWatch();
+    this.events.state({ kind: 'idle' });
+  }
+
+  /** The stream open is done with: its id, what it showed, and the changes asked of it go. */
+  private forgetWatch(): void {
     this.watchId = null;
     this.shown = null;
-    this.events.state({ kind: 'idle' });
+    this.changeFailures = 0;
+    if (this.changeTimer) clearTimeout(this.changeTimer);
+    this.changeTimer = null;
   }
 
   private async open(again: boolean): Promise<void> {
     const controller = new AbortController();
     this.controller = controller;
-    this.watchId = null;
+    this.forgetWatch();
     const ask = this.ask;
     this.events.state({ kind: 'connecting', again });
     let response: Response;
@@ -163,10 +201,21 @@ export class LiveWatch {
     const read = createLiveMessageReader({ maxData: MAX_LIVE_FRAME });
     const reader = response.body.getReader();
     let ended: LiveViewEnd | null = null;
+    // A stream that brings nothing, not even its heartbeat, is half open: it is dropped.
+    let stall: ReturnType<typeof setTimeout> | null = null;
+    const alive = (): void => {
+      if (stall) clearTimeout(stall);
+      stall = setTimeout(() => {
+        void reader.cancel().catch(() => {});
+        controller.abort();
+      }, STALL_MS);
+    };
     try {
+      alive();
       for (;;) {
         const { done, value } = await reader.read();
         if (done || this.controller !== controller) break;
+        alive();
         for (const raw of read(value)) {
           const message = readLiveViewerMessage(raw);
           if (!message) continue;
@@ -190,11 +239,13 @@ export class LiveWatch {
       }
     } catch {
       // A stream cut short, or one that broke its framing: it opens again.
+    } finally {
+      if (stall) clearTimeout(stall);
     }
     if (this.controller !== controller) return;
     if (ended) {
       this.controller = null;
-      this.watchId = null;
+      this.forgetWatch();
       this.halted = true;
       this.events.state({ kind: 'closed', status: null, reason: ended });
       return;
@@ -206,7 +257,7 @@ export class LiveWatch {
   private dropped(controller: AbortController): void {
     if (this.controller !== controller) return;
     this.controller = null;
-    this.watchId = null;
+    this.forgetWatch();
     if (this.retries >= RETRY_MS.length) {
       this.halted = true;
       this.events.state({ kind: 'closed', status: null, reason: null });
@@ -222,9 +273,15 @@ export class LiveWatch {
     );
   }
 
-  /** Tell the instance what changed of what the watch shows, one change at a time, the latest after the one before. */
+  /**
+   * Tell the instance what changed of what the watch shows, one change at a time, the latest after the one before;
+   * what the watch shows is what its answer says. A full view the instance refuses is no longer asked, and the page
+   * hears why. A change it did not answer (no answer, an error, too many changes) is asked again a little later, then,
+   * after `CHANGE_RETRY_MS.length` failures in a row, or at once for a watch it no longer holds, the stream is opened
+   * again with the whole ask.
+   */
   private async change(): Promise<void> {
-    if (this.changing || !this.watchId || !this.shown || !this.controller) return;
+    if (this.changing || this.changeTimer || !this.watchId || !this.shown || !this.controller) return;
     const ask = this.ask;
     const body: Record<string, unknown> = { watch: this.watchId };
     if (!sameAsk(ask.focus, this.shown.focus)) body.focus = ask.focus;
@@ -233,10 +290,14 @@ export class LiveWatch {
       body.width = ask.size.width;
       body.height = ask.size.height;
     }
-    if (Object.keys(body).length === 1) return;
+    if (Object.keys(body).length === 1) {
+      this.changeFailures = 0;
+      return;
+    }
     this.changing = true;
     const controller = this.controller;
     let status: number | null = null;
+    let shown: LiveWatchAsk | null = null;
     try {
       const response = await this.fetcher(this.url, {
         method: 'POST',
@@ -244,22 +305,39 @@ export class LiveWatch {
         body: JSON.stringify(body),
       });
       status = response.status;
+      shown = readLiveWatchShown(await response.json().catch(() => null));
     } catch {
       status = null;
     }
     this.changing = false;
     if (this.controller !== controller || !this.shown) return;
-    if (status !== null && status >= 200 && status < 300) {
-      this.shown = { ...ask, focus: ask.focus ? { ...ask.focus } : null, size: ask.size ?? this.shown.size };
-    } else if ('focus' in body && ask.focus) {
-      // The full view was refused: the watch shows none, and the page hears why.
-      this.shown = { ...this.shown, focus: null, tiles: 'tiles' in body ? ask.tiles : this.shown.tiles };
-      if (sameAsk(this.ask.focus, ask.focus)) this.ask = { ...this.ask, focus: null };
-      this.events.focusRefused(ask.focus, status);
-    } else {
-      // A change the instance did not take is not asked again until the page asks another.
-      this.shown = { ...ask, focus: this.shown.focus };
+    const ok = status !== null && status >= 200 && status < 300;
+    if (shown || ok) {
+      this.changeFailures = 0;
+      this.shown = shown ?? {
+        focus: 'focus' in body ? (ask.focus ? { ...ask.focus } : null) : this.shown.focus,
+        tiles: 'tiles' in body ? ask.tiles : this.shown.tiles,
+        size: 'width' in body ? ask.size : this.shown.size,
+      };
+      // The full view asked is not shown: refused, it is no longer asked, and the page hears why.
+      if (!ok && ask.focus && 'focus' in body && !sameAsk(this.shown.focus, ask.focus)) {
+        if (sameAsk(this.ask.focus, ask.focus)) this.ask = { ...this.ask, focus: null };
+        this.events.focusRefused(ask.focus, status);
+      }
+      return void this.change();
     }
-    void this.change();
+    this.changeFailures++;
+    // A watch the instance no longer holds, or a change that keeps failing: the stream opens again with the whole ask.
+    if (status === 404 || this.changeFailures > CHANGE_RETRY_MS.length) {
+      controller.abort();
+      return this.dropped(controller);
+    }
+    this.changeTimer = setTimeout(
+      () => {
+        this.changeTimer = null;
+        void this.change();
+      },
+      CHANGE_RETRY_MS[this.changeFailures - 1],
+    );
   }
 }

@@ -89,7 +89,7 @@ shared or not ([its stops](./share-live#stops-shared-or-not)).
   one to a [Watch all](./watch-all) tile, and about 256 KB a second, a heavier image holding the next one back longer.
   A test whose trace or video already films the page shares that recording's images, 800 pixels wide at quality 90.
   The recording stays whole. A test that starts its own `page.screencast` gets it, and the view
-  goes on with an image a second. A CI run's worker also sends the call's log. Nothing of the view is a step of the
+  goes on with an image a second. A CI run's view also gets the call's log. Nothing of the view is a step of the
   test or an action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
   [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.

@@ -49,9 +49,12 @@ view's images come at the size the panel shows them, up to 1280 by 800 pixels; a
 sends the larger. Each worker sends images only while a page shows it, in full or as a tile, and nothing is stored:
 [what is sent, to whom, and what is kept](./live-view#what-is-sent-to-whom-and-what-is-kept) applies to every tile.
 
-A run takes 16 such pages at a time, whatever each shows, and its workers send 4 MB of images a second at most
-together. An older reporter sends its images at 640 by 400 pixels, four a second, whatever the view asks; the
-dashboard passes one a second of them to a tile.
+A run takes 16 such pages at a time, whatever each shows, and its workers send 4 MB of images a second at most together.
+Each page gets 1 MB of images a second at most, the latest of each worker waiting for the next second, and a page that
+reads nothing for 5 seconds is cut off, then connects again. A tile carries no call log, and an image of 48 KB at most:
+a worker someone else watches in full at a large size says so in its tile. In a tab hidden for 10 minutes, the page
+stops asking for tiles, and asks again as you come back. An older reporter sends its images at 640 by 400 pixels, four a
+second, whatever the view asks; the dashboard passes one a second of them to a tile.
 
 ## In the demo
 

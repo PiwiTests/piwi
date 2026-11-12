@@ -6,13 +6,14 @@ import {
   type LiveViewerMessage,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
-import { LiveWatch, liveWatchQuery, sameWorker, type LiveWatchState } from '../../app/utils/live-watch';
+import { LiveWatch, STALL_MS, liveWatchQuery, sameWorker, type LiveWatchState } from '../../app/utils/live-watch';
 
 /**
  * The run page's one watch of a live run: it opens as something is wanted (a full view in the query, or tiles alone
  * and the full view asked once open), reads the stream's live messages across chunks, changes what it shows by a POST
- * naming the watch, opens again after a drop, and stays closed after the instance refused it or ended it, until the
- * page asks again.
+ * naming the watch and holds what the instance answers it shows, asks again for a change that failed and opens the
+ * stream again after repeated failures, opens again after a drop or a stream that brings nothing, and stays closed
+ * after the instance refused it or ended it, until the page asks again.
  */
 
 const URL = '/api/test-runs/7/live-view/watch';
@@ -20,21 +21,49 @@ const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9]);
 const LANE: LiveWorkerId = { shard: null, worker: 0, slot: 0 };
 const OTHER: LiveWorkerId = { shard: null, worker: 1, slot: 1 };
 
-/** A fake instance: each GET a stream the test writes to, each POST answered with `postStatus`. */
+/**
+ * A fake instance: each GET a stream the test writes to, each POST answered with what the watch shows then, a full
+ * view refused (404, the rest applied) while `refuseFocus`, or a failure (`failPosts`: a status with no state, or
+ * `null` for no answer).
+ */
 function instance() {
   const gets: Array<{ url: string; write: (bytes: Uint8Array) => void; close: () => void }> = [];
   const posts: Array<Record<string, unknown>> = [];
   let getStatus = 200;
-  let postStatus = 200;
+  let refuseFocus = false;
+  let failure: number | null | undefined;
+  let shown: { focus: unknown; tiles: boolean; width: number; height: number } = {
+    focus: null,
+    tiles: false,
+    width: 640,
+    height: 400,
+  };
   const fetcher = (async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
-      posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-      return new Response('{}', { status: postStatus });
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      posts.push(body);
+      if (failure === null) throw new TypeError('Failed to fetch');
+      if (failure !== undefined) return new Response('{}', { status: failure });
+      const focusRefused = refuseFocus && !!body.focus;
+      shown = {
+        focus: focusRefused ? null : 'focus' in body ? body.focus : shown.focus,
+        tiles: typeof body.tiles === 'boolean' ? body.tiles : shown.tiles,
+        width: typeof body.width === 'number' ? body.width : shown.width,
+        height: typeof body.height === 'number' ? body.height : shown.height,
+      };
+      return focusRefused
+        ? new Response(JSON.stringify({ statusCode: 404, data: { errorCode: 'NOT_FOUND', watch: shown } }), {
+            status: 404,
+          })
+        : new Response(JSON.stringify({ success: true, watch: shown }), { status: 200 });
     }
     expect((init!.headers as Record<string, string>).Accept).toBe(LIVE_STREAM_TYPE);
     if (getStatus !== 200) return new Response('{}', { status: getStatus });
+    const query = new globalThis.URL(url, 'http://x').searchParams;
+    shown = { focus: null, tiles: query.get('tiles') === '1', width: 640, height: 400 };
     let controller!: ReadableStreamDefaultController<Uint8Array>;
     const body = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) });
+    init?.signal?.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')));
     gets.push({ url, write: (bytes) => controller.enqueue(bytes), close: () => controller.close() });
     return new Response(body, { status: 200 });
   }) as unknown as typeof fetch;
@@ -43,7 +72,8 @@ function instance() {
     gets,
     posts,
     refuseGets: (status: number) => (getStatus = status),
-    refusePosts: (status: number) => (postStatus = status),
+    refuseFocus: (on: boolean) => (refuseFocus = on),
+    failPosts: (status: number | null | undefined) => (failure = status),
   };
 }
 
@@ -131,18 +161,22 @@ describe('the run page’s watch', () => {
   });
 
   test('hears a full view the instance refuses, and asks for it again once the page does', async () => {
-    const { watch, gets, posts, refused, refusePosts } = watcher();
+    const { watch, gets, posts, refused, refuseFocus } = watcher();
     watch.want({ focus: null, tiles: true, size: null });
     await settle();
     gets[0]!.write(HELLO);
     await settle();
-    refusePosts(404);
-    watch.want({ focus: OTHER, tiles: true, size: null });
+    refuseFocus(true);
+    // Refused, the full view goes; the size asked with it is what the instance says it shows, not asked again.
+    watch.want({ focus: OTHER, tiles: true, size: { width: 900, height: 600 } });
     await settle();
     expect(refused).toEqual([{ focus: OTHER, status: 404 }]);
+    expect(posts).toEqual([{ watch: 'abcdefghijklmnopqrstuv', focus: OTHER, width: 900, height: 600 }]);
+    watch.want({ focus: null, tiles: true, size: { width: 900, height: 600 } });
+    await settle();
     expect(posts).toHaveLength(1);
     // The full view of a worker whose test ended is asked anew.
-    refusePosts(200);
+    refuseFocus(false);
     watch.want({ focus: LANE, tiles: true, size: null });
     await settle();
     gets[0]!.write(encodeLiveViewerMessage({ type: 'end', ...LANE, reason: 'test-ended' }));
@@ -153,6 +187,73 @@ describe('the run page’s watch', () => {
       { watch: 'abcdefghijklmnopqrstuv', focus: LANE },
       { watch: 'abcdefghijklmnopqrstuv', focus: LANE },
     ]);
+    watch.close();
+  });
+
+  test('asks again for a change the instance did not take, then opens the stream again with the whole ask', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { watch, gets, posts, states, failPosts } = watcher();
+    watch.want({ focus: null, tiles: true, size: null });
+    await settle();
+    gets[0]!.write(HELLO);
+    await settle();
+    // No answer, then an error: the size is not shown yet, and asked again a little later.
+    failPosts(null);
+    watch.want({ focus: null, tiles: true, size: { width: 900, height: 600 } });
+    await settle();
+    failPosts(503);
+    vi.advanceTimersByTime(500);
+    await settle();
+    expect(posts).toHaveLength(2);
+    // It goes through: the watch shows what the instance says.
+    failPosts(undefined);
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(posts).toHaveLength(3);
+    watch.want({ focus: null, tiles: true, size: { width: 900, height: 600 } });
+    await settle();
+    expect(posts).toHaveLength(3);
+    // A change that keeps failing: the stream opens again, its query asking for the whole of what the page wants.
+    failPosts(500);
+    watch.want({ focus: LANE, tiles: false, size: { width: 900, height: 600 } });
+    for (const wait of [0, 500, 1000, 2000]) {
+      vi.advanceTimersByTime(wait);
+      await settle();
+    }
+    expect(posts).toHaveLength(7);
+    expect(states.at(-1)).toEqual({ kind: 'connecting', again: true });
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(gets.map((get) => get.url).at(-1)).toBe(`${URL}?worker=0&slot=0&width=900&height=600`);
+    // A watch the instance no longer holds is opened again at once.
+    gets.at(-1)!.write(HELLO);
+    await settle();
+    failPosts(404);
+    watch.want({ focus: OTHER, tiles: false, size: { width: 900, height: 600 } });
+    await settle();
+    expect(states.at(-1)).toEqual({ kind: 'connecting', again: true });
+    watch.close();
+  });
+
+  test('drops a stream that brings nothing, not even its heartbeat, and opens it again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { watch, gets, states } = watcher();
+    watch.want({ focus: LANE, tiles: false, size: null });
+    await settle();
+    gets[0]!.write(HELLO);
+    await settle();
+    vi.advanceTimersByTime(STALL_MS - 1000);
+    gets[0]!.write(LIVE_HEARTBEAT);
+    await settle();
+    vi.advanceTimersByTime(STALL_MS - 1000);
+    await settle();
+    expect(states.at(-1)).toEqual({ kind: 'open' });
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(states.at(-1)).toEqual({ kind: 'connecting', again: true });
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(gets).toHaveLength(2);
     watch.close();
   });
 
