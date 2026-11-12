@@ -5,12 +5,14 @@ import { apiError } from '../../server/utils/api-error';
 import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
+import { LIVE_FRAME_TYPE, MAX_LIVE_FRAME_MESSAGE, encodeLiveMessage, liveFrameHeader } from '@piwitests/core/live-view';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 
 /**
- * Who reaches a run's live view: watching a worker needs what opening the run needs, in a project with the live view
- * on; a worker's stream and posts need a key of that run, while it is live and its project's live view is on, and an
- * interrupted run keeps its keys for the worker to try again; a post is bounded. A run keeps its keys' digests, never a
+ * Who reaches a run's live view: watching it needs what opening the run needs, in a project with the live view on and
+ * while the run is live, and a watch changes what it shows only for the person who holds it; a worker's stream and
+ * posts need a key of that run, while it is live and its project's live view is on, and an interrupted run keeps its
+ * keys for the worker to try again; a post is bounded, a frame read as bytes or, from an older reporter, as JSON. A run keeps its keys' digests, never a
  * key, and an instance started again takes a running worker's key back by them, that run's alone, while it is live and
  * its project's live view is on.
  */
@@ -31,6 +33,8 @@ interface FakeEvent {
   params: Record<string, string>;
   query: Record<string, string>;
   headers: Record<string, string>;
+  body?: unknown;
+  stream?: ReadableStream<Uint8Array>;
   node: { req: { headers: Record<string, string> }; res: Record<string, unknown> };
 }
 
@@ -40,15 +44,21 @@ vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.headers[name.toLowerCase()]);
 vi.stubGlobal('apiError', apiError);
+vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.mock('h3', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getRequestHeader: (event: FakeEvent, name: string) => event.headers[name.toLowerCase()],
+  getRequestWebStream: (event: FakeEvent) => event.stream,
 }));
 
 type Route = (event: FakeEvent) => Promise<unknown>;
 const watch = underRoutePermission(
   state,
   (await import('../../server/api/test-runs/[id]/live-view/watch.get')).default as unknown as Route,
+);
+const change = underRoutePermission(
+  state,
+  (await import('../../server/api/test-runs/[id]/live-view/watch.post')).default as unknown as Route,
 );
 const workers = underRoutePermission(
   state,
@@ -137,6 +147,31 @@ describe('watching a worker', () => {
     expect(await refusal(watch, event(10, { worker: 'x' }))).toBe(400);
     expect(await workers(event(10))).toMatchObject({ enabled: true, workers: [] });
   });
+
+  test('shows a worker in full or every worker’s tile, at a size it names, while the run is live', async () => {
+    // Neither a worker nor tiles: nothing to show.
+    expect(await refusal(watch, event(10))).toBe(400);
+    expect(await refusal(watch, event(10, { tiles: '1', width: 'wide', height: '600' }))).toBe(400);
+    expect(await refusal(watch, event(11, { tiles: '1' }))).toBe(410);
+    expect(await refusal(watch, event(12, { tiles: '1' }))).toBe(410);
+    state.caller = viewerOf(3);
+    expect(await refusal(watch, event(30, { tiles: '1' }))).toBe(404);
+  });
+
+  test('changes what a watch shows for the person who holds it alone, saying what it shows', async () => {
+    const at = (runId: number, body: unknown) => ({ ...event(runId), body });
+    expect(await refusal(change, at(20, { watch: 'w'.repeat(22), tiles: true }))).toBe(403);
+    expect(await refusal(change, at(10, null))).toBe(400);
+    expect(await refusal(change, at(10, { tiles: true }))).toBe(400);
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22) }))).toBe(400);
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), tiles: 'yes' }))).toBe(400);
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), focus: { worker: -1 } }))).toBe(400);
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), width: 900 }))).toBe(400);
+    // A watch the relay does not hold for this person.
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), focus: null, width: 900, height: 600 }))).toBe(404);
+    state.caller = null;
+    expect(await refusal(change, at(10, { watch: 'w'.repeat(22), tiles: true }))).toBe(401);
+  });
 });
 
 describe("a worker's stream and posts", () => {
@@ -175,6 +210,31 @@ describe("a worker's stream and posts", () => {
     liveViewRelay.endProject(1);
     expect(await refusal(stream, event(10, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(404);
     expect(await refusal(post, event(10, {}, { authorization: `Bearer ${key}` }))).toBe(404);
+  });
+
+  test('read a frame as one live message, or as JSON from an older reporter', async () => {
+    const key = liveViewRelay.mintKey(10, 1)!;
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    const posting = (body: Uint8Array, type: string) => ({
+      ...event(10, {}, { ...bearer(key), 'content-type': type, 'content-length': String(body.length) }),
+      stream: new Blob([body as Uint8Array<ArrayBuffer>]).stream(),
+    });
+    const frame = encodeLiveMessage(liveFrameHeader({ shard: null, worker: 0 }, { call: null, test: 'pays' }), jpeg);
+    // Read whole: the worker holds no stream yet (409).
+    expect(await refusal(post, posting(frame, LIVE_FRAME_TYPE))).toBe(409);
+    const json = new TextEncoder().encode(
+      JSON.stringify({ type: 'frame', shard: null, worker: 0, data: Buffer.from(jpeg).toString('base64') }),
+    );
+    expect(await refusal(post, posting(json, 'application/json'))).toBe(409);
+    // A message that is not one, or that is not a frame, as bytes.
+    expect(await refusal(post, posting(frame.subarray(0, frame.length - 1), LIVE_FRAME_TYPE))).toBe(400);
+    const stop = encodeLiveMessage({ type: 'stop', shard: null, worker: 0, stop: null });
+    expect(await refusal(post, posting(stop, LIVE_FRAME_TYPE))).toBe(400);
+    expect(await refusal(post, posting(new TextEncoder().encode('{'), 'application/json'))).toBe(400);
+    // Bounded: a frame's message by its own size, larger than a JSON message's.
+    const over = { ...posting(frame, LIVE_FRAME_TYPE) };
+    over.headers['content-length'] = String(MAX_LIVE_FRAME_MESSAGE + 1);
+    expect(await refusal(post, over)).toBe(413);
   });
 
   test('are refused for a while as the run is interrupted, its key kept for when it goes on', async () => {

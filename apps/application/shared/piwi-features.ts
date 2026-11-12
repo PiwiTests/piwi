@@ -166,6 +166,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view',
       },
       {
+        title: 'Watch all workers',
+        summary:
+          'Every worker of a running CI or shared run as a tile on its run page, an image a second each; a click shows one in full, and Follow what needs attention moves to the worker whose test failed, got stuck or stopped, saying why.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch all',
+        doc: 'features/watch-all',
+      },
+      {
         title: 'Share a run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',

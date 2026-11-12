@@ -271,7 +271,9 @@ person's Resume, Step and Finish always answer the stop, and the stop a person's
 tools that watch that page (an editor's view, the desktop app's window, Piwi Picker's Runs window), and to the team
 instance while the run is shared live; nothing on your machine keeps them. **Share live** lets a teammate watch a run on
 your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
-being shared ([Live view of a run](/features/live-view)).
+being shared ([Live view of a run](/features/live-view)). **Watch all** shows every worker of such a run at once, a
+tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped
+([Watch all workers](/features/watch-all)).
 
 ### Verification
 

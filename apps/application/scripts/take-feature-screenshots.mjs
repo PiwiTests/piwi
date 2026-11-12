@@ -575,6 +575,50 @@ button { margin-top: 24px; width: 100%; padding: 12px; border: 0; border-radius:
   </section>
 </main>`;
 
+/** The other pages the workers of `run-watch-all` are on: a search, a cart and a sign-in. */
+const WATCH_ALL_PAGES = {
+  search: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600 }
+main { padding: 32px } input { width: 420px; padding: 10px; border: 1px solid #cbd2d9; border-radius: 6px; font: inherit }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 24px }
+.card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%) }
+.img { height: 120px; border-radius: 6px; background: linear-gradient(135deg, #c3dafe, #e9d8fd) }
+</style>
+<header>Shop</header>
+<main>
+  <input placeholder="Search" value="Nordwind">
+  <div class="grid">
+    <div class="card"><div class="img"></div><p>Nordwind trail runner</p><b>€89.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind rain jacket</p><b>€129.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind day pack</p><b>€59.00</b></div>
+    <div class="card"><div class="img"></div><p>Nordwind cap</p><b>€19.00</b></div>
+  </div>
+</main>`,
+  cart: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600; display: flex; justify-content: space-between }
+main { padding: 32px; max-width: 720px } section { background: #fff; border-radius: 8px; padding: 8px 24px 24px }
+.row { display: flex; justify-content: space-between; margin: 12px 0 }
+</style>
+<header><span>Shop</span><span>Signed in as jo@example.test · Cart (2)</span></header>
+<main><section>
+  <h2>Your cart</h2>
+  <div class="row"><span>Running shoes</span><span>€79.90</span></div>
+  <div class="row"><span>Socks, 3 pairs</span><span>€12.00</span></div>
+  <hr><div class="row"><b>Total</b><b>€91.90</b></div>
+</section></main>`,
+  signIn: `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933; display: grid; place-items: center; height: 100vh }
+section { background: #fff; border-radius: 8px; padding: 32px; width: 380px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%); text-align: center }
+</style>
+<section>
+  <h2>Check your inbox</h2>
+  <p>We sent a sign-in link to jo@example.test.</p>
+  <p style="color: #52606d; font-size: 14px">It expires in 15 minutes.</p>
+</section>`,
+};
+
 /**
  * The call log of the click `run-live-view` shows, as its worker posts it 6.4 s into the wait: Playwright 1.64's log
  * of a click on a disabled button, folded as the worker folds it.
@@ -6328,6 +6372,183 @@ const SCENES = [
         if (run) {
           await request.post(`${base}/api/test-runs/${run.id}/finish`, {
             data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-watch-all',
+    description:
+      'Watch all on a running CI run of four workers: a tile of each worker’s page with its test and step, and a click showing one in full in the lane panel, at 1280 px; the tiles alone at 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['run-watch-all.png', 'run-watch-all-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-watch-all needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      const closers = [];
+      let sending = null;
+      // Each worker's test: its title, its step and the page it is on.
+      const lanes = [
+        {
+          test: 'pays with a saved card',
+          step: ['Click', "getByRole('button', { name: 'Pay' })"],
+          html: LIVE_VIEW_CHECKOUT,
+        },
+        {
+          test: 'searches the catalog by brand',
+          step: ['Fill', "getByPlaceholder('Search')"],
+          html: WATCH_ALL_PAGES.search,
+        },
+        {
+          test: 'keeps the cart after sign-in',
+          step: ['Click', "getByRole('link', { name: 'Cart' })"],
+          html: WATCH_ALL_PAGES.cart,
+        },
+        {
+          test: 'signs in with a magic link',
+          step: ['Expect toBeVisible', "getByText('Check your inbox')"],
+          html: WATCH_ALL_PAGES.signIn,
+        },
+      ];
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and each worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 24 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: lanes.flatMap((lane, worker) => [
+              {
+                type: 'begin',
+                title: lane.test,
+                location: `tests/shop.spec.ts:${worker * 20 + 4}:3`,
+                workerIndex: worker,
+                parallelIndex: worker,
+                startedAt: now - 4_000 - worker * 1_500,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: lane.step[0],
+                subtitle: lane.step[1],
+                location: `tests/shop.spec.ts:${worker * 20 + 9}:5`,
+                stepCategory: 'pw:api',
+                parentTitle: lane.test,
+                workerIndex: worker,
+                startedAt: now - 2_000,
+              },
+            ]),
+          },
+        });
+        for (const worker of lanes.keys()) {
+          const client = base.startsWith('https:') ? https : http;
+          const stream = client.request(`${base}/api/test-runs/${run.id}/live-view?worker=${worker}&slot=${worker}`, {
+            headers: { Accept: 'text/event-stream', Authorization: `Bearer ${run.key}` },
+          });
+          stream.on('response', (response) => response.resume());
+          stream.on('error', () => {});
+          stream.end();
+          closers.push(() => stream.destroy());
+        }
+
+        // The image each worker sends: its page as the test's browser shows it.
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize({ width: 1280, height: 800 });
+        const images = [];
+        for (const lane of lanes) {
+          await testPage.setContent(lane.html);
+          images.push((await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64'));
+        }
+        await testPage.close();
+        const send = () =>
+          Promise.all(
+            lanes.map((lane, worker) =>
+              request
+                .post(`${base}/api/test-runs/${run.id}/live-view`, {
+                  headers: { Authorization: `Bearer ${run.key}` },
+                  data: {
+                    type: 'frame',
+                    shard: null,
+                    worker,
+                    slot: worker,
+                    data: images[worker],
+                    call: {
+                      title: `${lane.step[0]} ${lane.step[1]}`,
+                      file: 'tests/shop.spec.ts',
+                      line: worker * 20 + 9,
+                    },
+                    test: lane.test,
+                  },
+                })
+                .catch(() => undefined),
+            ),
+          );
+        sending = setInterval(send, 1000);
+        await goto(`/test-runs/${run.id}`);
+        // The step each worker is on: live steps reach the pages open as they stream.
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: lanes.map((lane, worker) => ({
+              type: 'step-begin',
+              title: lane.step[0],
+              subtitle: lane.step[1],
+              location: `tests/shop.spec.ts:${worker * 20 + 9}:5`,
+              stepCategory: 'pw:api',
+              parentTitle: lane.test,
+              workerIndex: worker,
+              startedAt: Date.now() - 1_000,
+            })),
+          },
+        });
+        await page.getByTestId('watch-all-toggle').click({ timeout: 60_000 });
+        await page
+          .getByTestId('watch-all-image')
+          .nth(lanes.length - 1)
+          .waitFor({ timeout: 30_000 });
+        await page.getByRole('button', { name: /^Show worker 1 in full/ }).click();
+        await page.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await send();
+        await settle();
+        await shoot();
+        await page.getByRole('button', { name: 'Close the live view' }).click();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        await shoot('narrow', { of: '[data-shot="watch-all"]', pad: 8 });
+      } finally {
+        clearInterval(sending);
+        for (const close of closers) close();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 4 },
           });
         }
       }

@@ -213,8 +213,17 @@ amber once marked **Stuck?**, and the test search takes `is:stuck`, `worker:` an
 prints a `::notice` with its page as it starts; a run outside CI makes its page an OSC 8 link in its terminal and shows
 its progress as OSC 9;4 in the terminals that read it (`PIWI_TERMINAL_PROGRESS`); and a CI run posts a pending commit
 status under the project's status context at most once a minute (open question 7: the same status and switch as the
-final one), replaced by its final status or closed by an error status. The rest of P10 and the later phases are
-proposed. The bugs the analysis
+final one), replaced by its final status or closed by an error status. Then P10's second half on the run page, on
+live-view-next's PR 4 without video: a worker posts each image as its JPEG's bytes behind a JSON header
+(`application/vnd.piwi.live-frame`) to an instance that says what its viewers ask on the worker's stream (`view`: the
+largest size one of them shows it at, 1280 by 800 at most, a recording's size kept, and the pace), and in base64 inside
+JSON to an older one, which the instance still reads; the run page holds one watch of the run, a stream of
+length-prefixed live messages read through `fetch` with `@piwitests/core/live-view`'s one reader, carrying a 320-pixel
+tile of each worker a second (**Watch all**, a click showing the lane in the lane panel) and the lane panel's full view,
+which a POST naming the watch changes without a new connection; the bound is 16 watches of a run, 4 a person, and 4 MB
+of images a second for the run's workers together; **Follow what needs attention** moves the lane panel to a lane whose
+test failed, was marked **Stuck?** or stopped, and says why; the demo's tiles name each running lane's step. The rest
+of P10 (CI runs of the branch in the editors and the Runs window) and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

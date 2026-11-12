@@ -14,6 +14,9 @@ import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
+import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
+import { PRESSED_TOGGLE_CLASS } from '~/utils';
+import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
 import {
   isFinalRefetch,
@@ -404,6 +407,71 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 }
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
+
+// The page's one watch of the run: the lane panel's full view and Watch all's tiles, on one connection.
+const live = useLiveWatch(() => Number(runId));
+/** **Watch all**: a tile of every worker in the run's live view, above its tests. */
+const watchAll = ref(false);
+// The demo runs no worker to watch: its tiles name each lane's step.
+watch(watchAll, (on) => !isDemoMode && live.watchAll(on));
+// A worker that left the run's live view leaves its tile.
+watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
+/**
+ * The workers Watch all shows: those in the run's live view; in the demo, which runs no worker, each running lane's
+ * stand-in.
+ */
+const watchAllWorkers = computed<LiveWorkerState[]>(() => {
+  if (!isDemoMode) return Object.values(liveWorkers.value);
+  const lanes = new Map<string, LiveWorkerState>();
+  for (const row of dedupedDisplayCases.value) {
+    if (row.status !== 'running' || typeof row.parallelIndex !== 'number') continue;
+    const worker = { shard: row.shardIndex ?? null, worker: row.workerIndex ?? row.parallelIndex };
+    lanes.set(liveWorkerKey(worker), { ...worker, slot: row.parallelIndex, connected: true, paused: null });
+  }
+  return [...lanes.values()];
+});
+/** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
+const offersWatchAll = computed(
+  () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
+);
+const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
+/** What each lane needs attention for now: its rows' failures, Stuck? marks and stops, and its worker's stop. */
+const attentionNow = computed(() => attentionSignals(displayTestCases.value, Object.values(liveWorkers.value)));
+/** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
+const followAttention = ref(false);
+/** Why the lane panel moved where it is, while it shows that lane. */
+const movedWhy = ref<string | null>(null);
+let follower = new AttentionFollower();
+// Turned on, it reads what needs attention afresh, and may move at once.
+watch(followAttention, (on) => {
+  follower = new AttentionFollower();
+  if (!on) movedWhy.value = null;
+  else followWhatNeedsAttention();
+});
+/** Move the lane panel where the follower says, when Follow what needs attention is on. */
+function followWhatNeedsAttention(): void {
+  if (!followAttention.value || !watchOpen.value) return;
+  const shown = watching.value;
+  const lane = shown?.slot !== undefined ? { shard: shown.shard, slot: shown.slot } : null;
+  const inView = Object.values(liveWorkers.value).flatMap((worker) =>
+    worker.slot === undefined ? [] : [{ shard: worker.shard, slot: worker.slot }],
+  );
+  const move = follower.update(attentionNow.value, lane, inView, Date.now());
+  const worker = move ? laneWorker(move.lane) : null;
+  if (!move || !worker) return;
+  watchWorker(worker, null);
+  movedWhy.value = attentionWords(move);
+}
+watch([attentionNow, liveWorkers], followWhatNeedsAttention);
+// The follower's waits end on a clock of their own: a lane holds the view a while, then the next news moves it.
+useIntervalFn(followWhatNeedsAttention, 1000);
+/** The person shows a lane in the lane panel, from a tile or a row: the view stays there a while. */
+function chooseWorker(worker: LiveWorkerState, testCase: TestCaseResult | null): void {
+  follower.chose(Date.now());
+  movedWhy.value = null;
+  watchWorker(worker, testCase);
+  if (!testCase) watchAsked.value = true;
+}
 
 /** What the page shows while live: the attempts a retry followed, then each test's latest attempt. */
 function showLive(): void {
@@ -1498,6 +1566,20 @@ const moreMenuItems = computed(() => {
           </template>
 
           <template #tab-test-cases>
+            <RunWatchAll
+              v-if="watchAll && offersWatchAll"
+              class="mb-3 max-h-[45svh] shrink-0 overflow-y-auto"
+              :workers="watchAllWorkers"
+              :tiles="live.images.value"
+              :steps="liveSteps"
+              :running="runningRows"
+              :signals="attentionNow"
+              :focused="watchOpen ? watching : null"
+              :state="live.state.value"
+              :demo="isDemoMode"
+              @focus="chooseWorker($event, null)"
+              @retry="live.resume()"
+            />
             <TestCasesList
               ref="testCasesListRef"
               data-shot="failure-clusters"
@@ -1525,9 +1607,22 @@ const moreMenuItems = computed(() => {
               :run-id="Number(runId)"
               class="flex-1 min-h-0"
               @quarantine-changed="reloadQuarantine"
-              @watch="watchWorker"
+              @watch="chooseWorker"
             >
               <template #toolbar-extra>
+                <UButton
+                  v-if="offersWatchAll"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-layout-grid"
+                  label="Watch all"
+                  :class="watchAll ? PRESSED_TOGGLE_CLASS : ''"
+                  :aria-pressed="watchAll"
+                  title="Show every running worker's page as a tile"
+                  data-testid="watch-all-toggle"
+                  @click="watchAll = !watchAll"
+                />
                 <RunLiveViewStatus
                   v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded && !runReadEnded"
                   :project-id="testRun.projectId"
@@ -1611,6 +1706,9 @@ const moreMenuItems = computed(() => {
         :step="watchedStep"
         :project-key="testRun?.projectId"
         :project-name="testRun?.project?.name"
+        :live="live"
+        :moved-why="movedWhy"
+        v-model:attention="followAttention"
       />
     </ClientOnly>
   </div>
