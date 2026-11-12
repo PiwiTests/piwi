@@ -79,6 +79,16 @@ function fileNameOf(storagePath: string, fallback: string): string {
   return raw.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+/**
+ * An export leaves the instance, as a file or behind a share link, so the known
+ * issue it carries names the tracker issue and no person: who filed it stays on
+ * the dashboard.
+ */
+function withoutFiler<T extends Record<string, any>>(holder: T): T {
+  const known = holder.knownIssue;
+  return known && typeof known === 'object' ? { ...holder, knownIssue: { ...known, filedBy: null } } : holder;
+}
+
 async function collectCase(db: DrizzleDB, executionId: number): Promise<ExportCase | null> {
   const detail = (await getTestRunCase(db, executionId)) as Record<string, any> | null;
   if (!detail) return null;
@@ -107,7 +117,7 @@ async function collectCase(db: DrizzleDB, executionId: number): Promise<ExportCa
     location: detail.location ?? null,
     status: String(detail.status ?? 'unknown'),
     slug,
-    detail,
+    detail: detail.failureCluster ? { ...detail, failureCluster: withoutFiler(detail.failureCluster) } : detail,
     traces,
     diagnosis: (diagnosis as Record<string, any> | null) ?? null,
     assets,
@@ -166,7 +176,7 @@ export async function collectClusterBundle(
     project: cluster.project
       ? { id: cluster.project.id, name: cluster.project.name, label: cluster.project.label ?? null }
       : null,
-    cluster: { ...cluster, diagnosis: diagnosis ?? cluster.diagnosis ?? null },
+    cluster: withoutFiler({ ...cluster, diagnosis: diagnosis ?? cluster.diagnosis ?? null }),
     cases,
     truncatedCases: truncated.map((m) => ({
       testCaseId: Number(m.testCaseId),
