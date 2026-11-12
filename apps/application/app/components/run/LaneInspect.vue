@@ -3,18 +3,21 @@
  * **Inspect** in the lane panel: the page of the worker's test at each of its calls, as a document. The worker sends
  * the DOM snapshot Playwright's trace takes before each call, at its action and after it while Inspect is open, and
  * the instance keeps them in memory and serves each page rendered, without a script (`app/utils/live-inspect.ts`).
- * The view opens on the latest call and follows each new one (**Follow the latest call**) until the reader chooses an
- * older call in the list or picks a locator; **Before**, **Action** and **After** show the call's page at that moment
- * when the worker sent it. **Pick a locator** opens the snapshot picker on the page shown, as for a stored trace.
- * Nothing is kept here but what the panel heard of each snapshot, until the view moves on to the next test.
+ * The view opens on the latest call and follows each new one (**Follow the latest call**), moving to the latest at most
+ * once in `FOLLOW_EVERY_MS` while they keep coming, until the reader chooses an older call in the list or picks a
+ * locator; **Before**, **Action** and **After** show the call's page at that moment when the worker sent it. **Pick a
+ * locator** opens the snapshot picker on the page shown, as for a stored trace. Each next test of the lane (`turn`)
+ * starts the view afresh, following its latest call. Nothing is kept here but what the panel heard of each snapshot.
  */
 import type { SnapshotPhase } from '@piwitests/core/live-inspect';
 import {
+  INSPECT_ENDED_TEXT,
   SNAPSHOT_PHASES,
   inspectCalls,
   inspectPageUrl,
   shownMoment,
   type HeardSnapshot,
+  type InspectEnd,
   type InspectMoment,
 } from '~/utils/live-inspect';
 import { SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
@@ -23,12 +26,14 @@ const props = defineProps<{
   runId: number;
   /** The snapshots of the worker's page the watch heard of, of the test the panel shows. */
   heard: readonly HeardSnapshot[];
-  /** Why the worker sends no page, when it said so. */
+  /** Why the worker sends no page of the test the panel shows, when it said so. */
   refused: string | null;
   /** The id of the page's watch, which the address of each page carries; null while the watch is not open. */
   watchId: string | null;
-  /** The view ended: the pages kept on the instance went with it. */
-  ended: boolean;
+  /** Which test the panel shows, counted: another starts the view afresh. */
+  turn: number;
+  /** Why the panel's view ended, null while it is open: no page shows after it, and none comes. */
+  ended: InspectEnd | null;
 }>();
 
 const baseURL = (useRuntimeConfig().app.baseURL || '/').replace(/\/$/, '');
@@ -48,10 +53,21 @@ const shownCall = computed(() =>
 function sameWorker(a: { worker: InspectMoment['worker'] }, b: { worker: InspectMoment['worker'] }): boolean {
   return a.worker.shard === b.worker.shard && a.worker.worker === b.worker.worker;
 }
+function sameMoment(a: InspectMoment | null, b: InspectMoment | null): boolean {
+  if (!a || !b) return a === b;
+  return a.call === b.call && a.phase === b.phase && sameWorker(a, b);
+}
 
 watch(follow, (on) => {
   if (on) pinned.value = null;
   else pinned.value ??= shownCall.value?.key ?? null;
+});
+/** The call pinned left the list: the view follows the latest call again. */
+watch(calls, (list) => {
+  if (pinned.value === null || list.some((call) => call.key === pinned.value)) return;
+  pinned.value = null;
+  phase.value = null;
+  follow.value = true;
 });
 
 /** Show a call of the list: an older one stops the view following. */
@@ -61,35 +77,19 @@ function choose(key: string): void {
   follow.value = false;
 }
 
-/** How long the view waits for the calls to settle before it loads the latest page, while it follows. */
-const FOLLOW_SETTLE_MS = 300;
-/** The moment whose page loads: the shown one, a moment later while the view follows. */
+/** While the view follows calls that keep coming, it moves its page to the latest at most once in this many ms. */
+const FOLLOW_EVERY_MS = 300;
+/** The moment whose page loads: the shown one, held back while the view follows calls that keep coming. */
 const loading = shallowRef<InspectMoment | null>(null);
-let settle: ReturnType<typeof setTimeout> | null = null;
-watch(
-  shown,
-  (next) => {
-    if (settle) clearTimeout(settle);
-    settle = null;
-    const same =
-      next && loading.value && next.call === loading.value.call && next.phase === loading.value.phase
-        ? sameWorker(next, loading.value)
-        : false;
-    if (same) return;
-    if (!next || !follow.value || !loading.value) {
-      loading.value = next;
-      return;
-    }
-    settle = setTimeout(() => {
-      settle = null;
-      loading.value = shown.value;
-    }, FOLLOW_SETTLE_MS);
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => {
-  if (settle) clearTimeout(settle);
-});
+/** When the page last moved, and the move held back until `FOLLOW_EVERY_MS` after it. */
+let movedAt = 0;
+let held: ReturnType<typeof setTimeout> | null = null;
+function load(moment: InspectMoment | null): void {
+  if (held) clearTimeout(held);
+  held = null;
+  movedAt = Date.now();
+  if (!sameMoment(moment, loading.value)) loading.value = moment;
+}
 
 /** The page loaded: its address and viewport, or why it does not show. */
 const page = shallowRef<{
@@ -99,10 +99,49 @@ const page = shallowRef<{
 } | null>(null);
 const pageError = ref<string | null>(null);
 let asked = 0;
+
+/** Another test of the lane: the view follows its latest call, at its latest moment, and shows no page before it. */
+watch(
+  () => props.turn,
+  () => {
+    follow.value = true;
+    pinned.value = null;
+    phase.value = null;
+    asked++;
+    page.value = null;
+    pageError.value = null;
+    loading.value = null;
+    load(shown.value);
+  },
+);
+watch(
+  shown,
+  (next) => {
+    if (sameMoment(next, loading.value)) {
+      if (held) clearTimeout(held);
+      held = null;
+      return;
+    }
+    if (!next || !follow.value || !loading.value) return load(next);
+    if (held) return;
+    held = setTimeout(() => load(shown.value), Math.max(0, movedAt + FOLLOW_EVERY_MS - Date.now()));
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (held) clearTimeout(held);
+});
+
 watch(
   [loading, () => props.watchId],
   async ([moment, watchId]) => {
-    if (!moment || !watchId) return;
+    if (!moment) {
+      asked++;
+      page.value = null;
+      pageError.value = null;
+      return;
+    }
+    if (!watchId) return;
     const token = ++asked;
     try {
       const meta = await $fetch<{ viewport: { width: number; height: number } | null }>(
@@ -133,9 +172,16 @@ const pickerPage = shallowRef<{
   viewport: { width: number; height: number } | null;
   title: string;
 } | null>(null);
+/** Why **Pick a locator** is off, as its title says; null while it is on. */
+const pickOff = computed(() => {
+  if (props.ended) return 'The view ended: no page to pick on.';
+  if (!props.watchId) return 'The view’s connection is opening again: pick a locator once it is open.';
+  if (!page.value) return 'No page of this test shows yet.';
+  return null;
+});
 function pick(): void {
   const shownPage = page.value;
-  if (!shownPage || !props.watchId) return;
+  if (!shownPage || !props.watchId || props.ended) return;
   pinned.value =
     calls.value.find((call) => call.call === shownPage.moment.call && sameWorker(call, shownPage.moment))?.key ?? null;
   follow.value = false;
@@ -161,7 +207,7 @@ watch(
 
 /** What the view says while it shows no page. */
 const waiting = computed(() => {
-  if (props.ended) return 'The view ended: open the worker’s view again to inspect its page.';
+  if (props.ended) return INSPECT_ENDED_TEXT[props.ended];
   if (props.refused) return props.refused;
   if (!props.watchId) return 'Waiting for the view’s connection…';
   return 'Waiting for the page at the test’s next call. The worker sends one before each call, at its action and after it.';
@@ -197,8 +243,8 @@ const waiting = computed(() => {
         color="neutral"
         variant="outline"
         label="Pick a locator"
-        :disabled="!page || ended"
-        title="Click an element of this page to get the locators that target it"
+        :disabled="!!pickOff"
+        :title="pickOff ?? 'Click an element of this page to get the locators that target it'"
         data-testid="live-inspect-pick"
         @click="pick"
       />
@@ -207,6 +253,7 @@ const waiting = computed(() => {
       {{ waiting }}
     </p>
     <template v-else>
+      <p v-if="refused" class="text-xs text-muted" role="status" data-testid="live-inspect-refused">{{ refused }}</p>
       <p v-if="page" class="text-xs text-muted" data-testid="live-inspect-at">
         The page {{ phaseWords }}: <span class="font-mono">{{ page.moment.title }}</span>
       </p>

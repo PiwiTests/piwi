@@ -16,7 +16,8 @@
  * the backend logged under its request); and, opened, the page's text as roles and names, masked by the worker,
  * searched with case and accents ignored, the lines naming the element the shown call targets marked; and, opened,
  * **Inspect** (`LaneInspect`): the page at each call as a document, the worker sending its snapshots while it is open.
- * Each is of the test the view shows, and let go with it. Watching only: nothing here reaches the test.
+ * Each is of the test the view shows, and let go with it; Inspect's of the lane's next test, sent before its first
+ * image, wait for the view to move on to it. Watching only: nothing here reaches the test.
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -62,7 +63,7 @@ import {
   type LaneEvents,
   type LaneTextTarget,
 } from '~/utils/live-layers';
-import { addHeardSnapshot, type HeardSnapshot } from '~/utils/live-inspect';
+import { NO_INSPECT_HEARD, hearInspect, inspectEnd, nextInspectTest, type InspectHeard } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '~/utils';
 
 const props = defineProps<{
@@ -151,17 +152,23 @@ const textOpen = useViewState('lane-text-open', () => false);
 const textQuery = useViewState('lane-text-query', () => '');
 /** Whether Inspect is open, as the reader left it. */
 const inspectOpen = useViewState('lane-inspect-open', () => false);
-/** The snapshots of the page the worker sent while Inspect is open, of the test the view shows. */
-const heardSnapshots = shallowRef<HeardSnapshot[]>([]);
-/** Why the worker sends no page to inspect, when it said so. */
-const snapshotRefused = ref<string | null>(null);
+/**
+ * What the worker sent for Inspect while it is open: of the test the view shows, and of the lane's next one, heard
+ * after the test shown ended or naming another test.
+ */
+const inspectHeard = shallowRef<InspectHeard>(NO_INSPECT_HEARD);
+/** Which test Inspect shows, counted: each next test, and each view started afresh, starts it afresh. */
+const inspectTurn = ref(0);
 
-/** Let go of the layers of the test the view showed: the next one's come afresh. */
-function forgetLayers(): void {
+/**
+ * Let go of the layers of the test the view showed: the next one's come afresh, but for what Inspect heard of the
+ * lane's next test ahead of it (`next`, the view moving on to that test).
+ */
+function forgetLayers(next = false): void {
   events.value = emptyLaneEvents();
   pageText.value = null;
-  heardSnapshots.value = [];
-  snapshotRefused.value = null;
+  inspectHeard.value = next ? nextInspectTest(inspectHeard.value, watchedTest.value) : NO_INSPECT_HEARD;
+  inspectTurn.value++;
   for (const shot of strip.value) URL.revokeObjectURL(shot.url);
   strip.value = [];
   enlarged.value = null;
@@ -185,7 +192,7 @@ function nextTest(test: string): boolean {
   lastTarget.value = null;
   // A view that heard of no test yet keeps the layers that came before its first image: they are of this one.
   if (before) {
-    forgetLayers();
+    forgetLayers(true);
     askText();
   }
   return true;
@@ -288,13 +295,13 @@ function onMessage(message: LiveViewerMessage): void {
       return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
     }
     // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
-    if (outcome.value && follows.value) {
+    if (testDone && follows.value) {
       outcome.value = null;
       testDone = false;
       log.value = null;
       lastTarget.value = null;
       if (zoom.value?.kind === 'element') zoom.value = null;
-      forgetLayers();
+      forgetLayers(true);
       askText();
     }
     showImage(message.image);
@@ -313,12 +320,12 @@ function onMessage(message: LiveViewerMessage): void {
     if (message.log.status !== 'running' && (before?.id !== message.log.id || before.status === 'running')) {
       endedAt.value = logAt.value;
     }
-  } else if (
-    message.type === 'page-event' ||
-    message.type === 'text' ||
-    message.type === 'thumb' ||
-    message.type === 'snapshot'
-  ) {
+  } else if (message.type === 'snapshot') {
+    // Inspect's of the lane's next test (heard after the test shown ended, or naming another test) wait for the view
+    // to move on to it: a test's refusal comes before its first image.
+    const ofNext = testDone || (message.test !== null && !!watchedTest.value && message.test !== watchedTest.value);
+    inspectHeard.value = hearInspect(inspectHeard.value, message, ofNext ? 'next' : 'shown');
+  } else if (message.type === 'page-event' || message.type === 'text' || message.type === 'thumb') {
     // A layer of a test the view does not show (the lane's last, sent late; its next, before its first image) goes,
     // but a page event of the lane's next test once the view's test ended moves the view on to it, as a call log
     // does: a test with no page sends no image.
@@ -326,13 +333,7 @@ function onMessage(message: LiveViewerMessage): void {
       if (message.type !== 'page-event' || !testDone || !nextTest(message.test)) return;
     }
     if (message.type === 'page-event') events.value = addLaneEvent(events.value, message.event, message.at);
-    else if (message.type === 'snapshot') {
-      if ('refused' in message) snapshotRefused.value = message.refused;
-      else {
-        heardSnapshots.value = addHeardSnapshot(heardSnapshots.value, message);
-        snapshotRefused.value = null;
-      }
-    } else if (message.type === 'text')
+    else if (message.type === 'text')
       pageText.value = 'refused' in message ? { refused: message.refused } : { text: message.text };
     else keepShot(message.thumb, message.image);
   } else if (message.type === 'refused') {
@@ -1003,10 +1004,11 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
           <LaneInspect
             class="pt-1"
             :run-id="runId"
-            :heard="heardSnapshots"
-            :refused="snapshotRefused"
+            :heard="inspectHeard.shown"
+            :refused="inspectHeard.refused"
             :watch-id="live.watchId.value"
-            :ended="ended"
+            :turn="inspectTurn"
+            :ended="ended ? inspectEnd(endReason) : null"
           />
         </template>
       </UCollapsible>

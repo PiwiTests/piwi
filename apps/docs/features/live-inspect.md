@@ -19,7 +19,8 @@ works in a CI run or a run [shared from a developer's machine](./share-live), an
 In the lane panel of a running test, open **Inspect** under the image.
 
 - **The latest call.** The view opens on the page at the latest call the worker sent, and shows each new call as it
-  comes while **Follow the latest call** is on.
+  comes while **Follow the latest call** is on: about three a second at most while they keep coming, the latest
+  each time.
 - **Before, Action, After.** The page before the call ran, at its action (where a click or a fill acts, for an input
   action) and after it. A moment the worker sent no page of stays greyed out.
 - **The calls.** Under the page, each call whose page came, the latest last. Choosing an older one turns following
@@ -28,7 +29,9 @@ In the lane panel of a running test, open **Inspect** under the image.
   element to get the locators that target it, ranked, to copy. Picking turns following off. Nothing is saved: the
   test is still running.
 
-The view goes on with the lane's next test, as the image does, and lets the pages of the test before go.
+The view goes on with the lane's next test, as the image does: it lets the pages of the test before go, and starts
+again on the new test's latest call, following it. When the worker sends no page of a test, Inspect says why, in place
+of the page or above the calls it already lists.
 
 ## Where the pages come from
 
