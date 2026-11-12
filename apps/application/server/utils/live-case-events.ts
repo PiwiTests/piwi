@@ -144,6 +144,8 @@ export function testCompletedData(
     filePath: input.filePath,
     suitePath: tc.suitePath ?? null,
     status: tc.status,
+    // Playwright's `expectedStatus`: a `test.fail()` attempt that failed is a pass, as the run's counts read it.
+    expectedStatus: tc.expectedStatus ?? null,
     duration: tc.duration,
     location: tc.location,
     error: hiddenErrorText(tc.error),

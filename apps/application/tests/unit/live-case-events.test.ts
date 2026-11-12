@@ -84,7 +84,10 @@ describe('testCompletedData', () => {
       tags: ['smoke', 'checkout'],
       locks: ['db'],
       testMeta: { owner: 'payments', priority: 'high' },
+      expectedStatus: null,
     });
+    const shouldFail: StreamEventPayload = { ...complete, expectedStatus: 'failed' };
+    expect(testCompletedData(shouldFail, mapWireCaseToRunCase(shouldFail), undefined).expectedStatus).toBe('failed');
   });
 
   test('carries the failure cluster the attempt joined and its label, else none', () => {

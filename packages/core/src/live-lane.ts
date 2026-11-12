@@ -11,7 +11,11 @@
  *
  * A producer keeps its own shape of a test, a stop and a call (`LaneTestRef`, `LaneStopRef`): the reducer reads their
  * ids alone. The defaults (`LaneTest`, `LaneStop`, `LaneCall`) are the shapes a lane carries on the wire.
+ *
+ * A lane holds one run: Playwright counts each run's workers from 0 again, so a producer starts the lanes of a run
+ * from `emptyLane`, never from those of a run before it under the same name.
  */
+import { classifyStatus } from './status-classify';
 
 /**
  * Where a lane stands: `between` two tests (no worker yet, or one waiting for its next test), `running` a test,
@@ -81,7 +85,7 @@ export interface Lane<T extends LaneTestRef = LaneTest, S extends LaneStopRef = 
 
 /**
  * What a producer hears of a lane. An event naming a worker (`worker`, Playwright's worker index) older than the
- * lane's is a worker that left it, and changes nothing; one naming a newer worker is the worker Playwright started in
+ * lane's is a worker that left it, and changes nothing but the counts (its attempt's end); one naming a newer worker is the worker Playwright started in
  * the lane again, which takes it from its first event, the old one's test, stop and call dropped. An event naming no
  * worker is the lane's worker's. A stop, its end and a test's end may name the attempt they are about (`test`, its id;
  * `retry`): one about another attempt changes nothing but the counts.
@@ -102,12 +106,19 @@ export type LaneEvent<T extends LaneTestRef = LaneTest, S extends LaneStopRef = 
   | { type: 'stopped'; worker?: number; test?: string; retry?: number; stop: S }
   /** The stop `stop` names (any, when it names none) ended: the test goes on. */
   | { type: 'resumed'; worker?: number; test?: string; retry?: number; stop?: S['id'] }
-  /** An attempt ended, with Playwright's status (`passed`, `failed`, `timedOut`, `skipped`, `interrupted`). */
-  | { type: 'test-end'; worker?: number; test: string; retry?: number; status: string }
+  /**
+   * An attempt ended, with Playwright's status (`passed`, `failed`, `timedOut`, `skipped`, `interrupted`) and the one
+   * its test was expected to end with (`expectedStatus`: `failed` for a `test.fail()` test; `passed` when unsaid). A
+   * producer says each attempt's end once.
+   */
+  | { type: 'test-end'; worker?: number; test: string; retry?: number; status: string; expected?: string | null }
   /** The run ended: the lane is done. */
   | { type: 'run-end' };
 
-/** The statuses of an attempt that failed: Playwright's, and the dashboard's lower-case `timedout`. */
+/**
+ * The statuses of an attempt that failed, read against the status it was expected to end with as the run's counts read
+ * it (`classifyStatus`): Playwright's, and the dashboard's lower-case `timedout`.
+ */
 const FAILED: ReadonlySet<string> = new Set(['failed', 'timedOut', 'timedout']);
 
 /** A lane nothing was heard of yet. */
@@ -131,7 +142,8 @@ export function reduceLane<T extends LaneTestRef, S extends LaneStopRef, C>(
   if (event.type === 'run-end') return { ...lane, state: 'done', test: null, stop: null, waiting: null };
   let at = lane;
   if (event.worker !== undefined && event.worker !== lane.worker) {
-    if (lane.worker !== null && event.worker < lane.worker) return lane;
+    if (lane.worker !== null && event.worker < lane.worker)
+      return event.type === 'test-end' ? counted(lane, event) : lane;
     // A worker that leaves has nothing of a lane it was not in yet.
     if (event.type === 'left') return lane;
     at = { ...lane, state: 'between', worker: event.worker, test: null, stop: null, waiting: null };
@@ -158,9 +170,9 @@ export function reduceLane<T extends LaneTestRef, S extends LaneStopRef, C>(
       if (!at.stop || !isAttempt(at, event) || (event.stop !== undefined && event.stop !== at.stop.id)) return at;
       return settled({ ...at, stop: null }, false);
     case 'test-end': {
-      const counted = { ...at, done: at.done + 1, failed: at.failed + (FAILED.has(event.status) ? 1 : 0) };
-      if (at.test && !isAttempt(at, event)) return counted;
-      return settled({ ...counted, test: null, stop: null, waiting: null }, pausing);
+      const ended = counted(at, event);
+      if (at.test && !isAttempt(at, event)) return ended;
+      return settled({ ...ended, test: null, stop: null, waiting: null }, pausing);
     }
   }
 }
@@ -171,6 +183,15 @@ export function laneOf<T extends LaneTestRef = LaneTest, S extends LaneStopRef =
   events: readonly LaneEvent<T, S, C>[],
 ): Lane<T, S, C> {
   return events.reduce<Lane<T, S, C>>(reduceLane, emptyLane<T, S, C>(id));
+}
+
+/** The lane with the attempt `event` ends counted. */
+function counted<L extends Lane<LaneTestRef, LaneStopRef, unknown>>(
+  lane: L,
+  event: { status: string; expected?: string | null },
+): L {
+  const failed = FAILED.has(classifyStatus(event.status, [], event.expected)) ? 1 : 0;
+  return { ...lane, done: lane.done + 1, failed: lane.failed + failed };
 }
 
 /** Whether an event names the attempt the lane runs, or none. */

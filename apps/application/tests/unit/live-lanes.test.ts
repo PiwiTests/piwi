@@ -97,8 +97,31 @@ describe('RunLanes', () => {
     lanes.hear(7, completed('failed'));
     const [retry] = lanes.hear(7, begin({ workerIndex: 5, retries: 1 }));
     expect(retry).toMatchObject({ state: 'running', worker: 5, test: { retry: 1 }, done: 1, failed: 1 });
-    // What the old worker says late is not the lane's.
+    // The end of an attempt counted already changes nothing.
     expect(lanes.hear(7, completed('passed', { workerIndex: 4 }))).toEqual([]);
+  });
+
+  test('a failed attempt whose end comes after its retry began counts, once however often it is sent', () => {
+    const lanes = new RunLanes();
+    lanes.hear(7, begin({ workerIndex: 0 }));
+    lanes.hear(7, begin({ workerIndex: 1, retries: 1 }));
+    const [counted] = lanes.hear(7, completed('failed', { workerIndex: 0 }));
+    expect(counted).toMatchObject({ state: 'running', worker: 1, test: { retry: 1 }, done: 1, failed: 1 });
+    expect(lanes.hear(7, completed('failed', { workerIndex: 0 }))).toEqual([]);
+    lanes.hear(7, completed('passed', { workerIndex: 1, retries: 1 }));
+    expect(lanes.hear(7, completed('passed', { workerIndex: 1, retries: 1 }))).toEqual([]);
+    expect(lanes.lanesOf(7)[0]).toMatchObject({ state: 'between', done: 2, failed: 1 });
+  });
+
+  test('a test.fail() attempt counts as the run counts it: failed as expected is a pass', () => {
+    const lanes = new RunLanes();
+    const [failedAsExpected] = lanes.hear(7, completed('failed', { expectedStatus: 'failed' }));
+    expect(failedAsExpected).toMatchObject({ done: 1, failed: 0 });
+    const annotated = { title: 'refunds', testAnnotations: [{ type: 'fail' }] };
+    const [byAnnotation] = lanes.hear(7, completed('failed', annotated));
+    expect(byAnnotation).toMatchObject({ done: 2, failed: 0 });
+    const [passedUnexpectedly] = lanes.hear(7, completed('passed', { title: 'voids', expectedStatus: 'failed' }));
+    expect(passedUnexpectedly).toMatchObject({ done: 3, failed: 1 });
   });
 
   test('a result without a lane, and a hook’s step, change no lane', () => {

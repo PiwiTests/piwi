@@ -67,6 +67,17 @@ describe('reduceLane', () => {
     expect(lane).toMatchObject({ done: 6, failed: 3, state: 'between' });
   });
 
+  test('an attempt read against the status it was expected to end with: a test.fail() that failed counts as passed', () => {
+    const end = (status: string, expected?: string | null) =>
+      reduceLane(emptyLane(ID), { type: 'test-end', test: 'a', status, expected }).failed;
+    expect(end('failed', 'failed')).toBe(0);
+    expect(end('passed', 'failed')).toBe(1);
+    expect(end('timedOut', 'failed')).toBe(1);
+    expect(end('failed', 'passed')).toBe(1);
+    expect(end('failed', null)).toBe(1);
+    expect(end('passed')).toBe(0);
+  });
+
   test('a stop, and its end: stopped, then running again', () => {
     let lane = laneOf(ID, [
       { type: 'joined', worker: 1 },
@@ -177,6 +188,16 @@ describe('reduceLane', () => {
     expect(passed).toMatchObject({ state: 'between', done: 2, failed: 1 });
   });
 
+  test('the end of a failed attempt, heard after its retry’s worker took the lane, counts', () => {
+    const lane = laneOf(ID, [
+      { type: 'test-begin', worker: 0, test: aTest('a', 0) },
+      { type: 'joined', worker: 1 },
+      { type: 'test-begin', worker: 1, test: aTest('a', 1) },
+      { type: 'test-end', worker: 0, test: 'a', retry: 0, status: 'failed' },
+    ]);
+    expect(lane).toMatchObject({ state: 'running', worker: 1, test: aTest('a', 1), done: 1, failed: 1 });
+  });
+
   test('the end of an earlier attempt, heard after the next began, counts and leaves the running attempt', () => {
     const lane = laneOf(ID, [
       { type: 'test-begin', test: aTest('a', 1) },
@@ -193,8 +214,12 @@ describe('reduceLane', () => {
     ]);
     const restarted = reduceLane(before, { type: 'test-begin', worker: 5, test: aTest('b') });
     expect(restarted).toMatchObject({ state: 'running', worker: 5, test: aTest('b'), stop: null });
-    // What the old worker says late is not the lane's any more.
-    expect(reduceLane(restarted, { type: 'test-end', worker: 3, test: 'a', status: 'failed' })).toBe(restarted);
+    // What the old worker says late is not the lane's any more, but the end of its attempt counts.
+    expect(reduceLane(restarted, { type: 'test-end', worker: 3, test: 'a', status: 'failed' })).toEqual({
+      ...restarted,
+      done: 1,
+      failed: 1,
+    });
     expect(reduceLane(restarted, { type: 'left', worker: 3 })).toBe(restarted);
     expect(reduceLane(restarted, { type: 'stopped', worker: 3, stop: aStop('t') })).toBe(restarted);
   });

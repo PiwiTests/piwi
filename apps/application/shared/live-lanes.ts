@@ -9,6 +9,7 @@
  * its worker goes on or leaves the view.
  */
 import { emptyLane, laneKey, reduceLane, type Lane, type LaneEvent, type LaneId } from '@piwitests/core/live-lane';
+import { resolveExpectedStatus } from '@piwitests/core/status-classify';
 
 export type { Lane } from '@piwitests/core/live-lane';
 
@@ -59,6 +60,7 @@ function laneEventOf(event: PublishedEvent, lane: Lane): LaneEvent | null {
         test: laneTestId(data),
         retry: count(data.retries),
         status: typeof data.status === 'string' ? data.status : 'passed',
+        expected: resolveExpectedStatus(data.expectedStatus, data.testAnnotations),
       };
     case 'test-stopped': {
       const stop = data.stop as { reason?: unknown; title?: unknown; since?: unknown } | null | undefined;
@@ -99,12 +101,14 @@ function laneEventOf(event: PublishedEvent, lane: Lane): LaneEvent | null {
 /** The lanes of every live run a producer keeps. */
 export class RunLanes {
   private readonly runs = new Map<number, Map<string, Lane>>();
+  /** Each live run's attempts whose end its lanes counted, so a batch the reporter sends again counts none twice. */
+  private readonly ended = new Map<number, Set<string>>();
 
   /** Hear a run event as it is published: the lanes it changed, as they stand now. */
   hear(runId: number, event: PublishedEvent): Lane[] {
     const lanes = this.runs.get(runId);
     if (event.type === 'run-finished') {
-      this.runs.delete(runId);
+      this.forget(runId);
       return [...(lanes?.values() ?? [])].flatMap((lane) => {
         const done = reduceLane(lane, { type: 'run-end' });
         return done === lane ? [] : [done];
@@ -115,7 +119,7 @@ export class RunLanes {
     const key = laneKey(id);
     const lane = lanes?.get(key) ?? emptyLane(id);
     const said = laneEventOf(event, lane);
-    if (!said) return [];
+    if (!said || this.endedBefore(runId, key, said)) return [];
     const next = reduceLane(lane, said);
     if (next === lane && lanes?.has(key)) return [];
     const kept = lanes ?? new Map<string, Lane>();
@@ -134,5 +138,17 @@ export class RunLanes {
   /** Let go of a run's lanes. */
   forget(runId: number): void {
     this.runs.delete(runId);
+    this.ended.delete(runId);
+  }
+
+  /** Whether `said` ends an attempt of the lane `key` whose end was heard already; notes its end otherwise. */
+  private endedBefore(runId: number, key: string, said: LaneEvent): boolean {
+    if (said.type !== 'test-end' || said.retry === undefined) return false;
+    const attempt = JSON.stringify([key, said.test, said.retry]);
+    const ended = this.ended.get(runId) ?? new Set<string>();
+    if (ended.has(attempt)) return true;
+    ended.add(attempt);
+    this.ended.set(runId, ended);
+    return false;
   }
 }
