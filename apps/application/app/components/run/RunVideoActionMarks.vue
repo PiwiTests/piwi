@@ -7,7 +7,7 @@
  */
 import { useResizeObserver } from '@vueuse/core';
 import { MAX_VIDEO_ACTIONS, markLabel, type VideoMark } from '#shared/video-actions';
-import { statusPalette } from '~/utils/status-palette';
+import { statusPalette } from '@piwitests/run-ui/status-palette';
 
 const props = defineProps<{
   /** The test that plays; the lane is its. */
