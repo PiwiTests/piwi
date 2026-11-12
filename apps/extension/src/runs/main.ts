@@ -58,7 +58,7 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piw
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
-import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
+import { formatNumber, formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
   RUNS_PING_MS,
   RUNS_PORT,
@@ -3025,7 +3025,7 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
  * were ended at a stop (skipped, marked so).
  */
 function renderProgress(progress: HubProgress): HTMLElement {
-  const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: progress.done }));
+  const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: formatNumber(progress.done) }));
   if (progress.failed > 0) line.append(' · ', element('span', 'failed', tn('runs_progressFailed', progress.failed)));
   if (progress.flaky > 0) line.append(' · ', element('span', 'flaky', tn('runs_progressFlaky', progress.flaky)));
   const endedAtStop = endedAtStopWords(endedAtStopOf(progress), runsSpeaker);
