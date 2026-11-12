@@ -213,15 +213,16 @@ const file = (entityType: 'test_run' | 'test_runs_case' | 'failure_cluster', ent
   });
 
 describe('an issue about a run', () => {
-  test('opens with the comment under the name, lists the tests and links on the run', async () => {
+  test('opens with the comment, lists the tests and links on the run, and names its filer once', async () => {
     const outcome = await file('test_run', 7, {
       comment: 'The coupon is accepted twice on reload.\nNo test covers it.',
       submissionId: '00000000-0000-4000-8000-000000000001',
     });
     expect(outcome).toMatchObject({ status: 'done', key: 'PROJ-1' });
     const body = creates[0]!;
-    expect(body.indexOf('Comment from Dana Lee')).toBeGreaterThan(-1);
-    expect(body.indexOf('Comment from Dana Lee')).toBeLessThan(body.indexOf('The run'));
+    expect(body.indexOf('"Comment"')).toBeGreaterThan(-1);
+    expect(body.indexOf('"Comment"')).toBeLessThan(body.indexOf('The run'));
+    expect(body.split('Dana Lee')).toHaveLength(2);
     expect(body).toContain('No test covers it.');
     expect(body).toContain('pays with a coupon');
     expect(body).toContain('Filed by Dana Lee from Piwi.');

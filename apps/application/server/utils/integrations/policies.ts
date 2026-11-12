@@ -52,7 +52,7 @@ import type {
   UpdateIssueActionPayload,
 } from './actions';
 import { enqueueAction, findActionByKey, runActionNow } from './actions';
-import { bindingLocale, readProjectIntegration } from './binding';
+import { bindingLocale, bindingTitlePrefix, readProjectIntegration } from './binding';
 import { getConnectionRow } from './connections';
 import { getClusterTrackerLink } from './known-issue';
 import { mergeEntityLinkMetadata } from './entity-links';
@@ -64,6 +64,7 @@ interface PolicyContext {
   link: EntityLink;
   binding: ResolvedProjectIntegration;
   locale: IssueLocale;
+  titlePrefix: string | null;
   clusterUrl: string | null;
 }
 
@@ -93,6 +94,7 @@ async function policyContext(db: DbClient, clusterId: number, projectId: number)
     link,
     binding,
     locale: bindingLocale(binding, connection?.config ?? null),
+    titlePrefix: bindingTitlePrefix(binding, connection?.config ?? null),
     clusterUrl: base ? `${base}/failure-clusters/${clusterId}` : null,
   };
 }
@@ -361,6 +363,8 @@ export async function enqueueDescriptionUpdate(
     shareUrl: meta.shareUrl ?? null,
     automatic: meta.automatic ?? null,
     comment: meta.comment ?? null,
+    filedBy: meta.filedBy ?? null,
+    titlePrefix: ctx.titlePrefix,
   });
   if (!built) return;
   await enqueueAndKick(db, {
