@@ -30,10 +30,17 @@ export {
 export const DECLARED_LINKS_TIMEOUT_MS = 10_000;
 
 /**
- * The keys Jira did not return, by connection, project and key, for a day: a later lookup asks about them after the
- * keys it has not yet found missing. A key a lookup returns is forgotten.
+ * The keys Jira did not return, by connection, Jira project and key, for a day: a later lookup asks about them after
+ * the keys it has not yet found missing. A key a lookup returns is forgotten.
  */
 export const unreturnedKeys = new TtlCache<true>(24 * 60 * 60 * 1000, 5000);
+
+/**
+ * The keys only tags name that a project's type filter dropped, by connection, Jira project, Piwi project and key, for
+ * a day: a later lookup of that Piwi project asks about them last. A key a lookup keeps, or a test names with an
+ * annotation, is forgotten.
+ */
+export const typeDroppedKeys = new TtlCache<true>(24 * 60 * 60 * 1000, 5000);
 
 /**
  * The link step: run at finalize for a run the `tracker` use and the binding's run scope admit, on a project bound to
@@ -63,6 +70,8 @@ export async function linkDeclaredIssues(
     tracker: tracker as typeof tracker & Required<Pick<typeof tracker, 'getIssues'>>,
     tagSource: resolveTagSource(project?.tagKeys, binding),
     unreturned: unreturnedKeys,
+    typeDropped: typeDroppedKeys,
+    projectId: run.projectId,
     deadline,
   });
 }

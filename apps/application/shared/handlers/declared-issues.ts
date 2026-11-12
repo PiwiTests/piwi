@@ -105,18 +105,26 @@ export interface DeclaredIssuesLookup {
    * tags name nothing.
    */
   tagSource?: { pattern: string | null; issueTypes: string[] | null };
-  /** The keys earlier lookups of this connection and project did not return; the demo passes none. */
+  /** The keys earlier lookups of this connection and Jira project did not return; the demo passes none. */
   unreturned?: UnreturnedKeys;
+  /**
+   * The keys only tags named that earlier lookups of this Piwi project found, and the tag source's type filter dropped;
+   * the demo passes none. Kept apart from `unreturned` because the filter is the project's own.
+   */
+  typeDropped?: UnreturnedKeys;
+  /** The Piwi project the run belongs to, which `typeDropped` is kept for. */
+  projectId?: number;
   /** Aborts the step; once it fires nothing more is written. */
   deadline: AbortSignal;
 }
 
 /**
  * Links the run's failing tests' named issues to their clusters: one bulk lookup for at most
- * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first and the keys earlier lookups did
- * not return, or returned as issues of a type the tag source drops, last, leaving out a key a cluster already links or
- * has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more` is set to the keys it names
- * and does not link, and to 0 for a failing cluster that names none this run.
+ * {@link MAX_DECLARED_KEYS_PER_RUN} keys, the ones the most failing tests name first and, last, the keys earlier
+ * lookups did not return and the keys only tags name that the project's type filter dropped, leaving out a key a
+ * cluster already links or has dismissed and the keys of a cluster at the cap. Each cluster's `declared_issues_more`
+ * is set to the keys it names and does not link, not counting those the type filter drops, and to 0 for a failing
+ * cluster that names none this run.
  *
  * The links and dismissals of the clusters are read again once the lookup returns, so one made during the lookup is
  * respected and counts toward the cap; one made between that read and an insert is not seen.
@@ -126,7 +134,7 @@ export interface DeclaredIssuesLookup {
 export async function linkNamedIssues(
   db: DrizzleDB,
   runId: number,
-  { projectKey, connectionId, tracker, tagSource, unreturned, deadline }: DeclaredIssuesLookup,
+  { projectKey, connectionId, tracker, tagSource, unreturned, typeDropped, projectId, deadline }: DeclaredIssuesLookup,
 ): Promise<DeclaredLinksResult> {
   const result: DeclaredLinksResult = { looked: [], linked: [] };
   if (deadline.aborted) return { ...result, failed: 'deadline' };
@@ -137,7 +145,15 @@ export async function linkNamedIssues(
   if (clusters.size === 0 && unnamed.length === 0) return { ...result, skipped: 'nothing-named' };
 
   const memory = (key: string) => `${connectionId ?? ''}:${projectKey}:${key}`;
-  const keys = pickLookupKeys(clusters, (key) => unreturned?.get(memory(key)) === true);
+  const droppedMemory = (key: string) => `${connectionId ?? ''}:${projectKey}:${projectId ?? ''}:${key}`;
+  const namedByAnnotation = (key: string) => [...clusters.values()].some((state) => state.annotated.has(key));
+  // A key an annotation names is asked on its own merits: the type filter never applies to it.
+  const keys = pickLookupKeys(
+    clusters,
+    (key) =>
+      unreturned?.get(memory(key)) === true ||
+      (!namedByAnnotation(key) && typeDropped?.get(droppedMemory(key)) === true),
+  );
   result.looked = keys;
   let found: TrackerIssue[] = [];
   if (keys.length > 0) {
@@ -156,15 +172,15 @@ export async function linkNamedIssues(
   for (const issue of found) {
     if (asked.has(issue.key) && issue.projectKey === projectKey && issue.id) byKey.set(issue.key, issue);
   }
-  if (unreturned) {
-    // A key Jira did not return, or returned as an issue only tags name and the type filter drops, is asked last.
+  if (unreturned || typeDropped) {
     const returned = new Set(found.map((issue) => issue.key));
-    const onlyTagged = (key: string) => [...clusters.values()].every((state) => !state.annotated.has(key));
     for (const key of keys) {
       const issue = byKey.get(key);
-      const dropped = issue !== undefined && onlyTagged(key) && !isIssueTypeAccepted(issue, tagTypes ?? []);
-      if (returned.has(key) && !dropped) unreturned.delete(memory(key));
-      else unreturned.set(memory(key), true);
+      const dropped = issue !== undefined && !namedByAnnotation(key) && !isIssueTypeAccepted(issue, tagTypes ?? []);
+      if (returned.has(key)) unreturned?.delete(memory(key));
+      else unreturned?.set(memory(key), true);
+      if (dropped) typeDropped?.set(droppedMemory(key), true);
+      else typeDropped?.delete(droppedMemory(key));
     }
   }
 

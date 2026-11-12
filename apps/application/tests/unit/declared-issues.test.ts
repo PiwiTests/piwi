@@ -20,7 +20,7 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 
 const { createConnection } = await import('../../server/utils/integrations/connections');
 const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
-const { linkDeclaredIssues, MAX_DECLARED_KEYS_PER_RUN, unreturnedKeys } =
+const { linkDeclaredIssues, MAX_DECLARED_KEYS_PER_RUN, unreturnedKeys, typeDroppedKeys } =
   await import('../../server/utils/integrations/declared-issues');
 const { syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { getClusterTrackerLink, getClusterKnownIssue } = await import('../../server/utils/integrations/known-issue');
@@ -261,6 +261,7 @@ beforeEach(async () => {
   jiraDown = false;
   lookupHangs = false;
   unreturnedKeys.deleteWhere(() => true);
+  typeDroppedKeys.deleteWhere(() => true);
   await setIssueTagPattern(null);
   await bind();
 });
@@ -277,6 +278,16 @@ async function setIssueTagPattern(issue: string | null) {
 function rememberedKeys(): string[] {
   const keys: string[] = [];
   unreturnedKeys.deleteWhere((_, key) => {
+    keys.push(key);
+    return false;
+  });
+  return keys;
+}
+
+/** The keys the type-drop memory holds now, as written. */
+function droppedKeys(): string[] {
+  const keys: string[] = [];
+  typeDroppedKeys.deleteWhere((_, key) => {
     keys.push(key);
     return false;
   });
@@ -1402,6 +1413,18 @@ describe('the tag source', () => {
     expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-99']);
   });
 
+  test('a key dropped for its type is remembered under the Piwi project, not as one Jira did not return', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-2', { type: { id: '10001', name: 'Story' } });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-2'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(rememberedKeys()).toEqual([]);
+    expect(droppedKeys()).toEqual([`${connectionId}:PROJ:1:PROJ-2`]);
+  });
+
   test('an annotation’s key of another type is not remembered as one the tag source drops', async () => {
     await setIssueTagPattern(ISSUE_PATTERN);
     const cluster = await newCluster();
@@ -1412,5 +1435,87 @@ describe('the tag source', () => {
 
     expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-3']);
     expect(rememberedKeys()).toEqual([]);
+    expect(droppedKeys()).toEqual([]);
+  });
+
+  test('a key dropped as a tag in one run and annotated in the next is asked normally', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const others = Array.from({ length: MAX_DECLARED_KEYS_PER_RUN }, (_, i) => `PROJ-${i + 200}`);
+    for (const key of others) defineIssue(key);
+    defineIssue('PROJ-1', { type: { id: '10001', name: 'Story' } });
+
+    const first = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(droppedKeys()).toEqual([`${connectionId}:PROJ:1:PROJ-1`]);
+
+    const second = await failRun([{ cluster, issues: ['PROJ-1'], tags: others }]);
+    await linkDeclaredIssues(dbc, second.runId);
+
+    expect(lookups[1]![0]).toBe('PROJ-1');
+    expect((await links(cluster)).map((l) => l.key)).toContain('PROJ-1');
+    expect(droppedKeys()).toEqual([]);
+  });
+
+  test('another project’s annotation of a key a project dropped is still asked with room to spare', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const others = Array.from({ length: MAX_DECLARED_KEYS_PER_RUN }, (_, i) => `PROJ-${i + 200}`);
+    defineIssue('PROJ-1', { type: { id: '10001', name: 'Story' } });
+    const first = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+    await linkDeclaredIssues(dbc, first.runId);
+    expect(droppedKeys()).toEqual([`${connectionId}:PROJ:1:PROJ-1`]);
+
+    const second = await failRun([{ cluster, issues: ['PROJ-1'], tags: others }]);
+    const asked: string[][] = [];
+    await linkNamedIssues(db as never, second.runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: {
+        parseIssueUrl: () => null,
+        getIssues: async (keys: string[]) => {
+          asked.push(keys);
+          return { issues: [], missing: keys };
+        },
+      } as never,
+      tagSource: { pattern: ISSUE_PATTERN, issueTypes: ['Bug'] },
+      unreturned: unreturnedKeys,
+      typeDropped: typeDroppedKeys,
+      projectId: 2,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    expect(asked[0]![0]).toBe('PROJ-1');
+    expect(asked[0]).toHaveLength(MAX_DECLARED_KEYS_PER_RUN);
+  });
+
+  test('a key dropped by one project’s type filter is not pushed back for another project’s tags', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const others = Array.from({ length: MAX_DECLARED_KEYS_PER_RUN }, (_, i) => `PROJ-${i + 200}`);
+    defineIssue('PROJ-1', { type: { id: '10001', name: 'Story' } });
+    const first = await failRun([{ cluster, issues: [], tags: ['PROJ-1'] }]);
+    await linkDeclaredIssues(dbc, first.runId);
+
+    const second = await failRun([{ cluster, issues: [], tags: ['PROJ-1', ...others] }]);
+    const asked: string[][] = [];
+    await linkNamedIssues(db as never, second.runId, {
+      projectKey: 'PROJ',
+      connectionId,
+      tracker: {
+        parseIssueUrl: () => null,
+        getIssues: async (keys: string[]) => {
+          asked.push(keys);
+          return { issues: [], missing: keys };
+        },
+      } as never,
+      tagSource: { pattern: ISSUE_PATTERN, issueTypes: ['Story'] },
+      unreturned: unreturnedKeys,
+      typeDropped: typeDroppedKeys,
+      projectId: 2,
+      deadline: AbortSignal.timeout(10_000),
+    });
+
+    expect(asked[0]![0]).toBe('PROJ-1');
   });
 });
