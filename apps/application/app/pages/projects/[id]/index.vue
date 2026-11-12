@@ -13,7 +13,7 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
-import { listsRun, ownRunMark } from '~/utils/own-run-mark';
+import { joinOwnRuns, listsRun, ownRunMark } from '~/utils/own-run-mark';
 import { ranToItsEnd } from '#shared/project-health';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
@@ -213,9 +213,7 @@ const scopedRuns = computed(() => project.value?.testRuns ?? []);
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
 // The runs list adds the viewer's own runs the partial-run or branch filter leaves out, in date order.
 const listedRuns = computed(() =>
-  [...filteredRuns.value, ...(project.value?.ownRuns ?? []).filter(inDrillPeriod)].sort(
-    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
-  ),
+  joinOwnRuns(filteredRuns.value, (project.value?.ownRuns ?? []).filter(inDrillPeriod)),
 );
 
 function resetFilters(): void {

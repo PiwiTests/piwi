@@ -32,3 +32,13 @@ export function ownRunMark(run: ListedRun, scope: ProjectRunScope, defaultBranch
   }
   return why.length > 0 ? ['Yours', ...why].join(' · ') : null;
 }
+
+/**
+ * A runs list's rows: the scoped runs and the viewer's own runs the scope leaves out, each run once, newest first.
+ */
+export function joinOwnRuns<T extends { id: number; startTime: string | Date }>(scoped: T[], own: T[]): T[] {
+  const listed = new Set(scoped.map((run) => run.id));
+  return [...scoped, ...own.filter((run) => !listed.has(run.id))].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+  );
+}

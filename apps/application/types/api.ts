@@ -431,7 +431,7 @@ export interface ProjectWithTestRuns {
   testRuns: TestRunSummary[];
   /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
   unscopedRuns?: ProjectUnscopedRun[];
-  /** With a run scope: the viewer's own most recent runs its partial-run or branch reading leaves out. */
+  /** With a run scope: the viewer's own most recent runs, in its environments, that `testRuns` does not hold. */
   ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;

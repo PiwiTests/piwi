@@ -6,7 +6,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
 import { isOwnRun, ownRunSql, SOLE_USER, type RunViewer } from '#shared/own-runs';
-import { listsRun, ownRunMark } from '../../app/utils/own-run-mark';
+import { joinOwnRuns, listsRun, ownRunMark } from '../../app/utils/own-run-mark';
 import type { ProjectRunScope } from '#shared/project-run-scope';
 import { migrateToLatest } from './temp-db';
 
@@ -222,6 +222,50 @@ describe('the runs lists', () => {
     expect(jordans.testRuns.map((run: any) => run.mine)).toEqual([undefined]);
   });
 
+  /** `db` on the same connection, running `write` once right after the project's scoped run list is read. */
+  function writingAfterScopedList(write: string): Db {
+    const client = (db as unknown as { $client: ReturnType<typeof createClient> }).$client;
+    let written = false;
+    const racing = new Proxy(client, {
+      get(target, key) {
+        if (key !== 'execute') return Reflect.get(target, key);
+        return async (stmt: { sql: string }) => {
+          const result = await target.execute(stmt as never);
+          if (!written && /"test_runs"\."is_full_run" = \?/.test(stmt.sql)) {
+            written = true;
+            await target.execute(write);
+          }
+          return result;
+        };
+      },
+    });
+    return drizzle(racing, { schema });
+  }
+
+  test('list a run once when a write moves it out of the scope between the reads', async () => {
+    const run = await storeRun({ id: 1, reporterId: AVERY, branch: null });
+    const racing = writingAfterScopedList(`UPDATE test_runs SET branch = 'feature/x' WHERE id = ${run}`);
+    const project = await getProject(racing as never, projectId, { scope, viewer: avery });
+    const listed = [...project.testRuns, ...(project.ownRuns ?? [])].map((r: any) => r.id);
+    expect(listed).toEqual([run]);
+  });
+
+  test('list a run when a write moves it into the scope between the reads', async () => {
+    const run = await storeRun({ id: 1, reporterId: AVERY, branch: 'feature/x' });
+    const racing = writingAfterScopedList(`UPDATE test_runs SET branch = 'main' WHERE id = ${run}`);
+    const project = await getProject(racing as never, projectId, { scope, viewer: avery });
+    const listed = [...project.testRuns, ...(project.ownRuns ?? [])].map((r: any) => r.id);
+    expect(listed).toEqual([run]);
+  });
+
+  test('add no own run the scope holds past the scoped list’s window', async () => {
+    await storeRun({ id: 1, reporterId: AVERY });
+    const newer = await storeRun({ id: 2 });
+    const project = await getProject(db as never, projectId, { scope, viewer: avery, runLimit: 1 });
+    expect(project.testRuns.map((r: any) => r.id)).toEqual([newer]);
+    expect(project.ownRuns?.map((r: any) => r.id)).toEqual([]);
+  });
+
   test('say `mine` of every run outside CI with authentication off', async () => {
     await storeRun({ id: 1 });
     await storeRun({ id: 2, isFullRun: 0 });
@@ -307,5 +351,18 @@ describe('the runs list’s mark', () => {
     expect(listsRun({ ...own, isFullRun: false }, scope, 'main')).toBe(true);
     expect(listsRun({ ...own, isFullRun: false, environment: 'staging' }, scope, 'main')).toBe(false);
     expect(listsRun({ ...own, isFullRun: false, mine: undefined }, scope, 'main')).toBe(false);
+  });
+
+  test('lists each run once, newest first, when the own runs repeat a scoped one', () => {
+    const at = (minute: number) => new Date(Date.UTC(2026, 10, 1, 10, minute));
+    const scoped = [
+      { id: 3, startTime: at(3) },
+      { id: 1, startTime: at(1) },
+    ];
+    const own = [
+      { id: 3, startTime: at(3) },
+      { id: 2, startTime: at(2) },
+    ];
+    expect(joinOwnRuns(scoped, own).map((run) => run.id)).toEqual([3, 2, 1]);
   });
 });

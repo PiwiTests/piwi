@@ -29,6 +29,7 @@ import {
   and,
   or,
   inArray,
+  gt,
   gte,
   lte,
   isNull,
@@ -440,9 +441,9 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
  * scope, and `unscopedRuns` lists the newest runs of any scope with the fields
  * the scope reads: the environments and branches the filters offer, and the
  * runs they hide. Each run says `mine` when it is the `viewer`'s own
- * (`#shared/own-runs`), and `ownRuns` lists the viewer's newest own runs that
- * the scope's partial-run or branch reading leaves out, in its environments,
- * which the runs list shows whatever the filters say.
+ * (`#shared/own-runs`), and `ownRuns` lists the viewer's newest own runs, in
+ * the scope's environments, that the scoped list does not hold, which the runs
+ * list shows whatever the filters say.
  */
 export async function getProject(
   db: DrizzleDB,
@@ -488,6 +489,10 @@ export async function getProject(
         .orderBy(desc(testRuns.startTime))
         .limit(runLimit)
     : null;
+  // The own runs the scoped list does not hold: those the scope leaves out, and those newer than its window, which a
+  // write between the two reads moved into the scope.
+  const listedIds = runs.map((run) => run.id as number);
+  const oldestListed = runs.length === runLimit ? runs[runs.length - 1].startTime : null;
   const ownRuns: any[] | null =
     scope && viewer && inScope
       ? await db
@@ -499,7 +504,8 @@ export async function getProject(
               notPrivateRun(),
               ownRunSql(viewer),
               ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch),
-              sql`(${inScope}) IS NOT TRUE`,
+              listedIds.length > 0 ? notInArray(testRuns.id, listedIds) : undefined,
+              oldestListed ? or(sql`(${inScope}) IS NOT TRUE`, gt(testRuns.startTime, oldestListed)) : undefined,
             ),
           )
           .orderBy(desc(testRuns.startTime))
