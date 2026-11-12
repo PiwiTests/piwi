@@ -2645,6 +2645,93 @@ const DESKTOP_UPDATE_RELEASE_NOTES = {
   ],
 };
 
+/** A finished run of the checkout project whose tests all have a video; the demo seed's run #1. */
+const VIDEO_MARKS_RUN = 1;
+/** One of its videoed tests: it checks a box and hovers the button a few ms apart, which merge into one mark, then clicks it. */
+const VIDEO_MARKS_EXECUTION = 6;
+
+/**
+ * The marks under the video review: the lane of a test's actions on the run's Video tab, a click, a fill and the
+ * merged mark each hovered, one action shown as failed and the lane of a test with no recorded actions (answered
+ * here, since every videoed test of the seed has some), then the same lane in the Evidence window. The narrow and
+ * dark ones keep the lane and the merged mark.
+ */
+function videoMarksScene(width, colorScheme, suffix) {
+  const name = `run-video-marks${suffix}`;
+  const full = suffix === '';
+  const lane = '[data-testid="video-action-marks"]';
+  const byLabel = (page, pattern) => page.getByRole('button', { name: pattern }).locator('visible=true').first();
+  const marksOf = (page) => page.locator(`${lane} [data-testid="video-action-mark"]`);
+  const outputs = [`${name}-lane.png`, `${name}-merged.png`];
+  if (full) {
+    outputs.push(
+      `${name}-click.png`,
+      `${name}-fill.png`,
+      `${name}-failed.png`,
+      `${name}-evidence.png`,
+      `${name}-empty.png`,
+    );
+  }
+  return {
+    name,
+    description: `The marks under the video review on the run's Video tab (${width} px, ${colorScheme}): the lane and the merged mark${full ? ', a click, a fill and a failed action hovered, the Evidence window and a test with no recorded actions' : ''}`,
+    route: `/test-runs/${VIDEO_MARKS_RUN}?tab=video`,
+    viewport: { width, height: width < 640 ? 1500 : 1000 },
+    colorScheme,
+    outputs,
+    async run({ page, goto, settle, shoot }) {
+      const tab = '[data-shot="run-video-tab"]';
+      const ready = async () => {
+        await page.locator(`${tab} ${lane} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      const hover = async (locator, label) => {
+        await locator.hover();
+        await page.getByRole('tooltip').first().waitFor({ timeout: 10_000 });
+        await shoot(label, { of: tab, pad: 12 });
+      };
+      await ready();
+      await shoot('lane', { of: tab, pad: 12 });
+      await hover(byLabel(page, /^2 actions/), 'merged');
+      if (!full) return;
+
+      await page.mouse.move(0, 0);
+      await hover(byLabel(page, /^Click getByRole\('button', \{ name: 'Place order' \}\)/), 'click');
+      await page.mouse.move(0, 0);
+      await hover(byLabel(page, /^Fill getByLabel\('Email'\)/), 'fill');
+
+      // The seed has no failed action, so the last one is answered as failed.
+      await page.route('**/api/test-run-cases/*/video-actions', async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        const last = body.actions[body.actions.length - 1];
+        if (last) last.failed = true;
+        await route.fulfill({ response, json: body });
+      });
+      await goto(`/test-runs/${VIDEO_MARKS_RUN}?tab=video`);
+      await ready();
+      await page.mouse.move(0, 0);
+      await hover(marksOf(page).last(), 'failed');
+      await page.unroute('**/api/test-run-cases/*/video-actions');
+
+      await page.route('**/api/test-run-cases/*/video-actions', (route) =>
+        route.fulfill({ json: { source: 'none', timing: null, actions: [], total: 0, capped: false } }),
+      );
+      await goto(`/test-runs/${VIDEO_MARKS_RUN}?tab=video`);
+      await page.getByText('No recorded actions for this test').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('empty', { of: tab, pad: 12 });
+      await page.unroute('**/api/test-run-cases/*/video-actions');
+
+      await goto(`/test-run-cases/${VIDEO_MARKS_EXECUTION}`);
+      await page.getByRole('button', { name: 'Open video review' }).click();
+      await page.locator(`[role="dialog"] ${lane} [data-testid="video-action-count"]`).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('evidence');
+    },
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -5030,6 +5117,9 @@ const SCENES = [
   },
   runTimelineLeaksScene('light', ''),
   runTimelineLeaksScene('dark', '-dark'),
+  videoMarksScene(1280, 'light', ''),
+  videoMarksScene(375, 'light', '-phone'),
+  videoMarksScene(1280, 'dark', '-dark'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
