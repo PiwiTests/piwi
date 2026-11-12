@@ -222,10 +222,23 @@ describe('tickedEntries', () => {
 
   it('ticks the playing test once its video passes the end of the test', () => {
     expect(tickedEntries(reel, { index: 0, videoMs: 999 })).toEqual([false, false, false]);
-    expect(tickedEntries(reel, { index: 0, videoMs: 1000 })).toEqual([true, false, false]);
+    expect(tickedEntries(reel, { index: 0, videoMs: 1000 })).toEqual([true, true, false]);
   });
 
   it('ticks the tests before the playing one, a test with no video among them', () => {
     expect(tickedEntries(reel, { index: 2, videoMs: 10 })).toEqual([true, true, false]);
+  });
+
+  it('ticks a test with no video along with the test before it, also at the end of the reel', () => {
+    const tail = buildReel(
+      [execution({ executionId: 1, startedAt: T0 }), execution({ executionId: 2, startedAt: T0 + 2000, video: null })],
+      'worker',
+    )[0]!;
+    expect(tickedEntries(tail, { index: 0, videoMs: 500 })).toEqual([false, false]);
+    expect(tickedEntries(tail, { index: 0, videoMs: 1000 })).toEqual([true, true]);
+  });
+
+  it('ticks at the end the cursor names, a video shorter than its test', () => {
+    expect(tickedEntries(reel, { index: 0, videoMs: 600, endMs: 600 })).toEqual([true, true, false]);
   });
 });

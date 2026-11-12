@@ -232,18 +232,22 @@ export function buildReel(executions: readonly ReelExecution[], group: ReelGroup
 export interface ReelCursor {
   index: number;
   videoMs: number;
+  /** Where the playing test ends in its video once the video's length is known; else the entry's `lengthMs`. */
+  endMs?: number;
 }
 
 /**
  * Whether each entry is ticked at the cursor: every entry before the playing one, and the playing one once its video
- * passes the end of the test. An entry with no video takes no time, so it ticks with the entries around it. Null
- * before playback has begun: nothing is ticked.
+ * passes the end of the test. An entry with no video takes no playing time, so it ticks with the entry before it.
+ * Null before playback has begun: nothing is ticked.
  */
 export function tickedEntries(reel: Reel, cursor: ReelCursor | null): boolean[] {
-  return reel.entries.map((entry, i) => {
-    if (cursor == null) return false;
-    if (i < cursor.index) return true;
-    if (i > cursor.index) return false;
-    return entry.execution.video ? cursor.videoMs >= entry.lengthMs : true;
+  const ticked: boolean[] = [];
+  reel.entries.forEach((entry, i) => {
+    if (cursor == null) ticked.push(false);
+    else if (i < cursor.index) ticked.push(true);
+    else if (entry.execution.video == null) ticked.push(i === 0 || ticked[i - 1]!);
+    else ticked.push(i === cursor.index && cursor.videoMs >= (cursor.endMs ?? entry.lengthMs));
   });
+  return ticked;
 }
