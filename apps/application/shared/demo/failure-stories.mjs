@@ -3174,7 +3174,7 @@ export const DEMO_PROJECTS = [
         title: 'Hover',
         subtitle: "getByRole('button', { name: 'Place order' })",
         category: 'action',
-        weight: 12,
+        weight: 300,
         params: { locator: "getByRole('button', { name: 'Place order' })" },
       },
       {
