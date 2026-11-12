@@ -982,6 +982,115 @@ test.describe('Desktop run live view', () => {
     await expect(outdated).toHaveAttribute('title', 'Update the reporter to watch a running test');
   });
 
+  test('shows a watched lane’s layers under its page: why its call waits, its events, its text as asked and its filmstrip', async ({
+    page,
+  }) => {
+    const image = await jpeg(page);
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    // The window takes every layer of the lane but the page's text, which it asks for as the person does.
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'watch').map((c) => c.layers))
+      .toEqual([['calls', 'events', 'filmstrip']]);
+    const send = (event: Record<string, unknown>) =>
+      page.evaluate((e) => window.__hub.send(e), { ref: REF, lane: 0, worker: 0, test: 't1', ...event });
+    await send({ type: 'lane-frame', since: null, width: 640, height: 400, data: image });
+    await expect(worker.getByRole('img', { name: LIVE, exact: true })).toBeVisible();
+    // Nothing shows under the page until the lane sends a layer.
+    const layers = worker.getByTestId('desktop-lane-layers');
+    await expect(layers).toHaveCount(0);
+
+    const at = Date.now();
+    await send({
+      type: 'lane-layer',
+      layer: 'calls',
+      log: {
+        id: 'call@7',
+        call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 12 },
+        status: 'running',
+        lines: ["waiting for getByRole('button', { name: 'Pay' })", '  - element is not enabled'],
+        point: null,
+        target: { count: 1, box: null, enabled: false },
+        viewport: null,
+        ms: 3400,
+        error: null,
+      },
+    });
+    await expect(layers.getByRole('heading')).toHaveText(['Why it waits', 'Events', 'Text', 'Filmstrip']);
+    await expect(layers.getByTestId('desktop-lane-call-state')).toHaveText(
+      'Running for 3.4s · 1 element matches its locator · Its element is not enabled',
+    );
+    await expect(layers.getByText('element is not enabled', { exact: false }).last()).toBeVisible();
+
+    // The page's events, newest first, a pending request one line whose time grows.
+    const pending = { kind: 'request-pending', id: 3, method: 'POST', url: 'http://shop.test/api/checkout' };
+    await send({ type: 'lane-layer', layer: 'events', at, event: { ...pending, ms: 5000, done: false } });
+    await send({ type: 'lane-layer', layer: 'events', at, event: { kind: 'console', text: 'cart broke' } });
+    await send({ type: 'lane-layer', layer: 'events', at, event: { ...pending, ms: 10_000, done: false } });
+    await expect(layers.getByTestId('desktop-lane-events').getByRole('listitem')).toHaveText([
+      'Console error cart broke',
+      'Pending request POST http://shop.test/api/checkout pending for 10s',
+    ]);
+
+    // The page's text, as asked: the hub hears the lane's layers with it, and it shows with its password hidden.
+    await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'watch').map((c) => c.layers))
+      .toEqual([
+        ['calls', 'events', 'filmstrip'],
+        ['calls', 'events', 'text', 'filmstrip'],
+      ]);
+    await expect(layers.getByText('Reading the page…')).toBeVisible();
+    await send({
+      type: 'lane-layer',
+      layer: 'text',
+      test: null,
+      text: { call: null, source: 'snapshot', text: '- textbox "Password": S3cr3t\n- button "Pay"', cut: false, at },
+    });
+    const text = layers.getByTestId('desktop-lane-text');
+    await expect(text).toContainText('textbox "Password": <hidden>');
+    await expect(text).not.toContainText('S3cr3t');
+    await expect(layers.getByText('Taken as you asked')).toBeVisible();
+
+    // The filmstrip: one image a call, chosen to show larger with its call's title, Close going back.
+    const thumb = (call: string, index: number, title: string) => ({ call, title, index, width: 320, height: 200, at });
+    await send({ type: 'lane-layer', layer: 'filmstrip', thumb: thumb('call@2', 1, 'Click Check'), data: image });
+    await send({ type: 'lane-layer', layer: 'filmstrip', thumb: thumb('call@5', 2, 'Fill Card number'), data: image });
+    await send({ type: 'lane-layer', layer: 'filmstrip', thumb: thumb('call@2', 1, 'Click Check'), data: image });
+    const film = layers.getByTestId('desktop-lane-film').getByRole('button');
+    await expect(film).toHaveCount(2);
+    await film.nth(1).click();
+    await expect(film.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(layers.getByRole('img', { name: 'The page after Fill Card number' }).first()).toBeVisible();
+    await expect(layers.locator('figcaption')).toHaveText('Fill Card number');
+    await layers.getByRole('button', { name: 'Close' }).click();
+    await expect(layers.locator('figcaption')).toHaveCount(0);
+
+    // Hide the text: the hub hears the layers without it.
+    await layers.getByRole('button', { name: 'Hide the text' }).click();
+    await expect
+      .poll(() =>
+        commands
+          .filter((c) => c.type === 'watch')
+          .map((c) => c.layers)
+          .at(-1),
+      )
+      .toEqual(['calls', 'events', 'filmstrip']);
+    await expect(text).toHaveCount(0);
+
+    // Watch off: the layers go with the lane.
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect(layers).toHaveCount(0);
+  });
+
   test('keeps the keyboard on the worker and the image honest as its lane stops, hides, refuses and leaves a test', async ({
     page,
   }) => {
