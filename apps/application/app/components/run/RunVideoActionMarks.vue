@@ -41,7 +41,7 @@ const { state, marks, total, capped, seekToMark } = useVideoActionMarks(
 
 const failedPalette = statusPalette('failed');
 const MARK_BASE =
-  'absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[10px] font-medium leading-none focus-visible:outline-2 focus-visible:outline-offset-2 before:absolute before:-inset-1.5 before:content-[""]';
+  'absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[10px] font-medium leading-none focus-visible:outline-2 focus-visible:outline-offset-2 before:absolute before:-inset-2 before:content-[""]';
 
 function markClass(mark: VideoMark): string[] {
   const merged = mark.actions.length > 1;

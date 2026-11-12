@@ -130,6 +130,21 @@ test.describe('Video review fit', () => {
         expect(fit.scrolling).toEqual([]);
       });
 
+      test('gives every mark a hit area of at least 24 by 24 px', async ({ page }) => {
+        await openVideoTab(page, size);
+        const hit = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-testid="video-action-mark"]')].map((mark) => {
+            const box = mark.getBoundingClientRect();
+            const at = (dx: number, dy: number) =>
+              mark.contains(document.elementFromPoint(box.left + box.width / 2 + dx, box.top + box.height / 2 + dy));
+            // The 24 px square around the mark's center, corners included.
+            return [-11.5, 11.5].flatMap((dx) => [-11.5, 11.5].map((dy) => at(dx, dy))).every(Boolean);
+          }),
+        );
+        expect(hit.length).toBeGreaterThan(0);
+        expect(hit.every(Boolean)).toBe(true);
+      });
+
       test('shows the current block whole, with its ring, on the tab and in the Evidence window', async ({ page }) => {
         const clipped = (page: Page) =>
           page.evaluate(() => {
