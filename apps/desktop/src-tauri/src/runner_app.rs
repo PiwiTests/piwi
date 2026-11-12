@@ -679,6 +679,33 @@ mod tests {
     }
 
     #[test]
+    fn a_requested_run_names_the_hosts_hub_and_nothing_else() {
+        // A requested run starts through `spawn_tests`, which adds the host's run channel (`bundled_hub_env`), read
+        // from the route Runner's host serves; Runner names its hub to no other tool.
+        let run_target = include_str!("run_target.rs");
+        let requested = run_target
+            .split("pub async fn desktop_run_requested_tests")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n").next())
+            .expect("the requested run's command");
+        assert!(requested.contains("crate::runner::spawn_tests("));
+        let runner = include_str!("runner.rs");
+        let spawn = runner
+            .split("pub(crate) async fn spawn_tests(")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n").next())
+            .expect("spawn_tests");
+        assert!(spawn.contains("bundled_hub_env(app, id, attended)"));
+        assert!(runner.contains("\"/api/desktop/run-channel\""));
+        let code = include_str!("runner_app.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!code.contains("publish_discovery_hub"));
+        assert!(!code.contains("DiscoveryHub"));
+    }
+
+    #[test]
     fn the_app_never_publishes_the_discovery_file() {
         // The reporter, the MCP bridge and the editor take `~/.piwi/desktop.json` for a Piwi server: Runner is not one.
         let source = include_str!("runner_app.rs");

@@ -9,6 +9,7 @@
 // the normal server build.
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
+import { messageOf, openRunWindow } from '@piwitests/editor/shell-runs-routes';
 import { desktopRuns } from '../../../utils/desktop-runs';
 
 /** Every how many milliseconds an open stream gets a comment, so a gone window is noticed. */
@@ -28,7 +29,6 @@ export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
   const runs = await desktopRuns();
-  if (!runs) throw apiError({ statusCode: 503, message: 'The desktop runs’ hub is not listening' });
 
   const { req, res } = event.node;
   let gone = false;
@@ -57,7 +57,7 @@ export default eventHandler(async (event) => {
   res.on('close', leave);
   res.on('error', leave);
 
-  const opened = await runs.openWindow({
+  const opened = await openRunWindow(runs, {
     send: (payload) => {
       if (gone) return;
       start();
@@ -72,13 +72,8 @@ export default eventHandler(async (event) => {
       leave();
     },
   });
-  if (!opened) {
-    if (!res.headersSent) {
-      throw apiError({
-        statusCode: 503,
-        message: 'The desktop runs’ hub is not listening, or holds 16 window streams',
-      });
-    }
+  if ('status' in opened) {
+    if (!res.headersSent) throw apiError({ statusCode: opened.status, message: messageOf(opened) });
     res.end();
     return;
   }

@@ -4,7 +4,7 @@
 // pick on the image of a stop. The runs post with the token minted for this
 // route alone (`desktopPicksToken`), which opens no other; each locator goes
 // to the window, to copy. Responds 404 on the normal server build.
-import { parseSendPayload } from '@piwitests/core/editor-send';
+import { answerRunPick, messageOf } from '@piwitests/editor/shell-runs-routes';
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
 import { desktopRuns } from '../../../utils/desktop-runs';
@@ -22,13 +22,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
-  const runs = await desktopRuns();
-  if (!runs) throw apiError({ statusCode: 503, message: 'The desktop runs’ hub is not listening' });
-  const payload = parseSendPayload(await readBody(event).catch(() => null));
-  if ('error' in payload) throw apiError({ statusCode: 400, message: payload.error });
-  if (payload.kind !== 'locator') {
-    throw apiError({ statusCode: 400, message: 'The desktop app takes a picked locator alone' });
-  }
-  runs.picked({ locator: payload.text, file: payload.at?.file ?? null, line: payload.at?.line ?? null });
+  const answer = answerRunPick(await desktopRuns(), await readBody(event).catch(() => null));
+  if (answer.status !== 200) throw apiError({ statusCode: answer.status, message: messageOf(answer) });
   return { ok: true };
 });

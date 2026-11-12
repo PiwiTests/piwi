@@ -1,6 +1,6 @@
 /**
- * The run control a host other than the language server builds on: the desktop app's server, the hub of the runs its
- * shell starts (`apps/application/server/utils/desktop-runs.ts`). Each piece is the service's own, and none speaks the
+ * The run control a host other than the language server builds on: a desktop shell's host, the hub of the runs its
+ * shell starts (`./shell-runs.ts`, which the desktop app's server and Piwi Runner's host run). Each piece is the service's own, and none speaks the
  * Language Server Protocol: the socket every run names, which takes the workers' run connections with its token
  * (`RecordChannel`); the sessions and the controls they pass on (`RunSessions`); the hub's WebSocket for Piwi Picker,
  * and the peers a host joins to it with a transport of its own (`RunHub.join`); the code made at a stop

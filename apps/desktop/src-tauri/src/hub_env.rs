@@ -180,6 +180,25 @@ mod tests {
     }
 
     #[test]
+    fn names_runners_host_as_the_hub_of_a_requested_run() {
+        // Piwi Runner's host names its own channel and its picks route, as the bundled server does.
+        let channel = format!("/tmp/piwi-runner-run-Ab12/channel.sock#{TOKEN}");
+        let picks = format!("http://127.0.0.1:51234/api/desktop/runs/picks#pdp_{TOKEN}");
+        let args = [
+            "tests/checkout.spec.ts:12".to_string(),
+            "--headed".to_string(),
+        ];
+        assert_eq!(
+            hub_env(Some(&channel), Some(&picks), 3, attended_args(&args)),
+            vec![
+                ("PIWI_RUN_CHANNEL", channel.clone()),
+                ("PIWI_RUN_REF", "desktop-3".to_string()),
+                ("PIWI_EDITOR_SEND", picks.clone()),
+            ]
+        );
+    }
+
+    #[test]
     fn names_a_run_as_the_hubs_commands_take_it() {
         // Letters, digits, `_` and `-`, 64 at most: what the hub and the reporter read.
         for id in [0, 1, u32::MAX] {
