@@ -11,6 +11,7 @@ import { migrateToLatest } from './temp-db';
 import {
   TICKET_TITLE_MAX_LENGTH,
   TITLE_PREFIX_MAX_LENGTH,
+  cutLine,
   normalizeTitlePrefix,
   prefixedTitle,
   resolveTitlePrefix,
@@ -88,8 +89,45 @@ describe('prefixedTitle', () => {
     expect(prefixedTitle('QA', 'QA')).toBe('QA');
   });
 
+  test('reads a title as one line before it looks for the prefix, in any letter case', () => {
+    expect(prefixedTitle('[Piwi]', '  [Piwi] Login')).toBe('[Piwi] Login');
+    expect(prefixedTitle('[Piwi]', '[Piwi]\nLogin')).toBe('[Piwi] Login');
+    expect(prefixedTitle('[Piwi]', '[piwi] Login')).toBe('[piwi] Login');
+    expect(prefixedTitle('[Piwi]', '\n [PIWI]  ')).toBe('[PIWI]');
+    expect(prefixedTitle('QA', 'qauth fails')).toBe('QA qauth fails');
+  });
+
+  test('never cuts between the halves of an emoji', () => {
+    const emoji = '😀';
+    const title = `${'a'.repeat(TICKET_TITLE_MAX_LENGTH - 8)}${emoji}${emoji}${'b'.repeat(20)}`;
+    const cut = prefixedTitle('[Piwi]', title);
+    expect(cut.length).toBeLessThanOrEqual(TICKET_TITLE_MAX_LENGTH);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(cut).not.toMatch(/[\ud800-\udbff]…$/);
+    expect(cut).not.toMatch(/(^|[^\ud800-\udbff])[\udc00-\udfff]/);
+  });
+
   test('collapses the whitespace of the title it prefixes', () => {
     expect(prefixedTitle('QA:', 'Checkout\n  fails')).toBe('QA: Checkout fails');
+  });
+});
+
+describe('cutLine', () => {
+  test('keeps a short line and ends a long one in an ellipsis within the limit', () => {
+    expect(cutLine('short', 10)).toBe('short');
+    expect(cutLine('abcdefghijkl', 6)).toBe('abcde…');
+  });
+
+  test('does not split a surrogate pair at the cut', () => {
+    expect(cutLine('abc😀def', 5)).toBe('abc…');
+    expect(cutLine('abc😀def', 6)).toBe('abc😀…');
+  });
+});
+
+describe('a prefix of emoji', () => {
+  test('is cut to the limit without half an emoji', () => {
+    const prefix = normalizeTitlePrefix(`${'a'.repeat(TITLE_PREFIX_MAX_LENGTH - 1)}😀`)!;
+    expect(prefix).toBe('a'.repeat(TITLE_PREFIX_MAX_LENGTH - 1));
   });
 });
 
