@@ -31,6 +31,11 @@
  *   names, `cssReferences`, `CSS_DEPTH` imports deep) that its page loaded, from the trace folder's `resources/` alone,
  *   `MAX_RESOURCE_BYTES` at most and its bytes of the kind its content type says (`isInspectResourceBytes`): a
  *   stylesheet, a font, an image other than SVG; never a script, a document nor an SVG.
+ * - **Memory.** Every lane's stores and readers share one budget (`MAX_DESKTOP_INSPECT_BYTES`): a reader counts each
+ *   snapshot it parsed against it (`PARSED_COST` its line's bytes) while its frame's chain or the queue holds it, a
+ *   snapshot the budget has no room for stopping its frame's chain, and gives it all back as it closes. It knows
+ *   `MAX_FRAMES` frames, the names `MAX_CSS_SHEETS` stylesheets hold and `MAX_UNKEPT` resources it did not keep, the
+ *   least recently seen going past them, and reads every file through one buffer of `MAX_READ` bytes.
  * - **When** (`DesktopInspects`). Reading starts as a window opens Inspect on a lane (`open`), and follows the lane's
  *   attempts while one has it open (`sessionChanged`): a test's end lets go everything kept of it (`RunInspect.clear`),
  *   and the next test's trace is asked for. A worker that names none says why (the reporter's sentence, as for a test
@@ -89,10 +94,10 @@ import {
 const MB = 1024 * 1024;
 /** How often a lane's trace is read for new snapshots while a window has Inspect open on it. */
 const READ_MS = 400;
-/** The most bytes of a file one read takes: the rest waits for the next. */
-const MAX_READ = 8 * MB;
+/** The most bytes of a file one read takes, into the reader's one buffer: the rest waits for the next. */
+const MAX_READ = MB;
 /** The most reads of a file one turn takes as Inspect opens, to catch up with it: the rest waits for the next turn. */
-const MAX_READS_A_TURN = 16;
+const MAX_READS_A_TURN = 128;
 /** The longest line of a trace read whole: a snapshot's event of `MAX_SNAPSHOT_BYTES` and its wrapping. */
 const MAX_SNAPSHOT_LINE = MAX_SNAPSHOT_BYTES + 64 * 1024;
 /** The longest line of a trace's network file read: a resource's record, its headers included. */
@@ -108,8 +113,18 @@ const MAX_CALLS = 4096;
 /** The most values the attempt's calls typed that are kept, and values its secret fields held: the oldest go. */
 const MAX_TYPED = 64;
 const MAX_HELD = 256;
-/** The most pages whose main frame is known, to stop its pages when a frame in it cannot be read: the oldest go. */
-const MAX_PAGES = 1024;
+/**
+ * The most frames a reader knows (their count, chain and whether they stopped), and pages whose main frame it knows:
+ * past them, the least recently seen go.
+ */
+const MAX_FRAMES = 1024;
+/** The most stylesheets whose names a reader keeps, and names of each: past them, the oldest go. */
+const MAX_CSS_SHEETS = 256;
+/** The most resources a reader remembers it did not keep: past them, the oldest go. */
+const MAX_UNKEPT = 4096;
+/** What a snapshot parsed for its frame's chain holds in memory, by its line's bytes, against the shared budget. */
+const PARSED_COST = 3;
+const CHAINED_OVERHEAD = 256;
 /** The most bytes the resources a snapshot names take in its header. */
 const MAX_RESOURCE_LIST = 32 * 1024;
 /** How deep stylesheets are followed through their imports for the resources they name. */
@@ -226,7 +241,8 @@ class DesktopTraceTail {
     private readonly open: (file: string) => Promise<fs.FileHandle | null>,
   ) {}
 
-  async read(): Promise<Array<string | TraceGap>> {
+  /** Read what the file gained, `buffer.length` bytes at most, into `buffer`, which the reader's tails share. */
+  async read(buffer: Buffer): Promise<Array<string | TraceGap>> {
     const handle = await this.open(this.file);
     if (!handle) return [];
     try {
@@ -238,10 +254,9 @@ class DesktopTraceTail {
         this.skipping = false;
         this.decoder = new StringDecoder('utf8');
       }
-      const length = Math.min(size - this.offset, MAX_READ);
+      const length = Math.min(size - this.offset, buffer.length);
       this.behind = size - this.offset > length;
       if (length <= 0) return [];
-      const buffer = Buffer.alloc(length);
       const { bytesRead } = await handle.read(buffer, 0, length, this.offset);
       this.offset += bytesRead;
       let text = this.decoder.write(buffer.subarray(0, bytesRead));
@@ -272,14 +287,15 @@ class DesktopTraceTail {
 
 /**
  * The trace files of the attempt in the runner's trace folder `traces`, whose names start with `base`: its own, and
- * those of the contexts it opened (`-recording<N>`), `MAX_TRACE_FILES` at most, the newest past them.
+ * those of the contexts it opened (`-recording<N>`), `MAX_TRACE_FILES` at most, the newest past them; null when the
+ * folder cannot be listed.
  */
-export async function desktopAttemptFiles(traces: string, base: string): Promise<string[]> {
+export async function desktopAttemptFiles(traces: string, base: string): Promise<string[] | null> {
   let names: string[];
   try {
     names = await fs.readdir(traces);
   } catch {
-    return [];
+    return null;
   }
   const own = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:-recording(\\d+))?\\.trace$`);
   const files = names
@@ -297,11 +313,35 @@ interface Recorded {
   contentType: string;
 }
 
+/**
+ * A snapshot read, parsed, and what it counts against the budget, by its line's bytes, while its frame's chain or the
+ * queue holds it (`holders`).
+ */
+interface Chained {
+  snapshot: Record<string, unknown>;
+  bytes: number;
+  cost: number;
+  holders: number;
+}
+
+/** What a reader knows of a frame of the trace. */
+interface FrameRead {
+  /** How many of its snapshots the trace holds so far: the next one's place. */
+  count: number;
+  /** The page it is the main frame of, as its snapshots said; null for a frame in a page. */
+  page: string | null;
+  /** Whether its chain stopped: none of its snapshots is kept until its next full one. */
+  stopped: boolean;
+  /** Its snapshots since its last full one, by place, as the trace wrote them, for a later one's references. */
+  chain: Map<number, Chained>;
+}
+
 /** A snapshot read, as it waits to be kept: what it is, and where it is in the queue (`WaitingQueue`). */
 interface Waiting {
   fields: Omit<LiveSnapshot, 'resources' | 'title'>;
   callId: string;
-  snapshot: Record<string, unknown>;
+  /** The snapshot, parsed, which the queue holds until it lets it go (`release`). */
+  read: Chained;
   bytes: number;
   /** Its frame's turn in the queue as it came: a frame's snapshots dropped together end that turn. */
   turn: number;
@@ -319,9 +359,12 @@ interface WaitingFrame {
 /**
  * The snapshots that wait to be kept, oldest first, with how many and their bytes: each change takes a constant time,
  * but what it lets go, each once. A frame's snapshots go together (`dropFrame`) by ending its turn, and the queue is
- * built again once those gone outnumber, or outweigh, those that wait.
+ * built again once those gone outnumber, or outweigh, those that wait. Each one it no longer holds is let go
+ * (`release`), but one taken (`shift`), which its taker lets go.
  */
 class WaitingQueue {
+  constructor(private readonly release: (one: Waiting) => void) {}
+
   private items: Array<Waiting | undefined> = [];
   private head = 0;
   /** Where the oldest snapshot that is not full is looked for: each one before it is full, or gone. */
@@ -364,7 +407,10 @@ class WaitingQueue {
     while (this.head < this.items.length) {
       const one = this.items[this.head];
       if (one && this.waits(one)) return one;
-      if (one) this.forgetGone(one);
+      if (one) {
+        this.forgetGone(one);
+        this.release(one);
+      }
       this.items[this.head++] = undefined;
     }
     this.reset();
@@ -396,6 +442,7 @@ class WaitingQueue {
       if (!one || !this.waits(one) || one.fields.full) continue;
       this.items[this.partial++] = undefined;
       this.remove(one);
+      this.release(one);
       return true;
     }
     return false;
@@ -403,6 +450,10 @@ class WaitingQueue {
 
   /** Let go everything. */
   clear(): void {
+    for (let at = this.head; at < this.items.length; at++) {
+      const one = this.items[at];
+      if (one) this.release(one);
+    }
     this.frames.clear();
     this.count = 0;
     this.bytes = 0;
@@ -439,8 +490,12 @@ class WaitingQueue {
       const waiting: Waiting[] = [];
       for (let at = this.head; at < this.items.length; at++) {
         const one = this.items[at];
-        if (one && this.waits(one)) waiting.push(one);
-        else if (one) one.gone = true;
+        if (one && this.waits(one)) {
+          waiting.push(one);
+        } else if (one) {
+          one.gone = true;
+          this.release(one);
+        }
       }
       this.items = waiting;
       this.head = 0;
@@ -486,6 +541,11 @@ export interface DesktopTraceReaderOptions {
   /** The store the snapshots and resources go into, and the key of the lane's worker in it. */
   store: RunInspect;
   key: string;
+  /**
+   * The budget every lane's Inspect shares, which the store counts against too: the snapshots the reader parsed and
+   * keeps for their frames' chains count against it. Its own, of `MAX_DESKTOP_INSPECT_BYTES`, when not given.
+   */
+  budget?: InspectBudget;
   /** The lane's worker's index, which each notice names. */
   worker: number;
   /** The running test's title, which each notice names. */
@@ -516,20 +576,18 @@ export class DesktopTraceReader {
   private reading = false;
   /** Whether the reads caught up with the trace once: the latest page's snapshots are kept first. */
   private caughtUp = false;
+  /** The files of the attempt read, and the one buffer their reads go through. */
   private readonly tails = new Map<string, DesktopTraceTail>();
-  /** How many snapshots of each frame the trace holds so far: the next one's place. */
-  private readonly counts = new Map<string, number>();
-  /** The frames that are a page's main frame, as their snapshots said, and each page's. */
-  private readonly mainFrames = new Set<string>();
+  private buffer: Buffer | null = null;
+  /** The frames of the trace, the least recently seen first, and the main frame of each page. */
+  private readonly frames = new Map<string, FrameRead>();
   private readonly pageMains = new Map<string, string>();
-  /** Each frame's snapshots since its last full one, by place, as the trace wrote them, for the labels. */
-  private readonly chains = new Map<string, Map<number, Record<string, unknown>>>();
+  /** The bytes of the lines of the snapshots the frames' chains keep, and what they count against the budget. */
   private chainBytes = 0;
-  private readonly chainSizes = new Map<Record<string, unknown>, number>();
+  private charged = 0;
+  private readonly budget: InspectBudget;
   /** The snapshots that wait to be kept, oldest first. */
-  private readonly queue = new WaitingQueue();
-  /** The frames whose chain stopped: none of their snapshots is kept until their next full one. */
-  private readonly stopped = new Set<string>();
+  private readonly queue = new WaitingQueue((one) => this.release(one.read));
   /** The runner's step and the trace's title of each call, by the trace's id of it. */
   private readonly calls = new Map<string, { step: string; title: string }>();
   private snapshotsRead = 0;
@@ -544,20 +602,27 @@ export class DesktopTraceReader {
   private typed: string[] = [];
   private readonly held = new Set<string>();
 
-  constructor(private readonly options: DesktopTraceReaderOptions) {}
+  constructor(private readonly options: DesktopTraceReaderOptions) {
+    this.budget = options.budget ?? new InspectBudget(MAX_DESKTOP_INSPECT_BYTES);
+  }
 
   start(): void {
     this.schedule(0);
   }
 
-  /** Nothing more is read nor kept. */
+  /** Nothing more is read nor kept: what the frames' chains counted is given back to the budget. */
   close(): void {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.queue.clear();
-    this.chains.clear();
-    this.chainSizes.clear();
+    this.frames.clear();
+    this.pageMains.clear();
+    this.tails.clear();
+    this.buffer = null;
+    this.budget.used -= this.charged;
+    this.charged = 0;
+    this.chainBytes = 0;
   }
 
   private schedule(wait: number): void {
@@ -596,6 +661,12 @@ export class DesktopTraceReader {
     return tail;
   }
 
+  /** The lines a file of the trace gained, read through the reader's one buffer. */
+  private lines(tail: DesktopTraceTail): Promise<Array<string | TraceGap>> {
+    this.buffer ??= Buffer.alloc(MAX_READ);
+    return tail.read(this.buffer);
+  }
+
   /**
    * Read each file of the trace from where it stopped: its resources first, then its calls and snapshots. Its folder
    * and its resources folder are checked first, and again as each file opens (`open`).
@@ -605,10 +676,15 @@ export class DesktopTraceReader {
     const { traces } = this.options.trace;
     if (!(await this.holds(traces)) || (await this.holds(path.join(traces, 'resources'))) === false) return false;
     const slices = new Slices();
-    for (const file of await desktopAttemptFiles(traces, this.options.trace.base)) {
+    const files = await desktopAttemptFiles(traces, this.options.trace.base);
+    if (!files) return false;
+    // A file no longer among the attempt's newest is not read again.
+    const read = new Set(files.flatMap((file) => [file, file.replace(/\.trace$/, '.network')]));
+    for (const file of this.tails.keys()) if (!read.has(file)) this.tails.delete(file);
+    for (const file of files) {
       const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
-        for (const line of await network.read()) {
+        for (const line of await this.lines(network)) {
           if (slices.due()) await slices.next();
           if (this.closed) break;
           if (typeof line === 'string' && line.startsWith(RESOURCE_LINE)) this.takeResource(line);
@@ -617,7 +693,7 @@ export class DesktopTraceReader {
       }
       const trace = this.tail(file, MAX_SNAPSHOT_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
-        for (const line of await trace.read()) {
+        for (const line of await this.lines(trace)) {
           if (slices.due()) await slices.next();
           if (this.closed) break;
           if (typeof line !== 'string') this.passedOver(line.head);
@@ -687,13 +763,14 @@ export class DesktopTraceReader {
    * its fields held is not read, so the pages of a frame in a page stop too.
    */
   private passedOver(head: string): void {
-    const frame = /"frameId":"([^"]{1,200})"/.exec(head)?.[1];
-    if (!head.startsWith(SNAPSHOT_LINE) || !frame) return;
+    const id = /"frameId":"([^"]{1,200})"/.exec(head)?.[1];
+    if (!head.startsWith(SNAPSHOT_LINE) || !id) return;
     this.snapshotsRead++;
-    this.counts.set(frame, (this.counts.get(frame) ?? 0) + 1);
-    this.stopChain(frame, TOO_LARGE, 'kept');
+    const frame = this.frame(id);
+    frame.count++;
+    this.stopChain(id, TOO_LARGE, 'kept');
     const page = /"pageId":"([^"]{1,200})"/.exec(head)?.[1];
-    if (!this.mainFrames.has(frame) && page) this.stopPage(page);
+    if (frame.page === null && page) this.stopPage(page);
   }
 
   /**
@@ -711,19 +788,19 @@ export class DesktopTraceReader {
     if (typeof pageId !== 'string' || !isLayerCallId(pageId) || typeof frameId !== 'string') return;
     if (!isLayerCallId(frameId)) return;
     this.snapshotsRead++;
-    const index = this.counts.get(frameId) ?? 0;
-    this.counts.set(frameId, index + 1);
+    const frame = this.frame(frameId);
+    const index = frame.count++;
     if (!Array.isArray(snapshot.html)) return;
     const main = snapshot.isMainFrame !== false;
     if (main) {
-      this.mainFrames.add(frameId);
+      frame.page = pageId;
       this.pageMains.delete(pageId);
       this.pageMains.set(pageId, frameId);
-      if (this.pageMains.size > MAX_PAGES) this.pageMains.delete(this.pageMains.keys().next().value!);
+      if (this.pageMains.size > MAX_FRAMES) this.pageMains.delete(this.pageMains.keys().next().value!);
     }
     const readable = this.learnSecrets(frameId, index, snapshot.html);
     const full = isFullSnapshot(snapshot.html);
-    this.keepInChain(frameId, index, full, snapshot, line.length);
+    const chained = this.keepInChain(frame, index, full, snapshot, line.length);
     if (!main) {
       if (!readable) this.stopPage(pageId);
       return;
@@ -731,11 +808,13 @@ export class DesktopTraceReader {
     if (full) {
       // The page navigated: its main frame's snapshots before it are not kept, and its chain starts again.
       this.queue.dropFrame(frameId);
-      this.stopped.delete(frameId);
+      frame.stopped = false;
     }
     if (!readable) return this.stopChain(frameId, UNREAD_SNAPSHOT, 'kept');
+    // A snapshot its frame's chain has no room for: a later one that names it could not be read.
+    if (!chained) return this.stopChain(frameId, FULL, 'kept');
     const phase = snapshotPhase(snapshot);
-    if (!phase || !isLayerCallId(callId) || this.stopped.has(frameId)) return;
+    if (!phase || !isLayerCallId(callId) || frame.stopped) return;
     const queue = this.queue;
     if (this.caughtUp && (queue.bytes + line.length > MAX_SNAPSHOT_BACKLOG || queue.count >= MAX_WAITING)) {
       this.stopChain(frameId, BEHIND, 'kept');
@@ -743,10 +822,11 @@ export class DesktopTraceReader {
     }
     const at = typeof wallTime === 'number' && wallTime > 1e12 ? wallTime : Date.now();
     const step = this.calls.get(callId)?.step ?? callId;
+    chained.holders++;
     queue.push({
       fields: { call: step, phase, page: pageId, frame: frameId, main: true, full, index, at },
       callId,
-      snapshot,
+      read: chained,
       bytes: line.length,
     });
     if (!this.caughtUp) this.trimBacklog();
@@ -775,9 +855,33 @@ export class DesktopTraceReader {
     // A frame's full snapshot that waits is the oldest of its frame's that wait: its navigation let go those before it.
     if (waiting === 'until-full' && this.queue.waitsFull(frame)) return;
     if (waiting !== 'kept') this.queue.dropFrame(frame);
-    const told = this.stopped.has(frame);
-    this.stopped.add(frame);
-    if (this.mainFrames.has(frame) && !told) this.tell(`${why} ${UNTIL_NAVIGATION}`);
+    const read = this.frames.get(frame);
+    if (!read || read.stopped) return;
+    read.stopped = true;
+    if (read.page !== null) this.tell(`${why} ${UNTIL_NAVIGATION}`);
+  }
+
+  /**
+   * What the reader knows of a frame, seen now: past `MAX_FRAMES`, the least recently seen goes, its chain given back to
+   * the budget and its snapshots that wait let go. One seen again after it went counts its snapshots from 0: a
+   * reference of one to a snapshot before cannot be read, which stops its chain until its next full snapshot.
+   */
+  private frame(id: string): FrameRead {
+    let frame = this.frames.get(id);
+    if (frame) {
+      this.frames.delete(id);
+    } else {
+      frame = { count: 0, page: null, stopped: false, chain: new Map() };
+    }
+    this.frames.set(id, frame);
+    if (this.frames.size > MAX_FRAMES) {
+      const [oldest, gone] = this.frames.entries().next().value!;
+      this.frames.delete(oldest);
+      for (const old of gone.chain.values()) this.forget(old);
+      this.queue.dropFrame(oldest);
+      if (gone.page !== null && this.pageMains.get(gone.page) === oldest) this.pageMains.delete(gone.page);
+    }
+    return frame;
   }
 
   /**
@@ -826,48 +930,62 @@ export class DesktopTraceReader {
     if (!this.closed) this.options.refused(text);
   }
 
-  /** Keep a frame's snapshot for the labels a later one's references name, its chain started again by a full one. */
+  /**
+   * Keep a frame's snapshot for what a later one's references name, its chain started again by a full one, what it
+   * holds parsed counted against the budget (`PARSED_COST`). Past twice the backlog's bound, or past the budget, the
+   * least recently seen frames' oldest go: a snapshot that names one of them cannot be read. What it counts, or null
+   * when the budget has no room for it once they went.
+   */
   private keepInChain(
-    frame: string,
+    frame: FrameRead,
     index: number,
     full: boolean,
     snapshot: Record<string, unknown>,
     bytes: number,
-  ): void {
-    let chain = this.chains.get(frame);
-    if (full || !chain) {
-      for (const old of chain?.values() ?? []) this.forget(old);
-      chain = new Map();
-      this.chains.set(frame, chain);
+  ): Chained | null {
+    if (full) {
+      for (const old of frame.chain.values()) this.forget(old);
+      frame.chain.clear();
     }
-    chain.set(index, snapshot);
-    this.chainSizes.set(snapshot, bytes);
-    this.chainBytes += bytes;
-    // Past twice the backlog's bound, the oldest kept go: a snapshot that names one of them is not kept.
-    for (const kept of this.chains.values()) {
-      for (const [at, old] of kept) {
-        if (this.chainBytes <= 2 * MAX_SNAPSHOT_BACKLOG) return;
-        if (old === snapshot) continue;
-        kept.delete(at);
+    const kept: Chained = { snapshot, bytes, cost: PARSED_COST * bytes + CHAINED_OVERHEAD, holders: 1 };
+    const room = () => this.chainBytes + bytes <= 2 * MAX_SNAPSHOT_BACKLOG && this.budget.fits(kept.cost);
+    evict: for (const other of this.frames.values()) {
+      for (const [at, old] of other.chain) {
+        if (room()) break evict;
+        other.chain.delete(at);
         this.forget(old);
       }
     }
+    if (!room()) return null;
+    frame.chain.set(index, kept);
+    this.chainBytes += bytes;
+    this.charged += kept.cost;
+    this.budget.used += kept.cost;
+    return kept;
   }
 
-  private forget(snapshot: Record<string, unknown>): void {
-    this.chainBytes -= this.chainSizes.get(snapshot) ?? 0;
-    this.chainSizes.delete(snapshot);
+  /** A snapshot a frame's chain kept goes from it. */
+  private forget(old: Chained): void {
+    this.chainBytes -= old.bytes;
+    this.release(old);
+  }
+
+  /** A holder of a snapshot read lets it go: once none holds it, what it counted is given back. */
+  private release(read: Chained): void {
+    if (--read.holders > 0 || this.closed) return;
+    this.charged -= read.cost;
+    this.budget.used -= read.cost;
   }
 
   /** The nodes the references of the frame's snapshot at `index` name, from its chain kept. */
   private resolver(frame: string, index: number): SnapshotResolver {
-    const chain = this.chains.get(frame);
+    const chain = this.frames.get(frame)?.chain;
     const nodes = new Map<number, unknown[] | null>();
     const at =
       (from: number): SnapshotResolver =>
       (back, node) => {
         const target = from - back;
-        const snapshot = back > 0 ? chain?.get(target) : undefined;
+        const snapshot = back > 0 ? chain?.get(target)?.snapshot : undefined;
         if (!snapshot) return null;
         let list = nodes.get(target);
         if (list === undefined) {
@@ -888,7 +1006,11 @@ export class DesktopTraceReader {
       const next = this.queue.shift();
       if (!next) return false;
       taken += next.bytes;
-      await this.keep(next);
+      try {
+        await this.keep(next);
+      } finally {
+        this.release(next.read);
+      }
       if (slices.due()) await slices.next();
     }
     return false;
@@ -904,7 +1026,8 @@ export class DesktopTraceReader {
    * is not kept.
    */
   private async keep(waiting: Waiting): Promise<void> {
-    const { fields, snapshot } = waiting;
+    const { fields } = waiting;
+    const { snapshot } = waiting.read;
     const resolve = this.resolver(fields.frame, fields.index);
     const secrets = this.secrets();
     const shown = hideFrameSnapshotSecrets(snapshot, { secrets, resolve });
@@ -959,6 +1082,7 @@ export class DesktopTraceReader {
     if (this.closed) return false;
     if (!bytes || !isInspectResourceBytes(resource.contentType, bytes)) {
       this.unkept.add(resource.sha1);
+      if (this.unkept.size > MAX_UNKEPT) this.unkept.delete(this.unkept.values().next().value!);
       return false;
     }
     const added = this.options.store.addResource({
@@ -1018,14 +1142,19 @@ export class DesktopTraceReader {
     return [...found.values()];
   }
 
-  /** What a stylesheet of the trace names, read once. */
+  /**
+   * What a stylesheet of the trace names, `MAX_SNAPSHOT_RESOURCES` at most, read once while among the
+   * `MAX_CSS_SHEETS` latest read.
+   */
   private async cssNamesOf(sha1: string): Promise<string[]> {
     let names = this.cssNames.get(sha1);
     if (!names) {
       const bytes = await this.resourceBytes(sha1);
       if (this.closed) return [];
       names = bytes && isInspectResourceBytes('text/css', bytes) ? cssReferences(bytes.toString('utf8')) : [];
+      names = names.slice(0, MAX_SNAPSHOT_RESOURCES);
       this.cssNames.set(sha1, names);
+      if (this.cssNames.size > MAX_CSS_SHEETS) this.cssNames.delete(this.cssNames.keys().next().value!);
     }
     return names;
   }
@@ -1280,6 +1409,7 @@ export class DesktopInspects {
       trace: found,
       store,
       key: String(inspected.lane),
+      budget: this.budget,
       worker: found.worker,
       test: inspected.test,
       titleOf: (call) => inspected.titles.get(call) ?? null,

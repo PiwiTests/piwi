@@ -508,6 +508,110 @@ describe('the secrets a trace’s fields held', () => {
   });
 });
 
+describe('what a reader holds of the trace', () => {
+  /** A page of `count` items: its snapshot's line is some 40 bytes an item. */
+  function page(count: number, text: string): unknown[] {
+    const body: unknown[] = ['BODY', {}, ['P', {}, text]];
+    for (let i = 0; i < count; i++) body.push(['DIV', { class: `c${i % 50}` }, `item ${i}`]);
+    return ['HTML', {}, body];
+  }
+
+  function readerWith(traces: string, budget: InspectBudget) {
+    const store = new RunInspect(budget, DESKTOP_INSPECT_WORDS);
+    const kept: DesktopInspectNotice[] = [];
+    const refused: string[] = [];
+    const reader = new DesktopTraceReader({
+      trace: { traces, base: 't1' },
+      store,
+      key: '0',
+      worker: 0,
+      test: null,
+      budget,
+      kept: (notice) => void kept.push(notice),
+      refused: (text) => void refused.push(text),
+      readMs: 10_000,
+    });
+    return { reader, store, kept, refused };
+  }
+
+  /** What the store holds against the budget: its snapshots, resources and pages rendered. */
+  const held = (store: RunInspect) => {
+    const { snapshots, resources, pages } = store.size();
+    return snapshots + resources + pages;
+  };
+
+  it('counts the snapshots it parsed against the budget every lane shares, and gives them back as it closes', async () => {
+    const traces = path.join(root, 'counted', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const line = snapshotLine('c@1', 'after', page(5000, 'Cart'));
+    fs.writeFileSync(path.join(traces, 't1.trace'), `${line}\n`);
+    const budget = new InspectBudget(256 * 1024 * 1024);
+    const own = readerWith(traces, budget);
+    await own.reader.turn();
+    expect(own.kept.map((n) => n.call)).toEqual(['c@1']);
+    // The parsed snapshot its frame's chain keeps for the references of the next counts some three times its line.
+    expect(budget.used - held(own.store)).toBeGreaterThanOrEqual(3 * line.length);
+    own.reader.close();
+    expect(budget.used).toBe(held(own.store));
+    own.store.clear();
+    expect(budget.used).toBe(0);
+  });
+
+  it('keeps no page whose parsed snapshot the shared budget has no room for, saying why', async () => {
+    const traces = path.join(root, 'no-room', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const line = snapshotLine('c@1', 'after', page(5000, 'Cart'));
+    fs.writeFileSync(path.join(traces, 't1.trace'), `${line}\n`);
+    const own = readerWith(traces, new InspectBudget(2 * line.length));
+    await own.reader.turn();
+    expect(own.kept).toEqual([]);
+    expect(own.refused).toEqual([
+      'The page is not shown: the desktop app keeps no more pages for Inspect now. Inspect shows it again from its next navigation.',
+    ]);
+    own.reader.close();
+  });
+
+  it('remembers a bounded number of frames and of the stylesheets it read', async () => {
+    const traces = path.join(root, 'frames', 'traces');
+    fs.mkdirSync(path.join(traces, 'resources'), { recursive: true });
+    const lines: string[] = [];
+    const network: string[] = [];
+    for (let i = 0; i < 1500; i++) {
+      const sha1 = `${i.toString(16).padStart(40, '0')}.css`;
+      fs.writeFileSync(path.join(traces, 'resources', sha1), `@import url(/n${i}.css); body { color: red }`);
+      network.push(
+        JSON.stringify({
+          type: 'resource-snapshot',
+          snapshot: {
+            pageref: 'page@1',
+            request: { url: `https://shop.test/s${i}.css` },
+            response: { content: { _sha1: sha1, mimeType: 'text/css' } },
+          },
+        }),
+      );
+      lines.push(
+        snapshotLine(`c@${i}`, 'after', ['HTML', {}, ['BODY', {}, `in frame ${i}`]], `frame@${i + 2}`, 'page@1', false),
+      );
+      lines.push(
+        snapshotLine(`c@${i}`, 'after', [
+          'HTML',
+          {},
+          ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: `/s${i}.css` }]],
+        ]),
+      );
+    }
+    fs.writeFileSync(path.join(traces, 't1.network'), `${network.join('\n')}\n`);
+    fs.writeFileSync(path.join(traces, 't1.trace'), `${lines.join('\n')}\n`);
+    const own = readerOf(traces, 't1');
+    await own.reader.turn();
+    const state = own.reader as unknown as { frames: Map<string, unknown>; cssNames: Map<string, unknown> };
+    expect(state.frames.size).toBeLessThanOrEqual(1024);
+    expect(state.cssNames.size).toBeLessThanOrEqual(256);
+    expect(own.kept.at(-1)).toMatchObject({ call: 'c@1499' });
+    own.reader.close();
+  });
+});
+
 describe('a long trace', () => {
   it('is caught up with in slices the server’s other work runs between, its latest pages kept', async () => {
     const traces = path.join(root, 'long', 'traces');
