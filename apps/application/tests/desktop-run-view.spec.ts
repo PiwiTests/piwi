@@ -350,13 +350,13 @@ test.describe('Desktop run live view', () => {
       'Step',
       'Finish',
       'Mock a request',
-      'Watch live',
+      'Watch',
       'Pick on the image',
     ]);
 
-    // Watch live: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
-    await worker.getByRole('button', { name: 'Watch live' }).click();
-    await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+    // The stop's Watch: its frames take the image's place, and Interact sends the input to the page once the stop takes it.
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect(worker.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => commands.find((c) => c.type === 'view')).toMatchObject({ since: 's1', on: true });
     await page.evaluate(
       ({ ref, data }) =>
@@ -484,7 +484,7 @@ test.describe('Desktop run live view', () => {
         since: 's1',
       });
 
-    // Watch live and Interact, left on, watch the worker's next stop too, and send it the input.
+    // The stop's Watch and Interact, left on, watch the worker's next stop too, and send it the input.
     await interact.click();
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
@@ -494,7 +494,7 @@ test.describe('Desktop run live view', () => {
     );
     await expect(worker.getByText('Stopped after a step')).toBeVisible();
     await expect.poll(() => commands.filter((c) => c.type === 'view').at(-1)).toMatchObject({ since: 's2', on: true });
-    await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(worker.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.evaluate(
       ({ ref, data }) =>
         window.__hub.send({ type: 'frame', ref, worker: 0, since: 's2', width: 640, height: 400, data }),
@@ -502,13 +502,13 @@ test.describe('Desktop run live view', () => {
     );
     await expect(interact).toHaveAttribute('aria-pressed', 'true');
     await expect(worker.getByRole('img', { name: LIVE_INPUT })).toBeVisible();
-    // Watch live off turns Interact off, and gives back the stop the window drives.
+    // The stop's Watch off turns Interact off, and gives back the stop the window drives.
     const drove = { kind: 'desktop', name: 'the desktop app', self: true };
     await page.evaluate(
       (event) => window.__hub.send(event),
       session(stopped('s2', { reason: 'step', intents: ['view', 'input', 'pick-at'], driver: drove })),
     );
-    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
     await expect(interact).toHaveCount(0);
     await expect
       .poll(() => commands.filter((c) => c.type === 'drive').at(-1))
@@ -519,7 +519,7 @@ test.describe('Desktop run live view', () => {
       .toBeGreaterThan(commands.findLastIndex((c) => c.type === 'drive'));
     // A stop another tool drives is left to it.
     const drives = commands.filter((c) => c.type === 'drive').length;
-    await worker.getByRole('button', { name: 'Watch live' }).click();
+    await worker.getByRole('button', { name: 'Watch', exact: true }).click();
     const editor = { kind: 'editor', name: 'Visual Studio Code' };
     await page.evaluate(
       (event) => window.__hub.send(event),
@@ -585,7 +585,7 @@ test.describe('Desktop run live view', () => {
       'Finish',
       'End the test',
       'Mock a request',
-      'Watch live',
+      'Watch',
       'Pick on the image',
     ]);
     const end = worker.getByRole('button', { name: 'End the test' });
@@ -901,7 +901,7 @@ test.describe('Desktop run live view', () => {
     await expect(lane.getByText('Live', { exact: true })).toBeVisible();
 
     // A stop: the lane's frame of the stopped page comes, and with Interact the stop takes the clicks on it through the
-    // lane, with no view of its own; Watch live is not offered, the lane shows the stop.
+    // lane, with no view of its own; the stop's Watch is not offered, the lane shows the stop.
     const atStop = { ...stopped('s1', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents };
     await page.evaluate((event) => window.__hub.send(event), session(atStop));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
@@ -1435,7 +1435,9 @@ test.describe('Desktop run live view', () => {
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
     const lane = worker.locator('[data-shot="desktop-run-lane"]');
     const watch = worker.getByRole('button', { name: 'Watch', exact: true });
-    const watchLive = worker.getByRole('button', { name: 'Watch live' });
+    const watchLive = worker
+      .locator('[data-shot="desktop-run-page"]')
+      .getByRole('button', { name: 'Watch', exact: true });
     const live = lane.getByRole('img', { name: LIVE, exact: true });
     const lastShown = lane.getByRole('img', { name: LAST_SEEN });
     const intents = ['mock', 'view', 'input', 'pick-at'];
@@ -1460,7 +1462,7 @@ test.describe('Desktop run live view', () => {
         document.dispatchEvent(new Event('visibilitychange'));
       }, hidden);
 
-    // Watch has the keyboard as the running test stops: Watch live, in its place at the stop, takes it.
+    // Watch has the keyboard as the running test stops: the stop's Watch, in its place at the stop, takes it.
     await watch.focus();
     await send(atStop('s1'));
     await expect(watchLive).toBeFocused();
@@ -1500,12 +1502,12 @@ test.describe('Desktop run live view', () => {
     await expect(live).toBeVisible();
     await expect(tooLong).toHaveCount(0);
 
-    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with Watch live.
+    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with the stop's Watch.
     await send(atStop('s2', null));
     await expect(watchLive).toBeVisible();
     await expect(lane).toHaveCount(0);
 
-    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to Watch live, which stays off.
+    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to the stop's Watch, which stays off.
     await send(session(WATCHABLE));
     await send(atStop('s3'));
     await frame('s3');
@@ -1516,7 +1518,7 @@ test.describe('Desktop run live view', () => {
     await expect(watchLive).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(lastWatch).toMatchObject({ on: false });
 
-    // A lane the hub would not show says why, while the test runs and at its next stop, where Watch live is offered.
+    // A lane the hub would not show says why, while the test runs and at its next stop, where the stop's Watch is offered.
     refuse = true;
     await send(session(WATCHABLE));
     await watch.click();
@@ -1604,7 +1606,10 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByText('The test is stopped already.').first()).toBeVisible();
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s0', { reason: 'page-pause' })));
       await expect(tray(page).getByText('Stopped at page.pause()')).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
 
       // It goes on, and the next pause reaches it.
       await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -1619,10 +1624,13 @@ test.describe('Desktop run live view', () => {
       await expect(page.getByRole('button', { name: 'Pausing…' })).toHaveAttribute('aria-disabled', 'true');
       await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
       await expect(tray(page).getByText('Paused', { exact: true })).toBeVisible();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
 
       // The row says where the test stopped. Closed, the tray ends the view; Show its page opens it on the worker,
-      // the focus there, and Watch live, left on, watches the stop again.
+      // the focus there, and the stop's Watch, left on, watches the stop again.
       await expect(page.getByTestId('desktop-stopped')).toContainText(
         /Paused\s*·\s*Click getByRole\('button', \{ name: 'Pay' \}\)\s*·\s*tests\/checkout\.spec\.ts:5/,
       );
@@ -1630,7 +1638,10 @@ test.describe('Desktop run live view', () => {
       await expect(tray(page)).toHaveCount(0);
       await page.getByRole('button', { name: 'Show its page' }).click();
       await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').map((c) => [c.ref, c.since, c.on]))
         .toEqual([
@@ -1652,7 +1663,10 @@ test.describe('Desktop run live view', () => {
         session({ ...stopped('s2', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents }),
       );
       await expect(tray(page).getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
-      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
       await expect
         .poll(() => commands.filter((c) => c.type === 'view').at(-1))
         .toMatchObject({ ref: REF, since: 's2', on: true });

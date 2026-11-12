@@ -59,7 +59,7 @@ system's keychain. Each project's folder is linked on the first request for it. 
 
 Each run Piwi Runner starts shows in its window live, as the desktop app's runs show in its
 [Local runs tray](./desktop-runs): each worker's test and where it stands, **Pause**, **Step**, **Resume** and
-**Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch live**. A `page.pause()`,
+**Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch**. A `page.pause()`,
 a step or a breakpoint waits in the window until you answer it, and the window comes to the front. **Hold failures**,
 on each running run you attend and off until you turn it on, keeps a failing test at its line too, until you resume
 it; a run in UI mode, or one that repeats its tests past a failure, offers none. A run that goes on while the window

@@ -94,9 +94,6 @@ export const RUN_WORDS_EN = {
   runs_announceFailed: '$test$ failed at $place$.',
   // The test's page: its card, its tools, its image and its live view.
   runs_pageCaption: 'The test’s page',
-  runs_live: 'Watch live',
-  runs_liveTitle:
-    'Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it',
   runs_watch: 'Watch',
   runs_watchTitle:
     'Show the test’s page as it runs, through its stops and its next tests: at a stop, Interact sends your clicks and keys to it',

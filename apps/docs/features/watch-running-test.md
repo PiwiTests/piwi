@@ -22,7 +22,7 @@ sent](/guide/concepts#watch-share-live).
 | VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: **Piwi: worker 2** beside the editor | A headless stop of the worker shows there, with **Interact** and the pick on a click, instead of the paused page |
 | JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** beside it, for **Interact**, unless that tab holds another stop |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
-| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch-live) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
+| Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
 
 **Pause and watch** is **Piwi: Pause and watch a worker's test** in VS Code, **Tools → Piwi → Pause and Watch a
 Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several

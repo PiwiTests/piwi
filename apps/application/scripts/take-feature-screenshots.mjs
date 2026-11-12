@@ -7670,7 +7670,7 @@ const SCENES = [
         };
         await page.evaluate((event) => window.__hub.send(event), session({ ...running, state: 'stopped', stop }));
         const worker = tray.locator('[data-shot="desktop-run-worker"]');
-        await worker.locator('button[aria-pressed="true"]', { hasText: 'Watch live' }).waitFor();
+        await worker.locator('button[aria-pressed="true"]', { hasText: /^\s*Watch\s*$/ }).waitFor();
         await page.evaluate(
           (data) =>
             window.__hub.send({
@@ -9183,7 +9183,7 @@ const SCENES = [
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
       const shown = tray.locator('[data-shot="desktop-run-worker"]');
       await shown.getByRole('img', { name: /stopped before/ }).waitFor();
-      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
       await page.evaluate(
         (data) =>
           window.__hub.send({
@@ -9306,7 +9306,7 @@ const SCENES = [
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
       const shown = tray.locator('[data-worker="desktop-41|0"]');
-      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await shown.getByRole('button', { name: 'Watch', exact: true }).click();
       await page.evaluate(
         (data) =>
           window.__hub.send({

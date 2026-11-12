@@ -97,7 +97,7 @@ shared: **Share live**, above the run's workers, asks first the first time since
 A run that reports to the [desktop app](./desktop-runs) itself (a reproduction, a bisect, a **Re-run** in a folder
 that names no instance, a run your editor started) cannot be shared: the app hands out no live view key, since no
 teammate reaches it. Its tray offers no **Share live** for it, the app's project settings have no **Live view**
-section, and on the run's page its running tests offer [**Watch** and **Pause and watch**](./desktop-runs#watch-live),
+section, and on the run's page its running tests offer [**Watch** and **Pause and watch**](./desktop-runs#watch),
 shown in the app's tray from the app itself. A run your editor started says **See its page at a stop** there: its page
 shows where the editor steers it.
 

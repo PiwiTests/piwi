@@ -9,7 +9,7 @@
  *
  * What it keeps: each live run as the hub last told it, how many tests of each run that ended were ended at a stop
  * (`endedAtStop`, as its own process counted them), what each code made at a stop came to, the codes and the
- * locators picked, to copy, the workers whose **Watch live** is on, and the lanes the window watches (**Watch**: the
+ * locators picked, to copy, the workers whose stop's **Watch** is on, and the lanes the window watches (**Watch**: the
  * page of a worker's running test, and of its stops). The frames of a
  * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
  * lane (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
@@ -110,7 +110,7 @@ interface HubState {
   /** Goes up each time the stream opens again: every view of the stream before ended with it. */
   epoch: number;
   /**
-   * The workers whose Watch live is on, by run (ref): each next stop of theirs is watched, until it is turned off or
+   * The workers whose stop's Watch is on, by run (ref): each next stop of theirs is watched, until it is turned off or
    * their run ends. A stream that opens again keeps them.
    */
   watchLive: Record<string, number[]>;
@@ -485,8 +485,8 @@ function heardSession(session: HubSession): void {
 
 /**
  * The tabs of a run as its workers stand now: none for a run of fewer than two workers. A worker is watched while the
- * window watches its lane, or while it pauses with Watch live on (Pause and watch, where the lane cannot be watched);
- * a stopped one keeps its tab anyway, and Watch live shows nothing of one that runs on.
+ * window watches its lane, or while it pauses with its stop's Watch on (Pause and watch, where the lane cannot be watched);
+ * a stopped one keeps its tab anyway, and a stop's Watch shows nothing of one that runs on.
  */
 function followTabs(session: HubSession): void {
   const { ref } = session;
@@ -791,11 +791,11 @@ export function useDesktopRunHub() {
     shareWarned(): void {
       shareWarned = true;
     },
-    /** Whether Watch live is on for a worker: each next stop of it is watched. */
+    /** Whether a stop's Watch is on for a worker: each next stop of it is watched. */
     watchesLive(ref: string, worker: number): boolean {
       return state.watchLive[ref]?.includes(worker) ?? false;
     },
-    /** Turns Watch live on or off for a worker, for the window, until its run ends. */
+    /** Turns a stop's Watch on or off for a worker, for the window, until its run ends. */
     setWatchLive(ref: string, worker: number, on: boolean): void {
       const others = (state.watchLive[ref] ?? []).filter((w) => w !== worker);
       if (on) state.watchLive[ref] = [...others, worker];

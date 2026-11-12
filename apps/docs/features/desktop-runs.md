@@ -53,16 +53,16 @@ separate window**, the window button on the run, moves it to a window of its own
 screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
 here**, brings it back; the window closes with the app.
 
-## Watch live
+## Watch
 
 **Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
-stop, until you turn it off; at a stop, **Interact** sends your input there as with **Watch live**. Between two
-images, and with an older reporter: [Watch a running test](./watch-running-test).
+stop, until you turn it off. Between two images, and with an older reporter: [Watch a running
+test](./watch-running-test).
 
-**Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
-until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends your clicks, the wheel and your
-keys on the view to the page; `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the
-[frames](/guide/concepts#watch-share-live).
+At a stop of a worker nobody watches, **Watch** shows the stopped page as it paints, in place of its image, and stays
+on for the worker's next stops until you turn it off. [**Interact**](./watch-running-test#interact), beside it, sends
+your clicks, the wheel and your keys on the view to the page; `Tab` leaves the view unless a click into it took the
+keyboard. Nothing keeps the [frames](/guide/concepts#watch-share-live).
 
 **Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
 the test as **Pause** does and watches its worker: the tray opens at the stop, the page live, and the row says where
