@@ -34,7 +34,7 @@ term: `"guest checkout"`.
 | `feature:` | | The `piwi:feature` annotation | Run and project |
 | `id:` | | The test's [external ID](/reference/test-metadata#external-test-ids) | Run and project |
 | `is:` | | `is:stuck`: a running test marked [Stuck?](/features/stuck-tests), while the run is live | Run |
-| `worker:` | | The [worker](/reference/test-metadata#worker-lanes) the execution ran on, from 1 in each shard, as the run page names it | Run |
+| `worker:` | | The [worker lane](/reference/test-metadata#worker-lanes) the execution ran on, from 1 in each shard; a result from a reporter that sends no lane matches none | Run |
 | `shard:` | | The shard the execution ran in, from 1 | Run |
 
 How the terms combine:

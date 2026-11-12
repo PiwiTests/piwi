@@ -48,9 +48,9 @@ A page opened after the test was said to be stuck shows it too: the dashboard ke
 
 While a run runs, its **Timeline** tab shows each worker's lane, grouped by shard, with a bar for every attempt. A
 running attempt's bar grows to now over a pale bar of its test's usual time: the longest of the last passing runs this
-rule reads. It turns amber once the test is marked **Stuck?**, with a white tick where it would usually have ended. A
-test with too few passing runs has no pale bar. The header counts the stuck tests, and a sharded run's says which of its
-shards have started: `shards 1 and 3 of 4 started`.
+rule reads. Once it runs past that time, a white tick marks where it would usually have ended, and it turns amber once
+the test is marked **Stuck?**. A test with too few passing runs has no pale bar. The header counts the stuck tests, and
+a sharded run's says which of its shards have started: `shards 1 and 3 of 4 started`.
 
 On the **Tests** tab, `is:stuck` lists the stuck tests, and `worker:` and `shard:` narrow the list to one worker or one
 shard ([Test search](/reference/test-search)).
