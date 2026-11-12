@@ -7,10 +7,13 @@
  * Where playback stands comes from `requestVideoFrameCallback`, which reports every frame as it is shown, with
  * `timeupdate` where a browser has none.
  */
-import { tickedEntries, type Reel } from '#shared/video-reel';
+import { entryEndMs, tickedEntries, type Reel } from '#shared/video-reel';
 import { fileApiUrl } from '~/utils';
 
 type Slot = 0 | 1;
+
+/** How long `advance` waits for the next video's first frame before it asks the element to play regardless. */
+const FIRST_FRAME_WAIT_MS = 4000;
 
 export function useReelPlayer(reel: Ref<Reel | null>) {
   const baseURL = useRuntimeConfig().app.baseURL;
@@ -51,12 +54,14 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     return fileApiUrl(video.path, video.contentType, baseURL);
   }
 
-  /** Where entry `index` ends in its video, in ms: the end of its test, held to the length of the video. */
+  /** Where entry `index` ends in its video, in ms: the end of its test, held to the length of the video; the whole video when the test's span is unknown. */
   function lengthOf(index: number): number {
-    return Math.min(entries.value[index]?.lengthMs ?? 0, videoLengths.get(index) ?? Infinity);
+    const entry = entries.value[index];
+    return entry ? entryEndMs(entry, videoLengths.get(index)) : 0;
   }
   const endMs = computed(() => (current.value == null ? 0 : lengthOf(current.value)));
-  const endPassed = computed(() => started.value && positionMs.value >= endMs.value);
+  /** The end is 0 while a video whose test span is unknown has not told its length. */
+  const endPassed = computed(() => started.value && endMs.value > 0 && positionMs.value >= endMs.value);
 
   /** Ticks change only as a test's end passes, so the checklist does not render on every frame. */
   const ticked = computed(() => {
@@ -80,26 +85,37 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     if (!el || held[slot] === entry) return;
     held[slot] = entry;
     if (entry == null) {
+      // Taking the `src` off only frees the video once the element loads again.
       el.removeAttribute('src');
+      el.load();
     } else {
+      // Setting `src` starts the load; a `load()` after it would fetch the video twice.
       el.src = srcOf(entry);
       el.preload = 'auto';
     }
-    el.load();
   }
 
-  function once(el: HTMLVideoElement, event: string): Promise<void> {
+  /**
+   * Resolves on the element's next `event`; rejects on its own `error` event, which is the only thing that means the
+   * video failed. With `timeoutMs` it resolves when that passes, so a hidden element that never reaches the event
+   * cannot stall the reel.
+   */
+  function once(el: HTMLVideoElement, event: string, timeoutMs?: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const done = () => {
+      const clear = () => {
         el.removeEventListener(event, done);
         el.removeEventListener('error', fail);
+        clearTimeout(timer);
+      };
+      const done = () => {
+        clear();
         resolve();
       };
       const fail = () => {
-        el.removeEventListener(event, done);
-        el.removeEventListener('error', fail);
+        clear();
         reject(new Error('video failed to load'));
       };
+      const timer = timeoutMs == null ? undefined : setTimeout(done, timeoutMs);
       el.addEventListener(event, done);
       el.addEventListener('error', fail);
     });
@@ -149,6 +165,8 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
       if (el.seeking) await once(el, 'seeked');
       if (mine !== token) return;
     } catch {
+      // The element's own `error` event. A newer move owns the player now, so a stale one leaves it be.
+      if (mine !== token) return;
       moving = false;
       markFailed(index);
       return;
@@ -192,17 +210,33 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     }
     const mine = token;
     try {
-      if (el.readyState < 3) await once(el, 'canplay');
+      // The first frame is enough to start from; waiting for `canplay` would stall an element that stays at 1 or 2.
+      if (el.readyState < 2) await once(el, 'loadeddata', FIRST_FRAME_WAIT_MS);
       if (mine !== token) return;
       el.currentTime = 0;
-      await el.play();
     } catch {
+      // Only the element's own `error` event lands here.
+      if (mine !== token) return;
       moving = false;
       markFailed(next);
       if (current.value === index) void advance(index);
       return;
     }
-    if (mine !== token) return;
+    try {
+      await el.play();
+    } catch {
+      // A refused `play()` (autoplay policy, an interrupted load) is not a failed video: hold on the test that is over.
+      if (mine !== token) return;
+      moving = false;
+      els[front.value]?.pause();
+      playing.value = false;
+      return;
+    }
+    if (mine !== token) {
+      // A newer move may have taken this element over; only the video this move started is stopped.
+      if (held[hidden] === next && front.value !== hidden) el.pause();
+      return;
+    }
     els[front.value]?.pause();
     front.value = hidden;
     current.value = next;
@@ -216,7 +250,9 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     const index = held[front.value];
     if (!el || index == null || index !== current.value) return;
     positionMs.value = el.currentTime * 1000;
-    if (!moving && positionMs.value >= lengthOf(index)) void advance(index);
+    // A test whose span in its video is unknown has no end until the video's length is, so it is not over before.
+    const end = lengthOf(index);
+    if (!moving && end > 0 && positionMs.value >= end) void advance(index);
   }
 
   function togglePlay() {
@@ -227,8 +263,14 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
       if (first != null) void seekTo(first, 0);
     } else if (el.paused) {
       started.value = true;
-      void el.play().then(() => (playing.value = true));
+      el.play().then(
+        () => (playing.value = !el.paused),
+        () => (playing.value = false),
+      );
     } else {
+      // A move that is still waiting (a video to load, a seek) is dropped, so it cannot start playing again.
+      token++;
+      moving = false;
       el.pause();
       playing.value = false;
     }
@@ -295,8 +337,11 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     current.value = first;
     held[0] = held[1] = null;
     for (const slot of [0, 1] as const) {
-      els[slot]?.removeAttribute('src');
-      els[slot]?.load();
+      const el = els[slot];
+      if (el?.hasAttribute('src')) {
+        el.removeAttribute('src');
+        el.load();
+      }
     }
     front.value = 0;
     if (first != null) {
@@ -305,7 +350,8 @@ export function useReelPlayer(reel: Ref<Reel | null>) {
     }
   }
 
-  watch(reel, () => nextTick(reset), { immediate: true });
+  // `onMounted` starts the first reel, once its elements are bound; a later reel starts here.
+  watch(reel, () => nextTick(reset));
   onMounted(reset);
   onBeforeUnmount(() => {
     token++;
