@@ -13,7 +13,8 @@
  * a code made at this stop came to, shows under them, read out, while the worker stands there. Then its page, in its
  * card: the lane's while it is watched (`DesktopRunLaneView`), else the stop's (`DesktopRunStopPage`), who watches it
  * in its head, and who drives the stop at its foot (`DesktopRunDriver`): **Take control** from an agent, which waits
- * until **Give back**, or **Interact** on its page, turned off again the same.
+ * until **Give back**, or **Interact** on its page, turned off again the same. Under a watched lane's card, its layers
+ * (`DesktopRunLaneLayers`): why its call waits, its page's events, its text and its filmstrip.
  *
  * Every control but Pause and End the test while a Pause waits names the stop it was drawn for (`since`), so a click
  * made twice never answers the next stop, and while one is on its way, or a command of the run's (`runBusy`), the
@@ -617,6 +618,8 @@ onBeforeUnmount(() => {
         <DesktopRunDriver :words="driverWords" :mine="drivesIt" :busy="waiting" @take="drive(true)" @give="giveBack" />
       </template>
     </DesktopRunLaneView>
+    <!-- The watched lane's layers under its page, once its worker's reporter sent one. -->
+    <DesktopRunLaneLayers v-if="laneShown" :session="session" :worker="worker" :busy="waiting" />
     <DesktopRunStopPage
       v-else-if="stop"
       ref="stopPage"

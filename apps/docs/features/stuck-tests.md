@@ -44,6 +44,17 @@ waits for. The badge leaves the row when the attempt ends. A test that stands st
 
 A page opened after the test was said to be stuck shows it too: the dashboard keeps it with the running test.
 
+## On the Timeline
+
+While a run runs, its **Timeline** tab shows each worker's lane, grouped by shard, with a bar for every attempt. A
+running attempt's bar grows to now over a pale bar of its test's usual time: the longest of the last passing runs this
+rule reads. Once it runs past that time, a white tick marks where it would usually have ended, and it turns amber once
+the test is marked **Stuck?**. A test with too few passing runs has no pale bar. The header counts the stuck tests, and
+a sharded run's says which of its shards have started: `shards 1 and 3 of 4 started`.
+
+On the **Tests** tab, `is:stuck` lists the stuck tests, and `worker:` and `shard:` narrow the list to one worker or one
+shard ([Test search](/reference/test-search)).
+
 ## The notification
 
 `test.stuck` fires once per attempt, through the channels of the project's
@@ -70,12 +81,14 @@ runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metada
 ## Try it in the demo
 
 In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
-waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time.
+waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time; on
+the **Timeline** tab its bar turns amber past the pale bar of that time.
 **Stopped at a breakpoint** plays a run from VS Code whose PayPal test stands at a breakpoint for five minutes: its row
 says where, and never reads **Stuck?**.
 
 ## Related
 
 - [Live view of a run](./live-view): watch a stuck test's page and what it waits for
+- [Test search](/reference/test-search): `is:stuck`, `worker:` and `shard:`
 - [Notifications & alerts](./notifications): channels and subscriptions
 - [Notification events & webhooks](/reference/notification-events)

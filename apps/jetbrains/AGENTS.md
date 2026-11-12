@@ -79,6 +79,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Settings and secrets](ARCHITECTURE.md#settings-and-secrets))
 - **Choices made on this machine live in `.idea/workspace.xml`** (`PiwiLocalSettings`). Choosing the desktop app never
   changes the instance, its project or its key.
+- **A text from a run never renders as HTML, and an image from a run is sized before it is decoded.** Labels set
+  `html.disable`, and a tooltip goes through `Glue.htmlTooltip`, which escapes it: the platform renders every
+  component's tooltip as HTML. A filmstrip image is decoded only once its JPEG header names a size within twice a
+  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest` and `PausedPagePanelTest`.
 - **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, the
   desktop app, or the `PIWI_DASHBOARD_URL` of the IDE's environment (which reaches every open project). An instance's
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
@@ -201,7 +205,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
   page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
-  `CaretCountInlay`).
+  `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI Run tab, the CI positions).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.

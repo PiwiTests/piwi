@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
+import type { PageEvent } from '@piwitests/core/live-layers';
+import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
+  CiSession,
   LocatorAtCaretResult,
   RunPresence,
   RunSession,
@@ -10,6 +13,29 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  ciLaneArg,
+  ciLaneCaption,
+  ciLaneLayersNote,
+  ciLaneRedraws,
+  ciLaneTakes,
+  ciLaneTitle,
+  eventLine,
+  LANE_LAYER_PARTS,
+  laneDuration,
+  laneLayersAsked,
+  laneLayersMessage,
+  laneLayersNote,
+  laneTextNote,
+  layersAfterAnswer,
+  MAX_LANE_EVENTS,
+  NO_LANE_LAYERS,
+  waitsView,
+  withLaneLayer,
+  ciNodes,
+  ciPositionFiles,
+  ciPositionsIn,
+  withCiSession,
+  type CiSessions,
   stopRunAnswer,
   CARET_REFUSAL_MS,
   CARET_WAIT_MS,
@@ -91,6 +117,7 @@ import {
   writtenLines,
   type CaretQuery,
   type CaretShown,
+  type LaneLayersShown,
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
@@ -131,6 +158,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   waiting: null,
   takes: [],
   watchable: false,
+  layers: false,
   showsWindow: false,
   ...extra,
 });
@@ -1990,5 +2018,477 @@ describe("this window's runs shared live, and a teammate's ask", () => {
   test('names who asks and the run', () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
+  });
+});
+
+describe('the CI runs of the branch', () => {
+  const spec = 'file:///work/shop/tests/checkout.spec.ts';
+  const page = 'file:///work/shop/tests/pages/checkout.page.ts';
+  const ci = (runId: number, over: Partial<CiSession> = {}): CiSession => ({
+    runId,
+    root: '/work/shop',
+    url: `https://piwi.example/test-runs/${runId}`,
+    name: `CI run #${runId}`,
+    branch: 'feature/pay',
+    startedAt: '2026-11-12T10:00:00.000Z',
+    progress: { total: 4, done: 1, failed: 1, flaky: 0, skipped: 0, status: 'running' },
+    summary: '1 of 4 tests · 1 failed',
+    tests: [
+      {
+        title: ['checkout', 'pays'],
+        uri: spec,
+        line: 2,
+        project: 'chromium',
+        status: 'running',
+        retry: 0,
+        lane: 2,
+        shard: null,
+        at: {
+          title: "Click getByRole('button')",
+          uri: page,
+          line: 8,
+          character: 21,
+          text: `CI run #${runId} · worker 2: Click getByRole('button')`,
+        },
+        watch: `https://piwi.example/test-runs/${runId}?watch=2`,
+      },
+      {
+        title: ['refunds'],
+        uri: spec,
+        line: 10,
+        project: 'chromium',
+        status: 'failed',
+        retry: 1,
+        lane: 1,
+        shard: null,
+        at: null,
+        watch: null,
+      },
+    ],
+    watchable: true,
+    ended: false,
+    ...over,
+  });
+
+  test('are kept, the latest of each run, until one says it ended', () => {
+    let kept: CiSessions = new Map();
+    kept = withCiSession(kept, ci(78));
+    kept = withCiSession(kept, ci(79));
+    kept = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect([...kept.values()].map((s) => [s.runId, s.summary])).toEqual([
+      [78, '2 of 4 tests · 1 failed'],
+      [79, '1 of 4 tests · 1 failed'],
+    ]);
+    kept = withCiSession(kept, ci(78, { ended: true }));
+    expect([...kept.values()].map((s) => s.runId)).toEqual([79]);
+  });
+
+  test('mark the line each running test is at, never a test that ended', () => {
+    const kept = withCiSession(withCiSession(new Map(), ci(78)), ci(79));
+    expect(ciPositionFiles(kept)).toEqual(new Set([page]));
+    expect(ciPositionsIn(kept, page)).toEqual([
+      {
+        line: 8,
+        text: "CI run #78 · worker 2: Click getByRole('button') · CI run #79 · worker 2: Click getByRole('button')",
+      },
+    ]);
+    expect(ciPositionsIn(kept, spec)).toEqual([]);
+  });
+
+  test('list each run named as other runs are, with its progress, Open, its tests and Watch, read-only', () => {
+    const [run] = ciNodes(withCiSession(new Map(), ci(78)));
+    expect(run).toMatchObject({
+      label: 'CI run #78',
+      description: 'feature/pay · 1 of 4 tests · 1 failed',
+      icon: 'cloud',
+      open: null,
+    });
+    expect(run!.tooltip).toContain('Read-only');
+    const [open, running, failed] = run!.children;
+    expect(open).toMatchObject({ label: 'Open run #78', open: { url: 'https://piwi.example/test-runs/78' } });
+    expect(running).toMatchObject({
+      label: 'checkout › pays',
+      description: "chromium · worker 2 · Click getByRole('button')",
+      icon: 'sync~spin',
+      open: { uri: page, line: 8, character: 21 },
+    });
+    // Watch opens the lane in the worker panel; the dashboard's view is the second choice.
+    expect(running!.children).toEqual([
+      expect.objectContaining({
+        label: 'Watch',
+        description: 'worker 2',
+        icon: 'eye',
+        open: {
+          lane: {
+            root: '/work/shop',
+            runId: 78,
+            shard: null,
+            lane: 2,
+            dashboard: 'https://piwi.example/test-runs/78?watch=2',
+          },
+        },
+      }),
+      expect.objectContaining({
+        label: 'Watch on the dashboard',
+        open: { url: 'https://piwi.example/test-runs/78?watch=2' },
+      }),
+    ]);
+    expect(failed).toMatchObject({
+      label: 'refunds',
+      description: 'chromium · retry 1 · failed',
+      icon: 'error',
+      open: { uri: spec, line: 10, character: 0 },
+      children: [],
+    });
+    // Each node keeps its key as the list moves.
+    const again = ciNodes(withCiSession(new Map(), ci(78, { tests: [...ci(78).tests].reverse() })));
+    expect(new Set(again[0]!.children.map((n) => n.key))).toEqual(new Set(run!.children.map((n) => n.key)));
+  });
+
+  test('offer no Watch while the run cannot be watched', () => {
+    const [run] = ciNodes(
+      withCiSession(new Map(), ci(78, { watchable: false, tests: ci(78).tests.map((t) => ({ ...t, watch: null })) })),
+    );
+    expect(run!.children.flatMap((n) => n.children)).toEqual([]);
+  });
+
+  test('read the lane a Watch names, and nothing else, from a command’s argument', () => {
+    const lane = {
+      root: '/work/shop',
+      runId: 78,
+      shard: 2,
+      lane: 1,
+      dashboard: 'https://piwi.example/test-runs/78?watch=2.1',
+    };
+    expect(ciLaneArg({ ci: lane })).toEqual(lane);
+    expect(ciLaneArg({ ci: { ...lane, dashboard: 'javascript:alert(1)' } })).toEqual({ ...lane, dashboard: null });
+    expect(ciLaneArg({ ci: { ...lane, lane: 0 } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, shard: undefined } })).toBeNull();
+    expect(ciLaneArg({ ci: { ...lane, runId: '78' } })).toBeNull();
+    // A local run's target is no CI lane.
+    expect(ciLaneArg({ ref: 'ed-1234abcd', worker: 1 })).toBeNull();
+    expect(ciLaneArg(undefined)).toBeNull();
+  });
+
+  test('say in the worker panel which CI lane it shows, what runs there, and that it is read-only', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    expect(ciLaneTitle(lane)).toBe('Piwi: CI run #78 · worker 2');
+    expect(ciLaneTitle({ ...lane, shard: 3 })).toBe('Piwi: CI run #78 · shard 3, worker 2');
+    expect(ciLaneCaption(kept, lane)).toBe(
+      "CI run #78 · worker 2 · Running checkout › pays · Click getByRole('button') · read-only",
+    );
+    expect(ciLaneCaption(kept, { ...lane, lane: 1 })).toBe('CI run #78 · worker 1 · between tests · read-only');
+    expect(ciLaneCaption(new Map(), lane)).toBe('CI run #78 · worker 2 · the run ended.');
+  });
+
+  test('take nothing a CI lane’s panel sends but Watch: no Interact, pick, input or release reaches its page', () => {
+    expect(ciLaneTakes({ type: 'ready' })).toBe(true);
+    expect(ciLaneTakes({ type: 'view', on: true })).toBe(true);
+    expect(ciLaneTakes({ type: 'layers', text: true, filmstrip: false })).toBe(true);
+    expect(ciLaneTakes({ type: 'text' })).toBe(true);
+    for (const type of ['interact', 'pick', 'input', 'release', undefined]) expect(ciLaneTakes({ type })).toBe(false);
+  });
+
+  test('draw a CI lane’s panel again only when what it says of the lane, or its watch, changed', () => {
+    const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
+    const kept = withCiSession(new Map(), ci(78));
+    const caption = ciLaneCaption(kept, lane);
+    const view = { caption, live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false } };
+    // Another run's push, or one of this run that changes nothing the panel says.
+    expect(ciLaneRedraws(view, ciLaneCaption(withCiSession(kept, ci(79)), lane), true)).toBe(false);
+    const counted = withCiSession(kept, ci(78, { summary: '2 of 4 tests · 1 failed' }));
+    expect(ciLaneRedraws(view, ciLaneCaption(counted, lane), true)).toBe(false);
+    // The run ends, the watch goes off, or nothing was drawn yet.
+    expect(ciLaneRedraws(view, ciLaneCaption(new Map(), lane), false)).toBe(true);
+    expect(ciLaneRedraws(view, caption, false)).toBe(true);
+    expect(ciLaneRedraws(null, caption, true)).toBe(true);
+  });
+
+  test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI run #78 · worker 2 · between tests · read-only',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      },
+      'n0nce',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain('<input id="live" type="checkbox"> Watch</label>');
+    expect(html).toContain('<label hidden><input id="interact" type="checkbox" disabled> Interact</label>');
+    expect(html).toContain('read-only');
+    expect(html).toContain('alt="The page of the CI worker\'s test"');
+    expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('the worker panel’s layers', () => {
+  const at = 1_800_000_000_000;
+  const log = (extra: Partial<LiveCallLog> = {}): LiveCallLog => ({
+    id: 'c3',
+    call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 9 },
+    status: 'running',
+    lines: [
+      'waiting for getByRole(…)',
+      '  locator resolved to <button disabled>',
+      '  element is not enabled',
+      'retrying',
+    ],
+    point: null,
+    target: { count: 1, box: null, enabled: false },
+    viewport: null,
+    ms: 4200,
+    error: null,
+    ...extra,
+  });
+  const thumb = (call: string, index: number) => ({
+    layer: 'filmstrip' as const,
+    test: 't1',
+    thumb: { call, title: `Call ${index}`, index, width: 320, height: 200, at },
+    data: `/9j/${call}==`,
+  });
+
+  test('ask for the call log and the events always, the text and the filmstrip while their section is open', () => {
+    expect(laneLayersAsked({ text: false, filmstrip: false })).toEqual(['calls', 'events']);
+    expect(laneLayersAsked({ text: true, filmstrip: true })).toEqual(['calls', 'events', 'text', 'filmstrip']);
+    expect(laneLayersAsked({ text: false, filmstrip: true })).toEqual(['calls', 'events', 'filmstrip']);
+  });
+
+  test('say why the call waits: how long, what its locator matches, the log’s last lines and its error', () => {
+    expect(waitsView(log())).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · waiting 4.2 s",
+      target: '1 element matches, disabled',
+      lines: ['  locator resolved to <button disabled>', '  element is not enabled', 'retrying'],
+      failed: false,
+    });
+    expect(waitsView(log({ target: { count: 0, box: null, enabled: null }, ms: 17_400 })).target).toBe(
+      'No element matches yet',
+    );
+    expect(waitsView(log({ target: { count: 3, box: null, enabled: true } })).target).toBe(
+      '3 elements match, the first enabled',
+    );
+    const failed = waitsView(log({ status: 'failed', ms: 30_000, error: 'Timeout 30000ms exceeded.', lines: ['a'] }));
+    expect(failed).toEqual({
+      head: "Click getByRole('button', { name: 'Pay' }) · failed after 30 s",
+      target: null,
+      lines: ['a', 'Timeout 30000ms exceeded.'],
+      failed: true,
+    });
+    expect(waitsView(log({ status: 'passed', ms: 120 })).head).toMatch(/done in 120 ms$/);
+    expect(laneDuration(999)).toBe('999 ms');
+  });
+
+  test('list each event in a line of its own, a request’s pending time by its address’s path', () => {
+    const pending = eventLine(
+      {
+        kind: 'request-pending',
+        id: 4,
+        method: 'POST',
+        url: 'https://shop.test/api/checkout?x=1',
+        ms: 17_000,
+        done: false,
+      },
+      at,
+      2,
+      1,
+    );
+    expect(pending).toEqual({
+      key: 'pending 2:4',
+      text: 'POST /api/checkout?x=1 pending 17 s',
+      level: 'warning',
+      url: 'https://shop.test/api/checkout?x=1',
+      at,
+    });
+    const line = (event: PageEvent) => eventLine(event, at, 0, 1);
+    expect(line({ kind: 'console', text: 'Oops' })).toMatchObject({ text: 'Console error: Oops', level: 'error' });
+    expect(line({ kind: 'page-error', text: 'x is undefined' }).text).toBe('Uncaught error: x is undefined');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: 'https://shop.test/cart', status: 503, failure: null }).text,
+    ).toBe('GET /cart answered 503');
+    expect(
+      line({ kind: 'request-failed', method: 'GET', url: '/x', status: null, failure: 'net::ERR_ABORTED' }).text,
+    ).toBe('GET /x failed: net::ERR_ABORTED');
+    expect(
+      line({
+        kind: 'backend',
+        method: 'POST',
+        url: 'https://shop.test/pay',
+        status: 500,
+        level: 'error',
+        text: 'Card',
+      }),
+    ).toMatchObject({ text: 'Backend error on POST /pay (500): Card', level: 'error' });
+    expect(
+      line({ kind: 'api', method: 'POST', url: 'https://api.test/orders', status: 201, ms: 85, failure: null }),
+    ).toMatchObject({ text: 'API POST /orders answered 201 in 85 ms', level: 'info' });
+    expect(line({ kind: 'dropped', count: 12 }).text).toBe('12 more events were not sent: too many at once.');
+  });
+
+  test('keep the newest events first, capped, one line per pending request, its last time in place', () => {
+    let shown = NO_LANE_LAYERS;
+    const event = (e: PageEvent) => {
+      const next = withLaneLayer(shown, { layer: 'events', event: e, at, test: 't1', worker: 0 });
+      shown = next.shown;
+      return next.changed;
+    };
+    const request = {
+      kind: 'request-pending',
+      id: 1,
+      method: 'POST',
+      url: '/api/checkout',
+      ms: 5000,
+      done: false,
+    } as const;
+    expect(event(request)).toEqual(['events']);
+    event({ kind: 'console', text: 'Oops' });
+    event({ ...request, ms: 10_000 });
+    expect(shown.events.map((e) => e.text)).toEqual(['POST /api/checkout pending 10 s', 'Console error: Oops']);
+    event({ ...request, ms: 12_300, done: true });
+    expect(shown.events[0]).toMatchObject({ text: 'POST /api/checkout answered after 12 s', level: 'info' });
+    expect(shown.events).toHaveLength(2);
+    for (let i = 0; i < MAX_LANE_EVENTS + 5; i++) event({ kind: 'console', text: `n${i}` });
+    expect(shown.events).toHaveLength(MAX_LANE_EVENTS);
+    expect(shown.events[0]!.text).toBe(`Console error: n${MAX_LANE_EVENTS + 4}`);
+  });
+
+  test('keep one image of the filmstrip per call, in the test’s order, and start anew with another test', () => {
+    let shown = NO_LANE_LAYERS;
+    const hear = (layer: Parameters<typeof withLaneLayer>[1]) => {
+      const next = withLaneLayer(shown, layer);
+      shown = next.shown;
+      return next.changed;
+    };
+    expect(hear(thumb('c1', 1))).toEqual(['strip']);
+    expect(hear(thumb('c2', 2))).toEqual(['strip']);
+    // The strip sent again, as a viewer asks for it again, changes nothing.
+    expect(hear(thumb('c1', 1))).toEqual([]);
+    expect(hear(thumb('c2', 2))).toEqual([]);
+    expect(hear({ ...thumb('c9', 9), data: 'iVBORw0KGgo=' })).toEqual([]);
+    expect(shown.strip.map((image) => image.call)).toEqual(['c1', 'c2']);
+    hear({ layer: 'calls', log: log(), test: 't1' });
+    hear({
+      layer: 'text',
+      text: { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at },
+      test: null,
+    });
+    expect(shown.waits).not.toBeNull();
+    // Another test's call log clears the strip and the call log before it; the text stays.
+    expect(hear({ layer: 'calls', log: log({ id: 'd1' }), test: 't2' }).sort()).toEqual(['strip', 'waits']);
+    expect(shown.strip).toEqual([]);
+    expect(shown.text).toMatchObject({ text: '- heading "Shop"' });
+    expect(hear({ layer: 'text', refused: 'The page is closed.', test: 't2' })).toEqual(['text']);
+    expect(laneTextNote(shown.text)).toBe('The page is closed.');
+    expect(laneTextNote({ text: 'x', cut: true, source: 'trace', at })).toBe(
+      'From the test’s trace. Cut at 96 K characters.',
+    );
+  });
+
+  test('start the filmstrip and the call log anew for a retry of the test, in another worker or from its first call', () => {
+    const attempt = (worker: number | undefined, call: string, index: number) => ({
+      layer: 'filmstrip' as const,
+      test: 'same-test-id',
+      ...(worker === undefined ? {} : { worker }),
+      thumb: { call, title: `Attempt ${worker ?? '?'} call ${index}`, index, width: 320, height: 200, at },
+      data: `/9j/${call.replace(/[^A-Za-z0-9]/g, '')}${worker ?? 9}==`,
+    });
+    const strip = (shown: LaneLayersShown) => shown.strip.map((image) => `${image.call} ${image.title}`);
+    let shown = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['abcd@1', 1],
+      ['abcd@2', 2],
+      ['abcd@3', 3],
+    ] as const) {
+      shown = withLaneLayer(shown, attempt(0, call, index)).shown;
+    }
+    shown = withLaneLayer(shown, { layer: 'calls', log: log(), test: 'same-test-id', worker: 0 }).shown;
+    // The retry runs in another worker: its first layer clears the attempt before, the call log with the strip.
+    const retry = withLaneLayer(shown, attempt(1, 'wxyz@1', 1));
+    expect(retry.changed.sort()).toEqual(['strip', 'waits']);
+    expect(retry.shown.waits).toBeNull();
+    shown = withLaneLayer(retry.shown, attempt(1, 'wxyz@2', 2)).shown;
+    expect(strip(shown)).toEqual(['wxyz@1 Attempt 1 call 1', 'wxyz@2 Attempt 1 call 2']);
+
+    // Step ids that restart with each attempt: the retry's images are not taken for the first attempt's sent again.
+    let restarted = NO_LANE_LAYERS;
+    for (const [call, index] of [
+      ['pw:api@1', 1],
+      ['pw:api@2', 2],
+      ['pw:api@3', 3],
+    ] as const) {
+      restarted = withLaneLayer(restarted, attempt(0, call, index)).shown;
+    }
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@1', 1)).shown;
+    restarted = withLaneLayer(restarted, attempt(1, 'pw:api@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['pw:api@1 Attempt 1 call 1', 'pw:api@2 Attempt 1 call 2']);
+    // A layer that names no worker: an image placed at or before the strip's last, of a call it does not hold, is
+    // another attempt's.
+    restarted = withLaneLayer(restarted, attempt(undefined, 'qq@2', 2)).shown;
+    expect(strip(restarted)).toEqual(['qq@2 Attempt ? call 2']);
+  });
+
+  test('post the parts that changed, each image of the strip once, and every part to a view drawn anew', () => {
+    let shown = NO_LANE_LAYERS;
+    shown = withLaneLayer(shown, thumb('c1', 1)).shown;
+    shown = withLaneLayer(shown, thumb('c2', 2)).shown;
+    const posted = new Set(['c1']);
+    expect(laneLayersMessage(4, shown, ['strip'], posted)).toEqual({
+      type: 'layers',
+      shown: 4,
+      strip: [
+        { call: 'c1', title: 'Call 1', index: 1 },
+        { call: 'c2', title: 'Call 2', index: 2 },
+      ],
+      images: { c2: '/9j/c2==' },
+    });
+    expect(laneLayersMessage(4, shown, LANE_LAYER_PARTS, new Set(), 'Worker 2 shows no page now.')).toMatchObject({
+      waits: null,
+      events: [],
+      text: { text: null, note: 'Worker 2 shows no page now.' },
+      images: { c1: '/9j/c1==', c2: '/9j/c2==' },
+    });
+    expect(laneLayersNote({ layers: false })).toMatch(/^This worker’s reporter sends its images alone/);
+    expect(laneLayersNote({ layers: true })).toBeNull();
+    expect(laneLayersNote(null)).toBeNull();
+  });
+
+  test('say why a CI lane may show none of its layers until the first comes', () => {
+    expect(ciLaneLayersNote(NO_LANE_LAYERS)).toMatch(/older than the editor’s sends the images alone\.$/);
+    // Its call log comes with the view itself, whatever the instance and the reporter: it says nothing of the others.
+    const calls = withLaneLayer(NO_LANE_LAYERS, { layer: 'calls', log: log(), test: 't1', worker: 2 }).shown;
+    expect(ciLaneLayersNote(calls)).not.toBeNull();
+    const event = { layer: 'events' as const, event: { kind: 'console' as const, text: 'Oops' }, at, test: 't1' };
+    expect(ciLaneLayersNote(withLaneLayer(calls, event).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, thumb('c1', 1)).shown)).toBeNull();
+    expect(ciLaneLayersNote(withLaneLayer(calls, { layer: 'text', refused: 'No page.', test: 't1' }).shown)).toBeNull();
+  });
+
+  test('hold a change of the layers as asked unless the service refused that very change', () => {
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', true)).toBe('calls,events,text');
+    expect(layersAfterAnswer('calls,events,text', 'calls,events,text', false)).toBe('');
+    // A later change asked meanwhile stays held: its own answer decides.
+    expect(layersAfterAnswer('calls,events', 'calls,events,text', false)).toBe('calls,events');
+  });
+
+  test('draw the sections under a worker’s image, empty, with Text and Filmstrip open as the person left them', () => {
+    const view = {
+      image: null,
+      caption: 'Worker 2',
+      lane: true,
+      live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+      layers: { text: true, filmstrip: false, note: 'Update <b>' },
+    };
+    const html = pausedPageHtml(view, 'n', 'https://webview/paused-page.js');
+    expect(html).toContain('<details id="text-section" class="layer" open>');
+    expect(html).toContain('<details id="strip-section" class="layer">');
+    expect(html).toContain('Update &#60;b&#62;');
+    expect(html).not.toContain('<b>');
+    // The paused page of one stop has none.
+    expect(pausedPageHtml({ ...view, lane: false }, 'n', 'https://webview/paused-page.js')).not.toContain(
+      'id="layers"',
+    );
   });
 });

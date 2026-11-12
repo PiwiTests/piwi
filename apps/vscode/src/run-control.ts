@@ -7,9 +7,12 @@
  * the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
  * (Share live: what it sends, how it stands), the workers a panel can watch while their test runs and what the panel
  * says of one, and the edits of the documents since a run started, which map a line of the run's code to the document
- * as it stands and back.
+ * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
+ * nodes, the CI positions marked at a line, and what the worker panel says of a CI run's lane it watches.
  */
 import type {
+  CiSession,
+  CiTest,
   DriveStopParams,
   EditorBreakpoint,
   LocatorAtCaretParams,
@@ -32,6 +35,10 @@ import type {
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
+import { LANE_LAYERS, MAX_FILMSTRIP, MAX_LANE_TEXT, type LaneLayer } from '@piwitests/core/live-layer-bounds';
+import type { PageEvent } from '@piwitests/core/live-layers';
+import type { LiveCallLog } from '@piwitests/core/live-view';
+import type { LaneLayerData } from '@piwitests/core/run-channel';
 import type { ViewInput } from '@piwitests/core/run-view';
 import { RUN_STOP_WORDS } from '@piwitests/editor/protocol';
 
@@ -1754,6 +1761,8 @@ export interface PausedPageView {
   live?: { shown: number; on: boolean; input: boolean; interacting: boolean; clickCounts: boolean };
   /** The panel watches a worker's slot, running or stopped, not one stop. */
   lane?: boolean;
+  /** The slot is a CI run's lane, read-only: Watch alone, no Interact and no pick. */
+  ci?: boolean;
   /** The image shows what the worker did before: a test or a stop it left, until the next image comes. */
   stale?: boolean;
   /**
@@ -1761,6 +1770,12 @@ export interface PausedPageView {
    * on the view goes to the page, whose Escape it is, rather than giving the stop back.
    */
   acting?: boolean;
+  /**
+   * The worker panel's sections beside the image (Why it waits, Events, Text, Filmstrip): which of the two that ask
+   * for their layer while open are open, why the lane shows none (`note`: a reporter that sends its images alone), and
+   * whether the page's text asked again waits for its answer (`textAsking`), Take the text again off meanwhile.
+   */
+  layers?: LaneSections & { note: string | null; textAsking?: boolean };
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -1875,6 +1890,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
   const src = imageSource(view.image);
   const pick = src && view.pick ? view.pick : null;
   const live = view.live && scriptUri ? view.live : null;
+  const layers = live && view.lane ? (view.layers ?? { text: false, filmstrip: false, note: null }) : null;
   const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
@@ -1882,14 +1898,16 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
-      ? view.lane
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+      ? view.ci
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label hidden><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
+        : view.lane
+          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+          : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live
@@ -1898,10 +1916,11 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
         ? `<p class="note" role="status">${escapeHtml(view.note)}</p>`
         : '',
     live
-      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'}${view.stale ? ' class="stale"' : ''} alt="${view.lane ? "The page of the worker's test" : 'The page of the paused test'}" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
+      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'}${view.stale ? ' class="stale"' : ''} alt="${view.ci ? "The page of the CI worker's test" : view.lane ? "The page of the worker's test" : 'The page of the paused test'}" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
       : src
         ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">`
         : '',
+    layers ? layersHtml(layers) : '',
     live
       ? `<script nonce="${nonce}" src="${escapeHtml(scriptUri!)}"></script>`
       : pick
@@ -1910,6 +1929,27 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '</body>',
     '</html>',
   ].join('\n');
+}
+
+/** The style of the worker panel's sections beside the image. */
+const LAYERS_STYLE =
+  'details.layer{color:var(--vscode-foreground)}summary{cursor:pointer}.waits{border:1px solid var(--vscode-panel-border);padding:4px 8px;margin:8px 0}.waits.failed{border-color:var(--vscode-errorForeground)}.waits p{margin:0 0 4px}pre{margin:4px 0;white-space:pre-wrap;word-break:break-word;font:12px var(--vscode-editor-font-family)}.events{list-style:none;padding:0;margin:4px 0;max-height:240px;overflow:auto}.events li{padding:1px 0;white-space:pre-wrap;word-break:break-word}.events li.error{color:var(--vscode-errorForeground)}.events li.warning{color:var(--vscode-editorWarning-foreground)}pre.text{max-height:480px;overflow:auto}.strip{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}.strip button{padding:0;border:1px solid var(--vscode-panel-border);background:none;cursor:pointer}.strip button[aria-pressed=true]{outline:2px solid var(--vscode-focusBorder)}.strip img{height:60px;display:block;border:0}figure{margin:8px 0}';
+
+/**
+ * The worker panel's sections under its image, empty: the view's script fills them from the lane's layers, every text
+ * of the run set as text. Why it waits shows while a call log came; Events is open; Text and Filmstrip ask for their
+ * layer while open.
+ */
+function layersHtml(layers: LaneSections & { note: string | null; textAsking?: boolean }): string {
+  return [
+    `<p id="layers-note" class="note"${layers.note ? '' : ' hidden'}>${escapeHtml(layers.note ?? '')}</p>`,
+    '<section id="layers" aria-label="Beside the image">',
+    '<div id="waits" class="waits" role="status" hidden><p><strong>Why it waits</strong></p><p id="waits-head"></p><p id="waits-target" class="hint"></p><pre id="waits-lines"></pre></div>',
+    '<details id="events-section" class="layer" open><summary>Events <span id="events-count" class="hint"></span></summary><p id="events-empty" class="hint">Nothing yet: console errors, the page’s uncaught errors, failed and slow requests, and the errors its backend logged show here, the newest first.</p><ol id="events" class="events"></ol></details>',
+    `<details id="text-section" class="layer"${layers.text ? ' open' : ''}><summary>Text</summary><p class="hint">The page as roles and names, the secret fields hidden: Find (Ctrl+F) searches it.</p><button id="text-again" type="button"${layers.textAsking ? ' disabled' : ''}>Take the text again</button><p id="text-note" class="note"></p><pre id="text" class="text"></pre></details>`,
+    `<details id="strip-section" class="layer"${layers.filmstrip ? ' open' : ''}><summary>Filmstrip</summary><p id="strip-empty" class="hint">One image for each call of the test that ended: click one to see it larger.</p><div id="strip" class="strip"></div><figure id="thumb" hidden><img id="thumb-image" alt=""><figcaption id="thumb-title"></figcaption></figure></details>`,
+    '</section>',
+  ].join('');
 }
 
 /**
@@ -1928,4 +1968,540 @@ export function accessibleLabel(item: ControlItem): string {
 /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
 export function askToWatchText(ask: Pick<AskToWatchParams, 'by' | 'run'>): string {
   return `${ask.by} asks to watch ${ask.run === null ? 'this run' : `run #${ask.run}`} live.`;
+}
+
+/** The CI runs of the branch kept from `piwi/ciSessionChanged`, by `ciKey`: the latest of each, one that ended dropped. */
+export type CiSessions = Map<string, CiSession>;
+
+/** A CI session's key: its context's folder and its run. */
+export function ciKey(session: Pick<CiSession, 'root' | 'runId'>): string {
+  return `${session.root}\n${session.runId}`;
+}
+
+/** The sessions with `session` heard: kept as the latest of its run, or dropped once it ended. */
+export function withCiSession(sessions: CiSessions, session: CiSession): CiSessions {
+  const next = new Map(sessions);
+  if (session.ended) next.delete(ciKey(session));
+  else next.set(ciKey(session), session);
+  return next;
+}
+
+/**
+ * The CI positions of a file, as the editor marks them at the end of a line: the call each running test of a CI run
+ * is at in it, one mark per line, the words of several tests on one line joined. Never a stop: nothing waits there.
+ */
+export function ciPositionsIn(sessions: CiSessions, uri: string): Array<{ line: number; text: string }> {
+  const lines = new Map<number, string[]>();
+  for (const session of sessions.values()) {
+    for (const test of session.tests) {
+      if (test.status !== 'running' || test.at?.uri !== uri) continue;
+      const texts = lines.get(test.at.line) ?? [];
+      if (!texts.includes(test.at.text)) texts.push(test.at.text);
+      lines.set(test.at.line, texts);
+    }
+  }
+  return [...lines].sort(([a], [b]) => a - b).map(([line, texts]) => ({ line, text: texts.join(' · ') }));
+}
+
+/** The files a CI position is in now, to draw again as they change. */
+export function ciPositionFiles(sessions: CiSessions): Set<string> {
+  return new Set([...sessions.values()].flatMap((s) => s.tests.flatMap((t) => (t.at ? [t.at.uri] : []))));
+}
+
+/**
+ * A lane of a CI run the worker panel watches (`piwi/ciWatch`), as its `CiTest` names it, and its view on the dashboard,
+ * the second choice where the editor cannot show it.
+ */
+export interface CiLane {
+  root: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  dashboard: string | null;
+}
+
+/** What a node of the **CI Runs** view opens: a file at a line, a page of the instance, a lane in the worker panel. */
+export type CiOpen = { uri: string; line: number; character: number } | { url: string } | { lane: CiLane } | null;
+
+/** The CI lane a command's argument names (`{ ci: CiLane }`, from the **CI Runs** view); null for anything else. */
+export function ciLaneArg(arg: unknown): CiLane | null {
+  const ci = (arg as { ci?: Partial<CiLane> } | null | undefined)?.ci;
+  if (!ci || typeof ci !== 'object' || typeof ci.root !== 'string') return null;
+  const whole = (n: unknown, min: number) => typeof n === 'number' && Number.isInteger(n) && n >= min;
+  if (!whole(ci.runId, 1) || !whole(ci.lane, 1) || !(ci.shard === null || whole(ci.shard, 1))) return null;
+  const dashboard = typeof ci.dashboard === 'string' && /^https?:\/\//.test(ci.dashboard) ? ci.dashboard : null;
+  return { root: ci.root, runId: ci.runId!, shard: ci.shard!, lane: ci.lane!, dashboard };
+}
+
+/** `worker 2`, or `shard 1, worker 2`: a CI lane in words. */
+function ciLaneName(lane: Pick<CiTest, 'lane' | 'shard'>): string {
+  if (lane.lane === null) return '';
+  return lane.shard !== null ? `shard ${lane.shard}, worker ${lane.lane}` : `worker ${lane.lane}`;
+}
+
+/** The worker panel's title while it watches a CI lane: `Piwi: CI run #78 · worker 2`. */
+export function ciLaneTitle(lane: CiLane): string {
+  return `Piwi: CI run #${lane.runId} · ${ciLaneName(lane)}`;
+}
+
+/**
+ * What the worker panel says above a CI lane it watches, from the run's session: the test running in the lane and the
+ * call it is at, else that the lane is between tests, else that the run ended; always read-only.
+ */
+export function ciLaneCaption(sessions: CiSessions, lane: CiLane): string {
+  const name = `CI run #${lane.runId} · ${ciLaneName(lane)}`;
+  const session = sessions.get(ciKey(lane));
+  if (!session) return `${name} · the run ended.`;
+  const test = session.tests.find(
+    (t) => t.status === 'running' && t.lane === lane.lane && (t.shard ?? null) === lane.shard,
+  );
+  if (!test) return `${name} · between tests · read-only`;
+  const at = test.at ? ` · ${test.at.title}` : '';
+  return `${name} · Running ${ciTestName(test)}${at} · read-only`;
+}
+
+/**
+ * Whether the worker panel takes a message of its script while it shows a CI run's lane, read-only: its `ready`, Watch
+ * (`view`), the sections it opens (`layers`) and the page's text asked again (`text`) alone, never Interact, a pick,
+ * input or a release.
+ */
+export function ciLaneTakes(message: Readonly<Record<string, unknown>>): boolean {
+  return message.type === 'ready' || message.type === 'view' || message.type === 'layers' || message.type === 'text';
+}
+
+/**
+ * Whether the worker panel draws a CI lane again as the CI sessions change: only when its caption or whether it watches
+ * changed, so a push of another run, or of nothing the panel says, posts nothing to it.
+ */
+export function ciLaneRedraws(
+  view: Pick<PausedPageView, 'caption' | 'live'> | null,
+  caption: string,
+  watching: boolean,
+): boolean {
+  return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
+}
+
+/** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
+export interface CiNode {
+  key: string;
+  label: string;
+  description: string;
+  tooltip: string;
+  /** A codicon id. */
+  icon: string;
+  open: CiOpen;
+  children: CiNode[];
+}
+
+const CI_TEST_ICONS: Record<CiTest['status'], string> = {
+  running: 'sync~spin',
+  passed: 'pass',
+  failed: 'error',
+  flaky: 'warning',
+  skipped: 'debug-step-over',
+};
+
+/** A test's name in the view: its describe blocks, then its title, a title's own line breaks as spaces. */
+function ciTestName(test: CiTest): string {
+  return test.title.join(' › ').replace(/\s+/g, ' ');
+}
+
+/** A CI test's words beside its name: its Playwright project and attempt, then where it runs and its call, or its result. */
+function ciTestDescription(test: CiTest): string {
+  const running = test.status === 'running';
+  const parts = [
+    test.project,
+    test.retry ? `retry ${test.retry}` : '',
+    running ? ciLaneName(test) : test.status,
+    running ? (test.at?.title ?? '') : '',
+  ];
+  return parts.filter(Boolean).join(' · ');
+}
+
+/**
+ * The **CI Runs** view: each CI run of the branch in progress, named as other runs are (`CI run #78`) with its
+ * progress, then **Open** on its page and its tests: a running one opens the call it is at, else its spec, and offers
+ * **Watch** in the worker panel and **Watch on the dashboard** while its run can be watched; one that ended opens its
+ * spec. Read-only: nothing here steers the run.
+ */
+export function ciNodes(sessions: CiSessions): CiNode[] {
+  return [...sessions.values()]
+    .sort((a, b) => b.runId - a.runId)
+    .map((session) => {
+      const key = ciKey(session);
+      const open: CiNode = {
+        key: `${key}\nopen`,
+        label: `Open run #${session.runId}`,
+        description: 'on the dashboard',
+        tooltip: `Open CI run #${session.runId} on the dashboard: ${session.url}`,
+        icon: 'link-external',
+        open: { url: session.url },
+        children: [],
+      };
+      // A test's node keeps its key as the list moves, so the view keeps what the person expanded.
+      const keys = new Set<string>();
+      const tests = session.tests.map((test, index): CiNode => {
+        let testKey = `${key}\n${test.uri ?? ''}\n${test.title.join('\x1f')}\n${test.project}`;
+        if (keys.has(testKey)) testKey = `${testKey}\n${index}`;
+        keys.add(testKey);
+        const spec = test.uri && test.line !== null ? { uri: test.uri, line: test.line, character: 0 } : null;
+        const place = test.at ? { uri: test.at.uri, line: test.at.line, character: test.at.character ?? 0 } : spec;
+        const lane: CiLane | null =
+          test.watch && test.lane !== null
+            ? { root: session.root, runId: session.runId, shard: test.shard, lane: test.lane, dashboard: test.watch }
+            : null;
+        const watch: CiNode[] = test.watch
+          ? [
+              ...(lane
+                ? [
+                    {
+                      key: `${testKey}\nwatch-here`,
+                      label: 'Watch',
+                      description: ciLaneName(test),
+                      tooltip: `Watch the page of the test ${ciLaneName(test)} runs, in the editor, read-only, as the team instance relays it.`,
+                      icon: 'eye',
+                      open: { lane },
+                      children: [],
+                    },
+                  ]
+                : []),
+              {
+                key: `${testKey}\nwatch`,
+                label: 'Watch on the dashboard',
+                description: '',
+                tooltip: `Watch this test’s page live on the dashboard, read-only: ${test.watch}`,
+                icon: 'link-external',
+                open: { url: test.watch },
+                children: [],
+              },
+            ]
+          : [];
+        const where = test.at ? `\n\nAt ${test.at.title}, line ${test.at.line + 1} as the run’s commit has it.` : '';
+        return {
+          key: testKey,
+          label: ciTestName(test),
+          description: ciTestDescription(test),
+          tooltip:
+            `${ciTestName(test)}${test.project ? ` (${test.project})` : ''}: ` +
+            `${test.status === 'running' ? 'running on CI, read-only' : test.status}.${where}`,
+          icon: CI_TEST_ICONS[test.status],
+          open: place,
+          children: watch,
+        };
+      });
+      return {
+        key,
+        label: session.name,
+        description: `${session.branch ? `${session.branch} · ` : ''}${session.summary}`,
+        tooltip:
+          `${session.name}${session.branch ? ` on ${session.branch}` : ''}: ${session.summary}. ` +
+          'Read-only: it runs on CI, so nothing here pauses or steers it.' +
+          (session.watchable ? ' Its running tests can be watched, here or on the dashboard.' : ''),
+        icon: 'cloud',
+        open: null,
+        children: [open, ...tests],
+      };
+    });
+}
+
+/** The most events the worker panel lists, the newest first. */
+export const MAX_LANE_EVENTS = 50;
+/** The call log's last lines the worker panel shows under its image. */
+export const WAITS_LINES = 3;
+
+/** The sections of the worker panel that ask for their layer while open: the page's text and the filmstrip. */
+export interface LaneSections {
+  text: boolean;
+  filmstrip: boolean;
+}
+
+/**
+ * The layers the worker panel asks for (`piwi/laneView`'s and `piwi/ciWatch`'s `layers`): the call log and the page's
+ * events always, the page's text and the filmstrip while their section is open.
+ */
+export function laneLayersAsked(open: LaneSections): LaneLayer[] {
+  return LANE_LAYERS.filter((layer) => layer === 'calls' || layer === 'events' || open[layer]);
+}
+
+/** A time as the worker panel says it: `120 ms`, `4.2 s`, `17 s`. */
+export function laneDuration(ms: number): string {
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
+  return ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`;
+}
+
+/** An address as an event line shows it: its path and query on a web address, else as it came. */
+export function eventAddress(url: string): string {
+  const match = /^https?:\/\/[^/?#]+([^#]*)/i.exec(url);
+  return match ? match[1] || '/' : url;
+}
+
+/** Why the call the lane's test is in waits, as the worker panel shows it under the image. */
+export interface WaitsView {
+  /** The call and how it stands: `Click getByRole('button') · waiting 4.2 s`. */
+  head: string;
+  /** What its locator matches and in which state, while it waits on one; null otherwise. */
+  target: string | null;
+  /** The call log's last lines, oldest first, then the error it ended with. */
+  lines: string[];
+  failed: boolean;
+}
+
+/** What a call's locator matches as it waits: none yet, one, or several, and whether the first is enabled. */
+function targetWords(target: LiveCallLog['target']): string | null {
+  if (!target) return null;
+  if (target.count === 0) return 'No element matches yet';
+  const state = target.enabled === false ? 'disabled' : target.enabled === true ? 'enabled' : null;
+  if (target.count === 1) return `1 element matches${state ? `, ${state}` : ''}`;
+  return `${target.count} elements match${state ? `, the first ${state}` : ''}`;
+}
+
+/** Why it waits: the call, how long it ran, what its locator matches, and the call log's last lines. */
+export function waitsView(log: LiveCallLog): WaitsView {
+  const time = laneDuration(log.ms);
+  const how =
+    log.status === 'running' ? `waiting ${time}` : log.status === 'passed' ? `done in ${time}` : `failed after ${time}`;
+  const lines = log.lines.slice(-WAITS_LINES);
+  return {
+    head: `${log.call.title} · ${how}`,
+    target: log.status === 'running' ? targetWords(log.target) : null,
+    lines: log.error ? [...lines, log.error] : lines,
+    failed: log.status === 'failed',
+  };
+}
+
+/** A line of the worker panel's events: its words, how it reads (`error`, `warning`, `info`) and its full address. */
+export interface EventLine {
+  /** The same request's lines share it, so its pending time replaces the line before. */
+  key: string;
+  text: string;
+  level: 'error' | 'warning' | 'info';
+  /** The request's whole address, for a tooltip; null for an event without one. */
+  url: string | null;
+  at: number;
+}
+
+/** What a page event says, as the worker panel lists it; `n` keys a line no other replaces. */
+export function eventLine(event: PageEvent, at: number, worker: number, n: number): EventLine {
+  const line = (text: string, level: EventLine['level'], url: string | null = null, key = `${n}`): EventLine => ({
+    key,
+    text,
+    level,
+    url,
+    at,
+  });
+  switch (event.kind) {
+    case 'console':
+      return line(`Console error: ${event.text}`, 'error');
+    case 'page-error':
+      return line(`Uncaught error: ${event.text}`, 'error');
+    case 'request-failed': {
+      const what = `${event.method} ${eventAddress(event.url)}`;
+      const why = event.status !== null ? `answered ${event.status}` : `failed: ${event.failure ?? 'no answer'}`;
+      return line(`${what} ${why}`, 'error', event.url);
+    }
+    case 'request-pending': {
+      const what = `${event.method} ${eventAddress(event.url)}`;
+      const text = event.done
+        ? `${what} answered after ${laneDuration(event.ms)}`
+        : `${what} pending ${laneDuration(event.ms)}`;
+      return line(text, event.done ? 'info' : 'warning', event.url, `pending ${worker}:${event.id}`);
+    }
+    case 'backend': {
+      const status = event.status !== null ? ` (${event.status})` : '';
+      return line(
+        `Backend ${event.level} on ${event.method} ${eventAddress(event.url)}${status}: ${event.text}`,
+        event.level,
+        event.url,
+      );
+    }
+    case 'api': {
+      const what = `API ${event.method} ${eventAddress(event.url)}`;
+      if (event.failure !== null || event.status === null) {
+        return line(`${what} failed: ${event.failure ?? 'no answer'}`, 'error', event.url);
+      }
+      return line(
+        `${what} answered ${event.status} in ${laneDuration(event.ms)}`,
+        event.status >= 400 ? 'error' : 'info',
+        event.url,
+      );
+    }
+    case 'dropped':
+      return line(`${event.count} more events were not sent: too many at once.`, 'warning');
+  }
+}
+
+/** An image of the lane's filmstrip: the call it ended, its title and its place in the strip, its JPEG in base64. */
+export interface StripImage {
+  call: string;
+  title: string;
+  index: number;
+  data: string;
+}
+
+/** The page's text as the worker panel shows it, or why none goes. */
+export type LaneTextShown =
+  | { text: string; cut: boolean; source: 'trace' | 'snapshot'; at: number }
+  | { refused: string };
+
+/** The layers the worker panel shows of its lane, as they came. */
+export interface LaneLayersShown {
+  /**
+   * The test they are of (its id, or its title on a CI lane) and the worker that runs it: another test's call log and
+   * filmstrip start anew, and so do those of another worker, a retry of the same test.
+   */
+  test: string | null;
+  worker: number | null;
+  waits: WaitsView | null;
+  /** The newest first, {@link MAX_LANE_EVENTS} at most. */
+  events: EventLine[];
+  /** How many events were heard, which keys each line. */
+  heard: number;
+  text: LaneTextShown | null;
+  /** In the order of the test's calls, one image per call, `MAX_FILMSTRIP` at most. */
+  strip: StripImage[];
+}
+
+export const NO_LANE_LAYERS: LaneLayersShown = {
+  test: null,
+  worker: null,
+  waits: null,
+  events: [],
+  heard: 0,
+  text: null,
+  strip: [],
+};
+
+/** A part of the worker panel a layer changes. */
+export type LaneLayerPart = 'waits' | 'events' | 'text' | 'strip';
+
+/** A JPEG in base64, as a filmstrip image comes. */
+const THUMB_DATA = /^\/9j\/[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * The layers shown with `layer` heard, and the parts it changed (none for an image of a call the strip holds, as the
+ * worker sends the filmstrip again when the layers change). A layer of another test than the one shown, or of another
+ * worker (a retry runs in a new one), starts the call log and the filmstrip anew; so does an image placed at or before
+ * the strip's last of a call it does not hold, another attempt's. The events and the text stay until newer ones come.
+ * A request's pending time replaces its line, which comes first again.
+ */
+export function withLaneLayer(
+  shown: LaneLayersShown,
+  layer: LaneLayerData & { test: string | null; worker?: number },
+): { shown: LaneLayersShown; changed: LaneLayerPart[] } {
+  const changed = new Set<LaneLayerPart>();
+  let next = shown;
+  const worker = layer.worker ?? shown.worker;
+  if ((layer.test !== null && layer.test !== shown.test) || worker !== shown.worker) {
+    if (shown.waits) changed.add('waits');
+    if (shown.strip.length) changed.add('strip');
+    next = { ...next, test: layer.test ?? shown.test, worker, waits: null, strip: [] };
+  }
+  switch (layer.layer) {
+    case 'calls':
+      next = { ...next, waits: waitsView(layer.log) };
+      changed.add('waits');
+      break;
+    case 'events': {
+      const line = eventLine(layer.event, layer.at, layer.worker ?? 0, next.heard + 1);
+      const events = [line, ...next.events.filter((e) => e.key !== line.key)].slice(0, MAX_LANE_EVENTS);
+      next = { ...next, events, heard: next.heard + 1 };
+      changed.add('events');
+      break;
+    }
+    case 'text':
+      next = {
+        ...next,
+        text:
+          'refused' in layer
+            ? { refused: layer.refused }
+            : { text: layer.text.text, cut: layer.text.cut, source: layer.text.source, at: layer.text.at },
+      };
+      changed.add('text');
+      break;
+    case 'filmstrip': {
+      if (!THUMB_DATA.test(layer.data) || next.strip.some((image) => image.call === layer.thumb.call)) break;
+      const image = { call: layer.thumb.call, title: layer.thumb.title, index: layer.thumb.index, data: layer.data };
+      const last = next.strip[next.strip.length - 1];
+      const kept = last && image.index <= last.index ? [] : next.strip;
+      const strip = [...kept, image].slice(-MAX_FILMSTRIP);
+      next = { ...next, strip };
+      changed.add('strip');
+      break;
+    }
+  }
+  return { shown: next, changed: [...changed] };
+}
+
+/** What the page's text section says above the text: where it came from and whether it was cut, or why none came. */
+export function laneTextNote(text: LaneTextShown | null): string {
+  if (!text) return 'Nothing yet.';
+  if ('refused' in text) return text.refused;
+  const from = text.source === 'trace' ? 'From the test’s trace.' : 'Read from the page.';
+  return text.cut ? `${from} Cut at ${MAX_LANE_TEXT / 1024} K characters.` : from;
+}
+
+/**
+ * What the worker panel posts its script of the lane's layers: the parts that changed (`parts`), the strip as the order
+ * of its images and, of their JPEGs, those not posted to the document yet (`posted`, by call).
+ */
+export interface LaneLayersMessage {
+  type: 'layers';
+  shown: number;
+  waits?: WaitsView | null;
+  events?: EventLine[];
+  text?: { text: string | null; note: string };
+  strip?: Array<Omit<StripImage, 'data'>>;
+  images?: Record<string, string>;
+}
+
+/** The message posting `parts` of the layers shown to the view drawn `shown`th, `textNote` said over the text's own. */
+export function laneLayersMessage(
+  shown: number,
+  layers: LaneLayersShown,
+  parts: readonly LaneLayerPart[],
+  posted: ReadonlySet<string>,
+  textNote: string | null = null,
+): LaneLayersMessage {
+  const message: LaneLayersMessage = { type: 'layers', shown };
+  if (parts.includes('waits')) message.waits = layers.waits;
+  if (parts.includes('events')) message.events = layers.events;
+  if (parts.includes('text')) {
+    const text = layers.text && 'text' in layers.text ? layers.text.text : null;
+    message.text = { text, note: textNote ?? laneTextNote(layers.text) };
+  }
+  if (parts.includes('strip')) {
+    message.strip = layers.strip.map(({ call, title, index }) => ({ call, title, index }));
+    const images = layers.strip.filter((image) => !posted.has(image.call));
+    if (images.length) message.images = Object.fromEntries(images.map((image) => [image.call, image.data]));
+  }
+  return message;
+}
+
+/** Every part of the worker panel's layers, posted to a view drawn anew. */
+export const LANE_LAYER_PARTS: readonly LaneLayerPart[] = ['waits', 'events', 'text', 'strip'];
+
+/** The note over a lane whose reporter sends no layers; null when it sends them or the panel cannot tell. */
+export function laneLayersNote(worker: Pick<RunWorker, 'layers'> | null): string | null {
+  return worker && !worker.layers
+    ? 'This worker’s reporter sends its images alone: update @piwitests/reporter to see why it waits, the page’s events, its text and the filmstrip.'
+    : null;
+}
+
+/**
+ * The note over a CI lane while none of its page's events, its text or its filmstrip came: neither the team instance
+ * nor the CI run's reporter says whether it sends them, and an older one of either sends the images alone. Null once
+ * one came.
+ */
+export function ciLaneLayersNote(layers: Pick<LaneLayersShown, 'heard' | 'text' | 'strip'>): string | null {
+  return layers.heard || layers.text || layers.strip.length
+    ? null
+    : 'The page’s events, its text and the filmstrip show here as the CI run’s worker sends them: a team instance or a @piwitests/reporter older than the editor’s sends the images alone.';
+}
+
+/**
+ * The layers the worker panel holds as asked once the service answered a change of them (`asked`, as text): those it
+ * held, unless the service refused the very change they are, which leaves none held, so the next change asks again.
+ */
+export function layersAfterAnswer(held: string, asked: string, ok: boolean): string {
+  return ok || held !== asked ? held : '';
 }

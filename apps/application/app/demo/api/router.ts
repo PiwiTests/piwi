@@ -250,6 +250,7 @@ import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions'
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
 import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import { getRunReusedResults } from '#shared/handlers/reused-results';
+import { runUsualDurations } from '#shared/handlers/stuck-tests';
 import {
   computeScenarioGaps,
   listScenarioGaps,
@@ -1657,6 +1658,14 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return getRunReusedResults(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/usual-durations$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return runUsualDurations(await getDemoDb(), +m[1]!);
     },
   },
   {

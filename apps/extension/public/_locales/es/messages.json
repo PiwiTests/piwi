@@ -6595,6 +6595,250 @@
       }
     }
   },
+  "runs_layerCalls": {
+    "message": "Por qué espera"
+  },
+  "runs_callNone": {
+    "message": "Aún no hay ninguna llamada: la llamada que ejecuta el test aparece aquí, con lo que Playwright espera."
+  },
+  "runs_callRunning": {
+    "message": "En curso desde hace $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callPassed": {
+    "message": "Terminada en $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_callFailed": {
+    "message": "Falló tras $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_targetNone": {
+    "message": "Aún ningún elemento coincide con su locator"
+  },
+  "runs_targetMatches_one": {
+    "message": "$count$ elemento coincide con su locator",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetMatches_other": {
+    "message": "$count$ elementos coinciden con su locator",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_targetDisabled": {
+    "message": "Su elemento no está habilitado"
+  },
+  "runs_layerEvents": {
+    "message": "Eventos"
+  },
+  "runs_eventsNone": {
+    "message": "Nada por ahora: los errores de la consola, las peticiones fallidas o lentas y los errores del backend aparecen aquí."
+  },
+  "runs_eventConsole": {
+    "message": "Error de la consola"
+  },
+  "runs_eventPageError": {
+    "message": "Error no capturado"
+  },
+  "runs_eventFailed": {
+    "message": "Petición fallida"
+  },
+  "runs_eventPending": {
+    "message": "Petición pendiente"
+  },
+  "runs_eventSlow": {
+    "message": "Petición lenta"
+  },
+  "runs_eventBackendError": {
+    "message": "Error del backend"
+  },
+  "runs_eventBackendWarning": {
+    "message": "Aviso del backend"
+  },
+  "runs_eventApi": {
+    "message": "Llamada a la API"
+  },
+  "runs_eventDropped_one": {
+    "message": "$count$ evento más omitido",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_eventDropped_other": {
+    "message": "$count$ eventos más omitidos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runs_requestAnswered": {
+    "message": "$request$ respondió $status$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      }
+    }
+  },
+  "runs_requestAnsweredIn": {
+    "message": "$request$ respondió $status$ en $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "status": {
+        "content": "$2",
+        "example": "500"
+      },
+      "time": {
+        "content": "$3",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestAnsweredAfter": {
+    "message": "$request$ respondió tras $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestPending": {
+    "message": "$request$ pendiente desde hace $time$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12s"
+      }
+    }
+  },
+  "runs_requestFailed": {
+    "message": "$request$ falló: $failure$",
+    "placeholders": {
+      "failure": {
+        "content": "$1",
+        "example": "net::ERR_CONNECTION_REFUSED"
+      },
+      "request": {
+        "content": "$2",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestUnanswered": {
+    "message": "$request$ no recibió respuesta",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      }
+    }
+  },
+  "runs_requestLogged": {
+    "message": "$request$: $text$",
+    "placeholders": {
+      "request": {
+        "content": "$1",
+        "example": "POST /api/checkout"
+      },
+      "text": {
+        "content": "$2",
+        "example": "NullReferenceException in CartService"
+      }
+    }
+  },
+  "runs_layerText": {
+    "message": "Texto"
+  },
+  "runs_textShow": {
+    "message": "Mostrar el texto de la página"
+  },
+  "runs_textShowTitle": {
+    "message": "Mostrar la página como roles y nombres, con sus campos secretos ocultos: tomada ahora y seguida a medida que la traza del test la escribe"
+  },
+  "runs_textAgain": {
+    "message": "Tomarlo de nuevo"
+  },
+  "runs_textHide": {
+    "message": "Ocultar el texto"
+  },
+  "runs_textWaiting": {
+    "message": "Leyendo la página…"
+  },
+  "runs_textTrace": {
+    "message": "De la traza del test"
+  },
+  "runs_textSnapshot": {
+    "message": "Tomado a petición tuya"
+  },
+  "runs_textCut": {
+    "message": "Recortado: el texto de la página es más largo"
+  },
+  "runs_textLabel": {
+    "message": "El texto de la página, con sus campos secretos ocultos"
+  },
+  "runs_layerFilmstrip": {
+    "message": "Tira de imágenes"
+  },
+  "runs_filmstripNone": {
+    "message": "La página de cada llamada aparece aquí cuando la llamada termina."
+  },
+  "runs_filmstripAlt": {
+    "message": "La página tras $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_filmstripClose": {
+    "message": "Cerrar"
+  },
   "runs_progressEndedAtStop_one": {
     "message": "$count$ terminada en una parada",
     "placeholders": {
@@ -7166,6 +7410,52 @@
   },
   "runs_copyRunPageShort": {
     "message": "Copiar enlace"
+  },
+  "runs_ciHeading": {
+    "message": "Ejecuciones de CI en curso"
+  },
+  "runs_ciRun": {
+    "message": "Ejecución de CI #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "78"
+      }
+    }
+  },
+  "runs_ciWhere": {
+    "message": "en $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      }
+    }
+  },
+  "runs_ciWhereProject": {
+    "message": "$project$, en $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "feature/pay"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciProject": {
+    "message": "$project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Shop"
+      }
+    }
+  },
+  "runs_ciReadOnly": {
+    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Abre la página de una ejecución para ver una prueba en curso."
   },
   "runs_pageAtStop": {
     "message": "La página de un test aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando lo pausas. Ver en directo la muestra entonces tal como se dibuja."

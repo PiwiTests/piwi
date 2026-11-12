@@ -96,11 +96,13 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
-  // The run page's live view: a live run's test workers hold its streams and post its frames, and someone watches
-  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch.
+  // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
+  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch, and Watch all
+  // shows each running lane's step in place of its image.
   'GET /api/test-runs/:id/live-view',
   'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
+  'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
   // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
   // no reporter, so its simulated runs are never a run nobody shares.

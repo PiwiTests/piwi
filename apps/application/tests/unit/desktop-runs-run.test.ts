@@ -483,11 +483,12 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         const worker = lastWorker();
         return worker?.test?.title.at(-1) === 'watched as it runs' && worker.state === 'running' ? worker : undefined;
       });
-      // The reporter shows its lane while the test runs: the window watches it, frames of the running test coming.
+      // The reporter shows its lane while the test runs: the window watches it, frames of the running test coming, and
+      // the layers it asks beside them.
       expect(running.intents).toContain('watch');
-      expect(await send({ type: 'watch', ref: REF, lane: running.parallelIndex, on: true })).toMatchObject({
-        ok: true,
-      });
+      expect(
+        await send({ type: 'watch', ref: REF, lane: running.parallelIndex, on: true, layers: ['calls', 'filmstrip'] }),
+      ).toMatchObject({ ok: true });
       const frame = await waitFor(() => laneFrames()[0]);
       expect(frame).toMatchObject({
         ref: REF,
@@ -499,6 +500,15 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         height: 600,
       });
       expect(Buffer.from(frame.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      // The call its test is in, and an image of its filmstrip for each call that ended, come to the window's stream;
+      // the page's text, which it did not ask, does not.
+      const layers = () => events.filter((e) => e.type === 'lane-layer');
+      const of = { ref: REF, lane: running.parallelIndex, worker: running.worker, test: running.test!.id };
+      expect(await waitFor(() => layers().find((e) => e.layer === 'calls'))).toMatchObject({ ...of, layer: 'calls' });
+      const thumb = await waitFor(() => layers().find((e) => e.layer === 'filmstrip'));
+      expect(thumb).toMatchObject({ ...of, layer: 'filmstrip' });
+      expect(Buffer.from((thumb as { data: string }).data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect(layers().filter((e) => e.layer === 'text' || e.layer === 'events')).toEqual([]);
 
       // Paused: the window watches the stop through its lane, so the stop takes its input with no view of its own.
       expect(await send({ type: 'runControl', ref: REF, worker: null, action: 'pause', since: null })).toMatchObject({

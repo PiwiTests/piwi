@@ -38,7 +38,7 @@ describe('a view the instance refused', () => {
 
   test('says the run has as many views as it allows', () => {
     expect(liveViewRefusalText({ ...open, viewers: 16 }, view)).toBe(
-      '16 people at most watch one run at a time, and as many views of this run are open. Try again once one closes.',
+      '16 pages at most watch one run at a time, and as many watch this run now. Try again once one closes.',
     );
   });
 });

@@ -299,9 +299,9 @@ describe('the request host', () => {
     cleanups.push(instance.close);
     const { made, statuses } = host(instance.url);
     made.start();
-    await until(() => opened >= 2);
+    // The instance counts the second stream as it opens; the host says it is online once it hears the answer.
+    await until(() => opened >= 2 && statuses[statuses.length - 1] === 'online');
     expect(statuses).toContain('offline');
-    expect(statuses[statuses.length - 1]).toBe('online');
   });
 
   test('stops for good once the key is revoked, on the stream or by a refusal', async () => {

@@ -157,6 +157,7 @@ describe('the global shortcut’s rule', () => {
       client: null,
       desktop: true,
       lanes: true,
+      layers: true,
       presence: true,
       holds,
       stops: false,
@@ -432,6 +433,7 @@ describe('what a stop takes from the window', () => {
           client: null,
           desktop: false,
           lanes: false,
+          layers: false,
           presence: false,
           holds: false,
           stops: false,
@@ -490,6 +492,22 @@ describe('Watch, as the worker reads it', () => {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
   });
+
+  it('names the layers of the lane the window takes, those the worker knows, each once, in their order', () => {
+    expect(
+      parseRunsRequest({ ...command, what: 'watch', lane: 2, on: true, layers: ['filmstrip', 'calls', 'calls'] }),
+    ).toEqual({ ...command, what: 'watch', lane: 2, on: true, layers: ['calls', 'filmstrip'] });
+    expect(parseRunsRequest({ ...command, what: 'watch', lane: 2, on: true, layers: ['newer'] })).toMatchObject({
+      layers: [],
+    });
+    for (const bad of [
+      { ...command, what: 'watch', lane: 1, on: true, layers: 'calls' },
+      // Only Watch names layers.
+      { ...command, what: 'share', on: true, layers: ['calls'] },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
 });
 
 describe('a lane watched while it runs', () => {
@@ -514,6 +532,7 @@ describe('a lane watched while it runs', () => {
           client: null,
           desktop: false,
           lanes: true,
+          layers: false,
           presence: false,
           holds: false,
           stops: false,
@@ -545,6 +564,7 @@ describe('what the runs ask of the person', () => {
       client: null,
       desktop: false,
       lanes: true,
+      layers: false,
       presence: false,
       holds: false,
       stops: false,

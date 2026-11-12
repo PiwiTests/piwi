@@ -18,9 +18,8 @@ import type { PiwiContext } from './context.js';
 import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
 import type { LiveRun, LiveTestStatus, Notice, RepeatVerdict, RunEnded } from './protocol.js';
 import {
-  EventStream,
   InstanceStream,
-  isRunEvent,
+  RunStreams,
   type EventStreamOptions,
   type InstanceEvent,
   type RunEvent,
@@ -60,7 +59,7 @@ function editorRef(run: RunDetails): string | null {
 }
 
 /** A run's counts as the status bars show them, from its details or an event of its stream; null without counts. */
-function countsOf(data: Record<string, unknown>): Pick<LiveRun, 'done' | 'total' | 'failed'> | null {
+export function countsOf(data: Record<string, unknown>): Pick<LiveRun, 'done' | 'total' | 'failed'> | null {
   if (typeof data.totalTests !== 'number' && typeof data.passedTests !== 'number') return null;
   const n = (key: string) => (typeof data[key] === 'number' ? (data[key] as number) : 0);
   const done = n('passedTests') + n('failedTests') + n('flakyTests') + n('skippedTests') + n('didNotRunTests');
@@ -81,7 +80,7 @@ function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveR
 }
 
 /** Whether a run is a CI run's: its origin says so, else, for a run that names none, the CI it names. */
-function isCiRun(run: RunDetails): boolean {
+export function isCiRun(run: RunDetails): boolean {
   const origin = parseRunOrigin(run.metadata?.[RUN_ORIGIN_METADATA_KEY]);
   if (origin) return origin.kind === 'ci' || origin.kind === 'ci-rerun';
   const ci = run.metadata?.ci;
@@ -107,13 +106,17 @@ function passedAfterFailure(data: Record<string, unknown>): boolean {
   return earlier.length > 0 ? isFlakyResult('passed', earlier) : retries > 0;
 }
 
-/** A test's end as the gutter shows it: a pass after a failed attempt is flaky; null for an outcome it does not show. */
-function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
+/**
+ * A test's end as the gutter shows it: a pass after a failed attempt is flaky; null for an outcome it does not show. A
+ * time-out is `timedOut` as the reporter sends it live, `timedout` as the instance stores it and sends it again.
+ */
+export function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
   switch (data.status) {
     case 'passed':
       return passedAfterFailure(data) ? 'flaky' : 'passed';
     case 'failed':
     case 'timedOut':
+    case 'timedout':
     case 'interrupted':
       return 'failed';
     case 'skipped':
@@ -260,6 +263,12 @@ export interface RunWatchOptions {
    * (`RunSessions.endedAtStopOf`): `runEnded` says it beside the skipped.
    */
   endedAtStop?: (ref: string) => number;
+  /** The runs' streams, which the service shares with the CI sessions; one of the watch's own when not given. */
+  runStreams?: RunStreams;
+  /** A run of a context's project started, as its details read then: any run, the context's or not. */
+  runStarted?: (context: PiwiContext, run: RunDetails) => void;
+  /** An event of the instance's stream about a context's project, its tally (`run-progress`) included. */
+  instanceEvent?: (context: PiwiContext, event: InstanceEvent) => void;
 }
 
 /** A command built with a ref, and the runs carrying that ref the instance holds. */
@@ -313,7 +322,8 @@ interface RepeatTally extends RepeatCount {
 /** The live run of a context, followed through its own stream. */
 interface Followed {
   runId: number;
-  stream: EventStream;
+  /** Stops following the run's stream. */
+  unfollow: () => void;
   /** Set while a test's end waits for the counts that follow it. */
   countsTimer: ReturnType<typeof setTimeout> | null;
   /** When the run's details were last read for its counts. */
@@ -338,8 +348,11 @@ export class RunWatch {
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
   private progressAt = 0;
   private disposed = false;
+  private readonly runStreams: RunStreams;
 
-  constructor(private readonly options: RunWatchOptions) {}
+  constructor(private readonly options: RunWatchOptions) {
+    this.runStreams = options.runStreams ?? new RunStreams(options.stream);
+  }
 
   /** One stream per instance and key the contexts read: the new ones are opened, those no context reads closed. */
   sync(): void {
@@ -521,6 +534,7 @@ export class RunWatch {
     for (const context of this.options.contexts()) {
       if (!context.client || context.project?.id !== event.projectId) continue;
       if (streamKey(context.client.connection) !== key) continue;
+      this.options.instanceEvent?.(context, event);
       switch (event.type) {
         case 'run-started':
         case 'run-initializing':
@@ -552,6 +566,7 @@ export class RunWatch {
     if (!client || context.live?.runId === runId) return;
     const run = await client.runDetails(runId).catch(() => null);
     if (!run || this.disposed || context.client?.connection.serverUrl !== client.connection.serverUrl) return;
+    this.options.runStarted?.(context, run);
     const ref = editorRef(run);
     const w = ref ? this.watches.get(ref) : undefined;
     if (w && w.context === context && this.current(w)) {
@@ -585,14 +600,7 @@ export class RunWatch {
     if (!client) return;
     this.followed.set(context, {
       runId,
-      stream: new EventStream(
-        (signal) => client.runEvents(runId, signal),
-        (data) => {
-          if (isRunEvent(data)) this.onRunEvent(context, runId, data);
-        },
-        undefined,
-        { ...this.options.stream, notFoundRetryMs: null },
-      ),
+      unfollow: this.runStreams.follow(client, runId, (event) => this.onRunEvent(context, runId, event)),
       countsTimer: null,
       detailsAt: 0,
     });
@@ -601,7 +609,7 @@ export class RunWatch {
   private unfollow(context: PiwiContext): void {
     const followed = this.followed.get(context);
     if (!followed) return;
-    followed.stream.close();
+    followed.unfollow();
     if (followed.countsTimer) clearTimeout(followed.countsTimer);
     this.followed.delete(context);
   }

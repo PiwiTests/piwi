@@ -326,7 +326,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes', 'hold', 'presence', 'stop'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'],
     });
     client.socket.close();
   });
@@ -914,7 +914,7 @@ describe('stopping a whole run', () => {
     }))!;
     try {
       const { welcome, answer } = await stopOn(own, 'ed-1');
-      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'stop'] });
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers'] });
       expect(answer).toEqual({ type: 'answer', id: 4, ok: true, message: 'Test Editor stops the run.' });
       expect(stopped).toEqual(['ed-1']);
     } finally {
@@ -926,7 +926,7 @@ describe('stopping a whole run', () => {
     const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
     try {
       const { welcome, answer } = await stopOn(own, 'ed-1');
-      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence'] });
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'layers'] });
       expect(answer).toEqual({
         type: 'answer',
         id: 4,

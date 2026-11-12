@@ -1,20 +1,9 @@
 /**
- * What the run page reads of a live run's live view: whether the run holds a key (`live-view`), each connected worker's
- * state, which the run's event stream carries (`live-worker`), and the messages of one worker's view (`/api/test-runs/:id/live-view/watch`). The worker's
- * side of the protocol is `@piwitests/core/live-view`.
+ * What the run page reads of a live run's live view: whether the run holds a key (`live-view`), and each connected
+ * worker's state, which the run's event stream carries (`live-worker`). The page's watch of the run
+ * (`/api/test-runs/:id/live-view/watch`) and the worker's side of the protocol are `@piwitests/core/live-view`'s.
  */
-import {
-  isEpochMs,
-  readLiveCall,
-  readLiveCallLog,
-  readLiveTestOutcome,
-  readLiveTestTitle,
-  type LiveCall,
-  type LiveCallLog,
-  type LiveStop,
-  type LiveTestOutcome,
-  type LiveWorkerId,
-} from '@piwitests/core/live-view';
+import type { LiveStop, LiveViewEnd, LiveWorkerId } from '@piwitests/core/live-view';
 
 export {
   liveWorkerKey,
@@ -22,6 +11,8 @@ export {
   type LiveCallLog,
   type LiveStop,
   type LiveTestOutcome,
+  type LiveViewEnd,
+  type LiveViewerMessage,
 } from '@piwitests/core/live-view';
 
 /**
@@ -111,72 +102,6 @@ export function parseLiveWatchAddress(value: unknown): LiveLane | null {
   const number = Number(match[2]);
   if (number < 1 || number > 10_000 || (shard !== null && shard < 1)) return null;
   return { shard, slot: number - 1 };
-}
-
-/**
- * Why a view ended: its test ended, its worker left, the run ended, the project's live view was turned off, the person
- * who watched it opened a further one of the run, past their share, in its place (`replaced`), or the developer who
- * shared the run from their machine stopped sharing it (`unshared`).
- */
-export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | 'replaced' | 'unshared';
-
-/** A message of one worker's view, to the person watching it. */
-export type LiveViewerMessage =
-  /**
-   * A frame of the test's page, a JPEG in base64, the call it was taken at, the title of its test and, from a reporter
-   * that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's
-   * clock.
-   */
-  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number }
-  /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */
-  | { type: 'call-log'; log: LiveCallLog; test: string | null }
-  /** Why no frame shows now. */
-  | { type: 'refused'; message: string }
-  /** The test ended, how when its worker says (`outcome`): a view that follows the worker's lane stays for the next. */
-  | { type: 'test-ended'; outcome: LiveTestOutcome | null }
-  /** The view ended, with how its test ended when that is why: the stream closes after it. */
-  | { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null };
-
-const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced', 'unshared'];
-
-/** A message of a view's stream (the `data` of one event); null when it is not one. */
-export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(data);
-  } catch {
-    return null;
-  }
-  if (typeof value !== 'object' || value === null) return null;
-  const message = value as Record<string, unknown>;
-  switch (message.type) {
-    case 'frame':
-      if (typeof message.data !== 'string' || !message.data) return null;
-      return {
-        type: 'frame',
-        data: message.data,
-        call: message.call ? readLiveCall(message.call) : null,
-        test: readLiveTestTitle(message.test),
-        ...(isEpochMs(message.at) ? { at: message.at } : {}),
-      };
-    case 'call-log': {
-      const log = readLiveCallLog(message.log);
-      return log ? { type: 'call-log', log, test: readLiveTestTitle(message.test) } : null;
-    }
-    case 'refused':
-      return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;
-    case 'test-ended':
-      return { type: 'test-ended', outcome: readLiveTestOutcome(message.outcome) };
-    case 'end': {
-      if (!ENDS.includes(message.reason as string)) return null;
-      const outcome = readLiveTestOutcome(message.outcome);
-      return outcome
-        ? { type: 'end', reason: message.reason as LiveViewEnd, outcome }
-        : { type: 'end', reason: message.reason as LiveViewEnd };
-    }
-    default:
-      return null;
-  }
 }
 
 /** The sentence a view says as it ends. */

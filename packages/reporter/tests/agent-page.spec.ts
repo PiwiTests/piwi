@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, expect as expectPage, type Browser, type Page } from '@playwright/test';
+import { withoutFieldSecrets } from '@piwitests/core/mask';
 import { MAX_ELEMENT_TEXT } from '@piwitests/core/run-channel';
 import { pauseAnswered, probeElementAttrs, showPauseBar } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
-import { actOnRef, readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
+import { actOnRef, readSnapshot, refLocators } from '../src/internal/capture/agent-page.js';
 import { maskedImage } from '../src/internal/capture/live-mask.js';
 
 /**

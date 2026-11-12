@@ -1,9 +1,9 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { eligibleRunSql } from '../run-eligibility';
-import { STUCK_HISTORY } from '../stuck-tests';
-import { joinSuitePath } from '../utils/suites';
+import { STUCK_HISTORY, usualDurationKey, usualDurationMs } from '../stuck-tests';
+import { joinSuitePath, splitSuitePath } from '../utils/suites';
 import { storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
 
 /** A running test as its begin event names it. */
@@ -69,4 +69,100 @@ export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Prom
     passingDurations: rows.flatMap((row) => (typeof row.duration === 'number' ? [row.duration] : [])),
     owner: testCase.owner ?? null,
   };
+}
+
+/** A test's usual duration in a run's project, as `runUsualDurations` lists it. */
+export interface UsualDuration {
+  filePath: string;
+  suitePath: string[];
+  title: string;
+  /** The Playwright project its passes ran in; null for none. */
+  browser: string | null;
+  /** The longest of its last `STUCK_HISTORY` passing executions on that project, in ms (`usualDurationMs`). */
+  usualMs: number;
+}
+
+/** How many of a project's newest runs eligible as a baseline the usual durations read. */
+export const USUAL_DURATION_RUNS = 200;
+
+/**
+ * The usual duration of every test of a run's project on each Playwright project it ran in, from the passing
+ * executions the Stuck? rule reads (`runningTestHistory`: the last `STUCK_HISTORY` of each, in runs eligible as a
+ * baseline), within the project's newest `USUAL_DURATION_RUNS` such runs, in one query: the run page's Timeline draws
+ * it behind a running attempt. A test with fewer passes than the rule needs is left out. Where two tests share a file,
+ * describe path and title, the one an external ID names stands for the name, as `runningTestHistory` picks it, with
+ * too few passes too. Empty for an unknown run.
+ */
+export async function runUsualDurations(db: DrizzleDB, runId: number): Promise<{ tests: UsualDuration[] }> {
+  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return { tests: [] };
+  const browserKey = sql<string>`COALESCE(${testRunsCases.browserName}, '')`;
+  const recentRuns = db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, run.projectId), eligibleRunSql('baseline')))
+    .orderBy(desc(testRuns.id))
+    .limit(USUAL_DURATION_RUNS);
+  const ranked = db.$with('ranked').as(
+    db
+      .select({
+        testCaseId: testRunsCases.testCaseId,
+        browser: sql<string>`COALESCE(${testRunsCases.browserName}, '')`.as('browser_key'),
+        duration: testRunsCases.duration,
+        rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRunsCases.testCaseId}, ${browserKey} ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC)`.as(
+          'rn',
+        ),
+      })
+      .from(testRunsCases)
+      .where(
+        and(
+          inArray(testRunsCases.testRunId, recentRuns),
+          sql`${testRunsCases.status} = 'passed'`,
+          sql`${testRunsCases.duration} IS NOT NULL`,
+        ),
+      ),
+  );
+  const rows = await db
+    .with(ranked)
+    .select({
+      testCaseId: ranked.testCaseId,
+      browser: ranked.browser,
+      duration: ranked.duration,
+      filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
+      title: testCases.title,
+      externalId: testCases.externalId,
+    })
+    .from(ranked)
+    .innerJoin(testCases, eq(testCases.id, ranked.testCaseId))
+    .where(sql`${ranked.rn} <= ${STUCK_HISTORY}`);
+
+  const byTest = new Map<string, { row: (typeof rows)[number]; durations: number[] }>();
+  for (const row of rows) {
+    const key = `${row.testCaseId}\x00${row.browser}`;
+    const entry = byTest.get(key);
+    if (entry) entry.durations.push(Number(row.duration));
+    else byTest.set(key, { row, durations: [Number(row.duration)] });
+  }
+  // The test an external ID names first, then the newest, as `runningTestHistory` picks one of a name.
+  const entries = [...byTest.values()].sort(
+    (a, b) =>
+      Number(a.row.externalId == null) - Number(b.row.externalId == null) || b.row.testCaseId - a.row.testCaseId,
+  );
+  const tests = new Map<string, UsualDuration | null>();
+  for (const { row, durations } of entries) {
+    const test: UsualDuration = {
+      filePath: row.filePath,
+      suitePath: splitSuitePath(row.suitePath),
+      title: row.title,
+      browser: row.browser || null,
+      usualMs: 0,
+    };
+    const key = usualDurationKey(test);
+    // The test picked for a name keeps it, with too few passes for the rule too.
+    if (tests.has(key)) continue;
+    const usualMs = usualDurationMs(durations);
+    tests.set(key, usualMs === null ? null : { ...test, usualMs });
+  }
+  return { tests: [...tests.values()].filter((test): test is UsualDuration => test !== null) };
 }

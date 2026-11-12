@@ -21,6 +21,8 @@ describe("a run's page", () => {
       { runUrl: '//evil.example/test-runs/7' },
       { runUrl: 'https://piwi.example.com/test-runs/7) [x](https://evil.example' },
       { runUrl: 'https://piwi.example.com/test runs/7' },
+      { runUrl: '/test-runs/7\u001b]0;pwned\u0007' },
+      { runUrl: '/test-runs/7\u009b2J' },
     ]) {
       expect(answeredRunUrl(answer, 'http://piwi:3000', 7), JSON.stringify(answer)).toBe(own);
     }

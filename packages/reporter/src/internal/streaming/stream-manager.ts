@@ -15,6 +15,7 @@ import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { answeredRunUrl } from '../support/run-url.js';
 import { requestedRunTarget } from '../config/env.js';
 import { formatDuration } from '../flake/lab.js';
+import { announceLiveRun } from '../support/ci-output.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
@@ -378,7 +379,7 @@ export class StreamManager {
       );
     } else this.logger.debug(`Streaming enabled. Run ID: ${runId}`);
     // The global setup printed it already for the run it registered.
-    if (this._runUrl !== shown) this.logger.info(`View live progress: ${this._runUrl}`);
+    if (this._runUrl !== shown) announceLiveRun(this._runUrl, this.logger);
     this.onOpened?.(runId, this._runUrl);
     this.lastActivityAt = Date.now();
     this.scheduleHeartbeat();
