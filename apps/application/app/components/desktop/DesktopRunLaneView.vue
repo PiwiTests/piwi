@@ -15,7 +15,10 @@
  * far**, in the card's head while the lane is watched and its worker runs a test whose reporter answers the ask
  * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer
  * opens, on the machine the run runs on (`openTrace`): its sentence shows under the test as the worker's other answers
- * do (`said`).
+ * do (`said`). **Inspect**, beside it, shows the page of that test at each of its calls under the image
+ * (`DesktopRunLaneInspect`), which the app's server reads from the test's own trace while the window has it open
+ * (`setInspect`), following the lane's next tests, until it is turned off, the lane is no longer watched or the card
+ * goes.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -258,6 +261,27 @@ async function openTrace(): Promise<void> {
   emit('said', answer, {});
 }
 
+// ── Inspect ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Inspect is open on the lane: the server reads its running test's pages from its own trace. */
+const inspecting = computed(() => !!hub.inspectOf(runRef.value, lane.value));
+
+/** Opens Inspect on the lane, or closes it; a refusal shows under the test as the worker's other answers do. */
+async function toggleInspect(): Promise<void> {
+  const on = !inspecting.value;
+  if (on && !traceable.value) return;
+  const answer = await hub.setInspect(runRef.value, lane.value, on);
+  if (!answer.ok) emit('said', answer, {});
+}
+
+// Inspect goes with the lane's watch, and with the card.
+watch(watched, (on) => {
+  if (!on && inspecting.value) void hub.setInspect(runRef.value, lane.value, false);
+});
+onBeforeUnmount(() => {
+  if (inspecting.value) void hub.setInspect(runRef.value, lane.value, false);
+});
+
 /** Escape on the image: Interact goes off, and the keyboard to its toggle. */
 async function leave(): Promise<void> {
   void interactOff();
@@ -292,7 +316,7 @@ const note = computed((): { icon?: string; text: string } | null => {
     :data-watching="watched || undefined"
     data-shot="desktop-run-lane"
   >
-    <template v-if="stop || traceable" #tools>
+    <template v-if="stop || traceable || inspecting" #tools>
       <template v-if="stop">
         <UButton
           data-focus="page:watch"
@@ -352,6 +376,20 @@ const note = computed((): { icon?: string; text: string } | null => {
       >
         {{ desktopSay('runs_openTrace') }}
       </UButton>
+      <UButton
+        v-if="traceable || inspecting"
+        data-focus="page:inspect"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-scan-search"
+        :aria-pressed="inspecting"
+        :class="inspecting ? PRESSED_TOGGLE_CLASS : ''"
+        title="The page at each call of this test, as a document, with a locator picker, read from its own trace on this machine"
+        @click="toggleInspect"
+      >
+        Inspect
+      </UButton>
     </template>
     <DesktopRunLiveImage
       ref="liveImage"
@@ -379,6 +417,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" aria-hidden="true" />
       {{ note.text }}
     </p>
+    <DesktopRunLaneInspect v-if="inspecting && watched" :session="session" :worker="worker" />
     <template v-if="$slots.foot" #foot>
       <slot name="foot" />
     </template>

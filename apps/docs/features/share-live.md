@@ -91,6 +91,9 @@ an image. A test that stands stopped is never marked [**Stuck?**](./stuck-tests)
 
 ## From the desktop app
 
+A **Re-run** in a folder whose `.env` or Playwright config names your team's instance reports to it, and can be
+shared: **Share live**, above the run's workers, asks first the first time since the app started.
+
 A run that reports to the [desktop app](./desktop-runs) itself (a reproduction, a bisect, a **Re-run** in a folder
 that names no instance, a run your editor started) cannot be shared: the app hands out no live view key, since no
 teammate reaches it. Its tray offers no **Share live** for it, the app's project settings have no **Live view**

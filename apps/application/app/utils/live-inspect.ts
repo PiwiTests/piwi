@@ -1,12 +1,16 @@
 import { liveWorkerKey, type LiveViewEnd, type LiveViewerMessage, type LiveWorkerId } from '@piwitests/core/live-view';
 import type { SnapshotPhase } from '@piwitests/core/live-inspect';
+import type { DesktopInspectCalls } from '#shared/desktop-runs';
 
 /**
- * The lane panel's **Inspect**, as a model the panel renders: the snapshots of the worker's page its watch heard of
- * (`@piwitests/core/live-inspect`), of the test the view shows and of the lane's next one (`InspectHeard`), each call
- * they are of with the moments heard (before it, at its action, after it), the call and moment shown (the latest call
- * while the view follows it, else the one the reader chose), the address of its page on the instance, and what the
- * view says once it ended. Nothing here holds a page: the instance renders each one.
+ * **Inspect**, as a model `LaneInspect` renders: the snapshots of the worker's page heard of
+ * (`@piwitests/core/live-inspect`), each call they are of with the moments heard (before it, at its action, after
+ * it), the call and moment shown (the latest call while the view follows it, else the one the reader chose), and where
+ * its pages come from and what it says (`InspectSource`). Two surfaces show it: the run page's lane panel, whose watch
+ * hears each snapshot the worker sends the instance, of the test the view shows and of the lane's next one
+ * (`InspectHeard`), its pages on the instance (`teamInspectSource`); and the desktop app's Local runs tray, whose
+ * window hears each snapshot its server read from the test's own trace (`DesktopLaneInspect`), its pages on that server
+ * (`desktopInspectSource`). Nothing here holds a page: the server renders each one.
  */
 
 /** What a watch hears of a snapshot of its worker's page, without its JSON. */
@@ -175,6 +179,24 @@ export function inspectPageUrl(
 }
 
 /**
+ * The address of the page at a moment of a lane the desktop app's window `viewer` has Inspect open on, as its server
+ * serves it: the read-only render, the picker's (`mode` left for the picker to add) or its viewport (`json`).
+ */
+export function desktopInspectPageUrl(
+  base: string,
+  viewer: string,
+  at: { ref: string; lane: number },
+  moment: InspectMoment,
+  as: 'readonly' | 'picker' | 'json',
+): string {
+  const query = new URLSearchParams({ viewer, ref: at.ref, lane: String(at.lane), call: moment.call });
+  query.set('phase', moment.phase);
+  if (as === 'readonly') query.set('mode', 'readonly');
+  if (as === 'json') query.set('format', 'json');
+  return `${base.replace(/\/$/, '')}/api/desktop/runs/inspect/page?${query}`;
+}
+
+/**
  * Why the lane panel's view ended, as Inspect says it: the run ended, the live view was turned off, the test ended,
  * or the view closed.
  */
@@ -195,3 +217,116 @@ export const INSPECT_ENDED_TEXT: Record<InspectEnd, string> = {
   'test-ended': 'The test ended: the next test’s pages come as it runs, in the worker’s view of it.',
   closed: 'The view closed: Inspect shows a test’s pages while the worker’s view of it is open.',
 };
+
+/** What Inspect says, by where its pages come from. */
+export interface InspectWords {
+  /** While the connection its pages are read through is not open. */
+  connecting: string;
+  /** Why **Pick a locator** is off meanwhile. */
+  pickConnecting: string;
+  /** While no page of the test came yet. */
+  waiting: string;
+  /** Once the test ended, while the view waits for the lane's next. */
+  testEnded: string;
+  /** Once the view ended, by why. */
+  ended: Record<InspectEnd, string>;
+  /** Under the view: where its pages come from, and what is kept of them. */
+  note: string;
+  /** Where the picker says the page came from: `Rendered from the page <from> at <call>`. */
+  from: string;
+}
+
+/**
+ * Where **Inspect** reads its pages, and what it says: the address of the page at a moment (`pageUrl`: the read-only
+ * render, the picker's, or its viewport as JSON), null while the connection it reads them through is not open.
+ */
+export interface InspectSource {
+  pageUrl: ((moment: InspectMoment, as: 'readonly' | 'picker' | 'json') => string) | null;
+  words: InspectWords;
+}
+
+/** What the run page's Inspect says: the worker sends the pages, and the instance keeps them. */
+export const TEAM_INSPECT_WORDS: InspectWords = {
+  connecting: 'Waiting for the view’s connection…',
+  pickConnecting: 'The view’s connection is opening again: pick a locator once it is open.',
+  waiting:
+    'Waiting for the page at the test’s next call. The worker sends one before each call, at its action and after it.',
+  testEnded: INSPECT_TEST_ENDED,
+  ended: INSPECT_ENDED_TEXT,
+  note: 'The worker sends these pages only while Inspect is open, without their scripts and with the values of their secret fields removed. The instance keeps them in memory until the run ends.',
+  from: 'the worker sent',
+};
+
+/** The run page's Inspect, through the watch `watchId` of run `runId` (null while it is not open). */
+export function teamInspectSource(base: string, runId: number, watchId: string | null): InspectSource {
+  return {
+    pageUrl: watchId === null ? null : (moment, as) => inspectPageUrl(base, runId, watchId, moment, as),
+    words: TEAM_INSPECT_WORDS,
+  };
+}
+
+/** What the tray's Inspect says: the desktop app reads the pages from the test's own trace, on this machine. */
+export const DESKTOP_INSPECT_VIEW_WORDS: InspectWords = {
+  connecting: 'Waiting for the window’s connection to the runs…',
+  pickConnecting: 'The window’s connection to the runs is opening again: pick a locator once it is open.',
+  waiting:
+    'Waiting for the page at the test’s next call. Its trace takes one before each call, at its action and after it.',
+  testEnded: 'The test ended: the desktop app let its pages go. The next test’s come as it runs.',
+  ended: {
+    'run-ended': 'The run ended: the desktop app let its pages go.',
+    off: 'Inspect closed: the desktop app let this test’s pages go.',
+    'test-ended': 'The test ended: the next test’s pages come as it runs.',
+    closed: 'Inspect closed: the desktop app let this test’s pages go.',
+  },
+  note: 'The desktop app reads these pages from the test’s own trace on this machine while Inspect is open, without their scripts and with the values of their secret fields removed, and keeps them in memory until the test ends.',
+  from: 'its trace took',
+};
+
+/** The tray's Inspect of the lane `at`, through the window's stream `viewer` (null while it is not open). */
+export function desktopInspectSource(
+  base: string,
+  viewer: string | null,
+  at: { ref: string; lane: number },
+): InspectSource {
+  return {
+    pageUrl: viewer === null ? null : (moment, as) => desktopInspectPageUrl(base, viewer, at, moment, as),
+    words: DESKTOP_INSPECT_VIEW_WORDS,
+  };
+}
+
+/**
+ * What the tray heard for Inspect of a lane: the attempt its server follows (`attempt`, the lane's running test and
+ * its retry, null between tests), counted as it changes (`turn`, which starts the view afresh), the snapshots read of
+ * it, and why no page of it shows, the latest of the two winning.
+ */
+export interface DesktopLaneInspect {
+  attempt: string | null;
+  turn: number;
+  heard: HeardSnapshot[];
+  refused: string | null;
+}
+
+/** Nothing heard yet: Inspect just opened on the lane. */
+export const NO_DESKTOP_INSPECT: DesktopLaneInspect = { attempt: null, turn: 0, heard: [], refused: null };
+
+/**
+ * `inspect` with what the server said of the lane (`event`, or what it listed as the window opened Inspect, `calls`): of
+ * another attempt, the view starts afresh; a snapshot of it is heard once; why none shows replaces what showed, until a
+ * snapshot comes; the attempt alone, said again, clears why none showed.
+ */
+export function hearDesktopInspect(
+  inspect: DesktopLaneInspect,
+  event: { attempt: string | null; snapshot?: HeardSnapshot; refused?: string } | DesktopInspectCalls,
+): DesktopLaneInspect {
+  let next =
+    event.attempt === inspect.attempt
+      ? inspect
+      : { attempt: event.attempt, turn: inspect.turn + 1, heard: [], refused: null };
+  if ('heard' in event) {
+    for (const snapshot of event.heard) next = { ...next, heard: addHeardSnapshot(next.heard, snapshot) };
+    return event.refused === null ? next : { ...next, refused: event.refused };
+  }
+  if (event.snapshot) return { ...next, heard: addHeardSnapshot(next.heard, event.snapshot), refused: null };
+  if (event.refused) return { ...next, refused: event.refused };
+  return next === inspect ? { ...inspect, refused: null } : next;
+}

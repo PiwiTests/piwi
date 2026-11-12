@@ -1,15 +1,22 @@
 import { describe, expect, test } from 'vitest';
 import {
+  DESKTOP_INSPECT_VIEW_WORDS,
   INSPECT_ENDED_TEXT,
   MAX_HEARD_SNAPSHOTS,
+  NO_DESKTOP_INSPECT,
   NO_INSPECT_HEARD,
+  TEAM_INSPECT_WORDS,
   addHeardSnapshot,
+  desktopInspectPageUrl,
+  desktopInspectSource,
+  hearDesktopInspect,
   hearInspect,
   inspectCalls,
   inspectEnd,
   inspectPageUrl,
   nextInspectTest,
   shownMoment,
+  teamInspectSource,
   type HeardSnapshot,
   type InspectHeard,
 } from '~/utils/live-inspect';
@@ -156,5 +163,64 @@ describe('Inspect in the lane panel', () => {
     expect(inspectPageUrl('', 7, 'w', moment, 'picker')).toBe(
       '/api/test-runs/7/live-view/watch/w/snapshot?worker=3&shard=2&call=call%404&phase=action',
     );
+  });
+});
+
+describe('Inspect’s sources', () => {
+  const moment = { worker: { shard: null, worker: 5 }, call: 'call@4', title: 'Click', phase: 'after' as const };
+
+  test('reads the run page’s pages on the instance through its watch, none while the watch is not open', () => {
+    const team = teamInspectSource('/demo/', 7, 'w1');
+    expect(team.words).toBe(TEAM_INSPECT_WORDS);
+    expect(team.pageUrl!(moment, 'json')).toBe(inspectPageUrl('/demo/', 7, 'w1', moment, 'json'));
+    expect(teamInspectSource('/', 7, null).pageUrl).toBeNull();
+  });
+
+  test('reads the tray’s pages on the desktop app’s server through the window’s stream, by run and lane', () => {
+    const at = { ref: 'desktop-41', lane: 2 };
+    expect(desktopInspectPageUrl('/', 'f'.repeat(32), at, moment, 'readonly')).toBe(
+      `/api/desktop/runs/inspect/page?viewer=${'f'.repeat(32)}&ref=desktop-41&lane=2&call=call%404&phase=after&mode=readonly`,
+    );
+    expect(desktopInspectPageUrl('/', 'v', at, moment, 'picker')).toBe(
+      '/api/desktop/runs/inspect/page?viewer=v&ref=desktop-41&lane=2&call=call%404&phase=after',
+    );
+    const desktop = desktopInspectSource('/', null, at);
+    expect(desktop.pageUrl).toBeNull();
+    expect(desktop.words).toBe(DESKTOP_INSPECT_VIEW_WORDS);
+    // Its words say where the pages come from: never the instance, nor a worker that sends them.
+    for (const text of [
+      DESKTOP_INSPECT_VIEW_WORDS.note,
+      DESKTOP_INSPECT_VIEW_WORDS.testEnded,
+      DESKTOP_INSPECT_VIEW_WORDS.waiting,
+    ]) {
+      expect(text).not.toMatch(/instance|worker sends/);
+    }
+  });
+
+  test('hears the tray’s Inspect: the attempt it follows, each snapshot once, why none shows, until the next attempt', () => {
+    const opened = hearDesktopInspect(NO_DESKTOP_INSPECT, { attempt: 't1#0' });
+    expect(opened).toEqual({ attempt: 't1#0', turn: 1, heard: [], refused: null });
+    const untraced = 'This test’s attempt is not traced.';
+    const refused = hearDesktopInspect(opened, { attempt: 't1#0', refused: untraced });
+    expect(refused.refused).toBe(untraced);
+    // The same attempt said again: why none showed goes.
+    expect(hearDesktopInspect(refused, { attempt: 't1#0' })).toMatchObject({ turn: 1, refused: null });
+    const one = hearDesktopInspect(refused, { attempt: 't1#0', snapshot: heard('call@1', 'after') });
+    expect(one).toMatchObject({ turn: 1, refused: null });
+    expect(hearDesktopInspect(one, { attempt: 't1#0', snapshot: heard('call@1', 'after') }).heard).toHaveLength(1);
+    // What the server listed as Inspect opened, with what was heard already, once each.
+    const listed = hearDesktopInspect(one, {
+      attempt: 't1#0',
+      heard: [heard('call@1', 'after'), heard('call@2', 'before')],
+      refused: null,
+    });
+    expect(listed.heard.map((h) => h.call)).toEqual(['call@1', 'call@2']);
+    // Another attempt, or none: the view starts afresh.
+    expect(hearDesktopInspect(listed, { attempt: null })).toEqual({ attempt: null, turn: 2, heard: [], refused: null });
+    expect(hearDesktopInspect(listed, { attempt: 't2#0', snapshot: heard('call@9', 'before') })).toMatchObject({
+      attempt: 't2#0',
+      turn: 2,
+      heard: [expect.objectContaining({ call: 'call@9' })],
+    });
   });
 });
