@@ -2837,7 +2837,7 @@ describe('runs as they happen', () => {
     const ended = await waitFor(() => ciHeard.find((s) => s.runId === 60 && s.ended));
     expect(ended).toMatchObject({ progress: { status: 'passed' }, watchable: false });
     expect(ended.tests[0]).toMatchObject({ at: null, watch: null });
-    await waitFor(() => (statuses.at(-1)?.contexts[0]?.live === null ? true : undefined));
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
   });
 
   test('a run started here says what it changed once it ended and was read', async () => {

@@ -201,7 +201,7 @@ describe('the CI sessions', () => {
       stepCategory: 'fixture',
     });
     await settle();
-    const running = heard.at(-1)!;
+    const running = heard[heard.length - 1]!;
     expect(running.watchable).toBe(true);
     expect(running.tests).toEqual([
       {
@@ -233,7 +233,7 @@ describe('the CI sessions', () => {
       stepCategory: 'pw:api',
     });
     await settle();
-    expect(heard.at(-1)!.tests[0]!.at).toMatchObject({ uri: uri('tests/checkout.spec.ts'), line: 3 });
+    expect(heard[heard.length - 1]!.tests[0]!.at).toMatchObject({ uri: uri('tests/checkout.spec.ts'), line: 3 });
 
     // It ends timed out, as the instance stores it, and the tally comes from the instance's stream.
     send(78, 'test-completed', { ...begin, status: 'timedout' });
@@ -248,13 +248,18 @@ describe('the CI sessions', () => {
       didNotRunTests: 0,
     });
     await settle();
-    const ended = heard.at(-1)!;
+    const ended = heard[heard.length - 1]!;
     expect(ended.tests[0]).toMatchObject({ status: 'failed', at: null, watch: null });
     expect(ended.summary).toBe('1 of 4 tests · 1 failed');
 
     // The run ends: the session's last word, and the stream let go.
     send(78, 'run-finished', { status: 'failed', totalTests: 4, passedTests: 3, failedTests: 1, skippedTests: 0 });
-    expect(heard.at(-1)).toMatchObject({ runId: 78, ended: true, watchable: false, progress: { status: 'failed' } });
+    expect(heard[heard.length - 1]).toMatchObject({
+      runId: 78,
+      ended: true,
+      watchable: false,
+      progress: { status: 'failed' },
+    });
     expect(followed.get(78)!.stopped).toBe(true);
     expect(sessions!.sessions()).toEqual([]);
     // A read of the run from before its end follows it no more.

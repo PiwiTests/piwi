@@ -163,7 +163,7 @@ describe('the runs’ streams', () => {
     await waitFor(() => (second.length ? true : undefined));
     expect(aborted).toEqual([1]);
     expect(second).toEqual([{ type: 'init', data: { connection: 2 } }]);
-    expect(first.at(-1)).toEqual({ type: 'init', data: { connection: 2 } });
+    expect(first[first.length - 1]).toEqual({ type: 'init', data: { connection: 2 } });
     expect(opened).toEqual([78, 78]);
     expect(streams.size).toBe(1);
 
