@@ -7523,7 +7523,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Abra a página de uma execução para assistir a um teste em execução."
+    "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Assistir mostra aqui a página de um teste em execução."
   },
   "runs_ciTests": {
     "message": "Testes em execução agora"

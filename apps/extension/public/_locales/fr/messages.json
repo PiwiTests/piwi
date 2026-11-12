@@ -7523,7 +7523,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Lecture seule : elles tournent en CI, rien ici ne les met en pause ni ne les pilote. Ouvrez la page d’une exécution pour regarder un test en cours."
+    "message": "Lecture seule : elles tournent en CI, rien ici ne les met en pause ni ne les pilote. Regarder affiche ici la page d’un test en cours."
   },
   "runs_ciTests": {
     "message": "Tests en cours"

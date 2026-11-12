@@ -7523,7 +7523,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. Öffnen Sie die Seite eines Laufs, um einen laufenden Test anzusehen."
+    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
   },
   "runs_ciTests": {
     "message": "Jetzt laufende Tests"

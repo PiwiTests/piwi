@@ -168,7 +168,7 @@ export const RUN_WORDS_EN = {
   runs_ciWhereProject: '$project$, on $branch$',
   runs_ciProject: '$project$',
   runs_ciReadOnly:
-    'Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.',
+    'Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',

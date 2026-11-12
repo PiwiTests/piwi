@@ -7523,7 +7523,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Abre la página de una ejecución para ver una prueba en curso."
+    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Ver muestra aquí la página de una prueba en curso."
   },
   "runs_ciTests": {
     "message": "Pruebas en curso"

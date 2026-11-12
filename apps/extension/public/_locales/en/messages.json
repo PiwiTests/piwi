@@ -8933,8 +8933,8 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
-    "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
+    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are read-only, and Watch (runs_watch) on a running test shows its page in the window."
   },
   "runs_ciTests": {
     "message": "Tests running now",
