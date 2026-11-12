@@ -716,6 +716,12 @@ files it by Playwright's worker index, with:
 - where it stands stopped (`RunStop`);
 - whether a Pause reached it and it has not stopped yet (`pausing`).
 
+Those four are its lane's (`parallelIndex`), which the session keeps as it stands through core's reducer
+(`@piwitests/core/live-lane`, `RunSessions.hear`): what a worker says (`run-attach`, `test-begin`, a Pause, `waiting`,
+`stopped`, `running`, `test-end`, its connection closing) and the run's `run-end` are lane events, and a worker reads
+its lane only while it is the lane's worker. The worker Playwright starts in the lane again takes it between tests; a
+Pause sent between two tests waits for the next one. The clients receive the state ready and work none of it out.
+
 A connection naming the index of a worker connected now is closed: another process the run's environment reached (a
 test running Playwright itself) takes no worker's place.
 
