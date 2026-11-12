@@ -104,12 +104,20 @@ function standIn() {
 }
 
 /**
- * The run `ed-1` in its own sessions, its lane 0's worker running the test `TEST_ID` in `run`, and answering each
- * `trace` it is asked with `answer`'s value then (none, for a worker that does not answer).
+ * The run `ed-1` in its own sessions, its folder `root` (`run` unless named), its lane 0's worker running the test
+ * `TEST_ID` in `cwd` (the run's folder unless named), and answering each `trace` it is asked with `answer`'s value then
+ * (none, for a worker that does not answer).
  */
 function harness(
-  options: { features?: RunFeature[]; launcher?: TraceViewerLauncher | null; cwd?: string; retry?: number } = {},
+  options: {
+    features?: RunFeature[];
+    launcher?: TraceViewerLauncher | null;
+    root?: string;
+    cwd?: string;
+    retry?: number;
+  } = {},
 ) {
+  const root = options.root ?? run;
   const sent: RunSession[] = [];
   const notices: string[] = [];
   const own = standIn();
@@ -117,7 +125,7 @@ function harness(
     notify: (session) => void sent.push(session),
     answersStops: () => true,
     notice: (_root, _severity, message) => void notices.push(message),
-    rootOf: () => run,
+    rootOf: () => root,
     paceMs: 5,
     burstMs: 0,
     requestMs: 300,
@@ -129,7 +137,7 @@ function harness(
     type: 'run-attach',
     token: 't',
     ref: 'ed-1',
-    cwd: options.cwd ?? run,
+    cwd: options.cwd ?? root,
     workerIndex: 0,
     parallelIndex: 0,
     pid: 1,
@@ -521,8 +529,9 @@ describe('the launcher', () => {
   /**
    * A project with a stand-in `@playwright/test` whose CLI writes its arguments, folder and environment beside itself,
    * then stays up a moment as a viewer does, writing on its error output as it starts and before it stops; or, for a
-   * trace whose name holds `fail`, says why on its error output and stops. For one whose name holds `orphan`, it writes
-   * on its error output once more after its parent is gone, then says it still runs (`alive`).
+   * trace whose name holds `fail` or `long-reason`, says why on its error output (the latter naming the trace past its
+   * 250th character) and stops. For one whose name holds `orphan`, it writes on its error output once more after its
+   * parent is gone, then says it still runs (`alive`).
    */
   beforeAll(() => {
     project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-trace-project-')));
@@ -537,6 +546,10 @@ const path = require('node:path');
 const trace = process.argv[3] || '';
 if (trace.includes('fail')) {
   process.stderr.write("Error: browserType.launch: Executable doesn't exist at /x/chrome\\n");
+  process.exit(1);
+}
+if (trace.includes('long-reason')) {
+  process.stderr.write('Error: ' + 'x'.repeat(250) + ' ' + trace + '\\n');
   process.exit(1);
 }
 fs.writeFileSync(
@@ -661,6 +674,22 @@ if (trace.includes('orphan')) {
       ok: false,
       reason: 'Playwright is not installed in the folder the run runs in',
     });
+  });
+
+  test('says why it did not start with the trace’s path left out, then cut, a path across the cut included', async () => {
+    const own = harness({
+      root: project,
+      launcher: (launch) => startTraceViewer(launch, { startMs: 3000, tempDir: temp }),
+    });
+    // The stand-in says why with 250 characters, then the path of what it opens, which runs past 300.
+    own.begin(0, 'long-reason');
+    own.answer.value = named(file(path.join(project, 'test-results/.playwright-artifacts-0/traces/long-reason.trace')));
+    const answer = await own.sessions.openTrace({ ref: 'ed-1', lane: 0 });
+    expect(answer).toEqual({
+      ok: false,
+      message: `Playwright's trace viewer could not start: ${'x'.repeat(250)} the test's trace/long-reason.json.`,
+    });
+    expect(answer.message).not.toContain(project.slice(0, 8));
   });
 
   test('keeps a running viewer’s error output in a file of a folder of its own, gone once the viewer stops', async () => {

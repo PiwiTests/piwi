@@ -1082,8 +1082,8 @@ app's server; without one, the hub leaves `trace` out of its features and the re
   start: that file's first line says why (Playwright's browser not installed). Once it runs, nothing of it holds the
   service open; its folder goes once it stops while the host runs, and one the host did not outlive stays there.
 - **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its
-  folders taken out (`withoutPaths`). No session, notice, hub message or answer carries it
-  (`tests/run-trace.test.ts`).
+  folders taken out (`withoutPaths`), then is cut to 300 characters, so no part of a path is left where the cut falls.
+  No session, notice, hub message or answer carries it (`tests/run-trace.test.ts`).
 
 ### Share live
 

@@ -25,9 +25,6 @@ export const TRACE_VIEWER_START_MS = 2_000;
 /** The most of the viewer's error output read for why it did not start, in bytes. */
 const MAX_START_OUTPUT = 4_000;
 
-/** The longest reason a viewer that did not start gives, in characters. */
-const MAX_REASON = 300;
-
 /**
  * The variables of the host's environment the viewer runs with, by their name in capitals: what a window and
  * Playwright need (the user's home, folders and temp, the locale, the display and its session bus, Playwright's
@@ -92,7 +89,10 @@ export interface TraceViewerLaunch {
   trace: string;
 }
 
-/** A viewer that started, and settles `closed` once it stops; or why it did not start, as a clause. */
+/**
+ * A viewer that started, and settles `closed` once it stops; or why it did not start, as a clause, which may name the
+ * trace's path: the run sessions take it out before a surface hears it.
+ */
 export type TraceViewerStarted = { ok: true; closed: Promise<void> } | { ok: false; reason: string };
 
 /** Starts Playwright's trace viewer on a trace: `startTraceViewer`, or a stand-in in tests. */
@@ -174,13 +174,16 @@ export function checkTraceFile(file: string, attempt: TraceAttempt): CheckedTrac
   return { ok: true, trace: path.join(traces, `${base}.json`) };
 }
 
-/** A viewer's error output as a clause: its first line that says something, past a box's border. */
+/**
+ * A viewer's error output as a clause: its first line that says something, past a box's border, whole. The run
+ * sessions take the trace's path out of it before they cut it.
+ */
 function reasonOf(output: string, code: number | null, signal: NodeJS.Signals | null): string {
   const line = output
     .split(/\r?\n/)
     .map((text) => text.replace(/^Error:\s*/, '').trim())
     .find((text) => text && !/^[╔║╚═\s]+$/.test(text));
-  if (line) return line.slice(0, MAX_REASON);
+  if (line) return line;
   return code === null ? `it was stopped (${signal ?? 'no signal'})` : `it stopped with exit code ${code}`;
 }
 
@@ -192,14 +195,18 @@ export interface TraceViewerStart {
   tempDir?: string;
 }
 
-/** The start of the viewer's error output: at most `MAX_START_OUTPUT` bytes of `file`, empty when it cannot be read. */
+/**
+ * The start of the viewer's error output: at most `MAX_START_OUTPUT` bytes of `file`, without a last line that read
+ * cut short (part of a path is no path to take out); empty when it cannot be read.
+ */
 async function startOutput(file: string): Promise<string> {
   let handle: fs.promises.FileHandle | undefined;
   try {
     handle = await fs.promises.open(file, 'r');
     const buffer = Buffer.alloc(MAX_START_OUTPUT);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return buffer.toString('utf8', 0, bytesRead);
+    const text = buffer.toString('utf8', 0, bytesRead);
+    return bytesRead < buffer.length ? text : text.slice(0, text.lastIndexOf('\n') + 1);
   } catch {
     return '';
   } finally {

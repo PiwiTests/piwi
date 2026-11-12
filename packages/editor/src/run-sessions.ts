@@ -325,16 +325,20 @@ function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** The longest reason a viewer that did not start gives a surface, in characters. */
+const MAX_TRACE_REASON = 300;
+
 /**
- * A viewer's reason with the trace's path and its folders left out, with either separator: the reason goes to every
- * surface, the path to none. Its trailing period is left out: the sentence ends it.
+ * A viewer's reason with the trace's path and its folders left out, with either separator, then cut to
+ * `MAX_TRACE_REASON`: the reason goes to every surface, the path to none, whole or in part. Its trailing period is left
+ * out: the sentence ends it.
  */
 function withoutPaths(reason: string, paths: readonly string[]): string {
   let said = reason;
   for (const known of paths.flatMap((p) => [p, p.split(path.sep).join('/')]).sort((a, b) => b.length - a.length)) {
     if (known) said = said.split(known).join("the test's trace");
   }
-  return said.replace(/[.\s]+$/, '').slice(0, 300) || 'it did not say why';
+  return said.slice(0, MAX_TRACE_REASON).replace(/[.\s]+$/, '') || 'it did not say why';
 }
 
 /** Why the input of a viewer that does not watch the stop is refused. */
