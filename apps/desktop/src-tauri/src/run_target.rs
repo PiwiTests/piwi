@@ -30,7 +30,7 @@ use crate::STORE_FILE;
 const INSTANCE_KEY: &str = "runTargetInstance";
 /// Store key of `{ instance → { project id → folder } }`.
 const LINKS_KEY: &str = "instanceLinks";
-/// The keychain service Piwi Dashboard keeps the instance's key under.
+/// The keychain service Piwi Desktop keeps the instance's key under.
 const DESKTOP_KEYCHAIN_SERVICE: &str = "Piwi Desktop run requests";
 /// The keychain service Piwi Runner keeps the instance's key under: the two apps are on the same machine, and each
 /// holds its own key for the same instance.

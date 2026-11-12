@@ -7,10 +7,10 @@
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-  !insertmacro PIWI_STOP_SIDECAR piwi-runner-node
+  !insertmacro PIWI_STOP_SIDECAR "$INSTDIR" "piwi-runner-node"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-  !insertmacro PIWI_STOP_SIDECAR piwi-runner-node
+  !insertmacro PIWI_STOP_SIDECAR "$INSTDIR" "piwi-runner-node"
 !macroend

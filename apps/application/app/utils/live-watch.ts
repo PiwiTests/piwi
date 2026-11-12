@@ -22,7 +22,8 @@ import { LANE_LAYERS, readLaneLayers, type LaneLayer } from '@piwitests/core/liv
  * then the stream is dropped and opened again, its query asking for the whole of it. The full view also names the
  * layers it takes beside its images (`@piwitests/core/live-layers`: the page's events, its text, the test's filmstrip),
  * those the lane panel shows, and asks the worker shown in full for its page's text now (`text: true`) as the page asks
- * (`askText`) and as each stream that takes the text opens. It opens as soon as something is wanted, and closes once
+ * (`askText`) and as each stream that takes the text opens, and whether it has **Inspect** open (`inspect`), the worker
+ * then sending its page's snapshots, whose pages the watch's id (`id`) names. It opens as soon as something is wanted, and closes once
  * nothing is. A stream that drops, breaks its framing or brings nothing for `STALL_MS` (the instance sends a heartbeat
  * every 15 s) is let go, its request aborted, and opens again, waiting longer each time, `RETRY_MS.length` times in a
  * row at most: a stream open `STEADY_MS` counts the tries afresh. One the instance refuses, or that ends saying why, or
@@ -39,10 +40,15 @@ export interface LiveWatchAsk {
   size: { width: number; height: number } | null;
   /** The layers the full view takes beside its images: those the lane panel shows, in `LANE_LAYERS`' order. */
   layers: LaneLayer[];
+  /** Whether the full view has Inspect open: the worker shown in full sends its page's snapshots. */
+  inspect?: boolean;
 }
 
-/** What the instance says a watch shows: `layers` null from an answer that does not say them. */
-export type LiveWatchShown = Omit<LiveWatchAsk, 'layers'> & { layers: LaneLayer[] | null };
+/** What the instance says a watch shows: `layers` and `inspect` null from an answer that does not say them. */
+export type LiveWatchShown = Omit<LiveWatchAsk, 'layers' | 'inspect'> & {
+  layers: LaneLayer[] | null;
+  inspect: boolean | null;
+};
 
 /** How the watch stands: nothing wanted, opening (again), open, or closed with why. */
 export type LiveWatchState =
@@ -108,7 +114,8 @@ export function readLiveWatchShown(answer: unknown): LiveWatchShown | null {
   const focus = raw ? readLiveWorkerId(raw.shard, raw.worker, raw.slot) : null;
   if (!size || (raw && !focus)) return null;
   const layers = readLaneLayers(value.layers);
-  return { focus, tiles: value.tiles, size, layers: layers ? heldLayers(layers) : null };
+  const inspect = typeof value.inspect === 'boolean' ? value.inspect : null;
+  return { focus, tiles: value.tiles, size, layers: layers ? heldLayers(layers) : null, inspect };
 }
 
 /** Whether a watch shows anything. */
@@ -116,7 +123,10 @@ function wanted(ask: LiveWatchAsk): boolean {
   return ask.tiles || ask.focus !== null;
 }
 
-/** The query of a watch's stream: its full view (unless it shows tiles), its tiles, the full view's size and layers. */
+/**
+ * The query of a watch's stream: its full view (unless it shows tiles), its tiles, the full view's size and layers, and
+ * whether it has Inspect open.
+ */
 export function liveWatchQuery(ask: LiveWatchAsk): URLSearchParams {
   const query = new URLSearchParams();
   if (ask.focus && !ask.tiles) {
@@ -130,11 +140,12 @@ export function liveWatchQuery(ask: LiveWatchAsk): URLSearchParams {
     query.set('height', String(ask.size.height));
   }
   if (ask.layers.length) query.set('layers', ask.layers.join(','));
+  if (ask.inspect) query.set('inspect', '1');
   return query;
 }
 
 export class LiveWatch {
-  private ask: LiveWatchAsk = { focus: null, tiles: false, size: null, layers: [] };
+  private ask: LiveWatchAsk = { focus: null, tiles: false, size: null, layers: [], inspect: false };
   /** What the instance shows now, as the watch's stream opened or the last change said. */
   private shown: LiveWatchAsk | null = null;
   private controller: AbortController | null = null;
@@ -169,6 +180,7 @@ export class LiveWatch {
       focus: ask.focus ? { ...ask.focus } : null,
       size: heldSize(ask.size),
       layers: heldLayers(ask.layers),
+      inspect: ask.inspect === true,
     };
     if (!wanted(this.ask)) return this.close();
     if (this.halted) return;
@@ -186,6 +198,11 @@ export class LiveWatch {
   askText(): void {
     this.textAsks++;
     void this.change();
+  }
+
+  /** The id the instance named the open stream's watch by (`hello`); null while none is open. */
+  get id(): string | null {
+    return this.watchId;
   }
 
   /** Open a watch that closed saying why again, as the page asks: what it wants shown now. */
@@ -345,6 +362,7 @@ export class LiveWatch {
       body.height = ask.size.height;
     }
     if (!sameLayers(ask.layers, this.shown.layers)) body.layers = ask.layers;
+    if (!!ask.inspect !== !!this.shown.inspect) body.inspect = !!ask.inspect;
     // A text asked while the full view takes none is not asked any more.
     if (!ask.layers.includes('text')) this.textTaken = this.textAsks;
     const textAsks = this.textAsks;
@@ -375,13 +393,15 @@ export class LiveWatch {
       this.changeFailures = 0;
       if (body.text) this.textTaken = Math.max(this.textTaken, textAsks);
       const layers = 'layers' in body ? ask.layers : this.shown.layers;
+      const inspect = 'inspect' in body ? !!ask.inspect : !!this.shown.inspect;
       this.shown = shown
-        ? { ...shown, layers: shown.layers ?? layers }
+        ? { ...shown, layers: shown.layers ?? layers, inspect: shown.inspect ?? inspect }
         : {
             focus: 'focus' in body ? (ask.focus ? { ...ask.focus } : null) : this.shown.focus,
             tiles: 'tiles' in body ? ask.tiles : this.shown.tiles,
             size: 'width' in body ? ask.size : this.shown.size,
             layers,
+            inspect,
           };
       // The full view asked is not shown: refused, it is no longer asked, and the page hears why.
       if (!ok && ask.focus && 'focus' in body && !sameAsk(this.shown.focus, ask.focus)) {

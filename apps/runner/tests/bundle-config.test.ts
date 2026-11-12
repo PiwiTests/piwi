@@ -40,8 +40,21 @@ describe("Piwi Runner's merged bundle config", () => {
     const hooks = fs.readFileSync(path.join(shell, runner.bundle.windows.nsis.installerHooks), 'utf8');
     // It stops the sidecar the config bundles, before the installer and the uninstaller touch a file.
     const sidecar = path.posix.basename(runner.bundle.externalBin[0]);
-    expect(hooks.match(new RegExp(`PIWI_STOP_SIDECAR ${sidecar}\\n`, 'g'))).toHaveLength(2);
+    expect(hooks.split(`PIWI_STOP_SIDECAR "$INSTDIR" "${sidecar}"\n`)).toHaveLength(3);
     expect(hooks).not.toMatch(/MUI_|PIWI_SAVE_PORT/);
+  });
+
+  test("keeps none of the desktop app's upgrade ties: its MSI upgrade code and the packages it replaces", () => {
+    expect(desktop.bundle.windows.wix.upgradeCode).toBeTruthy();
+    expect(runner.bundle.windows.wix).not.toHaveProperty('upgradeCode');
+    expect(desktop.bundle.linux.deb.replaces).toEqual(['piwi-dashboard']);
+    for (const [format, keys] of [
+      ['deb', ['conflicts', 'replaces']],
+      ['rpm', ['conflicts', 'obsoletes']],
+    ] as const) {
+      expect(desktop.bundle.linux[format]).toMatchObject(Object.fromEntries(keys.map((k) => [k, ['piwi-dashboard']])));
+      for (const key of keys) expect(runner.bundle.linux?.[format] ?? {}).not.toHaveProperty(key);
+    }
   });
 
   test('answers piwi-runner links alone, and the desktop app keeps piwi', () => {

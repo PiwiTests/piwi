@@ -39,6 +39,7 @@ import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
+import { LiveByteBudget, LiveInspect } from './live-inspect.js';
 import { subscribeLane, type LaneSubscription } from './lane-feed.js';
 import {
   LaneFilmstrip,
@@ -95,7 +96,10 @@ import type { PageFrame } from './page-view.js';
  * watches, the view's own masked image shortly after each call of the test ended, scaled down, kept in memory for the
  * test alone (`LaneFilmstrip`) until the project's masks change, all of them posted again to a viewer that asks later
  * (`resend`, or the layer asked anew), `LANE_THUMBS_PER_SECOND` at most, `MAX_FILMSTRIP` waiting at most. None is
- * stored.
+ * stored. While a full view has Inspect open (`view`'s `inspect`), the page's DOM snapshots and the resources they name
+ * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`: each of its posts waits once, a
+ * second at most, and the frames after it are spaced by its bytes, a second at most), and Inspect opens again as the
+ * project's masks change.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -194,13 +198,21 @@ interface Link {
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
 }
 
-/** What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts. */
+/**
+ * What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts, and Inspect
+ * of the view's page.
+ */
 const layerRuns: {
   events: (() => void) | null;
   text: (() => void) | null;
   texts: LaneTexts | null;
   thumbs: ReturnType<typeof setInterval> | null;
-} = { events: null, text: null, texts: null, thumbs: null };
+  inspect: LiveInspect | null;
+} = { events: null, text: null, texts: null, thumbs: null, inspect: null };
+/** The bytes a second the view's frames and Inspect share. */
+const budget = new LiveByteBudget();
+/** The resources Inspect posted to the run on the stream open now, by name: each goes once. */
+const inspectSent = new Set<string>();
 /** The view and its test now, counted: a text taken for another one goes nowhere. */
 let textGeneration = 0;
 /** The test's filmstrip, taken from the view's own masked images while someone watches. */
@@ -215,6 +227,11 @@ function layerAsked(own: Link, layer: LaneLayer): boolean {
   return (
     !!view && own === link && active(own) && own.viewers > 0 && shownInFull(own) && !!own.asked?.layers.includes(layer)
   );
+}
+
+/** Whether a full view has Inspect open now, while the view runs. */
+function inspectAsked(own: Link): boolean {
+  return !!view && own === link && active(own) && own.viewers > 0 && shownInFull(own) && !!own.asked?.inspect;
 }
 
 /** Whether a viewer shows the worker in full: only then do its call log and its test's end go. */
@@ -384,6 +401,7 @@ export function openLiveView(
     asked: null,
   };
   if (link.sharing) connect(link);
+  inspectSent.clear();
   filmstrip?.close();
   filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
     if (!link || !layerAsked(link, 'filmstrip')) return;
@@ -569,6 +587,8 @@ function connect(own: Link): void {
     own.answered = null;
     // The form this stream's instance takes frames in, and what its viewers ask, it says on this stream.
     own.asked = null;
+    // An instance started again holds none of the resources Inspect posted before.
+    inspectSent.clear();
     if (own.dark) {
       own.backTimer = setTimeout(() => {
         own.backTimer = null;
@@ -736,6 +756,9 @@ function setMasks(own: Link, locators: string[] | null): void {
   filmstrip?.forget();
   thumbPosts.queue = [];
   view?.frames.refresh();
+  // Inspect opens again, as the masks say.
+  void stopInspect();
+  applyLayers(own, new Set(own.asked?.layers ?? []));
 }
 
 /**
@@ -795,11 +818,33 @@ function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
     layerRuns.thumbs = null;
     thumbPosts.queue = [];
   }
+  if (inspectAsked(own) && !layerRuns.inspect && view) {
+    const inspect = new LiveInspect(view.page, {
+      id: own.id,
+      test: () => running?.title ?? null,
+      masks: () => own.masks,
+      post: (body) => postBody(own, body, LIVE_FRAME_TYPE),
+      budget,
+      sent: inspectSent,
+    });
+    layerRuns.inspect = inspect;
+    void inspect.open();
+  } else if (!inspectAsked(own)) {
+    void stopInspect();
+  }
 }
 
-/** Stop every layer: the view stopped. */
-function stopLayers(): void {
+/** Inspect closes: its reads stop, and Piwi's own trace, if it ran one, stops unsaved. */
+function stopInspect(): Promise<void> {
+  const closing = layerRuns.inspect?.close() ?? Promise.resolve();
+  layerRuns.inspect = null;
+  return closing.catch(() => undefined);
+}
+
+/** Stop every layer: the view stopped; resolves once Inspect closed. */
+function stopLayers(): Promise<void> {
   textGeneration++;
+  const inspecting = stopInspect();
   layerRuns.events?.();
   layerRuns.text?.();
   layerRuns.texts?.close();
@@ -809,6 +854,7 @@ function stopLayers(): void {
   layerRuns.texts = null;
   layerRuns.thumbs = null;
   thumbPosts.queue = [];
+  return inspecting;
 }
 
 /** The instance asks for the page's text now, while a full view asks for it: an ARIA snapshot where the trace has none. */
@@ -887,7 +933,8 @@ function startView(): void {
     get fps() {
       return own.asked?.fps ?? LIVE_FRAME_FPS;
     },
-    spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
+    // A frame is spaced by its own bytes, and by those Inspect posted before it, a second at most.
+    spacing: (frame) => Math.max((frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE, budget.wait()),
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
@@ -947,7 +994,7 @@ function forgetLog(own: Link): void {
 async function stopView(): Promise<void> {
   const shown = view;
   view = null;
-  stopLayers();
+  const inspecting = stopLayers();
   if (!shown) return;
   shown.page.off('close', shown.onClose);
   void shown.following?.then((stop) => stop?.());
@@ -955,7 +1002,7 @@ async function stopView(): Promise<void> {
   const closed = shown.frames.close();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
-    closed.catch(() => undefined),
+    Promise.all([closed.catch(() => undefined), inspecting]),
     new Promise<void>((resolve) => {
       timer = setTimeout(resolve, VIEW_END_MS);
       timer.unref?.();
@@ -971,6 +1018,7 @@ function postFrame(own: Link, frame: PageFrame): void {
   const call = running?.call() ?? null;
   const shown = { call: call && hideCallSecrets(call), test: running?.title ?? null };
   const at = Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {};
+  budget.spend(frame.data.length);
   const posted = own.asked
     ? postBody(own, encodeLiveMessage(liveFrameHeader(own.id, { ...shown, ...at }), frame.data), LIVE_FRAME_TYPE)
     : post(own, { type: 'frame', ...own.id, data: frame.data.toString('base64'), ...shown, ...at });

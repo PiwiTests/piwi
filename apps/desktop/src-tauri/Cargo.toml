@@ -1,7 +1,7 @@
 [package]
 name = "piwi-desktop"
 version = "0.68.0" # x-release-please-version
-description = "Piwi Dashboard desktop app"
+description = "Piwi Desktop app"
 authors = ["piwitests"]
 license = "FSL-1.1-MIT"
 repository = "https://github.com/PiwiTests/piwi"
@@ -25,6 +25,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
+# The start-on-login entry of the product's former name (`src/login_item.rs`); the plugin's own version.
+auto-launch = "0.6"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"

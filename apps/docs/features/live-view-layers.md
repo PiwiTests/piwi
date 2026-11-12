@@ -71,11 +71,12 @@ A worker of an older reporter sends none of them: the sections stay empty, and *
 ## In the demo
 
 The live demo runs no browser, so its runs have no worker to watch in full: [Watch all](./watch-all#in-the-demo)
-names each worker's step, and the panel with its events, text and filmstrip never opens.
+names each worker's step, and the panel with its events, text, filmstrip and Inspect never opens.
 
 ## Related
 
 - [Live view of a run](./live-view): turning it on, and the image and call of one worker
 - [Watch all workers](./watch-all): every worker of a run at once
+- [Inspect a running test's page](./live-inspect): the page at each call as a document, with the locator picker
 - [Backend logs](/guide/backend-logs): what the backend instrumentation attaches to a response
 - [Failure evidence](./evidence): the console, network and ARIA a finished test keeps

@@ -152,7 +152,7 @@ fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, St
         let attempt = match read_endpoint(discovery) {
             Some(endpoint) => post(&endpoint, message),
             None => Err(PostError {
-                message: "Piwi Desktop is not running — start it (Piwi Dashboard in the Start menu, the Dock or the app list), then reconnect this server"
+                message: "Piwi Desktop is not running — start it from the Start menu, the Dock or the app list, then reconnect this server"
                     .into(),
                 retryable: true,
                 sent: false,

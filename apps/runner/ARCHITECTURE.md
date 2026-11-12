@@ -29,8 +29,9 @@ shared with the desktop app:
   desktop app's port page. `runner.conf.json` is merged over `tauri.conf.json` as a JSON merge patch
   (`apps/runner/tests/bundle-config.test.ts` checks the merge).
 - **The link**: `piwi-runner://connect` only, which brings the window forward.
-- **The sidecar**: Node bundled as `piwi-runner-node` (`NODE_SIDECAR`), so the Linux packages of the two apps do not
-  both install `/usr/bin/node`, and its script, `resources/runner-host`, staged by `npm run runner:stage`.
+- **The sidecar**: Node bundled as `piwi-runner-node` (`NODE_SIDECAR`), as the desktop app's is `piwi-desktop-node`, so
+  the Linux packages of the two apps and the distribution's `nodejs` never install the same file, and its script,
+  `resources/runner-host`, staged by `npm run runner:stage`.
 - **The icon**: `apps/runner/app-icon.svg`, the Piwi mark on a teal tile with a play sign, rendered into
   `src-tauri/icons-runner/` by `tauri icon`; the app, the tray and the Windows installers take it.
 - **The keychain service**: `Piwi Runner run requests`, so an entry written by one app is never read by the other.

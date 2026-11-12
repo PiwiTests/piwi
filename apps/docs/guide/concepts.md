@@ -288,7 +288,11 @@ the instance's watches of the run for the key's owner, as a dashboard tab does. 
 your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
 being shared ([Live view of a run](/features/live-view)). **Watch all** shows every worker of such a run at once, a
 tile each, and **Follow what needs attention** moves the view to the worker whose test failed, got stuck or stopped
-([Watch all workers](/features/watch-all)).
+([Watch all workers](/features/watch-all)). **Inspect**, under a worker's view on the team instance, shows the page
+of its running test at each call as a document (the DOM Playwright's trace takes before the call, at its action and
+after it), rendered without its scripts, with the locator picker on it; the worker sends those pages, their secret
+fields' values removed, only while someone has Inspect open, and the instance keeps them in memory alone
+([Inspect a running test's page](/features/live-inspect)).
 
 ### Trace so far
 

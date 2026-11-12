@@ -67,7 +67,7 @@ export default eventHandler(async (event) => {
     entry,
     worker,
     () => openEventStream(event),
-    parseLiveMasks(run.masks) ?? [],
+    run.masks == null ? [] : parseLiveMasks(run.masks),
   );
   if (refused) throw apiError({ statusCode: refused.status, message: refused.message });
   liveAsks.shareRun(id);

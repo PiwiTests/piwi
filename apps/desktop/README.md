@@ -1,4 +1,4 @@
-# Piwi Dashboard — Desktop app
+# Piwi Desktop
 
 A [Tauri](https://tauri.app) shell that bundles the **same** Nuxt/Nitro server
 shipped as the Docker image and `@piwitests/server`, and runs it locally. No
@@ -18,7 +18,7 @@ channel, so a per-user install pulls a per-user update.
    (`serverPort` in the app's `settings.json`, 3000 by default; a free port
    when that one is taken), resolves a per-user data
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
-   sidecar** (`src-tauri/binaries/node-<triple>` running
+   sidecar** (`src-tauri/binaries/piwi-desktop-node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
    compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
    other versions' folders are deleted in the background). The retention the
@@ -342,5 +342,50 @@ updater's pre-exit hook (`updates.rs`) runs the quit cleanup instead
 (`shut_down` in `lib.rs`) and waits for the Node sidecar to be gone — left
 running, it holds the bundled native modules (sharp's libvips DLLs) and the
 installer fails with "Error opening file for writing". Builds up to 0.37 lacked
-that hook, so the NSIS installer also stops a `node.exe` still running from its
+that hook, so the NSIS installer also stops a sidecar still running from its
 install folder (`src-tauri/windows/installer-hooks.nsh`) before copying files.
+
+### From Piwi Dashboard to Piwi Desktop
+
+Releases up to 0.68 were installed as **Piwi Dashboard** (`productName`). The
+installed product is **Piwi Desktop**, and every installer upgrades an install
+of the former name, by hand or through its update channel, keeping the app's
+data: the `identifier` (`io.piwitests.dashboard`) is unchanged, and with it the
+app data folder, `settings.json` and the installer's `PIWI_APP_DATA`. The
+keychain service (`DESKTOP_KEYCHAIN_SERVICE`) is a name of its own.
+
+- **`.msi`**: `bundle.windows.wix.upgradeCode` pins the code the bundler derived
+  from the former name (UUIDv5 of `Piwi Dashboard.exe.app.x64`), so the new
+  `.msi` major-upgrades the old one: `Program Files\Piwi Dashboard` is removed
+  and the app installs in `Program Files\Piwi Desktop`.
+- **`.exe`**: the install folder and the uninstall key follow the product name,
+  so once the new files are in, `NSIS_HOOK_POSTINSTALL` (`installer-hooks.nsh`)
+  removes the former per-user install: the files its installer wrote, its
+  uninstall key, its own registry values and its shortcuts, which the updater's
+  `/UPDATE` run makes again under the new name. Its uninstaller is not run, since
+  it would delete the file associations the new install wrote. App data and the
+  start-on-login entry are left for the app. A failed install leaves the former
+  one in place, and one in a folder of the user's choice is replaced by one in
+  `%LOCALAPPDATA%\Piwi Desktop`. The `.exe` does not find a per-machine `.msi`
+  of the former name, as Tauri's installer finds only one of its own name: a
+  user who switches channels by hand uninstalls it from Windows' app list.
+- **`.deb` / `.rpm`**: the package is `piwi-desktop`, which `Conflicts` with and
+  `Replaces` `piwi-dashboard` (`.rpm`: `Obsoletes`), so `dpkg -i`, `apt` and the
+  updater's `dpkg` remove the old package and take over its files
+  (`/usr/bin/piwi-desktop`).
+- **macOS**: the updater replaces the bundle where it is, so an updated install
+  keeps the file name `Piwi Dashboard.app` while its menu bar and Dock show
+  Piwi Desktop; a new `.dmg` install is `Piwi Desktop.app`. The bundle is never
+  renamed while it runs.
+- **AppImage**: the updater replaces the file in place, under its old name. The
+  MCP client configs know an AppImage by either name (`APP_PRODUCTS` in
+  `mcp_clients.rs`).
+- **Start on login**: the autostart plugin names its entry after the product.
+  At startup an installed build moves an entry left under Piwi Dashboard (a
+  Windows `Run` value, a macOS LaunchAgent, a Linux `~/.config/autostart` file)
+  to its own name, pointing at the running executable (`src-tauri/src/login_item.rs`).
+  It turns the new entry on only once the old one is gone, and removes an old
+  entry that is off (a `Run` value disabled in Task Manager) without turning
+  anything on. On macOS an entry is on while its LaunchAgent exists, so one the
+  user switched off in System Settings › Login Items comes back on under the new
+  name.

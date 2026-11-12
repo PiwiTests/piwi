@@ -13,7 +13,13 @@ view of a CI run, **Stuck?** with `test.stuck` (Part 1, as it now describes them
 in usually takes is not built), and the secret fields masked with the project's own list (Part 2). PR 4 is built
 without video (Part 7: images as bytes, at the size the viewer shows them), and of PR 7, **Watch all** and **Follow
 what needs attention** as [`live-runs.md`](live-runs.md) P10 revises them (one watch connection a page, 16 a run and a
-byte rate, the follow a mode of the lane view); the last passing run's image is not. The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+byte rate, the follow a mode of the lane view); the last passing run's image is not. PR 6 is built, as **Inspect** in
+the run page's lane panel (`live-runs.md` P11's team half): the page at each call (Part 4), before it, at its action
+and after it, read from the runner's growing trace or a live trace of the worker's own (D6), sent only while a viewer
+has it open with its stylesheets, fonts and images, its secret fields removed in the worker, and none from a project
+that masks elements (D7), kept in the instance's memory for the run (a worker's latest 32 MB, the run's 128 MB, its
+resources' 64 MB) and served rendered without a script, following the latest call until the viewer pins one, with the
+snapshot picker and its search by text; the snapshot view's ARIA tree is not. The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and

@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Run video',
+        summary:
+          'Play the videos of a finished run one test after another, grouped by worker or file, with a checklist.',
+        needs: [],
+        where: 'Test run → Video',
+        doc: 'features/run-video',
+      },
+      {
         title: 'Watch a run',
         summary:
           'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
@@ -180,6 +188,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch → Page events, Page text',
         doc: 'features/live-view-layers',
+      },
+      {
+        title: "Inspect a running test's page",
+        summary:
+          'In a worker’s live view, the page at each call of its running test as a document, before it, at its action and after it, rendered without its scripts, with the locator picker on it: sent only while open, its secret fields removed in the worker, never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch → Inspect',
+        doc: 'features/live-inspect',
       },
       {
         title: 'Share a run live',

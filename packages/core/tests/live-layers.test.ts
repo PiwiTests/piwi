@@ -675,6 +675,7 @@ describe('the layers on the live view', () => {
       fps: 4,
       full: true,
       layers: ['events', 'text'],
+      inspect: false,
     });
     expect(
       parseInstanceToWorker(JSON.stringify({ type: 'view', width: 640, height: 400, fps: 4, full: true })),

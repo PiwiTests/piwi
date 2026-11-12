@@ -148,7 +148,7 @@ describe('getTraceDomSnapshot — image inlining', () => {
     const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
     expect(res.status).toBe('ok');
     // Root-relative and document-relative refs both resolve to the captured image.
-    expect(res.html).toContain(`<img alt="a > b" src="${PNG_URI}">`);
+    expect(res.html).toContain(`<img alt="a &gt; b" src="${PNG_URI}">`);
     expect(res.html).toContain(`<img src="${PNG_URI}" class="relative">`);
     // An image the trace never captured keeps its src.
     expect(res.html).toContain('<img src="/img/missing.png" alt="gone">');

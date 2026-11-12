@@ -241,6 +241,27 @@ describe('the run page’s watch', () => {
     watch.close();
   });
 
+  test('asks for Inspect in its query and its changes, and names its watch by the id the stream opened with', async () => {
+    const { watch, gets, posts } = watcher();
+    watch.want({ focus: LANE, tiles: false, size: null, layers: [], inspect: true });
+    await settle();
+    expect(new globalThis.URL(gets[0]!.url, 'http://x').searchParams.get('inspect')).toBe('1');
+    expect(watch.id).toBeNull();
+    gets[0]!.write(HELLO);
+    await settle();
+    expect(watch.id).toBe(WATCH);
+    expect(posts).toEqual([]);
+    watch.want({ focus: LANE, tiles: false, size: null, layers: [] });
+    await settle();
+    expect(posts).toEqual([{ watch: WATCH, inspect: false }]);
+    watch.want({ focus: LANE, tiles: false, size: null, layers: [], inspect: true });
+    await settle();
+    expect(posts.at(-1)).toEqual({ watch: WATCH, inspect: true });
+    expect(readLiveWatchShown({ watch: { focus: null, tiles: false, width: 640, height: 400 } })?.inspect).toBeNull();
+    watch.close();
+    expect(watch.id).toBeNull();
+  });
+
   test('holds the layers a worker posts beside its call log, in its order, as the instance says them', () => {
     expect(heldLayers(['filmstrip', 'calls', 'events'])).toEqual(['events', 'filmstrip']);
     const watch = { focus: null, tiles: false, width: 640, height: 400 };

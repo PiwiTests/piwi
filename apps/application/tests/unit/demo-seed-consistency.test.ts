@@ -676,11 +676,18 @@ describe('media wiring', () => {
     }
   });
 
+  // The run page's Video tab plays the final attempts of the newest run of project 1, so a few short tests there carry
+  // a video of their own, in no cluster. Those rows are that tab's demo reel and are left out; every other trace and
+  // video is checked.
   test('trace/video/screenshot attachments are wired to the most recent failing execution of their case', () => {
     const attachments = q(`
       select f.id, f.type, f.test_runs_case_id, trc.test_case_id, trc.failure_cluster_id
       from files f join test_runs_cases trc on trc.id = f.test_runs_case_id
-      where f.path like 'demo/traces/%' or f.path like 'demo/videos/%'
+      where (f.path like 'demo/traces/%' or f.path like 'demo/videos/%')
+        and not (
+          f.path like 'demo/videos/%' and trc.failure_cluster_id is null
+          and trc.test_run_id = (select id from test_runs where project_id = 1 order by start_time desc, id desc limit 1)
+        )
     `);
     expect(attachments.length).toBeGreaterThan(0);
     for (const a of attachments) {

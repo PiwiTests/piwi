@@ -1,4 +1,4 @@
-// Piwi Dashboard desktop shell.
+// Piwi Desktop shell.
 //
 // This wraps the *same* Nuxt/Nitro server that ships as the Docker image and the
 // `@piwitests/server` npm package. On launch it:
@@ -13,6 +13,7 @@
 mod hub_env;
 mod ide_launcher;
 mod inspect;
+mod login_item;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
@@ -530,8 +531,8 @@ struct TrayStatusInner {
 }
 
 /// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
-/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
-/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`), and the installed product's
+/// (`productName` in `tauri.conf.json`), which the Start menu, the Dock and the app list show.
 pub(crate) const APP_NAME: &str = "Piwi Desktop";
 const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
@@ -1364,9 +1365,9 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
     let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
-/// The bundled Node's name (`externalBin`): `node` for the desktop app, `piwi-runner-node` for Piwi Runner
+/// The bundled Node's name (`externalBin`): `piwi-desktop-node` for the desktop app, `piwi-runner-node` for Piwi Runner
 /// (`runner.conf.json`). The Linux packages install it in `/usr/bin` under this name, so each app's has its own.
-pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "node" };
+pub(crate) const NODE_SIDECAR: &str = if cfg!(feature = "runner") { "piwi-runner-node" } else { "piwi-desktop-node" };
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
 /// Windows, Tauri's resource + app-data paths come back with the `\\?\` verbatim
@@ -3540,6 +3541,9 @@ pub fn run() {
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
             adopt_installer_choices(app.handle(), &app_data_dir, &log_path);
+            if let Some(line) = login_item::move_former_entry(app.handle()) {
+                append_log(&log_path, &line);
+            }
             let preferred_port = configured_port(app.handle());
             let port = pick_port(preferred_port);
             if port != preferred_port {
@@ -3925,7 +3929,7 @@ pub fn run() {
             }
         })
         .build(context)
-        .expect("error while building the Piwi Dashboard app")
+        .expect("error while building the Piwi Desktop app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
             // Some ways out end the app with `Exit` alone: the Dock's Quit on

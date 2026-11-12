@@ -20,7 +20,14 @@
   },
   "bundle": {
     "fileAssociations": null,
+    "linux": {
+      "deb": { "conflicts": null, "replaces": null },
+      "rpm": { "conflicts": null, "obsoletes": null }
+    },
     "windows": {
+      "wix": {
+        "upgradeCode": null
+      },
       "nsis": {
         "installerHooks": "windows/runner-installer-hooks.nsh",
         "installerIcon": "icons-runner/icon.ico",
