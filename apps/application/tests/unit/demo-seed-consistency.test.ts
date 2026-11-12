@@ -676,11 +676,13 @@ describe('media wiring', () => {
     }
   });
 
+  // The run page's Video tab plays the final attempts of the newest run, so a few short tests there (passed or failed,
+  // in no cluster) carry a video too: they are the tab's demo reel and are left out here.
   test('trace/video/screenshot attachments are wired to the most recent failing execution of their case', () => {
     const attachments = q(`
       select f.id, f.type, f.test_runs_case_id, trc.test_case_id, trc.failure_cluster_id
       from files f join test_runs_cases trc on trc.id = f.test_runs_case_id
-      where f.path like 'demo/traces/%' or f.path like 'demo/videos/%'
+      where (f.path like 'demo/traces/%' or f.path like 'demo/videos/%') and trc.failure_cluster_id is not null
     `);
     expect(attachments.length).toBeGreaterThan(0);
     for (const a of attachments) {
