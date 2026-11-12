@@ -6,7 +6,8 @@
 import { placeMarks, type VideoActionsResponse, type VideoMark } from '#shared/video-actions';
 import { readVideoActions } from '~/utils/video-actions-cache';
 
-export type VideoMarksState = 'loading' | 'error' | 'empty' | 'ready';
+/** `clock-unknown`: the test recorded actions but no start time to place them in its video by. */
+export type VideoMarksState = 'loading' | 'error' | 'empty' | 'clock-unknown' | 'ready';
 
 export function useVideoActionMarks(
   executionId: Ref<number | null>,
@@ -48,7 +49,8 @@ export function useVideoActionMarks(
   const state = computed<VideoMarksState>(() => {
     if (failed.value) return 'error';
     if (!answer.value) return 'loading';
-    return answer.value.actions.length === 0 ? 'empty' : 'ready';
+    if (answer.value.actions.length > 0) return 'ready';
+    return answer.value.reason === 'clock-unknown' ? 'clock-unknown' : 'empty';
   });
   const marks = computed<VideoMark[]>(() =>
     answer.value ? placeMarks(answer.value.actions, spanMs.value, widthPx.value) : [],

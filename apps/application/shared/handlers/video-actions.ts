@@ -44,7 +44,8 @@ export async function getVideoActions(
     }
     if (!raw || raw.length === 0) continue;
     const timed = timeActions(raw, timing);
-    return timed ? { source, ...timed } : NONE;
+    // Actions were recorded but the test has no start time to place them by: say so, rather than "no actions".
+    return timed ? { source, ...timed } : { ...NONE, reason: 'clock-unknown' };
   }
   return NONE;
 }

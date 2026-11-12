@@ -62,6 +62,11 @@ export interface VideoActionsResponse {
   total: number;
   /** True when the answer holds fewer actions than the test took. */
   capped: boolean;
+  /**
+   * Why an answer with no actions has none, when the test did record some: they cannot be placed in the video because
+   * the test has no recorded start time. Absent when there is simply nothing to show.
+   */
+  reason?: 'clock-unknown';
 }
 
 /** An action before it is timed: when it started in epoch ms. */

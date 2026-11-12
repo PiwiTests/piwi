@@ -110,6 +110,9 @@ const countText = computed(() =>
       {{ countText }}
     </p>
     <p v-else-if="state === 'empty'" class="text-xs text-muted">No recorded actions for this test</p>
+    <p v-else-if="state === 'clock-unknown'" class="text-xs text-muted" data-testid="video-action-clock-unknown">
+      This test did not record when it started, so its actions cannot be placed in the video
+    </p>
     <p v-else-if="state === 'error'" class="text-xs text-muted">The actions of this test could not be loaded</p>
     <p v-else class="text-xs text-muted">Loading actions…</p>
   </div>

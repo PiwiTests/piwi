@@ -89,8 +89,22 @@ describe('getVideoActions', () => {
     expect(await getVideoActions(db as any, 999)).toEqual(none);
   });
 
-  test('is empty when the execution has no start time to place actions by', async () => {
-    expect((await getVideoActions(db as any, 12)).source).toBe('none');
+  test('says the clock is unknown when the execution has actions but no start time to place them by', async () => {
+    const out = await getVideoActions(db as any, 12);
+    expect(out).toEqual({
+      source: 'none',
+      timing: null,
+      actions: [],
+      total: 0,
+      capped: false,
+      reason: 'clock-unknown',
+    });
+    const fromTrace = await getVideoActions(db as any, 12, async () => trace([300]));
+    expect(fromTrace.reason).toBe('clock-unknown');
+  });
+
+  test('gives no reason when there are no actions at all', async () => {
+    expect((await getVideoActions(db as any, 11)).reason).toBeUndefined();
   });
 
   test('caps the marks and says how many the test took', async () => {

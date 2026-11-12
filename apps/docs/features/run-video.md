@@ -58,7 +58,9 @@ Video tab and in the Evidence video review.
 
 The marks come from what the project already stores. A test with a [trace](./evidence) uses the trace's actions, and any
 other test uses its step list, so there is nothing to switch on. A test with neither shows "No recorded actions for this
-test", and a failed load is one muted line; the video plays either way.
+test". A test that recorded actions but not when it started shows "This test did not record when it started, so its
+actions cannot be placed in the video", since there is nothing to place them by. A failed load is one muted line; the
+video plays either way.
 
 Piwi does not show what a test typed. The server masks each action before it sends it, and a locator is shown as the test
 wrote it:

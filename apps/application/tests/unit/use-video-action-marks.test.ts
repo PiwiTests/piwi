@@ -71,6 +71,14 @@ describe('useVideoActionMarks', () => {
     expect(l.marks.value).toEqual([]);
   });
 
+  it('says the clock is unknown, not that there are no actions, when they cannot be placed', async () => {
+    reader = async () => answer([], { source: 'none', timing: null, reason: 'clock-unknown' });
+    const l = lane();
+    await settle();
+    expect(l.state.value).toBe('clock-unknown');
+    expect(l.marks.value).toEqual([]);
+  });
+
   it('is an error when the read fails, and leaves the test it is on alone', async () => {
     reader = () => Promise.reject(new Error('500'));
     const l = lane();
