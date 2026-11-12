@@ -278,7 +278,7 @@ test counts by its last attempt, so one whose retry passed names nothing:
   an issue type to link. A key in a tag is linked only when Jira says its issue is of one of the types in the
   binding's *Issue types linked from test tags* (by default the binding's issue type, a number meaning a type id and
   any other text a type name), since a tag can also name a story. A key the filter drops counts in *and N more*. An
-  annotation has no type filter and wins when both name the key. The chip says *From the tag `@SHOP-123`*.
+  annotation has no type filter and wins when both name the key. The chip says *From the tag @SHOP-123*.
 - **Removing one keeps it off.** A link from the tests removed on the dashboard or through the MCP tools is not linked
   to that cluster again, even once the issue moves; a merge keeps the removal on the surviving cluster and a split
   copies it to the new one. Pinning the issue on that cluster by hand lifts it.

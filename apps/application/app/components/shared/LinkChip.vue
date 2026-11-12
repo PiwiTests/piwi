@@ -33,7 +33,7 @@ const source = computed(() => {
   if (props.link.origin === 'annotation') return "From the test's annotation";
   if (props.link.origin !== 'tag') return null;
   const tag = props.link.metadata?.source?.tag;
-  return tag ? `From the tag \`${tag}\`` : 'From the tag';
+  return tag ? `From the tag ${tag}` : 'From the tag';
 });
 </script>
 
