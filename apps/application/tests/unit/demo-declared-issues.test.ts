@@ -94,7 +94,7 @@ describe("the demo's link step", () => {
     expect(cluster!.declaredIssuesMore).toBe(1);
   });
 
-  test('links the Bug a tag names with the tag as its source, and counts the Task it does not link', async () => {
+  test('links the Bug a tag names with the tag as its source, and leaves the Task it does not link out of the count', async () => {
     const clusterId = await failNaming(
       [],
       {},
@@ -110,9 +110,10 @@ describe("the demo's link step", () => {
         expect.objectContaining({ source: { testCaseId: expect.any(Number), tag: '@DEMO-52' } }),
       ],
     ]);
-    // DEMO-53 is a Task and the binding's issue type is Bug; SHOP-1 is not in the bound project.
+    // DEMO-53 is a Task and the binding's issue type is Bug, so it is dropped and not counted; SHOP-1 is not in the
+    // bound project.
     const [cluster] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, clusterId));
-    expect(cluster!.declaredIssuesMore).toBe(1);
+    expect(cluster!.declaredIssuesMore).toBe(0);
   });
 
   test('reads no tag when the project has no issue key pattern', async () => {

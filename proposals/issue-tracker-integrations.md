@@ -492,8 +492,8 @@ issue on the site and show its title and status to the project's readers. Pinnin
   The list is a nullable column on the binding (`declared_issue_types`; null, and a list that names none, mean the
   binding's issue type), edited as a multi-select under the issue type. An entry of digits matches the
   issue's type id or a type named with those digits, and any other entry the type name, ignoring case, since the
-  binding stores either. A key the
-  filter drops counts like a key Jira did not return.
+  binding stores either. A key the filter drops is left out of *and N more named by its tests*; a key Jira did not
+  return is counted.
 
 **Links from the tests are read-only.** Run data must not drive writes through the shared account. Today the policies
 write to the cluster's tracker link (`getClusterTrackerLink`: the newest keyed link `writableLink` accepts) and the

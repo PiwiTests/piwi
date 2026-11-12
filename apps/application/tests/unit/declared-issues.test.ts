@@ -1234,7 +1234,7 @@ describe('the tag source', () => {
     expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-6']);
   });
 
-  test('links an issue of the binding’s issue type by default, and counts one of another type as not found', async () => {
+  test('links an issue of the binding’s issue type by default, and does not count one of another type', async () => {
     await setIssueTagPattern(ISSUE_PATTERN);
     const cluster = await newCluster();
     defineIssue('PROJ-1');
@@ -1244,7 +1244,34 @@ describe('the tag source', () => {
     await linkDeclaredIssues(dbc, runId);
 
     expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-1']);
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 0 });
+  });
+
+  test('a key the type filter drops is left out of the count, one Jira did not return is counted', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    defineIssue('PROJ-1');
+    defineIssue('PROJ-2', { type: { id: '10001', name: 'Story' } });
+    const { runId } = await failRun([{ cluster, issues: [], tags: ['PROJ-1', 'PROJ-2', 'PROJ-3'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect((await links(cluster)).map((l) => l.key)).toEqual(['PROJ-1']);
     expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 1 });
+  });
+
+  test('a key the type filter drops is left out of the count when the cluster is at the cap', async () => {
+    await setIssueTagPattern(ISSUE_PATTERN);
+    const cluster = await newCluster();
+    const bugs = Array.from({ length: 12 }, (_, i) => `PROJ-${i + 10}`);
+    for (const key of bugs) defineIssue(key);
+    defineIssue('PROJ-99', { type: { id: '10001', name: 'Story' } });
+    const { runId } = await failRun([{ cluster, issues: [], tags: [...bugs, 'PROJ-99'] }]);
+
+    await linkDeclaredIssues(dbc, runId);
+
+    expect(await links(cluster)).toHaveLength(10);
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 2 });
   });
 
   test('takes the types of the list instead of the binding’s, by name or by id', async () => {
@@ -1259,7 +1286,7 @@ describe('the tag source', () => {
     await linkDeclaredIssues(dbc, runId);
 
     expect((await links(cluster)).map((l) => l.key).sort()).toEqual(['PROJ-1', 'PROJ-2']);
-    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 1 });
+    expect(await clusterRow(cluster)).toMatchObject({ declaredIssuesMore: 0 });
   });
 
   test('an entry of digits matches the type id or a type named with those digits; a name matches the name only', async () => {

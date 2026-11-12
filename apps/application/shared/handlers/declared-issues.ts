@@ -240,8 +240,13 @@ export async function linkNamedIssues(
       room--;
       if (inserted.length > 0) result.linked.push({ clusterId, key });
     }
-    // The keys named and still not linked or dismissed: left out at the cap, past the run's budget, or not found.
-    const more = state.candidates.filter((k) => !state.taken.has(k)).length;
+    // The keys named and still not linked or dismissed: left out at the cap, past the run's budget, or not found. A key
+    // only tags name that the type filter drops is not one the cluster would link, so it is not counted.
+    const dropsForType = (key: string) => {
+      const issue = byKey.get(key);
+      return issue !== undefined && !state.annotated.has(key) && !isIssueTypeAccepted(issue, tagTypes ?? []);
+    };
+    const more = state.candidates.filter((k) => !state.taken.has(k) && !dropsForType(k)).length;
     if (deadline.aborted) return stopped();
     await db.update(failureClusters).set({ declaredIssuesMore: more }).where(eq(failureClusters.id, clusterId));
   }
