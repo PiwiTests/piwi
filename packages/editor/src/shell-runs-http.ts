@@ -11,6 +11,7 @@ import type { ShellRuns } from './shell-runs';
 import {
   answerRunChannel,
   answerRunCommand,
+  answerRunEnded,
   answerRunPick,
   answerRunStarted,
   matchShellRunsRoute,
@@ -130,7 +131,9 @@ export async function serveShellRuns(
         ? await answerRunCommand(runs, body)
         : route === 'started'
           ? answerRunStarted(runs, guarded, body)
-          : answerRunPick(runs, body);
+          : route === 'ended'
+            ? answerRunEnded(runs, body)
+            : answerRunPick(runs, body);
     send(res, answer.status, answer.body);
   } catch {
     // A client gone mid-body leaves nothing to answer; anything else answers 500.

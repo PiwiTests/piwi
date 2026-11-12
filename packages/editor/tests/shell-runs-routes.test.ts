@@ -15,6 +15,7 @@ import {
   DESKTOP_RUN_COMMANDS_PATH,
   DESKTOP_RUN_EVENTS_PATH,
   DESKTOP_RUN_STARTED_PATH,
+  DESKTOP_RUN_ENDED_PATH,
   type DesktopRunEvent,
 } from '../src/shell-run-events';
 import { matchShellRunsRoute } from '../src/shell-runs-routes';
@@ -162,13 +163,15 @@ function attach(ref: string): net.Socket {
 }
 
 describe('the routes', () => {
-  test('match the five paths and methods alone', () => {
+  test('match the six paths and methods alone', () => {
     expect(matchShellRunsRoute('GET', DESKTOP_RUN_CHANNEL_PATH)).toBe('run-channel');
     expect(matchShellRunsRoute('GET', DESKTOP_RUN_EVENTS_PATH)).toBe('events');
     expect(matchShellRunsRoute('POST', DESKTOP_RUN_COMMANDS_PATH)).toBe('commands');
     expect(matchShellRunsRoute('POST', DESKTOP_PICKS_PATH)).toBe('picks');
     expect(matchShellRunsRoute('POST', DESKTOP_RUN_STARTED_PATH)).toBe('started');
     expect(matchShellRunsRoute('GET', DESKTOP_RUN_STARTED_PATH)).toBeNull();
+    expect(matchShellRunsRoute('POST', DESKTOP_RUN_ENDED_PATH)).toBe('ended');
+    expect(matchShellRunsRoute('GET', DESKTOP_RUN_ENDED_PATH)).toBeNull();
     expect(matchShellRunsRoute('POST', DESKTOP_RUN_CHANNEL_PATH)).toBeNull();
     expect(matchShellRunsRoute('GET', DESKTOP_PICKS_PATH)).toBeNull();
     expect(matchShellRunsRoute('GET', '/api/desktop/live')).toBeNull();
@@ -183,6 +186,18 @@ describe('the routes', () => {
     );
     expect((await call('GET', DESKTOP_RUN_CHANNEL_PATH, { 'x-piwi-token': `pd_${'e'.repeat(64)}` })).status).toBe(401);
     expect((await call('POST', DESKTOP_RUN_STARTED_PATH, {}, { ref: 'desktop-1', args: [] })).status).toBe(401);
+    expect((await call('POST', DESKTOP_RUN_ENDED_PATH, {}, { ref: 'desktop-1', exitCode: 0 })).status).toBe(401);
+  });
+
+  test('hear that a run the shell started ended, from the window too', async () => {
+    const window = { ...SHELL, origin: 'http://127.0.0.1:3000' };
+    expect(await call('POST', DESKTOP_RUN_ENDED_PATH, window, { ref: 'desktop-1', exitCode: 1 })).toEqual({
+      status: 200,
+      body: { ok: true },
+    });
+    expect((await call('POST', DESKTOP_RUN_ENDED_PATH, SHELL, { ref: 'desktop-2' })).status).toBe(200);
+    expect((await call('POST', DESKTOP_RUN_ENDED_PATH, SHELL, { ref: 'ed-1', exitCode: 0 })).status).toBe(400);
+    expect((await call('POST', DESKTOP_RUN_ENDED_PATH, SHELL, { ref: 'desktop-3', exitCode: 'x' })).status).toBe(400);
   });
 
   test('name the run channel, the picks address and the hub to the shell, and nothing to a browser', async () => {

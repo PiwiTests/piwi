@@ -4,7 +4,8 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { ToolResult } from '../src/run-host';
 import { ShellRuns, type ShellRunStart, type ShellRunsOptions, type ShellRunsWords } from '../src/shell-runs';
-import { EDITOR_AGENT_WORDS } from '../src/run-agent';
+import { EDITOR_AGENT_WORDS, MAX_AGENT_RUNS } from '../src/run-agent';
+import type { DesktopRunEvent } from '../src/shell-run-events';
 
 /**
  * An agent's `run_start` on a desktop shell's hub (`ShellRuns`): the spec of a linked folder, checked by the hub, and
@@ -37,6 +38,8 @@ let runs: ShellRuns | null = null;
 /** What the host's window was asked to start, and what it answers. */
 let asked: ShellRunStart[] = [];
 let answer: { ref: string } | { refused: string } = { ref: 'desktop-12' };
+/** How long the host's window takes to answer, in milliseconds. */
+let answerMs = 0;
 
 async function open(options: Partial<ShellRunsOptions> = {}): Promise<ShellRuns> {
   runs = await ShellRuns.start({
@@ -48,7 +51,9 @@ async function open(options: Partial<ShellRunsOptions> = {}): Promise<ShellRuns>
     folderPrefix: 'piwi-test-shell-start-',
     startRun: async (start) => {
       asked.push(start);
-      return answer;
+      const now = answer;
+      if (answerMs) await new Promise((resolve) => setTimeout(resolve, answerMs));
+      return now;
     },
     ...options,
   });
@@ -70,6 +75,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(other, 'cart.spec.ts'), SPEC);
   asked = [];
   answer = { ref: 'desktop-12' };
+  answerMs = 0;
 });
 
 afterEach(() => {
@@ -157,5 +163,104 @@ describe('an agent’s run_start on a desktop shell’s hub', () => {
       message:
         "tests/cart.spec.ts started in the test host's window, but it is not served to agents: nobody attends it.",
     });
+  });
+
+  test('ends a run as the window says its process ended, whose workers never connected, and frees its place', async () => {
+    await open();
+    for (const id of [21, 22, 23]) {
+      answer = { ref: `desktop-${id}` };
+      expect((await call('run_start', { file: 'tests/cart.spec.ts' })).isError).toBe(false);
+    }
+    answer = { ref: 'desktop-24' };
+    expect((await call('run_start', { file: 'tests/cart.spec.ts' })).piwi.message).toBe(
+      '3 runs agents started have not ended (desktop-21, desktop-22, desktop-23): follow one to its end, or let its stops go on, before starting another.',
+    );
+    expect(runs!.ended('desktop-22', 1)).toBeNull();
+    const followed = await call('run_follow', { run: 'desktop-22', wait: 0 });
+    expect(followed.piwi.events).toEqual([expect.objectContaining({ kind: 'run-ended', exitCode: 1 })]);
+    expect((await call('run_start', { file: 'tests/cart.spec.ts' })).piwi).toMatchObject({
+      ok: true,
+      run: 'desktop-24',
+    });
+    // A run the shell did not start is no ref of this hub's.
+    expect(runs!.ended('terminal-1', 0)).toBe('The ref names no run the shell starts.');
+    expect(runs!.ended('desktop-25', 'x')).toBe('exitCode is a whole number, or null.');
+  });
+
+  test(`counts the starts still waiting for the window, ${MAX_AGENT_RUNS} at once at most`, async () => {
+    await open();
+    answerMs = 30;
+    let next = 30;
+    const startOne = () => {
+      answer = { ref: `desktop-${next++}` };
+      return call('run_start', { file: 'tests/cart.spec.ts' });
+    };
+    const answers = await Promise.all(Array.from({ length: 6 }, startOne));
+    expect(answers.filter((a) => !a.isError)).toHaveLength(MAX_AGENT_RUNS);
+    expect(asked).toHaveLength(MAX_AGENT_RUNS);
+    // A start the window refused gives its place back.
+    runs!.close();
+    asked = [];
+    await open();
+    answer = { refused: 'No window is open.' };
+    for (let i = 0; i < MAX_AGENT_RUNS + 1; i++) {
+      expect((await call('run_start', { file: 'tests/cart.spec.ts' })).piwi.message).toBe('No window is open.');
+    }
+    expect(asked).toHaveLength(MAX_AGENT_RUNS + 1);
+  });
+
+  test('counts a run the window started that nobody attends, and has the window stop it', async () => {
+    await open();
+    const heard: DesktopRunEvent[] = [];
+    await runs!.openWindow({ send: (event) => heard.push(event as DesktopRunEvent), buffered: () => 0, close() {} });
+    for (const id of [41, 42, 43]) {
+      answer = { ref: `desktop-${id}-unattended` };
+      expect((await call('run_start', { file: 'tests/cart.spec.ts' })).isError).toBe(true);
+    }
+    expect(heard.filter((event) => event.type === 'stop-run')).toEqual([
+      { type: 'stop-run', ref: 'desktop-41-unattended' },
+      { type: 'stop-run', ref: 'desktop-42-unattended' },
+      { type: 'stop-run', ref: 'desktop-43-unattended' },
+    ]);
+    answer = { ref: 'desktop-44' };
+    expect((await call('run_start', { file: 'tests/cart.spec.ts' })).piwi.message).toMatch(/^3 runs agents started/);
+    // Not listed to agents, and its place freed once its process ended.
+    expect((await call('run_list', {})).piwi.runs).toEqual([]);
+    runs!.ended('desktop-42', 0);
+    expect((await call('run_start', { file: 'tests/cart.spec.ts' })).piwi).toMatchObject({
+      ok: true,
+      run: 'desktop-44',
+    });
+  });
+
+  test('refuses a line of no test, a spec Playwright would read as an option and a path it cannot read', async () => {
+    await open();
+    expect((await call('run_start', { file: 'tests/cart.spec.ts', line: 999 })).piwi.message).toBe(
+      'Line 999 of tests/cart.spec.ts is in no test: name a line of a test, or leave out line to run the whole spec.',
+    );
+    expect((await call('run_start', { file: 'tests/cart.spec.ts', line: 1 })).piwi.message).toBe(
+      'Line 1 of tests/cart.spec.ts is in no test: name a line of a test, or leave out line to run the whole spec.',
+    );
+    fs.writeFileSync(path.join(folder, '-cart.spec.ts'), SPEC);
+    expect((await call('run_start', { file: '-cart.spec.ts' })).piwi.message).toBe(
+      '-cart.spec.ts starts with "-", which Playwright reads as an option: rename the spec to run it.',
+    );
+    const long = `${'a'.repeat(300)}.spec.ts`;
+    expect((await call('run_start', { file: long })).piwi.message).toBe(`Piwi cannot read ${long}: ENAMETOOLONG.`);
+    expect(asked).toEqual([]);
+  });
+
+  test('names a run’s command only where every shell reads its words as they are', async () => {
+    await open();
+    const command = (ref: string, args: string[]) => {
+      expect(runs!.started(ref, args)).toBeNull();
+      return (runs as unknown as { commandOf(ref: string): string | null }).commandOf(ref);
+    };
+    expect(command('desktop-1', ['tests/cart.spec.ts:3', '--grep', 'pays (card); by | card'])).toBe(
+      'npx playwright test tests/cart.spec.ts:3 --grep "pays (card); by | card"',
+    );
+    for (const arg of ['$(calc)', '`calc`', '"x"', 'a\\b', '%PATH%', 'x‮y', 'x​y', 'wow!']) {
+      expect(command('desktop-2', ['--grep', arg])).toBeNull();
+    }
   });
 });

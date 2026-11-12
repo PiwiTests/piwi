@@ -44,6 +44,12 @@ export const DESKTOP_PICKS_PATH = '/api/desktop/runs/picks';
  */
 export const DESKTOP_RUN_STARTED_PATH = '/api/desktop/runs/started';
 
+/**
+ * Where the window that started a run says its process ended (`{ ref, exitCode }`), so an agent's run whose workers
+ * never connected ends too.
+ */
+export const DESKTOP_RUN_ENDED_PATH = '/api/desktop/runs/ended';
+
 /** The most codes made at stops and locators picked the host keeps, the latest, for a window that opens later. */
 export const MAX_KEPT_STOP_CODES = 20;
 
