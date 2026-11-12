@@ -1102,6 +1102,11 @@ would open on the machine the run runs on, not this one.").
 - **The path stays with the hub.** Every answer is a sentence; a reason the viewer gives has the trace's path and its
   folders taken out (`withoutPaths`), then is cut to 300 characters, so no part of a path is left where the cut falls.
   No session, notice, hub message or answer carries it (`tests/run-trace.test.ts`).
+- **The host reads it too** (`RunSessions.laneTrace`): the same ask and checks, without a launcher or a display,
+  answer the host alone with the checked file, the runner's trace folder it is in as the file system spells it, the
+  name the attempt's files start with and the attempt (`LaneTrace`); a refusal is the same sentence. `openTrace` is
+  that, then the viewer. The desktop app's server reads the attempt's files from that folder for its window's
+  **Inspect**; no hub command, client request nor agent's tool reaches it.
 
 ### Share live
 
@@ -1358,7 +1363,8 @@ surfaces as `server.ts` wires them to the client:
 - `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
   the folders a process of its own that was killed left behind.
 - `RunSessions` takes `traceViewer` and `traceDisplay` too: the server starts Playwright's trace viewer from the linked
-  folder's own Playwright, where the machine shows its window ([The trace so far](#the-trace-so-far)).
+  folder's own Playwright, where the machine shows its window, and reads a lane's checked trace itself for its window's
+  **Inspect** (`laneTrace`) ([The trace so far](#the-trace-so-far)).
 - `RunHub` takes the `token` `hello` carries (the desktop token), the sentence its connections close with
   (`closing`), and `stopRun`, which sends `stop-run` to the app's windows on the hub's `stop`. `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket

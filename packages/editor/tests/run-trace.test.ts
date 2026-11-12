@@ -381,6 +381,76 @@ describe('opening a lane’s running test’s trace', () => {
   });
 });
 
+describe('the trace a host reads itself', () => {
+  test('is the checked trace of the lane’s running attempt: its folder, the name its files start with, the attempt', async () => {
+    // No viewer, no display: the host reads the files itself.
+    const own = harness({ launcher: null, display: false, retry: 1 });
+    own.begin();
+    const trace = file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}-retry1-recording2.trace`);
+    own.answer.value = named(trace);
+    expect(await own.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toEqual({
+      ok: true,
+      root: run,
+      traces,
+      base: `${TEST_ID}-retry1`,
+      file: trace,
+      worker: 0,
+      test: { id: TEST_ID, retry: 1 },
+    });
+    expect(own.asked).toHaveLength(1);
+    expect(own.launches).toEqual([]);
+    for (const said of [JSON.stringify(own.sent), JSON.stringify(own.notices)]) expect(said).not.toContain(traces);
+  });
+
+  test('is refused as Open the trace so far is, in the same sentences', async () => {
+    const older = harness({ features: ['view-lane', 'layers'] });
+    older.begin();
+    expect(await older.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toEqual({
+      ok: false,
+      message: "This worker's reporter cannot open its trace: update @piwitests/reporter.",
+    });
+    const between = harness();
+    expect(await between.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toEqual({
+      ok: false,
+      message: 'No test runs on this worker now.',
+    });
+    expect([...older.asked, ...between.asked]).toEqual([]);
+    const unknown = harness({ root: null, cwd: run });
+    unknown.begin();
+    expect(await unknown.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toMatchObject({ ok: false });
+    expect(unknown.asked).toEqual([]);
+    const untraced = "This test's attempt is not traced: its project's trace option records none of it.";
+    const own = harness({ launcher: null });
+    own.begin();
+    own.answer.value = { ok: false, message: untraced };
+    expect(await own.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: false, message: untraced });
+    own.answer.value = named(path.join(root, 'elsewhere', '.playwright-artifacts-0', 'traces', `${TEST_ID}.trace`));
+    expect(await own.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).toMatchObject({ ok: false });
+    expect(await own.sessions.laneTrace({ ref: 'ed-1', lane: -1 })).toMatchObject({ ok: false });
+  });
+
+  test('goes to no hub connection: a host that opens no viewer answers its openTrace in a sentence', async () => {
+    const own = harness({ launcher: null });
+    own.begin();
+    own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
+    const hub = await hubOf(own.sessions);
+    try {
+      const picker = await pairedTo(hub);
+      picker.send({ type: 'openTrace', id: 1, ref: 'ed-1', lane: 0 });
+      expect(await picker.answer(1)).toEqual({
+        type: 'answer',
+        id: 1,
+        ok: false,
+        message: 'The editor cannot open a trace.',
+      });
+      expect((await own.sessions.laneTrace({ ref: 'ed-1', lane: 0 })).ok).toBe(true);
+      expect(picker.raw.join('\n')).not.toContain('.playwright-artifacts');
+    } finally {
+      hub.close();
+    }
+  });
+});
+
 describe('the trace file a worker names', () => {
   /** What the run sessions answer when the worker names `named` while `TEST_ID` runs, and what they launched. */
   async function refusal(name: string, options: Parameters<typeof harness>[0] = {}): Promise<RunControlResult> {
