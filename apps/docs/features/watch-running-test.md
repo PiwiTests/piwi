@@ -76,6 +76,11 @@ Under the image, the editor's view shows what the pixels cannot, a CI run's lane
 The text and the filmstrip are read only while open. The view says when an older reporter, or team instance, may send
 none of them.
 
+While an editor watches a worker of your run, the line of the call its test is in is marked until the test ends or
+stops, the call named after it (VS Code dims the line, `Worker 2 · Click getByRole('button')`; a JetBrains IDE adds an
+inlay), and the page's events go to VS Code's **Piwi: Page** output or the JetBrains Piwi tool window's **Page** tab,
+each test named as it begins.
+
 ## Open the trace so far
 
 **Open the trace so far** opens Playwright's trace viewer on the running test's trace up to now, on the machine the
@@ -86,9 +91,7 @@ window and the desktop app's tray, while the worker runs a test, stopped or not,
 It shows only where it can open: the machine the run runs on has a display (on Linux, `DISPLAY` or `WAYLAND_DISPLAY`
 set), the editor or the desktop app knows the run's folder, and a Runs window reaches the hub without a forwarded port.
 
-The attempt must be traced: `trace: 'on'` or `'retain-on-failure'` (`wrapConfig`'s default when your config sets
-none) traces every attempt, `'on-first-retry'` and `'on-all-retries'` a retry alone. Its trace starts with its first
-browser context.
+The attempt must be traced: [which attempts are](/guide/concepts#trace-so-far).
 
 ## Interact
 
@@ -109,10 +112,8 @@ picks a locator instead. The keys that stay the window's are listed under
 - **The test's `page`.** A popup or a second page the test opens is not shown. A download a click on the view starts
   and a dialog the page opens go to the test as its own would: Playwright deletes the download with the test's
   context, and dismisses the dialog unless the test handles it.
-- **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
-  size and quality; when none can start, it is an image of the page twice a second.
-- **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a second; when even that is
-  too heavy, the view says so in its place.
+- **The images** follow the test's own screencast and give way on a heavy page:
+  [Watch](/guide/concepts#watch-share-live).
 - **An older reporter** shows a stopped test alone: the Runs window's row and the desktop app's tray hold their
   **Watch**, saying to update it, and the editors offer no Watch for its workers.
 

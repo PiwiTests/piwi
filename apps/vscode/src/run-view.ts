@@ -23,8 +23,9 @@
  * and a breakpoint or the cursor's line back to the run's. A stop's browser is shared with Playwright's own tools only
  * when asked, each time, after a warning (`piwi/stopBind`). **Share live** shares a run on the team instance its
  * reporter reports to (`piwi/shareRun`), after a warning the first time in this window, and **Stop sharing** ends it;
- * the status bar says how a shared run stands and offers it to a run that can be shared. The pure half is
- * `run-control.ts`.
+ * the status bar says how a shared run stands and offers it to a run that can be shared, its click opening a menu
+ * whose Stop sharing asks to confirm. While the worker panel watches a slot, the line of the call its test is in is
+ * dimmed, the call after it (`piwi/runningLine`, `RunningLines`). The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -44,6 +45,7 @@ import {
   SET_BREAKPOINTS_NOTIFICATION,
   SHARE_RUN_REQUEST,
   SHARE_WINDOW_NOTIFICATION,
+  RUNNING_LINE_NOTIFICATION,
   ASK_TO_WATCH_NOTIFICATION,
   ANSWER_ASK_REQUEST,
   HOLD_RUN_REQUEST,
@@ -64,6 +66,7 @@ import {
   type SetBreakpointsParams,
   type ShareRunParams,
   type ShareWindowParams,
+  type RunningLine,
   type AskToWatchParams,
   type AnswerAskParams,
   type HoldRunParams,
@@ -101,6 +104,7 @@ import {
   linesAbove,
   liveItem,
   liveMenu,
+  RunningLines,
   progressItem,
   liveTarget,
   pagePoint,
@@ -185,6 +189,8 @@ export interface RunControl extends vscode.Disposable {
   sessions(): RunSession[];
   /** The lines of a file drawn as an execution point, by its URI. */
   executionPoints(uri: string): number[];
+  /** The lines of a file marked as a watched lane's running call, by its URI. */
+  runningLines(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
   /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
@@ -264,6 +270,15 @@ export function registerRunControl(
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'execution-point.svg'),
     gutterIconSize: 'contain',
   });
+  /** The line of the call a watched lane's test is in: dim, the call after the line, one per lane (`RunningLines`). */
+  const runningLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+    after: { margin: '0 0 0 3ch', color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' },
+  });
+  const running = new RunningLines();
+  /** The lines marked as running, by file, for the API `activate` returns. */
+  const runningDrawn = new Map<string, number[]>();
   /** A held failure's line: the execution point in the dashboard's failure red. */
   const failurePoint = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -346,6 +361,7 @@ export function registerRunControl(
       if (edit) edits.add(uri, edit);
     }
     if (stopsOf(sessions).some((s) => s.stop.uri === uri)) drawStops();
+    if (runningDrawn.has(uri)) drawRunning();
   };
 
   const item = (key: string) => {
@@ -440,6 +456,32 @@ export function registerRunControl(
     );
     hover.isTrusted = { enabledCommands: STOP_COMMANDS };
     return hover;
+  };
+
+  /** The running line of each watched lane in the visible editors of its file, at its line now. */
+  const drawRunning = () => {
+    runningDrawn.clear();
+    for (const editor of vscode.window.visibleTextEditors) {
+      const uri = editor.document.uri.toString();
+      const marks = running.marks(uri, editor.document.lineCount, (file, line, ref) =>
+        edits.forward(file, line, sinceOf(ref)),
+      );
+      editor.setDecorations(
+        runningLine,
+        marks.map((mark) => {
+          const end = editor.document.lineAt(mark.line).range.end;
+          return {
+            range: new vscode.Range(mark.line, 0, mark.line, end.character),
+            renderOptions: { after: { contentText: mark.text } },
+          };
+        }),
+      );
+      if (marks.length)
+        runningDrawn.set(
+          uri,
+          marks.map((mark) => mark.line),
+        );
+    }
   };
 
   /** The execution point of each stop in the visible editors of its file. */
@@ -767,6 +809,8 @@ export function registerRunControl(
     const keys = new Set(now.map(stopKey));
     drawControls();
     drawStops();
+    running.sessionsChanged(sessions);
+    drawRunning();
     caretMoved();
     const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.watches(s.ref, s.slot) });
     wakeWhenWaited();
@@ -1325,11 +1369,13 @@ export function registerRunControl(
     }),
     executionPoint,
     failurePoint,
+    runningLine,
     lensesChanged,
     caretDecoration,
     { dispose: () => counts.dispose() },
     vscode.window.onDidChangeVisibleTextEditors(() => {
       drawStops();
+      drawRunning();
       drawCaret();
     }),
     vscode.window.onDidChangeActiveTextEditor(() => caretMoved()),
@@ -1418,6 +1464,11 @@ export function registerRunControl(
     ),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharingWindow, () => shareWindow(null, false)),
     vscode.commands.registerCommand(RUN_COMMANDS.liveMenu, () => openLiveMenu()),
+    lc.onNotification(RUNNING_LINE_NOTIFICATION, (told: RunningLine) => {
+      // Spelled as VS Code spells a document's URI, as a stop's is.
+      const call = told?.call ? { ...told.call, uri: vscode.Uri.parse(told.call.uri).toString() } : null;
+      if (told && running.heard({ ...told, call })) drawRunning();
+    }),
     lc.onNotification(SHARE_WINDOW_NOTIFICATION, (changed: ShareWindowParams) => {
       windowShared = changed?.on === true;
       void vscode.commands.executeCommand('setContext', 'piwi.windowSharedLive', windowShared);
@@ -1471,6 +1522,7 @@ export function registerRunControl(
     },
     clear() {
       sessions = new Map();
+      running.clear();
       // A service started again holds none of the editor's breakpoints.
       editorSent = '';
       forgetEdits();
@@ -1479,6 +1531,7 @@ export function registerRunControl(
     breakpointsChanged: () => sendBreakpoints(),
     sessions: () => [...sessions.values()],
     executionPoints: (uri) => drawn.get(uri) ?? [],
+    runningLines: (uri) => runningDrawn.get(uri) ?? [],
     pausedPage: () => (panel ? page : null),
     workerView: () => workerPanel.view(),
     workerMessage: (message) => workerPanel.message(message),

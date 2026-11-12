@@ -20,8 +20,10 @@ import type {
   PausedImage,
   RunControlAction,
   RunControlResult,
+  LaneViewLayer,
   RunLive,
   AskToWatchParams,
+  RunningLine,
   RunPresence,
   RunSession,
   RunStop,
@@ -1089,6 +1091,112 @@ export function liveItem(sessions: Sessions, windowShared = false): ControlItem 
     tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
     command: RUN_COMMANDS.shareLive,
   };
+}
+
+/** The line of the call a watched lane's test runs, as the editor marks it: its 0-based line now and its words. */
+export interface RunningMark {
+  line: number;
+  text: string;
+}
+
+/**
+ * The running lines the service tells (`piwi/runningLine`), one per lane of a run, each a line of the run's code, kept
+ * until the service says it goes (the test ended or stopped, the watch ended) or its run ends.
+ */
+export class RunningLines {
+  private readonly lines = new Map<string, RunningLine>();
+
+  /** A running line told: kept, or gone for a null `call`; whether what the editor marks changed. */
+  heard(told: RunningLine): boolean {
+    const key = `${told.ref}\n${told.lane}`;
+    const before = this.lines.get(key);
+    if (!told.call) return this.lines.delete(key);
+    if (before && before.worker === told.worker && JSON.stringify(before.call) === JSON.stringify(told.call)) {
+      return false;
+    }
+    this.lines.set(key, told);
+    return true;
+  }
+
+  /** The runs changed: the lines of a run that ended, or that the sessions no longer hold, go; whether any went. */
+  sessionsChanged(sessions: Sessions): boolean {
+    let gone = false;
+    for (const [key, line] of this.lines) {
+      if (sessions.has(line.ref)) continue;
+      this.lines.delete(key);
+      gone = true;
+    }
+    return gone;
+  }
+
+  /** Every line goes (a service started again holds none); whether any did. */
+  clear(): boolean {
+    const any = this.lines.size > 0;
+    this.lines.clear();
+    return any;
+  }
+
+  /**
+   * The marks in the document `uri` of `lineCount` lines, each at its line now (`forward` maps a line of the run `ref`'s
+   * code through the edits since it started), by lane: `Worker 1 · Click getByRole('button')`.
+   */
+  marks(uri: string, lineCount: number, forward: (uri: string, line: number, ref: string) => number): RunningMark[] {
+    return [...this.lines.values()]
+      .filter((told) => told.call?.uri === uri)
+      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane)
+      .flatMap((told) => {
+        const line = forward(uri, told.call!.line, told.ref);
+        return line >= 0 && line < lineCount ? [{ line, text: `${workerName(told.lane)} · ${told.call!.title}` }] : [];
+      });
+  }
+}
+
+/** A line of the **Piwi: Page** output, and how it reads. */
+export interface PageLine {
+  text: string;
+  level: 'error' | 'warning' | 'info';
+}
+
+/**
+ * What **Piwi: Page** writes of the lane the worker panel watches: the test its worker begins, named once per attempt
+ * (`── Worker 1 · checkout › pays`), then each thing its page says, one line each, in the worker panel's words
+ * (`eventLine`), a request pending said once until it is answered.
+ */
+export class PageLog {
+  /** The test last named: its run, worker, id and attempt. */
+  private named: string | null = null;
+  /** The requests said pending, by the worker's number for each, until they are answered. */
+  private readonly pending = new Set<string>();
+
+  /** The watched lane `lane` of the run `ref` as the sessions hold it: the test its worker began, named once. */
+  lane(sessions: Sessions, ref: string, lane: number): PageLine[] {
+    const worker = sessions.get(ref)?.workers.find((w) => w.parallelIndex === lane);
+    return worker?.test ? this.name(ref, worker, worker.test) : [];
+  }
+
+  /** A page event of the watched lane: its test named first when it was not, then its line. */
+  event(layer: Extract<LaneViewLayer, { layer: 'events' }>, sessions: Sessions): PageLine[] {
+    const worker = sessions.get(layer.ref)?.workers.find((w) => w.worker === layer.worker);
+    const test = worker?.test && worker.test.id === layer.test ? worker.test : null;
+    const header = worker && test ? this.name(layer.ref, worker, test) : [];
+    const { event } = layer;
+    if (event.kind === 'request-pending') {
+      const key = `${layer.ref}:${layer.worker}:${event.id}`;
+      if (!event.done && this.pending.has(key)) return header;
+      if (event.done) this.pending.delete(key);
+      else this.pending.add(key);
+    }
+    const said = eventLine(event, layer.at, layer.worker, 0);
+    return [...header, { text: said.text, level: said.level }];
+  }
+
+  private name(ref: string, worker: RunWorker, test: RunTest): PageLine[] {
+    const key = `${ref}:${worker.worker}:${test.id}:${test.retry}`;
+    if (key === this.named) return [];
+    this.named = key;
+    const attempt = test.retry > 0 ? ` (attempt ${test.retry + 1})` : '';
+    return [{ text: `── ${workerName(worker.parallelIndex)} · ${testTitle(test)}${attempt}`, level: 'info' }];
+  }
 }
 
 /** An entry of the Live item's menu: open a shared run's page, copy its link, or stop sharing it or the window's runs. */

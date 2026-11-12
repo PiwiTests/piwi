@@ -484,6 +484,15 @@ Interact off, and Interact goes off with the watch (Watch off, a refused watch, 
 end), at another slot's view and at a stop that takes no input; the watch ends while the panel is hidden and starts
 again as it shows (`pausedPageViewChange`).
 
+**The running line and Piwi: Page.** The extension takes `piwi/runningLine` (`runningLine` in its initialization
+options): while the worker panel watches a slot, the line of the call its running test is in is drawn whole, in
+`editor.rangeHighlightBackground`, with `Worker 1 · <the call>` after it in the CodeLens color (`RunningLines`, one per
+slot, at the line it stands on now through `EditLog`, as a stop's). It goes as the service says (the test ended or
+stopped, the watch ended), as its run ends, and as the service starts again; the API `activate` returns gives the lines
+(`runningLines`). The slot's `events` layer also goes, one line each in the worker panel's words, to the **Piwi: Page**
+log output channel, made as its first line comes, the test the slot's worker begins named once per attempt
+(`PageLog`): only while the panel watches, as the layers do.
+
 **Open the trace so far.** Beside Watch and Interact, while the slot's worker runs a test whose reporter answers trace
 asks (`canOpenTrace` of `@piwitests/run-model/stop`, the view's `trace`), the button posts `trace`; it and
 **Piwi: Open the trace so far** (`piwi.openTraceSoFar`) send `piwi/openTrace` for the slot (`openTraceParams`). The

@@ -4,7 +4,9 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import type {
   CiSession,
   LocatorAtCaretResult,
+  LaneViewLayer,
   RunControlResult,
+  RunningLine,
   RunPresence,
   RunSession,
   RunStop,
@@ -66,6 +68,8 @@ import {
   liveInstance,
   liveItem,
   liveMenu,
+  PageLog,
+  RunningLines,
   stopSharingQuestion,
   STOP_SHARING,
   progressItem,
@@ -808,6 +812,109 @@ describe('Share live', () => {
     expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
     // Two runs that can be shared: the person chooses.
     expect(liveTarget(sessionsOf(live('ed-1'), live('ed-2')), true)).toEqual({ candidates: ['ed-1', 'ed-2'] });
+  });
+});
+
+describe('the running line', () => {
+  const told = (ref: string, lane: number, line: number | null, title = "Click getByRole('button')"): RunningLine => ({
+    ref,
+    lane,
+    worker: lane,
+    call: line === null ? null : { test: 't1', title, uri: spec, line },
+  });
+  const same = (_uri: string, line: number) => line;
+
+  test('marks the call each watched lane runs at its line now, with the call after it', () => {
+    const lines = new RunningLines();
+    expect(lines.heard(told('ed-1', 0, 4))).toBe(true);
+    expect(lines.heard(told('ed-1', 0, 4))).toBe(false);
+    expect(lines.marks(spec, 20, same)).toEqual([{ line: 4, text: "Worker 1 · Click getByRole('button')" }]);
+    // The edits since the run started move it, and it is not drawn past the document's end or in another file.
+    expect(lines.marks(spec, 20, (_uri, line, ref) => (ref === 'ed-1' ? line + 2 : line))).toEqual([
+      { line: 6, text: "Worker 1 · Click getByRole('button')" },
+    ]);
+    expect(lines.marks(spec, 4, same)).toEqual([]);
+    expect(lines.marks(pageObject, 20, same)).toEqual([]);
+    // One per worker: the lane's next call moves it, another lane's stands beside it.
+    lines.heard(told('ed-1', 0, 7, "Fill getByLabel('Name')"));
+    lines.heard(told('ed-1', 1, 9));
+    expect(lines.marks(spec, 20, same)).toEqual([
+      { line: 7, text: "Worker 1 · Fill getByLabel('Name')" },
+      { line: 9, text: "Worker 2 · Click getByRole('button')" },
+    ]);
+  });
+
+  test('clears a lane’s line as the service says it goes, and every line of a run that ended or is gone', () => {
+    const lines = new RunningLines();
+    lines.heard(told('ed-1', 0, 4));
+    lines.heard(told('ed-1', 1, 5));
+    lines.heard(told('ed-2', 0, 6));
+    // The test ended or stopped, the watch or the call's place went: the service says so.
+    expect(lines.heard(told('ed-1', 1, null))).toBe(true);
+    expect(lines.heard(told('ed-1', 1, null))).toBe(false);
+    expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([4, 6]);
+    // The run ended: its lines go though the service said nothing yet.
+    const live = sessionsOf(session('ed-2', [worker(0, 'running')]));
+    expect(lines.sessionsChanged(live)).toBe(true);
+    expect(lines.sessionsChanged(live)).toBe(false);
+    expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([6]);
+    // A service started again holds no line.
+    expect(lines.clear()).toBe(true);
+    expect(lines.marks(spec, 20, same)).toEqual([]);
+    expect(lines.clear()).toBe(false);
+  });
+});
+
+describe('the Piwi: Page output', () => {
+  const at = 1_800_000_000_000;
+  const eventOf = (event: PageEvent, test = 't1', worker = 0): Extract<LaneViewLayer, { layer: 'events' }> => ({
+    ref: 'ed-1',
+    lane: 0,
+    worker,
+    test,
+    layer: 'events',
+    event,
+    at,
+  });
+  const running = sessionsOf(session('ed-1', [worker(0, 'running')]));
+
+  test('names each test the watched lane begins, then what its page says, one line each', () => {
+    const log = new PageLog();
+    expect(log.lane(running, 'ed-1', 0)).toEqual([{ text: '── Worker 1 · checkout › pays', level: 'info' }]);
+    expect(log.lane(running, 'ed-1', 0)).toEqual([]);
+    expect(log.event(eventOf({ kind: 'console', text: 'boom' }), running)).toEqual([
+      { text: 'Console error: boom', level: 'error' },
+    ]);
+    // A request pending is said once, then as it is answered.
+    const pending = (ms: number, done: boolean): PageEvent => ({
+      kind: 'request-pending',
+      id: 3,
+      method: 'POST',
+      url: 'https://shop.example/api/pay',
+      ms,
+      done,
+    });
+    expect(log.event(eventOf(pending(5000, false)), running)).toEqual([
+      { text: 'POST /api/pay pending 5.0 s', level: 'warning' },
+    ]);
+    expect(log.event(eventOf(pending(10_000, false)), running)).toEqual([]);
+    expect(log.event(eventOf(pending(12_000, true)), running)).toEqual([
+      { text: 'POST /api/pay answered after 12 s', level: 'info' },
+    ]);
+    // The next attempt is named again, as an event of a test not named yet is.
+    const retried = sessionsOf(session('ed-1', [worker(0, 'running', { test: { ...runTest(1), id: 't1' } })]));
+    expect(log.lane(retried, 'ed-1', 0)).toEqual([
+      { text: '── Worker 1 · checkout › pays (attempt 2)', level: 'info' },
+    ]);
+    const other = sessionsOf(
+      session('ed-1', [worker(0, 'running', { test: { ...runTest(), id: 't2', title: ['cart', 'adds'] } })]),
+    );
+    expect(log.event(eventOf({ kind: 'page-error', text: 'oops' }, 't2'), other)).toEqual([
+      { text: '── Worker 1 · cart › adds', level: 'info' },
+      { text: 'Uncaught error: oops', level: 'error' },
+    ]);
+    // Between tests, nothing is named.
+    expect(log.lane(sessionsOf(session('ed-1', [worker(0, 'between')])), 'ed-1', 0)).toEqual([]);
   });
 });
 

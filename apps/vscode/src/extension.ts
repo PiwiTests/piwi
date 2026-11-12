@@ -302,6 +302,8 @@ export interface PiwiApi {
   runSessions(): RunSession[];
   /** The lines of a file drawn as where a run is stopped, by its URI. */
   executionPoints(uri: string): number[];
+  /** The lines of a file marked as a watched lane's running call. */
+  runningLines(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
   /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
@@ -469,6 +471,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl: true,
       stopCode: true,
       stopsRuns: true,
+      // The run control marks the line of the call the watched lane's test is in (`piwi/runningLine`).
+      runningLine: true,
       // The service builds an agent's run_start, and the extension runs it as a person's (`piwi/startRun`).
       startsRuns: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
@@ -1833,6 +1837,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     testExplorer: () => explorer?.shown() ?? null,
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
+    runningLines: (uri) => runControl.runningLines(uri),
     pausedPage: () => runControl.pausedPage(),
     workerView: () => runControl.workerView(),
     workerMessage: (message) => runControl.workerMessage(message),
