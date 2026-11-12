@@ -83,6 +83,18 @@ function viewerEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * Whether this machine shows a window for Playwright's trace viewer: macOS and Windows always; Linux, the BSDs and any
+ * other system only with an X or a Wayland display named in its environment (`DISPLAY`, `WAYLAND_DISPLAY`).
+ */
+export function hasDisplay(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (platform === 'darwin' || platform === 'win32') return true;
+  return !!env.DISPLAY || !!env.WAYLAND_DISPLAY;
+}
+
 /** What a viewer opens, and where it runs. */
 export interface TraceViewerLaunch {
   /** The run's folder, as its host knows it: the viewer is the Playwright installed there, and runs in it. */

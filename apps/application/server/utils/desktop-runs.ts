@@ -212,6 +212,11 @@ export interface DesktopRunsOptions {
    * the linked folder the run runs in: `startTraceViewer` by default.
    */
   traceViewer?: TraceViewerLauncher;
+  /**
+   * Whether this machine shows the trace viewer's window (`hasDisplay` by default): without one, the hub offers no
+   * trace and refuses `openTrace`.
+   */
+  traceDisplay?: () => boolean;
 }
 
 interface RunWindow {
@@ -367,6 +372,7 @@ export class DesktopRuns {
       // **Open the trace so far**: the viewer runs from the run's folder with none of this server's environment but
       // what a window and Playwright need, the trace's path staying in this server.
       traceViewer: options.traceViewer ?? startTraceViewer,
+      ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
     });
     this.actions = new StopActions({
       sessions: this.sessions,

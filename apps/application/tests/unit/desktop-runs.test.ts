@@ -63,6 +63,8 @@ const traceViewer: TraceViewerLauncher = async (launch) => {
   traceLaunches.push(launch);
   return { ok: true, closed: new Promise<void>((resolve) => traceClosers.push(resolve)) };
 };
+/** Whether the machine the hub runs on shows the trace viewer's window, whatever display the test's machine has. */
+const machine = { display: true };
 /** The editors' discovery folder the hub names its peers from. */
 let editors = '';
 let runs: DesktopRuns;
@@ -286,6 +288,7 @@ beforeAll(async () => {
     editorsDir: editors,
     peersMs: 50,
     traceViewer,
+    traceDisplay: () => machine.display,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -1036,6 +1039,36 @@ describe('the trace so far of a desktop run', () => {
     expect(repro.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
     window.close();
     for (const worker of [first, second, repro]) worker.socket.destroy();
+  });
+
+  it('offers and opens no trace on a machine without a display, nor asks the worker', async () => {
+    machine.display = false;
+    onTestFinished(() => {
+      machine.display = true;
+    });
+    const ref = 'desktop-trace-4';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, [], ['view-lane', 'trace']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test);
+    expect(window.session(ref)!.workers[0]).not.toHaveProperty('traces');
+    const picker = await paired();
+    expect(picker.messages.find((m) => m.type === 'welcome')).toMatchObject({
+      features: expect.not.arrayContaining(['trace']),
+    });
+    const noDisplay = "This machine has no display for Playwright's trace viewer.";
+    expect(await window.command({ type: 'openTrace', id: 12, ref, lane: 0 })).toEqual({
+      type: 'answer',
+      id: 12,
+      ok: false,
+      message: noDisplay,
+    });
+    picker.send({ type: 'openTrace', id: 13, ref, lane: 0 });
+    expect(await picker.answer(13)).toMatchObject({ ok: false, message: noDisplay });
+    expect(worker.heard.filter((m) => m.type === 'request' && m.what === 'trace')).toEqual([]);
+    picker.socket.close();
+    window.close();
+    worker.socket.destroy();
   });
 
   it('starts the viewer with none of the server’s own settings and secrets', async () => {

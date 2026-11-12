@@ -448,6 +448,8 @@ export interface ServerOptions {
   launchRecorder?: LauncherFactory;
   /** Starts Playwright's trace viewer on a running test's trace (`piwi/openTrace`); the project's own by default. */
   traceViewer?: TraceViewerLauncher;
+  /** Whether this machine shows the trace viewer's window; `hasDisplay` of `trace-viewer.ts` by default. */
+  traceDisplay?: () => boolean;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
   /**
@@ -1953,6 +1955,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return disk && (started === null || disk.mtime <= started) ? disk.text : null;
     },
     traceViewer: options.traceViewer ?? startTraceViewer,
+    ...(options.traceDisplay ? { traceDisplay: options.traceDisplay } : {}),
   });
   clientPageView = new ClientPageView(
     runSessions,

@@ -28,6 +28,7 @@ import { RunHub } from '../src/run-hub';
 import { RunSessions } from '../src/run-sessions';
 import {
   checkTraceFile,
+  hasDisplay,
   startTraceViewer,
   type TraceViewerLaunch,
   type TraceViewerLauncher,
@@ -112,6 +113,8 @@ function harness(
   options: {
     features?: RunFeature[];
     launcher?: TraceViewerLauncher | null;
+    /** Whether the machine shows the viewer's window: it does unless false. */
+    display?: boolean;
     root?: string | null;
     cwd?: string;
     retry?: number;
@@ -131,6 +134,7 @@ function harness(
     requestMs: 300,
     lingerMs: 60_000,
     ...(options.launcher === null ? {} : { traceViewer: options.launcher ?? own.launcher }),
+    traceDisplay: () => options.display !== false,
   });
   const socket = fakeSocket();
   const reader = sessions.attach(socket as unknown as net.Socket, {
@@ -294,6 +298,64 @@ describe('opening a lane’s running test’s trace', () => {
     // Its sessions say no worker opens its trace there.
     await waitFor(() => last(own.sent)?.workers[0]?.test ?? undefined);
     expect(last(own.sent)!.workers[0]).not.toHaveProperty('traces');
+  });
+
+  test('opens nothing, nor offers it, on a machine without a display, nor asks the worker', async () => {
+    const noDisplay = "This machine has no display for Playwright's trace viewer.";
+    const own = harness({ display: false });
+    own.begin();
+    own.answer.value = named(file(`test-results/.playwright-artifacts-0/traces/${TEST_ID}.trace`));
+    expect(await own.sessions.openTrace({ ref: 'ed-1', lane: 0 })).toEqual({ ok: false, message: noDisplay });
+    expect(own.sessions.opensTraces).toBe(false);
+    expect(own.asked).toEqual([]);
+    expect(own.launches).toEqual([]);
+    await waitFor(() => last(own.sent)?.workers[0]?.test ?? undefined);
+    expect(last(own.sent)!.workers[0]).not.toHaveProperty('traces');
+    // The hub leaves `trace` out of its features, and answers its `openTrace` so.
+    const hub = (await RunHub.open({
+      sessions: own.sessions,
+      actions: {
+        action: async () => ({ ok: false, message: 'No action here.' }),
+        requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
+      },
+      runInfo: () => ({ command: null, label: 'shop', project: null }),
+      welcome: () => ({ pid: process.pid, version: '0.0.0', client: 'Test Editor', roots: [run] }),
+      surfacesChanged: () => {},
+    }))!;
+    const socket = new WebSocket(hub.url, { origin: ORIGIN });
+    const messages: HubMessage[] = [];
+    socket.on('message', (data) => {
+      const message = parseHubMessage(String(data));
+      if (message) messages.push(message);
+    });
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: hub.token }));
+      const welcome = await waitFor(() => messages.find((m) => m.type === 'welcome'));
+      expect(welcome).toMatchObject({ features: expect.not.arrayContaining(['trace']) });
+      socket.send(JSON.stringify({ type: 'openTrace', id: 1, ref: 'ed-1', lane: 0 }));
+      expect(await waitFor(() => messages.find((m): m is HubAnswer => m.type === 'answer' && m.id === 1))).toEqual({
+        type: 'answer',
+        id: 1,
+        ok: false,
+        message: noDisplay,
+      });
+      expect(own.asked).toEqual([]);
+    } finally {
+      socket.close();
+      hub.close();
+    }
+  });
+
+  test('takes a display on Linux and the BSDs from DISPLAY or WAYLAND_DISPLAY, and always on macOS and Windows', () => {
+    expect(hasDisplay('linux', {})).toBe(false);
+    expect(hasDisplay('linux', { DISPLAY: '' })).toBe(false);
+    expect(hasDisplay('linux', { DISPLAY: ':0' })).toBe(true);
+    expect(hasDisplay('linux', { WAYLAND_DISPLAY: 'wayland-0' })).toBe(true);
+    expect(hasDisplay('freebsd', {})).toBe(false);
+    expect(hasDisplay('openbsd', { DISPLAY: ':1' })).toBe(true);
+    expect(hasDisplay('darwin', {})).toBe(true);
+    expect(hasDisplay('win32', {})).toBe(true);
   });
 
   test('says a worker opens its trace where its reporter answers it and the host starts the viewer', async () => {
@@ -619,6 +681,44 @@ describe('the trace’s path', () => {
       worker.socket.destroy();
     } finally {
       own.closeAll();
+      svc.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('is never asked by piwi/openTrace on a machine without a display', async () => {
+    const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-trace-lsp-')));
+    writeRunWorkspace(dir);
+    const own = standIn();
+    const svc = await service(dir, true, { traceViewer: own.launcher, traceDisplay: () => false });
+    try {
+      const { ref, channel } = await svc.command();
+      const worker = new FakeWorker(channel.path, dir);
+      worker.send({
+        type: 'run-attach',
+        token: channel.token,
+        ref,
+        cwd: dir,
+        workerIndex: 0,
+        parallelIndex: 0,
+        pid: process.pid,
+        playwright: '1.64.1',
+        reporter: '0.80.0',
+        takes: ['pick', 'record'],
+        holds: ['failure'],
+        features: ['view-lane', 'trace'],
+      });
+      worker.begin('adds a mug');
+      await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
+      expect(svc.latest(ref)!.workers[0]).not.toHaveProperty('traces');
+      expect(await svc.client.sendRequest('piwi/openTrace', { ref, lane: 0 })).toEqual({
+        ok: false,
+        message: "This machine has no display for Playwright's trace viewer.",
+      });
+      expect(worker.heard.filter((m) => m.type === 'request')).toEqual([]);
+      expect(own.launches).toEqual([]);
+      worker.socket.destroy();
+    } finally {
       svc.stop();
       fs.rmSync(dir, { recursive: true, force: true });
     }

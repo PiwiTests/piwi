@@ -881,9 +881,9 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
 `keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, `stop`
-where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer,
-`RunSessionsOptions.traceViewer`; `hubFeatures`). A reader keeps the features it knows; a hub that predates the list
-reads as having none.
+where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer on
+a machine that shows its window, `RunSessions.opensTraces`; `hubFeatures`). A reader keeps the features it knows; a
+hub that predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -1052,7 +1052,10 @@ asked for them, never an instance or a file.
 **Open the trace so far** opens a lane's running test's trace in Playwright's trace viewer, on the machine the run
 runs on: the client's `piwi/openTrace` and the hub's `openTrace` (`ref`, `lane`) both reach `RunSessions.openTrace`,
 which a host gives a launcher (`RunSessionsOptions.traceViewer`: `startTraceViewer` in the service and in the desktop
-app's server; without one, the hub leaves `trace` out of its features and the request is refused).
+app's server). It is offered and opened only on a machine that shows the viewer's window (`traceDisplay`, `hasDisplay`
+by default: macOS and Windows always, Linux and the BSDs with `DISPLAY` or `WAYLAND_DISPLAY` set). Without a launcher
+or a display, no worker carries `traces`, the hub leaves `trace` out of its features, and the request is refused
+without asking the worker ("This machine has no display for Playwright's trace viewer.").
 
 - **The worker names the file to the hub alone.** A worker whose `run-attach` lists `trace` in `features`
   (`RunWorker.traces`, the hub session's worker `traces`) answers the request `trace` with the running attempt's own
@@ -1349,8 +1352,8 @@ surfaces as `server.ts` wires them to the client:
   nobody attends): their workers hear `attached` without `failure`, and a failure that stops one anyway goes on.
 - `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
   the folders a process of its own that was killed left behind.
-- `RunSessions` takes `traceViewer` too: the server starts Playwright's trace viewer from the linked folder's own
-  Playwright ([The trace so far](#the-trace-so-far)).
+- `RunSessions` takes `traceViewer` and `traceDisplay` too: the server starts Playwright's trace viewer from the linked
+  folder's own Playwright, where the machine shows its window ([The trace so far](#the-trace-so-far)).
 - `RunHub` takes the `token` `hello` carries (the desktop token), the sentence its connections close with
   (`closing`), and `stopRun`, which sends `stop-run` to the app's windows on the hub's `stop`. `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket

@@ -94,7 +94,7 @@ import type {
 import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
 import { breakpointLines, runToLine } from './recorder/page-candidates.js';
-import { checkTraceFile, type TraceViewerLauncher } from './trace-viewer.js';
+import { checkTraceFile, hasDisplay, type TraceViewerLauncher } from './trace-viewer.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
@@ -320,6 +320,9 @@ const CANNOT_TRACE = "This worker's reporter cannot open its trace: update @piwi
 /** Why **Open the trace so far** is refused between two tests. */
 const NO_TEST = 'No test runs on this worker now.';
 
+/** Why **Open the trace so far** is refused on a machine that shows no window (`traceDisplay`). */
+const NO_DISPLAY = "This machine has no display for Playwright's trace viewer.";
+
 /** Why **Open the trace so far** is refused in a run whose folder the host does not know (`rootOf`). */
 const NO_ROOT = "This run's folder is not known here: open its trace from the editor or the app that started it.";
 
@@ -459,6 +462,11 @@ export interface RunSessionsOptions {
    * service's and the desktop app's server's `startTraceViewer`. Absent, no trace is opened.
    */
   traceViewer?: TraceViewerLauncher;
+  /**
+   * Whether this machine shows the trace viewer's window: `hasDisplay` by default. Without one, no worker says it opens
+   * its trace (`RunWorker.traces`), the hub leaves `trace` out of its features, and `openTrace` is refused.
+   */
+  traceDisplay?(): boolean;
 }
 
 interface Worker {
@@ -692,9 +700,17 @@ export class RunSessions {
 
   constructor(private readonly options: RunSessionsOptions) {}
 
-  /** Whether this host opens a lane's running test's trace in Playwright's trace viewer (`openTrace`). */
+  /**
+   * Whether this host opens a lane's running test's trace in Playwright's trace viewer (`openTrace`): it starts one, on
+   * a machine that shows its window.
+   */
   get opensTraces(): boolean {
-    return !!this.options.traceViewer;
+    return !!this.options.traceViewer && this.showsTraceViewer();
+  }
+
+  /** Whether this machine shows the trace viewer's window (`traceDisplay`). */
+  private showsTraceViewer(): boolean {
+    return this.options.traceDisplay ? this.options.traceDisplay() : hasDisplay();
   }
 
   /** What the sentences call the host the workers connect to. */
@@ -1694,6 +1710,7 @@ export class RunSessions {
     const lane = params?.lane;
     if (!Number.isInteger(lane) || lane < 0) return { ok: false, message: 'The command needs the lane of the trace.' };
     if (!launch) return { ok: false, message: `${capitalized(this.host)} cannot open a trace.` };
+    if (!this.showsTraceViewer()) return { ok: false, message: NO_DISPLAY };
     if (!session || session.ended) return { ok: false, message: this.noWorker(session) };
     const root = session.root;
     if (root === null) return { ok: false, message: NO_ROOT };
