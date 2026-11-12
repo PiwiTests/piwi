@@ -153,13 +153,21 @@ shell and are feature-equivalent.
 - **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
   product, the sidecar's script, the keychain service and the request folders' prefix, and shares the rest of
   `run_target.rs`, the window guards and the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
-- **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
+- **Piwi Runner has no updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
   `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
+  Its tray shares the desktop app's Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
+  with Run in background on until the person turns it off.
+- **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config): the `.deb`
+  and the `.rpm` install the sidecar in `/usr/bin`, so the two apps' packages would otherwise clash.
+  `apps/runner/tests/bundle-config.test.ts` holds the constant and both configs together.
+- **The release's file names come from `ASSET_NAME_PATTERN`** in `reusable-publish-desktop.yml` (`Piwi-Desktop_…`) and
+  `reusable-publish-runner.yml` (`Piwi-Runner_…`), never from `productName`; the step that writes `latest-nsis.json`
+  finds the `.exe` by that pattern.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
-- **The sidecar layout** (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
-  packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means
+- **The sidecar layout** (`src-tauri/binaries/node-<triple>`, Runner's `piwi-runner-node-<triple>`,
+  `src-tauri/resources/app-server/.output/`) is what the packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means
   updating both.
 - **Commit scope**: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where
   backend work goes, behind a desktop guard: the common case), `desktop` for a change confined to this directory (the

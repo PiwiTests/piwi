@@ -49,3 +49,29 @@ describe("Piwi Runner's merged bundle config", () => {
     expect(runner.bundle).not.toHaveProperty('fileAssociations');
   });
 });
+
+describe("Piwi Runner's own files", () => {
+  const libRs = fs.readFileSync(path.join(shell, 'src', 'lib.rs'), 'utf8');
+  const sidecar = /const NODE_SIDECAR: &str = if cfg!\(feature = "runner"\) \{ "([^"]+)" \} else \{ "([^"]+)" \};/.exec(
+    libRs,
+  );
+  const name = (bin: string) => path.posix.basename(bin);
+
+  test('bundles Node under a name of its own, the one the shell spawns', () => {
+    expect(sidecar).not.toBeNull();
+    const [, runnerName, desktopName] = sidecar!;
+    expect(runner.bundle.externalBin.map(name)).toEqual([runnerName]);
+    expect(desktop.bundle.externalBin.map(name)).toEqual([desktopName]);
+    // The Linux packages install each sidecar in /usr/bin, so the two apps' must differ.
+    expect(runnerName).not.toBe(desktopName);
+  });
+
+  test('takes its own icons, in the app and on the installers', () => {
+    const own = (file: string) => file.startsWith('icons-runner/');
+    expect(runner.bundle.icon.length).toBeGreaterThan(0);
+    expect(runner.bundle.icon.every(own)).toBe(true);
+    expect(desktop.bundle.icon.some(own)).toBe(false);
+    expect(own(runner.bundle.windows.nsis.installerIcon)).toBe(true);
+    expect(own(runner.bundle.windows.nsis.uninstallerIcon)).toBe(true);
+  });
+});

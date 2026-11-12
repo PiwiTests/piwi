@@ -23,7 +23,8 @@ Everything binds to `127.0.0.1`.
 
 ## Where it is
 
-Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest):
+Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest), the files named
+`Piwi-Desktop_…` (the `Piwi-Runner_…` files are [Piwi Runner](./piwi-runner)):
 
 | OS | Installer |
 |----|-----------|

@@ -783,7 +783,7 @@ pub(crate) async fn spawn_tests(
     let hub = bundled_hub_env(app, id, attended).await;
     let command = app
         .shell()
-        .sidecar("node")
+        .sidecar(crate::NODE_SIDECAR)
         .map_err(|e| e.to_string())?
         .args(cmd_args)
         .current_dir(folder)

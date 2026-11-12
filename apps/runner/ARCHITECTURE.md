@@ -27,20 +27,29 @@ shared with the desktop app:
   and no installer hooks. `bundle.windows.nsis.installerHooks` is `null` in `runner.conf.json`, which is merged over
   `tauri.conf.json` as a JSON merge patch (`apps/runner/tests/bundle-config.test.ts` checks the merge).
 - **The link**: `piwi-runner://connect` only, which brings the window forward.
-- **The sidecar's script**: `resources/runner-host`, staged by `npm run runner:stage`.
+- **The sidecar**: Node bundled as `piwi-runner-node` (`NODE_SIDECAR`), so the Linux packages of the two apps do not
+  both install `/usr/bin/node`, and its script, `resources/runner-host`, staged by `npm run runner:stage`.
+- **The icon**: `apps/runner/app-icon.svg`, the Piwi mark on a teal tile with a play sign, rendered into
+  `src-tauri/icons-runner/` by `tauri icon`; the app, the tray and the Windows installers take it.
 - **The keychain service**: `Piwi Runner run requests`, so an entry written by one app is never read by the other.
 
 The Release workflow builds it with the same steps: the host, the window and the staging, then tauri-action with
-`--features runner --config src-tauri/runner.conf.json`, which names the files from that merged config
-("Piwi Runner_<version>_<arch>"), so they never match the dashboard's. It keeps them as the run's artifacts and attaches
-nothing to the release.
+`--features runner --config src-tauri/runner.conf.json`, and attaches the installers to the tag's release under
+`ASSET_NAME_PATTERN` ("Piwi-Runner_<version>_<arch>"), beside the desktop app's "Piwi-Desktop_…". Off a tag it keeps
+them as the run's artifacts.
+
+The two apps install side by side: each has its own identifier, product name, binary, sidecar, install folder, Linux
+package name, MSI upgrade code and keychain service, so neither installer replaces the other.
 
 `runner_app` is compiled with and without the feature, so `cargo test` covers both.
 
 ## Quitting
 
 Closing the window and the app menu's Quit (Cmd+Q on macOS) ask for confirmation while a run is going
-(`hold_close_for_local_runs`, `quit_after_confirming`); Runner has no tray and no updater. The ways out that cannot be
+(`hold_close_for_local_runs`, `quit_after_confirming`), and so does the tray's Quit. While Run in background is on
+(the default: Runner is how the team instance reaches this machine), closing the window hides it to the tray instead,
+and a request that arrives brings it back (`desktop_bring_to_front`). Start on login launches it with `--hidden`, in the
+tray. Runner has no updater. The ways out that cannot be
 held, Quit from the Dock on macOS and logging out or shutting down on macOS and Windows, reach only `RunEvent::Exit`,
 with no hook before it: they stop Runner's runs without asking (`shut_down` still runs). On Linux the
 session's end stops the app without `shut_down`. The desktop app has the same exits

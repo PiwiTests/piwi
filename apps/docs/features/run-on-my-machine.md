@@ -15,8 +15,8 @@ out of everything the team sees.
 
 ## Experimental
 
-**Experimental.** Run on my machine is off by default, and only the desktop app takes requests in this release. The
-design is in the
+**Experimental.** Run on my machine is off by default. The desktop app and [Piwi Runner](./piwi-runner), the same
+requests without the dashboard, take them. The design is in the
 [Run on my machine design record](https://github.com/PiwiTests/piwi/blob/main/proposals/run-on-my-machine.md).
 
 ## Turn it on

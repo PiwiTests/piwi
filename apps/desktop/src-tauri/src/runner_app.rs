@@ -5,8 +5,9 @@
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
 //   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
 //   4. points the window at the host through a single-use session code (`/__piwi/session?code=…`).
-// There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
-// this machine may take it for one. Everything binds 127.0.0.1.
+// There is no database, updater or reporter discovery file: Runner is not a Piwi server, and nothing on this machine
+// may take it for one. Everything binds 127.0.0.1. Its tray icon keeps it reachable by the team instance once the
+// window closes, while Run in background is on (the default), and Start on login launches it hidden in the tray.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +15,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_deep_link::DeepLinkExt as _;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
@@ -22,16 +26,29 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, bring_to_front, follow_notifications,
+    app_menu_action, append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray,
     hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
-    random_hex_32, reapply_splash_status, run_app_menu_action, show_splash_status, shut_down, supervise_server,
-    LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
+    quit_after_confirming, random_hex_32, reapply_splash_status, reveal_log, run_app_menu_action, show_splash_status,
+    shut_down, supervise_server, toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed,
+    RunInBackground, ServerGaveUp, ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID,
+    TRAY_START_ON_LOGIN_ID,
 };
 use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
 /// The app's name, in its menu and in the questions it asks.
 const APP_NAME: &str = "Piwi Runner";
+
+/// The tray icon's tooltip.
+const TRAY_TOOLTIP: &str = "Piwi Runner (click to open)";
+/// The argument Start on login launches the app with: it starts in the tray, its window hidden.
+const HIDDEN_ARG: &str = "--hidden";
+
+/// Whether this launch starts in the tray: Start on login passes `--hidden` as the only argument, and a link that
+/// launched the app is an argument of its own.
+fn launched_hidden(args: &[String]) -> bool {
+    args.len() == 2 && args[1] == HIDDEN_ARG
+}
 
 /// The log of the shell and of the host's output, in the app's data folder.
 const LOG_FILE: &str = "runner.log";
@@ -94,10 +111,10 @@ fn spawn_host(
     app: &AppHandle,
     cfg: &HostConfig,
 ) -> Option<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild)> {
-    let cmd = match app.shell().sidecar("node") {
+    let cmd = match app.shell().sidecar(NODE_SIDECAR) {
         Ok(cmd) => cmd,
         Err(e) => {
-            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            append_log(&cfg.log_path, &format!("sidecar '{NODE_SIDECAR}' not found: {e}"));
             return None;
         }
     };
@@ -183,6 +200,57 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
     Ok(menu)
 }
 
+/// The tray icon: a click opens the window, and its menu holds Open, Show logs, Run in background, Start on login and
+/// Quit.
+fn tray(app: &tauri::App) -> tauri::Result<()> {
+    let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
+    let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+    let (bg_i, login_i) = background_menu_items(app)?;
+    let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&open_i)
+        .item(&logs_i)
+        .separator()
+        .item(&bg_i)
+        .item(&login_i)
+        .separator()
+        .item(&quit_i)
+        .build()?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip(TRAY_TOOLTIP)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(w) = tray.app_handle().get_webview_window("main") {
+                    bring_to_front(&w);
+                }
+            }
+        })
+        .on_menu_event(move |app, event| match event.id().as_ref() {
+            "open" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    bring_to_front(&w);
+                }
+            }
+            "show_logs" => reveal_log(app),
+            TRAY_RUN_BG_ID => toggle_run_in_background(app, &bg_i),
+            TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app, &login_i),
+            "quit" => quit_after_confirming(app, APP_NAME),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
 pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
     if let Some(refusal) = identifier_refusal(&context.config().identifier) {
         eprintln!("{refusal}");
@@ -204,6 +272,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![HIDDEN_ARG]),
+        ))
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -378,6 +450,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 }
             });
 
+            // Runner is how the team instance reaches this machine, so closing its window leaves it in the tray
+            // until the person turns Run in background off.
+            app.manage(RunInBackground::from_saved(app.handle(), true));
+            tray(app)?;
+            if launched_hidden(&std::env::args().collect::<Vec<_>>()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(menu(app.handle())?)?;
@@ -420,9 +502,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // The window is the app: closing it quits, once the user agrees to stop the runs still going.
+            // Closing the window hides it to the tray while Run in background is on, and otherwise quits, once the
+            // user agrees to stop the runs still going.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && hold_close_for_local_runs(window, APP_NAME) {
+                if window.label() == "main" && (hide_to_tray(window) || hold_close_for_local_runs(window, APP_NAME)) {
                     api.prevent_close();
                 }
             }
@@ -431,6 +514,15 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .expect("error while building the Piwi Runner app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } | RunEvent::Exit => shut_down(app_handle, None),
+            // macOS: a click on the Dock icon brings back the window Run in background hid.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(true) || w.is_minimized().unwrap_or(false) {
+                        bring_to_front(&w);
+                    }
+                }
+            }
             _ => {}
         });
 }
@@ -463,6 +555,16 @@ mod tests {
     fn the_desktop_apps_links_are_not_answered() {
         assert!(!is_connect_link(&url("piwi://connect")));
         assert!(!is_connect_link(&url("piwi://open/runs")));
+    }
+
+    #[test]
+    fn only_start_on_logins_launch_starts_in_the_tray() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        assert!(launched_hidden(&args(&["piwi-runner", "--hidden"])));
+        assert!(!launched_hidden(&args(&["piwi-runner"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "piwi-runner://connect", "--hidden"])));
+        assert!(!launched_hidden(&args(&["piwi-runner", "--hidden", "--hidden"])));
     }
 
     #[test]

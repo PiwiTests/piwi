@@ -73,12 +73,12 @@ window is a single-page Nuxt app that extends `packages/run-ui`, the layer the d
 connection card, the confirmation of a request, the stream of the host's events); it shows the runs the shell started,
 with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of
 its own in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or
-watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Of PR 4c, the installers are
-built: the Release workflow builds Runner's for the desktop app's platforms on every run, tags included, and keeps them
-as the run's artifacts; they are not published. What remains of 4c: publishing them, together with Runner's docs page
-and a clear split from the desktop app on the release; signing; the updater; Runner's own installer art; and the Linux
-packages' Node (D8): the `.deb` and the `.rpm` of both apps install the bundled Node as `/usr/bin/node`, so the two
-apps' packages clash, and each clashes with the distribution's `nodejs`. The instance's side of PR 2 is done. The
+watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Of PR 4c, publishing is built: the Release workflow attaches Runner's installers to the tag's release, for the
+desktop app's platforms, as `Piwi-Runner_…` beside the desktop app's `Piwi-Desktop_…`; the feature page has a Piwi
+Runner section; Runner bundles Node as `piwi-runner-node`, so its `.deb` and `.rpm` clash neither with the desktop
+app's nor with the distribution's `nodejs` (the desktop app's own `/usr/bin/node` still clashes with `nodejs`); it has
+an icon of its own (the Piwi mark on a teal tile, with a play sign) and a tray with **Run in background**, on by
+default, and **Start on login**. What remains of 4c: signing, the updater, and Runner's own installer art. The instance's side of PR 2 is done. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner
 take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
 confirmed in the target (D2); a request carries resolved tests and is
@@ -364,8 +364,8 @@ only: it does not become the fallback hub of terminal runs, which stays the desk
 - **Updates**: signed, from the same release, as a separate artifact on each platform (PR 4c).
 - **Before publishing the installers (PR 4c)**: on Linux, where the package puts the bundled Node and how the host
   script finds it. Checked on the 0.67.0 builds: the `.deb` and the `.rpm` of both apps put it at `/usr/bin/node`
-  (the AppImage keeps it inside its own image), so one name per app or a path under the app's `/usr/lib` folder is
-  needed first. And Runner's own installer art.
+  (the AppImage keeps it inside its own image). Settled in PR 4c: Runner's is `piwi-runner-node`, one name per app.
+  Runner's own installer art remains.
 
 Alternatives:
 

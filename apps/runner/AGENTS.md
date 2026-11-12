@@ -43,8 +43,15 @@ npm run runner:window        # .output/public (the window, `nuxt generate`)
 npm run runner:stage         # copies dist/server.cjs and .output/public into the shell's resources/runner-host
 ```
 
-The app itself is built from the desktop crate: after `runner:build`, `runner:window` and `runner:stage`, run
-`npx tauri build --features runner --config src-tauri/runner.conf.json` from `apps/desktop`.
-The Release workflow builds the installers for the same platforms as the desktop app (`reusable-publish-runner.yml`),
-unsigned, with no secret and no updater, and keeps them as the run's artifacts. Runner is not released: nothing is
-attached to the GitHub release, on a tag either. Publishing, signing and an updater are not wired.
+The app itself is built from the desktop crate: after `runner:build`, `runner:window` and `runner:stage`, run from
+`apps/desktop`:
+
+```bash
+npm run fetch-node -- --name piwi-runner-node                     # Runner's own Node sidecar
+npx tauri icon ../runner/app-icon.svg --output src-tauri/icons-runner   # Runner's own icons
+npx tauri build --features runner --config src-tauri/runner.conf.json
+```
+
+The Release workflow builds the installers for the same platforms as the desktop app (`reusable-publish-runner.yml`)
+and attaches them to the tag's GitHub release as `Piwi-Runner_<version>_<arch>…`, beside the desktop app's. They are
+signed ad hoc on macOS, unsigned on Windows, and have no updater: a new version is installed over the old one.

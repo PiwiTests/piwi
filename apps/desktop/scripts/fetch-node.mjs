@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Download the official Node.js runtime for a Tauri target triple and place it
-// as the sidecar binary at desktop/src-tauri/binaries/node-<triple>[.exe].
-// Tauri resolves `externalBin: ["binaries/node"]` to node-<current-triple>.
+// as the sidecar binary at desktop/src-tauri/binaries/<name>-<triple>[.exe].
+// Tauri resolves `externalBin: ["binaries/node"]` to node-<current-triple>. Piwi
+// Runner's is `piwi-runner-node` (runner.conf.json): the Linux packages install
+// a sidecar in /usr/bin under its name, so each app's needs one of its own.
 // Every download is checked against the release's SHASUMS256.txt, and the
 // script fails on a file the list does not name or whose SHA-256 differs.
 //
 // The version is the root Dockerfile's (scripts/node-version.mjs), unless
 // --node or PIWI_NODE_VERSION names another.
 //
-// Usage: node scripts/fetch-node.mjs --target <triple> [--node <version>]
+// Usage: node scripts/fetch-node.mjs --target <triple> [--node <version>] [--name <name>]
 //   e.g. --target x86_64-pc-windows-msvc
 //        --target aarch64-apple-darwin
 import { mkdirSync, writeFileSync, copyFileSync, chmodSync, rmSync } from 'node:fs';
@@ -37,6 +39,8 @@ function defaultHostTriple() {
 
 const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || bundledNodeVersion()).replace(/^v/, '');
 const target = arg('target', defaultHostTriple());
+const name = arg('name', 'node');
+if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`not a sidecar name: ${name}`);
 const base = `https://nodejs.org/dist/v${NODE_VERSION}`;
 
 mkdirSync(binaries, { recursive: true });
@@ -86,7 +90,7 @@ function extractNodeBinary(archive, innerDir, outFile) {
 async function fromTarball(distName, ext) {
   const archive = join(tmpdir(), `${distName}.${ext}`);
   await download(`${distName}.${ext}`, archive);
-  const out = join(binaries, `node-${target}`);
+  const out = join(binaries, `${name}-${target}`);
   extractNodeBinary(archive, distName, out);
   rmSync(archive, { force: true });
   console.log(`[fetch-node] Wrote ${out}`);
@@ -95,7 +99,7 @@ async function fromTarball(distName, ext) {
 const run = async () => {
   if (target.includes('windows')) {
     // Windows ships node.exe directly — no archive to unpack.
-    const out = join(binaries, `node-${target}.exe`);
+    const out = join(binaries, `${name}-${target}.exe`);
     await download('win-x64/node.exe', out);
     console.log(`[fetch-node] Wrote ${out}`);
   } else if (target === 'aarch64-apple-darwin') {

@@ -1,19 +1,26 @@
 name: Publish Piwi Runner installers
 
-# Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and keeps the installers as the run's
-# artifacts (release.yml calls it). Runner is not released yet: nothing is attached to the GitHub release, on a tag or
-# off one, so the legs stay tested without Runner showing next to the desktop app. Runner is the desktop crate built
-# with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and window. It has no
-# updater and is unsigned, so the workflow takes no secrets and writes no updater manifest.
+# Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and attaches the installers to the
+# GitHub Release release-please created for the tag, beside the desktop app's (release.yml calls it). Runner is the
+# desktop crate built with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and
+# window. It has no updater and is signed ad hoc on macOS only, so the workflow takes no secrets and writes no updater
+# manifest. Off a tag it builds the installers and keeps them as the run's artifacts.
 on:
   workflow_call:
 
 permissions:
   contents: read
 
+# The release's file names: "Piwi-Runner_<version>_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…".
+env:
+  ASSET_NAME_PATTERN: 'Piwi-Runner_[version]_[arch][setup][ext]'
+
 jobs:
   runner:
     name: runner (${{ matrix.target }}, ${{ matrix.bundles }})
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    permissions:
+      contents: write # upload installers to the release
     strategy:
       fail-fast: false
       matrix:
@@ -78,9 +85,11 @@ jobs:
         working-directory: apps/desktop
         run: npm install
 
+      # Under Runner's own name (runner.conf.json's externalBin): the .deb and the .rpm install it in /usr/bin, beside
+      # the desktop app's.
       - name: Fetch Node sidecar
         working-directory: apps/desktop
-        run: node scripts/fetch-node.mjs --target ${{ matrix.target }}
+        run: node scripts/fetch-node.mjs --target ${{ matrix.target }} --name piwi-runner-node
 
       - name: Build the Runner host
         run: npm run runner:build -w apps/runner
@@ -91,18 +100,35 @@ jobs:
       - name: Stage the Runner host and window
         run: npm run runner:stage -w apps/runner
 
-      # Runner has no icon of its own yet: it takes the dashboard's logo.
+      # Runner's own logo, into the folder runner.conf.json's bundle icons name.
       - name: Generate app icons
         working-directory: apps/desktop
-        run: npx tauri icon ../application/public/logo.svg
+        run: npx tauri icon ../runner/app-icon.svg --output src-tauri/icons-runner
+
+      # tauri-action gets the release's id, not its tag: with a tag it also rewrites the release's name and body, to
+      # its empty releaseBody; with an id it only uploads.
+      - name: Find the release
+        id: release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! id=$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id); then
+            echo "::error::No GitHub release for $TAG: release-please creates it with the tag"
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
       # The action reads the product name and version from the base config with runner.conf.json merged over it
-      # (utils.ts getInfo), so the files are named "Piwi Runner_<version>_<arch>..." and never match the dashboard's
-      # "Piwi Dashboard_<version>_<arch>...". No TAURI_SIGNING_* is set, and the updater manifest is never written. With
-      # no tagName and no releaseId, tauri-action only builds.
-      - name: Build Piwi Runner
+      # (utils.ts getInfo). No TAURI_SIGNING_* is set, and the updater manifest is never written, so the desktop app's
+      # latest.json stays its own. Off a tag releaseId is empty, and tauri-action only builds.
+      - name: Build & release Piwi Runner
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Linux AppImage bundling runs linuxdeploy, a self-mounting AppImage; GitHub runners have no libfuse2, so it
           # extracts and runs instead. No-op on Windows/macOS.
           APPIMAGE_EXTRACT_AND_RUN: 1
@@ -110,7 +136,9 @@ jobs:
           projectPath: apps/desktop
           retryAttempts: 3
           uploadUpdaterJson: false
+          releaseAssetNamePattern: ${{ env.ASSET_NAME_PATTERN }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json
+          releaseId: ${{ steps.release.outputs.id }}
 
       # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
       # damaged, and the Node sidecar the bundler re-signed must still run the host: start it from the bundle, as the
@@ -136,9 +164,9 @@ jobs:
           trap cleanup EXIT
           app="$mount/Piwi Runner.app"
           codesign --verify --strict --verbose=2 "$app"
-          codesign --display --entitlements - "$app/Contents/MacOS/node"
+          codesign --display --entitlements - "$app/Contents/MacOS/piwi-runner-node"
           PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" PIWI_RUNNER_PORT=3918 \
-            "$app/Contents/MacOS/node" "$app/Contents/Resources/resources/runner-host/server.cjs" > "$log" 2>&1 &
+            "$app/Contents/MacOS/piwi-runner-node" "$app/Contents/Resources/resources/runner-host/server.cjs" > "$log" 2>&1 &
           host=$!
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3918/api/health > /dev/null 2>&1; then
@@ -152,9 +180,10 @@ jobs:
           echo "::error::The bundled host did not answer /api/health"
           exit 1
 
-      # The installers are the run's artifacts, never release assets. A tag's are kept for 90 days, so a release's
-      # builds stay downloadable while Runner is tried out.
-      - name: Upload installers
+      # Dry-run only: make the built installers downloadable as a workflow artifact (they are not attached to any
+      # release unless this was a tag build).
+      - name: Upload installers (dry-run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: piwi-runner-${{ matrix.target }}
@@ -166,4 +195,4 @@ jobs:
             apps/desktop/src-tauri/target/**/release/bundle/**/*.rpm
             apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
           if-no-files-found: warn
-          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 7 }}
+          retention-days: 7
