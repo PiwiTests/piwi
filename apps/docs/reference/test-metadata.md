@@ -162,8 +162,8 @@ keep the tags that matter:
 A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it covers (`SHOP-T123`). Two patterns, under
 **Project → Settings → Integrations → Keys in test tags**, tell Piwi which tags are which:
 
-- **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`. Piwi [links the issue](#issues-the-tests-declare)
-  to the failure cluster of a test that carries the tag.
+- **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`. Piwi
+  [links the issue](#issues-the-tests-declare) to the failure cluster of a test that carries the tag.
 - **Test case key**: a tag naming a test case, such as `^SHOP-T[0-9]+$`.
 
 A pattern is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor
@@ -268,8 +268,9 @@ test counts by its last attempt, so one whose retry passed names nothing:
   prefix, a URL must point at the connection's site, and Jira must return the issue under that key and project, so an
   issue moved to another project is dropped. Anything else is dropped, not stored as a plain link. A binding without a
   Jira project links nothing.
-- **One lookup per run**, of at most 50 keys, the ones the most tests name first and the ones Jira never returned before last, within 10 seconds for the whole step.
-  With Jira down or slow, nothing is linked, and the next failing run that names the issue tries again.
+- **One lookup per run**, of at most 50 keys, the ones the most tests name first and the ones Jira never returned before
+  last, within 10 seconds for the whole step. With Jira down or slow, nothing is linked, and the next failing run that
+  names the issue tries again.
 - **At most 10 per cluster**, the first linked staying; links pinned by hand or filed by Piwi do not count. The other
   keys of the bound project its tests named in that run, neither linked nor removed, show as *and N more named by its
   tests* at the end of its links. A cluster already linking a key, by any route, gets no second link to it.
