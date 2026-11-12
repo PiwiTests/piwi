@@ -1367,6 +1367,10 @@ test.describe('Live view of a run', () => {
       await expect(frame.getByRole('heading', { name: 'Cart' })).toBeVisible({ timeout: 15_000 });
       await expect(follow).not.toBeChecked();
       await endTest(first);
+      // The test ended: the instance let its pages go, and Pick a locator is off until the next test's come.
+      await expect(inspect.getByTestId('live-inspect-test-ended')).toBeVisible();
+      await expect(pick).toBeDisabled();
+      await expect(pick).toHaveAttribute('title', /The test ended/);
       await startTest(second);
       await expect(follow).toBeChecked();
       await expect(inspect.getByTestId('live-inspect-frame')).toHaveCount(0);

@@ -159,6 +159,8 @@ const inspectOpen = useViewState('lane-inspect-open', () => false);
 const inspectHeard = shallowRef<InspectHeard>(NO_INSPECT_HEARD);
 /** Which test Inspect shows, counted: each next test, and each view started afresh, starts it afresh. */
 const inspectTurn = ref(0);
+/** The test Inspect shows ended, the view waiting for the lane's next: the instance lets its pages go. */
+const inspectTestEnded = ref(false);
 
 /**
  * Let go of the layers of the test the view showed: the next one's come afresh, but for what Inspect heard of the
@@ -169,6 +171,7 @@ function forgetLayers(next = false): void {
   pageText.value = null;
   inspectHeard.value = next ? nextInspectTest(inspectHeard.value, watchedTest.value) : NO_INSPECT_HEARD;
   inspectTurn.value++;
+  inspectTestEnded.value = false;
   for (const shot of strip.value) URL.revokeObjectURL(shot.url);
   strip.value = [];
   enlarged.value = null;
@@ -341,6 +344,7 @@ function onMessage(message: LiveViewerMessage): void {
   } else if (message.type === 'test-ended') {
     showOutcome(message.outcome);
     testDone = true;
+    inspectTestEnded.value = true;
     // Not following the lane: the view ends with its test.
     if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
   } else if (message.type === 'end') {
@@ -1008,6 +1012,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
             :refused="inspectHeard.refused"
             :watch-id="live.watchId.value"
             :turn="inspectTurn"
+            :test-ended="inspectTestEnded"
             :ended="ended ? inspectEnd(endReason) : null"
           />
         </template>

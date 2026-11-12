@@ -12,6 +12,7 @@
 import type { SnapshotPhase } from '@piwitests/core/live-inspect';
 import {
   INSPECT_ENDED_TEXT,
+  INSPECT_TEST_ENDED,
   SNAPSHOT_PHASES,
   inspectCalls,
   inspectPageUrl,
@@ -32,6 +33,8 @@ const props = defineProps<{
   watchId: string | null;
   /** Which test the panel shows, counted: another starts the view afresh. */
   turn: number;
+  /** The test the panel shows ended, the panel waiting for the lane's next: the instance lets its pages go. */
+  testEnded: boolean;
   /** Why the panel's view ended, null while it is open: no page shows after it, and none comes. */
   ended: InspectEnd | null;
 }>();
@@ -175,13 +178,14 @@ const pickerPage = shallowRef<{
 /** Why **Pick a locator** is off, as its title says; null while it is on. */
 const pickOff = computed(() => {
   if (props.ended) return 'The view ended: no page to pick on.';
+  if (props.testEnded) return INSPECT_TEST_ENDED;
   if (!props.watchId) return 'The view’s connection is opening again: pick a locator once it is open.';
   if (!page.value) return 'No page of this test shows yet.';
   return null;
 });
 function pick(): void {
   const shownPage = page.value;
-  if (!shownPage || !props.watchId || props.ended) return;
+  if (!shownPage || pickOff.value) return;
   pinned.value =
     calls.value.find((call) => call.call === shownPage.moment.call && sameWorker(call, shownPage.moment))?.key ?? null;
   follow.value = false;
@@ -209,6 +213,7 @@ watch(
 const waiting = computed(() => {
   if (props.ended) return INSPECT_ENDED_TEXT[props.ended];
   if (props.refused) return props.refused;
+  if (props.testEnded) return INSPECT_TEST_ENDED;
   if (!props.watchId) return 'Waiting for the view’s connection…';
   return 'Waiting for the page at the test’s next call. The worker sends one before each call, at its action and after it.';
 });
@@ -254,6 +259,9 @@ const waiting = computed(() => {
     </p>
     <template v-else>
       <p v-if="refused" class="text-xs text-muted" role="status" data-testid="live-inspect-refused">{{ refused }}</p>
+      <p v-else-if="testEnded" class="text-xs text-muted" role="status" data-testid="live-inspect-test-ended">
+        {{ INSPECT_TEST_ENDED }}
+      </p>
       <p v-if="page" class="text-xs text-muted" data-testid="live-inspect-at">
         The page {{ phaseWords }}: <span class="font-mono">{{ page.moment.title }}</span>
       </p>

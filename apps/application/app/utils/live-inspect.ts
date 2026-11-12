@@ -185,6 +185,9 @@ export function inspectEnd(reason: LiveViewEnd | null): InspectEnd {
   return reason === 'run-ended' || reason === 'off' || reason === 'test-ended' ? reason : 'closed';
 }
 
+/** What Inspect says once the test it shows ended, while the view waits for the lane's next. */
+export const INSPECT_TEST_ENDED = 'The test ended: the instance let its pages go. The next test’s come as it runs.';
+
 /** What Inspect says once its view ended, by why. */
 export const INSPECT_ENDED_TEXT: Record<InspectEnd, string> = {
   'run-ended': 'The run ended: the instance let its pages go.',
