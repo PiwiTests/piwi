@@ -572,7 +572,7 @@ export const HELP_TOPICS = {
     text: [
       'Two patterns that read a key out of a test’s tags, so the issue tracker and the test management integration can tell the tags apart.',
       '',
-      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`.',
+      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`. Piwi links that issue to the failing test’s cluster, for the issue types the project’s tracker binding lists.',
       '- **Test case key** — a tag naming the test case a test covers, such as `SHOP-T123`.',
       '',
       'Each is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor it with `^` and `$` (`^SHOP-T[0-9]+$`) and use letters, digits, character classes and quantifiers only: no groups or `|`. A pattern that breaks the rule, matches an empty tag, or does not compile is refused. Leave a field empty to turn it off; both are off by default.',

@@ -269,18 +269,18 @@ export function resolveProjectIntegration(
 
 /**
  * What the declared-issue link step reads from a test's tags: the project's issue key pattern (`tagKeys`) and the
- * issue types it links, which are the binding's `declaredIssueTypes`, else its issue type. `why` says what is missing
- * when the tag source links nothing: it has no pattern, or there is no issue type to link.
+ * issue types it links, which are the binding's `declaredIssueTypes`, else its issue type. With no pattern or no
+ * issue type to link, the tag source links nothing.
  */
 export function resolveTagSource(
   tagKeys: unknown,
   binding: Pick<ResolvedProjectIntegration, 'issueType' | 'declaredIssueTypes'>,
-): { pattern: string | null; issueTypes: string[]; why: 'no-pattern' | 'no-issue-type' | null } {
+): { pattern: string | null; issueTypes: string[] } {
   const pattern = resolveTagKeyPatterns(tagKeys).issue;
   const issueTypes = binding.declaredIssueTypes?.length
     ? binding.declaredIssueTypes
     : binding.issueType
       ? [binding.issueType]
       : [];
-  return { pattern, issueTypes, why: !pattern ? 'no-pattern' : issueTypes.length === 0 ? 'no-issue-type' : null };
+  return { pattern, issueTypes };
 }

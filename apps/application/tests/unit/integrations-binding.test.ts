@@ -222,20 +222,20 @@ describe('resolveTagSource', () => {
     expect(resolveTagSource(pattern, { issueType: '10004', declaredIssueTypes: null })).toEqual({
       pattern: pattern.issue,
       issueTypes: ['10004'],
-      why: null,
     });
     expect(resolveTagSource(pattern, { issueType: '10004', declaredIssueTypes: ['Story'] }).issueTypes).toEqual([
       'Story',
     ]);
+    expect(resolveTagSource(pattern, { issueType: 'Bug', declaredIssueTypes: [] }).issueTypes).toEqual(['Bug']);
   });
 
-  test('says why it links nothing: no pattern, or no issue type', () => {
-    expect(resolveTagSource(null, { issueType: '10004', declaredIssueTypes: null }).why).toBe('no-pattern');
+  test('has no pattern for a missing or refused one and no issue type without a type to link', () => {
+    expect(resolveTagSource(null, { issueType: '10004', declaredIssueTypes: null }).pattern).toBeNull();
     expect(
-      resolveTagSource({ issue: 'no anchors', testCase: null }, { issueType: 'Bug', declaredIssueTypes: null }).why,
-    ).toBe('no-pattern');
-    expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: null }).why).toBe('no-issue-type');
-    expect(resolveTagSource(pattern, { issueType: 'Bug', declaredIssueTypes: [] }).why).toBeNull();
+      resolveTagSource({ issue: 'no anchors', testCase: null }, { issueType: 'Bug', declaredIssueTypes: null }).pattern,
+    ).toBeNull();
+    expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: null }).issueTypes).toEqual([]);
+    expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: [] }).issueTypes).toEqual([]);
   });
 });
 
