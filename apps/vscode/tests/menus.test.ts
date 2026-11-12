@@ -131,14 +131,14 @@ describe("the commands' glyphs", () => {
 });
 
 describe('Open the trace so far', () => {
-  test('is offered while the worker panel is the active editor, with the trace’s glyph', () => {
+  test('is offered while the worker panel is the active editor and its slot can open its trace, with its glyph', () => {
     const commands = manifest.contributes.commands as Array<{ command: string; title: string; icon?: string }>;
     expect(commands.find((c) => c.command === RUN_COMMANDS.openTrace)).toMatchObject({
       title: 'Open the trace so far',
       icon: commands.find((c) => c.command === 'piwi.openTrace')!.icon,
     });
     const palette = menus['commandPalette']!.find((e) => e.command === RUN_COMMANDS.openTrace);
-    expect(palette?.when).toBe("activeWebviewPanelId == 'piwi.workerView'");
+    expect(palette?.when).toBe("activeWebviewPanelId == 'piwi.workerView' && piwi.runCanOpenTrace");
   });
 });
 

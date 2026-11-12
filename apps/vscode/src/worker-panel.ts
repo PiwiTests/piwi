@@ -15,8 +15,9 @@
  * (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked
  * for while their section is open, kept for the slot it shows until the panel closes. **Open the trace so far**, beside
  * Watch and Interact while the slot's worker can open its running test's trace (`canOpenTrace`), and
- * `piwi.openTraceSoFar`, ask the service to open Playwright's trace viewer on it (`piwi/openTrace`) and say its answer.
- * The pure half is `run-control.ts`.
+ * `piwi.openTraceSoFar`, offered meanwhile (`piwi.runCanOpenTrace`), ask the service to open Playwright's trace viewer on
+ * it (`piwi/openTrace`), one ask per slot (`TraceAsks`), and say its answer, with the worker it is for once the panel
+ * shows another. The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -66,11 +67,14 @@ import {
   laneShown,
   layersAfterAnswer,
   NO_LANE_LAYERS,
+  openTraceOffered,
   openTraceParams,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
   picksOnImage,
+  traceAnswerText,
+  TraceAsks,
   withLaneLayer,
   workerName,
   type CiLane,
@@ -162,11 +166,24 @@ export function createWorkerPanel(
   let textAsking = false;
   /** The layers the watch asked last, as text: a change of the sections asks again when they differ. */
   let layersSent = '';
-  /** Open the trace so far waits for the service's answer: its button is off, and another ask gets that answer. */
-  let traceAsked: Promise<RunControlResult> | null = null;
+  /** Open the trace so far's asks waiting for the service's answer, one per slot: that slot's button is off meanwhile. */
+  const traceAsks = new TraceAsks();
+  /** What `piwi.runCanOpenTrace` was set to last: it is set again only when it changes. */
+  let traceOffered = false;
 
   const script = () =>
     panel!.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'paused-page.js')).toString();
+
+  /**
+   * Offer **Piwi: Open the trace so far** (`piwi.runCanOpenTrace`) while the panel's slot can open its trace and no ask
+   * of it waits (`openTraceOffered`).
+   */
+  const offerTrace = () => {
+    const offered = !!panel && openTraceOffered(view);
+    if (offered === traceOffered) return;
+    traceOffered = offered;
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanOpenTrace', offered);
+  };
 
   /** The view as it stands, posted to the panel's script, or drawn anew for a new slot (`fresh`). */
   const draw = (fresh = false) => {
@@ -181,6 +198,7 @@ export function createWorkerPanel(
         live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
         layers: { ...sections, note: ciLaneLayersNote(layers), textAsking },
       };
+      offerTrace();
       if (!panel) return;
       if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
       else void panel.webview.postMessage({ type: 'state', view });
@@ -206,8 +224,9 @@ export function createWorkerPanel(
       // An action runs in the test's window at the stop the input goes to: Escape on the view goes to the page.
       acting: !!stop?.stop.acting,
       layers: { ...sections, note: laneLayersNote(lane.worker), textAsking },
-      trace: lane.worker && canOpenTrace(lane.worker) ? { asking: !!traceAsked } : null,
+      trace: lane.worker && canOpenTrace(lane.worker) ? { asking: traceAsks.asking(target) } : null,
     };
+    offerTrace();
     if (!panel) return;
     if (fresh) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'), script());
     else void panel.webview.postMessage({ type: 'state', view });
@@ -285,30 +304,33 @@ export function createWorkerPanel(
   };
 
   /**
-   * Ask the service to open Playwright's trace viewer on the slot's running test (`piwi/openTrace`), one ask at a time,
-   * and say its answer: an information message, else a warning.
+   * Ask the service to open Playwright's trace viewer on the slot's running test (`piwi/openTrace`), one ask per slot at
+   * a time, and say its answer: an information message, else a warning, naming its worker when the panel shows another
+   * slot by then.
    */
   const openTrace = (): Promise<RunControlResult> => {
-    if (traceAsked) return traceAsked;
     const asked = openTraceParams(target, !!ciTarget);
     if ('none' in asked) {
       void vscode.window.showWarningMessage(`Piwi: ${asked.none}`);
       return Promise.resolve({ ok: false, message: asked.none });
     }
     const params: OpenTraceParams = asked;
-    traceAsked = lc
-      .sendRequest<RunControlResult>(OPEN_TRACE_REQUEST, params)
-      .catch(() => null)
-      .then((answer) => {
-        traceAsked = null;
-        draw();
-        const said = answer ?? { ok: false, message: NO_ANSWER };
-        if (said.ok) void vscode.window.showInformationMessage(`Piwi: ${said.message}`);
-        else void vscode.window.showWarningMessage(`Piwi: ${said.message}`);
-        return said;
-      });
+    const waiting = traceAsks.waitingFor(params);
+    if (waiting) return waiting;
+    const answered = traceAsks.ask(params, () =>
+      lc
+        .sendRequest<RunControlResult>(OPEN_TRACE_REQUEST, params)
+        .catch(() => null)
+        .then((answer) => answer ?? { ok: false, message: NO_ANSWER }),
+    );
     draw();
-    return traceAsked;
+    return answered.then((said) => {
+      draw();
+      const text = `Piwi: ${traceAnswerText(params, ciTarget ? null : target, said.message)}`;
+      if (said.ok) void vscode.window.showInformationMessage(text);
+      else void vscode.window.showWarningMessage(text);
+      return said;
+    });
   };
 
   const stopWatching = () => {
@@ -525,6 +547,7 @@ export function createWorkerPanel(
       target = null;
       ciTarget = null;
       view = null;
+      offerTrace();
       forgetLayers();
       if (!disposed) hooks.changed();
     });

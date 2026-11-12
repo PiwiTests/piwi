@@ -1801,6 +1801,61 @@ export function openTraceParams(
   return { ref: slot.ref, lane: slot.lane };
 }
 
+/** A worker slot of a run, as Open the trace so far asks for it: the run's ref and the worker's lane. */
+export interface TraceSlot {
+  ref: string;
+  lane: number;
+}
+
+/**
+ * The worker panel's **Open the trace so far** asks, one per slot at a time: a slot's button is off while its own ask
+ * waits for the service's answer, never while another slot's does, and a second ask of a slot gets the answer of the
+ * one that waits.
+ */
+export class TraceAsks {
+  private readonly waiting = new Map<string, Promise<RunControlResult>>();
+
+  /** The answer the ask of `slot` waits for; undefined while none waits. */
+  waitingFor(slot: TraceSlot | null): Promise<RunControlResult> | undefined {
+    return slot ? this.waiting.get(traceSlotKey(slot)) : undefined;
+  }
+
+  /** Whether the ask of `slot` waits for the service's answer. */
+  asking(slot: TraceSlot | null): boolean {
+    return this.waitingFor(slot) !== undefined;
+  }
+
+  /** Ask for `slot` with `send`, or, while its ask waits, give that ask's answer. */
+  ask(slot: TraceSlot, send: () => Promise<RunControlResult>): Promise<RunControlResult> {
+    const waiting = this.waitingFor(slot);
+    if (waiting) return waiting;
+    const key = traceSlotKey(slot);
+    const asked = send().finally(() => this.waiting.delete(key));
+    this.waiting.set(key, asked);
+    return asked;
+  }
+}
+
+function traceSlotKey(slot: TraceSlot): string {
+  return `${slot.ref}\n${slot.lane}`;
+}
+
+/**
+ * What the answer to an ask of `asked` says: as it is while the panel shows that slot (`shown`), else with the name of
+ * the worker it is for in front.
+ */
+export function traceAnswerText(asked: TraceSlot, shown: TraceSlot | null, message: string): string {
+  return shown?.ref === asked.ref && shown.lane === asked.lane ? message : `${workerName(asked.lane)}: ${message}`;
+}
+
+/**
+ * Whether **Piwi: Open the trace so far** is offered (`piwi.runCanOpenTrace`): the worker panel shows a slot whose worker
+ * can open its running test's trace (`trace`), and no ask of that slot waits.
+ */
+export function openTraceOffered(view: PausedPageView | null): boolean {
+  return !!view?.trace && !view.trace.asking && !view.ci;
+}
+
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
 export function picksOnImage(takes: readonly string[], image: PausedImage | null): boolean {
   return takes.includes('pick-at') && !!image?.width && !!image.height;

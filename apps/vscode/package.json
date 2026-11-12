@@ -755,7 +755,7 @@
         },
         {
           "command": "piwi.openTraceSoFar",
-          "when": "activeWebviewPanelId == 'piwi.workerView'"
+          "when": "activeWebviewPanelId == 'piwi.workerView' && piwi.runCanOpenTrace"
         },
         {
           "command": "piwi.pickAtStop",

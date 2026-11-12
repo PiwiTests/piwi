@@ -484,10 +484,14 @@ again as it shows (`pausedPageViewChange`).
 
 **Open the trace so far.** Beside Watch and Interact, while the slot's worker runs a test whose reporter answers trace
 asks (`canOpenTrace` of `@piwitests/run-model/stop`, the view's `trace`), the button posts `trace`; it and
-**Piwi: Open the trace so far** (`piwi.openTraceSoFar`, offered while the panel is the active editor,
-`activeWebviewPanelId`) send `piwi/openTrace` for the slot (`openTraceParams`), one ask at a time, the button off until
-the service answers, and show its sentence: an information message, a warning when it is not `ok`. The service starts
-Playwright's trace viewer on this machine; the trace's path never reaches the extension. A CI run's lane has neither.
+**Piwi: Open the trace so far** (`piwi.openTraceSoFar`) send `piwi/openTrace` for the slot (`openTraceParams`). The
+palette offers the command while the panel is the active editor (`activeWebviewPanelId`) and `piwi.runCanOpenTrace` is
+set: the panel sets it, only as it changes, while its slot can open its trace and no ask of that slot waits
+(`openTraceOffered`), so never on a CI run's lane, between tests or for an older reporter. One ask per slot at a time
+(`TraceAsks`): a slot's button is off until the service answers its own ask, another slot's stays on and asks for its
+own. Each answer shows as an information message, a warning when it is not `ok`, its worker named in front
+(`Worker 1: …`, `traceAnswerText`) when the panel shows another slot by then. The service starts Playwright's trace
+viewer on the machine the run runs on; the trace's path never reaches the extension. A CI run's lane has neither.
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
