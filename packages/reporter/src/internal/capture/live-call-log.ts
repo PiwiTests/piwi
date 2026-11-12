@@ -432,6 +432,19 @@ function listenContext(context: BrowserContext, titleOf: (id: string) => string 
 }
 
 /**
+ * Follow a context's calls through Playwright's in-process instrumentation from as it opens, in a worker whose run Piwi
+ * may pause and that can show a view: a view that comes while a call waits shows that call at once. Nothing for a
+ * context with no in-process server.
+ */
+export function listenCalls(context: BrowserContext, titleOf: (id: string) => string | null): void {
+  try {
+    listenContext(context, titleOf);
+  } catch {
+    // A context of another shape is followed as a view comes, or not at all.
+  }
+}
+
+/**
  * The calls of a context as the worker's instrumentation hears them, for a context with no in-process server: each
  * running call, its title the runner's, without its log. The calls of every context of the worker are heard alike.
  */

@@ -129,6 +129,8 @@ const THUMB_AFTER_MS = 300;
 const THUMB_TAKES_PER_SECOND = 2;
 /** The JPEG quality of an image of the filmstrip. */
 const THUMB_QUALITY = 60;
+/** The most page events posted at once. */
+const MAX_EVENT_POSTS = 8;
 /** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
 const GIVE_UP = new Set([403, 410]);
 /**
@@ -222,6 +224,8 @@ const layerRuns: {
   thumbs: ReturnType<typeof setInterval> | null;
 } = { events: null, text: null, texts: null, thumbs: null };
 let strip: Strip | null = null;
+/** The page events posted now. */
+let eventPosts = 0;
 /** What stops hearing the calls of the worker's Playwright end, for the filmstrip. */
 let unhearCalls: (() => void) | null = null;
 
@@ -300,6 +304,11 @@ function showKey(): void {
 /** Whether the worker holds the run's live view key, shared or not. */
 export function liveViewOpen(): boolean {
   return link !== null;
+}
+
+/** Whether the worker holds a key of a run outside CI: one a person may pause, whose call log the listener follows. */
+export function liveViewMayPause(): boolean {
+  return link !== null && !link.ci;
 }
 
 /** Whether the worker's stream is wanted now and may open: it holds a key the instance takes, and the run is shared. */
@@ -759,8 +768,12 @@ function setAsked(own: Link, asked: Link['asked']): void {
 function applyLayers(own: Link, before: ReadonlySet<LaneLayer>): void {
   if (layerAsked(own, 'events') && !layerRuns.events) {
     layerRuns.events = subscribePageEvents((event, at) => {
-      if (layerAsked(own, 'events'))
-        void post(own, { type: 'page-event', ...own.id, event, at, test: running?.title ?? null });
+      // An instance that answers slowly is not sent more than a few at once: the others go nowhere.
+      if (!layerAsked(own, 'events') || eventPosts >= MAX_EVENT_POSTS) return;
+      eventPosts++;
+      void post(own, { type: 'page-event', ...own.id, event, at, test: running?.title ?? null }).finally(() => {
+        eventPosts--;
+      });
     });
   } else if (!layerAsked(own, 'events') && layerRuns.events) {
     layerRuns.events();

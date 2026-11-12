@@ -46,12 +46,14 @@ const SHOP = `<!doctype html><meta charset="utf-8"><title>shop</title>
 const SPEC = (base: string) => `const { test } = require('../fixture.cjs');
 test('pay', async ({ page }) => {
   await page.goto('${base}/shop');
-  await fetch('${base}/watch');
-  await page.waitForTimeout(1000);
   await page.getByLabel('Password').fill('${SECRET}');
   await page.getByLabel('IBAN').fill('${IBAN}');
   await page.getByRole('button', { name: 'Check' }).click();
-  await page.getByRole('button', { name: 'Pay' }).click();
+  // Someone comes to watch while the click waits.
+  const paid = page.getByRole('button', { name: 'Pay' }).click();
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await fetch('${base}/watch');
+  await paid;
   await page.evaluate(() => {
     console.error('cart broke');
     void fetch('/api/missing');
@@ -214,6 +216,9 @@ describe('the layers of the team’s live view', () => {
 
   it('tells why a click waits in a run outside CI, from the in-process instrumentation', () => {
     const logs: LiveCallLog[] = of('call-log').map(({ message }) => message.log);
+    // A viewer who comes while the click waits sees it at once: its calls were followed from the context's start.
+    expect(logs[0], JSON.stringify(logs.map((log) => log.call.title))).toMatchObject({ status: 'running' });
+    expect(logs[0]!.call.title).toContain("'Pay'");
     const waiting = logs.find((log) => log.call.title.includes("'Pay'") && log.target?.enabled === false);
     expect(waiting, JSON.stringify(logs.map((log) => [log.call.title, log.status]))).toBeDefined();
     expect(waiting!.lines.join('\n')).toMatch(/not enabled/);

@@ -515,7 +515,9 @@ What the package does to a user's run, process by process.
   log (`onCallLog`, the `api` log alone), act at its point (`onBeforeInputAction`) and end
   (`onAfterCall`), Playwright 1.64's progress argument or an earlier one's metadata, synchronously,
   pausing nothing, removed as the context closes; the title is the runner's step for the call's id
-  (`layersTitleOf`). A browser the worker connected to has no in-process server: the call alone is
+  (`layersTitleOf`). In a worker with a run connection, or a live view key outside CI, the listener
+  is added to each context as the capture fixtures instrument it (`listenCalls`), so a view that
+  comes while a call waits shows that call at once; elsewhere, as the first view follows it. A browser the worker connected to has no in-process server: the call alone is
   followed there, from the worker's instrumentation, without its log. In a CI run nothing may
   pause, it listens to the context's call stream, then turns it on
   (`context.debugger._enable()` through `internalCall`, each member checked first), which
@@ -537,7 +539,8 @@ What the package does to a user's run, process by process.
   selector of that frame: the read finds nothing then (the call's log says it found its
   element, so the read is dropped) or another element of the main frame.
 - While its full views ask for layers (`view`'s `layers`, `applyLayers`), the worker posts
-  them as the lane view does (`lane-layers.ts`): the page's events (`page-event`), its text
+  them as the lane view does (`lane-layers.ts`): the page's events (`page-event`, eight posts in
+  flight at most, the others going nowhere), its text
   (`text`, as the trace writes it, and taken as the instance asks, `text`, or as the layer is
   asked anew, one a second at most, masked with the project's masks too), and its test's
   filmstrip (`thumb`, a live message whose data is the JPEG): while anyone watches, 300 ms

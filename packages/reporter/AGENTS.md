@@ -46,9 +46,10 @@ responsibilities.
      wrappers on the browser types and on the `sendMessageToServer` of the worker's connection and of each browser it
      connects to while that browser is connected, which only read each call (`internal/capture/resource-ledger.ts`),
      and the `clear_refs` writes and DevTools sessions of `internal/capture/worker-metrics.ts`;
-   - while a view follows a context's calls in a run Piwi may pause, the listener `live-call-log.ts` adds to that
-     context's in-process server instrumentation (`context._connection.toImpl(context).instrumentation`,
-     feature-checked, absent for a connected browser), which only reads each call and goes as the context closes; and
+   - in a worker of a run Piwi may pause that can show a view (a run connection, or a live view key outside CI), the
+     listener `live-call-log.ts` adds to each context's in-process server instrumentation as it opens
+     (`context._connection.toImpl(context).instrumentation`, feature-checked, absent for a connected browser), which
+     only reads each call and goes as the context closes (`listenCalls`); and
      while a viewer asks for the page's text or the filmstrip, the reads of the runner's growing trace of the test
      (`<outputDir>/.playwright-artifacts-<workerIndex>/traces/`, `lane-layers.ts`), and of the page's ARIA snapshot
      through `internalCall` when asked where the trace writes none;

@@ -149,7 +149,7 @@ import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
 import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
-import { layersTestBegan, layersTestEnded } from './lane-layers.js';
+import { layersTestBegan, layersTestEnded, layersTitleOf } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -159,6 +159,7 @@ import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeLiveView,
+  liveViewMayPause,
   liveViewOpen,
   liveViewPage,
   liveViewStopped,
@@ -166,7 +167,7 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
-import { trackCalls } from './live-call-log.js';
+import { listenCalls, trackCalls } from './live-call-log.js';
 import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
@@ -3347,6 +3348,8 @@ function instrumentContext(context: BrowserContext): void {
     });
   }
   observeOwnApiRequests(context);
+  // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
+  if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
 
   // Seed the probe for every document this context loads, so a capture ships a
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
