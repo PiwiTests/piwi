@@ -30,7 +30,11 @@ import {
 import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
-import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
+import {
+  resolveProjectIntegration,
+  resolveTagSource,
+  type ResolvedProjectIntegration,
+} from '#shared/integrations/binding';
 import { previewAutoCreate, type AutoCreatePreview } from '#shared/handlers/tracker-automation';
 import { projectDefaultBranch } from '~~/server/utils/scm/stored-default-branch';
 import {
@@ -746,7 +750,6 @@ const DEMO_ISSUE_LOOKUP = {
         assignee: null,
         url: `${DEMO_CONNECTION.baseUrl}/browse/${issue.key}`,
         projectKey: DEMO_PROJECT_KEY,
-        issueType: DEMO_ISSUE_TYPE,
       })),
     };
   },
@@ -754,19 +757,27 @@ const DEMO_ISSUE_LOOKUP = {
 
 /**
  * The link step at a demo run's finish, as the server runs it: a run the `tracker` use admits links the issues its
- * failing tests name, looked up in the demo's Jira through the canned binding, which admits every run.
+ * failing tests name, looked up in the demo's Jira through the canned binding, which admits every run. A tag the
+ * project's issue key pattern matches names an issue too, linked when it is of the binding's issue type.
  */
 export async function linkDemoDeclaredIssues(db: DrizzleDB, runId: number): Promise<DeclaredLinksResult | null> {
   const [run] = await db
-    .select({ metadata: testRuns.metadata, isFullRun: testRuns.isFullRun, status: testRuns.status })
+    .select({
+      metadata: testRuns.metadata,
+      isFullRun: testRuns.isFullRun,
+      status: testRuns.status,
+      projectId: testRuns.projectId,
+    })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
   if (!run || !isEligibleRun(run, 'tracker')) return null;
+  const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, run.projectId));
   return linkNamedIssues(db, runId, {
     projectKey: DEMO_PROJECT_KEY,
     // No connection row backs the canned connection, as for the seeded links.
     connectionId: null,
     tracker: DEMO_ISSUE_LOOKUP,
+    tagSource: resolveTagSource(project?.tagKeys, getDemoProjectIntegration()),
     deadline: AbortSignal.timeout(10_000),
   });
 }
