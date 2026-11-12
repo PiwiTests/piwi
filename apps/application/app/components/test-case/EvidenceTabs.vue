@@ -36,6 +36,7 @@ import { extractStepLocatorUses } from '#shared/locator-chain';
 import type { LightboxSubject } from '~/utils/lightbox';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import type { ReelVideo } from '#shared/video-reel';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -374,7 +375,7 @@ const reviewVideo = computed<ReelVideo | null>(() => {
 });
 const runIsFinished = computed(() => {
   const runStatus = props.testCase?.testRun?.status;
-  return runStatus != null && runStatus !== 'running' && runStatus !== 'finalizing';
+  return runStatus != null && !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(runStatus);
 });
 const canReviewVideo = computed(() => reviewVideo.value != null && runId.value != null && runIsFinished.value);
 
@@ -554,7 +555,6 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         <div v-if="primaryTrace || canReviewVideo" class="ml-auto flex flex-wrap items-center justify-end gap-2">
           <UButton
             v-if="canReviewVideo"
-            icon="i-lucide-list-video"
             size="xs"
             color="neutral"
             variant="outline"

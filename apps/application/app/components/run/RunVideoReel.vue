@@ -186,16 +186,9 @@ function blockLabel(entry: ReelEntry): string {
             <span class="min-w-0 flex-1">
               <span class="block text-sm text-highlighted">
                 {{ entry.execution.title }}
-                <UBadge
-                  v-if="isFocus(entry)"
-                  label="This test"
-                  color="neutral"
-                  variant="subtle"
-                  size="sm"
-                  class="ml-1 align-middle"
-                />
               </span>
               <span class="block text-xs text-muted">
+                <template v-if="isFocus(entry)">This test · </template>
                 <template v-if="group === 'file' && entry.laneLabel">{{ entry.laneLabel }} · </template>
                 {{ formatDuration(entry.execution.durationMs) }}
                 <template v-if="entry.context"> · not played here</template>
