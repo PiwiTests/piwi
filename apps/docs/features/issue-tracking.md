@@ -110,8 +110,8 @@ A **title prefix** such as `[Piwi]` starts every summary Piwi files. Set it on t
 connection's default; the binding's wins. It is up to 40 characters and counts toward Jira's 255: a long title is cut,
 never the prefix. A title you type is filed as typed; a summary edited in Jira never gets the prefix back.
 
-A ticket ends with *Filed by <name> from Piwi*, naming the person once. The cluster's **Issue** line says the same:
-*Filed by Priya Shah, 2 days ago*.
+A ticket ends with *Filed by Priya Shah from Piwi*, naming the person once. The cluster's **Issue** line says
+the same: *Filed by Priya Shah, 2 days ago*.
 
 ## Required Jira fields
 
