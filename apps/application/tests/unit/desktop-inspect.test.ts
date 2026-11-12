@@ -40,6 +40,8 @@ const chromium = ((): Chromium | null => {
 })();
 
 const SECRET = 'hunter2-Secret!';
+const MOVED =
+  "Inspect stopped reading this test's trace: the runner's trace folder, a folder above it or its resources folder is a link or no longer a folder.";
 const PNG = Buffer.from(
   '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fe0dce4a5f0000000049454e44ae426082',
   'hex',
@@ -87,29 +89,29 @@ async function waitFor<T>(read: () => T | undefined | false | null, ms = 15_000)
 }
 
 /** Node's file system promises, as the reader calls them: a test holds or changes one of its calls. */
-const fsPromises = requireHere('node:fs/promises') as {
-  open: (...args: unknown[]) => Promise<unknown>;
-  lstat: (...args: unknown[]) => Promise<unknown>;
-};
+const fsPromises = requireHere('node:fs/promises') as Record<
+  'open' | 'lstat' | 'readdir',
+  (...args: unknown[]) => Promise<unknown>
+>;
 
 /**
- * Holds the next opening of `file` until `release` is called, `at` resolving as it is held: a read of the reader in
- * flight, at the moment the test chooses.
+ * Holds the next call `name` of the file system on `file` until `release` is called, `at` resolving as it is held: a
+ * read of the reader in flight, at the moment the test chooses.
  */
-function holdOpen(file: string): { at: Promise<void>; release: () => void } {
-  const open = fsPromises.open;
+function holdCall(name: 'open' | 'readdir', file: string): { at: Promise<void>; release: () => void } {
+  const call = fsPromises[name];
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
   let reached!: () => void;
   const at = new Promise<void>((resolve) => (reached = resolve));
-  fsPromises.open = async (...args: unknown[]) => {
+  fsPromises[name] = async (...args: unknown[]) => {
     if (args[0] === file) {
-      fsPromises.open = open;
+      fsPromises[name] = call;
       syncBuiltinESMExports();
       reached();
       await released;
     }
-    return open(...args);
+    return call(...args);
   };
   syncBuiltinESMExports();
   return { at, release };
@@ -225,17 +227,15 @@ describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser
       await linked.reader.turn();
       expect(linked.kept).toEqual([]);
       linked.reader.close();
-      // A resources folder that is a link is never read: the page shows without its styles.
+      // A resources folder that is a link stops the reading, saying why: nothing of the trace is kept.
       const moved = path.join(root, 'linked', 'resources-elsewhere');
       fs.renameSync(path.join(traces, 'resources'), moved);
       fs.symlinkSync(moved, path.join(traces, 'resources'));
       const real = readerOf(traces, 'real');
       await real.reader.turn();
-      const shown = await waitFor(() => real.kept.find((n) => n.title === 'goto'));
-      const rendered = await real.store.render('0', shown.call, shown.phase);
-      expect('html' in rendered && rendered.html).toContain('Shop');
-      expect('html' in rendered && rendered.html).not.toContain('rgb(1, 2, 3)');
-      expect(real.store.size().counts.resources).toBe(0);
+      expect(real.refused).toEqual([MOVED]);
+      expect(real.kept).toEqual([]);
+      expect(real.store.size().counts).toEqual({ snapshots: 0, resources: 0 });
       real.reader.close();
     } finally {
       await browser.close();
@@ -274,6 +274,49 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
     expect(own.kept.at(-1)).toMatchObject({ call: 'c@3', phase: 'after', index: 3 });
     expect(own.refused).toEqual([]);
     own.reader.close();
+  });
+
+  it('stops reading, saying why, once the trace folder became a link', async () => {
+    const folder = path.join(root, 'swapped');
+    const traces = path.join(folder, '.playwright-artifacts-0', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    fs.writeFileSync(path.join(traces, 't1.trace'), `${snapshotLine('c@1', 'after', ['HTML', {}, 'Checked'])}\n`);
+    const elsewhere = path.join(folder, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    fs.writeFileSync(
+      path.join(elsewhere, 't1.trace'),
+      [
+        snapshotLine('c@1', 'after', ['HTML', {}, 'Checked']),
+        snapshotLine('c@2', 'after', ['HTML', {}, 'Elsewhere']),
+        '',
+      ].join('\n'),
+    );
+    const own = readerOf(traces, 't1');
+    await own.reader.turn();
+    expect(own.kept.map((n) => n.call)).toEqual(['c@1']);
+    fs.renameSync(traces, path.join(folder, 'moved'));
+    fs.symlinkSync(elsewhere, traces);
+    await own.reader.turn();
+    expect(own.kept.map((n) => n.call)).toEqual(['c@1']);
+    expect(own.refused).toEqual([MOVED]);
+    await own.reader.turn();
+    expect(own.refused).toEqual([MOVED]);
+    own.reader.close();
+
+    // Swapped as a read lists the folder: no file is opened through the link.
+    fs.unlinkSync(traces);
+    fs.renameSync(path.join(folder, 'moved'), traces);
+    const late = readerOf(traces, 't1');
+    const held = holdCall('readdir', traces);
+    const turn = late.reader.turn();
+    await held.at;
+    fs.renameSync(traces, path.join(folder, 'moved'));
+    fs.symlinkSync(elsewhere, traces);
+    held.release();
+    await turn;
+    expect(late.kept).toEqual([]);
+    expect(late.refused).toEqual([MOVED]);
+    late.reader.close();
   });
 
   it('names a call’s pages by the runner’s title of its step, as the trace’s call names it', async () => {
@@ -399,7 +442,7 @@ describe('a reader that closes while it reads', () => {
       refused: () => undefined,
       readMs: 10_000,
     });
-    const held = holdOpen(image);
+    const held = holdCall('open', image);
     const turn = reader.turn();
     await held.at;
     // The lane stops reading as the image is read: the reader closes, then its store lets everything go.
@@ -420,7 +463,7 @@ describe('a reader that closes while it reads', () => {
       `${['c@1', 'c@2', 'c@3'].map((call) => JSON.stringify({ type: 'before', callId: call, method: 'click' })).join('\n')}\n`,
     );
     const own = readerOf(traces, 't1');
-    const held = holdOpen(file);
+    const held = holdCall('open', file);
     const turn = own.reader.turn();
     await held.at;
     own.reader.close();
@@ -575,7 +618,7 @@ describe('the lanes the windows have Inspect open on', () => {
       test: { id: 't1', retry: 0 },
     };
     const own = lanes([found, ...Array.from({ length: 20 }, () => ({ ok: false as const, message: untraced }))]);
-    const held = holdOpen(file);
+    const held = holdCall('open', file);
     own.inspects.open(VIEWER, 'desktop-7', 0);
     await held.at;
     // The test ends and the next begins while the reader of the first one reads.

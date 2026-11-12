@@ -265,8 +265,9 @@ runs (`@piwitests/editor/run-host`), plus these:
   bisect, a lab job, a run with `--ui`, and one with `--repeat-each` above 1 unless it stops at its first failure.
 - **Inspect reads a lane's trace from the file its worker named to the hub alone, checked (`RunSessions.laneTrace`),
   and no path reaches a window.** `desktop-inspect.ts` reads that folder's attempt files and `resources/`, never through
-  a link, into `RunInspect` with the reporter's secret removal and resource allow list, served by
-  `snapshotFrameDocument`; nothing is kept past the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`).
+  a link (each folder's real path checked again as each file opens, which opens without waiting on a pipe), into
+  `RunInspect` with the reporter's secret removal and resource allow list, served by `snapshotFrameDocument`; nothing
+  is kept past the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`).
 - **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
   editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
   it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)

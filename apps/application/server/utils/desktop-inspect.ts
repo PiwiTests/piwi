@@ -9,10 +9,13 @@
  *
  * - **What is read** (`DesktopTraceReader`), as the reporter's Inspect reads the runner's trace: each file of the
  *   attempt (`<base>[-recording<N>].trace`, `MAX_TRACE_FILES` at most) and its `.network`, from where the last read
- *   stopped, every `READ_MS`, a link or anything but a regular file never read. Of the trace: each call as it begins
- *   (`before`: its id, its title, the text it types), and the `frame-snapshot` events, each numbered in its frame as
- *   Playwright numbers them, a line past `MAX_SNAPSHOT_LINE` counted where it was and passed over. Of the network file:
- *   each resource a page loaded (`resource-snapshot`) that `inspectResourceType` allows, by its page and address.
+ *   stopped, every `READ_MS`, a link or anything but a regular file never read. The trace folder and its resources
+ *   folder are checked as each turn starts and again as each file opens: still folders whose real path is the one
+ *   checked, so that neither they nor a folder above them is a link; else the reading stops, saying why. Of the
+ *   trace: each call as it begins (`before`: its id, its title, the text it types), and the `frame-snapshot` events,
+ *   each numbered in its frame as Playwright numbers them, a line past `MAX_SNAPSHOT_LINE` counted where it was and
+ *   passed over. Of the network file: each resource a page loaded (`resource-snapshot`) that `inspectResourceType`
+ *   allows, by its page and address.
  * - **What is kept.** The snapshots of every page's main frame, from the main frame's last full snapshot as Inspect
  *   opens (`MAX_SNAPSHOT_BACKLOG` bytes at most, the oldest after a frame's full one left out), then each new one, in
  *   the trace's order. Before one is kept, what its page's secrets show is removed (`hideFrameSnapshotSecrets`) with
@@ -134,6 +137,9 @@ const BEHIND = 'The page is not shown: Inspect fell behind the test’s calls.';
 const OVER_BACKLOG = `The page is not shown: its snapshots since its navigation are larger than ${MAX_SNAPSHOT_BACKLOG / MB} MB.`;
 const FULL = 'The page is not shown: the desktop app keeps no more pages for Inspect now.';
 const UNTIL_NAVIGATION = 'Inspect shows it again from its next navigation.';
+/** Why the reading of the trace stops: its folder is no longer the one checked. */
+const FOLDER_MOVED =
+  "Inspect stopped reading this test's trace: the runner's trace folder, a folder above it or its resources folder is a link or no longer a folder.";
 /** Why no page of the attempt shows: its trace takes no DOM snapshot. */
 const NO_SNAPSHOTS =
   "Inspect has no page to show: this test's trace takes no DOM snapshots (its trace option's snapshots, or their dom, is off).";
@@ -156,6 +162,19 @@ const TYPING: ReadonlyMap<string, 'value' | 'text'> = new Map([
 /** A line of a trace passed over for its length, where it was among the others: its first `LONG_LINE_HEAD` characters. */
 interface TraceGap {
   head: string;
+}
+
+/**
+ * Whether `folder` is still the folder checked: a folder, spelled as the file system spells it with every link
+ * followed, so that neither it nor a folder above it is a link. Null when it is not there.
+ */
+async function sameFolder(folder: string): Promise<boolean | null> {
+  try {
+    const [stat, real] = await Promise.all([fs.lstat(folder), fs.realpath(folder)]);
+    return stat.isDirectory() && real === folder;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? null : false;
+  }
 }
 
 /** How a file of the trace opens: to read, never through a link, and without waiting on a named pipe. */
@@ -192,10 +211,11 @@ class DesktopTraceTail {
   constructor(
     readonly file: string,
     private readonly maxLine: number,
+    private readonly open: (file: string) => Promise<fs.FileHandle | null>,
   ) {}
 
   async read(): Promise<Array<string | TraceGap>> {
-    const handle = await openPlain(this.file);
+    const handle = await this.open(this.file);
     if (!handle) return [];
     try {
       const { size } = await handle.stat();
@@ -385,16 +405,21 @@ export class DesktopTraceReader {
   private tail(file: string, maxLine: number): DesktopTraceTail {
     let tail = this.tails.get(file);
     if (!tail) {
-      tail = new DesktopTraceTail(file, maxLine);
+      tail = new DesktopTraceTail(file, maxLine, (one) => this.open(one));
       this.tails.set(file, tail);
     }
     return tail;
   }
 
-  /** Read each file of the trace from where it stopped: its resources first, then its calls and snapshots. */
+  /**
+   * Read each file of the trace from where it stopped: its resources first, then its calls and snapshots. Its folder
+   * and its resources folder are checked first, and again as each file opens (`open`).
+   */
   private async read(): Promise<boolean> {
     let behind = false;
-    for (const file of await desktopAttemptFiles(this.options.trace.traces, this.options.trace.base)) {
+    const { traces } = this.options.trace;
+    if (!(await this.holds(traces)) || (await this.holds(path.join(traces, 'resources'))) === false) return false;
+    for (const file of await desktopAttemptFiles(traces, this.options.trace.base)) {
       const network = this.tail(file.replace(/\.trace$/, '.network'), MAX_NETWORK_LINE);
       for (let i = 0; i < MAX_READS_A_TURN && !this.closed; i++) {
         for (const line of await network.read()) {
@@ -558,6 +583,26 @@ export class DesktopTraceReader {
     if (this.mainFrames.has(frame) && !told) this.tell(`${why} ${UNTIL_NAVIGATION}`);
   }
 
+  /**
+   * Whether `folder`, the trace folder or its resources folder, is still the folder checked: null when it is not there
+   * (nothing is read in it); false when it is a link, or a folder above it is, or it is no longer a folder, which stops
+   * the reader, saying why.
+   */
+  private async holds(folder: string): Promise<boolean | null> {
+    const same = await sameFolder(folder);
+    if (same === false && !this.closed) {
+      this.tell(FOLDER_MOVED);
+      this.close();
+    }
+    return same;
+  }
+
+  /** Open a file of the trace folder or its resources folder to read, the folder checked again right before. */
+  private async open(file: string): Promise<fs.FileHandle | null> {
+    if (!(await this.holds(path.dirname(file))) || this.closed) return null;
+    return openPlain(file);
+  }
+
   /** Tell the windows why a page goes no further, or why the trace has none: a reader closed tells nothing. */
   private tell(text: string): void {
     if (!this.closed) this.options.refused(text);
@@ -714,13 +759,7 @@ export class DesktopTraceReader {
   /** A resource's bytes, from the trace folder's `resources/` alone, no link; null past `MAX_RESOURCE_BYTES` or unread. */
   private async resourceBytes(sha1: string): Promise<Buffer | null> {
     if (!isResourceSha1(sha1)) return null;
-    const folder = path.join(this.options.trace.traces, 'resources');
-    try {
-      if (!(await fs.lstat(folder)).isDirectory()) return null;
-    } catch {
-      return null;
-    }
-    const handle = await openPlain(path.join(folder, sha1));
+    const handle = await this.open(path.join(this.options.trace.traces, 'resources', sha1));
     if (!handle) return null;
     try {
       const { size } = await handle.stat();
