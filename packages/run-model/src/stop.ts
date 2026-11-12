@@ -1,8 +1,9 @@
 /**
  * A worker's stop as a surface that follows a run reads it (`@piwitests/core/run-hub`): what the stop takes from the
- * surface, whether its worker's lane can be watched and whether a lane's frame shows the worker as it is now, a point
- * of an image of the stopped page in the page's pixels, and where the stop stands, its error, its test's and its run's
- * names, and what a surface says of it as it comes, as text.
+ * surface, whether its worker's lane can be watched, whether its running test's trace so far opens (`canOpenTrace`),
+ * and whether a lane's frame shows the worker as it is now, a point of an image of the stopped page in the page's
+ * pixels, and where the stop stands, its error, its test's and its run's names, and what a surface says of it as it
+ * comes, as text.
  */
 import type { HubAction, HubSession, HubStop, HubTest, HubWorker } from '@piwitests/core/run-hub';
 import type { RunSpeaker } from './words';
@@ -50,6 +51,15 @@ export function laneWatchOf(
 ): 'watch' | 'outdated' | null {
   if (!hub?.lanes) return null;
   return worker.intents.includes('watch') ? 'watch' : 'outdated';
+}
+
+/**
+ * Whether **Open the trace so far** opens the worker's running test's trace in Playwright's trace viewer (the hub's
+ * `openTrace`): its reporter says where the trace grows (`traces`, which a hub without the `trace` feature never
+ * sends), and it runs a test, stopped at one of its calls or not.
+ */
+export function canOpenTrace(worker: Pick<HubWorker, 'traces' | 'test'>): boolean {
+  return worker.traces === true && worker.test !== null;
 }
 
 /**

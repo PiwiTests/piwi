@@ -300,6 +300,19 @@ async function attemptFiles(dir: string, base: string): Promise<string[]> {
   return kept.map((file) => path.join(dir, file.name));
 }
 
+/**
+ * The running attempt's own trace file as the runner writes it now: of its files, the first context's (the one without
+ * `-recording<N>`, else the lowest), which the hub opens in Playwright's trace viewer with the others of the attempt;
+ * null between two tests, or when the runner writes none (`noTest` tells which).
+ */
+export async function attemptTraceFile(): Promise<{ file: string } | { noTest: boolean }> {
+  const test = current;
+  if (!test) return { noTest: true };
+  if (!test.trace) return { noTest: false };
+  const [first] = await attemptFiles(test.trace.dir, test.trace.base);
+  return first ? { file: first } : { noTest: false };
+}
+
 /** The running test's trace, read up to now; null for a test whose trace is not known. */
 async function traceOf(): Promise<AttemptTrace | null> {
   const test = current;

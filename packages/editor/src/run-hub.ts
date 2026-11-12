@@ -91,9 +91,12 @@ export interface HubRunInfo {
   project: string | null;
 }
 
-/** The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`). */
+/**
+ * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
+ * run sessions start the trace viewer.
+ */
 export function hubFeatures(options: Pick<RunHubOptions, 'stopRun'>): HubFeature[] {
-  return HUB_FEATURES.filter((feature) => feature !== 'stop' || !!options.stopRun);
+  return HUB_FEATURES.filter((feature) => (feature !== 'stop' || !!options.stopRun) && feature !== 'trace');
 }
 
 export interface RunHubOptions {
@@ -688,6 +691,8 @@ export class RunHub {
           const { ref, worker, since, on } = command;
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
         }
+        case 'openTrace':
+          return reply({ ok: false, message: 'This hub cannot open a trace.' });
         case 'watch': {
           const { ref, lane, on, layers } = command;
           const answer = await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer);
@@ -723,8 +728,9 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, traces, ...worker }) => ({
         ...worker,
+        ...(traces ? { traces: true as const } : {}),
         // Each surface names the stop's line where it stands now, as the editor does.
         ...(worker.stop
           ? {

@@ -32,6 +32,7 @@ import {
   type RunToHub,
   type SnapshotAnswer,
   type StopReason,
+  type TraceAnswer,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
 import {
@@ -68,6 +69,7 @@ import {
 import {
   LaneFilmstrip,
   LaneTexts,
+  attemptTraceFile,
   followTraceText,
   layersTest,
   layersTitleOf,
@@ -1273,6 +1275,10 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         void answered.then((value) => tellHub({ type: 'answer', request, what: 'view-lane', value }));
         return;
       }
+      if (message.what === 'trace') {
+        void answerTrace().then((value) => tellHub({ type: 'answer', request, what: 'trace', value }));
+        return;
+      }
       if (message.what === 'text') {
         const texts = laneView ? layerRuns.text?.texts : undefined;
         const value = texts
@@ -1392,6 +1398,21 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         message: `@piwitests/reporter ${getReporterVersion()} does not take the editor's ${message.what}: update it.`,
       });
   }
+}
+
+/**
+ * Where the running attempt's own trace file grows, for the hub alone, which opens it in Playwright's trace viewer and
+ * names it to no one; or why there is none.
+ */
+async function answerTrace(): Promise<TraceAnswer> {
+  const found = await attemptTraceFile().catch(() => ({ noTest: false }));
+  if ('file' in found) return { ok: true, message: "The attempt's trace grows there.", file: found.file };
+  return {
+    ok: false,
+    message: found.noTest
+      ? 'No test runs on this worker now.'
+      : "This test's attempt is not traced: its project's `trace` option records none of it.",
+  };
 }
 
 /** Why Show the browser is refused at a stop no pause bar shows: a headless one, or one whose page is not known. */
