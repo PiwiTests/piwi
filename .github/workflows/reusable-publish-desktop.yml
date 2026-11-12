@@ -178,9 +178,9 @@ jobs:
           #
           # In-app updates are opt-in and OFF until the updater keypair exists.
           # To enable them: run `npx tauri signer generate` locally, put the
-          # public key into BOTH src-tauri/tauri.updater.conf.json (the .msi
-          # channel) and src-tauri/tauri.updater.nsis.conf.json (the .exe
-          # channel), and add the private key (+ its password) as the two secrets
+          # public key into src-tauri/tauri.updater.conf.json (the .msi
+          # channel), src-tauri/tauri.updater.nsis.conf.json (the .exe
+          # channel) and src-tauri/runner.updater.conf.json (Piwi Runner), and add the private key (+ its password) as the two secrets
           # below. Each leg's overlay (matrix.updaterConfig) is applied only when
           # the secret is present, so releases without it build exactly as
           # before, installers with no update artifacts and apps that report
@@ -269,9 +269,12 @@ jobs:
             const { owner, repo } = context.repo;
             const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
             const built = sig.slice(0, -'.sig'.length);
+            // The version and arch of the file this leg built (`<product>_<version>_<arch>-setup.exe`).
+            const parts = /_([^_]+)_([^_]+)-setup\.exe$/.exec(built);
+            if (!parts) throw new Error(`not an NSIS installer name: ${built}`);
             const expected = process.env.ASSET_NAME_PATTERN
-              .replace('[version]', tag.replace(/^v/, ''))
-              .replace('[arch]', 'x64')
+              .replace('[version]', parts[1])
+              .replace('[arch]', parts[2])
               .replace('[setup]', '-setup')
               .replace('[ext]', '.exe');
             const setup = release.data.assets.find((a) => a.label === expected || a.name === expected);

@@ -176,8 +176,8 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 - **Run on my machine** — ask the desktop app on your own machine to run the tests a page shows, the app asking
   before every run and the run reported as yours alone. The instance's side has shipped behind an experimental
   capability, off by default ([Run on my machine](https://piwitests.dev/features/run-on-my-machine)); the desktop app
-  taking requests, the page's button and its progress, and Piwi Runner are built, Runner's installers published
-  beside the desktop app's; its updates follow. Design record in
+  taking requests, the page's button and its progress, and Piwi Runner are built, Runner's installers and updates
+  published beside the desktop app's. Design record in
   [proposals/run-on-my-machine.md](proposals/run-on-my-machine.md).
 - **Issue trackers, the rest** — tickets for flaky tests and whole runs, investigation and run reports published to
   Confluence with in-place page updates, and the next trackers on the same provider layer: GitHub Issues and GitLab
