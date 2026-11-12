@@ -13,6 +13,7 @@ import {
   errorPlace,
   failureError,
   runningCall,
+  runnerTraces,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
   ARIA_SNAPSHOT_CONTENT_TYPE,
@@ -2175,6 +2176,34 @@ describe('runningCall', () => {
   it('names a step of the test by its title, and nothing once every call ended', () => {
     expect(runningCall(info([{ category: 'test.step', title: 'Pay', location: at(10) }]))?.title).toBe('Pay');
     expect(runningCall(info([{ category: 'pw:api', title: 'Click', location: at(12), endWallTime: 1 }]))).toBeNull();
+  });
+});
+
+describe('runnerTraces', () => {
+  const info = (tracing: unknown) => ({ _tracing: tracing }) as unknown as Parameters<typeof runnerTraces>[0];
+  const options = (value: unknown) => info({ traceOptions: () => value });
+
+  it('says the runner traces an attempt its tracing has options for, and not one it has none for', () => {
+    expect(runnerTraces(options({ mode: 'on', snapshots: true }))).toBe(true);
+    expect(runnerTraces(options({ mode: 'retain-on-failure' }))).toBe(true);
+    expect(runnerTraces(options(undefined))).toBe(false);
+    expect(runnerTraces(options({ mode: 'off' }))).toBe(false);
+  });
+
+  it('knows nothing of a runner of another shape', () => {
+    expect(runnerTraces(info(undefined))).toBeNull();
+    expect(runnerTraces(info({}))).toBeNull();
+    expect(runnerTraces(options(null))).toBeNull();
+    expect(runnerTraces(options({ screenshots: true }))).toBeNull();
+    expect(
+      runnerTraces(
+        info({
+          traceOptions: () => {
+            throw new Error('moved');
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 });
 

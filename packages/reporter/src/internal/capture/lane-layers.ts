@@ -82,6 +82,8 @@ export interface LayersTest {
   fixtureCall(callId: string): boolean;
   /** The folder the runner writes the attempt's trace in, and the name its files start with; null when unknown. */
   trace: { dir: string; base: string } | null;
+  /** Whether the runner traces the attempt; null, or absent, where its shape is not known. */
+  traced?: () => boolean | null;
 }
 
 let current: LayersTest | null = null;
@@ -302,16 +304,24 @@ async function attemptFiles(dir: string, base: string): Promise<string[]> {
 }
 
 /**
+ * Why the running attempt has no trace file: no test runs (`no-test`), the runner does not trace it (`not-traced`), it
+ * does but no context of the attempt started tracing yet (`not-yet`), or the runner's shape does not say which of the
+ * last two (`unknown`).
+ */
+export type NoTraceFile = 'no-test' | 'not-traced' | 'not-yet' | 'unknown';
+
+/**
  * The running attempt's own trace file as the runner writes it now: of its files, the first context's (the one without
  * `-recording<N>`, else the lowest), which the hub opens in Playwright's trace viewer with the others of the attempt;
- * null between two tests, or when the runner writes none (`noTest` tells which).
+ * else why there is none.
  */
-export async function attemptTraceFile(): Promise<{ file: string } | { noTest: boolean }> {
+export async function attemptTraceFile(): Promise<{ file: string } | { none: NoTraceFile }> {
   const test = current;
-  if (!test) return { noTest: true };
-  if (!test.trace) return { noTest: false };
-  const [first] = await attemptFiles(test.trace.dir, test.trace.base);
-  return first ? { file: first } : { noTest: false };
+  if (!test) return { none: 'no-test' };
+  const [first] = test.trace ? await attemptFiles(test.trace.dir, test.trace.base) : [];
+  if (first) return { file: first };
+  const traced = test.traced?.() ?? null;
+  return { none: traced === null ? 'unknown' : traced ? 'not-yet' : 'not-traced' };
 }
 
 /** The running test's trace, read up to now; null for a test whose trace is not known. */

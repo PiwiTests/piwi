@@ -96,7 +96,8 @@ responsibilities.
      call outside the fixtures, taken only while the lane view is on and kept in the worker's memory for the test
      (`LaneFilmstrip`, as the instance's is), none past the lane view, `tests/run-channel-layers.spec.ts`,
      `tests/run-channel-filmstrip.spec.ts`), with `trace` in `features` the path of the running attempt's own trace
-     file as the hub asks, for the hub alone (`attemptTraceFile`, `tests/run-channel-trace.spec.ts`), plays trusted
+     file as the hub asks, for the hub alone, or why there is none, from the runner's `_tracing.traceOptions()`
+     (feature-checked: `runnerTraces`, `attemptTraceFile`, `tests/run-channel-trace.spec.ts`), plays trusted
      input only while that
      stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, no press on the pause
      bar's band nor a key press the bar was not held inert for, a release always played and activating nothing on the

@@ -13,8 +13,9 @@ import { withoutCi } from './_helpers.js';
  * Where a worker's running test's trace grows, in a real Playwright run through the built package: a fake editor
  * service on the socket the run names asks each worker for its trace (`trace`), as the hub does for **Open the trace so
  * far**. In a traced test the worker names the attempt's own trace file in the runner's trace folder, of that test and
- * not of the one before it in the worker, a file that grows as the test goes on; once its last test ended it says none
- * runs; in a project whose trace is off it says the attempt is not traced.
+ * not of the one before it in the worker, a file that grows as the test goes on; in a traced test that opened no context
+ * yet it says the trace starts with the first; once its last test ended it says none runs; in a project whose trace is
+ * off it says the attempt is not traced.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -25,6 +26,9 @@ const TOKEN = 'run-trace-token-0123456789';
 const requireHere = createRequire(import.meta.url);
 
 const TRACED_SPEC = `const { test } = require('../fixture.cjs');
+test('bare', async () => {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+});
 test('first', async ({ page }) => {
   await page.setContent('<h1>first</h1>');
 });
@@ -116,7 +120,7 @@ function serve(connection: net.Socket): void {
             await sleep(3000);
             return askTrace(title);
           }
-          if (title === 'plain') {
+          if (title === 'plain' || title === 'bare') {
             await sleep(800);
             return askTrace(title);
           }
@@ -202,6 +206,7 @@ describe('where a worker’s running test’s trace grows', () => {
       tests.map((t) => [t.title, t.status]),
       output,
     ).toEqual([
+      ['bare', 'passed'],
       ['first', 'passed'],
       ['grows', 'passed'],
       ['plain', 'passed'],
@@ -237,12 +242,21 @@ describe('where a worker’s running test’s trace grows', () => {
     expect(later!.size).toBeGreaterThan(early!.size!);
   });
 
+  it('says a traced test that opened no context yet has written no trace yet', () => {
+    const bare = answers.filter((a) => a.test === 'bare');
+    expect(bare).toHaveLength(1);
+    expect(bare[0]!.answer).toEqual({
+      ok: false,
+      message: 'This test has written no trace yet: its trace starts with its first browser context.',
+    });
+  });
+
   it('says a test whose project traces nothing is not traced', () => {
     const plain = answers.filter((a) => a.test === 'plain');
     expect(plain).toHaveLength(1);
     expect(plain[0]!.answer).toEqual({
       ok: false,
-      message: "This test's attempt is not traced: its project's `trace` option records none of it.",
+      message: "This test's attempt is not traced: its project's trace option records none of it.",
     });
   });
 });

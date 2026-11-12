@@ -69,6 +69,7 @@ import {
 import {
   LaneFilmstrip,
   LaneTexts,
+  type NoTraceFile,
   attemptTraceFile,
   followTraceText,
   layersTest,
@@ -1405,14 +1406,22 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
  * names it to no one; or why there is none.
  */
 async function answerTrace(): Promise<TraceAnswer> {
-  const found = await attemptTraceFile().catch(() => ({ noTest: false }));
+  return traceAnswer(await attemptTraceFile().catch(() => ({ none: 'unknown' as const })));
+}
+
+/** Why a running attempt has no trace file to open, in the sentence the hub passes on. */
+const NO_TRACE_FILE: Record<NoTraceFile, string> = {
+  'no-test': 'No test runs on this worker now.',
+  'not-traced': "This test's attempt is not traced: its project's trace option records none of it.",
+  'not-yet': 'This test has written no trace yet: its trace starts with its first browser context.',
+  unknown:
+    "This test has no trace to open now: either its project's trace option records none of it, or its trace starts with its first browser context.",
+};
+
+/** The answer to `trace`, from the attempt's trace file or why there is none. */
+export function traceAnswer(found: { file: string } | { none: NoTraceFile }): TraceAnswer {
   if ('file' in found) return { ok: true, message: "The attempt's trace grows there.", file: found.file };
-  return {
-    ok: false,
-    message: found.noTest
-      ? 'No test runs on this worker now.'
-      : "This test's attempt is not traced: its project's `trace` option records none of it.",
-  };
+  return { ok: false, message: NO_TRACE_FILE[found.none] };
 }
 
 /** Why Show the browser is refused at a stop no pause bar shows: a headless one, or one whose page is not known. */
