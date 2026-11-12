@@ -67,7 +67,7 @@ import {
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { LaneViewFrame, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import type { LaneViewFrame, LaneViewLayer, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -374,6 +374,15 @@ export class RunHub {
   }
 
   /**
+   * A layer of a lane a connection watches and asked for, as its worker sent it, bounded as each layer is: dropped
+   * while the connection's socket left more than `MAX_VIEW_BUFFERED` unread. The hub keeps none.
+   */
+  private laneLayer(connection: Connection, layer: LaneViewLayer): void {
+    if (connection.transport.buffered() > MAX_VIEW_BUFFERED) return;
+    this.send(connection, { type: 'lane-layer', ...layer });
+  }
+
+  /**
    * Send `frame` at most `MAX_VIEW_FPS` a second for its `key`, the latest one once the connection's socket left less
    * than `MAX_VIEW_BUFFERED` unread; `MAX_VIEW_PACERS` keys at most, the oldest let go.
    */
@@ -461,6 +470,7 @@ export class RunHub {
       viewer: {
         frame: (frame) => this.frame(connection, frame),
         laneFrame: (frame) => this.laneFrame(connection, frame),
+        laneLayer: (layer) => this.laneLayer(connection, layer),
         ...(who ? { who } : {}),
       },
       frames: new Map(),
@@ -679,8 +689,8 @@ export class RunHub {
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
         }
         case 'watch': {
-          const { ref, lane, on } = command;
-          reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
+          const { ref, lane, on, layers } = command;
+          reply(await sessions.watchLane({ ref, lane, on, ...(layers ? { layers } : {}) }, connection.viewer));
           return this.resend(connection, ref);
         }
         default:

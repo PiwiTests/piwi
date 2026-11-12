@@ -19,7 +19,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { ClientLaneView } from '../src/client-page-view';
 import type { LaneFrame, RunSession } from '../src/protocol';
-import { RunSessions, type LaneViewFrame, type Viewer } from '../src/run-sessions';
+import { RunSessions, type LaneViewFrame, type LaneViewLayer, type Viewer } from '../src/run-sessions';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'c'.repeat(32)}`;
@@ -111,10 +111,32 @@ function harness(requestMs = 2000) {
   return { sessions, sent, join };
 }
 
-function viewer(): Viewer & { lanes: LaneViewFrame[] } {
+function viewer(): Viewer & { lanes: LaneViewFrame[]; layers: LaneViewLayer[] } {
   const lanes: LaneViewFrame[] = [];
-  return { lanes, frame: () => {}, laneFrame: (frame) => void lanes.push(frame) };
+  const layers: LaneViewLayer[] = [];
+  return {
+    lanes,
+    layers,
+    frame: () => {},
+    laneFrame: (frame) => void lanes.push(frame),
+    laneLayer: (layer) => void layers.push(layer),
+  };
 }
+
+const AT = 1_800_000_000_000;
+const pageError: RunToHub = {
+  type: 'lane-layer',
+  test: 't0',
+  layer: 'events',
+  event: { kind: 'page-error', text: 'boom' },
+  at: AT,
+};
+const pageText: RunToHub = {
+  type: 'lane-layer',
+  test: 't0',
+  layer: 'text',
+  text: { call: null, source: 'snapshot', text: '- heading "Shop"', cut: false, at: AT },
+};
 
 /** What `run` answers once the worker answered the lane view requests it heard. */
 async function watch<T>(worker: { asked(): unknown[]; answerAll(): void }, run: Promise<T>): Promise<T> {
@@ -242,6 +264,64 @@ describe('a lane watched in the run sessions', () => {
     expect(sessions.intentsOf('ed-1', 0)).not.toContain('watch');
     expect(sessions.intentsOf('ed-1', 1)).toContain('watch');
     expect(await sessions.watchLane({ ref: 'ed-9', lane: 0, on: true }, viewer())).toMatchObject({ ok: false });
+  });
+});
+
+describe('the layers of a lane watched in the run sessions', () => {
+  test('go to the lane’s viewers that asked for each alone, the worker hearing what they ask together', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0, ['view-lane', 'layers']);
+    const [a, b, c, other] = [viewer(), viewer(), viewer(), viewer()];
+    const layersHeard = () =>
+      w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : ([] as Array<readonly string[]>)));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events', 'calls'] }, a));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['text'] }, b));
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, c));
+    expect(layersHeard()).toEqual([
+      ['calls', 'events'],
+      ['calls', 'events', 'text'],
+      ['calls', 'events', 'text'],
+    ]);
+
+    w.read(pageError);
+    w.read(pageText);
+    expect(a.layers).toEqual([
+      {
+        ref: 'ed-1',
+        lane: 0,
+        worker: 0,
+        test: 't0',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      },
+    ]);
+    expect(b.layers.map((layer) => layer.layer)).toEqual(['text']);
+    expect(c.layers).toEqual([]);
+    expect(other.layers).toEqual([]);
+
+    // A viewer that leaves takes its layers with it; the last one turns them off with the lane view.
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: false }, b);
+    expect(last(layersHeard())).toEqual(['calls', 'events']);
+    sessions.unwatchAll(a);
+    sessions.unwatchAll(c);
+    expect(last(layersHeard())).toEqual([]);
+    expect(w.asked(false)).toHaveLength(1);
+    w.read(pageError);
+    expect(a.layers).toHaveLength(1);
+  });
+
+  test('never tells a worker that sends no layers about them, and forgets a lane’s layers with the run', async () => {
+    const { sessions, join } = harness();
+    const old = join(0, 0);
+    const a = viewer();
+    await watch(old, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }, a));
+    expect(old.heard().some((m) => m.type === 'layers')).toBe(false);
+    // A worker Playwright starts in the lane later, which sends layers, hears what the lane's viewers ask.
+    old.socket.destroy();
+    const next = join(1, 0, ['view-lane', 'layers']);
+    await waitFor(() => (next.heard().some((m) => m.type === 'layers') ? true : undefined));
+    expect(next.heard().find((m) => m.type === 'layers')).toEqual({ type: 'layers', layers: ['events'] });
   });
 });
 
@@ -514,8 +594,63 @@ describe('a lane watched on the hub', () => {
           .filter((m): m is Extract<HubMessage, { type: 'session' }> => m.type === 'session' && m.session.ref === ref)
           .pop()?.session as HubSession | undefined,
       lanes: () => messages.filter((m): m is HubLaneFrameMessage => m.type === 'lane-frame' && 'data' in m),
+      layers: () => messages.filter((m) => m.type === 'lane-layer'),
     };
   }
+
+  test('sends a lane’s layers to the connections that asked for them alone', async () => {
+    const [a, b] = [await paired(), await paired()];
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 1,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane', 'layers'],
+    });
+    worker.begin();
+    try {
+      expect(a.welcome).toMatchObject({ features: expect.arrayContaining(['layers']) });
+      await waitFor(() => a.session(ref)?.workers[0]?.intents);
+      a.send({ type: 'watch', id: 2, ref, lane: 0, on: true, layers: ['events'] });
+      const asked = await worker.next('request');
+      worker.send({
+        type: 'answer',
+        request: (asked as { request: number }).request,
+        what: 'view-lane',
+        value: { ok: true, message: 'The live view is on.' },
+      });
+      expect(await a.answer(2)).toMatchObject({ ok: true });
+      b.send({ type: 'watch', id: 3, ref, lane: 0, on: true });
+      await b.answer(3);
+      expect(await worker.next('layers')).toEqual({ type: 'layers', layers: ['events'] });
+      worker.send({ ...pageError, test: 'id-adds a mug' });
+      const [layer] = await waitFor(() => (a.layers().length ? a.layers() : undefined));
+      expect(layer).toEqual({
+        type: 'lane-layer',
+        ref,
+        lane: 0,
+        worker: 1,
+        test: 'id-adds a mug',
+        layer: 'events',
+        event: { kind: 'page-error', text: 'boom' },
+        at: AT,
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      expect(b.layers()).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+      a.socket.close();
+      b.socket.close();
+    }
+  });
 
   test('says it shows lanes, offers watch for a worker that can, and sends its frames to its watchers alone', async () => {
     const [a, b] = [await paired(), await paired()];

@@ -861,8 +861,8 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
-`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, and `stop` where
-its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, and
+`stop` where its host can stop a run: `RunHubOptions.stopRun`, `hubFeatures`). A reader keeps the features it knows; a hub that
 predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
@@ -886,7 +886,8 @@ not a boundary.
 - the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
 - `requests` and `mock` (`request`, a kept response's id), with `since` too;
 - `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view));
-- `watch` (`lane`, `on`): a lane while its tests run, with no stop ([The live view](#the-live-view)).
+- `watch` (`lane`, `on`, `layers`): a lane while its tests run, with no stop, and the layers it takes beside its frames
+  ([The live view](#the-live-view)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
@@ -1004,6 +1005,16 @@ viewers alone, paced as a stop's frames are, and none once its stop ended or its
 refuses, is turned off again, and a worker that leaves before it answered leaves its viewers watching the next one. At a
 stop of its running test, which the lane's frames show, a viewer of the lane is a viewer of that stop: input, the
 intents in the window and `pick-at` are its, with no `view` of its own. At most 64 lanes of a run are watched at once.
+
+A `watch` also names the layers its connection takes of the lane beside the frames (`layers`, at a hub whose `welcome`
+lists `layers`; `@piwitests/core/live-layers`: `calls`, `events`, `text`, `filmstrip`), none when it names none, and a
+later `watch` changes them (`LaneParams.layers`, kept per viewer in `Session.laneLayers`). The lane's worker, when its
+`run-attach` lists `layers` in `features`, hears what the lane's viewers ask together at each `watch`, as a worker
+Playwright starts in the lane does, and none as the lane's last viewer leaves (`sendLayers`, `stopLane`): it sends each
+as `lane-layer`, which goes to the viewers of the lane that asked for that layer alone (`Viewer.laneLayer`), and on the
+hub as `lane-layer` with the run's ref, the lane and the worker, dropped while the connection's socket left more than
+`MAX_VIEW_BUFFERED` unread (`RunHub.laneLayer`). A `watch` asked again has the worker send its call log and filmstrip
+again and take the page's text anew. The hub keeps none of them. The editor client's own lane view takes no layer.
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.

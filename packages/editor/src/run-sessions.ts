@@ -41,6 +41,7 @@ import {
   type HubToRun,
   isPageOfInstance,
   type IntentAnswer,
+  type LaneLayerData,
   type LocatorAnswer,
   type MockAnswer,
   type PickAtAnswer,
@@ -60,6 +61,7 @@ import {
   type SnapshotAnswer,
 } from '@piwitests/core/run-channel';
 import { parseLiveAskAnswer } from '@piwitests/core/live-view';
+import { LANE_LAYERS, type LaneLayer } from '@piwitests/core/live-layers';
 import { isViewPoint, type ViewInput } from '@piwitests/core/run-view';
 import type {
   HoldRunParams,
@@ -164,12 +166,20 @@ export type LaneViewFrame = { ref: string; lane: number; worker: number; since: 
 );
 
 /**
- * Who watches the live view of a stop: each frame of it goes to `frame`, while it watches; and the frames of a lane it
- * watches to `laneFrame`, which a viewer that watches no lane leaves out.
+ * A layer of a lane a viewer watches and asked for (`LaneParams.layers`, `@piwitests/core/live-layers`): of the worker
+ * `worker` and the test `test` (Playwright's id; null for the text of a page no test shows), as the worker sent it.
+ */
+export type LaneViewLayer = { ref: string; lane: number; worker: number; test: string | null } & LaneLayerData;
+
+/**
+ * Who watches the live view of a stop: each frame of it goes to `frame`, while it watches; the frames of a lane it
+ * watches to `laneFrame`, which a viewer that watches no lane leaves out; and the layers of that lane it asked for to
+ * `laneLayer`, which a viewer that asks for none leaves out.
  */
 export interface Viewer {
   frame(frame: ViewFrame): void;
   laneFrame?(frame: LaneViewFrame): void;
+  laneLayer?(layer: LaneViewLayer): void;
   /** The tool it is, as presence names it; a viewer without one is in no presence list and drives no stop. */
   who?: Omit<RunPresence, 'self'>;
 }
@@ -200,11 +210,15 @@ function presenceOf(viewer: Viewer, self: Viewer | null): RunPresence {
   return { kind: viewer.who!.kind, name: viewer.who!.name, ...(own ? { self: true as const } : {}) };
 }
 
-/** A lane as a viewer names it: the run, and Playwright's `parallelIndex`. */
+/**
+ * A lane as a viewer names it: the run, and Playwright's `parallelIndex`; and the layers it takes of the lane beside its
+ * frames, none when left out.
+ */
 export interface LaneParams {
   ref: string;
   lane: number;
   on: boolean;
+  layers?: readonly LaneLayer[];
 }
 
 /** A stop as a client names it: the run, the one stopped worker or `worker`, and the stop it showed (`since`). */
@@ -487,6 +501,8 @@ interface Session {
   live: RunLive | null;
   /** Who watches each lane (`parallelIndex`), through its tests and the workers Playwright starts in it. */
   lanes: Map<number, Set<Viewer>>;
+  /** The layers each viewer of a lane asked for, by lane. */
+  laneLayers: Map<number, Map<Viewer, ReadonlySet<LaneLayer>>>;
   /** The run's own connection (`run-begin`), while it is open: the run goes on between its workers. */
   main: net.Socket | null;
   /** How far the run is, as its own process said; null before it said, and from a reporter that predates it. */
@@ -673,6 +689,7 @@ export class RunSessions {
       stopped: null,
       live: null,
       lanes: new Map(),
+      laneLayers: new Map(),
       main: null,
       progress: null,
       page: null,
@@ -811,6 +828,7 @@ export class RunSessions {
     // A worker Playwright starts in a lane someone watches shows it from its first test.
     if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
       void this.startLane(worker);
+      this.sendLayers(session, worker);
     }
     this.changed(session);
     this.options.heard?.(attach.ref, worker.index, { type: 'joined' }, session.root);
@@ -1432,7 +1450,10 @@ export class RunSessions {
    * its tests and the workers Playwright starts in it, its frames going to `viewer.laneFrame` until it stops watching,
    * the run ends or it leaves. The lane's worker starts its lane view with the first viewer and stops it with the last;
    * a viewer that comes later is sent its latest frame again. Refused for a worker whose reporter does not show its
-   * lane. A lane with no worker connected now is watched from the next one Playwright starts in it.
+   * lane. A lane with no worker connected now is watched from the next one Playwright starts in it. The layers it asks
+   * (`layers`, none when left out) go to `viewer.laneLayer` alone, from a worker that sends them: the worker hears
+   * every viewer's together (`layers`), again at each watch, which sends a call log and a filmstrip again and takes the
+   * page's text anew.
    */
   async watchLane(params: LaneParams, viewer: Viewer): Promise<RunControlResult> {
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
@@ -1458,12 +1479,17 @@ export class RunSessions {
     session.lanes.set(lane, viewers);
     const came = !viewers.has(viewer);
     viewers.add(viewer);
+    const layered = session.laneLayers.get(lane) ?? new Map<Viewer, ReadonlySet<LaneLayer>>();
+    session.laneLayers.set(lane, layered);
+    layered.set(viewer, new Set(LANE_LAYERS.filter((layer) => params.layers?.includes(layer))));
     const next = { ok: true, message: `You watch worker ${lane + 1} from its next test.` };
     if (!worker) return next;
     const own = worker.lane;
     // A viewer that comes to a lane view on: the worker sends the frame it sent last again.
     if (own?.on && came) void this.ask(worker, 'view-lane', undefined, { on: true });
-    const answer = await (own ? own.started : this.startLane(worker));
+    const starting = own ? own.started : this.startLane(worker);
+    this.sendLayers(session, worker);
+    const answer = await starting;
     if (answer.ok || !session.lanes.get(lane)?.has(viewer)) return answer;
     // A worker that left before it answered: the viewer watches the next one Playwright starts in the lane.
     if (session.workers.get(worker.index) !== worker && !session.ended) return next;
@@ -1493,20 +1519,40 @@ export class RunSessions {
     return started;
   }
 
-  /** Have a worker stop its lane view, whatever it answers. */
+  /** Have a worker stop its lane view and its layers, whatever it answers. */
   private stopLane(worker: Worker): void {
-    if (!worker.socket.destroyed)
-      this.send(worker, { type: 'request', request: ++this.lastRequest, what: 'view-lane', on: false });
+    if (worker.socket.destroyed) return;
+    if (worker.features.has('layers')) this.send(worker, { type: 'layers', layers: [] });
+    this.send(worker, { type: 'request', request: ++this.lastRequest, what: 'view-lane', on: false });
+  }
+
+  /**
+   * Tell a worker that sends layers which its lane's viewers ask, together, in `LANE_LAYERS`' order: it sends their
+   * call log and filmstrip again, and takes the page's text anew.
+   */
+  private sendLayers(session: Session, worker: Worker): void {
+    if (!worker.features.has('layers') || worker.socket.destroyed) return;
+    const asked = new Set<LaneLayer>();
+    for (const layers of session.laneLayers.get(worker.parallelIndex)?.values() ?? []) {
+      for (const layer of layers) asked.add(layer);
+    }
+    this.send(worker, { type: 'layers', layers: LANE_LAYERS.filter((layer) => asked.has(layer)) });
   }
 
   /** A viewer stops watching a lane: the last one to go has its worker stop the lane view. */
   private unwatchLane(session: Session, lane: number, viewer: Viewer): void {
     const viewers = session.lanes.get(lane);
     if (!viewers?.delete(viewer)) return;
+    const layered = session.laneLayers.get(lane);
+    layered?.delete(viewer);
+    if (!layered?.size) session.laneLayers.delete(lane);
     for (const worker of session.workers.values()) {
       if (worker.parallelIndex === lane) this.letGo(session, worker, viewer);
     }
     if (viewers.size) {
+      for (const worker of session.workers.values()) {
+        if (worker.parallelIndex === lane && worker.lane) this.sendLayers(session, worker);
+      }
       this.changed(session);
       return;
     }
@@ -2124,6 +2170,18 @@ export class RunSessions {
         for (const viewer of viewers) viewer.laneFrame?.(frame);
         return;
       }
+      case 'lane-layer': {
+        // A layer of the worker's lane, for the lane's viewers that asked for it alone.
+        const viewers = session.lanes.get(worker.parallelIndex);
+        const layered = session.laneLayers.get(worker.parallelIndex);
+        if (!viewers?.size || !layered?.size || !worker.lane) return;
+        const { type: _type, ...data } = message;
+        const layer = { ref: session.ref, lane: worker.parallelIndex, worker: worker.index, ...data } as LaneViewLayer;
+        for (const [viewer, layers] of layered) {
+          if (layers.has(message.layer) && viewers.has(viewer)) viewer.laneLayer?.(layer);
+        }
+        return;
+      }
       case 'frame': {
         // A frame of the stop the worker stands at, for its viewers alone, or why none comes.
         const view = worker.view;
@@ -2260,6 +2318,7 @@ export class RunSessions {
     const workers = [...session.workers.values()];
     session.workers.clear();
     session.lanes.clear();
+    session.laneLayers.clear();
     session.main?.destroy();
     session.main = null;
     // A run that ends before its process said how: its command ended, or nothing connected for a while.
