@@ -244,6 +244,12 @@ the `afterEach` hooks. The test's duration leaves the time paused out, and every
 dashboard's timelines draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it
 out.
 
+### CI position
+
+**The call a running test of a CI run is at, in your code:** a plain mark at the end of its line in the editors,
+read-only. Never a stop: nothing waits there, and no tool answers it
+([A CI run of your branch](/features/watch-running-test#a-ci-run-of-your-branch)).
+
 ### Hold failures
 
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run

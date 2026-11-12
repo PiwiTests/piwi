@@ -28,6 +28,7 @@ and line, the call about to run, and an image of the page. A run that ended says
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. While none
 of its tests is stopped, a run without [**Watch**](#watch-live) says how one stops: at a breakpoint, a `page.pause()`
 or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
+[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only.
 
 ## The controls
 
@@ -136,6 +137,6 @@ runs](./desktop-runs).
 - [Code from a pause](./editor-stop-code): what each action writes, and where.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
 - [Remote development](/guide/remote-development): the runs of a dev container or a remote window.
-- [Desktop app runs](./desktop-runs): the same runs, in the desktop app's window.
+- [A CI run of your branch](./watch-running-test#a-ci-run-of-your-branch): listed here read-only.
 - [Piwi Picker and your editor](./editor-pairing): how the pairing reaches each editor window and the desktop app,
   on your machine alone.

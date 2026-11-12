@@ -213,8 +213,12 @@ amber once marked **Stuck?**, and the test search takes `is:stuck`, `worker:` an
 prints a `::notice` with its page as it starts; a run outside CI makes its page an OSC 8 link in its terminal and shows
 its progress as OSC 9;4 in the terminals that read it (`PIWI_TERMINAL_PROGRESS`); and a CI run posts a pending commit
 status under the project's status context at most once a minute (open question 7: the same status and switch as the
-final one), replaced by its final status or closed by an error status. The rest of P10 and the later phases are
-proposed. The bugs the analysis
+final one), replaced by its final status or closed by an error status. Of P10's second half (E24), a CI run of the
+branch is a read-only session in the editors, from the run stream the editor already holds (one connection a run,
+the two newest a branch): VS Code's **CI Runs** view and the JetBrains **CI Run** tab list it with its progress and
+tests, the line each running test is at is marked as a CI position, and Piwi Picker's Runs window lists the CI runs in
+progress of the projects it maps; their **Watch** opens the lane's view on the dashboard until the lane view over the
+instance is built. The rest of P10 and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

@@ -27,6 +27,27 @@ stops it before its next call too. It needs `@piwitests/reporter` newer than 0.6
 Worker's Test** in a JetBrains IDE, and a button beside **Watch** in the Runs window and the desktop app. With several
 workers to choose from, the editor asks which.
 
+## A CI run of your branch
+
+A CI run of the branch your workspace reads or has checked out shows beside your own runs while it runs, read-only:
+nothing in your editor or Piwi Picker pauses, steps, holds or shares it.
+
+- **VS Code**: the **CI Runs** view of the Piwi panel lists it as `CI run #78`, its branch and progress beside it,
+  then **Open run #78** and its tests: those running, then the latest that ended, failures first. A running test
+  opens the call it is at, else its spec.
+- **JetBrains IDEs**: the **CI Run** tab of the Piwi tool window, added while one runs, lists the same rows; a double
+  click opens one.
+- **The line each running test is at** ends with a plain mark in the CodeLens or inlay color, `CI run #78 · worker 2:
+  Click getByRole('button')`: a CI position, never a stop. The line is the run's commit's.
+- **Piwi Picker's Runs window** lists the CI runs in progress of the projects your
+  [connection](./extension-connection) maps, through that instance, with **Open**.
+- **Watch on the dashboard**, under a running test of a run whose project has the [live view](./live-view) on, opens
+  its lane's view on the run's page.
+
+The editor follows the two newest CI runs of a branch through the connection to the instance it already holds, and
+Piwi Picker reads the list every 15 seconds while its Runs window is open. While the editor follows a run, the run's
+reporter streams the call each test is at.
+
 ## What you see
 
 Each view names the worker by its slot in the run (`Worker 2`) and says what it does: its running test, the call a Pause waits in, where it
@@ -75,3 +96,4 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 - [Pause and step from the editor](./editor-run-control): the controls and the paused page, in the editor.
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts, and its tray.
 - [Live view of a run](./live-view): a CI run's or a shared run's page, on the team instance.
+- [Runs from the editor](./editor-runs): your own runs, and the status bar that counts a CI run of your branch.
