@@ -2,8 +2,9 @@
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
  * desktop app, the secret area and the browser's WebSocket; the CI runs in progress the connected instance lists,
  * read while a window is open (`ciRuns`); the window's port (`RUNS_PORT`, taken from `runs.html`
- * alone), which gets the state at each change, what each code written at a stop came to and the frames of the live
- * views and lanes it watches, and passes the window's commands on, its views and lanes stopped as it closes; the
+ * alone), which gets the state at each change, what each code written at a stop came to, the frames of the live
+ * views and lanes it watches and the layers of those lanes it asked for, and passes the window's commands on, its
+ * views and lanes stopped as it closes; the
  * popup's Runs tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
@@ -122,6 +123,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     ended: (view) => post({ type: 'view-ended', ...view }),
     laneFrame: (frame) => post({ type: 'lane-frame', ...frame }),
     laneEnded: (lane) => post({ type: 'lane-ended', ...lane }),
+    laneLayer: (layer) => post({ type: 'lane-layer', ...layer }),
   };
   const postState = () => post({ type: 'state', state: { ...runHubs.state(viewer), ci: ciRuns.state() } });
   const unlisten = runHubs.listen(postState, (code) => post({ type: 'code', ...code }));

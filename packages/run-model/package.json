@@ -9,6 +9,7 @@
     "./attention": "./src/attention.ts",
     "./ci": "./src/ci.ts",
     "./controls": "./src/controls.ts",
+    "./layers": "./src/layers.ts",
     "./outcome": "./src/outcome.ts",
     "./presence": "./src/presence.ts",
     "./status": "./src/status.ts",

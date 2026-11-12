@@ -883,6 +883,11 @@ starts again once the hub answers.
   one kept in memory alone for a window that comes to it. A frame names the worker, the test and the stop (`since`,
   null while the test runs) it shows; at a stop of a test (the worker runs one), the windows that watch the lane are
   viewers of that stop. The lane shows no stop outside a test.
+- At a hub whose `welcome` lists `layers` (`RunsHub.layers`), each window names the layers of a lane it takes
+  (`watch`'s `layers`, `LaneWatch.layers`): the hub hears `watch` with those every window watching the lane asks
+  together, again as one asks anew (the page's text, as its person asks for it) or leaves taking fewer. Each
+  `lane-layer` goes to the windows that asked for its layer alone (`RunsViewer.laneLayer`, `RunsLaneLayer`), as
+  `parseHubMessage` read it; none is kept. A new ask the hub does not take leaves a window on the lane.
 - A connection lost, or closed as the hubs change, ends the views and lanes it carried: each window that watched one
   hears `view-ended` (`RunsViewer.ended`) or `lane-ended` (`RunsViewer.laneEnded`).
 - A window's `input` goes on only for a stop it watches itself, through the stop's view or its worker's lane (`viewerOf`),
@@ -1007,6 +1012,19 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   shows, the image is the stop's live view: input, Pick on the image and the actions in the test's window work as
   with Watch live, Interact and Escape included. A watched lane that stops is scrolled into view
   (`bringIntoView`) when its row is not wholly in it.
+- A watched lane's layers show under its page, once its worker's reporter sent one (`LaneView.layered`: a reporter
+  that sends none shows none), in sections with their headings (`renderLaneLayers`), each drawn again only as what it
+  shows changes and the window at most every 200 ms for them. The window takes every layer but the page's text, kept
+  by `takeLaneLayer` (`@piwitests/run-model/layers`) for the test the lane runs, another test starting afresh, in
+  memory alone: **Why it waits**, the call's title through `richText` with its place, how long it has run or how it
+  ended, what its locator matches and whether its element is enabled, and the latest lines of Playwright's log of it;
+  **Events**, newest first, 30 at most, a pending request one line whose time grows; **Text**, the page's ARIA text
+  with its secret fields hidden, which **Show the page's text** asks for (`watch` with `text` among the layers: taken
+  now, then followed as the trace writes it), **Take it again** and **Hide the text**, "Reading the page…" until it
+  comes (15 s at most), and where it came from; **Filmstrip**, an image for each call that ended, by its place in the
+  strip, one a call, its base64 checked again (`isLaneThumbData`), each a button (`aria-pressed`) that shows it larger
+  with its call's title, **Close** going back to the strip. Words go through the run model and `runsSpeaker`, a time
+  through `formatUnit`.
 - **Interact**, a toggle after Watch live or Watch where a live view shows a stop that takes `input` from the window
   (only while it watches, once the hub accepted the view), sends the person's input to the page, whose first event that
   is not a move drives the stop. It is kept by run and slot (`interacting`, `slotKey`) across the slot's next stops,
@@ -1126,12 +1144,14 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   window asks and as the last one leaves, the lane's frames to the windows that watch it alone, paced, a refusal, input
   from a window that watches the lane, a run that ended, and a connection lost; the state sent again to a window that
   stops watching a view or a lane, the actions in the test's window refused to it, no viewer of a stop outside a
-  test, `watch` turned off after an ask not answered in time; and a run of a ref that runs again listed once.
+  test, `watch` turned off after an ask not answered in time; and a run of a ref that runs again listed once; and the
+  layers: `layers` read from `welcome`, the layers every window asks together, again as one asks anew or leaves, none
+  asked of a hub without them, each layer to the windows that asked for it alone, and a new ask not taken.
 - `packages/run-model/tests/` covers the run model: which keys go to the page and as what, and the input's batches
   (`view-input.test.ts`: coalesced moves, double and triple clicks, drags, the wheel, texts joined, the bound, the
   rate, a refusal and `dispose`), `stopIntents` and its fallback, `heldUntilWatched`, `laneWatchOf`, `laneFrameNow`,
-  `pagePoint`, `shownLaneOf`, a worker's status and controls, a run's Pause all and Resume all, and who is present,
-  in English. `run-words.test.ts`
+  `pagePoint`, `shownLaneOf`, a worker's status and controls, a run's Pause all and Resume all, who is present, and a
+  watched lane's layers kept and said (`layers.test.ts`), in English. `run-words.test.ts`
   holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
 - `ci-runs.test.ts` checks the CI runs: those of the mapped projects, the CI runs alone, read only while a window
   listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance
@@ -1144,8 +1164,8 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
 - `runs.spec.ts` plays the desktop app as its server builds the hub (`startDesktop`, on the editor service's run
   control with the desktop token): its run beside the editor's, steered, its mock made for the app's window, and the
   window following the app alone.
-- `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands and Watch's field by field,
-  `stateForViewer` by stop and by lane, and `pageHintOf`.
+- `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands and Watch's, its layers
+  included, field by field, `stateForViewer` by stop and by lane, and `pageHintOf`.
 - `runs.spec.ts` runs the real extension against the real editor service, started in-process
   (`tests/e2e/runs-fixtures.ts`, on `packages/editor/tests/run-fixtures.ts`). A stub stands in for the Send to editor
   endpoint, and a fake worker plays a run on the run channel. It covers the popup's tile; the window's Pause, Step
@@ -1167,8 +1187,10 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   short window, its frames taking a click and Pick with no `view` asked, the frame before dimmed and taking no input
   once watched again, dimmed across a Step; a refusal, a hidden window and a closed one; the worker Playwright starts in
   the lane and the extension's worker restarting; a refusal of `watch` going with its test; a stop outside a test,
-  with Watch live; the desktop app's hub lost, said once; and a reporter without `watch`, told to update, its stops
-  keeping Watch live.
+  with Watch live; the desktop app's hub lost, said once; a reporter without `watch`, told to update, its stops
+  keeping Watch live; and a reporter that sends layers: nothing under the page until one comes, then why its call
+  waits, its events, its text as asked (its password hidden), then hidden again, its filmstrip with an image chosen
+  and closed, none of it stored, and the next test's layers starting afresh.
 - `i18n.spec.ts` checks the window in French and German, the list open and the live view on, nothing clipping.
 - `docs-screenshots.spec.ts` captures `picker-runs.png` the same way: the page's image without the pause bar, as the
   reporter takes it; and `picker-runs-live.png`, a headless stop watched live, the picker in its frame.

@@ -3,7 +3,7 @@ import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '
 import { HUB_CLOSE, type HubProgress, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
 import type { HubSocket } from '../../src/background/hub-connection.js';
 import { RunHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
-import type { RunsFrame, RunsLane, RunsLaneFrame, RunsView } from '../../src/shared/runs.js';
+import type { RunsFrame, RunsLane, RunsLaneFrame, RunsLaneLayer, RunsView } from '../../src/shared/runs.js';
 
 /**
  * The worker's hub client against a stub: the editor's live endpoint as a fetch that answers what a test says (a
@@ -873,6 +873,7 @@ describe('connections that fail', () => {
         client: 'Visual Studio Code',
         desktop: false,
         lanes: false,
+        layers: false,
         presence: false,
         holds: false,
         stops: false,
@@ -1624,5 +1625,136 @@ describe('a lane watched while it runs', () => {
       await hubs.command({ ...noLane, worker: null, since: null, what: 'watch', on: true }, viewer()),
     ).toMatchObject({ failure: 'offline' });
     expect(socket.sent).toHaveLength(sent);
+  });
+});
+
+describe('a watched lane’s layers', () => {
+  const LANE_RUNNING: HubWorker = { ...RUNNING, worker: 2, parallelIndex: 1, intents: ['view', 'input', 'watch'] };
+  const LANE: RunsLane = { hub: HUB.url, ref: 'r1', lane: 1 };
+
+  function viewer(): RunsViewer & { layers: RunsLaneLayer[] } {
+    const layers: RunsLaneLayer[] = [];
+    return {
+      layers,
+      frame: () => {},
+      ended: () => {},
+      laneFrame: () => {},
+      laneEnded: () => {},
+      laneLayer: (layer) => void layers.push(layer),
+    };
+  }
+
+  async function watched(features = ['peers', 'lanes', 'layers']) {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([LANE_RUNNING])], 20_000, features);
+    return { hubs, socket };
+  }
+
+  /** A window watches the lane taking `layers`, the hub answering. */
+  async function watch(
+    hubs: RunHubs,
+    socket: FakeSocket,
+    window: RunsViewer,
+    layers?: Array<'calls' | 'events' | 'text' | 'filmstrip'>,
+  ) {
+    const answer = hubs.command(
+      { ...LANE, worker: null, since: null, what: 'watch', on: true, ...(layers ? { layers } : {}) },
+      window,
+    );
+    const sent = socket.last('watch')!;
+    socket.hear({ type: 'answer', id: sent.id, ok: true, message: 'The live view is on.' });
+    return answer;
+  }
+
+  const event = {
+    type: 'lane-layer',
+    ref: 'r1',
+    lane: 1,
+    worker: 2,
+    test: 't1',
+    layer: 'events',
+    at: 1_800_000_000_000,
+  };
+
+  it('says which hubs send a lane’s layers, as their welcome lists it', async () => {
+    expect((await watched()).hubs.state().hubs).toMatchObject([{ id: HUB.url, layers: true }]);
+    expect((await watched(['peers', 'lanes'])).hubs.state().hubs).toMatchObject([{ id: HUB.url, layers: false }]);
+  });
+
+  it('asks the hub for the layers every window watching the lane asks together, again as one asks anew or leaves', async () => {
+    const { hubs, socket } = await watched();
+    const [a, b] = [viewer(), viewer()];
+    await watch(hubs, socket, a, ['calls', 'events', 'filmstrip']);
+    expect(socket.last('watch')).toMatchObject({ on: true, layers: ['calls', 'events', 'filmstrip'] });
+    await watch(hubs, socket, b, ['events']);
+    expect(socket.last('watch')).toMatchObject({ on: true, layers: ['calls', 'events', 'filmstrip'] });
+    // A window that asks the page's text: the hub hears it among the others.
+    await watch(hubs, socket, b, ['events', 'text']);
+    expect(socket.last('watch')).toMatchObject({ on: true, layers: ['calls', 'events', 'text', 'filmstrip'] });
+    // The window that asked the most leaves: the hub hears what the one left asks.
+    await hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: false }, a);
+    expect(socket.last('watch')).toMatchObject({ on: true, layers: ['events', 'text'] });
+    hubs.unwatchAll(b);
+    expect(socket.last('watch')).toEqual({ type: 'watch', id: expect.any(Number), ref: 'r1', lane: 1, on: false });
+  });
+
+  it('asks no layer of a hub that does not send them', async () => {
+    const { hubs, socket } = await watched(['peers', 'lanes']);
+    await watch(hubs, socket, viewer(), ['calls', 'events']);
+    expect(socket.last('watch')).toEqual({ type: 'watch', id: expect.any(Number), ref: 'r1', lane: 1, on: true });
+  });
+
+  it('sends each layer to the windows that asked for it alone, read field by field, keeping none', async () => {
+    const { hubs, socket } = await watched();
+    const [a, b, c] = [viewer(), viewer(), viewer()];
+    await watch(hubs, socket, a, ['calls', 'events', 'filmstrip']);
+    await watch(hubs, socket, b, ['filmstrip']);
+    socket.hear({ ...event, event: { kind: 'console', text: 'cart broke' } });
+    socket.hear({
+      ...event,
+      layer: 'filmstrip',
+      thumb: { call: 'c@1', title: 'Click', index: 1, width: 320, height: 200, at: 1_800_000_000_000 },
+      data: '/9j/AAAA',
+    });
+    // One that does not read as a layer, and one of a lane nobody watches, go nowhere.
+    socket.hear({ ...event, event: { kind: 'console' } });
+    socket.hear({ ...event, lane: 0, event: { kind: 'console', text: 'elsewhere' } });
+    expect(a.layers.map((l) => l.layer)).toEqual(['events', 'filmstrip']);
+    expect(a.layers[0]).toEqual({
+      ...LANE,
+      worker: 2,
+      test: 't1',
+      layer: 'events',
+      at: 1_800_000_000_000,
+      event: { kind: 'console', text: 'cart broke' },
+    });
+    expect(b.layers.map((l) => l.layer)).toEqual(['filmstrip']);
+    expect(c.layers).toEqual([]);
+    // A window that stopped watching hears none.
+    await hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: false }, b);
+    socket.hear({
+      ...event,
+      layer: 'filmstrip',
+      thumb: { call: 'c@2', title: 'Fill', index: 2, width: 320, height: 200, at: 1_800_000_000_000 },
+      data: '/9j/BBBB',
+    });
+    expect(b.layers).toHaveLength(1);
+    expect(a.layers).toHaveLength(3);
+  });
+
+  it('keeps a window on a lane whose new ask of layers the hub did not take', async () => {
+    const { hubs, socket } = await watched();
+    const a = viewer();
+    await watch(hubs, socket, a, ['events']);
+    const asked = hubs.command(
+      { ...LANE, worker: null, since: null, what: 'watch', on: true, layers: ['events', 'text'] },
+      a,
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await asked).toMatchObject({ ok: false, failure: 'timeout' });
+    socket.hear({ ...event, event: { kind: 'console', text: 'still here' } });
+    expect(a.layers).toHaveLength(1);
   });
 });

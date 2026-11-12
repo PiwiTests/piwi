@@ -10,6 +10,7 @@ import type {
   HubWorker,
 } from '@piwitests/core/run-hub';
 import { canStopRun } from '@piwitests/core/run-hub';
+import { isLaneThumbData } from '@piwitests/core/live-layers';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
 import {
   CONTROLS,
@@ -23,6 +24,17 @@ import {
   type Control,
 } from '@piwitests/run-model/controls';
 import { CI_READ_ONLY, ciRunName, ciRunWhere, type CiRun } from '@piwitests/run-model/ci';
+import {
+  callWait,
+  laneEventSaid,
+  laneLayersAsked,
+  laneTextSource,
+  noLaneLayers,
+  takeLaneLayer,
+  type LaneEventEntry,
+  type LaneFilmEntry,
+  type LaneLayers,
+} from '@piwitests/run-model/layers';
 import { endedAtStopOf, endedAtStopWords } from '@piwitests/run-model/outcome';
 import { driverOf, givesBack, presenceLine, watchersLine } from '@piwitests/run-model/presence';
 import { tabStatus, workerStatus, type WorkerStatus } from '@piwitests/run-model/status';
@@ -66,6 +78,7 @@ import {
   type RunsHub,
   type RunsLane,
   type RunsLaneFrame,
+  type RunsLaneLayer,
   type RunsRequest,
   type RunsRun,
   type RunsState,
@@ -111,7 +124,10 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * as running, until the next one comes. At a stop the lane's frames show, they are its live view, taking Interact's
  * input as Watch live's do; a watched lane that stops is brought into view. Pause and watch pauses the worker and watches it. At a
  * stop no pause bar shows and that the window does not watch, the actions in the test's window show held, saying to
- * watch first.
+ * watch first. At a hub that sends a lane's layers, a watched lane shows them under its page once its worker's reporter
+ * sent one (`@piwitests/run-model/layers`): why its call waits (the latest lines of Playwright's log of it, what its locator matches and how), its
+ * page's events, newest first, the page's text once the person asks for it, then followed, and the test's filmstrip,
+ * an image shown larger with its call's title as it is chosen. They are kept in memory while the lane is watched.
  */
 
 await initI18n();
@@ -229,6 +245,8 @@ function connect(): void {
       heardLaneFrame(event);
     } else if (event?.type === 'lane-ended') {
       heardLaneEnded(event);
+    } else if (event?.type === 'lane-layer') {
+      heardLaneLayer(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -255,7 +273,10 @@ function connect(): void {
 }
 
 /** What a command names besides its stop: the response to mock, whether a view is on, a lane, the input, a point. */
-type CommandExtra = Pick<Extract<RunsRequest, { type: 'command' }>, 'request' | 'on' | 'lane' | 'events' | 'x' | 'y'>;
+type CommandExtra = Pick<
+  Extract<RunsRequest, { type: 'command' }>,
+  'request' | 'on' | 'lane' | 'layers' | 'events' | 'x' | 'y'
+>;
 
 function command(
   hub: string,
@@ -564,6 +585,17 @@ interface LaneView extends RunsLane, ViewSurface {
   refusals: number;
   /** The stop its input goes to, while the frame drawn shows the stop the worker stands at. */
   inputSince: string | null;
+  /** Its layers as they came, of the test its worker runs (`takeLaneLayer`), in memory alone. */
+  layers: LaneLayers;
+  /** A layer came while it was watched: its worker's reporter sends them, and they show under its page. */
+  layered: boolean;
+  /** The person asked for the page's text: the hub takes it and follows it, until Hide the text. */
+  text: boolean;
+  /** The page's text was asked and has not come yet; why it did not, once the hub said. */
+  textAsking: boolean;
+  textNote: string;
+  /** The image of the filmstrip shown larger, by its call's id; null for the strip alone. */
+  film: string | null;
 }
 
 /** Each stopped worker's live view, by worker. */
@@ -931,6 +963,12 @@ function startLane(run: RunsRun, worker: HubWorker): void {
     inputOn: false,
     input: null,
     captured: false,
+    layers: noLaneLayers(),
+    layered: false,
+    text: false,
+    textAsking: false,
+    textNote: '',
+    film: null,
   };
   liveImage(lane, `${slot}|view`, () => laneTarget(lane));
   lanes.set(slot, lane);
@@ -955,7 +993,8 @@ function askLane(slot: string, lane: LaneView): void {
   }
   lane.status = 'starting';
   const ask = ++lane.asks;
-  const watch = (on: boolean) => command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on });
+  const watch = (on: boolean) =>
+    command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on, ...(on ? layersAsk(lane) : {}) });
   void watch(true).then((answer) => {
     if (lanes.get(slot) !== lane || lane.asks !== ask || lane.status !== 'starting') return;
     if (answer.ok) {
@@ -1091,6 +1130,224 @@ function heardLaneEnded(ended: RunsLane): void {
   lane.waitAway = true;
   announce(lane.note);
   render();
+}
+
+// ── A watched lane's layers ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** The layers a lane's watch takes, at a hub that sends them: every one, the page's text once the person asked. */
+function layersAsk(lane: LaneView): { layers?: ReturnType<typeof laneLayersAsked> } {
+  return state?.hubs.find((hub) => hub.id === lane.hub)?.layers ? { layers: laneLayersAsked(lane.text) } : {};
+}
+
+/** How long the window says it reads the page's text before it gives up waiting for it. */
+const TEXT_WAIT_MS = 15_000;
+
+/**
+ * Shows the page's text, takes it again (`on`), or hides it: the hub hears the lane's layers again, `text` among them
+ * taking the page's text now and following it after.
+ */
+function askText(slot: string, on: boolean): void {
+  const lane = lanes.get(slot);
+  if (!isLive(lane)) return;
+  lane.text = on;
+  lane.textAsking = on;
+  lane.textNote = '';
+  if (!on) lane.layers = { ...lane.layers, text: null, textRefused: null };
+  void command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on: true, ...layersAsk(lane) }).then(
+    (answer) => {
+      if (lanes.get(slot) !== lane || answer.ok || !lane.textAsking) return;
+      lane.textAsking = false;
+      lane.textNote = failureText(answer);
+      render();
+    },
+  );
+  if (on) {
+    setTimeout(() => {
+      if (lanes.get(slot) !== lane || !lane.textAsking) return;
+      lane.textAsking = false;
+      render();
+    }, TEXT_WAIT_MS);
+  }
+  render();
+}
+
+/** The window is drawn again for a lane's layers at most every `LAYERS_DRAW_MS`: a call's log comes four times a second. */
+const LAYERS_DRAW_MS = 200;
+let layersDraw: ReturnType<typeof setTimeout> | null = null;
+
+/** A layer of a lane this window watches: kept with the lane's others, the test's alone. */
+function heardLaneLayer({ hub, ref, lane: index, ...heard }: RunsLaneLayer): void {
+  const lane = lanes.get(slotKey(hub, ref, index));
+  if (!isLive(lane)) return;
+  lane.layers = takeLaneLayer(lane.layers, heard);
+  lane.layered = true;
+  if (heard.layer === 'text') {
+    lane.textAsking = false;
+    lane.textNote = '';
+  }
+  // The image shown larger belongs to the strip: another test's strip shows none.
+  if (lane.film && !lane.layers.film.some((entry) => entry.thumb.call === lane.film)) lane.film = null;
+  layersDraw ??= setTimeout(() => {
+    layersDraw = null;
+    render();
+  }, LAYERS_DRAW_MS);
+}
+
+/** A time in the window's language: `12 s`. */
+const inSeconds = (value: number): string => formatUnit(value, 'second');
+
+/** A section of a lane's layers: its heading, then what it shows. */
+function layerSection(name: string, id: string, ...children: HTMLElement[]): HTMLElement {
+  const heading = element('h3', 'layer-title', name);
+  heading.id = id;
+  const section = element('section', 'layer', heading, ...children);
+  section.setAttribute('aria-labelledby', id);
+  return section;
+}
+
+/**
+ * A watched lane's layers under its page, at a hub that sends them: why its call waits, its page's events, the page's
+ * text and the test's filmstrip. Each section is drawn again only when what it shows changes.
+ */
+function renderLaneLayers(key: string, slot: string, lane: LaneView, away: boolean): HTMLElement {
+  const box = part(`${key}|layers`, null, () => element('div', 'layers'));
+  const { layers } = lane;
+  const text = {
+    asked: lane.text,
+    asking: lane.textAsking,
+    note: lane.textNote,
+    text: layers.text,
+    refused: layers.textRefused,
+  };
+  const film = { open: lane.film, thumbs: layers.film.map((entry) => entry.thumb) };
+  place(box, [
+    part(`${key}|layer-calls`, layers.log, () => renderCallsLayer(key, layers.log)),
+    part(`${key}|layer-events`, layers.events, () => renderEventsLayer(key, layers.events)),
+    part(`${key}|layer-text`, text, () => renderTextLayer(key, slot, lane)),
+    part(`${key}|layer-film`, film, () => renderFilmLayer(key, slot, lane, layers.film)),
+  ]);
+  markBusy(box.querySelectorAll('button.piwi-btn'), away);
+  return box;
+}
+
+/** Why the lane's call waits: the call, how long, what its locator matches, then the latest lines of its log. */
+function renderCallsLayer(key: string, log: LaneLayers['log']): HTMLElement {
+  const id = domId('layer-calls', key);
+  if (!log) return layerSection(t('runs_layerCalls'), id, element('p', 'layer-empty', t('runs_callNone')));
+  const wait = callWait(log, runsSpeaker, inSeconds);
+  const call = element('p', 'layer-call', element('span', 'call', ...richText(wait.title)));
+  if (wait.place) call.append(' ', element('span', 'place', wait.place));
+  const state = element('p', 'layer-state', wait.state);
+  state.dataset.tone = wait.tone;
+  if (wait.target) state.append(' · ', wait.target);
+  const children: HTMLElement[] = [call, state];
+  if (wait.error) children.push(element('p', 'layer-error', wait.error));
+  if (wait.lines.length > 0) children.push(element('pre', 'layer-log', wait.lines.join('\n')));
+  return layerSection(t('runs_layerCalls'), id, ...children);
+}
+
+/** The lane's page's events, newest first: what each is, what it says. */
+function renderEventsLayer(key: string, events: readonly LaneEventEntry[]): HTMLElement {
+  const id = domId('layer-events', key);
+  if (events.length === 0) {
+    return layerSection(t('runs_layerEvents'), id, element('p', 'layer-empty', t('runs_eventsNone')));
+  }
+  const list = element('ul', 'layer-events');
+  for (const entry of events) {
+    const said = laneEventSaid(entry.event, runsSpeaker, inSeconds);
+    const item = element('li', 'layer-event', element('span', 'event-label', said.label));
+    item.dataset.tone = said.tone;
+    if (said.text) item.append(' ', element('span', 'event-text', said.text));
+    list.append(item);
+  }
+  return layerSection(t('runs_layerEvents'), id, list);
+}
+
+/**
+ * The page's text, once the person asked for it: Show the page's text, then the text with where it came from, Take
+ * it again and Hide the text; or why none came.
+ */
+function renderTextLayer(key: string, slot: string, lane: LaneView): HTMLElement {
+  const id = domId('layer-text', key);
+  const { text, textRefused } = lane.layers;
+  const button = (label: string, on: boolean, focus: string, icon: IconName, title?: string) => {
+    const made = makeButton(label, (event) => !pressedHeld(event) && askText(slot, on), {
+      icon,
+      small: true,
+      ...(title ? { title } : {}),
+    });
+    made.dataset.focus = `${key}|${focus}`;
+    return made;
+  };
+  if (!lane.text) {
+    const show = button(t('runs_textShow'), true, 'text-show', 'list', t('runs_textShowTitle'));
+    return layerSection(t('runs_layerText'), id, element('div', 'piwi-actions', show));
+  }
+  const actions = element(
+    'div',
+    'piwi-actions',
+    button(t('runs_textAgain'), true, 'text-again', 'refresh'),
+    button(t('runs_textHide'), false, 'text-hide', 'eye-off'),
+  );
+  const children: HTMLElement[] = [actions];
+  if (lane.textAsking) children.push(element('p', 'layer-empty', t('runs_textWaiting')));
+  const why = lane.textNote || textRefused;
+  if (why) children.push(iconText(element('p', 'note'), 'alert', why));
+  if (text) {
+    children.push(element('p', 'meta', laneTextSource(text, runsSpeaker)));
+    const pre = element('pre', 'layer-text', text.text);
+    pre.tabIndex = 0;
+    pre.setAttribute('aria-label', t('runs_textLabel'));
+    children.push(pre);
+  }
+  return layerSection(t('runs_layerText'), id, ...children);
+}
+
+/**
+ * The test's filmstrip: an image for each call that ended, in the strip's order, each a button that shows it larger
+ * with its call's title, Close going back to the strip.
+ */
+function renderFilmLayer(key: string, slot: string, lane: LaneView, film: readonly LaneFilmEntry[]): HTMLElement {
+  const id = domId('layer-film', key);
+  const shown = film.filter((entry) => isLaneThumbData(entry.data));
+  if (shown.length === 0) {
+    return layerSection(t('runs_layerFilmstrip'), id, element('p', 'layer-empty', t('runs_filmstripNone')));
+  }
+  const choose = (call: string | null) => {
+    const now = lanes.get(slot);
+    if (now !== lane) return;
+    lane.film = call;
+    render();
+  };
+  const children: HTMLElement[] = [];
+  const open = shown.find((entry) => entry.thumb.call === lane.film);
+  if (open) {
+    const image = element('img', 'film-large');
+    image.src = `data:image/jpeg;base64,${open.data}`;
+    image.alt = t('runs_filmstripAlt', { call: open.thumb.title });
+    const close = makeButton(t('runs_filmstripClose'), () => choose(null), { icon: 'close', small: true });
+    close.dataset.focus = `${key}|film-close`;
+    children.push(
+      element('figure', 'film-shown', image, element('figcaption', 'call', ...richText(open.thumb.title))),
+      element('div', 'piwi-actions', close),
+    );
+  }
+  const strip = element('ul', 'film-strip');
+  for (const entry of shown) {
+    const button = element('button', 'film-thumb');
+    button.type = 'button';
+    button.title = entry.thumb.title;
+    button.dataset.focus = `${key}|film|${entry.thumb.call}`;
+    button.setAttribute('aria-pressed', String(entry === open));
+    const image = element('img');
+    image.src = `data:image/jpeg;base64,${entry.data}`;
+    image.alt = t('runs_filmstripAlt', { call: entry.thumb.title });
+    button.append(image);
+    button.addEventListener('click', () => choose(entry === open ? null : entry.thumb.call));
+    strip.append(element('li', undefined, button));
+  }
+  children.push(strip);
+  return layerSection(t('runs_layerFilmstrip'), id, ...children);
 }
 
 /** Where a pointer event is on an image, in CSS pixels of the viewport it shows. */
@@ -2819,6 +3076,10 @@ function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker,
     if (page) parts.push(page);
     else if (watchers) {
       parts.push(part(`${key}|watchers`, watchers, () => iconText(element('p', 'watchers'), 'eye', watchers)));
+    }
+    // A watched lane's layers, under its page, once its worker's reporter sent one.
+    if (lane && isWatched(lane) && lane.layered && hub?.layers && byLane) {
+      parts.push(renderLaneLayers(key, slotKey(run.hub, run.session.ref, worker.parallelIndex), lane, away));
     }
   }
   place(item, parts);
