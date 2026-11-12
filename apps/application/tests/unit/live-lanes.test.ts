@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { RunLanes, laneTestId } from '#shared/live-lanes';
+import { RunLanes, heldLanes, laneTestId, type Lane } from '#shared/live-lanes';
 import { runEventBus, type RunEvent } from '../../server/utils/run-events';
 
 /**
@@ -177,5 +177,33 @@ describe('the run event bus', () => {
     } finally {
       stop();
     }
+  });
+});
+
+describe('the lanes a run page holds', () => {
+  const lanes = new RunLanes();
+  const [running] = lanes.hear(7, begin());
+  const [stopped] = lanes.hear(7, { type: 'test-stopped', data: { ...begin().data, stop: STOP } });
+  const event = (type: string, data: Record<string, unknown> = {}) => ({ type, data, seq: 0 });
+
+  test('holds each lane as its last lane event says it', () => {
+    let held: Record<string, Lane> = {};
+    held = heldLanes(held, event('lane', { ...running }));
+    held = heldLanes(held, event('lane', { ...stopped }));
+    expect(Object.values(held)).toEqual([stopped]);
+    expect(heldLanes(held, event('test-begin', begin().data))).toBe(held);
+    expect(heldLanes(held, event('lane', { state: 'running' }))).toBe(held);
+  });
+
+  test('holds none from the start of a catch-up, so a lane the instance no longer keeps gives no stop', () => {
+    const held = heldLanes({}, event('lane', { ...stopped }));
+    expect(heldLanes(held, event('init', { status: 'running' }))).toEqual({});
+  });
+
+  test('holds none once the run ended, its lanes done', () => {
+    const held = heldLanes({}, event('lane', { ...stopped }));
+    expect(heldLanes(held, event('run-finished', { status: 'passed' }))).toEqual({});
+    const [done] = new RunLanes().hear(7, begin()).map((lane) => ({ ...lane, state: 'done' as const }));
+    expect(heldLanes(held, event('lane', { ...done }))).toEqual({});
   });
 });

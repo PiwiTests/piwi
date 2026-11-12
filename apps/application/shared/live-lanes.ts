@@ -8,7 +8,15 @@
  * the reporter (`test-stopped`, outside CI) and from the live view (`live-worker`'s `paused`); the live view's ends as
  * its worker goes on or leaves the view.
  */
-import { emptyLane, laneKey, reduceLane, type Lane, type LaneEvent, type LaneId } from '@piwitests/core/live-lane';
+import {
+  emptyLane,
+  laneKey,
+  readLane,
+  reduceLane,
+  type Lane,
+  type LaneEvent,
+  type LaneId,
+} from '@piwitests/core/live-lane';
 import { resolveExpectedStatus } from '@piwitests/core/status-classify';
 
 export type { Lane } from '@piwitests/core/live-lane';
@@ -151,4 +159,24 @@ export class RunLanes {
     this.ended.set(runId, ended);
     return false;
   }
+}
+
+/**
+ * The lanes a page of a live run holds, by `laneKey`, after an event of the run's stream: each lane as its last `lane`
+ * event says it, and none from an `init` (the first event of each connection's catch-up, after which the catch-up
+ * sends the lanes the instance keeps) or once the run ended (`run-finished`, a `done` lane). The same object when the
+ * event changes none.
+ */
+export function heldLanes(
+  lanes: Record<string, Lane>,
+  event: { type?: unknown; data?: unknown },
+): Record<string, Lane> {
+  if (event.type === 'init' || event.type === 'run-finished') return Object.keys(lanes).length ? {} : lanes;
+  const lane = event.type === 'lane' ? readLane(event.data) : null;
+  if (!lane) return lanes;
+  const key = laneKey(lane.id);
+  if (lane.state !== 'done') return { ...lanes, [key]: lane };
+  if (!(key in lanes)) return lanes;
+  const { [key]: _done, ...held } = lanes;
+  return held;
 }

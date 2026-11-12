@@ -47,8 +47,7 @@ import {
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
 import type { TestStop } from '@piwitests/core/wire';
-import { laneKey, readLane } from '@piwitests/core/live-lane';
-import type { Lane } from '#shared/live-lanes';
+import { heldLanes, type Lane } from '#shared/live-lanes';
 
 const route = useRoute();
 const router = useRouter();
@@ -201,8 +200,9 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 // The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
 // one offers Watch, and says Paused while its test is stopped.
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
-// The run's lanes as they stand, by `laneKey`, from the stream's `lane` events: the instance reduces them from the run's
-// events, so the page reads each lane's state, test and stop ready.
+// The run's lanes as they stand, by `laneKey`, from the stream's `lane` events (`heldLanes`): the instance reduces them
+// from the run's events, so the page reads each lane's state, test and stop ready. Each catch-up, and the run's end,
+// starts them afresh.
 const liveLanes = ref<Record<string, Lane>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
@@ -547,6 +547,7 @@ function flushPendingEvents() {
   pendingEvents = [];
   for (const parsed of events) {
     const data = parsed.data as Record<string, unknown>;
+    liveLanes.value = heldLanes(liveLanes.value, parsed);
     // 'init' and 'run-progress' carry the server's running counters; the header
     // and bar are derived from the de-duplicated case list instead (see
     // displayProgress), so only their planned suite size is kept.
@@ -883,9 +884,6 @@ function flushPendingEvents() {
         liveWorkerSeen.value = true;
       } else delete next[liveWorkerKey(worker)];
       liveWorkers.value = next;
-    } else if (parsed.type === 'lane') {
-      const lane = readLane(data);
-      if (lane) liveLanes.value = { ...liveLanes.value, [laneKey(lane.id)]: lane };
     } else if (parsed.type === 'live-view') {
       const state = data as unknown as LiveViewRunState;
       // A key opens the run's live view only while the project has it on.
@@ -920,6 +918,7 @@ function onRunEnded(): void {
   liveRunEnded.value = true;
   liveSteps.value = {};
   liveWorkers.value = {};
+  liveLanes.value = {};
   liveViewKeyed.value = false;
   liveViewState.value = null;
   disconnectStream();
@@ -977,6 +976,8 @@ function connectToDemoStream() {
     .catch(() => ({ events: [] }))
     .then((catchUp) => {
       if (demoUnsubscribe !== unsubscribe) return;
+      // The demo's catch-up sends no `init`: the lanes it sends are all the page holds.
+      liveLanes.value = {};
       for (const event of [...(catchUp.events ?? []), ...(heldEvents ?? [])]) enqueueEvent(event);
       heldEvents = null;
     });
