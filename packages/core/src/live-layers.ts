@@ -18,7 +18,8 @@
  * - `text`: the page as roles and names (`LaneText`), an ARIA snapshot: from the trace's own file of the call when the
  *   project's trace writes one (`aria/<callId>-after.json`, rendered by `ariaTreeText`), else taken when a viewer asks
  *   (`ariaSnapshot` in AI mode, `LANE_TEXT_DEPTH` levels deep), each field that holds a secret written as `<hidden>`
- *   (`maskAriaSnapshot` of `@piwitests/core/mask`), `MAX_LANE_TEXT` characters at most.
+ *   (`maskAriaSnapshot` of `@piwitests/core/mask`), `MAX_LANE_TEXT` characters and `MAX_LANE_TEXT_BYTES` bytes at
+ *   most.
  * - `filmstrip`: one image for each call of the test that ended (`LaneThumb`), for a viewer who comes late, on both
  *   wires from the view's own images, masked as its frames are, taken only while someone watches, kept in the worker's
  *   memory (`MAX_FILMSTRIP` images and `MAX_FILMSTRIP_BYTES` at most). `MAX_LANE_THUMB` bytes each,
@@ -184,6 +185,12 @@ export function isLayerCallId(value: unknown): value is string {
 
 /** The longest page's text a layer carries, in characters: a longer one is cut, and says so (`cut`). */
 export const MAX_LANE_TEXT = 96 * 1024;
+/**
+ * The longest page's text a layer carries in bytes, as UTF-8 inside a JSON string writes it: a text in a script of
+ * several bytes a character is cut there first, and says so (`cut`), so a worker's post of it as JSON fits a live
+ * message (`MAX_LIVE_MESSAGE` of `@piwitests/core/live-view`) with room for its other fields.
+ */
+export const MAX_LANE_TEXT_BYTES = 192 * 1024;
 /** How deep the page's text taken on request reads its tree. */
 export const LANE_TEXT_DEPTH = 8;
 /** The most texts a worker sends a second on one wire: the latest alone waits. */
@@ -203,22 +210,60 @@ export interface LaneText {
   at: number;
 }
 
+/** How many bytes a UTF-16 unit of a text takes as UTF-8 inside a JSON string, and how many units it reads. */
+function jsonUnit(text: string, at: number): { bytes: number; units: number } {
+  const code = text.charCodeAt(at);
+  // `"`, `\` and the five control characters JSON writes as two: `\b`, `\t`, `\n`, `\f`, `\r`.
+  if (code === 0x22 || code === 0x5c || (code >= 0x08 && code <= 0x0d && code !== 0x0b)) return { bytes: 2, units: 1 };
+  if (code < 0x20) return { bytes: 6, units: 1 };
+  if (code < 0x80) return { bytes: 1, units: 1 };
+  if (code < 0x800) return { bytes: 2, units: 1 };
+  if (code >= 0xd800 && code <= 0xdbff) {
+    const low = text.charCodeAt(at + 1);
+    if (low >= 0xdc00 && low <= 0xdfff) return { bytes: 4, units: 2 };
+  }
+  // A lone surrogate JSON writes as `\udXXX`.
+  if (code >= 0xd800 && code <= 0xdfff) return { bytes: 6, units: 1 };
+  return { bytes: 3, units: 1 };
+}
+
 /**
- * A page's text, checked field by field, cut at `MAX_LANE_TEXT` and masked again as a snapshot alone tells (a field
- * named for a secret, a card's number) with its credentials hidden; null when it is not one.
+ * A page's text cut to `MAX_LANE_TEXT` characters and `MAX_LANE_TEXT_BYTES` bytes (`jsonUnit`), where a line ends when
+ * one does within them, else where a character ends; `cut` says it was cut. Linear in the part kept. Pure.
+ */
+export function cutLaneText(text: string): { text: string; cut: boolean } {
+  let bytes = 0;
+  let end = 0;
+  while (end < text.length) {
+    const unit = jsonUnit(text, end);
+    if (end + unit.units > MAX_LANE_TEXT || bytes + unit.bytes > MAX_LANE_TEXT_BYTES) break;
+    bytes += unit.bytes;
+    end += unit.units;
+  }
+  if (end >= text.length) return { text, cut: false };
+  const line = text.lastIndexOf('\n', end);
+  return { text: text.slice(0, line > 0 ? line : end), cut: true };
+}
+
+/**
+ * A page's text, checked field by field, masked again as a snapshot alone tells (a field named for a secret, a card's
+ * number) with its credentials hidden, then cut (`cutLaneText`), whole lines alone read past twice `MAX_LANE_TEXT`;
+ * null when it is not one.
  */
 export function readLaneText(value: unknown): LaneText | null {
   if (!isObject(value) || typeof value.text !== 'string' || !value.text.trim()) return null;
   if (value.source !== 'trace' && value.source !== 'snapshot') return null;
   if (value.call !== null && !isLayerCallId(value.call)) return null;
   if (!isLayerTime(value.at)) return null;
-  const text = hideSecretsInText(maskAriaSnapshot(value.text.slice(0, MAX_LANE_TEXT)));
-  const cut = value.cut === true || value.text.length > MAX_LANE_TEXT || text.length > MAX_LANE_TEXT;
+  const long = value.text.length > 2 * MAX_LANE_TEXT;
+  const read = long ? value.text.slice(0, Math.max(0, value.text.lastIndexOf('\n', 2 * MAX_LANE_TEXT))) : value.text;
+  if (!read.trim()) return null;
+  const { text, cut } = cutLaneText(hideSecretsInText(maskAriaSnapshot(read)));
   return {
     call: value.call as string | null,
     source: value.source,
-    text: text.slice(0, MAX_LANE_TEXT),
-    cut,
+    text,
+    cut: value.cut === true || long || cut,
     at: value.at,
   };
 }
@@ -286,6 +331,8 @@ export function isLaneThumbBytes(bytes: Uint8Array): boolean {
 const MAX_TREE_DEPTH = 200;
 /** The flags a node of a trace's ARIA tree may hold, as Playwright writes them, in its order. */
 const TREE_FLAGS = ['checked', 'disabled', 'expanded', 'level', 'pressed', 'selected'] as const;
+/** The properties a node of a trace's ARIA tree may hold, written as Playwright writes them, in its order. */
+const TREE_PROPS = ['url', 'placeholder'] as const;
 
 /** A role as a node names it: letters, digits and `-`; `generic` for anything else. */
 function treeRole(value: unknown): string {
@@ -306,8 +353,9 @@ function treeScalar(value: string): string {
 
 /**
  * The ARIA tree a trace keeps of a page (`aria/<callId>-<phase>.json`: a list of nodes, each with its `role`, `name`,
- * flags, `text` and `children`), in Playwright's text form (`- textbox "Password": S3cr3t`), `max` characters at most;
- * null for anything but a list of nodes.
+ * flags, `url`, `placeholder`, `text` and `children`), in Playwright's text form (`- textbox "Password": S3cr3t`, a
+ * field's value on a `- text:` line under its `/placeholder`), whole lines, `max` characters at most; null for anything
+ * but a list of nodes.
  */
 export function ariaTreeText(value: unknown, max = MAX_LANE_TEXT): { text: string; cut: boolean } | null {
   if (!Array.isArray(value)) return null;
@@ -345,14 +393,16 @@ export function ariaTreeText(value: unknown, max = MAX_LANE_TEXT): { text: strin
         else if (typeof set === 'number' || set === 'mixed') head += ` [${flag}=${set}]`;
       }
       const children = Array.isArray(node.children) && depth < MAX_TREE_DEPTH ? node.children : [];
-      const url = typeof node.url === 'string' ? node.url : null;
-      if (!children.length && url === null) {
+      const props = TREE_PROPS.filter((prop) => typeof node[prop] === 'string');
+      if (!children.length && !props.length) {
         if (!add(text !== null && text !== '' ? `${head}: ${treeScalar(text)}` : head)) return false;
         continue;
       }
       if (!add(`${head}:`)) return false;
+      for (const prop of props) {
+        if (!add(`${indent}  - /${prop}: ${treeScalar(node[prop] as string)}`)) return false;
+      }
       if (text !== null && text !== '' && !add(`${indent}  - text: ${treeScalar(text)}`)) return false;
-      if (url !== null && !add(`${indent}  - /url: ${treeScalar(url)}`)) return false;
       if (!visit(children, depth + 1)) return false;
     }
     return true;

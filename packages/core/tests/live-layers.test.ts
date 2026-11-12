@@ -2,9 +2,11 @@ import { describe, expect, test } from 'vitest';
 import {
   LANE_LAYERS,
   MAX_LANE_TEXT,
+  MAX_LANE_TEXT_BYTES,
   MAX_LANE_THUMB,
   MAX_PAGE_EVENT_TEXT,
   ariaTreeText,
+  cutLaneText,
   isLaneThumbBytes,
   isLaneThumbData,
   readLaneLayers,
@@ -12,7 +14,14 @@ import {
   readLaneThumb,
   readPageEvent,
 } from '../src/live-layers';
-import { HIDDEN_VALUE, ariaMaskProblem, isSecretFieldName, looksLikeCardNumber, maskAriaSnapshot } from '../src/mask';
+import {
+  HIDDEN_VALUE,
+  ariaMaskProblem,
+  isSecretFieldName,
+  looksLikeCardNumber,
+  maskAriaSnapshot,
+  withoutFieldSecrets,
+} from '../src/mask';
 import {
   encodeLiveMessage,
   encodeLiveViewerMessage,
@@ -23,6 +32,7 @@ import {
   readWorkerToInstance,
   createLiveMessageReader,
   MAX_LIVE_FRAME,
+  MAX_LIVE_MESSAGE,
 } from '../src/live-view';
 import { parseHubToRun, parseRunToHub, RUN_FEATURES } from '../src/run-channel';
 import { HUB_FEATURES, parseHubCommand, parseHubMessage } from '../src/run-hub';
@@ -89,7 +99,7 @@ describe('the ARIA snapshot masker', () => {
     );
   });
 
-  test('hides what a project’s masked element shows, by its label or its role and name, and all inside it', () => {
+  test('hides what a project’s masked element shows, its name too, by its label or its role and name, and all inside it', () => {
     const snapshot = [
       '- textbox "IBAN": DE89370400440532013000',
       '- region "Balance":',
@@ -103,8 +113,8 @@ describe('the ARIA snapshot masker', () => {
       masks: ["getByLabel('IBAN')", "getByRole('region', { name: 'Balance' })"],
     });
     expect(hidden.split('\n')).toEqual([
-      `- textbox "IBAN": ${HIDDEN_VALUE}`,
-      '- region "Balance":',
+      `- textbox "${HIDDEN_VALUE}": ${HIDDEN_VALUE}`,
+      `- region "${HIDDEN_VALUE}":`,
       `  - heading "${HIDDEN_VALUE}" [level=2]`,
       `  - text: ${HIDDEN_VALUE}`,
       `  - link "${HIDDEN_VALUE}":`,
@@ -132,6 +142,8 @@ describe('the ARIA snapshot masker', () => {
     expect(ariaMaskProblem("locator('#iban')")).toMatch(/accessible name/);
     expect(ariaMaskProblem("getByTestId('balance')")).toMatch(/accessible name/);
     expect(ariaMaskProblem("getByRole('textbox')")).toMatch(/accessible name/);
+    // A title the text does not show beside a label: such a mask sends no text.
+    expect(ariaMaskProblem("getByTitle('Tax id')")).toMatch(/accessible name/);
   });
 
   test('reads the names of secret fields and the shapes of card numbers', () => {
@@ -154,6 +166,174 @@ describe('the ARIA snapshot masker', () => {
     expect(looksLikeCardNumber('4111-1111-1111-1111')).toBe(true);
     expect(looksLikeCardNumber('4111 1111 1111 1112')).toBe(false);
     expect(looksLikeCardNumber('123456')).toBe(false);
+  });
+});
+
+/** A page of secrets, as HTML: each field's value is one a viewer must not read. */
+// <h2>Account DE89370400440532013000</h2>
+// <label for=a>Verification code</label><input id=a placeholder="6 digits" value="482913">
+// <label for=b>Your phrase</label><input id=b type=password placeholder="secret" value="hunter2xyz">
+// <label for=c>Card number: 16 digits</label><input id=c value="4242 4242 4242 4242">
+// <label for=d>PIN #</label><input id=d value="9876">
+// <label for=e>Security code {CVC}</label><input id=e value="321">
+// <label for=f>Account</label><input id=f placeholder="DE00 0000" value="DE89370400440532013000">
+// <label for=g>Note: it's "q"</label><input id=g value="a: b">
+// <img alt="Passport scan of Ada" src="…">
+// <table><tr><td>ada@example.com</td><td>Paid</td></tr></table>
+
+/** Playwright 1.64.1's `page.ariaSnapshot({ mode: 'ai' })` of that page, as it wrote it. */
+const PLAYWRIGHT_AI = [
+  '- generic [ref=e1]:',
+  '  - heading "Account DE89370400440532013000" [level=2] [ref=e2]',
+  '  - text: Verification code',
+  '  - textbox "Verification code" [ref=e3]:',
+  '    - /placeholder: 6 digits',
+  '    - text: "482913"',
+  '  - text: Your phrase',
+  '  - textbox "Your phrase" [ref=e4]:',
+  '    - /placeholder: secret',
+  '    - text: hunter2xyz',
+  '  - text: "Card number: 16 digits"',
+  `  - 'textbox "Card number: 16 digits" [ref=e5]': 4242 4242 4242 4242`,
+  '  - text: "PIN #"',
+  `  - 'textbox "PIN #" [ref=e6]': "9876"`,
+  '  - text: "Security code {CVC}"',
+  `  - 'textbox "Security code {CVC}" [ref=e7]': "321"`,
+  '  - text: Account',
+  '  - textbox "Account" [ref=e8]:',
+  '    - /placeholder: DE00 0000',
+  '    - text: DE89370400440532013000',
+  '  - text: "Note: it\'s \\"q\\""',
+  `  - 'textbox "Note: it''s \\"q\\"" [active] [ref=e9]': "a: b"`,
+  '  - img "Passport scan of Ada" [ref=e10]',
+  '  - table [ref=e11]:',
+  '    - rowgroup [ref=e12]:',
+  '      - row [ref=e13]:',
+  '        - cell "ada@example.com" [ref=e14]',
+  '        - cell "Paid" [ref=e15]',
+].join('\n');
+
+/** The ARIA tree Playwright 1.64.1's trace kept of that page (`aria/<callId>-after.json`), its boxes left out. */
+const PLAYWRIGHT_TRACE: unknown = JSON.parse(
+  '[{"role":"heading","name":"Account DE89370400440532013000","level":2},{"role":"text","text":"Verification code"},' +
+    '{"role":"textbox","name":"Verification code","placeholder":"6 digits","text":"482913"},' +
+    '{"role":"text","text":"Your phrase"},{"role":"textbox","name":"Your phrase","placeholder":"secret","text":"hunter2xyz"},' +
+    '{"role":"text","text":"Card number: 16 digits"},{"role":"textbox","name":"Card number: 16 digits","text":"4242 4242 4242 4242"},' +
+    '{"role":"text","text":"PIN #"},{"role":"textbox","name":"PIN #","text":"9876"},' +
+    '{"role":"text","text":"Security code {CVC}"},{"role":"textbox","name":"Security code {CVC}","text":"321"},' +
+    '{"role":"text","text":"Account"},{"role":"textbox","name":"Account","placeholder":"DE00 0000","text":"DE89370400440532013000"},' +
+    '{"role":"text","text":"Note: it\'s \\"q\\""},{"role":"textbox","name":"Note: it\'s \\"q\\"","text":"a: b"},' +
+    '{"role":"img","name":"Passport scan of Ada"},{"role":"table","children":[{"role":"rowgroup","children":' +
+    '[{"role":"row","name":"ada@example.com Paid","children":[{"role":"cell","name":"ada@example.com"},' +
+    '{"role":"cell","name":"Paid"}]}]}]}]',
+);
+
+/** The project's masks of that page, one of each kind the text finds. */
+const PAGE_MASKS = [
+  "getByRole('heading', { name: /Account/ })",
+  "getByPlaceholder('DE00 0000')",
+  "getByRole('cell', { name: /@/ })",
+  'getByAltText(/Passport/)',
+];
+
+describe('the ARIA snapshot masker, on Playwright’s own output', () => {
+  test('hides a value behind a key Playwright quotes, and a placeholder’s field’s value on its text line', () => {
+    const hidden = maskAriaSnapshot(PLAYWRIGHT_AI).split('\n');
+    expect(hidden).toContain(`  - 'textbox "Card number: 16 digits" [ref=e5]': ${HIDDEN_VALUE}`);
+    expect(hidden).toContain(`  - 'textbox "PIN #" [ref=e6]': ${HIDDEN_VALUE}`);
+    expect(hidden).toContain(`  - 'textbox "Security code {CVC}" [ref=e7]': ${HIDDEN_VALUE}`);
+    expect(hidden.slice(3, 6)).toEqual([
+      '  - textbox "Verification code" [ref=e3]:',
+      '    - /placeholder: 6 digits',
+      `    - text: ${HIDDEN_VALUE}`,
+    ]);
+    for (const secret of ['4242', '9876', '"321"', '482913']) expect(hidden.join('\n')).not.toContain(secret);
+    // A field its name does not name a secret keeps its value, a quoted key's too, unless the page says it is one.
+    expect(hidden).toContain(`  - 'textbox "Note: it''s \\"q\\"" [active] [ref=e9]': "a: b"`);
+    expect(hidden).toContain('    - text: hunter2xyz');
+    expect(maskAriaSnapshot(PLAYWRIGHT_AI, { secrets: ['hunter2xyz'] })).not.toContain('hunter2xyz');
+  });
+
+  test('hides each masked element’s name and value, found by its name, its alt text or its placeholder', () => {
+    const hidden = maskAriaSnapshot(PLAYWRIGHT_AI, { masks: PAGE_MASKS, secrets: ['hunter2xyz'] });
+    expect(hidden.split('\n')).toEqual([
+      '- generic [ref=e1]:',
+      `  - heading "${HIDDEN_VALUE}" [level=2] [ref=e2]`,
+      '  - text: Verification code',
+      '  - textbox "Verification code" [ref=e3]:',
+      '    - /placeholder: 6 digits',
+      `    - text: ${HIDDEN_VALUE}`,
+      '  - text: Your phrase',
+      '  - textbox "Your phrase" [ref=e4]:',
+      '    - /placeholder: secret',
+      `    - text: ${HIDDEN_VALUE}`,
+      '  - text: "Card number: 16 digits"',
+      `  - 'textbox "Card number: 16 digits" [ref=e5]': ${HIDDEN_VALUE}`,
+      '  - text: "PIN #"',
+      `  - 'textbox "PIN #" [ref=e6]': ${HIDDEN_VALUE}`,
+      '  - text: "Security code {CVC}"',
+      `  - 'textbox "Security code {CVC}" [ref=e7]': ${HIDDEN_VALUE}`,
+      '  - text: Account',
+      `  - textbox "${HIDDEN_VALUE}" [ref=e8]:`,
+      `    - /placeholder: ${HIDDEN_VALUE}`,
+      `    - text: ${HIDDEN_VALUE}`,
+      '  - text: "Note: it\'s \\"q\\""',
+      `  - 'textbox "Note: it''s \\"q\\"" [active] [ref=e9]': "a: b"`,
+      `  - img "${HIDDEN_VALUE}" [ref=e10]`,
+      '  - table [ref=e11]:',
+      '    - rowgroup [ref=e12]:',
+      '      - row [ref=e13]:',
+      `        - cell "${HIDDEN_VALUE}" [ref=e14]`,
+      '        - cell "Paid" [ref=e15]',
+    ]);
+  });
+
+  test('reads the trace’s tree with its placeholders, and hides there what it hides in a snapshot', () => {
+    const rendered = ariaTreeText(PLAYWRIGHT_TRACE)!.text;
+    expect(rendered.split('\n').slice(2, 5)).toEqual([
+      '- textbox "Verification code":',
+      '  - /placeholder: 6 digits',
+      '  - text: "482913"',
+    ]);
+    const hidden = maskAriaSnapshot(rendered, { masks: PAGE_MASKS, secrets: ['hunter2xyz'] });
+    for (const secret of ['DE89', '482913', 'hunter2xyz', '4242', '9876', '"321"', 'ada@', 'Passport']) {
+      expect(hidden, secret).not.toContain(secret);
+    }
+    // The row the trace names by its cells hides the masked cell's name with it.
+    expect(hidden).toContain(`    - row "${HIDDEN_VALUE}":`);
+    expect(hidden).toContain('      - cell "Paid"');
+    expect(hidden).toContain('- textbox "Note: it\'s \\"q\\"": "a: b"');
+  });
+
+  test('hides what a line it cannot read shows, and all under it', () => {
+    const snapshot = [
+      `- 'textbox "PIN #" [ref=e2]': "98`,
+      `- 'textbox "Open [ref=e3]: 12`,
+      '- textbox "Note" [ref=e4]: "1\\q2"',
+      '- textbox "Bad \\q" [ref=e5]: 77',
+      '- ??? 4421',
+      '  - text: under it',
+      '',
+      '- textbox "Name" [ref=e6]: Ada',
+    ].join('\n');
+    expect(maskAriaSnapshot(snapshot).split('\n')).toEqual([
+      `- 'textbox "PIN #" [ref=e2]': ${HIDDEN_VALUE}`,
+      `- ${HIDDEN_VALUE}`,
+      `- textbox "Note" [ref=e4]: ${HIDDEN_VALUE}`,
+      `- textbox "${HIDDEN_VALUE}" [ref=e5]: ${HIDDEN_VALUE}`,
+      `- ${HIDDEN_VALUE}`,
+      `  - text: ${HIDDEN_VALUE}`,
+      '',
+      '- textbox "Name" [ref=e6]: Ada',
+    ]);
+  });
+
+  test('hides a secret field’s value behind a quoted key for an agent too', () => {
+    const hidden = withoutFieldSecrets(PLAYWRIGHT_AI, ['9876', 'a: b', 'hunter2xyz']);
+    expect(hidden).toContain(`  - 'textbox "PIN #" [ref=e6]': ${HIDDEN_VALUE}`);
+    expect(hidden).toContain(`  - 'textbox "Note: it''s \\"q\\"" [active] [ref=e9]': ${HIDDEN_VALUE}`);
+    expect(hidden).toContain(`    - text: ${HIDDEN_VALUE}`);
+    expect(hidden).toContain(`  - 'textbox "Security code {CVC}" [ref=e7]': "321"`);
   });
 });
 
@@ -273,6 +453,48 @@ describe('the layers’ readers', () => {
     expect(long.text.length).toBe(MAX_LANE_TEXT);
     expect(readLaneText({ call: 'a b', source: 'trace', text: 'x', cut: false, at: AT })).toBeNull();
     expect(readLaneText({ call: null, source: 'video', text: 'x', cut: false, at: AT })).toBeNull();
+  });
+
+  test('masks a page’s text whole lines at a time, never a line cut before it is read', () => {
+    // A card's number at the cut: cut first, its digits would no longer read as one.
+    const filler = (length: number): string => {
+      const one = '- listitem: Item\n';
+      const lines = one.repeat(Math.floor((length - 9) / one.length));
+      return `${lines}- text: ${'y'.repeat(length - lines.length - 9)}\n`;
+    };
+    const card = '- textbox "Pay with" [ref=e9]: 4111 1111 1111 1111\n';
+    // Its number runs over each bound the reader cuts at: the line a sender may cut, and the text's.
+    for (const at of [MAX_LANE_TEXT, 2 * MAX_LANE_TEXT]) {
+      const text = `${filler(at - 35)}${card}${filler(2 * MAX_LANE_TEXT)}`;
+      expect(text.slice(at - 3, at + 3)).toMatch(/^[\d ]+$/);
+      const read = readLaneText({ call: null, source: 'snapshot', text, cut: false, at: AT })!;
+      expect(read.cut).toBe(true);
+      expect(read.text).not.toMatch(/4111|1111 11/);
+      expect(read.text.endsWith('\n')).toBe(false);
+    }
+  });
+
+  test('cuts a page’s text in a script of several bytes a character so a worker’s post of it fits a live message', () => {
+    const line = `- paragraph: ${'漢字かな交じり文'.repeat(8)}`;
+    const text = Array.from({ length: Math.ceil(MAX_LANE_TEXT / line.length) + 10 }, () => line).join('\n');
+    expect(text.length).toBeGreaterThan(MAX_LANE_TEXT);
+    const kept = cutLaneText(text);
+    expect(kept.cut).toBe(true);
+    expect(new TextEncoder().encode(JSON.stringify(kept.text)).length).toBeLessThanOrEqual(MAX_LANE_TEXT_BYTES + 2);
+    expect(text.startsWith(kept.text) && text[kept.text.length]).toBe('\n');
+    const post = JSON.stringify({
+      type: 'text',
+      run: 'r'.repeat(64),
+      worker: 3,
+      shard: null,
+      text: { call: 'pw:api@123', source: 'trace', text: kept.text, cut: true, at: AT },
+      test: 'T'.repeat(1000),
+    });
+    expect(new TextEncoder().encode(post).length).toBeLessThan(MAX_LIVE_MESSAGE);
+    // A quote JSON escapes counts twice, an emoji's two halves once as four bytes.
+    expect(cutLaneText('"'.repeat(MAX_LANE_TEXT)).text.length).toBe(MAX_LANE_TEXT_BYTES / 2);
+    expect(cutLaneText('😀'.repeat(MAX_LANE_TEXT / 2)).text.length).toBe(MAX_LANE_TEXT);
+    expect(cutLaneText('short\ntext')).toEqual({ text: 'short\ntext', cut: false });
   });
 
   test('reads an image of a filmstrip, its title’s typed text hidden, and its JPEG within its bound', () => {
