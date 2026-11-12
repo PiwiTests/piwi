@@ -605,14 +605,14 @@ object Glue {
      * The editor's own run in progress the failures tree counts, and the folder of its Playwright config: counted from
      * what the run's own process tells the hub (`RunSession.progress`, from its `run-begin` and `run-progress`) when it
      * does, so it counts with no instance and with the desktop app as the instance, else from the instance (`LiveRun`).
-     * A run started in a terminal is not the editor's own. Null while none runs.
+     * The instance's run is matched to its session by its ref alone: with none matched, the instance's count shows. A
+     * run started in a terminal is not the editor's own. Null while none runs.
      */
     fun ownRunInProgress(contexts: List<RunStatus>, sessions: Map<String, RunSession>): Pair<LiveRun, String?>? {
         val own = contexts.firstOrNull { it.live?.own == true }
         val ownLive = own?.live
         val told = sessions.values.filter { !it.ended && !it.terminal && it.progress?.status == "running" }
-        val session = told.firstOrNull { ownLive?.ref != null && it.ref == ownLive.ref }
-            ?: told.firstOrNull { ownLive == null || it.root == own.root }
+        val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
         val progress = session?.progress ?: return ownLive?.let { it to own.root }
         val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
             .copy(done = progress.done, total = progress.total, failed = progress.failed)

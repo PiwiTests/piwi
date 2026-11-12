@@ -2851,6 +2851,11 @@ class GlueTest {
         )
         // A reporter that tells nothing: the instance's count.
         assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-1" to told.copy(progress = null))))
+        // Another run of the same config is not the instance's run, nor is any run when the instance names none: the
+        // instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-2" to told.copy(ref = "ed-2"))))
+        val unnamed = instance.copy(ref = null)
+        assertEquals(unnamed to "/w/shop", Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = unnamed)), mapOf("ed-1" to told)))
         // Offline, or with the desktop app hosting the run: the hub's count alone.
         assertEquals(
             LiveRun(status = "running", done = 5, total = 9, failed = 1, own = true, ref = "ed-1") to "/w/shop",

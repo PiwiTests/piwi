@@ -252,8 +252,8 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
   above its tree, and the header line names no run.
 - **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
-  as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`), else as the instance does
-  (`LiveRun`); the tree is drawn again as the run's sessions change.
+  as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
+  session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
 - **A row.** A `ColoredTreeCellRenderer` draws a failure's title, headline, run and place. The run is
   `Glue.FailureNode.note`, which the service writes with `failureRunNote` in `packages/editor/src/failure-tree.ts`:
   `your run #N`, `edited since run #N` with the information icon, `fixed` with the passed icon. `TreeSpeedSearch` finds
