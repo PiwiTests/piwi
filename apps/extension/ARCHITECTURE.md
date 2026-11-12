@@ -1020,8 +1020,9 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   ended, what its locator matches and whether its element is enabled, and the latest lines of Playwright's log of it;
   **Events**, newest first, 30 at most, a pending request one line whose time grows; **Text**, the page's ARIA text
   with its secret fields hidden, which **Show the page's text** asks for (`watch` with `text` among the layers: taken
-  now, then followed as the trace writes it), **Take it again** and **Hide the text**, "Reading the page…" until it
-  comes (15 s at most), and where it came from; **Filmstrip**, an image for each call that ended, by its place in the
+  now, then followed as the trace writes it, and asked again as the lane's next test begins, `asksLaneTextAgain`),
+  **Take it again** and **Hide the text**, "Reading the page…" until it comes (15 s at most after the latest ask), and
+  where it came from; **Filmstrip**, an image for each call that ended, by its place in the
   strip, one a call, its base64 checked again (`isLaneThumbData`), each a button (`aria-pressed`) that shows it larger
   with its call's title, **Close** going back to the strip. Words go through the run model and `runsSpeaker`, a time
   through `formatUnit`.

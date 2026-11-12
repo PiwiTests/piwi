@@ -25,6 +25,7 @@ import {
 } from '@piwitests/run-model/controls';
 import { CI_READ_ONLY, ciRunName, ciRunWhere, type CiRun } from '@piwitests/run-model/ci';
 import {
+  asksLaneTextAgain,
   callWait,
   laneEventSaid,
   laneLayersAsked,
@@ -594,6 +595,8 @@ interface LaneView extends RunsLane, ViewSurface {
   /** The page's text was asked and has not come yet; why it did not, once the hub said. */
   textAsking: boolean;
   textNote: string;
+  /** Ends `textAsking` `TEXT_WAIT_MS` after the latest ask. */
+  textTimer: ReturnType<typeof setTimeout> | null;
   /** The image of the filmstrip shown larger, by its call's id; null for the strip alone. */
   film: string | null;
 }
@@ -968,6 +971,7 @@ function startLane(run: RunsRun, worker: HubWorker): void {
     text: false,
     textAsking: false,
     textNote: '',
+    textTimer: null,
     film: null,
   };
   liveImage(lane, `${slot}|view`, () => laneTarget(lane));
@@ -1152,6 +1156,8 @@ function askText(slot: string, on: boolean): void {
   lane.text = on;
   lane.textAsking = on;
   lane.textNote = '';
+  if (lane.textTimer) clearTimeout(lane.textTimer);
+  lane.textTimer = null;
   if (!on) lane.layers = { ...lane.layers, text: null, textRefused: null };
   void command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on: true, ...layersAsk(lane) }).then(
     (answer) => {
@@ -1162,7 +1168,8 @@ function askText(slot: string, on: boolean): void {
     },
   );
   if (on) {
-    setTimeout(() => {
+    lane.textTimer = setTimeout(() => {
+      lane.textTimer = null;
       if (lanes.get(slot) !== lane || !lane.textAsking) return;
       lane.textAsking = false;
       render();
@@ -1175,16 +1182,24 @@ function askText(slot: string, on: boolean): void {
 const LAYERS_DRAW_MS = 200;
 let layersDraw: ReturnType<typeof setTimeout> | null = null;
 
-/** A layer of a lane this window watches: kept with the lane's others, the test's alone. */
+/**
+ * A layer of a lane this window watches: kept with the lane's others, the test's alone. The lane's next test, while the
+ * person shows the page's text, asks for its text.
+ */
 function heardLaneLayer({ hub, ref, lane: index, ...heard }: RunsLaneLayer): void {
-  const lane = lanes.get(slotKey(hub, ref, index));
+  const slot = slotKey(hub, ref, index);
+  const lane = lanes.get(slot);
   if (!isLive(lane)) return;
+  const again = lane.text && asksLaneTextAgain(lane.layers, heard);
   lane.layers = takeLaneLayer(lane.layers, heard);
   lane.layered = true;
   if (heard.layer === 'text') {
     lane.textAsking = false;
     lane.textNote = '';
+    if (lane.textTimer) clearTimeout(lane.textTimer);
+    lane.textTimer = null;
   }
+  if (again) askText(slot, true);
   // The image shown larger belongs to the strip: another test's strip shows none.
   if (lane.film && !lane.layers.film.some((entry) => entry.thumb.call === lane.film)) lane.film = null;
   layersDraw ??= setTimeout(() => {

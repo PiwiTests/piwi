@@ -2409,7 +2409,13 @@ test.describe('watching a running test', () => {
         await expect(text).toHaveCount(0);
         await expect(layers.getByRole('button', { name: 'Show the page’s text' })).toBeVisible();
 
-        // The next test starts its layers afresh.
+        // Shown again, then the next test starts its layers afresh, and asks the worker for its page's text: a second
+        // later, as the hub takes an ask within a second of the one before as that one.
+        await layers.getByRole('button', { name: 'Show the page’s text' }).click();
+        await expect.poll(() => asked().slice(-1)).toEqual([['calls', 'events', 'text', 'filmstrip']]);
+        const textAsks = () => heardRequests(worker, 'text').length;
+        const shown = textAsks();
+        await runs.waitForTimeout(1100);
         worker.send({ type: 'test-end', testId: 'id-pays', status: 'passed', pausedMs: 0 });
         worker.begin('pays again');
         worker.send({
@@ -2421,6 +2427,8 @@ test.describe('watching a running test', () => {
         });
         await expect(layers.locator('.layer-event')).toHaveText(['Console error fresh']);
         await expect(layers.locator('.film-thumb')).toHaveCount(0);
+        await expect.poll(textAsks).toBeGreaterThan(shown);
+        await expect(layers.getByText('Reading the page…')).toBeVisible();
       } finally {
         await endRun(run);
       }

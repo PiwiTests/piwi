@@ -3,8 +3,9 @@
  * desktop app's Local runs tray show them under the lane's page: why the call the test runs waits (`calls`), what its
  * page and its requests said (`events`), the page's text, taken as the person asks and followed after (`text`), and
  * the test's filmstrip (`filmstrip`). A surface asks for them at a hub whose features list `layers` (`laneLayersAsked`,
- * `watch`'s `layers`), keeps each lane's as they come (`takeLaneLayer`, a test's starting afresh) and says them through
- * its `RunSpeaker`, a time through its own `seconds`. Nothing here is stored: a surface keeps them in memory while it
+ * `watch`'s `layers`), keeps each lane's as they come (`takeLaneLayer`, a test's starting afresh), asks for the text
+ * again as the lane's next test begins while the person shows it (`asksLaneTextAgain`) and says them through its
+ * `RunSpeaker`, a time through its own `seconds`. Nothing here is stored: a surface keeps them in memory while it
  * watches the lane.
  */
 import {
@@ -68,14 +69,20 @@ export function noLaneLayers(): LaneLayers {
 /** A layer as a surface hears it from its hub: the worker and the test it is of (null for a page no test shows). */
 export type HeardLaneLayer = { worker: number; test: string | null } & LaneLayerData;
 
+/** Whether `heard` is of a test or a worker other than the one `layers` are of: a page no test shows is of none. */
+function isAnotherTest(layers: LaneLayers, heard: HeardLaneLayer): boolean {
+  return heard.test !== null && (heard.test !== layers.test || heard.worker !== layers.worker);
+}
+
 /**
  * The lane's layers with `heard` in them; the ones given are left as they were. A layer of another worker or test
  * starts afresh: what the surface kept was of the test before. A text of a page no test shows keeps the rest. An image
  * whose data is not a JPEG in base64 is left out, and an image of a call the strip holds takes its place.
  */
 export function takeLaneLayer(layers: LaneLayers, heard: HeardLaneLayer): LaneLayers {
-  const another = heard.test !== null && (heard.test !== layers.test || heard.worker !== layers.worker);
-  const base: LaneLayers = another ? { ...noLaneLayers(), worker: heard.worker, test: heard.test } : layers;
+  const base: LaneLayers = isAnotherTest(layers, heard)
+    ? { ...noLaneLayers(), worker: heard.worker, test: heard.test }
+    : layers;
   switch (heard.layer) {
     case 'calls':
       return { ...base, log: heard.log };
@@ -94,6 +101,14 @@ export function takeLaneLayer(layers: LaneLayers, heard: HeardLaneLayer): LaneLa
       return { ...base, film: film.slice(Math.max(0, film.length - MAX_FILMSTRIP)) };
     }
   }
+}
+
+/**
+ * Whether a surface that shows the lane's page's text asks for it again as `heard` comes: it begins the lane's next
+ * test, whose text starts afresh (`takeLaneLayer`) and comes only as asked, unless it is that text.
+ */
+export function asksLaneTextAgain(layers: LaneLayers, heard: HeardLaneLayer): boolean {
+  return heard.layer !== 'text' && layers.test !== null && isAnotherTest(layers, heard);
 }
 
 function takeEvent(layers: LaneLayers, event: PageEvent, at: number): LaneLayers {

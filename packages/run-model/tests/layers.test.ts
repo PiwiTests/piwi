@@ -4,6 +4,7 @@ import type { LiveCallLog } from '@piwitests/core/live-view';
 import {
   LANE_LOG_LINES,
   MAX_LANE_EVENTS,
+  asksLaneTextAgain,
   callWait,
   englishSeconds,
   laneEventSaid,
@@ -70,6 +71,17 @@ describe('a lane’s layers as they come', () => {
     expect(replaced.worker).toBe(1);
     // The ones given are left as they were.
     expect(first.events).toHaveLength(1);
+  });
+
+  it('asks for the page’s text again as the lane’s next test begins, the text it starts with aside', () => {
+    const first = taken({ layer: 'calls', log: log() });
+    const text = { call: null, source: 'snapshot' as const, text: '- button "Pay"', cut: false, at: AT };
+    expect(asksLaneTextAgain(noLaneLayers(), { worker: 0, test: 't1', layer: 'calls', log: log() })).toBe(false);
+    expect(asksLaneTextAgain(first, { worker: 0, test: 't1', layer: 'calls', log: log() })).toBe(false);
+    expect(asksLaneTextAgain(first, { worker: 0, test: null, layer: 'text', text })).toBe(false);
+    expect(asksLaneTextAgain(first, { worker: 0, test: 't2', layer: 'calls', log: log() })).toBe(true);
+    expect(asksLaneTextAgain(first, { worker: 1, test: 't1', ...event({ kind: 'console', text: 'boom' }) })).toBe(true);
+    expect(asksLaneTextAgain(first, { worker: 0, test: 't2', layer: 'text', text })).toBe(false);
   });
 
   it('keeps the text of a page no test shows beside the rest', () => {
