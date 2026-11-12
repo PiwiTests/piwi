@@ -28,7 +28,7 @@ export const SNAPSHOT_PHASES: ReadonlyArray<{ key: SnapshotPhase; label: string;
   { key: 'after', label: 'After', words: 'after it' },
 ];
 
-/** A call whose page the worker sent: its worker, its id and title, and the moments heard, in the order they came. */
+/** A call whose page was heard of: its worker, its id and title, and the moments heard, in the order they came. */
 export interface InspectCall {
   key: string;
   worker: LiveWorkerId;
@@ -232,6 +232,8 @@ export interface InspectWords {
   ended: Record<InspectEnd, string>;
   /** Under the view: where its pages come from, and what is kept of them. */
   note: string;
+  /** The name of the list of calls, which says where their pages come from. */
+  calls: string;
   /** Where the picker says the page came from: `Rendered from the page <from> at <call>`. */
   from: string;
 }
@@ -254,6 +256,7 @@ export const TEAM_INSPECT_WORDS: InspectWords = {
   testEnded: INSPECT_TEST_ENDED,
   ended: INSPECT_ENDED_TEXT,
   note: 'The worker sends these pages only while Inspect is open, without their scripts and with the values of their secret fields removed. The instance keeps them in memory until the run ends.',
+  calls: 'The calls whose page the worker sent, the latest last',
   from: 'the worker sent',
 };
 
@@ -279,6 +282,7 @@ export const DESKTOP_INSPECT_VIEW_WORDS: InspectWords = {
     closed: 'Inspect closed: the desktop app let this test’s pages go.',
   },
   note: 'The desktop app reads these pages from the test’s own trace on this machine while Inspect is open, without their scripts and with the values of their secret fields removed, and keeps them in memory until the test ends.',
+  calls: 'The calls whose page the desktop app read from the test’s trace, the latest last',
   from: 'its trace took',
 };
 

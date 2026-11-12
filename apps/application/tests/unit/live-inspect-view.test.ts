@@ -192,9 +192,12 @@ describe('Inspect’s sources', () => {
       DESKTOP_INSPECT_VIEW_WORDS.note,
       DESKTOP_INSPECT_VIEW_WORDS.testEnded,
       DESKTOP_INSPECT_VIEW_WORDS.waiting,
+      DESKTOP_INSPECT_VIEW_WORDS.calls,
     ]) {
-      expect(text).not.toMatch(/instance|worker sends/);
+      expect(text).not.toMatch(/instance|worker sen/);
     }
+    expect(DESKTOP_INSPECT_VIEW_WORDS.calls).toMatch(/from the test’s trace/);
+    expect(TEAM_INSPECT_WORDS.calls).toMatch(/the worker sent/);
   });
 
   test('hears the tray’s Inspect: the attempt it follows, each snapshot once, why none shows, until the next attempt', () => {

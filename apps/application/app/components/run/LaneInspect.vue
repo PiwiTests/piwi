@@ -278,7 +278,7 @@ const waiting = computed(() => {
       <ol
         ref="list"
         class="max-h-40 divide-y divide-default overflow-y-auto rounded-md border border-default"
-        aria-label="The calls whose page the worker sent, the latest last"
+        :aria-label="words.calls"
         data-testid="live-inspect-calls"
       >
         <li v-for="call in calls" :key="call.key">
