@@ -546,6 +546,37 @@ describe('Share live on the hub', () => {
     });
   });
 
+  test('reads share with the window’s scope, naming a run or none, and the window’s state the hub sends', () => {
+    expect(parseHubCommand(json({ type: 'share', id: 8, ref: 'ed-1', on: true, scope: 'window' }))).toEqual({
+      type: 'share',
+      id: 8,
+      ref: 'ed-1',
+      on: true,
+      scope: 'window',
+    });
+    expect(parseHubCommand(json({ type: 'share', id: 8, on: false, scope: 'window' }))).toEqual({
+      type: 'share',
+      id: 8,
+      ref: null,
+      on: false,
+      scope: 'window',
+    });
+    // The run's own share names its run; a scope this version does not know is refused.
+    expect(parseHubCommand(json({ type: 'share', id: 8, on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'share', id: 8, ref: 'ed-1', on: true, scope: 'all' }))).toMatchObject({
+      type: 'invalid',
+    });
+    expect(parseHubCommand(json({ type: 'share', id: 8, ref: 'ed 1', on: true, scope: 'window' }))).toMatchObject({
+      type: 'invalid',
+    });
+    expect(parseHubMessage(json({ type: 'share-window', on: true }))).toEqual({ type: 'share-window', on: true });
+    expect(parseHubMessage(json({ type: 'share-window', on: 'yes' }))).toBeNull();
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['share-window', 'peers', 'later'] }))).toMatchObject({
+      features: ['peers', 'share-window'],
+    });
+  });
+
   test('has the extension read how a run stands on the instance, and leave out what it cannot read', () => {
     const live = {
       shared: true,

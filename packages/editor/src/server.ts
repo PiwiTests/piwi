@@ -1936,8 +1936,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
     sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
     askedToWatch: (ask) => void connection.sendNotification(ASK_TO_WATCH_NOTIFICATION, ask satisfies AskToWatchParams),
-    shareWindowChanged: (on) =>
-      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams),
+    shareWindowChanged: (on) => {
+      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
+      runHub?.shareWindowChanged(on);
+    },
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -2484,6 +2486,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       RunHub.open({
         sessions: runSessions,
         actions: stopActions,
+        // An editor window shares its runs until the person stops: Piwi Picker offers it too.
+        sharesWindow: true,
         lineNow: (ref, uri, line) => {
           const file = uriToPath(uri);
           if (!file) return null;
