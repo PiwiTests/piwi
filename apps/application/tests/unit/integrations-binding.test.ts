@@ -130,10 +130,11 @@ describe('resolveProjectIntegration', () => {
     expect(resolveProjectIntegration({ connectionId: 1.5 }).connectionId).toBeNull();
   });
 
-  test('the issue types of the tag source stay null until a list is given, and normalize', () => {
+  test('the issue types of the tag source stay null until a list names one, and normalize', () => {
     expect(resolveProjectIntegration({}).declaredIssueTypes).toBeNull();
     expect(resolveProjectIntegration({ declaredIssueTypes: 'Bug' as never }).declaredIssueTypes).toBeNull();
-    expect(resolveProjectIntegration({ declaredIssueTypes: [] }).declaredIssueTypes).toEqual([]);
+    expect(resolveProjectIntegration({ declaredIssueTypes: [] }).declaredIssueTypes).toBeNull();
+    expect(resolveProjectIntegration({ declaredIssueTypes: [' ', '', 7 as never] }).declaredIssueTypes).toBeNull();
     expect(
       resolveProjectIntegration({ declaredIssueTypes: [' Bug ', '10004', 'Bug', '', 7 as never] }).declaredIssueTypes,
     ).toEqual(['Bug', '10004']);
@@ -234,7 +235,7 @@ describe('resolveTagSource', () => {
       resolveTagSource({ issue: 'no anchors', testCase: null }, { issueType: 'Bug', declaredIssueTypes: null }).why,
     ).toBe('no-pattern');
     expect(resolveTagSource(pattern, { issueType: null, declaredIssueTypes: null }).why).toBe('no-issue-type');
-    expect(resolveTagSource(pattern, { issueType: 'Bug', declaredIssueTypes: [] }).why).toBe('no-issue-type');
+    expect(resolveTagSource(pattern, { issueType: 'Bug', declaredIssueTypes: [] }).why).toBeNull();
   });
 });
 

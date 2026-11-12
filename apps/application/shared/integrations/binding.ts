@@ -178,14 +178,14 @@ function normalizeLabels(value: unknown): string[] {
   return [...new Set(cleaned)].slice(0, 50);
 }
 
-/** The issue types of the tag source: trimmed and deduplicated; null when the input is not a list. */
+/** The issue types of the tag source: trimmed and deduplicated; null when the input is not a list or names none. */
 function normalizeIssueTypes(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const cleaned = value
     .filter((v): v is string => typeof v === 'string')
     .map((v) => v.trim().slice(0, 100))
     .filter(Boolean);
-  return [...new Set(cleaned)].slice(0, 50);
+  return cleaned.length > 0 ? [...new Set(cleaned)].slice(0, 50) : null;
 }
 
 function trimOrNull(value: unknown, max = 200): string | null {
@@ -277,6 +277,10 @@ export function resolveTagSource(
   binding: Pick<ResolvedProjectIntegration, 'issueType' | 'declaredIssueTypes'>,
 ): { pattern: string | null; issueTypes: string[]; why: 'no-pattern' | 'no-issue-type' | null } {
   const pattern = resolveTagKeyPatterns(tagKeys).issue;
-  const issueTypes = binding.declaredIssueTypes ?? (binding.issueType ? [binding.issueType] : []);
+  const issueTypes = binding.declaredIssueTypes?.length
+    ? binding.declaredIssueTypes
+    : binding.issueType
+      ? [binding.issueType]
+      : [];
   return { pattern, issueTypes, why: !pattern ? 'no-pattern' : issueTypes.length === 0 ? 'no-issue-type' : null };
 }
