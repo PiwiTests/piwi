@@ -40,6 +40,8 @@ const chromium = ((): Chromium | null => {
 })();
 
 const SECRET = 'hunter2-Secret!';
+const UNREAD_FRAME =
+  'The page is not shown: the desktop app could not read one of its frames whole (too deep, too large, or naming one it no longer holds), so it could not hide its secrets. Inspect shows it again from its next navigation.';
 const MOVED =
   "Inspect stopped reading this test's trace: the runner's trace folder, a folder above it or its resources folder is a link or no longer a folder.";
 const PNG = Buffer.from(
@@ -136,8 +138,15 @@ function readerOf(traces: string, name: string, titleOf?: (call: string) => stri
   return { reader, store, kept, refused };
 }
 
-/** A frame-snapshot line of the main frame `frame` of `page`, at `call`'s `phase`. */
-function snapshotLine(call: string, phase: string, html: unknown, frame = 'frame@1', page = 'page@1'): string {
+/** A frame-snapshot line of the frame `frame` of `page` (its main frame unless `main` is false), at `call`'s `phase`. */
+function snapshotLine(
+  call: string,
+  phase: string,
+  html: unknown,
+  frame = 'frame@1',
+  page = 'page@1',
+  main = true,
+): string {
   return JSON.stringify({
     type: 'frame-snapshot',
     snapshot: {
@@ -149,9 +158,14 @@ function snapshotLine(call: string, phase: string, html: unknown, frame = 'frame
       html,
       viewport: { width: 800, height: 600 },
       wallTime: 1_794_487_222_117,
-      isMainFrame: true,
+      isMainFrame: main,
     },
   });
+}
+
+/** A `before` line of the call `call`, of the method `method` with `params`. */
+function beforeLine(call: string, method: string, params: Record<string, unknown> = {}): string {
+  return JSON.stringify({ type: 'before', callId: call, method, params });
 }
 
 describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser writes', () => {
@@ -373,6 +387,124 @@ describe('the reader of a lane’s trace, on a trace written by hand', () => {
     ]);
     own.reader.close();
     none.reader.close();
+  });
+});
+
+describe('the secrets a trace’s fields held', () => {
+  const PASSWORD = 'S3cret-Passw0rd!';
+  /** A page whose new password field holds it, filled through a locator that names no secret. */
+  const FILLED = ['HTML', {}, ['BODY', {}, ['INPUT', { id: 'new', type: 'password', __playwright_value_: PASSWORD }]]];
+  /** The page after it, which shows it as text. */
+  const ECHOED = ['HTML', {}, ['BODY', {}, ['P', {}, `Your new password is ${PASSWORD}`]]];
+
+  async function shown(traces: string, call: string, read: (own: ReturnType<typeof readerOf>) => Promise<void>) {
+    const own = readerOf(traces, 't1');
+    await read(own);
+    const page = await own.store.render('0', call, 'after');
+    own.reader.close();
+    if ('status' in page) throw new Error(page.message);
+    return { html: page.html, refused: own.refused };
+  }
+
+  it('are hidden in a page Inspect opens on after the page that held them navigated', async () => {
+    const traces = path.join(root, 'held-before', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    fs.writeFileSync(
+      path.join(traces, 't1.trace'),
+      [
+        beforeLine('c@1', 'fill', { selector: '#new', value: PASSWORD }),
+        snapshotLine('c@1', 'after', FILLED),
+        beforeLine('c@2', 'click', { selector: 'text=Save' }),
+        snapshotLine('c@2', 'after', ECHOED),
+        '',
+      ].join('\n'),
+    );
+    const { html } = await shown(traces, 'c@2', (own) => own.reader.turn());
+    expect(html).not.toContain(PASSWORD);
+    expect(html).toContain('Your new password is &lt;hidden>');
+  });
+
+  it('are hidden in a page that navigated in the same read as the page that held them', async () => {
+    const traces = path.join(root, 'held-same-read', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    fs.writeFileSync(
+      file,
+      `${snapshotLine('c@0', 'after', ['HTML', {}, ['BODY', {}, ['INPUT', { id: 'new', type: 'password' }]]])}\n`,
+    );
+    const { html } = await shown(traces, 'c@2', async (own) => {
+      await own.reader.turn();
+      fs.appendFileSync(
+        file,
+        [
+          beforeLine('c@1', 'fill', { selector: '#new', value: PASSWORD }),
+          snapshotLine('c@1', 'after', FILLED),
+          snapshotLine('c@2', 'after', ECHOED),
+          '',
+        ].join('\n'),
+      );
+      await own.reader.turn();
+    });
+    expect(html).not.toContain(PASSWORD);
+  });
+
+  it('are hidden in the main frame when a frame in it held them', async () => {
+    const traces = path.join(root, 'held-in-frame', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    fs.writeFileSync(
+      path.join(traces, 't1.trace'),
+      [
+        beforeLine('c@1', 'fill', { selector: 'iframe >> internal:control=enter-frame >> #f1', value: PASSWORD }),
+        snapshotLine(
+          'c@1',
+          'after',
+          [
+            'HTML',
+            {},
+            ['BODY', {}, ['LABEL', { for: 'f1' }, 'PIN'], ['INPUT', { id: 'f1', __playwright_value_: PASSWORD }]],
+          ],
+          'frame@2',
+          'page@1',
+          false,
+        ),
+        snapshotLine('c@1', 'after', ['HTML', {}, ['BODY', {}, ['IFRAME', {}], ['P', {}, `Code: ${PASSWORD}`]]]),
+        '',
+      ].join('\n'),
+    );
+    const { html } = await shown(traces, 'c@1', (own) => own.reader.turn());
+    expect(html).not.toContain(PASSWORD);
+  });
+
+  it('stop the main frame’s pages, saying why, while a frame in it cannot be read whole', async () => {
+    const traces = path.join(root, 'unread-frame', 'traces');
+    fs.mkdirSync(traces, { recursive: true });
+    const file = path.join(traces, 't1.trace');
+    fs.writeFileSync(
+      file,
+      [
+        snapshotLine('c@1', 'after', ['HTML', {}, ['BODY', {}, ['IFRAME', {}], ['P', {}, 'Before']]]),
+        // A frame's snapshot that names a node of one the trace never held: what its fields hold cannot be read.
+        snapshotLine(
+          'c@2',
+          'after',
+          ['HTML', {}, ['BODY', {}, ['LABEL', { for: 'pin' }, [[3, 0]]], ['INPUT', { id: 'pin' }]]],
+          'frame@2',
+          'page@1',
+          false,
+        ),
+        snapshotLine('c@2', 'after', ['HTML', {}, [[1, 3]], ['P', {}, 'After']]),
+        '',
+      ].join('\n'),
+    );
+    const own = readerOf(traces, 't1');
+    await own.reader.turn();
+    expect(own.kept.map((n) => n.call)).toEqual(['c@1']);
+    expect(own.refused).toEqual([UNREAD_FRAME]);
+    // Its next navigation shows it again.
+    fs.appendFileSync(file, `${snapshotLine('c@3', 'after', ['HTML', {}, ['BODY', {}, 'Next']])}\n`);
+    await own.reader.turn();
+    expect(own.kept.map((n) => n.call)).toEqual(['c@1', 'c@3']);
+    own.reader.close();
   });
 });
 

@@ -19,13 +19,14 @@
  * - **What is kept.** The snapshots of every page's main frame, from the main frame's last full snapshot as Inspect
  *   opens (`MAX_SNAPSHOT_BACKLOG` bytes and `MAX_WAITING` snapshots at most, the oldest after a frame's full one left
  *   out), then each new one, in the trace's order; the reading and the keeping run in slices (`SLICE_MS`,
- *   `SLICE_ITEMS`), the server's other work running between them. Before one is kept, what its page's secrets show is removed (`hideFrameSnapshotSecrets`) with
- *   the attempt's secrets as the trace tells them: the values its secret fields held in the snapshots read so far, this
- *   one included (`snapshotFieldSecrets`), and each value its calls typed into a field their locator names for a secret
- *   or with no locator; its call's title is the runner's of its step as the lane's layers named it (`titled`; the
- *   step is the call's `stepId` in the trace, else its id), else the trace's own, the text it types and its credentials
- *   hidden. A snapshot that cannot be read whole, or past `MAX_SNAPSHOT_BYTES` once hidden, stops its frame's chain
- *   until its next full snapshot, saying why.
+ *   `SLICE_ITEMS`), the server's other work running between them. Before one is kept, what its page's secrets show is
+ *   removed (`hideFrameSnapshotSecrets`) with the attempt's secrets as the trace tells them: the values the secret
+ *   fields of every frame held, learned from each snapshot of any frame as it is read, before anything of it is let go
+ *   (`snapshotFieldSecrets`), and each value its calls typed into a field their locator names for a secret or with no
+ *   locator. A snapshot that cannot be read whole, or past `MAX_SNAPSHOT_BYTES` once hidden, stops its frame's chain
+ *   until its next full snapshot, saying why; one of another frame, its page's main frame's. Its call's title is the
+ *   runner's of its step as the lane's layers named it (`titled`; the step is the call's `stepId` in the trace, else
+ *   its id), else the trace's own, the text it types and its credentials hidden.
  * - **Resources.** Before a snapshot, each resource it names (`snapshotResourceUrls`, and what a stylesheet among them
  *   names, `cssReferences`, `CSS_DEPTH` imports deep) that its page loaded, from the trace folder's `resources/` alone,
  *   `MAX_RESOURCE_BYTES` at most and its bytes of the kind its content type says (`isInspectResourceBytes`): a
@@ -107,6 +108,8 @@ const MAX_CALLS = 4096;
 /** The most values the attempt's calls typed that are kept, and values its secret fields held: the oldest go. */
 const MAX_TYPED = 64;
 const MAX_HELD = 256;
+/** The most pages whose main frame is known, to stop its pages when a frame in it cannot be read: the oldest go. */
+const MAX_PAGES = 1024;
 /** The most bytes the resources a snapshot names take in its header. */
 const MAX_RESOURCE_LIST = 32 * 1024;
 /** How deep stylesheets are followed through their imports for the resources they name. */
@@ -140,6 +143,8 @@ export const DESKTOP_INSPECT_WORDS: InspectWords = {
 const TOO_LARGE = `The page is not shown: its snapshot is larger than ${MAX_SNAPSHOT_BYTES / MB} MB.`;
 const UNREAD_SNAPSHOT =
   'The page is not shown: the desktop app could not read its snapshot whole (too deep, too large, or naming one it no longer holds), so it could not hide its secrets.';
+const UNREAD_FRAME =
+  'The page is not shown: the desktop app could not read one of its frames whole (too deep, too large, or naming one it no longer holds), so it could not hide its secrets.';
 const BEHIND = 'The page is not shown: Inspect fell behind the test’s calls.';
 const OVER_BACKLOG = `The page is not shown: its snapshots since its navigation are more than ${MAX_WAITING.toLocaleString('en-US')}, or larger than ${MAX_SNAPSHOT_BACKLOG / MB} MB.`;
 const FULL = 'The page is not shown: the desktop app keeps no more pages for Inspect now.';
@@ -514,9 +519,10 @@ export class DesktopTraceReader {
   private readonly tails = new Map<string, DesktopTraceTail>();
   /** How many snapshots of each frame the trace holds so far: the next one's place. */
   private readonly counts = new Map<string, number>();
-  /** The frames that are a page's main frame, as their snapshots said. */
+  /** The frames that are a page's main frame, as their snapshots said, and each page's. */
   private readonly mainFrames = new Set<string>();
-  /** Each main frame's snapshots since its last full one, by place, as the trace wrote them, for the labels. */
+  private readonly pageMains = new Map<string, string>();
+  /** Each frame's snapshots since its last full one, by place, as the trace wrote them, for the labels. */
   private readonly chains = new Map<string, Map<number, Record<string, unknown>>>();
   private chainBytes = 0;
   private readonly chainSizes = new Map<Record<string, unknown>, number>();
@@ -676,16 +682,24 @@ export class DesktopTraceReader {
     }
   }
 
-  /** A snapshot's line passed over for its length: its frame counts it where it was, and its chain stops there. */
+  /**
+   * A snapshot's line passed over for its length: its frame counts it where it was, and its chain stops there; what
+   * its fields held is not read, so the pages of a frame in a page stop too.
+   */
   private passedOver(head: string): void {
     const frame = /"frameId":"([^"]{1,200})"/.exec(head)?.[1];
     if (!head.startsWith(SNAPSHOT_LINE) || !frame) return;
     this.snapshotsRead++;
     this.counts.set(frame, (this.counts.get(frame) ?? 0) + 1);
     this.stopChain(frame, TOO_LARGE, 'kept');
+    const page = /"pageId":"([^"]{1,200})"/.exec(head)?.[1];
+    if (!this.mainFrames.has(frame) && page) this.stopPage(page);
   }
 
-  /** A snapshot: numbered in its frame, and, of a page's main frame, kept for its chain and queued to be kept. */
+  /**
+   * A snapshot of any frame: numbered in its frame and kept for its chain, what its secret fields hold learned
+   * (`learnSecrets`) before anything of it is let go; of a page's main frame, queued to be kept.
+   */
   private takeSnapshot(line: string): void {
     let snapshot: Record<string, unknown>;
     try {
@@ -699,15 +713,27 @@ export class DesktopTraceReader {
     this.snapshotsRead++;
     const index = this.counts.get(frameId) ?? 0;
     this.counts.set(frameId, index + 1);
-    if (snapshot.isMainFrame === false || !Array.isArray(snapshot.html)) return;
-    this.mainFrames.add(frameId);
+    if (!Array.isArray(snapshot.html)) return;
+    const main = snapshot.isMainFrame !== false;
+    if (main) {
+      this.mainFrames.add(frameId);
+      this.pageMains.delete(pageId);
+      this.pageMains.set(pageId, frameId);
+      if (this.pageMains.size > MAX_PAGES) this.pageMains.delete(this.pageMains.keys().next().value!);
+    }
+    const readable = this.learnSecrets(frameId, index, snapshot.html);
     const full = isFullSnapshot(snapshot.html);
     this.keepInChain(frameId, index, full, snapshot, line.length);
+    if (!main) {
+      if (!readable) this.stopPage(pageId);
+      return;
+    }
     if (full) {
       // The page navigated: its main frame's snapshots before it are not kept, and its chain starts again.
       this.queue.dropFrame(frameId);
       this.stopped.delete(frameId);
     }
+    if (!readable) return this.stopChain(frameId, UNREAD_SNAPSHOT, 'kept');
     const phase = snapshotPhase(snapshot);
     if (!phase || !isLayerCallId(callId) || this.stopped.has(frameId)) return;
     const queue = this.queue;
@@ -774,12 +800,33 @@ export class DesktopTraceReader {
     return openPlain(file);
   }
 
+  /**
+   * Learn what the secret fields of a frame's snapshot hold as it is read, its labels' references followed through
+   * its frame's chain: every page kept hides it. Whether it could be read whole; one that cannot is read for what its
+   * own nodes show.
+   */
+  private learnSecrets(frame: string, index: number, html: unknown): boolean {
+    const whole = snapshotFieldSecrets(html, this.resolver(frame, index));
+    for (const value of whole ?? snapshotFieldSecrets(html) ?? []) {
+      this.held.delete(value);
+      this.held.add(value);
+      if (this.held.size > MAX_HELD) this.held.delete(this.held.values().next().value!);
+    }
+    return whole !== null;
+  }
+
+  /** A frame of the page `page` could not be read whole: its main frame's pages stop until its next navigation. */
+  private stopPage(page: string): void {
+    const main = this.pageMains.get(page);
+    if (main) this.stopChain(main, UNREAD_FRAME, 'kept');
+  }
+
   /** Tell the windows why a page goes no further, or why the trace has none: a reader closed tells nothing. */
   private tell(text: string): void {
     if (!this.closed) this.options.refused(text);
   }
 
-  /** Keep a main frame's snapshot for the labels a later one's references name, its chain started again by a full one. */
+  /** Keep a frame's snapshot for the labels a later one's references name, its chain started again by a full one. */
   private keepInChain(
     frame: string,
     index: number,
@@ -859,13 +906,6 @@ export class DesktopTraceReader {
   private async keep(waiting: Waiting): Promise<void> {
     const { fields, snapshot } = waiting;
     const resolve = this.resolver(fields.frame, fields.index);
-    const held = snapshotFieldSecrets(snapshot.html, resolve);
-    if (!held) return this.stopChain(fields.frame, UNREAD_SNAPSHOT, 'until-full');
-    for (const value of held) {
-      this.held.delete(value);
-      this.held.add(value);
-      if (this.held.size > MAX_HELD) this.held.delete(this.held.values().next().value!);
-    }
     const secrets = this.secrets();
     const shown = hideFrameSnapshotSecrets(snapshot, { secrets, resolve });
     if (!shown) return this.stopChain(fields.frame, UNREAD_SNAPSHOT, 'until-full');

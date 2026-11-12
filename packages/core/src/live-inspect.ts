@@ -545,6 +545,9 @@ function stringHider(secrets: readonly string[]): StringHider {
   };
 }
 
+/** The hider of a walk that reads what fields hold alone (`snapshotFieldSecrets`): each string left as it is. */
+const KEEP_STRINGS: StringHider = { text: (value) => value, url: (value) => value, srcset: (value) => value };
+
 /** Whether a label's text, as `labelText` read it, names a secret: one it could not read whole does. */
 function namesSecret(text: string | null): boolean {
   return text === null || isSecretFieldName(text);
@@ -698,7 +701,7 @@ export function hideSnapshotSecrets(html: unknown, options: SnapshotSecretOption
  */
 export function snapshotFieldSecrets(html: unknown, resolve?: SnapshotResolver): string[] | null {
   const held = new Set<string>();
-  const read = hideHtml(html, { secrets: [], ...(resolve ? { resolve } : {}) }, stringHider([]), held);
+  const read = hideHtml(html, { secrets: [], ...(resolve ? { resolve } : {}) }, KEEP_STRINGS, held);
   return read === null ? null : [...held];
 }
 
