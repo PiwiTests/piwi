@@ -568,8 +568,9 @@ object Glue {
 
     /**
      * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
-     * description (`4 min ago`), and, while the editor's own run is `live`, that run on the node of the run of its
-     * Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9`).
+     * description (`4 min ago`), and, while the editor's own run is `live` ([ownRunInProgress]), that run on the node of
+     * the run of its Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9 · 1
+     * failed`).
      */
     fun failureNodes(
         result: FailuresResult?,
@@ -584,7 +585,7 @@ object Glue {
             kind = node.kind,
             label = node.label,
             description = if (running != null && node.kind == "run" && (liveRoot == null || node.root == null || node.root == liveRoot)) {
-                "running ${running.done}/${running.total}"
+                "running ${running.done}/${running.total}" + if (running.failed > 0) " · ${running.failed} failed" else ""
             } else {
                 listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
             },
@@ -598,6 +599,24 @@ object Glue {
             tooltip = node.tooltip.orEmpty(),
         )
         return result?.tree.orEmpty().map { draw(it) }
+    }
+
+    /**
+     * The editor's own run in progress the failures tree counts, and the folder of its Playwright config: counted from
+     * what the run's own process tells the hub (`RunSession.progress`, from its `run-begin` and `run-progress`) when it
+     * does, so it counts with no instance and with the desktop app as the instance, else from the instance (`LiveRun`).
+     * A run started in a terminal is not the editor's own. Null while none runs.
+     */
+    fun ownRunInProgress(contexts: List<RunStatus>, sessions: Map<String, RunSession>): Pair<LiveRun, String?>? {
+        val own = contexts.firstOrNull { it.live?.own == true }
+        val ownLive = own?.live
+        val told = sessions.values.filter { !it.ended && !it.terminal && it.progress?.status == "running" }
+        val session = told.firstOrNull { ownLive?.ref != null && it.ref == ownLive.ref }
+            ?: told.firstOrNull { ownLive == null || it.root == own.root }
+        val progress = session?.progress ?: return ownLive?.let { it to own.root }
+        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
+            .copy(done = progress.done, total = progress.total, failed = progress.failed)
+        return counted to (if (ownLive != null) own.root else session.root)
     }
 
     /**
@@ -2134,6 +2153,9 @@ object Glue {
             (if (failed > 0) " · $failed failed" else "") +
             if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
     }
+
+    /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
+    fun runsFailing(sessions: Map<String, RunSession>): Boolean = sessions.values.any { (it.progress?.failed ?: 0) > 0 }
 
     /**
      * A stop's or a share's status with how far the runs are after it, so neither hides the other:

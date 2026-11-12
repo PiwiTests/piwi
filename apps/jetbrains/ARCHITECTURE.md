@@ -251,7 +251,9 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
   above its tree, and the header line names no run.
-- **The editor's own run in progress** shows on the run of its config (`liveRoot`).
+- **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
+  as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`), else as the instance does
+  (`LiveRun`); the tree is drawn again as the run's sessions change.
 - **A row.** A `ColoredTreeCellRenderer` draws a failure's title, headline, run and place. The run is
   `Glue.FailureNode.note`, which the service writes with `failureRunNote` in `packages/editor/src/failure-tree.ts`:
   `your run #N`, `edited since run #N` with the information icon, `fixed` with the passed icon. `TreeSpeedSearch` finds
@@ -319,7 +321,8 @@ platform's text presentations take no color. It shows:
 - an icon (`Glue.StatusIcon`): the plugin's, an `AllIcons` icon for the connection and for a failing or passed run,
   `AnimatedIcon.Default` for a run in progress or a read;
 - the text, in the theme's error foreground (`NamedColorUtil.getErrorForeground`) while tests of the run it counts fail,
-  a run in progress by its own failures (`StatusView.error`), and in the status bar's foreground
+  a run in progress by its own failures (`StatusView.error`, or `Glue.runsFailing` while it counts the hub's
+  progress), and in the status bar's foreground
   (`JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`) otherwise.
 
 **Which config.** It speaks for the context of the selected editor's file (`Glue.statusContext`: the deepest config
@@ -342,8 +345,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's
   controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
-  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`). Its tooltip says what
-  each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
+  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
+  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
 - while a run is shared live: the share's entries, the run page, its link and **Stop Sharing…**, which asks first
   ([Run control](#run-control)).
 

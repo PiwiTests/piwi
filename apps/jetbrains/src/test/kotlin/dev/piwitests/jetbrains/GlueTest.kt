@@ -760,6 +760,9 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // A failure so far takes the error color, as the hub counts it.
+        assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
+        assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))
         // A test ended at a stop is marked so, not counted as a plain pass.
         val endedAtAStop = ready.copy(ref = "ed-3", progress = RunProgress(total = 2, done = 2, skipped = 1, endedAtStop = 1, status = "passed"))
         assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
@@ -2782,6 +2785,30 @@ class GlueTest {
         val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live).single().description)
         assertEquals("4 min ago", Glue.failureNodes(treeFailures, treeNow, live.copy(own = false)).single().description)
+        assertEquals("running 4/9 · 1 failed", Glue.failureNodes(treeFailures, treeNow, live.copy(failed = 1)).single().description)
+    }
+
+    @Test
+    fun `the editor's own run is counted from what its process tells the hub, else from the instance`() {
+        val instance = LiveRun(runId = 125, status = "running", done = 2, total = 9, own = true, ref = "ed-1")
+        val contexts = listOf(RunStatus(root = "/w/shop", live = instance))
+        val told = RunSession("ed-1", root = "/w/shop", progress = RunProgress(total = 9, done = 5, failed = 1))
+        // The hub's count wins over the instance's, which lags behind it.
+        assertEquals(
+            instance.copy(done = 5, failed = 1) to "/w/shop",
+            Glue.ownRunInProgress(contexts, mapOf("ed-1" to told)),
+        )
+        // A reporter that tells nothing: the instance's count.
+        assertEquals(instance to "/w/shop", Glue.ownRunInProgress(contexts, mapOf("ed-1" to told.copy(progress = null))))
+        // Offline, or with the desktop app hosting the run: the hub's count alone.
+        assertEquals(
+            LiveRun(status = "running", done = 5, total = 9, failed = 1, own = true, ref = "ed-1") to "/w/shop",
+            Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told)),
+        )
+        // A run of a terminal is not the editor's own; one that ended counts no more.
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("t-1" to told.copy(ref = "t-1", terminal = true))))
+        assertEquals(null, Glue.ownRunInProgress(emptyList(), mapOf("ed-1" to told.copy(progress = told.progress!!.copy(status = "failed")))))
+        assertEquals(null, Glue.ownRunInProgress(listOf(RunStatus(root = "/w/shop", live = instance.copy(own = false))), emptyMap()))
     }
 
     @Test

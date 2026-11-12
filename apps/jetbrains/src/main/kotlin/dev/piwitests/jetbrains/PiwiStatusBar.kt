@@ -144,7 +144,11 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
         }
-        label.error = recording == null && stopped == null && shared == null && progress == null && !refreshing && view.error
+        label.error = when {
+            recording != null || stopped != null || shared != null -> false
+            progress != null -> runs()?.let { Glue.runsFailing(it.sessions) } == true
+            else -> !refreshing && view.error
+        }
         label.toolTipText = Glue.htmlTooltip(
             recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
                 ?: stopped?.let { "$it$present\nClick for the run's controls." }
@@ -339,7 +343,7 @@ private class OpenFailuresAction : DumbAwareAction("Open the Failures", null, PI
  * The item's label: an icon and a text in the status bar's font and insets, the text in the status bar's foreground,
  * or the error foreground with [error]; both are theme colors.
  */
-private class StatusLabel : JBLabel() {
+internal class StatusLabel : JBLabel() {
     var error = false
         set(value) {
             field = value

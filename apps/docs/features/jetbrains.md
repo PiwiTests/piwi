@@ -67,7 +67,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   Its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own
   runs do.
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
-  icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
+  icon for its state and the error color while its tests fail. It counts a run you started (`3 of 9 · 1 failed`) as
+  the run itself reports it, with no instance too, as does the run's node in the Piwi tool window. A click opens a menu of the actions, led by what the
   item calls for: [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu
   opens its page, copies its link, and has **Stop Sharing the Run…**, which asks first.
 - **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the Test at

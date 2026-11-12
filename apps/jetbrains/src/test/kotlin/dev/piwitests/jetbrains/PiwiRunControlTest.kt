@@ -563,6 +563,31 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
+     * With no instance, the status bar counts the run as its own process tells the hub: done of total, the failed in the
+     * error color, until the run ends.
+     */
+    fun testTheStatusBarCountsTheRunFromTheHubWithoutAnInstance() {
+        val statusBar = PiwiStatusBarWidget(project)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        val label = statusBar.component as StatusLabel
+        hear(running("ed-count").copy(progress = RunProgress(total = 9, done = 3)))
+        statusBar.update()
+        assertEquals("Piwi: 3 of 9", label.text)
+        assertFalse(label.error)
+        hear(running("ed-count").copy(progress = RunProgress(total = 9, done = 4, failed = 1)))
+        statusBar.update()
+        assertEquals("Piwi: 4 of 9 · 1 failed", label.text)
+        assertTrue(label.error)
+        assertEquals(
+            LiveRun(status = "running", done = 4, total = 9, failed = 1, own = true, ref = "ed-count") to base.path,
+            Glue.ownRunInProgress(emptyList(), sessions.sessions),
+        )
+        hear(running("ed-count").copy(ended = true, progress = RunProgress(total = 9, done = 9, failed = 1, status = "failed")))
+        statusBar.update()
+        assertFalse(label.text.contains("of 9"))
+    }
+
+    /**
      * The status bar's menu on a share leads with the run page, its link and Stop Sharing…, which stops the share only
      * once the person confirms; while a test is stopped, the share's entries follow the run's controls.
      */
