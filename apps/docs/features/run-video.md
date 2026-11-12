@@ -8,10 +8,10 @@ lang: en-US
 
 <Needs reporter />
 
-A finished run has a **Video** tab that plays the videos Playwright recorded for the run, one test after another, beside
-a checklist of the tests. A test is ticked as its video passes the end of the test, so you can follow a worker's run as
-it happened. The bar under the video has one block for each test, colored by its result. Click a test or the bar to jump
-there.
+A finished run has a **Video** tab, labelled with the number of tests that have a video (**Video (12)**). It plays the
+videos Playwright recorded for the run, one test after another, beside a checklist of the tests. A test is ticked as its
+video passes the end of the test, so you can follow a worker's run as it happened. The bar under the video has one block
+for each test, colored by its result. Click a test or the bar to jump there.
 
 ## Group by Worker or File
 
@@ -43,7 +43,7 @@ This test.
 ## When there are no videos
 
 Most suites record video only for failing tests (`video: 'retain-on-failure'`), so a run where nothing failed often has
-none, and the tab says so. Set `video: 'on'` in Playwright's `use` options to record every test. Videos can be large, so
+none. The tab is then disabled, with the tooltip "no videos in this run". Set `video: 'on'` in Playwright's `use` options to record every test. Videos can be large, so
 read [storage cleanup](/operate/storage#storage-management) first.
 
 ## Related
