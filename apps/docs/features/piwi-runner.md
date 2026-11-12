@@ -62,8 +62,9 @@ Each run Piwi Runner starts shows in its window live, as the desktop app's runs 
 **Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch**. A `page.pause()`,
 a step or a breakpoint waits in the window until you answer it, and the window comes to the front. **Hold failures**,
 on each running run you attend and off until you turn it on, keeps a failing test at its line too, until you resume
-it; a run in UI mode, or one that repeats its tests past a failure, offers none. A run that goes on while the window
-reloads shows again, with **Stop**.
+it; a run in UI mode, or one that repeats its tests past a failure, offers none. Once the run reported to the
+instance, its card names it, **Run #78 · Open**, which opens its page there, and keeps it after the run ended. A run
+that goes on while the window reloads shows again, with **Stop**.
 **Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
 writes no file. **Share live** shows the run's stops to your team on the instance it reports to, as in the desktop
 app. **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.

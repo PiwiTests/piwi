@@ -6,6 +6,7 @@ import {
   createRunnerRuns,
   finishedStatus,
   isRunnerRunRef,
+  noteRunPages,
   runnerShellIdOf,
   runnerShownRefs,
   type RunnerRun,
@@ -160,5 +161,24 @@ describe('the hub’s name of a run', () => {
     expect(runnerShownRefs(runs)).toEqual(['desktop-7']);
     book.handle({ id: 7, kind: 'exit', code: 0 });
     expect(runnerShownRefs(runs)).toEqual([]);
+  });
+});
+
+describe('the run’s page', () => {
+  test('is kept once the hub names it, after the run ended too, for the run of the same shell id alone', async () => {
+    const { runs, book } = setup();
+    const run = await book.start(input);
+    expect(run.page).toBeNull();
+    const page = { id: 78, url: 'https://team.example.com/test-runs/78' };
+    noteRunPages(runs, [
+      { ref: 'desktop-9', page: { id: 1, url: 'https://team.example.com/test-runs/1' } },
+      { ref: 'desktop-7' },
+    ]);
+    expect(run.page).toBeNull();
+    noteRunPages(runs, [{ ref: 'desktop-7', page }]);
+    expect(run.page).toEqual(page);
+    book.handle({ id: 7, kind: 'exit', code: 1 });
+    noteRunPages(runs, []);
+    expect(run).toMatchObject({ status: 'failed', page });
   });
 });

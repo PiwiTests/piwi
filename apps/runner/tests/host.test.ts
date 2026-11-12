@@ -6,11 +6,13 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { linkedFolders, resetDesktopRunTarget, useLinks } from '@piwitests/editor/run-target';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { linkedFolders, resetDesktopRunTarget, useKeptKey, useLinks } from '@piwitests/editor/run-target';
 import { ShellRuns } from '@piwitests/editor/shell-runs';
 import { isLoopbackHost, runnerHandler } from '../server/host';
 import { RUNNER_RUN_CHANNEL_PREFIX, RUNNER_RUNS_WORDS } from '../server/runs';
@@ -62,6 +64,16 @@ afterEach(async () => {
   });
   fs.rmSync(path.dirname(root), { recursive: true, force: true });
 });
+
+async function waitFor<T>(read: () => T | undefined | null | false, ms = 5000): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const value = read();
+    if (value !== undefined && value !== null && value !== false) return value;
+    if (Date.now() - start > ms) throw new Error('timed out');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 /** A request as the shell or the window sends one; the path is sent as it is written. */
 function call(method: string, route: string, headers: Record<string, string> = {}, body?: string): Promise<Answer> {
@@ -254,6 +266,47 @@ describe('the hub of the runs the shell starts', () => {
     useLinks(new Map([[4, folder]]));
     expect(runs.live()[0]?.roots).toEqual([folder]);
     expect(runs.live()[0]?.client).toBe('Piwi Runner');
+  });
+
+  test('hears the page a requested run names on the instance it connects to, and shows it to the window', async () => {
+    const runs = await open();
+    const folder = path.dirname(root);
+    await useKeptKey('https://team.piwi.example', `pd_${'k'.repeat(64)}`, new Map([[4, folder]]));
+    const sessions: HubSession[] = [];
+    const window = await runs.openWindow({
+      send: (event) => {
+        if (event.type === 'session') sessions.push(event.session);
+      },
+      buffered: () => 0,
+      close() {},
+    });
+    const [socketPath, token] = runs.runChannel!.split('#') as [string, string];
+    const main = net.connect(socketPath);
+    main.on('error', () => {});
+    const send = (message: Record<string, unknown>) => main.write(`${JSON.stringify(message)}\n`);
+    send({
+      type: 'run-begin',
+      token,
+      ref: 'desktop-8',
+      cwd: folder,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.68.0',
+      total: 3,
+      workers: 1,
+      shard: null,
+    });
+    // A page on another address is not linked: the test's own code may name any.
+    send({ type: 'run-page', id: 66, url: 'https://elsewhere.example/test-runs/66' });
+    send({ type: 'run-progress', done: 1, failed: 0, flaky: 0, skipped: 0 });
+    const latest = () => sessions.filter((session) => session.ref === 'desktop-8').pop();
+    await waitFor(() => latest()?.progress?.done === 1);
+    expect(latest()).not.toHaveProperty('page');
+    send({ type: 'run-page', id: 78, url: 'https://team.piwi.example/test-runs/78' });
+    await waitFor(() => latest()?.page);
+    expect(latest()?.page).toEqual({ id: 78, url: 'https://team.piwi.example/test-runs/78' });
+    main.destroy();
+    window?.close();
   });
 
   test('serves no other route of the dashboard’s desktop build', async () => {
