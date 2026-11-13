@@ -9,11 +9,6 @@ import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 delete process.env.PIWI_DATABASE_URL;
 
 const { assignFailureClusters, getOrCreateFailureClusters, mergeFailureClusters } =
@@ -128,7 +123,7 @@ describe('moving tests to a new cluster', () => {
     const announcedAt = new Date('2026-10-01T00:00:00Z');
     await db.update(schema.failureClusters).set({ announcedAt });
 
-    const result = await extractClusterCases(db as never, sourceId, [2], null);
+    const result = await extractClusterCases(db as never, sourceId, [2], undefined);
 
     expect((await readCluster(result!.clusterId!))!.announcedAt).toEqual(announcedAt);
   });

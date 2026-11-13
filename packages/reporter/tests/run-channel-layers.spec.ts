@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { MAX_FILMSTRIP } from '@piwitests/core/live-layers';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The layers of a worker's lane view, in a real Playwright run through the built package: a fake editor service on the
@@ -48,8 +48,17 @@ const SHOP = `<!doctype html><meta charset="utf-8"><title>shop</title>
 <button id="pay" disabled>Pay</button>`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+/** Wait, outside Playwright, until the editor's side says \`what\` happened. */
+async function until(what) {
+  for (let tries = 0; tries < 100; tries++) {
+    if ((await (await fetch('${base}/editor/' + what)).json()).done) return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
 test('checkout', async ({ page, request }) => {
   await page.goto('${base}/shop');
+  // Each call from here on ends with a frame of the lane view to take its image from.
+  await until('lane-frame');
   await page.getByLabel('Password').fill('${SECRET}');
   await page.getByLabel('Card number').fill('${CARD}');
   await page.locator('#f1').fill('${PIN}');
@@ -64,6 +73,7 @@ test('checkout', async ({ page, request }) => {
     void fetch('/api/stream');
   });
   await page.waitForTimeout(7500);
+  await until('asked-again');
   expect((await request.get('${base}/api/items')).status()).toBe(200);
   await page.waitForTimeout(1500);
 });
@@ -142,6 +152,8 @@ async function onMessage(message: RunToHub): Promise<void> {
   ids[title] = message.testId;
   if (title === 'checkout') {
     await sleep(7000);
+    // The same layers are asked again once the filmstrip of the first ask came.
+    for (let i = 0; i < 100 && layers('filmstrip', message.testId).length < 3; i++) await sleep(100);
     repeatedAt = Date.now();
     send({ type: 'layers', layers: ['calls', 'events', 'text', 'filmstrip'] });
     await sleep(2000);
@@ -188,6 +200,13 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => hub.listen(socketPath, resolve));
   server = await startServer((req, res) => {
     const route = new URL(req.url, 'http://x').pathname;
+    if (route === '/editor/lane-frame') {
+      const done = heard.some(
+        ({ message: m }) => m.type === 'lane-frame' && 'data' in m && !!ids.checkout && m.test === ids.checkout,
+      );
+      return jsonRes(res, 200, { done });
+    }
+    if (route === '/editor/asked-again') return jsonRes(res, 200, { done: askedAgainAt < Infinity });
     if (route === '/api/missing') {
       const logs = gzipSync(JSON.stringify([{ level: 'Error', message: 'NullReferenceException in CartService' }]));
       res.writeHead(500, { 'content-type': 'application/json', 'x-piwi-logs': logs.toString('base64') });
@@ -232,7 +251,7 @@ exports.expect = expect;
 module.exports = defineConfig({
   testDir: './tests',
   outputDir: './test-results',
-  timeout: 30000,
+  timeout: 60000,
   workers: 1,
   reporter: [['./results-reporter.cjs', { outputFile: 'results.json' }]],
   projects: [

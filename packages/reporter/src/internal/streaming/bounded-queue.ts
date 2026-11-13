@@ -154,7 +154,7 @@ export class BoundedEventQueue {
         // Never shed the last remaining event at the critical tier: keeping one
         // oversized result beats dropping it and emptying the buffer.
         if (tier === CRITICAL_TIER && this.items.length <= 1) break;
-        const it = this.items[i];
+        const it = this.items[i]!;
         if (DROP_TIER[it.event.type] === tier) {
           this.items.splice(i, 1);
           this._bytes -= it.size;

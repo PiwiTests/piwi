@@ -82,7 +82,7 @@ describe('computeMissedBy', () => {
       extensionVersion: null,
       pathPrefix: '/app',
     });
-    const missed = computeMissedBy(index(), { steps: prefixed, pageKey: context.pageKey, ...context });
+    const missed = computeMissedBy(index(), { steps: prefixed, ...context });
     expect(missed.page).toBe('/cart');
     expect(missed.visiting.map((t) => t.testCaseId).sort()).toEqual([1, 2, 3]);
   });

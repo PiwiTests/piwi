@@ -53,7 +53,7 @@ describe('encoding helpers preserve slashes, escape the rest', () => {
 });
 
 describe('SCM providers reject a traversal ref before it reaches an API URL', () => {
-  const fetchMock = vi.fn(async () => new Response('[]', { status: 200 }));
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response('[]', { status: 200 }));
   afterEach(() => {
     fetchMock.mockClear();
     vi.unstubAllGlobals();

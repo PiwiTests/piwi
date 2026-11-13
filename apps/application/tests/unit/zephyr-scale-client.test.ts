@@ -569,7 +569,10 @@ describe('findRun', () => {
   });
 
   test('run 12 does not match the cycle of run 123', async () => {
-    const page = reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![0]] });
+    const page = reply({
+      ...fixture('testexecutions-page'),
+      values: [(fixture('testexecutions-page').values as unknown[])[0]],
+    });
     fetchMock
       .mockResolvedValueOnce(page.clone())
       .mockResolvedValueOnce(reply(fixture('testcycle-other')))
@@ -582,11 +585,11 @@ describe('findRun', () => {
   test('run 12 does not match a cycle named Piwi #12a', async () => {
     fetchMock
       .mockResolvedValueOnce(
-        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+        reply({ ...fixture('testexecutions-page'), values: [(fixture('testexecutions-page').values as unknown[])[1]] }),
       )
       .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Piwi #12a main' }))
       .mockResolvedValueOnce(
-        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+        reply({ ...fixture('testexecutions-page'), values: [(fixture('testexecutions-page').values as unknown[])[1]] }),
       );
     expect(await client().findRun('SHOP', marker)).toEqual({ outcome: 'not-found' });
   });
@@ -594,7 +597,7 @@ describe('findRun', () => {
   test('matches a cycle named exactly as the run was', async () => {
     fetchMock
       .mockResolvedValueOnce(
-        reply({ ...fixture('testexecutions-page'), values: [fixture('testexecutions-page').values![1]] }),
+        reply({ ...fixture('testexecutions-page'), values: [(fixture('testexecutions-page').values as unknown[])[1]] }),
       )
       .mockResolvedValueOnce(reply({ ...fixture('testcycle-piwi'), name: 'Nightly' }));
     expect(await client().findRun('SHOP', { ...marker, name: 'Nightly' })).toMatchObject({

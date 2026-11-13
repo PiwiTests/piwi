@@ -185,7 +185,9 @@ describe('withLineage', () => {
 
 describe('dataNoteSentence', () => {
   const text = (parts: ReturnType<typeof dataNoteSentence>) =>
-    parts.map((p) => (typeof p === 'string' ? p : `[${p.commit.slice(0, 7)}]`)).join('');
+    parts
+      .map((p) => (typeof p === 'string' ? p : 'commit' in p ? `[${p.commit.slice(0, 7)}]` : `[#${p.run}]`))
+      .join('');
 
   test('says each note in one plain sentence, the commits it names apart', () => {
     const sha = 'f'.repeat(40);

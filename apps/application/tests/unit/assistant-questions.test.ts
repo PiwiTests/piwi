@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import { DESKTOP_MCP_TOOL_DEFS, MCP_TOOL_DEFS, toolPermissions } from '#shared/mcp-tools';
+import { DESKTOP_MCP_TOOL_DEFS, MCP_TOOL_DEFS, toolPermissions, type McpToolDef } from '#shared/mcp-tools';
 import { isAssistantBlockTool } from '#shared/assistant-blocks';
 import { ASSISTANT_MAX_QUESTION_CHARS, assistantPageContextSchema } from '#shared/assistant';
 import { findGuideAnchor } from '#shared/guide-anchors/index.mjs';
@@ -43,7 +43,9 @@ const questionsFile = join(appDir, 'tests/live/assistant-questions.ts');
 
 const desktopOnly = new Set<string>(DESKTOP_MCP_TOOL_DEFS.map((t) => t.name));
 const READ_TOOLS = new Set<string>(
-  MCP_TOOL_DEFS.filter((t) => toolPermissions(t).length === 0 && !desktopOnly.has(t.name)).map((t) => t.name),
+  MCP_TOOL_DEFS.filter((t: McpToolDef) => toolPermissions(t).length === 0 && !desktopOnly.has(t.name)).map(
+    (t) => t.name,
+  ),
 );
 /** The assistant's own tools: what a toolbox offers besides the read tools and the block tools. */
 const OWN_TOOLS = new Set(

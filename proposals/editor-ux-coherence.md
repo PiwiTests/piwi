@@ -10,7 +10,13 @@ tools meets one Piwi.
 and trimmed on 2026-11-12 to the work left at `b0ff6772`, where every line reference points. Built and left out of this
 document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and Q24, the medium step M19, the 34
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
-remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, with their
+remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, in part:
+Q27 (JetBrains says a stopped service is not running, with Restart the editor service first, #1255; one did-not-answer
+sentence, as a warning with its fixes; the MCP copies confirmed, the .NET note offered, Connect… on the connect-first
+answer), Q28 (a CI run's tests never drawn as running on the test lines, which name it 'CI run #130' beside their own
+result; an agent's label on `RunSession`, in the status bars' progress and JetBrains' Run tab) and Q30 (Re-run failing
+only while a test fails; the Worker tab's image named per kind of lane), with a picked locator sent to the project whose
+run made it (#1289). Also built since, with their
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a

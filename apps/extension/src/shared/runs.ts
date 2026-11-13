@@ -10,6 +10,7 @@ import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import {
+  type HubAnswerCode,
   type HubCodeAction,
   type HubCodeIntent,
   type HubWindowAction,
@@ -304,6 +305,8 @@ export type RunsFailure = 'offline' | 'timeout' | 'unwatched';
 export interface RunsAnswer {
   ok: boolean;
   message: string;
+  /** What the hub's sentence says, as a code the window says in its own words (`ANSWER_KEYS`); absent for none. */
+  code?: HubAnswerCode;
   failure?: RunsFailure;
   /** For `image`: the stopped page, null when the worker has none. */
   image?: HubImage | null;
@@ -553,6 +556,28 @@ export function attentionOf(state: Pick<RunsState, 'runs' | 'hubs'>): RunAttenti
   const { waiting = 0, heldFailures = 0, failed = 0 } = live ?? {};
   return { state: waiting > 0 ? 'waiting' : 'failing', waiting, heldFailures, failed: failed + missed };
 }
+
+/** The catalog key of each code a hub's answer carries, which the window says in place of the hub's sentence. */
+export const ANSWER_KEYS = {
+  pausing: 'runs_answerPausing',
+  stepping: 'runs_answerStepping',
+  resuming: 'runs_answerResuming',
+  finishing: 'runs_answerFinishing',
+  'ending-skipped': 'runs_answerEndingSkipped',
+  'ending-failed': 'runs_answerEndingFailed',
+  'went-on': 'runs_answerWentOn',
+  running: 'runs_answerRunning',
+  'stopped-already': 'runs_answerStoppedAlready',
+  'drive-on': 'runs_answerDriveOn',
+  'drive-taken': 'runs_answerDriveTaken',
+  'drive-back': 'runs_answerDriveBack',
+  'drive-none': 'runs_answerDriveNone',
+  'hold-on': 'runs_answerHoldOn',
+  'hold-off': 'runs_answerHoldOff',
+  'hold-unattended': 'runs_answerHoldUnattended',
+  'share-on': 'runs_answerShareOn',
+  'share-off': 'runs_answerShareOff',
+} as const satisfies Record<HubAnswerCode, string>;
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */
 const EARLIER_UNREGISTERED =

@@ -75,7 +75,12 @@ test.describe('checkout', () => {
     `const { test } = require('../fixture.cjs');
 test('resets catalog', async ({ page }) => {
   await page.goto(${JSON.stringify(server.url + '/')});
-  await page.evaluate(() => fetch('/api/cart').then((r) => r.text()));
+  const ms = await page.evaluate(async () => {
+    const start = performance.now();
+    await (await fetch('/api/cart')).text();
+    return performance.now() - start;
+  });
+  if (ms >= 800) throw new Error("the companion's cart was delayed");
 });
 test('unrelated', async () => {});
 `,
@@ -160,12 +165,7 @@ describe('a flake-lab run', () => {
       expect(line.startedAt).toBeGreaterThan(0);
       expect(typeof line.workerIndex).toBe('number');
     }
-    // Only the target's request is delayed: the companion does the same page load and fetch, so it
-    // finishes well ahead of the target however slow the machine is (half the 800 ms delay of margin).
-    const target = lines.filter((l) => l.role === 'target');
-    expect(Math.min(...companion.map((l) => l.duration))).toBeLessThan(
-      Math.min(...target.map((l) => l.duration)) - 400,
-    );
+    // Only the target's request is delayed: the companion fails when its own fetch takes the 800 ms delay, and it passed.
   });
 
   it('writes whole lines from several workers into one file, and none for other tests', () => {

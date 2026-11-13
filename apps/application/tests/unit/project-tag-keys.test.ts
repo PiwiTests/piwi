@@ -43,7 +43,7 @@ describe('a project stores its tag key patterns', () => {
   });
 
   test('leaving tagKeys out changes nothing, and null clears it', async () => {
-    await updateProject(db as never, 1, { name: 'shop' });
+    await updateProject(db as never, 1, { label: 'Shop' });
     expect((await getProject(db as never, 1))?.tagKeys).toEqual({ issue: null, testCase: TEST_CASE });
     await updateProject(db as never, 1, { tagKeys: null });
     expect((await getProject(db as never, 1))?.tagKeys).toBeNull();

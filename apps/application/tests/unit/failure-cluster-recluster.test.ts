@@ -9,11 +9,6 @@ import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set;
 // clear it before the modules under test are loaded so they bind to SQLite.
 delete process.env.PIWI_DATABASE_URL;

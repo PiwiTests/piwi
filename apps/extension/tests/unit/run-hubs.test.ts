@@ -712,8 +712,15 @@ describe('a hub’s connection', () => {
       { type: 'share', id: 2, ref: 'r1', on: true },
       { type: 'share', id: 3, ref: 'r1', on: false },
     ]);
-    socket.hear({ type: 'answer', id: 2, ok: true, message: 'Sharing the run live on piwi.example.com.' });
-    expect(await shared).toEqual({ ok: true, message: 'Sharing the run live on piwi.example.com.' });
+    socket.hear({
+      type: 'answer',
+      id: 2,
+      ok: true,
+      message: 'Sharing the run live on piwi.example.com.',
+      code: 'share-on',
+    });
+    // The answer's code comes with its sentence, for the window to say it in its own words.
+    expect(await shared).toEqual({ ok: true, message: 'Sharing the run live on piwi.example.com.', code: 'share-on' });
   });
 
   it('passes the window’s share on, and says which hubs offer it and whether their window shares its runs', async () => {

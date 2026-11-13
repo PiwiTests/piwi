@@ -7655,5 +7655,71 @@
   },
   "runs_shareRefusedUnknown": {
     "message": "Cette exécution ne peut pas être partagée en direct : le reporter Piwi n’a donné à ses workers aucune clé de vue en direct."
+  },
+  "runs_answerPausing": {
+    "message": "Pause au prochain appel."
+  },
+  "runs_answerStepping": {
+    "message": "Passage à l’appel suivant."
+  },
+  "runs_answerResuming": {
+    "message": "Reprise."
+  },
+  "runs_answerFinishing": {
+    "message": "Le test va jusqu’au bout sans s’arrêter à un point d’arrêt."
+  },
+  "runs_answerEndingSkipped": {
+    "message": "Fin du test : il est signalé comme ignoré."
+  },
+  "runs_answerEndingFailed": {
+    "message": "Le test a déjà échoué : il se termine en échec."
+  },
+  "runs_answerWentOn": {
+    "message": "Le test a continué."
+  },
+  "runs_answerRunning": {
+    "message": "Le test est en cours."
+  },
+  "runs_answerStoppedAlready": {
+    "message": "Le test est déjà arrêté."
+  },
+  "runs_answerDriveOn": {
+    "message": "Vous pilotez cet arrêt : un agent attendrait que vous le rendiez."
+  },
+  "runs_answerDriveTaken": {
+    "message": "Vous pilotez cet arrêt : l’agent attend que vous le rendiez."
+  },
+  "runs_answerDriveBack": {
+    "message": "Vous avez rendu cet arrêt : un agent peut y agir."
+  },
+  "runs_answerDriveNone": {
+    "message": "Vous ne pilotiez pas cet arrêt."
+  },
+  "runs_answerHoldOn": {
+    "message": "Un échec qu’aucune barre de pause ne montre attend à sa ligne dans cette exécution, jusqu’à ce que quelqu’un y réponde."
+  },
+  "runs_answerHoldOff": {
+    "message": "Un échec de cette exécution qu’aucune barre de pause ne montre continue aussitôt."
+  },
+  "runs_answerHoldUnattended": {
+    "message": "Personne ne suit une exécution de ce genre : ses échecs continuent aussitôt, quel que soit qui la regarde."
+  },
+  "runs_answerShareOn": {
+    "message": "Exécution partagée en direct sur $instance$ : qui peut l’ouvrir là-bas peut regarder les pages de ses tests tant que quelqu’un le fait.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_answerShareOff": {
+    "message": "L’exécution n’est plus partagée : plus rien ne part vers $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
   }
 }

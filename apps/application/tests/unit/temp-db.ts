@@ -6,11 +6,6 @@ import { createClient, type Client } from '@libsql/client';
 import { inject } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 declare module 'vitest' {
   export interface ProvidedContext {
     /** The statements that rebuild a SQLite database holding every migration (`global-setup.ts`). */

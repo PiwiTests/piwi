@@ -55,7 +55,7 @@ describe('the passed-after-failure backfill', () => {
     for (const row of STORED_EXECUTIONS.filter((r) => typeof r.attempts === 'string')) {
       await client.execute({
         sql: 'UPDATE test_runs_cases SET attempts = ? WHERE id = ?',
-        args: [row.attempts, row.id],
+        args: [row.attempts as string, row.id],
       });
     }
 

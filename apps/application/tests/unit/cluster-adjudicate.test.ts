@@ -16,7 +16,13 @@ vi.mock('../../server/utils/ai-provider', () => ({
 
 const { adjudicateClusterPair } = await import('../../server/utils/cluster-adjudicate');
 
-const role: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-reason', baseUrl: null };
+const role: ResolvedAiRole = {
+  provider: 'openai',
+  apiKey: 'k',
+  model: 'test-reason',
+  baseUrl: null,
+  temperature: null,
+};
 
 const minimal: ClusterForAdjudication = { signature: 'sig-a', errorType: 'assertion', sampleError: 'boom' };
 

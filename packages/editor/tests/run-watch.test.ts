@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { catalogCaseOf, exitVerdict, repeatVerdict } from '../src/run-watch';
+import type { PiwiContext } from '../src/context';
+import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch } from '../src/run-watch';
+import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
   const cases = [
@@ -70,5 +72,50 @@ describe('the verdict of a run of each test several times', () => {
     expect(exitVerdict(3, null, 'tests/checkout.spec.ts:42').message).toBe(
       'The 3 runs of tests/checkout.spec.ts:42 ended without an exit code: see the output.',
     );
+  });
+});
+
+describe('the live run read twice', () => {
+  test('keeps its newer status when the older read comes back last', async () => {
+    let status = 'initializing';
+    const connection = { serverUrl: 'http://piwi.test', apiKey: 'pd_key', project: 'shop' };
+    const client = {
+      connection,
+      // Each read answers the run as it stood when asked: the one that found it initializing comes back last.
+      runDetails: (id: number) => {
+        const run = { id, status, branch: 'main', startTime: '2026-09-27T12:00:00.000Z', metadata: {}, totalTests: 2 };
+        return new Promise((resolve) => setTimeout(() => resolve(run), status === 'initializing' ? 60 : 10));
+      },
+    };
+    const context = {
+      client,
+      project: { id: 7 },
+      live: null,
+      liveTests: new Map(),
+      ownRuns: new Set(),
+      runBranch: 'main',
+      checkedOutBranch: 'main',
+    } as unknown as PiwiContext;
+    const opened: number[] = [];
+    const runStreams = {
+      follow: (_client: unknown, runId: number) => {
+        opened.push(runId);
+        return () => {};
+      },
+    } as unknown as RunStreams;
+    const watch = new RunWatch({ contexts: () => [context], changed: () => {}, notice: () => {}, runStreams });
+    const onEvent = (event: InstanceEvent) =>
+      (watch as unknown as { onEvent(key: string, event: InstanceEvent): void }).onEvent(
+        `${connection.serverUrl}\n${connection.apiKey}`,
+        event,
+      );
+
+    onEvent({ type: 'run-initializing', runId: 9, projectId: 7 });
+    status = 'running';
+    onEvent({ type: 'run-started', runId: 9, projectId: 7 });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(context.live).toMatchObject({ runId: 9, status: 'running' });
+    expect(opened).toEqual([9]);
+    watch.dispose();
   });
 });

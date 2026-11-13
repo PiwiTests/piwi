@@ -46,7 +46,7 @@ What the comment says, in this order:
 6. **Fixed by this change**: clusters this pull request closed, with how long they were open. See
    [Did the fix work?](./failure-clusters#did-the-fix-work)
 7. **Left open by this change**: [resource leaks](./leak-history) the base branch never showed, each with the
-   line that opened it.
+   line that opened it, its last use and where its close goes: its test, an `afterAll`, or its fixture's teardown.
 
 Each failure carries its error, its owner and tags when the test declares them (see
 [ownership metadata](/reference/test-metadata#ownership-metadata-piwi-annotations)), and, when a locator broke, the
