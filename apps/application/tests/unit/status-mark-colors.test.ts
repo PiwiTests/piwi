@@ -114,4 +114,52 @@ describe('the outcome marks', () => {
       highContrastLight: STATUS_COLORS.flaky.print,
     });
   });
+
+  test('tint a failing test, its failing line and a recording in the failed and running fills, in both editors', () => {
+    const colors = JSON.parse(read('apps/vscode/package.json')).contributes.colors as Array<{
+      id: string;
+      defaults: Record<string, string>;
+    }>;
+    const tinted: Record<string, string> = {
+      'piwi.failingTestBackground': STATUS_COLORS.failed.fill,
+      'piwi.failingLineBackground': STATUS_COLORS.failed.fill,
+      'piwi.failurePointBackground': STATUS_COLORS.failed.fill,
+      'piwi.recordingBlockBackground': STATUS_COLORS.running.fill,
+    };
+    for (const [id, fill] of Object.entries(tinted)) {
+      for (const value of Object.values(colors.find((c) => c.id === id)!.defaults)) {
+        expect(value.slice(0, 7), id).toBe(fill);
+      }
+    }
+    // A held failure's arrow in VS Code's gutter: the failed fill, outlined in its print color.
+    expect(disc(read('apps/vscode/media/failure-point.svg'))).toBe(STATUS_COLORS.failed.fill);
+    expect(read('apps/vscode/media/failure-point.svg')).toContain(`stroke="${STATUS_COLORS.failed.print}"`);
+    // A JetBrains scheme takes no alpha: the fill blended over the scheme's own background.
+    const blend = (fill: string, ground: string, alpha: number) =>
+      [1, 3, 5]
+        .map((i) => {
+          const f = parseInt(fill.slice(i, i + 2), 16);
+          const g = parseInt(ground.slice(i, i + 2), 16);
+          return Math.round(f * alpha + g * (1 - alpha))
+            .toString(16)
+            .padStart(2, '0');
+        })
+        .join('');
+    const option = (xml: string, name: string, key: string) =>
+      new RegExp(`<option name="${name}">[\\s\\S]*?<option name="${key}" value="([0-9a-f]{6})"`).exec(xml)?.[1];
+    for (const [scheme, ground, faint, strong] of [
+      ['PiwiDefault', '#ffffff', 0.1, 0.2],
+      ['PiwiDarcula', '#2b2b2b', 0.15, 0.25],
+    ] as const) {
+      const xml = read(`apps/jetbrains/src/main/resources/colorSchemes/${scheme}.xml`);
+      const failed = STATUS_COLORS.failed.fill;
+      const running = STATUS_COLORS.running.fill;
+      expect(option(xml, 'PIWI_FAILING_TEST', 'BACKGROUND'), scheme).toBe(blend(failed, ground, faint));
+      expect(option(xml, 'PIWI_FAILING_TEST', 'ERROR_STRIPE_COLOR'), scheme).toBe(blend(failed, ground, 0.5));
+      expect(option(xml, 'PIWI_FAILING_LINE', 'BACKGROUND'), scheme).toBe(blend(failed, ground, strong));
+      expect(option(xml, 'PIWI_FAILING_LINE', 'ERROR_STRIPE_COLOR'), scheme).toBe(failed.slice(1));
+      expect(option(xml, 'PIWI_RECORDING_BLOCK', 'BACKGROUND'), scheme).toBe(blend(running, ground, faint));
+      expect(option(xml, 'PIWI_RECORDING_BLOCK', 'ERROR_STRIPE_COLOR'), scheme).toBe(blend(running, ground, 0.6));
+    }
+  });
 });

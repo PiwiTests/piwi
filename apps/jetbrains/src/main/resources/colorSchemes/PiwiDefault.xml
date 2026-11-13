@@ -1,20 +1,20 @@
 <list>
   <option name="PIWI_FAILING_TEST">
     <value>
-      <option name="BACKGROUND" value="fdeeee"/>
-      <option name="ERROR_STRIPE_COLOR" value="f2a8a8"/>
+      <option name="BACKGROUND" value="feecef"/>
+      <option name="ERROR_STRIPE_COLOR" value="fa9faf"/>
     </value>
   </option>
   <option name="PIWI_FAILING_LINE">
     <value>
-      <option name="BACKGROUND" value="f9d0d0"/>
-      <option name="ERROR_STRIPE_COLOR" value="e06c6c"/>
+      <option name="BACKGROUND" value="fdd9df"/>
+      <option name="ERROR_STRIPE_COLOR" value="f43f5e"/>
     </value>
   </option>
   <option name="PIWI_RECORDING_BLOCK">
     <value>
-      <option name="BACKGROUND" value="e8effc"/>
-      <option name="ERROR_STRIPE_COLOR" value="7aa2e3"/>
+      <option name="BACKGROUND" value="ebf3fe"/>
+      <option name="ERROR_STRIPE_COLOR" value="89b4fa"/>
     </value>
   </option>
   <option name="PIWI_COVERAGE_RUN">

@@ -1370,20 +1370,20 @@
         "id": "piwi.failingTestBackground",
         "description": "The background of a test that failed in the latest run Piwi reads.",
         "defaults": {
-          "dark": "#f8514926",
-          "light": "#f851491a",
-          "highContrast": "#f8514940",
-          "highContrastLight": "#f8514926"
+          "dark": "#f43f5e26",
+          "light": "#f43f5e1a",
+          "highContrast": "#f43f5e40",
+          "highContrastLight": "#f43f5e26"
         }
       },
       {
         "id": "piwi.failingLineBackground",
         "description": "The background of the line a failing test failed at, over the test's own.",
         "defaults": {
-          "dark": "#f8514940",
-          "light": "#f8514933",
-          "highContrast": "#f8514966",
-          "highContrastLight": "#f8514940"
+          "dark": "#f43f5e40",
+          "light": "#f43f5e33",
+          "highContrast": "#f43f5e66",
+          "highContrastLight": "#f43f5e40"
         }
       },
       {
@@ -1440,10 +1440,10 @@
         "id": "piwi.recordingBlockBackground",
         "description": "The background of the block a recording writes, while it records.",
         "defaults": {
-          "dark": "#2f81f726",
-          "light": "#0969da1a",
-          "highContrast": "#2f81f740",
-          "highContrastLight": "#0969da26"
+          "dark": "#3b82f626",
+          "light": "#3b82f61a",
+          "highContrast": "#3b82f640",
+          "highContrastLight": "#3b82f626"
         }
       },
       {
@@ -1460,10 +1460,10 @@
         "id": "piwi.failurePointBackground",
         "description": "The background of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
         "defaults": {
-          "dark": "#f8514940",
-          "light": "#f8514933",
-          "highContrast": "#f8514966",
-          "highContrastLight": "#f8514940"
+          "dark": "#f43f5e40",
+          "light": "#f43f5e33",
+          "highContrast": "#f43f5e66",
+          "highContrastLight": "#f43f5e40"
         }
       }
     ],
