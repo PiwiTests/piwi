@@ -69,6 +69,27 @@ describe('the outcome marks', () => {
     expect(rgb('DOT_PAUSED')).toBe(resume);
   });
 
+  test('count a test that waits for you in Piwi Picker in the pause bar’s violet, as the tray does', () => {
+    const resume = /'background:(#[0-9a-f]{6});color:#fff;border:1px solid/.exec(
+      read('packages/picker-dom/src/overlay-pause.ts'),
+    )?.[1];
+    // The bar's border, the violet it shows on its dark ground.
+    const onDark = /border-bottom:2px solid (#[0-9a-f]{6})/.exec(read('packages/picker-dom/src/overlay-pause.ts'))?.[1];
+    expect(
+      /const RUNS_WAITING_COLOR = '(#[0-9a-f]{6})'/.exec(read('apps/extension/src/background/runs-window.ts'))?.[1],
+    ).toBe(resume);
+    for (const [file, variable] of [
+      ['apps/extension/popup.html', 'wait'],
+      ['apps/extension/runs.html', 'stopped'],
+    ] as const) {
+      const html = read(file);
+      const light = /:root \{([^}]*)\}/.exec(html)?.[1] ?? '';
+      const dark = /prefers-color-scheme: dark\)[^{]*\{\s*:root \{([^}]*)\}/.exec(html)?.[1] ?? '';
+      expect(new RegExp(`--${variable}: (#[0-9a-f]{6});`).exec(light)?.[1], `${file} light`).toBe(resume);
+      expect(new RegExp(`--${variable}: (#[0-9a-f]{6});`).exec(dark)?.[1], `${file} dark`).toBe(onDark);
+    }
+  });
+
   test('color the failed and flaky counts of Piwi Picker’s Runs window and VS Code’s flaky word as text', () => {
     const runs = read('apps/extension/runs.html');
     const light = /:root \{([^}]*)\}/.exec(runs)?.[1] ?? '';

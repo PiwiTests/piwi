@@ -779,9 +779,9 @@ The extension follows and steers these runs from the background worker alone, be
 and the popup's Runs tile only ask the worker, and the worker handles the run shortcut.
 
 What the runs ask of the person (`attentionOf`, from `@piwitests/run-model/attention`'s `runsAttention`, over the runs whose
-hub answers) shows in three places: the toolbar's badge (`runsBadge`: the tests that wait at a stop, amber, else the
-tests that failed, red), which a recording's or a replay's badge and the run shortcut's sign take over for their time;
-the popup's Runs tile (`runsSummary`, `data-state` `attention` or `failed`); and the Runs window's title
+hub answers) shows in three places: the toolbar's badge (`runsBadge`: the tests that wait at a stop, in the pause bar's
+violet, else the tests that failed, red), which a recording's or a replay's badge and the run shortcut's sign take over
+for their time; the popup's Runs tile (`runsSummary`, `data-state` `attention` or `failed`); and the Runs window's title
 (`runs_titleWaiting`, `runs_titleFailed`). The worker hears the runs as an observer (`RunHubs.observe`), which follows
 none of them, and draws the badge again only when what it says changes, and once as it starts, the browser keeping a
 badge across the worker's restarts. A run that ends failed or timed out while no Runs window has the browser's focus
