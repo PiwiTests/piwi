@@ -243,7 +243,8 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service
+     * again.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
 

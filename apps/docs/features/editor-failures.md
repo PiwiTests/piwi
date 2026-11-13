@@ -88,7 +88,8 @@ the progress of the run you started (`running 4/9`). Under it:
   **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
-  edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
+  edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`); a hover gives its
+  headline.
 
 In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
 named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`). Its run and failures
@@ -106,9 +107,9 @@ The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failin
 run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run),
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
 menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
-title and its icon's red dot do. A JetBrains IDE keeps Connect, Piwi Picker's pairing, the MCP configurations and the
-settings in the tool window's gear menu, and a hover on a node says what VS Code's does. The tree is read again when a
-run ends or an edit moves a failure.
+title and its icon's red dot do. A JetBrains IDE keeps Connect, Piwi Picker's pairing, the MCP configurations, **Reload
+Piwi**, the settings and **Documentation** in the tool window's gear menu, and a hover on a node says what VS Code's
+does. The tree is read again when a run ends or an edit moves a failure.
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries

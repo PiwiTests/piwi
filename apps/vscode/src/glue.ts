@@ -46,7 +46,7 @@ import type {
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 
-/** What a Refresh the editor service did not answer says, with `RESTART_SERVICE`. */
+/** What a Reload Piwi the editor service did not answer says, with `RESTART_SERVICE`. */
 export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
 
 /** The button that runs `piwi.restartService`. */

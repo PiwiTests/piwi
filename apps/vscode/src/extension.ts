@@ -1281,7 +1281,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         });
       await restarting;
     }),
-    // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
+    // The status bar item's click: the latest run and its failures alone, not the indexes Reload Piwi reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
       if (refreshing || !connectedOrSay()) return;
       refreshing = true;

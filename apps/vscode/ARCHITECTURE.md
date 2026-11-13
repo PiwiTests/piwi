@@ -60,7 +60,7 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 
 **Glyphs.** Every command in `package.json` has a codicon from the concept table of
 [editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), checked by
-hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Refresh, Run to the cursor, Pause and
+hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Reload Piwi, Run to the cursor, Pause and
 watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
 context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
 `tests/menus.test.ts` holds both.
@@ -138,7 +138,7 @@ A setting left empty keeps the environment's own variable. A change of one of th
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
 output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
 (`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
-view's welcome offers it while the service does not answer, and so does a Refresh it did not answer. A failed request
+view's welcome offers it while the service does not answer, and so does a Reload Piwi it did not answer. A failed request
 reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
 service is down. The client writes to the extension's own log channel (`outputChannel`), which a restart keeps; a
 service whose first start failed starts again only with the window.

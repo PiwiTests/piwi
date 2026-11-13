@@ -48,20 +48,20 @@ import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
 
 /**
- * The failures of the latest run on the checked-out branch, as the tree the service groups (`Glue.failureNodes`): the LSP client of the
- * JetBrains IDEs highlights open files only. The run comes first, with the runs laid over it, then the failures
- * grouped by file, cluster or owner, or flat (the toggles of the toolbar, kept in `PiwiLocalSettings`): a failure of a
- * local run says so, a failure whose line changed since its run is marked edited, and the failures a later run passed
- * follow, marked fixed. When several Playwright configs have something to show, each has a node of its own over its
- * run. Each failure is at its line as the edits since the run left it, and the tree follows the edits
- * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line, where
- * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
+ * The failures of the latest run on the checked-out branch, as the tree the service groups (`Glue.failureNodes`): the
+ * LSP client of the JetBrains IDEs highlights open files only. The run comes first, with the runs laid over it, then
+ * the failures grouped by file, cluster or owner, or flat (the toggles of the toolbar, kept in `PiwiLocalSettings`): a
+ * failure of a local run says so, a failure whose line changed since its run is marked edited, and the failures a later
+ * run passed follow, marked fixed. When several Playwright configs have something to show, each has a node of its own
+ * over its run. Each failure is at its line as the edits since the run left it, and the tree follows the edits
+ * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line,
+ * where the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
  * config's (Re-run the failing tests, Compare with…, Open in dashboard, for that config); Next and Previous Occurrence
  * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
  * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, the Group
  * by menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
- * configurations, Refresh and the settings are in the gear menu. The tab is Failures, and the tool window's icon has a
- * red dot while tests fail.
+ * configurations, Reload Piwi, the settings and Documentation are in the gear menu. The tab is Failures, and the tool
+ * window's icon has a red dot while tests fail.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
