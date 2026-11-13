@@ -6,7 +6,14 @@ import { beat, expect, waitFor } from './lib/script.mjs';
 import { TILES } from './lib/set.mjs';
 import { Agent, refOf, runsServer } from './lib/agent.mjs';
 import { dataUrlBytes, decodeImage, likeness } from './lib/likeness.mjs';
-import { RUN_VERDICT, laneLogProblems, readLaneLog, recordLaneView, watchedProblems } from './lib/watching.mjs';
+import {
+  RUN_VERDICT,
+  STOP_WORDS,
+  laneLogProblems,
+  readLaneLog,
+  recordLaneView,
+  watchedProblems,
+} from './lib/watching.mjs';
 import { PAGE_OBJECT, SPEC, push, read } from './lib/workspace.mjs';
 
 /** The page object's line the test fails at, and the call on it. */
@@ -456,15 +463,13 @@ export const STORY = [
         await gesture.click('runs', card.getByRole('button', { name: 'Watch', exact: true }), { timeout: 120_000 });
         const live = card.getByRole('img', { name: 'Live view of the test’s page', exact: true });
         await live.waitFor({ timeout: 30_000 });
-        // What the Runs window shows of the running test, every 250 ms for WATCH_MS.
+        // What the Runs window shows of the running test, and when, as often as it can be read for WATCH_MS.
         const looks = [];
         const until = Date.now() + WATCH_MS;
         await waitFor(
           async () => {
-            looks.push({
-              src: await live.getAttribute('src', { timeout: 1000 }).catch(() => null),
-              stopped: await card.getByText(/^Stopped /).count(),
-            });
+            const src = await live.getAttribute('src', { timeout: 1000 }).catch(() => null);
+            looks.push({ t: Date.now(), src, stopped: await card.getByText(STOP_WORDS).count() });
             return Date.now() >= until;
           },
           `${WATCH_MS / 1000} s of the running test in the Runs window`,
@@ -483,7 +488,7 @@ export const STORY = [
       });
     },
     async check({ instance, state }) {
-      const problems = watchedProblems(state.watchedRunning, { ms: WATCH_MS, every: 250 });
+      const problems = watchedProblems(state.watchedRunning);
       expect(!problems.length, `the Runs window showed the running test: ${problems.join('; ')}`);
       const test = await waitFor(async () => {
         const latest = (await instance.runs()).find((r) => !state.beforeWatched.includes(r.id));
@@ -511,8 +516,8 @@ export const STORY = [
       gesture.note('the fix is committed and pushed');
       state.fixCommit = push(repo.shop, 'Fix the checkout test for the redesign');
       const before = (await instance.runs()).map((r) => r.id);
-      // A CI run slowed enough to watch, as a long suite's run is.
-      state.ci = set.ci(state.fixCommit, 'ci-fix', { SLOW_MO: '1000' });
+      // A CI run slowed enough to watch, as a long suite's run is, on one worker: the lane watched runs every test.
+      state.ci = set.ci(state.fixCommit, 'ci-fix', { SLOW_MO: '1000' }, ['--workers=1']);
       const live = await waitFor(
         async () => (await instance.runs()).find((r) => !before.includes(r.id)),
         'the CI run of the fix on the instance',

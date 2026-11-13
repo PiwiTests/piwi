@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { laneLogProblems, watchedProblems } from '../lib/watching.mjs';
+import { STOP_WORDS, laneLogProblems, watchedProblems } from '../lib/watching.mjs';
 
 /** A lane panel's log: an image every second through two tests, then the run's end, said as the view says it. */
 function laneLog({ frames = [], said = ['', 'The run ended.', 'The run passed: 3 tests.'] } = {}) {
@@ -28,42 +28,70 @@ describe('the dashboard’s live view of a CI run’s lane', () => {
     const paused = laneLog().frames.map((f, i) => ({ ...f, t: f.t + (i >= 6 ? 20_000 : 0) }));
     assert.match(laneLogProblems(laneLog({ frames: paused })).join('\n'), /no image for 21 s/);
   });
+
+  test('froze before the run ended, though it showed each test', () => {
+    const log = laneLog();
+    const frozen = { ...log, statuses: log.statuses.map((status) => ({ ...status, t: status.t + 16_000 })) };
+    assert.match(laneLogProblems(frozen).join('\n'), /no image for 16.001 s/);
+  });
+
+  test('watched a lane that ran a single test, which hands over to no next one', () => {
+    const one = Array.from({ length: 4 }, (_, i) => ({ t: 1000 * i, ended: 0 }));
+    const statuses = [
+      { t: 0, text: '', ended: 0 },
+      { t: 4000, text: 'The run passed: 3 tests.', ended: 1 },
+    ];
+    assert.match(laneLogProblems({ frames: one, statuses }).join('\n'), /ran 1 test while watched/);
+  });
 });
 
 describe('the Runs window’s live view of a running test', () => {
-  const every = 250;
-  const ms = 5000;
-  const looks = (count, src, stopped = 0) => Array.from({ length: count }, (_, i) => ({ src: src(i), stopped }));
+  /** A look every `every` ms, each showing `src(i)`, the test stopped at `stopped` of them. */
+  const looks = (count, src, { every = 250, stopped = 0 } = {}) =>
+    Array.from({ length: count }, (_, i) => ({ t: i * every, src: src(i), stopped }));
 
-  test('has no problem when it showed the page changing at each look, the test unstopped', () => {
-    assert.deepEqual(
-      watchedProblems(
-        looks(20, (i) => `data:${Math.floor(i / 4)}`),
-        { ms, every },
-      ),
-      [],
-    );
+  test('has no problem when it showed the page changing through the watch, the test unstopped', () => {
+    assert.deepEqual(watchedProblems(looks(20, (i) => `data:${Math.floor(i / 4)}`)), []);
+  });
+
+  test('judges the images and their times, however few looks the watch took', () => {
+    assert.deepEqual(watchedProblems(looks(13, (i) => `data:${i}`, { every: 400 })), []);
+    assert.deepEqual(watchedProblems(looks(6, (i) => `data:${i}`, { every: 1000 })), []);
   });
 
   test('showed no image, the same one, or the test stopped', () => {
-    assert.match(
-      watchedProblems(
-        looks(20, () => null),
-        { ms, every },
-      ).join('\n'),
-      /showed at 0 of 20 looks/,
-    );
-    assert.match(
-      watchedProblems(
-        looks(20, () => 'data:1'),
-        { ms, every },
-      ).join('\n'),
-      /showed 1 images/,
-    );
-    const stopped = watchedProblems(
-      looks(20, (i) => `data:${i}`, 1),
-      { ms, every },
-    );
+    assert.match(watchedProblems(looks(20, () => null)).join('\n'), /showed at 0 of 20 looks/);
+    assert.match(watchedProblems(looks(20, () => 'data:1')).join('\n'), /showed 1 images/);
+    const stopped = watchedProblems(looks(20, (i) => `data:${i}`, { stopped: 1 }));
     assert.match(stopped.join('\n'), /stopped while it was watched/);
+  });
+
+  test('froze for most of the watch, then changed at its end', () => {
+    const frozen = looks(20, (i) => (i < 17 ? 'data:0' : `data:${i}`));
+    assert.match(watchedProblems(frozen).join('\n'), /showed one image for 4.25 s/);
+  });
+});
+
+describe('the words of a stop in the Runs window', () => {
+  test('match every way a worker stands at a stop or its failure', () => {
+    for (const said of [
+      'Stopped at a breakpoint',
+      'Stopped after a step',
+      'Paused',
+      'Paused by the agent',
+      'Stopped',
+      'Stopped at page.pause()',
+      'Stopped at the line the agent ran it to',
+      'Failed, held at its line',
+      'Failed at checkout-page.ts:12',
+    ]) {
+      assert.match(said, STOP_WORDS);
+    }
+  });
+
+  test('match no other state, nor a control', () => {
+    for (const said of ['Running', 'Between tests', 'Pausing…', 'Pause', 'Pause all', 'Resume']) {
+      assert.doesNotMatch(said, STOP_WORDS);
+    }
   });
 });
