@@ -788,7 +788,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             first.map { it.templatePresentation.text },
         )
         // The run's page is offered once.
-        assertEquals(1, entries().count { it.templatePresentation.text == "Open Run #42" || it.templatePresentation.text == "Open the run page" })
+        assertEquals(1, entries().count { it.templatePresentation.text == "Open run #42" || it.templatePresentation.text == "Open the run page" })
         val event = AnActionEvent.createFromDataContext(ActionPlaces.STATUS_BAR_PLACE, null, SimpleDataContext.getProjectContext(project))
         first[1].actionPerformed(event)
         assertEquals(page, com.intellij.openapi.ide.CopyPasteManager.getInstance().getContents(java.awt.datatransfer.DataFlavor.stringFlavor))
