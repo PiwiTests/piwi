@@ -28,7 +28,15 @@ describe('the manifests the build writes', () => {
       permissions: manifest.permissions,
       minimum_chrome_version: manifest.minimum_chrome_version,
       commands: manifest.commands,
+      content_security_policy: manifest.content_security_policy,
     }).toEqual(manifest);
+  });
+
+  it('gives Firefox’s extension pages a policy that upgrades no request, so the hubs’ `ws://127.0.0.1` stays `ws:`', () => {
+    expect(manifest).not.toHaveProperty('content_security_policy');
+    const policy = firefoxManifest(manifest).content_security_policy;
+    expect(policy).toEqual({ extension_pages: "script-src 'self';" });
+    expect(policy.extension_pages).not.toContain('upgrade-insecure-requests');
   });
 
   it('lets the run shortcut be global in Chrome and Edge, and suggests no key for it, which the person sets', () => {

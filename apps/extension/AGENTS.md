@@ -65,6 +65,9 @@ each rule below ends with the section to read there.
 - **`debugger` and `minimum_chrome_version` stay out of the Firefox manifest** (`firefoxManifest` in
   `scripts/build.mjs`, `build-manifests.test.ts`). `background.js` stays both `service_worker` and `scripts`; `dist/`
   drops `scripts`. (see "The manifest and its permissions")
+- **The Firefox manifest's `extension_pages` policy never carries `upgrade-insecure-requests`** (`firefoxManifest`,
+  `build-manifests.test.ts`): it upgrades the run services' `ws://127.0.0.1` and an `http://` instance, which answer
+  neither. No CI run exercises Firefox, so that test is the only guard. (see "The manifest and its permissions")
 - **`gecko.data_collection_permissions` is `{ "required": ["none"] }`: nothing may go anywhere but the user's instance,
   the paired editor (Send to editor and its run hubs) and the desktop app paired on loopback.** A feature that sends
   data elsewhere changes this key and the store disclosures (`PUBLISHING.md` §4). (see "The manifest and its
