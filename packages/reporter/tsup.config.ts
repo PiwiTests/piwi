@@ -14,14 +14,10 @@ export default defineConfig({
     // `piwi` CLI (package.json `bin`) — its own entry so the reporter's main
     // bundle stays free of CLI-only code.
     'src/cli/index.ts',
-    // The dashboard dogfoods the reporter by deep-importing these internal
-    // capture modules from `dist/` (see application/tests/fixtures.ts), so each
-    // keeps its own emitted file at `dist/internal/capture/<name>.js`.
-    'src/internal/capture/locator-healing.ts',
+    // The capture fixtures keep their own emitted file at
+    // `dist/internal/capture/capture-fixtures.js`: the public entry's types
+    // re-export `piwiFixtures` and `extendPiwiFixtures` from there.
     'src/internal/capture/capture-fixtures.ts',
-    'src/internal/capture/inspect-on-failure.ts',
-    'src/internal/capture/pick-on-failure.ts',
-    'src/internal/capture/attachments.ts',
   ],
   format: ['cjs'],
   // Every entry's types, the internal capture entries' too (the public entry

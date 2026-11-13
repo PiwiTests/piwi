@@ -2278,3 +2278,64 @@ describe('errorPlace', () => {
     expect(errorPlace(thrown('    at listOnTimeout (node:internal/timers:485:7)'), false)).toBeNull();
   });
 });
+
+describe('a context whose scripts are off', () => {
+  /** A context the capture can instrument: it records whether the probe's init script reached it. */
+  function fakeContext() {
+    return {
+      on: vi.fn(),
+      once: vi.fn(),
+      addInitScript: vi.fn(async () => {}),
+      newPage: vi.fn(async () => ({ on: vi.fn(), once: vi.fn() })),
+      pages: () => [],
+    };
+  }
+
+  /** Patch a fake browser as the `browser` fixture does, then run `body` on it. */
+  async function throughPatchedBrowser(
+    browser: Record<string, unknown>,
+    body: (browser: any) => Promise<void>,
+  ): Promise<void> {
+    const [fixture] = piwiFixtures.browser as unknown as [
+      (args: { browser: unknown }, use: (browser: unknown) => Promise<void>) => Promise<void>,
+    ];
+    await fixture({ browser }, body as (browser: unknown) => Promise<void>);
+  }
+
+  it('is left alone, while a context that runs scripts is instrumented', async () => {
+    const noScript = fakeContext();
+    const withScript = fakeContext();
+    const browser = {
+      newContext: vi.fn(async (options?: { javaScriptEnabled?: boolean }) =>
+        options?.javaScriptEnabled === false ? noScript : withScript,
+      ),
+      newPage: vi.fn(async () => ({ on: vi.fn(), once: vi.fn(), context: fakeContext })),
+      contexts: () => [],
+    };
+
+    await throughPatchedBrowser(browser, async (patched) => {
+      await patched.newContext({ javaScriptEnabled: false });
+      await patched.newContext();
+    });
+
+    // Nothing the capture installs runs in a page without scripts, and a read of it would wait out the test.
+    expect(noScript.addInitScript).not.toHaveBeenCalled();
+    expect(noScript.once).not.toHaveBeenCalled();
+    expect(withScript.addInitScript).toHaveBeenCalled();
+  });
+
+  it('is left alone when the page is made straight from the browser', async () => {
+    const page = { on: vi.fn(), once: vi.fn(), context: () => fakeContext() };
+    const browser = {
+      newPage: vi.fn(async () => page),
+      newContext: vi.fn(async () => fakeContext()),
+      contexts: () => [],
+    };
+
+    await throughPatchedBrowser(browser, async (patched) => {
+      await patched.newPage({ javaScriptEnabled: false });
+    });
+
+    expect(page.on).not.toHaveBeenCalled();
+  });
+});

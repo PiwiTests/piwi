@@ -60,8 +60,7 @@ import {
 } from './page-inventory.js';
 import { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
 
-// Re-exported for the dogfood fixtures (`apps/application/tests/fixtures.ts`),
-// which rebuild this wrapper and must record pages the same way.
+// The page log, re-exported from this entry.
 export { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
 import {
   isProbeMode,
@@ -243,14 +242,12 @@ import {
   type ApiCallRecorder,
 } from './api-requests.js';
 
-// Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
-// with the dashboard's snapshot picker), but the dogfood mirror
-// (`application/tests/fixtures.ts`) and this package's own tests import it
-// from here, as the mirror does the quiet-capture helpers and the page
-// interaction read.
+// Re-exported: probeElementAttrs lives in @piwitests/picker-dom (shared with
+// the dashboard's snapshot picker), and this package's tests import it from
+// here, with the quiet-capture helpers and the page interaction read.
 export { probeElementAttrs, internalCall, boxCaptureFrames, callMethod, readPageInteraction };
 export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
-// The dogfood mirror runs the same resource ledger from its own fixtures.
+// The resource ledger, re-exported from this entry.
 export { activeResourceLedger, noteResourceUse, recordResourceCensus, startResourceLedger, stopResourceLedger };
 export type { ProbeArg, ProbedAttrs };
 
@@ -1288,8 +1285,8 @@ const EARLY_READ_TRUSTED_MS = 250;
  * action. `tagRoles`/`inputRoles` are the shared role maps (single source of
  * truth in `locator-healing.ts`), and `roleSources` is the CSS selector for
  * every element the probe can resolve a role for — all derived from the map so
- * nothing is hand-maintained twice. Exported so the dogfood mirror
- * (`application/tests/fixtures.ts`) reuses the same assembled object.
+ * nothing is hand-maintained twice. Exported so every caller of the probe
+ * passes the same assembled object.
  */
 export const CAPTURED_ATTRS_ARG: ProbeArg = {
   keep: [...CAPTURED_ATTRIBUTES],
@@ -3464,6 +3461,15 @@ function instrumentContext(context: BrowserContext): void {
 }
 
 /**
+ * Whether these options turn scripts off, so the capture leaves the page
+ * alone: the probe, the stops and code reach all run in the page, and a read
+ * of theirs waits out the test's timeout where nothing evaluates.
+ */
+function runsNoScript(options: { javaScriptEnabled?: boolean } | undefined): boolean {
+  return options?.javaScriptEnabled === false;
+}
+
+/**
  * Patch a browser so any page or context created directly from it is
  * instrumented. This is what makes capture work for suites that build their own
  * pages from the worker-scoped `browser` (e.g. `browser.newPage()` /
@@ -3477,6 +3483,7 @@ function patchBrowser(browser: Browser): void {
   const originalNewPage = browser.newPage.bind(browser);
   browser.newPage = async (...args: Parameters<Browser['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
+    if (runsNoScript(args[0])) return page;
     instrumentPage(page);
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
@@ -3491,6 +3498,7 @@ function patchBrowser(browser: Browser): void {
     const emulation = flake?.role === 'target' ? flakeContextOptions(flake.plan) : null;
     const context = await originalNewContext(...(emulation ? ([{ ...args[0], ...emulation }] as const) : args));
     if (emulation) markFlakeContext(context);
+    if (runsNoScript(args[0])) return context;
     instrumentContext(context);
     await armStops([context]);
     return context;
