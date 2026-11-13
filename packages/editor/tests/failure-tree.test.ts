@@ -530,8 +530,14 @@ describe('failuresView', () => {
   });
 
   test('says nothing beside failures, and names the branch whose latest run has none', () => {
-    expect(failuresView([ctx()], true)).toEqual({ state: 'failures', message: null });
-    expect(failuresView([ctx()], false)).toEqual({ state: 'clear', message: 'No failure in the latest run of main.' });
+    expect(failuresView([ctx()], 1)).toEqual({ state: 'failures', message: null });
+    expect(failuresView([ctx()], 0)).toEqual({ state: 'clear', message: 'No failure in the latest run of main.' });
+  });
+
+  test('counts no failure fixed locally, so Re-run Failing goes once the last failing test passed', () => {
+    const fixed = result.items.map((f) => ({ ...f, state: 'fixed-locally' as const }));
+    expect(failuresView([ctx()], failingCount(fixed)).state).toBe('clear');
+    expect(failuresView([ctx()], failingCount([fixed[0]!, result.items[1]!])).state).toBe('failures');
   });
 
   test('tells an instance that does not answer from no connection, and says Piwi tries again', () => {
@@ -541,33 +547,33 @@ describe('failuresView', () => {
       problemKind: 'unreachable',
       problem: 'Could not reach https://piwi.corp: connect ECONNREFUSED',
     });
-    expect(failuresView([down], false)).toEqual({
+    expect(failuresView([down], 0)).toEqual({
       state: 'unreachable',
       message: 'Could not reach https://piwi.corp: connect ECONNREFUSED. Piwi tries again on its own.',
     });
-    expect(failuresView([ctx({ connected: false, hasRun: false })], false).state).toBe('disconnected');
+    expect(failuresView([ctx({ connected: false, hasRun: false })], 0).state).toBe('disconnected');
   });
 
   test('says a desktop app that did not prove its token in its own words', () => {
     const problem = "The desktop app's token is not sent to http://127.0.0.1:3000: restart or update the desktop app.";
     expect(
-      failuresView([ctx({ connected: false, hasRun: false, problemKind: 'desktop-unproven', problem })], false),
+      failuresView([ctx({ connected: false, hasRun: false, problemKind: 'desktop-unproven', problem })], 0),
     ).toEqual({ state: 'desktop-unproven', message: problem });
   });
 
   test('tells a project with no run from one with no failure, and names a baseline that found none', () => {
-    expect(failuresView([ctx({ hasRun: false })], false)).toEqual({
+    expect(failuresView([ctx({ hasRun: false })], 0)).toEqual({
       state: 'norun',
       message: 'No run of Acme Mugs yet. Run the tests with the Piwi reporter.',
     });
-    expect(failuresView([ctx({ hasRun: false, baseline: 'release (no run)' })], false)).toEqual({
+    expect(failuresView([ctx({ hasRun: false, baseline: 'release (no run)' })], 0)).toEqual({
       state: 'norun',
       message: 'Baseline: release (no run). Compare with another run.',
     });
   });
 
   test('says an instance is still being read rather than asking to connect', () => {
-    expect(failuresView([ctx({ connected: false, loading: true, hasRun: false })], false)).toEqual({
+    expect(failuresView([ctx({ connected: false, loading: true, hasRun: false })], 0)).toEqual({
       state: 'loading',
       message: 'Piwi is reading the instance…',
     });
@@ -575,7 +581,7 @@ describe('failuresView', () => {
 
   test('a context with a run comes before one that does not answer', () => {
     const down = ctx({ connected: false, hasRun: false, problemKind: 'unreachable', problem: 'down' });
-    expect(failuresView([down, ctx()], false).state).toBe('clear');
-    expect(failuresView([down, ctx({ hasRun: false })], false).state).toBe('unreachable');
+    expect(failuresView([down, ctx()], 0).state).toBe('clear');
+    expect(failuresView([down, ctx({ hasRun: false })], 0).state).toBe('unreachable');
   });
 });

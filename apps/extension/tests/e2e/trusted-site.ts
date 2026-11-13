@@ -1,13 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test as base, expect, type BrowserContext, type CDPSession, type Page, type Worker } from '@playwright/test';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
 import type { PiwiSteps } from '@piwitests/core/steps';
-import { extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
+import { extensionWorker, openOptions, launchWithEditedManifest } from './fixtures.js';
 
 /**
  * The real extension on a local site, granted the site's origin as a person
@@ -16,9 +12,6 @@ import { extensionWorker, launchWithExtension, openOptions } from './fixtures.js
  * request conditions through the `Fetch` domain). Playwright drives the browser
  * through its own debugging connection; `chrome.debugger` attaches beside it.
  */
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 export interface Fixtures {
   /** The site's origin, `http://127.0.0.1:<port>`; `pages` maps a path to its HTML. */
@@ -74,14 +67,10 @@ export const test = base.extend<Fixtures>({
     server.close();
   },
   context: async ({}, use) => {
-    const extension = mkdtempSync(path.join(tmpdir(), 'piwi-trusted-ext-'));
-    cpSync(DIST, extension, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-    writeFileSync(
-      path.join(extension, 'manifest.json'),
-      JSON.stringify({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
-    );
-    const context = await launchWithExtension(extension);
+    const context = await launchWithEditedManifest((manifest) => ({
+      ...manifest,
+      host_permissions: ['http://127.0.0.1/*'],
+    }));
     await use(context);
     await context.close();
   },

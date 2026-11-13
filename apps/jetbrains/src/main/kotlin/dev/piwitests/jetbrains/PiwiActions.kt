@@ -414,10 +414,13 @@ class CompareWithAction : AnAction(), DumbAware {
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    /** Enabled while failures are listed, from a run read before the instance stopped answering too. */
+    /**
+     * Enabled while a listed test still fails (`FailuresResult.failing`, which leaves out those fixed locally), from a
+     * run read before the instance stopped answering too.
+     */
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled =
-            e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failures.orEmpty().isNotEmpty()
+            (e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failuresResult?.failing ?: 0) > 0
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -522,15 +525,25 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
     }
 
     companion object {
+        /**
+         * The configuration on the clipboard, confirmed; with the service down, the not-running sentence and its fixes;
+         * with no instance connected, Connect… beside the answer.
+         */
         fun copyMcpConfiguration(project: Project) {
             ApplicationManager.getApplication().executeOnPooledThread {
-                val servers = project.service<PiwiProjectService>().server()?.mcp()?.orNull()?.servers.orEmpty()
+                val server = project.service<PiwiProjectService>().server()
+                    ?: return@executeOnPooledThread PiwiCommands.notify(project, Glue.SERVICE_NOT_RUNNING, NotificationType.WARNING)
+                val answer = server.mcp().orNull()
+                    ?: return@executeOnPooledThread PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
+                val servers = answer.servers.orEmpty()
                 if (servers.isEmpty()) {
-                    PiwiCommands.notify(project, "Connect to an instance first.", NotificationType.WARNING)
+                    PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.CONNECT_FIRST, NotificationType.WARNING)
+                        .addAction(NotificationAction.createSimpleExpiring(Glue.EmptyLink.CONNECT.label) { PiwiConnectFlow.run(project) })
+                        .notify(project)
                     return@executeOnPooledThread
                 }
                 CopyPasteManager.getInstance().setContents(StringSelection(Glue.mcpConfiguration(servers)))
-                PiwiCommands.notify(
+                PiwiNotifier.confirm(
                     project,
                     ("The MCP configuration is on the clipboard: paste it in Settings → Tools → AI Assistant → Model " +
                         "Context Protocol (or your agent's MCP settings). ${Glue.mcpAuthorizationNote(servers)}").trimEnd(),
@@ -592,7 +605,7 @@ class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
                     )
                 }
                 CopyPasteManager.getInstance().setContents(StringSelection(render(url, token)))
-                PiwiCommands.notify(
+                PiwiNotifier.confirm(
                     project,
                     "The runs' MCP configuration is on the clipboard: paste it in $where. It holds this project's token: " +
                         "keep it in your user settings, never in a file of the repository such as a project's .mcp.json. " +

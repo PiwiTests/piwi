@@ -15,6 +15,15 @@ import { recordRouteMeta, underRoutePermission, type RouteAccessState, type Rout
  */
 
 delete process.env.PIWI_DATABASE_URL;
+for (const name of [
+  'PIWI_JIRA_BASE_URL',
+  'PIWI_JIRA_EMAIL',
+  'PIWI_JIRA_API_TOKEN',
+  'PIWI_ZEPHYR_API_TOKEN',
+  'PIWI_ZEPHYR_REGION',
+]) {
+  delete process.env[name];
+}
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 
 const state = vi.hoisted(() => ({ db: null, caller: null, routePermission: [] }) as RouteAccessState);

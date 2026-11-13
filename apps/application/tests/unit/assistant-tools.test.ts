@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary, type AccessSummary } from '#shared/permissions';
-import { DESKTOP_MCP_TOOL_DEFS, MCP_TOOL_DEFS, toolPermissions } from '#shared/mcp-tools';
+import { DESKTOP_MCP_TOOL_DEFS, MCP_TOOL_DEFS, toolPermissions, type McpToolDef } from '#shared/mcp-tools';
 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
@@ -23,7 +23,7 @@ const { setAppSetting } = await import('../../server/utils/app-settings');
 type McpContext = import('../../server/utils/mcp/tools').McpContext;
 
 const appDir = resolve(__dirname, '../..');
-const READ_TOOLS = new Set(MCP_TOOL_DEFS.filter((t) => toolPermissions(t).length === 0).map((t) => t.name));
+const READ_TOOLS = new Set(MCP_TOOL_DEFS.filter((t: McpToolDef) => toolPermissions(t).length === 0).map((t) => t.name));
 
 const context = (access: AccessSummary, scope: McpContext['scope'] = 'all'): McpContext => ({
   user: { id: 2, role: access.instanceRole, name: 'Robin', username: 'robin' } as User,

@@ -47,14 +47,14 @@ beforeEach(async () => {
   for (const id of [1, 2]) {
     await db
       .insert(schema.testRuns)
-      .values({ id, projectId: 1, status: 'passed', isFullRun: true, startTime: new Date() });
+      .values({ id, projectId: 1, status: 'passed', isFullRun: 1, startTime: new Date() });
     await db.insert(schema.testRunsCases).values({ testRunId: id, testCaseId: 1, status: 'passed', duration: 7000 });
   }
   await db.insert(schema.testRuns).values({
     id: RUN.id,
     projectId: 1,
     status: 'running',
-    isFullRun: true,
+    isFullRun: 1,
     startTime: new Date(),
     metadata: { piwiOrigin: { kind: 'ci' } },
   });

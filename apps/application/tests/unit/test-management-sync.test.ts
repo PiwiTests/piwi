@@ -439,7 +439,7 @@ describe('what each failure of the upload leaves', () => {
     const before = Date.now();
     const row = await attempt();
     expect(row).toMatchObject({ status: 'pending', attempts: 1, result: null });
-    expect(row.scheduledFor.getTime()).toBeGreaterThanOrEqual(before + 119_000);
+    expect(row.scheduledFor!.getTime()).toBeGreaterThanOrEqual(before + 119_000);
     expect(connectionPausedUntil(zephyrId, new Date())).not.toBeNull();
     expect(uploads()).toHaveLength(1);
   });
@@ -449,7 +449,7 @@ describe('what each failure of the upload leaves', () => {
     const before = Date.now();
     const row = await attempt();
     expect(row).toMatchObject({ status: 'pending', attempts: 1, result: null });
-    expect(row.scheduledFor.getTime()).toBeGreaterThanOrEqual(before + 29_000);
+    expect(row.scheduledFor!.getTime()).toBeGreaterThanOrEqual(before + 29_000);
     expect(connectionPausedUntil(zephyrId, new Date())).toBeNull();
     expect(uploads()).toHaveLength(0);
   });

@@ -243,10 +243,10 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service
-     * again.
+     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
+     * `RESTART` starts a service that stopped again, with Open log after it.
      */
-    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
+    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
 
     /**
      * The icon before the status bar text: Piwi's own, the connection's state (`CONNECT`, `UNREACHABLE`), a run in
@@ -371,7 +371,8 @@ object Glue {
      * first entry of its popup reads it again.
      * It speaks for the context of `file`, the selected editor's ([statusContext]); with several, the tooltip names its
      * Playwright config. The text takes the error color while tests of the run it counts fail, that run in progress too.
-     * A null status means the service has not started: it starts with the first file of the project opened.
+     * A null status means the service has not started, and it starts with the first file of the project opened; or,
+     * with `stopped`, that the one that ran stopped: the item says Piwi is not running and offers to restart it.
      */
     fun statusView(
         status: StatusResult?,
@@ -381,12 +382,16 @@ object Glue {
         startProblem: String? = null,
         file: String? = null,
         trusted: Boolean = true,
+        stopped: Boolean = false,
     ): StatusView {
         if (status == null && !trusted) {
             return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
         }
         if (status == null && startProblem != null) {
             return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
+        }
+        if (status == null && stopped) {
+            return StatusView("Piwi: not running", SERVICE_STOPPED_TOOLTIP, null, StatusAction.RESTART, StatusIcon.WARNING)
         }
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
@@ -461,6 +466,13 @@ object Glue {
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** The status bar item's tooltip once the editor service that ran stopped. */
+    const val SERVICE_STOPPED_TOOLTIP =
+        "The Piwi editor service stopped, so nothing of the instance is read.\nClick to restart it, or to open its log, which says why it stopped."
+
+    /** What the tool window's header and the settings page say of the connection once the editor service stopped. */
+    const val NOT_RUNNING = "Piwi is not running: its editor service stopped."
 
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
     const val NODE_SETTINGS_LINK = "Node.js settings…"
@@ -1046,8 +1058,9 @@ object Glue {
         desktopChosen: Boolean = false,
         startProblem: String? = null,
         trusted: Boolean = true,
+        stopped: Boolean = false,
     ): ToolWindowHeader {
-        val summary = connectionSummary(status, desktopChosen, startProblem, trusted)
+        val summary = connectionSummary(status, desktopChosen, startProblem, trusted, stopped)
         val contexts = status?.contexts.orEmpty()
         val connected = contexts.filter { it.connected }
         val short = when {
@@ -1067,10 +1080,19 @@ object Glue {
      */
     fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
 
-    /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
+    /**
+     * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
+     * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
+     */
+    fun connectionSummary(
+        status: StatusResult?,
+        desktopChosen: Boolean = false,
+        startProblem: String? = null,
+        trusted: Boolean = true,
+        stopped: Boolean = false,
+    ): String {
         if (status == null && !trusted) return WAITING_FOR_TRUST
-        if (status == null) return startProblem ?: NOT_STARTED
+        if (status == null) return startProblem ?: if (stopped) NOT_RUNNING else NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
@@ -1115,6 +1137,9 @@ object Glue {
     /** What an action says when the running service did not answer it: the request failed, or took too long. */
     const val SERVICE_NO_ANSWER =
         "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open log shows its log."
+
+    /** What an action that needs an instance says while none is connected, beside **Connect…**. */
+    const val CONNECT_FIRST = "Connect to an instance first."
 
     /** What Restart the editor service says with no service running and no test file open: the IDE starts it for one. */
     const val SERVICE_NEEDS_A_FILE = "The Piwi editor service starts for a test file: open one of this project's."
@@ -1634,6 +1659,12 @@ object Glue {
     /** Whether a command chains several (`a && b`): a shell runs it, each one only once the one before it passed. */
     fun chained(command: String): Boolean = CHAIN in splitCommand(command)
 
+    /**
+     * A run's Run tab or run configuration name with who started it when a person did not (`RunCommand.label`), as the
+     * VS Code extension names its task: `Piwi: a.spec.ts · Started by Claude Code`.
+     */
+    fun labeledRunName(name: String, label: String?): String = if (label.isNullOrBlank()) name else "$name · $label"
+
     /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
     fun playwrightRunName(args: List<String>): String {
         val targets = args.filter { TEST_FILE_ARG.matches(it) }
@@ -1688,6 +1719,33 @@ object Glue {
     }
 
     data class SendPlace(val file: String, val line: Int)
+
+    /**
+     * An open project a pick may go to: the folders a run's paths start from (its Playwright configs' folders) and the
+     * files its runs are stopped in now, as paths.
+     */
+    data class PickCandidate<P>(val project: P, val roots: List<String>, val stoppedFiles: List<String>)
+
+    /**
+     * The project a pick at `at` goes to, the run's: the project a run is stopped in the file `at` names (relative to
+     * one of its roots), else the project holding that file (`exists`), else the focused one. Among several, the
+     * focused one, else the first. Without `at`, the focused project.
+     */
+    fun <P> pickProject(at: SendPlace?, candidates: List<PickCandidate<P>>, focused: P?, exists: (String) -> Boolean): P? {
+        if (at == null) return focused
+        fun named(candidate: PickCandidate<P>) = candidate.roots.mapNotNull { root ->
+            runCatching { Path.of(root).resolve(at.file).normalize() }.getOrNull()
+        }
+        fun preferred(matching: List<PickCandidate<P>>) =
+            (matching.firstOrNull { it.project == focused } ?: matching.firstOrNull())?.project
+        val stopped = candidates.filter { candidate ->
+            val stops = candidate.stoppedFiles.mapNotNull { runCatching { Path.of(it).normalize() }.getOrNull() }
+            named(candidate).any { it in stops }
+        }
+        if (stopped.isNotEmpty()) return preferred(stopped)
+        val holding = candidates.filter { candidate -> named(candidate).any { exists(it.toString()) } }
+        return preferred(holding) ?: focused
+    }
 
     const val MAX_SEND_TEXT = 4000
     const val MAX_SEND_BYTES = 2_000_000
@@ -2277,7 +2335,8 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, how many failed, and how many were ended at a stop; null while no run says.
+     * of how many they hold, how many failed, and how many were ended at a stop, then who started the one run that says
+     * when a person did not (`RunSession.label`); null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
         val told = sessions.values.filter { it.progress != null }
@@ -2286,9 +2345,10 @@ object Glue {
         val failed = progress.sumOf { it.failed }
         val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
         val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
         return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
             (if (failed > 0) " · $failed failed" else "") +
-            if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
+            (if (endedAtStop > 0) " · $endedAtStop ended at a stop" else "") + by
     }
 
     /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */
@@ -2310,6 +2370,15 @@ object Glue {
 
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /** The accessible name of the Paused Page tab's image, in the VS Code extension's words. */
+    const val PAUSED_PAGE_NAME = "The page of the paused test"
+
+    /** The accessible name of the Worker tab's image while it watches a worker of a run of this machine. */
+    const val WORKER_PAGE_NAME = "The page of the worker's test"
+
+    /** The accessible name of the Worker tab's image while it watches a CI run's worker. */
+    const val CI_WORKER_PAGE_NAME = "The page of the CI worker's test"
 
     /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
     fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {

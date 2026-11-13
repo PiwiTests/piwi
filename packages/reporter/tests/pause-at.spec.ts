@@ -565,8 +565,11 @@ function fakePausePage(
     }),
     evaluateHandle: vi.fn(async () => ({ evaluate: async () => opts.pick, dispose: async () => {} })),
     waitForFunction: vi.fn((predicate: unknown) => {
-      if (opts.hangPick && predicate !== pauseAnswered) return new Promise<void>(() => {});
-      return opts.holdBar ? new Promise<void>((resolve) => (takeDown = resolve)) : Promise.resolve();
+      if (opts.hangPick && predicate !== pauseAnswered) return new Promise<never>(() => {});
+      const answered = { jsonValue: async () => true };
+      return opts.holdBar
+        ? new Promise<typeof answered>((resolve) => (takeDown = () => resolve(answered)))
+        : Promise.resolve(answered);
     }),
     waitForLoadState: vi.fn(async () => {}),
     bringToFront: vi.fn(async () => {}),

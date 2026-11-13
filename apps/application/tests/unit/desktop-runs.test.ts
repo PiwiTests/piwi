@@ -406,7 +406,7 @@ describe('the run channel the shell names in a run', () => {
         client: 'Visual Studio Code',
       });
       // A request a browser sends is refused, the editor's channel named nowhere in the refusal.
-      for (const browser of [{ origin: ORIGIN }, { 'sec-fetch-site': 'same-origin' }]) {
+      for (const browser of [{ origin: ORIGIN }, { 'sec-fetch-site': 'same-origin' }] as Record<string, string>[]) {
         const refused = await ask({ 'x-piwi-token': TOKEN, ...browser }).then(
           () => null,
           (error: { statusCode?: number }) => error,
@@ -1293,7 +1293,7 @@ describe('the trace so far of a desktop run', () => {
     const before = { ...process.env };
     Object.assign(process.env, server);
     try {
-      const started = await startTraceViewer({ folder: linked, trace: path.join(linked, 'x.json') }, 300);
+      const started = await startTraceViewer({ folder: linked, trace: path.join(linked, 'x.json') }, { startMs: 300 });
       expect(started.ok).toBe(true);
       if (started.ok) await started.closed;
     } finally {

@@ -252,4 +252,27 @@ describe('a pick that ends unanswered', () => {
       await browser.close();
     }
   }, 15_000);
+
+  it('ends skipped once the page navigates away from its overlay, and waits on through a change of hash', async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto('data:text/html,<!doctype html><button>Pay</button>');
+      let settled = false;
+      const picked = pickLocator(page, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }, null).finally(() => {
+        settled = true;
+      });
+      await page.locator('#__piwi_picker_banner').waitFor({ state: 'attached' });
+      await page.evaluate(() => {
+        (globalThis as any).location.hash = '#pay';
+      });
+      await page.waitForTimeout(750);
+      expect(settled).toBe(false);
+      await page.goto('data:text/html,<!doctype html><p>Paid</p>');
+      expect(await picked).toBeNull();
+      expect(await page.evaluate(() => Object.keys(globalThis).filter((key) => key.startsWith('__piwi')))).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  }, 15_000);
 });

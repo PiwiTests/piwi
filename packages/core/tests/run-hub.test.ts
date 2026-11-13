@@ -281,7 +281,8 @@ describe('the hub’s WebSocket', () => {
         keepaliveMs: 20_000,
         features: ['peers'],
       },
-      { type: 'answer', id: 1, ok: true, message: 'Pausing at the next call.' },
+      { type: 'answer', id: 1, ok: true, message: 'Pausing at the next call.', code: 'pausing' },
+      { type: 'answer', id: 6, ok: true, message: 'Sharing the run live on piwi.example.com.', code: 'share-on' },
       {
         type: 'answer',
         id: 2,
@@ -431,6 +432,13 @@ describe('the hub’s WebSocket', () => {
     expect(
       parseHubMessage(json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } })),
     ).toEqual({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } });
+  });
+
+  test('has the extension read an answer’s code it knows, and leave out one it does not, keeping the sentence', () => {
+    const answer = { type: 'answer', id: 1, ok: true, message: 'Resuming.' };
+    expect(parseHubMessage(json({ ...answer, code: 'resuming' }))).toEqual({ ...answer, code: 'resuming' });
+    expect(parseHubMessage(json({ ...answer, code: 'resumed-later' }))).toEqual(answer);
+    expect(parseHubMessage(json({ ...answer, code: 7 }))).toEqual(answer);
   });
 
   test('has the extension read what a code from a stop came to, its warnings bounded, and never its code', () => {

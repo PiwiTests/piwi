@@ -957,6 +957,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
   why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
   sentence as the hub said it.
+- What a hub answers a command is said in the window's language when the answer carries a `code` the window knows
+  (`ANSWER_KEYS` in `src/shared/runs.ts`, `answerText` in `src/runs/main.ts`), else as the hub said it;
+  `answer-words.test.ts` holds the keys to the catalogs, and the editor service's `run-hub.test.ts` its sentences
+  (`ANSWER_SENTENCES`) to the English catalog.
 - From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the
   window's own `self` entry left out), each worker who watches its page (`watchers`, `self` as "you"), and a stop who
   drives it (`driver`), each kind in the window's own words (`@piwitests/run-model/presence`). **Take control** shows

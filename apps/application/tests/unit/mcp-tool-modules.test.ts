@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS, type McpToolDef } from '#shared/mcp-tools';
 import { CAPABILITY_BY_ID, CAPABILITY_MODULES } from '#shared/capabilities';
 
 // Every tool the MCP server can serve, hosted plus desktop-only.
-const ALL_TOOLS = [...MCP_TOOL_DEFS, ...DESKTOP_MCP_TOOL_DEFS];
+const ALL_TOOLS: readonly McpToolDef[] = [...MCP_TOOL_DEFS, ...DESKTOP_MCP_TOOL_DEFS];
 
 describe('MCP tool modules', () => {
   it('every tool declares a known module', () => {

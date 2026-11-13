@@ -50,7 +50,7 @@ const liveResources = (await import('../../server/api/test-runs/[id]/live-resour
 const { runEventBus } = await import('../../server/utils/run-events');
 
 function post(
-  parts: Partial<WireLiveResources> & { timeline?: Partial<WireLiveResources['timeline']> } = {},
+  parts: Omit<Partial<WireLiveResources>, 'timeline'> & { timeline?: Partial<WireLiveResources['timeline']> } = {},
 ): WireLiveResources {
   return {
     shardIndex: null,
