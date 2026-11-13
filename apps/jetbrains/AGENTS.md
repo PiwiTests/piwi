@@ -41,6 +41,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
+- **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
+  caret for the cursor and the project for the window. `packages/editor/tests/actions.test.ts` holds `plugin.xml` to it.
 - **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
   D25 of `proposals/1.0-stabilization.md` in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).

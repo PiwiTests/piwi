@@ -1451,7 +1451,7 @@ export interface StopAction extends StopControl {
 }
 
 /**
- * The code actions, in the order a stop offers them: the pause bar's Pick a locator and Record here, and Assert and
+ * The code actions, in the order a stop offers them: the pause bar's Pick a locator and Record, and Assert and
  * Assert a region, in the test's window, so at a stop the bar shows; Mock a request at any stop. Each is offered only
  * when the stopped worker's reporter takes it (`RunWorker.takes`).
  */
@@ -1467,7 +1467,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'record',
     icon: '$(record)',
-    title: 'Record here',
+    title: 'Record',
     command: RUN_COMMANDS.record,
     key: 'piwi.runCanRecord',
     detail: "Record what you do in the test's window above the stopped line",

@@ -26,7 +26,7 @@ second of its end.
   [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's **Piwi** submenu.
-- **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
+- **Piwi: Run a saved selection…** runs a [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
 folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** starts it again), in the Run tool
@@ -128,4 +128,4 @@ run**, **Reload Piwi** for an unreachable instance or a desktop app to restart, 
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
 - [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
-- [Test selection](/features/test-selection): the saved selections **Run selection…** runs.
+- [Test selection](/features/test-selection): the selections **Run a saved selection…** runs.

@@ -1964,7 +1964,7 @@ class GlueTest {
         assertEquals("Turn hold failures on", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", false)))))
         val two = Glue.runControls(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true)))
         assertEquals(true, two.holdable)
-        assertEquals("Turn hold failures on or off", Glue.holdActionText(two))
+        assertEquals("Turn hold failures on or off for the run", Glue.holdActionText(two))
         // The chooser names each run apart: its page, else its folder and ref.
         assertEquals("Run #42", Glue.runLabel(held("ed-1", true).copy(page = RunPage(42, "https://piwi.example/test-runs/42"))))
         assertEquals("Run in shop (ed-2)", Glue.runLabel(held("ed-2", true).copy(root = "/work/shop")))

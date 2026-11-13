@@ -36,7 +36,7 @@ fields, and an empty **Server URL** shows its address. **Test connection** besid
 there answers and asks for a key, before you apply it. While the service cannot start, the page and the **Piwi** tool
 window offer **Node.js settings…**, and the service starts again once you close the settings.
 
-When the service stops, the **Piwi** tool window says so and offers **Restart the editor service** and **Open log**, as
+When the service stops, the **Piwi** tool window says so and offers **Restart the editor service** and **Open the log**, as
 does a balloon that says it is not running; both are also under **Tools → Piwi** and in the tool window's gear. The
 **Log** tab holds the service's starts and stops, why it could not start, its errors and the requests that failed.
 

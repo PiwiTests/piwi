@@ -223,7 +223,7 @@ the service pushes the marks it moved. The service's hover names the tests behin
 mean, since VS Code shows no hover on a decoration's border. What the service computes:
 [Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
 
-**Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
+**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
 (`piwi.coverageShown`, shown by default). The command is in the palette only once a file showed marks
 (`piwi.hasCoverage`), so a workspace without coverage shows nothing of it.
 
@@ -266,9 +266,9 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
   reveals the active file's first failure. It is in the title's `…` menu, worded by its state, with **Connect**,
-  **Open settings** and **Open the log**; the run's actions are the title's icons.
+  **Settings…** and **Open the log**; the run's actions are the title's icons.
 - The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
-  Group by…, Run selection…, Run the tests that reach this file) show in the palette and the view's title only while a
+  Group by…, Run a saved selection…, Run the tests that reach this file) show in the palette and the view's title only while a
   context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance
   that does not answer, with **Retry**, one still being read, or `NOT_CONNECTED` with **Connect**. Re-run the failing
   tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
@@ -345,7 +345,7 @@ on.
 Every test run takes the person's start options (`withRunStart` in `src/glue.ts`, `RunStartOptions`), read from
 `piwi.runHeaded` and `piwi.runHoldFailures` at each run: `headed: true` when Run headed is on, `holdFailures` when Hold
 failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
-Testing view's and Verify ×3 included, and **Run selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
+Testing view's and Verify ×3 included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
 **Piwi: Run options…** (`piwi.runOptions`) changes them in a QuickPick, writing the workspace's settings when they hold a
 value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
 
@@ -354,7 +354,7 @@ value (`runOptionTarget`), else the user's, and the status bar item's tooltip en
 Every test run passes the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows
 (on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
 **Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
-tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
+tests**) and **Run a saved selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
 a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). A run with breakpoints stays headless unless
 **Run headed** is on ([How a run starts](#how-a-run-starts)) or the service makes it headed for a reporter that stops at
 none headless (`breakpointRunHeaded`), and its stops show in the editor as any headless stop does.

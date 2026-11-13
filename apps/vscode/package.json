@@ -231,7 +231,7 @@
     "commands": [
       {
         "command": "piwi.connect",
-        "title": "Connect",
+        "title": "Connect…",
         "icon": "$(plug)",
         "category": "Piwi"
       },
@@ -243,7 +243,7 @@
       },
       {
         "command": "piwi.openSettings",
-        "title": "Open settings",
+        "title": "Settings…",
         "icon": "$(gear)",
         "category": "Piwi"
       },
@@ -303,7 +303,7 @@
       },
       {
         "command": "piwi.runSelection",
-        "title": "Run selection…",
+        "title": "Run a saved selection…",
         "icon": "$(checklist)",
         "category": "Piwi"
       },
@@ -333,7 +333,7 @@
       },
       {
         "command": "piwi.holdFailures",
-        "title": "Hold failures: turn on or off for the run",
+        "title": "Turn hold failures on or off for the run",
         "category": "Piwi",
         "icon": "$(debug-breakpoint-unsupported)"
       },
@@ -417,7 +417,7 @@
       },
       {
         "command": "piwi.toggleCoverage",
-        "title": "Toggle the coverage marks",
+        "title": "Show or hide the coverage marks",
         "icon": "$(run-coverage)",
         "category": "Piwi"
       },
@@ -465,13 +465,13 @@
       },
       {
         "command": "piwi.record",
-        "title": "Record here",
+        "title": "Record here…",
         "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordFile",
-        "title": "Record a new test file",
+        "title": "Record a new test file…",
         "icon": "$(new-file)",
         "category": "Piwi"
       },
@@ -525,13 +525,13 @@
       },
       {
         "command": "piwi.finishRun",
-        "title": "Finish the test without stopping again",
+        "title": "Finish the test",
         "category": "Piwi",
         "icon": "$(debug-step-out)"
       },
       {
         "command": "piwi.endTest",
-        "title": "End the test here, skipping the rest of it",
+        "title": "End the test",
         "category": "Piwi",
         "icon": "$(circle-slash)"
       },
@@ -561,31 +561,31 @@
       },
       {
         "command": "piwi.pickAtStop",
-        "title": "Pick a locator in the stopped test's page",
+        "title": "Pick a locator at the stop",
         "icon": "$(target)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordAtStop",
-        "title": "Record in the stopped test's page",
+        "title": "Record at the stop",
         "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertAtStop",
-        "title": "Assert in the stopped test's page",
+        "title": "Assert at the stop",
         "icon": "$(pass)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertRegionAtStop",
-        "title": "Assert a region of the stopped test's page",
+        "title": "Assert a region at the stop",
         "icon": "$(screen-full)",
         "category": "Piwi"
       },
       {
         "command": "piwi.mockAtStop",
-        "title": "Mock a request of the stopped test",
+        "title": "Mock a request at the stop…",
         "icon": "$(arrow-swap)",
         "category": "Piwi"
       },

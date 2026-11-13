@@ -94,7 +94,7 @@ describe("a spec's editor title", () => {
       const icon = iconOf(command);
       expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
       const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
-      // Record, Resume recording and Record here at a stop are one concept, with one glyph.
+      // Record, Resume recording and Record at the stop are one concept, with one glyph.
       expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording', 'piwi.recordAtStop'] : []);
     }
   });

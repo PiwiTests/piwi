@@ -244,7 +244,7 @@ object Glue {
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
      * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
-     * `RESTART` starts a service that stopped again, with Open log after it.
+     * `RESTART` starts a service that stopped again, with Open the log after it.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
 
@@ -1136,7 +1136,7 @@ object Glue {
 
     /** What an action says when the running service did not answer it: the request failed, or took too long. */
     const val SERVICE_NO_ANSWER =
-        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open log shows its log."
+        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open the log shows it."
 
     /** What an action that needs an instance says while none is connected, beside **Connect…**. */
     const val CONNECT_FIRST = "Connect to an instance first."
@@ -1147,7 +1147,7 @@ object Glue {
     /** What the tool window says once the editor service that ran stopped, and nothing started it again. */
     const val SERVICE_STOPPED = "The Piwi editor service stopped."
 
-    /** What a message that the service does not run or did not answer offers: Restart the editor service and Open log. */
+    /** What a message that the service does not run or did not answer offers: Restart the editor service and Open the log. */
     val SERVICE_FIXES = listOf(EmptyLink.RESTART_SERVICE, EmptyLink.OPEN_LOG)
 
     /** Whether a message says the service does not run or did not answer: its balloon offers [SERVICE_FIXES]. */
@@ -1161,7 +1161,7 @@ object Glue {
         else -> EmptyText(NOT_STARTED)
     }
 
-    /** The Piwi tool window's tab that holds the editor service's log, which **Open log** opens. */
+    /** The Piwi tool window's tab that holds the editor service's log, which **Open the log** opens. */
     const val LOG_TAB = "Log"
 
     /** How many lines the log keeps: the oldest go first. */
@@ -1212,7 +1212,7 @@ object Glue {
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         RESTART_SERVICE("Restart the editor service", "Piwi.RestartService"),
-        OPEN_LOG("Open log", "Piwi.OpenLog"),
+        OPEN_LOG("Open the log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
         RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
@@ -2708,7 +2708,7 @@ object Glue {
     fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
         true -> "Turn hold failures off"
         false -> "Turn hold failures on"
-        null -> "Turn hold failures on or off"
+        null -> "Turn hold failures on or off for the run"
     }
 
     /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
@@ -2904,7 +2904,7 @@ object Glue {
 
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
-     * Record here, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
+     * Record, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
      * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
      * the inlay names it shorter, beside the controls.
      */
@@ -2916,7 +2916,7 @@ object Glue {
         val inPage: Boolean,
     ) : StopLink {
         PICK("Pick a locator", "Pick", "pick", listOf("pick"), true),
-        RECORD("Record here", "Record", "record", listOf("record"), true),
+        RECORD("Record", "Record", "record", listOf("record"), true),
         ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
         ASSERT_REGION("Assert a region", "Assert region", "assert-region", listOf("assert-region"), true),
         MOCK("Mock a request", "Mock", "mock", listOf("requests", "mock"), false),

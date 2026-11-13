@@ -125,7 +125,7 @@
             <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
                     text="Restart the editor service" icon="AllIcons.Actions.Restart"
                     description="Stop the Piwi editor service and start it again, or start it for the open test files when it does not run"/>
-            <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open log"
+            <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open the log"
                     icon="AllIcons.Toolwindows.ToolWindowMessages"
                     description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
             <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
@@ -145,7 +145,7 @@
                     icon="AllIcons.Actions.RunAll"
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
             </action>
-            <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run selection…"
+            <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run a saved selection…"
                     icon="AllIcons.Actions.ListFiles"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run headed"
@@ -164,14 +164,14 @@
                     icon="AllIcons.Actions.Diff"
                     description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
             <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
-                    text="Show coverage marks"
+                    text="Show or hide the coverage marks"
                     description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
                     icon="AllIcons.Ide.External_link_arrow"
                     text="Open in dashboard" description="Open this file's test, or the latest run"/>
             <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
                     icon="AllIcons.General.Web"
-                    text="Open the latest run in the dashboard" description="Open the run the status bar shows"/>
+                    text="Open the latest run" description="Open the run the status bar shows"/>
             <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
                     description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
@@ -190,7 +190,7 @@
                     text="Reset the runs' MCP server token"
                     description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
-            <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record here"
+            <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record here…"
                     icon="AllIcons.Ide.Macro.Recording_1"
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
@@ -236,7 +236,7 @@
             <action id="Piwi.StepRun" class="dev.piwitests.jetbrains.StepRunAction" text="Step to the next call"
                     icon="AllIcons.Actions.TraceOver" use-shortcut-of="StepOver"
                     description="Run the stopped test's call and stop again before the next one"/>
-            <action id="Piwi.RunToCaret" class="dev.piwitests.jetbrains.RunToCaretAction" text="Run to caret"
+            <action id="Piwi.RunToCaret" class="dev.piwitests.jetbrains.RunToCaretAction" text="Run to the caret"
                     icon="AllIcons.Actions.RunToCursor" use-shortcut-of="RunToCursor"
                     description="Run the stopped test on to the first call on the caret's line"/>
             <action id="Piwi.FinishRun" class="dev.piwitests.jetbrains.FinishRunAction" text="Finish the test"
@@ -263,7 +263,7 @@
             <action id="Piwi.PickAtStop" class="dev.piwitests.jetbrains.PickAtStopAction" text="Pick a locator at the stop"
                     icon="AllIcons.General.Locate"
                     description="Pick an element in the stopped test's window: its locator replaces the one on the stopped line"/>
-            <action id="Piwi.RecordAtStop" class="dev.piwitests.jetbrains.RecordAtStopAction" text="Record here at the stop"
+            <action id="Piwi.RecordAtStop" class="dev.piwitests.jetbrains.RecordAtStopAction" text="Record at the stop"
                     icon="AllIcons.Ide.Macro.Recording_1"
                     description="Record what you do in the stopped test's window above the stopped line"/>
             <action id="Piwi.AssertAtStop" class="dev.piwitests.jetbrains.AssertAtStopAction" text="Assert at the stop"
@@ -272,28 +272,28 @@
             <action id="Piwi.AssertRegionAtStop" icon="/icons/region.svg" class="dev.piwitests.jetbrains.AssertRegionAtStopAction"
                     text="Assert a region at the stop"
                     description="Pick a region in the stopped test's window: its ARIA snapshot goes above the stopped line"/>
-            <action id="Piwi.MockAtStop" icon="/icons/mock.svg" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a request at the stop"
+            <action id="Piwi.MockAtStop" icon="/icons/mock.svg" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a request at the stop…"
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
             <action id="Piwi.ShowBrowser" icon="/icons/browser.svg" class="dev.piwitests.jetbrains.ShowBrowserAction"
                     text="Show the stopped test's browser"
                     description="Bring the stopped test's window to the front, at a stop of a headed run"/>
             <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
             <action id="Piwi.ShareWithPlaywright" icon="/icons/tools.svg" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
-                    text="Share the stopped browser with Playwright tools"
+                    text="Share the stopped test's browser with Playwright tools"
                     description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
             <!-- Asked with a warning the first time in the IDE's session: the run's pages go to the team instance. -->
-            <action id="Piwi.ShareRunLive" icon="/icons/live.svg" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the run live"
+            <action id="Piwi.ShareRunLive" icon="/icons/live.svg" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the run live on the team instance"
                     description="Let anyone who can open the run on your team's Piwi instance watch its tests' pages from the run page"/>
             <action id="Piwi.StopSharingRun" icon="/icons/stopLive.svg" class="dev.piwitests.jetbrains.StopSharingRunAction"
-                    text="Stop sharing the run live…"
+                    text="Stop sharing the run live"
                     description="End the views of the run on the team instance: nothing more goes there"/>
             <action id="Piwi.ShareWindowLive" icon="/icons/live.svg" class="dev.piwitests.jetbrains.ShareWindowLiveAction"
                     text="Share this project's runs live until I stop"
                     description="Share each run of this project live on your team's Piwi instance from now on, until you stop or close the project"/>
             <action id="Piwi.StopSharingWindowLive" icon="/icons/stopLive.svg" class="dev.piwitests.jetbrains.StopSharingWindowLiveAction"
-                    text="Stop sharing this project's runs live…"
+                    text="Stop sharing this project's runs live"
                     description="Stop sharing every run of this project live: nothing more goes to the team instance"/>
-            <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn hold failures on or off"
+            <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn hold failures on or off for the run"
                     icon="AllIcons.Debugger.Db_exception_breakpoint"
                     description="Whether a failed test no pause bar shows waits at its line for an answer in the run, whichever surface set it"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the run"

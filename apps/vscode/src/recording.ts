@@ -1,5 +1,5 @@
 /**
- * Recording a test from the editor. **Piwi: Record here** and **Piwi: Record a new test file** ask the editor service
+ * Recording a test from the editor. **Piwi: Record here…** and **Piwi: Record a new test file…** ask the editor service
  * to open a browser (`piwi/record`); each `piwi/recordingChanged` then rewrites the recorded block in the file, with
  * the import lines it needs in the same edit. While it records, the block is tinted, its controls are a CodeLens
  * above it and the recording is in the status bar; its warnings are diagnostics on their lines, which offer, once it

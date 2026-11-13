@@ -27,7 +27,7 @@ Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScr
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, its history
   on hover; above each locator line, the tests that use it; above an application file, the tests that reach it.
 - **Coverage marks.** With coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike, the
-  tests behind each function, and the lines changed since the coverage run. **Piwi: Toggle the coverage marks** hides
+  tests behind each function, and the lines changed since the coverage run. **Piwi: Show or hide the coverage marks** hides
   them.
 - **Brittle locators and breaking changes.** A warning on a locator that will not survive a restyle, with the stable
   alternative stored for that call site, and on an unsaved change that renames a string your tests find elements by,

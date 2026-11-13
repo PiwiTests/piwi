@@ -333,7 +333,7 @@ export const STORY = [
       en: ['The redesign also added a box to tick.', 'Record here: the click becomes a step above the line.'],
     },
     async run({ vscode, testPage, gesture, palette }) {
-      await palette("Piwi: Record in the stopped test's page");
+      await palette('Piwi: Record at the stop');
       const page = await testPage();
       // The recorder records once it has its first step, the page it starts on, which the editor counts.
       await vscode.locator('.statusbar-item', { hasText: 'Piwi: recording · 1 step' }).waitFor({ timeout: 30_000 });

@@ -594,7 +594,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
         needs: [],
-        where: 'Piwi: Run the tests that reach this file, Piwi: Run selection…; the status bar',
+        where: 'Piwi: Run the tests that reach this file, Piwi: Run a saved selection…; the status bar',
         doc: 'features/editor-runs',
       },
       {
@@ -872,7 +872,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend'],
-        where: 'Application files in the editor; Piwi: Toggle the coverage marks, Tools → Piwi → Show coverage marks',
+        where:
+          'Application files in the editor; Piwi: Show or hide the coverage marks, in VS Code and under Tools → Piwi',
         doc: 'features/editor-coverage',
       },
       {

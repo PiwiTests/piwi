@@ -2044,7 +2044,7 @@ describe('a failure held for the editor', () => {
   test('offers the code actions as any stop does', () => {
     expect(stopActions(shown(failed)).map((a) => a.title)).toEqual([
       'Pick a locator',
-      'Record here',
+      'Record',
       'Assert',
       'Assert a region',
       'Mock a request',

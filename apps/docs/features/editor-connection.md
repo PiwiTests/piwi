@@ -132,7 +132,7 @@ The **Piwi** failures view says the same in both editors, naming the instance an
 **Retry**. When the editor service itself stops, VS Code's status bar reads **Piwi: not running** and its view offers
 **Piwi: Restart the editor service**, as does a **Reload Piwi** it did not answer.
 
-**Piwi: Open settings** in VS Code opens the extension's settings.
+**Piwi: Settings…** in VS Code opens the extension's settings.
 
 ## Related
 

@@ -265,7 +265,7 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
-/** Whether the coverage marks are shown (the default) or hidden with Toggle the coverage marks: workspace state. */
+/** Whether the coverage marks are shown (the default) or hidden with Show or hide the coverage marks: workspace state. */
 const COVERAGE_SHOWN = 'piwi.coverageShown';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */

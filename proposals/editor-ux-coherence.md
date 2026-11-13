@@ -65,7 +65,12 @@ at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMa
 in a product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and
 VS Code's views (IC8, IC9). Q9: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs and the
 new Reload Piwi (`icons/reload.svg`, JetBrains' too) and Run to the cursor glyphs, at one line weight, so every VS Code
-command draws one (IC1). §14 adds the findings the code that built the plan raised. The live-run study,
+command draws one (IC1). M1: one action catalog, `packages/editor/src/actions.ts`, gives each action its ids in both
+editors and one title in sentence case, with an ellipsis wherever it asks for something first and each platform's word
+for the cursor and the window; `tests/actions.test.ts` holds `package.json` and `plugin.xml` to it, and the titles that
+differed now read alike (Connect…, Open the log, Run a saved selection…, Turn hold failures on or off for the run, Show
+or hide the coverage marks, Finish the test, End the test, Record at the stop, Record here… for the caret alone) (X1, AC7,
+AC10, AC9 and NF3 in part). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
 debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
@@ -114,9 +119,9 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 
 ## 0. The findings that matter most
 
-1. **The two editors name one action differently, and the JetBrains plugin labels in Title Case where VS Code uses
-   sentence case** ([AC7](#ac7), [AC9](#ac9), [AC11](#ac11), [NF3](#nf3)). End the test has four spellings, the new
-   actions are worded apart in each client, and the words both clients show are written twice with no test between them.
+1. **The words both clients show beside their actions are written twice with no test between them**
+   ([AC9](#ac9), [AC11](#ac11), [NF3](#nf3)). A stop control's short labels, the recording's words and the start
+   options differ from one client to the other.
 
 2. **The status item behaves differently in each editor.** A click opens the status popup in JetBrains but refreshes in
    VS Code, which paints the item red for CI failures the developer did not cause, shows up to nine run items, and
@@ -179,7 +184,7 @@ since v0.68.0, Piwi Runner (`apps/runner`), the small app that runs a team insta
 These rules hold them together; each larger item of §10 carries one or more.
 
 1. **One name per concept, from the action catalog and a words table that both manifests and both clients are tested
-   against, in sentence case in both editors.** ([AC7](#ac7), [AC11](#ac11), [X1](#x1))
+   against, in sentence case in both editors.** ([AC11](#ac11))
 2. **One glyph per concept and one meaning per glyph, from the concept table; a glyph no platform has, Piwi draws
    once.** ([IC2](#ic2))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, restated in each tool and held to them by a
@@ -198,13 +203,6 @@ These rules hold them together; each larger item of §10 carries one or more.
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
    `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([LR6](#lr6),
    [RD4](#rd4))
-
-<a id="x1"></a>**X1. Every editor action is named and placed by hand twice, so the two editors drift and no check holds
-one to the other.** Each editor's manifest test fails on an action without an icon, but nothing compares
-`apps/vscode/package.json`'s 67 commands with `plugin.xml`'s 52 actions. End the test reads 'End the test here, skipping
-the rest of it' (`package.json:486`), 'End the Test' (`plugin.xml:238`), 'End Test' (`Glue.kt:2554`) and 'End test'
-(`apps/vscode/src/run-control.ts:1129`), and a stop's controls are chosen twice ([AC11](#ac11)). **(counted)** Fix: the
-action catalog of [LI1](#li1), tested against both manifests. ([M1](#m1), [LI1](#li1))
 
 <a id="x2"></a>**X2. The same concept is drawn differently in each Piwi tool, and no table or test ties the glyphs
 together.** Record is a gray film strip in JetBrains, `$(record)` in VS Code and a dot in Piwi Picker ([IC2](#ic2));
@@ -282,47 +280,12 @@ on config folders only. ([M3](#m3), [M17](#m17), [LI4](#li4), [LI16](#li16))
 
 ### 4.4 Names
 
-<a id="ac7"></a>**AC7. The two clients name at least thirteen shared actions differently, End the test has four
-spellings, and each lacks commands the other has.** Ten pairs between `apps/vscode/package.json:185-583`,
-`plugin.xml:110-295`, the JetBrains failures tree (`PiwiFailuresToolWindow.kt:397`) and the stop's lens and inlay
-(`apps/vscode/src/run-control.ts:1129`, `Glue.kt:2554`) are new beside
-[developer-loop-audit.md](developer-loop-audit.md) §9, whose Pick, Run to a line and Finish rows make thirteen (here:
-Pick at stop, Run to cursor as the IDE's debugger words it, Finish test). Some actions exist in one editor only: VS
-Code's Write code at the stop…, Get started, Follow the active editor, Run options…, Open the trace so far and Group the
-failures by…, and JetBrains' Open the Failures, Node.js Settings…, Run Headed, Hold Failures from Each Run's Start… and
-the Runs' MCP configuration copy. `apps/docs/features/editors.md:106-128` lists VS Code's names alone. **(seen)** Fix:
-one wording per action, from the action catalog both manifests are tested against, in sentence case in both editors.
-([M1](#m1), [LI1](#li1))
-
-| Action | VS Code title | JetBrains text | Proposed wording |
-|---|---|---|---|
-| Coverage marks | Toggle the coverage marks | Show Coverage Marks | Show coverage marks |
-| The run shown | Open the latest run | Open the Latest Run in the Dashboard | Open latest run |
-| Screenshot | Open the screenshot | Open the screenshot | Open screenshot |
-| End | End the test here, skipping the rest of it; End test | End the Test; End Test | End test |
-| Record at a stop | Record in the stopped test's page | Record Here at the Stop | Record at stop |
-| Assert | Assert in the stopped test's page | Assert at the Stop | Assert at stop |
-| Region | Assert a region of the stopped test's page | Assert a Region at the Stop | Assert region at stop |
-| Mock | Mock a request of the stopped test | Mock a Request at the Stop | Mock at stop… |
-| Connect | Connect | Connect… | Connect… |
-| Settings | Open settings | Settings… | Settings… |
-
-<a id="ac9"></a>**AC9. Record here names two different actions on a paused line, and inside JetBrains each stop control
-carries up to three labels.** VS Code's stop hover says Record here for a recording in the stopped test's browser
-(`apps/vscode/src/run-control.ts:1182`, `apps/vscode/src/run-view.ts:426`), and the Piwi submenu on the same line Record
-here for a new browser at the caret (`apps/vscode/package.json:421`, `:1055-1059`). JetBrains says Finish the Test in
-Tools → Piwi (`plugin.xml:234`) but Finish on the stop line (`Glue.kt:2553`), calls one code action Record Here at the
-Stop in Tools → Piwi (`plugin.xml:255`), Record Here in the stop's popup and Record on the inlay (`Glue.kt:2582`), and
-lists Record Here at the Stop beside Record Here in the status popup during a stop (`PiwiStatusBar.kt:204, 266`).
-**(seen)** Fix: a full name and a short label per control in the action catalog (Finish test and Finish), with Record
-here for the caret only. ([M1](#m1), [LI1](#li1))
-
-<a id="ac10"></a>**AC10. Labels that mislead: a Run selection… that runs a saved selection rather than the selected
-text, and a Record here that opens a dialog with no ellipsis.** VS Code's Run selection…
-(`apps/vscode/package.json:259`) and JetBrains' (`plugin.xml:146`) run one of the project's saved selections, and
-JetBrains' Record here opens the recording's dialog (`PiwiRecordingActions.kt:330`) under a label with no ellipsis,
-which only its Generate entry has (`plugin.xml:190, 313`). **(read)** Fix: Run saved selection…; an ellipsis wherever
-input follows. ([M1](#m1), [LI1](#li1))
+<a id="ac9"></a>**AC9. Inside JetBrains each stop control carries a full name and up to two short labels, kept apart from VS
+Code's.** Finish the test in Tools → Piwi is Finish on the stop line (`Glue.kt`, `StopControl`), and Record at the stop
+is Record in the stop's popup and on the inlay (`Glue.StopAction`), where VS Code's hover says Record
+(`apps/vscode/src/run-control.ts`, `STOP_ACTIONS`); nothing holds the short labels of one client to the other's.
+**(read)** Fix: a short label per control in the words table of [LI1](#li1), held by a test over both clients.
+([M22](#m22), [LI1](#li1))
 
 <a id="ac11"></a>**AC11. The stop's control labels and the recording's words exist twice, in the VS Code extension and
 `Glue.kt`, with no test between them, and differ.** `apps/vscode/src/run-control.ts:1127` says Run to cursor where
@@ -419,8 +382,8 @@ window. Run has five names (Run with Piwi, Run this test, Run This Test, Run, Ru
 missing from the hover and the lens, and the quick fixes, all `CodeActionKind.QuickFix` with no Piwi prefix, sit in the
 light bulb between Heal and TypeScript's Move to file. **(seen)** Fix: one role per surface in both editors: the gutter
 acts ([TL2](#tl2)), the hover says why, the lens shows evidence, a quick fix only edits ("Piwi: use getByRole(…)"), and
-the service owns every title, the words added to [developer-loop-audit.md](developer-loop-audit.md) §9's table
-([X1](#x1)). ([M7](#m7), [LI7](#li7))
+the service owns every title, the words added to [developer-loop-audit.md](developer-loop-audit.md) §9's table.
+([M7](#m7), [LI7](#li7))
 
 <a id="tl9"></a>**TL9. Record here is in JetBrains' Alt+Enter list on any line of a script, imports included, and
 missing from VS Code's Ctrl+.** `RecordHereIntention.kt:22-25` offers it anywhere under a config folder; VS Code
@@ -936,7 +899,7 @@ generates `package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s comma
 `packages/editor` (FSL); the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and
 four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
-makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Steps [M1](#m1), [M22](#m22).
+makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Step [M22](#m22).
 
 <a id="li15"></a>
 
@@ -1252,8 +1215,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
-| <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
+| <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): record, and the glyphs Appendix A marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [IC2](#ic2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **Piwi Picker's waiting count in the pause bar's violet** ([LI3](#li3)), both JetBrains color schemes held by the same test, and the running ring animated | `extension` | [IC4](#ic4), [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
@@ -1286,8 +1248,8 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q13, Q27, Q28, Q30), each on its own. Then M1, on which most of the rest
-builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
+The quick wins that stand alone (Q5, Q13, Q27, Q28, Q30), each on its own. Then, on the action catalog, one Piwi menu
+(M3) and the run-control places (M14); M4 and M5 draw the
 glyphs and the outcome palette that Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
@@ -1297,8 +1259,9 @@ whether M14's places are interim.
 1. **A debug session or not** ([LI10](#li10)): keep [run-control.md](../adr/run-control.md) §3.2's choice and give
    Piwi's controls the debugger's places ([LI9](#li9)), or an inline `DebugAdapter` and an `XDebugProcess`? To decide
    before 1.0 freezes the run-control ids D25 lists.
-2. **Caret or cursor**: [AC7](#ac7) names the control Run to Cursor, as JetBrains' own action does; does Run the test at
-   the caret take the same word in both clients, or keep each platform's?
+2. **Caret or cursor**: the action catalog keeps each platform's word (`{cursor}` in `packages/editor/src/actions.ts`:
+   Run to the cursor in VS Code, Run to the caret in JetBrains, whose own action is Run to Cursor); does it take one
+   word in both clients instead?
 3. **Record's color, and two marks**: flaky takes the dashboard's fuchsia shuffle (§2 principle 3, [IC4](#ic4)). Is
    Record's action icon red like Piwi Picker's dot, or gray, with red kept for the recording state as JetBrains' icon
    style asks? Can VS Code's margin show the flaky mark beside the Testing view's glyph, and can
@@ -1353,18 +1316,14 @@ The reviews at `b0ff6772` read the code that built the plan and the live-run stu
 Each finding below is new, read in the code at that commit; Kotlin files are cited by name as above. The defects among
 them, NF4, NF5, NF6 and NF9, are filed as #1315, with NF5's stopped-service status in #1255.
 
-<a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**
-Open Log and Open the log (`plugin.xml:126`, `apps/vscode/package.json:206`); Turn Hold Failures On or Off and Hold
-failures: turn on or off for the run (`plugin.xml:285`, `package.json:289`); Share the Run Live and its VS Code title
-naming the team instance (`plugin.xml:274`, `package.json:557`); Share the Stopped Browser with Playwright Tools and
-Share the stopped test's browser… (`plugin.xml:271`, `package.json:545`). VS Code titles its worker panel "Piwi: worker
-2" and both clients' CI lanes say "worker 2" against "Worker 2" elsewhere (`apps/vscode/src/worker-panel.ts:614`,
-`apps/vscode/src/run-control.ts:2117`, `Glue.kt:3336`), and `piwi.refresh` is Retry in one welcome and Refresh in the
-next (`package.json:91, 96`). VS Code offers one Run options… quick pick (`apps/vscode/src/extension.ts:1461-1490`)
-where JetBrains has a Run Headed toggle and Hold Failures from Each Run's Start… (`plugin.xml:149-154`), the hold
-choices worded three ways (`apps/vscode/src/glue.ts:1772-1776`, `package.json:1165-1169`, `Glue.kt:67-71`). **(read)**
-Fix: one wording per action in the action catalog, in sentence case in both editors, one shape for the start options,
-and each welcome's links from `failuresView`. ([M1](#m1))
+<a id="nf3"></a>**NF3. The start options take two shapes, and the words of a worker and of a welcome differ.** VS Code titles its
+worker panel "Piwi: worker 2" and both clients' CI lanes say "worker 2" against "Worker 2" elsewhere
+(`apps/vscode/src/worker-panel.ts:614`, `apps/vscode/src/run-control.ts:2117`, `Glue.kt:3336`), and `piwi.refresh` is
+Retry in one welcome and Refresh in the next (`package.json:91, 96`). VS Code offers one Run options… quick pick
+(`apps/vscode/src/extension.ts:1461-1490`) where JetBrains has a Run headed toggle and Hold failures from each run's
+start… (`plugin.xml:149-154`), the hold choices worded three ways (`apps/vscode/src/glue.ts:1772-1776`,
+`package.json:1165-1169`, `Glue.kt:67-71`). **(read)** Fix: one shape for the start options, the worker's and the
+hold choices' words from the words table, and each welcome's links from `failuresView`. ([M10](#m10), [M22](#m22))
 
 <a id="nf4"></a>**NF4. A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the
 status bars.** A test line takes its state from any live run (`packages/editor/src/server.ts:3060-3061`) and says
