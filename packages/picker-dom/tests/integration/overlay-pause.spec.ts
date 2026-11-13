@@ -29,14 +29,15 @@ test.describe('showPauseBar', () => {
     }
   });
 
+  // The controls come first, in the editors' order, then the code a stop can write.
   test('offers Record here only when the editor can record from the pause', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, ARG);
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator']);
     await page.evaluate(takePauseState);
     await page.evaluate(showPauseBar, { ...ARG, record: true });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Record here', 'Finish']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator', 'Record here']);
     await bar.getByRole('button', { name: 'Record here' }).click();
     expect(await page.evaluate(takePauseState)).toBe('record');
   });
@@ -45,7 +46,7 @@ test.describe('showPauseBar', () => {
     await page.setContent('<!doctype html><html><body></body></html>');
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
     await page.evaluate(showPauseBar, { ...ARG, end: true });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish', 'End the test']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Pick a locator']);
     await bar.getByRole('button', { name: 'End the test' }).click();
     expect(await page.evaluate(takePauseState)).toBe('end');
     await page.evaluate(showPauseBar, { ...ARG, end: true, failure: true });
