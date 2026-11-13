@@ -49,7 +49,7 @@
   ],
   "contributes": {
     "icons": {
-      "piwi": {
+      "piwi-mark": {
         "description": "Piwi's mark: the status item and the failures view's run",
         "default": {
           "fontPath": "media/piwi-icons.woff",

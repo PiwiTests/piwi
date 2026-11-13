@@ -120,15 +120,17 @@ describe("the commands' glyphs", () => {
   });
 
   test('draws Piwi’s own glyphs from the icon font the brand asset generator writes', () => {
+    // VS Code drops every icon an extension contributes when one id is not of two segments (`component-name`).
     const icons = manifest.contributes.icons as Record<
       string,
       { default: { fontPath: string; fontCharacter: string } }
     >;
-    expect(Object.keys(icons)).toEqual(['piwi']);
+    expect(Object.keys(icons)).toEqual(['piwi-mark']);
+    for (const id of Object.keys(icons)) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
     for (const icon of Object.values(icons)) {
       expect(fs.existsSync(path.resolve(__dirname, '..', icon.default.fontPath)), icon.default.fontPath).toBe(true);
     }
-    expect(icons.piwi!.default.fontCharacter).toBe('\\E000');
+    expect(icons['piwi-mark']!.default.fontCharacter).toBe('\\E000');
   });
 
   test('draws Open in dashboard as leaving the editor, apart from the run pages’ globe', () => {
