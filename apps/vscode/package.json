@@ -1281,6 +1281,16 @@
         }
       },
       {
+        "id": "piwi.flakyForeground",
+        "description": "The word flaky after a flaky test's line while the Testing view lists Piwi's tests: the dashboard's flaky color.",
+        "defaults": {
+          "dark": "#d946ef",
+          "light": "#d946ef",
+          "highContrast": "#d946ef",
+          "highContrastLight": "#d946ef"
+        }
+      },
+      {
         "id": "piwi.coverageRunBorder",
         "description": "The mark at the left of a line the tests ran, in the coverage Piwi shows: the color the dashboard marks it in.",
         "defaults": {

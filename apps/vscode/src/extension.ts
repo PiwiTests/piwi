@@ -513,7 +513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
       contentText: '  flaky',
-      color: new vscode.ThemeColor('editorWarning.foreground'),
+      color: new vscode.ThemeColor('piwi.flakyForeground'),
       fontStyle: 'italic',
     },
   });

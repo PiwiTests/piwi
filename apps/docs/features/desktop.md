@@ -45,7 +45,7 @@ While a test waits at a stop for you, the tray menu's **Show the stopped test** 
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
 or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
-Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs, or of an
+Windows) says how it stands: blue while it runs, red once a test failed, violet, the pause bar's color, while a test of the app's runs, or of an
 editor's, waits at a stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome as it ends, whatever
 else runs, and, failed while you look away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only
 at its verdict; an editor's, a terminal's or CI's run, or one from before a reload, never does. On Windows, the taskbar

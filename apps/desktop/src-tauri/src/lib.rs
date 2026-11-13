@@ -647,19 +647,28 @@ fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
     }
 }
 
+/// The dashboard's outcome palette (`STATUS_COLORS` in
+/// `apps/application/shared/status-colors.ts`) as the tray dot draws it;
+/// `status-mark-colors.test.ts` holds these to it.
+const DOT_FAILED: (u8, u8, u8) = (244, 63, 94); // rose-500
+const DOT_PASSED: (u8, u8, u8) = (16, 185, 129); // emerald-500
+const DOT_RUNNING: (u8, u8, u8) = (59, 130, 246); // blue-500
+/// A run that waits for you at a stop, or was interrupted: the pause bar's own violet.
+const DOT_PAUSED: (u8, u8, u8) = (124, 58, 237); // violet-600
+
 /// The colour of the status dot drawn on the tray icon (all platforms) and the
 /// taskbar overlay icon (Windows) for a run state, or `None` when the run is
 /// idle and the app's own icon should show instead. A determinate `normal` at
-/// 100% is the finished-pass flash (green); a running `normal` is blue, or red
-/// while `failing` (a test has failed so far).
+/// 100% is the finished-pass flash (passed); a running `normal` is running, or
+/// failed while `failing` (a test has failed so far); a paused or interrupted
+/// run is the pause bar's violet.
 fn status_dot_color(state: &str, fraction: Option<f64>, failing: bool) -> Option<(u8, u8, u8)> {
-    const RED: (u8, u8, u8) = (220, 38, 38); // red-600 — failed / failing
     match state {
-        "error" => Some(RED),
-        "paused" => Some((217, 119, 6)), // amber-600 — paused / interrupted
-        "normal" | "indeterminate" if failing => Some(RED),
-        "normal" if fraction.is_some_and(|f| f >= 1.0) => Some((22, 163, 74)), // green-600 — passed
-        "normal" | "indeterminate" => Some((37, 99, 235)), // blue-600 — running
+        "error" => Some(DOT_FAILED),
+        "paused" => Some(DOT_PAUSED),
+        "normal" | "indeterminate" if failing => Some(DOT_FAILED),
+        "normal" if fraction.is_some_and(|f| f >= 1.0) => Some(DOT_PASSED),
+        "normal" | "indeterminate" => Some(DOT_RUNNING),
         _ => None, // none / unknown — restore the app icon
     }
 }
@@ -3998,6 +4007,7 @@ mod tests {
         notification_wanted, read_event_stream, NotificationChoices, ServerNotification,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
+        DOT_FAILED, DOT_PAUSED, DOT_PASSED, DOT_RUNNING,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
@@ -4748,12 +4758,24 @@ mod tests {
 
     #[test]
     fn status_dot_color_maps_states_to_colours() {
-        assert_eq!(status_dot_color("error", None, false), Some((220, 38, 38)));
-        assert_eq!(status_dot_color("paused", None, false), Some((217, 119, 6)));
+        assert_eq!(status_dot_color("error", None, false), Some(DOT_FAILED));
+        assert_eq!(
+            status_dot_color("paused", None, false),
+            Some(DOT_PAUSED)
+        );
         // Running is blue; the finished-pass flash (normal at 100%) is green.
-        assert_eq!(status_dot_color("normal", Some(0.5), false), Some((37, 99, 235)));
-        assert_eq!(status_dot_color("indeterminate", None, false), Some((37, 99, 235)));
-        assert_eq!(status_dot_color("normal", Some(1.0), false), Some((22, 163, 74)));
+        assert_eq!(
+            status_dot_color("normal", Some(0.5), false),
+            Some(DOT_RUNNING)
+        );
+        assert_eq!(
+            status_dot_color("indeterminate", None, false),
+            Some(DOT_RUNNING)
+        );
+        assert_eq!(
+            status_dot_color("normal", Some(1.0), false),
+            Some(DOT_PASSED)
+        );
         // Idle / unknown clears the dot so the app icon shows through.
         assert_eq!(status_dot_color("none", None, false), None);
         assert_eq!(status_dot_color("bogus", Some(1.0), false), None);
@@ -4761,7 +4783,7 @@ mod tests {
 
     #[test]
     fn a_run_with_failures_shows_a_red_dot_while_it_runs() {
-        let red = Some((220, 38, 38));
+        let red = Some(DOT_FAILED);
         assert_eq!(status_dot_color("normal", Some(0.5), true), red);
         assert_eq!(status_dot_color("indeterminate", None, true), red);
         assert_eq!(status_dot_color("normal", Some(1.0), true), red);
@@ -4769,7 +4791,7 @@ mod tests {
         assert_eq!(status_dot_color("none", None, true), None);
         assert_eq!(
             status_dot_color("paused", Some(1.0), true),
-            Some((217, 119, 6))
+            Some(DOT_PAUSED)
         );
     }
 
