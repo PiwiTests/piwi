@@ -7714,7 +7714,7 @@
     }
   },
   "runs_answerShareOff": {
-    "message": "Der Lauf wird nicht mehr geteilt: Nichts mehr geht an $instance$.",
+    "message": "Der Lauf wird nicht mehr geteilt: Nichts mehr geht zu $instance$.",
     "placeholders": {
       "instance": {
         "content": "$1",
