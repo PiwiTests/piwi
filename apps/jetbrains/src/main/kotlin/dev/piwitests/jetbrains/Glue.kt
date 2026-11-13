@@ -1153,6 +1153,17 @@ object Glue {
     /** What Disconnect says when nothing is saved to forget. */
     const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
 
+    /** What Test connection says when the field holds no http(s) URL. */
+    const val TEST_CONNECTION_NO_URL = "Type an http(s) URL first, such as https://piwi.example.com."
+
+    /** What Test connection says of an address that answered, before it is saved: and whether it asks for a key. */
+    fun testConnectionText(url: String, needsKey: Boolean): String =
+        if (needsKey) "$url answers. It asks for an API key: Connect… signs in or takes one."
+        else "$url answers, and lists its projects without a key."
+
+    /** What Test connection says of an address that did not answer, with Connect's reason. */
+    fun testConnectionFailure(url: String, reason: String): String = "$url does not answer: $reason"
+
     /**
      * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
      * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it; any

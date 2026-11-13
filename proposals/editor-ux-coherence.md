@@ -12,11 +12,11 @@ document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and 
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
 remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, with their
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
-now read in sentence case) and Q12. §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+now read in sentence case), Q12, and Q5's Test connection (ST9). §14 adds the findings the code that built the plan
+raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
+leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
+each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
+phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -636,13 +636,6 @@ per-workspace command and a JetBrains toggle. **(seen)** Fix: before D25 freezes
 problems, off), `piwi.gutterIcons`, `piwi.coverageMarks`, `piwi.locatorWarnings` and `piwi.failingTestTint`, which the
 service reads from the credentials to filter lenses and diagnostics once for both clients, dropping a spec's lens whose
 only test is the one around it; JetBrains shows the five in its Editor group ([TL4](#tl4)). ([M10](#m10), [LI11](#li11))
-
-<a id="st9"></a>**ST9. Settings → Tools → Piwi cannot try an address before it is saved: the page has no Test
-Connection.** The In use group offers Reconnect, which hands the saved connection over again, and Node.js Settings…
-(`PiwiConfigurable.kt:59-68`); the URL field checks only that it is an http(s) URL (`:77-80`), and Connect… runs the
-dialogs of [ST16](#st16) (`:283-291`). A developer who types a URL learns whether it answers only by applying and
-reading In use, or by connecting. **(read)** Fix: Test connection beside the URL, saying what the address answered in
-the words of one Connect failure table ([NF7](#nf7)). ([Q5](#q5), [LI13](#li13))
 
 <a id="st12"></a>**ST12. The scopes differ: every JetBrains choice is per project, VS Code's are per user, and a
 committed `.vscode/settings.json` can override a personal choice.** JetBrains keeps all but the URL and project in
@@ -1407,7 +1400,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="q2"></a>Q2 | **A flaky test marked flaky in JetBrains**: the outcome palette's flaky glyph ([M5](#m5)) on the result icon and in the CI Run tab, where the warning and the amber `TestFailed` draw it now; a fixture check fails when a flaky test carries no flaky mark | `ide` | [TL13](#tl13), [IC4](#ic4) |
-| <a id="q5"></a>Q5 | **Test connection beside the URL on the JetBrains settings page, and no clipped text**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST9](#st9), [ST14](#st14) |
+| <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, the failure's headline in one place, Documentation in the gear, one Open in dashboard in the status popup, Reload Piwi with a glyph of its own beside Refresh the latest run; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM9](#hm9), [HM6](#hm6), [HM3](#hm3), [AC10](#ac10), [ST18](#st18) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a balloon titled by its run, Don't Show Again on VS Code's other messages, a gear on the run notices, `piwi.runNotifications` off `always` by default, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |

@@ -2148,6 +2148,22 @@ class GlueTest {
     }
 
     @Test
+    fun `test connection says whether the typed address answers and asks for a key, or why it does not`() {
+        assertEquals(
+            "https://piwi.example.com answers. It asks for an API key: Connect… signs in or takes one.",
+            Glue.testConnectionText("https://piwi.example.com", needsKey = true),
+        )
+        assertEquals("http://127.0.0.1:3000 answers, and lists its projects without a key.", Glue.testConnectionText("http://127.0.0.1:3000", false))
+        assertEquals(
+            "http://localhost:3000 does not answer: nothing answers there. Is the instance running, on that port?",
+            Glue.testConnectionFailure(
+                "http://localhost:3000",
+                Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
+            ),
+        )
+    }
+
+    @Test
     fun `connect says why it failed in words, a certificate naming its host and where to trust it`() {
         val pkix = javax.net.ssl.SSLHandshakeException("PKIX path building failed: unable to find valid certification path")
         val certificate = Glue.connectFailure(java.io.IOException("handshake", pkix), null, "https://piwi.corp:8443")

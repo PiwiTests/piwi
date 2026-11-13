@@ -43,6 +43,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private lateinit var disconnectButton: JButton
     private lateinit var nodeButton: JButton
     private lateinit var overridden: JEditorPane
+    private lateinit var tested: JEditorPane
 
     override fun createPanel(): DialogPanel {
         val settings = service.settings()
@@ -80,6 +81,10 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         }
                         .comment("Kept in .idea/piwi.xml, which the team can share")
                         .component
+                    button("Test connection") { testConnection() }
+                }
+                row {
+                    tested = text("", maxLineLength = 90).align(AlignX.FILL).component
                 }
                 row("Project:") {
                     projectField = textField()
@@ -284,6 +289,28 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 
     /** Connect with the URL typed on this page, Apply or not; the page's other edits stay pending. */
+    /**
+     * Test connection: whether the address typed in the field answers, before it is saved, said in Connect's words under
+     * the field. The request runs with modal progress, as Connect's do from this page.
+     */
+    private fun testConnection() {
+        val url = Glue.normalizeServerUrl(urlField.text)
+        if (url == null) {
+            tested.text = Glue.escapeHtml(Glue.TEST_CONNECTION_NO_URL)
+            return
+        }
+        tested.text = try {
+            val reached = com.intellij.openapi.progress.ProgressManager.getInstance().runProcessWithProgressSynchronously<PiwiInstance.Reached, Exception>(
+                { PiwiInstance.reach(url) }, "Piwi: Test connection", true, project,
+            )
+            Glue.escapeHtml(Glue.testConnectionText(reached.url, reached.needsKey))
+        } catch (_: com.intellij.openapi.progress.ProcessCanceledException) {
+            return
+        } catch (e: Exception) {
+            Glue.escapeHtml(Glue.testConnectionFailure(url, Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)))
+        }
+    }
+
     private fun connect() {
         val typed = urlField.text
         val url = Glue.normalizeServerUrl(typed)

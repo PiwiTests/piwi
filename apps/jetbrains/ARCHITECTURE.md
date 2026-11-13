@@ -942,19 +942,22 @@ breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and **Tools
-→ Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
-save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
-Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
+one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and
+**Tools → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and
+Disconnect save the connection themselves, then the page shows the connection rows as saved, and its other edits stay
+pending until Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
 (`sendCredentials`) and, while the service cannot start, **Node.js Settings…**, which selects the Node.js page of the
-open Settings dialog and starts the service again as the dialog closes; then the instance; then the desktop app, whose
-field reads **Desktop app project:**. When the environment or a `.env` names another instance than the saved one
-(`Glue.overriding`, the first config that does), the page says so above the fields (`Glue.overriddenText`), the
-desktop app's place before it included, and the empty fields show its address and, while it is read, its project. The
-page follows the status while the dialog shows (`PiwiProjectService.onChangeInDialogs`). The tool window's empty text
-links the Node.js settings while the service cannot start. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
-otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does not
-trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi instance.
+open Settings dialog and starts the service again as the dialog closes; then the instance, whose **Test connection**
+reaches the URL in the field, saved or not, with Connect's `reach` and says the answer under it
+(`Glue.testConnectionText`, `Glue.testConnectionFailure`); then the desktop app, whose field reads **Desktop app
+project:**. When the environment or a `.env` names another instance than the saved one (`Glue.overriding`, the first
+config that does), the page says so above the fields (`Glue.overriddenText`), the desktop app's place before it
+included, and the empty fields show its address and, while it is read, its project. The page follows the status while
+the dialog shows (`PiwiProjectService.onChangeInDialogs`). The tool window's empty text links the Node.js settings while
+the service cannot start. Disconnect is enabled only while something is saved to forget, and says so from **Tools →
+Piwi** otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does
+not trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi
+instance.
 
 `PiwiProjectService.desktop()` asks the service (`piwi/desktop`). While the service has not started, it reads the app's
 discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`), so Connect finds the app before any
