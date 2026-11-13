@@ -250,6 +250,8 @@ reference.
 - A Playwright config's node: `piwi.context`, with `failing` and `run`. It runs **Re-run the failing tests**,
   **Open in dashboard** and **Compare with…** for that config.
 - A run's node runs **Compare with…** for its config (`FailureNode.root`).
+- A flaky test: `piwi.flaky`. **Look into this flake…** (`piwi.lookIntoFlake`) lists its `FailureNode.actions` in a
+  quick pick and runs the one chosen.
 
 **Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
@@ -660,8 +662,10 @@ counts the window's runs from the same events, with or without an instance.
   30 s);
 - the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and
   a hint when the desktop app runs but is not in use, or was chosen but does not run;
-- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, and to `piwi.refresh`
-  (**Retry**) while the instance does not answer.
+- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, to `piwi.refresh`
+  (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
+  failures view lists flaky tests for it (`flakyTestsByRoot`; the view draws the item again once it has read its tree),
+  which selects and opens that config's **Flaky in this run** group (`FailuresView.revealFlaky`).
 
 **Piwi: Open the latest run** (`piwi.openRun`) is in the palette too.
 

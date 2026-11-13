@@ -39,6 +39,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
   `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **A change to `packages/editor/src/connect-failures.json` updates `Glue.CONNECT_FAILURE_WORDS` in the same change.**
+  Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
   D25 of `proposals/1.0-stabilization.md` in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).

@@ -70,7 +70,7 @@ test.describe.serial('Branch failures', () => {
     const none = await (
       await request.get(`/api/projects/${projectId}/branch-failures`, { params: { branch: 'nope' } })
     ).json();
-    expect(none).toEqual({ run: null, overlays: [], failures: [], resolved: [] });
+    expect(none).toEqual({ run: null, overlays: [], failures: [], resolved: [], flaky: [] });
   });
 
   test('lays a test re-run from the editor over the run: the failure it passed is resolved', async ({ request }) => {

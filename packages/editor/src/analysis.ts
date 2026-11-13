@@ -928,6 +928,11 @@ export interface FlakeLabLens {
   actions: Array<{ kind: 'reproduce' | 'verify'; title: string; command: string }>;
 }
 
+/** Flake Lab's share of a test's runs that failed at least once, as the editors say it (`flaky 18%`); null without one. */
+export function flakeRateText(rate: number | null | undefined): string | null {
+  return rate != null ? `flaky ${Math.max(1, Math.round(rate * 100))}%` : null;
+}
+
 /**
  * The lens above a flaky test: Flake Lab's flaky N% and the suspect it is shown with,
  * then "Reproduce this flake", and "Verify the flake fix" once the lab
@@ -939,7 +944,7 @@ export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLab
   const reproduce = flakeCommand(testCaseId, 'reproduce');
   const verifyCommand = flakeCommand(testCaseId, 'verify');
   if (!entry.nextCommand || !reproduce || !verifyCommand || (!entry.flaky && !verify)) return null;
-  const rate = entry.flakeRate != null ? `flaky ${Math.max(1, Math.round(entry.flakeRate * 100))}%` : 'flaky';
+  const rate = flakeRateText(entry.flakeRate) ?? 'flaky';
   const suspect = entry.suspect
     ? `top suspect: ${entry.suspect.label} (${entry.suspect.lab})`
     : entry.reproducedBy

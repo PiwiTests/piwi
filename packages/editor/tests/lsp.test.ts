@@ -570,7 +570,22 @@ beforeAll(async () => {
           JSON.stringify(laid ? { run: null, overlays: [], failures: [], resolved: [] } : { run: null, failures: [] }),
         );
       }
-      const latest = { run: { ...MAIN_RUN, commit: fixtureCommit }, failures: [ROW_FAILURE] };
+      const latest = {
+        run: { ...MAIN_RUN, commit: fixtureCommit },
+        failures: [ROW_FAILURE],
+        // The run's one flaky test, as the run counts it.
+        flaky: [
+          {
+            executionId: 950,
+            testCaseId: 1,
+            title: 'pays',
+            file: 'tests/checkout.spec.ts',
+            line: 3,
+            browserName: 'chromium',
+            retries: 1,
+          },
+        ],
+      };
       const over = runsKey ? runsLaidOver : laidOver;
       return res.end(JSON.stringify(laid ? (over ?? { ...latest, overlays: [], resolved: [] }) : latest));
     }
@@ -1136,6 +1151,23 @@ describe('the Piwi language server', () => {
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],
+      ['flaky', ['flaky:1\nchromium']],
+    ]);
+    // The flaky test at its test(…) line as the spec stands, its result's page one click away.
+    expect(failures.tree[0]!.children[1]!.children[0]).toMatchObject({
+      kind: 'flaky',
+      uri: uri('tests/checkout.spec.ts'),
+      line: 2,
+      url: `${url}/test-run-cases/950`,
+      description: 'tests/checkout.spec.ts:3 · chromium · passed on retry 1 · flaky 18%',
+    });
+    // Its Flake Lab line in the hover, and what looks into it in its menu: the lens's commands, in its order.
+    const flaky = failures.tree[0]!.children[1]!.children[0]!;
+    expect(flaky.tooltip).toContain('Flake Lab: flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)');
+    expect(flaky.actions?.map((a) => [a.title, a.command])).toEqual([
+      ['Open its Flakiness tab', 'piwi.openInDashboard'],
+      ['Reproduce this flake', 'piwi.runCommand'],
+      ['Verify the flake fix', 'piwi.runCommand'],
     ]);
   });
 
@@ -1144,6 +1176,7 @@ describe('the Piwi language server', () => {
     expect(byCluster.grouping).toBe('cluster');
     expect(byCluster.tree[0]!.children.map((group) => [group.key, group.label])).toEqual([
       ['group:cluster:77', 'Cluster #77'],
+      ['flaky', 'Flaky in this run'],
     ]);
     const kept = (await client.sendRequest('piwi/failures')) as FailuresResult;
     expect(kept.grouping).toBe('cluster');

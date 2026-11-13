@@ -7,6 +7,7 @@ import {
   failuresAnswer,
   failuresDrawn,
   failuresView,
+  flakyTestLab,
   type ContextViewState,
   parseFailuresGrouping,
   rerunFailingArgs,
@@ -205,6 +206,77 @@ describe('the failures tree', () => {
     ]);
     const [byOwner] = failureTree(result, 'owner');
     expect(byOwner!.children.slice(1).map((g) => g.label)).toEqual(['@team-auth', 'Unowned']);
+  });
+
+  test('lists the run’s flaky tests under one closed group, after the failures, and with none failing too', () => {
+    const flaky = [
+      {
+        testCaseId: 2,
+        uri: 'file:///w/tests/cart.spec.ts',
+        line: 2,
+        title: 'adds',
+        file: 'tests/cart.spec.ts',
+        browserName: 'chromium',
+        retries: 1,
+        url: 'http://piwi/test-run-cases/25',
+        rate: 'flaky 18%',
+        flakeLab: 'flaky 18% · reproduced by --repeat-each=10',
+        actions: [
+          { title: 'Open its Flakiness tab', command: 'piwi.openInDashboard' as const, arguments: ['http://piwi/f'] },
+        ],
+      },
+    ];
+    const [run] = failureTree({ ...result, flaky }, 'file');
+    const group = run!.children[run!.children.length - 1]!;
+    expect([group.key, group.kind, group.label, group.description, group.icon, group.expanded]).toEqual([
+      'flaky',
+      'group',
+      'Flaky in this run',
+      '1 test',
+      'flaky',
+      false,
+    ]);
+    expect(group.children).toEqual([
+      {
+        key: 'flaky:2\nchromium',
+        kind: 'flaky',
+        label: 'adds',
+        description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1 · flaky 18%',
+        tooltip: [
+          'adds',
+          'Flaky: passed on retry 1 on chromium',
+          'Flake Lab: flaky 18% · reproduced by --repeat-each=10',
+        ],
+        icon: 'flaky',
+        expanded: false,
+        url: 'http://piwi/test-run-cases/25',
+        uri: 'file:///w/tests/cart.spec.ts',
+        line: 2,
+        actions: flaky[0]!.actions,
+        children: [],
+      },
+    ]);
+    // A run with no failure still shows its flaky tests.
+    const [alone] = failureTree({ ...result, items: [], flaky }, 'file');
+    expect(alone!.children.map((c) => c.key)).toEqual(['runs', 'flaky']);
+    expect(failureTree({ ...result, items: [], flaky: [] }, 'file')).toEqual([]);
+  });
+
+  test('a flaky test says Flake Lab’s rate and line while Flake Lab shows one, else offers its Flakiness tab alone', () => {
+    const tab = { title: 'Open its Flakiness tab', command: 'piwi.openInDashboard' as const, arguments: ['http://f'] };
+    const reproduce = { title: 'Reproduce this flake', command: 'piwi.runCommand' as const, arguments: [{}] };
+    expect(
+      flakyTestLab(
+        [
+          { line: 0, title: 'flaky 18% · reproduced by delay', command: tab },
+          { line: 0, title: 'Reproduce this flake', command: reproduce },
+        ],
+        'flaky 18%',
+        'http://f',
+      ),
+    ).toEqual({ rate: 'flaky 18%', flakeLab: 'flaky 18% · reproduced by delay', actions: [tab, reproduce] });
+    // An entry Flake Lab shows no line for, such as a fix that holds, says no rate either.
+    expect(flakyTestLab([], 'flaky 1%', 'http://f')).toEqual({ rate: null, flakeLab: null, actions: [tab] });
   });
 
   test('without a failure, nothing; without a run, the groups alone', () => {

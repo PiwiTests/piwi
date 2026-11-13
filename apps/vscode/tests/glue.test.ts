@@ -18,6 +18,8 @@ import type {
 } from '@piwitests/editor/protocol';
 import {
   OwnRunCounts,
+  flakyTestsByRoot,
+  isFlakyGroup,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
   heldStops,
@@ -80,6 +82,7 @@ import {
   resultsKey,
   resultsRunName,
   testItemExtras,
+  failuresViewDescription,
   testOutcome,
   testRunsOf,
   testTree,
@@ -141,6 +144,11 @@ describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
     '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
+  /** The links of a run whose flaky tests the failures view lists: one more, to the config's. */
+  const FLAKY_LINKS = LINKS.replace(
+    ' · [Open in dashboard]',
+    ` · [Show the run's 2 flaky tests](command:piwi.showFlakyTests?${encodeURIComponent('["/w"]')}) · [Open in dashboard]`,
+  );
 
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
@@ -205,6 +213,15 @@ describe('statusBarView', () => {
       liveUrl: null,
       error: false,
     });
+  });
+
+  test("links the run's flaky tests once the failures view lists them, for the config shown", () => {
+    const listed = (root: string) => (root === '/w' ? 2 : 0);
+    expect(statusBarView(connected, run({}), false, Date.now(), null, undefined, listed).tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${FLAKY_LINKS}`,
+    );
+    const one = statusBarView(connected, run({}), false, Date.now(), null, undefined, () => 1).tooltip;
+    expect(one).toContain("[Show the run's flaky test](command:piwi.showFlakyTests?");
   });
 
   test('the tooltip names the reporter the project installs', () => {
@@ -1538,6 +1555,83 @@ describe('the failures view', () => {
     expect(edited).toMatchObject({ icon: 'edit', failure: { executionId: 3, state: 'edited' } });
   });
 
+  test('a flaky test is drawn with the flaky mark and opens at its test(…) line', () => {
+    const flaky = {
+      ...result,
+      tree: [
+        {
+          ...result.tree[0]!,
+          children: [
+            {
+              key: 'flaky',
+              kind: 'group' as const,
+              label: 'Flaky in this run',
+              description: '1 test',
+              tooltip: ['The tests that passed in this run after an attempt failed'],
+              icon: 'flaky' as const,
+              expanded: false,
+              url: null,
+              children: [
+                {
+                  key: 'flaky:tests/cart.spec.ts\nadds\nchromium',
+                  kind: 'flaky' as const,
+                  label: 'adds',
+                  description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1',
+                  tooltip: ['adds'],
+                  icon: 'flaky' as const,
+                  expanded: false,
+                  url: 'http://piwi/test-run-cases/25',
+                  uri: 'file:///w/tests/cart.spec.ts',
+                  line: 2,
+                  actions: [
+                    {
+                      title: 'Open its Flakiness tab',
+                      command: 'piwi.openInDashboard' as const,
+                      arguments: ['http://piwi/test-cases/2?tab=flakiness'],
+                    },
+                  ],
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const group = failureNodes(flaky, { now })[0]!.children[0]!;
+    expect(group).toMatchObject({ icon: 'mark:flaky', state: 'collapsed' });
+    expect(group.children[0]).toMatchObject({
+      kind: 'flaky',
+      icon: 'mark:flaky',
+      url: 'http://piwi/test-run-cases/25',
+      place: { uri: 'file:///w/tests/cart.spec.ts', line: 2 },
+      actions: [
+        {
+          title: 'Open its Flakiness tab',
+          command: 'piwi.openInDashboard',
+          arguments: ['http://piwi/test-cases/2?tab=flakiness'],
+        },
+      ],
+    });
+    expect(flakyTestsByRoot(flaky)).toEqual(new Map([['', 1]]));
+    // With several configs, each config's group is counted under the folder its node names.
+    const several = {
+      ...flaky,
+      tree: [{ ...flaky.tree[0]!, key: 'context:/w/apps/admin', root: '/w/apps/admin' }, flaky.tree[0]!],
+    };
+    expect(flakyTestsByRoot(several)).toEqual(
+      new Map([
+        ['/w/apps/admin', 1],
+        ['', 1],
+      ]),
+    );
+    expect([isFlakyGroup('flaky'), isFlakyGroup('/w/apps/admin\nflaky'), isFlakyGroup('flaky:t\nchromium')]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
   test('a hover is the service’s lines as Markdown, a failure’s title in bold', () => {
     const [root] = failureNodes(result, { now });
     expect(root!.tooltip).toBe(
@@ -2297,5 +2391,15 @@ describe('the status item while the editor service is not running', () => {
     expect(view.tooltip).toContain('[Restart the editor service](command:piwi.restartService)');
     expect(view.tooltip).toContain('[Open the log](command:piwi.openLog)');
     for (const command of ['piwi.restartService', 'piwi.openLog']) expect(STATUS_TOOLTIP_COMMANDS).toContain(command);
+  });
+});
+
+describe('the failures view’s description', () => {
+  test('says how it groups, and the baseline it compares with', () => {
+    expect(failuresViewDescription('file', undefined)).toBe('by file');
+    expect(failuresViewDescription('cluster', 'CI run #124 on main')).toBe(
+      'by cluster · Baseline: CI run #124 on main',
+    );
+    expect(failuresViewDescription('owner', '')).toBe('by owner');
   });
 });

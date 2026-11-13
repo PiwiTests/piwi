@@ -11,6 +11,7 @@
  */
 import type {
   BaselineChoice,
+  PiwiCommand,
   ConnectionSource,
   CoverageResult,
   DesktopJobUpdate,
@@ -118,7 +119,14 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.runOptions',
   'piwi.restartService',
   'piwi.openLog',
+  'piwi.showFlakyTests',
 ];
+
+/** The tooltip's link to a config's flaky tests, which the failures tree lists; null while it lists none. */
+function flakyLink(root: string, count: number): string | null {
+  if (count <= 0) return null;
+  return `[${showFlakyTestsLabel(count)}](command:piwi.showFlakyTests?${encodeURIComponent(JSON.stringify([root]))})`;
+}
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -193,6 +201,39 @@ function updatedLine(run: RunStatus | undefined, now: number): string | null {
 /** The baseline a context compares with, as the tooltip and the failures view name it: `Baseline: CI run #120 on main`. */
 export function baselineLine(label: string | undefined): string | null {
   return label ? `Baseline: ${label}` : null;
+}
+
+/** Whether a node of the service's failures tree is a run's `Flaky in this run` group, a context's or the only run's. */
+export function isFlakyGroup(key: string): boolean {
+  return key === 'flaky' || key.endsWith('\nflaky');
+}
+
+/**
+ * The flaky tests the failures tree lists, by the folder of the Playwright config whose run's group lists them: its
+ * `run` or `context` node's `root`.
+ */
+export function flakyTestsByRoot(result: FailuresResult | null): Map<string, number> {
+  const counts = new Map<string, number>();
+  const walk = (nodes: FailureTreeNode[], root: string) => {
+    for (const node of nodes) {
+      const at = node.root ?? root;
+      if (isFlakyGroup(node.key)) counts.set(at, (counts.get(at) ?? 0) + node.children.length);
+      else walk(node.children, at);
+    }
+  };
+  walk(result?.tree ?? [], '');
+  return counts;
+}
+
+/** What opens a config's flaky tests: `Show the run's 2 flaky tests`, as the JetBrains plugin's action says it. */
+export function showFlakyTestsLabel(count: number): string {
+  return count === 1 ? "Show the run's flaky test" : `Show the run's ${count} flaky tests`;
+}
+
+/** The failures view's description: how it groups, and the baseline it compares with (`by file · Baseline: …`). */
+export function failuresViewDescription(grouping: FailuresGrouping, baseline: string | undefined): string {
+  const by = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)?.label.toLowerCase() ?? grouping}`;
+  return [by, baselineLine(baseline)].filter(Boolean).join(' · ');
 }
 
 /**
@@ -335,6 +376,7 @@ export function statusBarView(
   now = Date.now(),
   activeFile: string | null = null,
   progressOf: (ref: string, instance: LiveRun) => RunCounts | undefined = () => undefined,
+  flakyListed: (root: string) => number = () => 0,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
@@ -460,6 +502,7 @@ export function statusBarView(
     linksLine(
       liveLink(live),
       live?.runId === r.id ? null : `[Open run #${r.id}](command:piwi.openRun)`,
+      flakyLink(connected.root, flakyListed(connected.root)),
       dashboard,
       compare,
       connect,
@@ -553,6 +596,10 @@ export interface FailureNode {
   root?: string;
   /** The failure a leaf stands for. */
   failure?: WorkspaceFailure;
+  /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
+  place?: { uri: string; line: number };
+  /** On a flaky test: what looks into it, which **Look into this flake…** offers. */
+  actions?: PiwiCommand[];
   children: FailureNode[];
 }
 
@@ -569,6 +616,8 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   failing: 'error',
   edited: 'edit',
   fixed: 'check',
+  // The editors' flaky mark (`media/test-flaky.svg`), as the CI view draws it.
+  flaky: 'mark:flaky',
 };
 
 /**
@@ -604,6 +653,8 @@ export function failureNodes(
       ...(node.executionId !== undefined && failures.has(node.executionId)
         ? { failure: failures.get(node.executionId)! }
         : {}),
+      ...(node.uri !== undefined && node.line !== undefined ? { place: { uri: node.uri, line: node.line } } : {}),
+      ...(node.actions?.length ? { actions: node.actions } : {}),
       children: node.children.map(draw),
     };
   };

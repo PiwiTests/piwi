@@ -17,7 +17,15 @@ import {
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
-import { FAILURES_GROUPINGS, failingRuns, failureNodes, type FailureNode } from './glue';
+import {
+  FAILURES_GROUPINGS,
+  failingRuns,
+  failureNodes,
+  failuresViewDescription,
+  flakyTestsByRoot,
+  isFlakyGroup,
+  type FailureNode,
+} from './glue';
 
 const GROUPING = 'piwi.failuresGrouping';
 const FOLLOW = 'piwi.followEditor';
@@ -76,6 +84,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     private readonly lc: LanguageClient,
     private readonly status: () => StatusResult | null,
     private readonly runs: () => RunStatusResult | null,
+    /** Called once the view drew an answer, for what reads it (the status item's link to the flaky tests). */
+    private readonly drawn: () => void = () => {},
   ) {
     this.view = vscode.window.createTreeView('piwi.failures', { treeDataProvider: this, showCollapseAll: true });
     this.disposables.push(
@@ -149,7 +159,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       ? { value: failing, tooltip: `${failing} failing ${failing === 1 ? 'test' : 'tests'}` }
       : undefined;
     const grouping = this.result?.grouping ?? this.grouping;
-    this.view.description = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)!.label.toLowerCase()}`;
+    this.view.description = failuresViewDescription(grouping, this.result?.baseline?.label);
     const run = this.result?.run;
     // Without a run, the service's words name the instance or the branch above the welcome's buttons.
     const view = this.result?.view;
@@ -160,6 +170,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
           ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
           : undefined;
     this.changed.fire(undefined);
+    this.drawn();
   }
 
   getTreeItem(node: FailureNode): vscode.TreeItem {
@@ -175,7 +186,9 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     const tooltip = new vscode.MarkdownString(node.tooltip);
     item.tooltip = tooltip;
     const color = ICON_COLORS[node.icon];
-    item.iconPath = new vscode.ThemeIcon(node.icon, color ? new vscode.ThemeColor(color) : undefined);
+    item.iconPath = node.icon.startsWith('mark:')
+      ? vscode.Uri.joinPath(this.context.extensionUri, 'media', `test-${node.icon.slice('mark:'.length)}.svg`)
+      : new vscode.ThemeIcon(node.icon, color ? new vscode.ThemeColor(color) : undefined);
     item.contextValue = contextValue(node, !!this.status()?.desktopUrl, this.result);
     const f = node.failure;
     if (f) {
@@ -184,10 +197,43 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
         command: 'vscode.open',
         arguments: [vscode.Uri.parse(f.uri), { selection: new vscode.Range(f.line, 0, f.line, 0), preview: true }],
       };
+    } else if (node.place) {
+      const { uri, line } = node.place;
+      item.command = {
+        title: 'Open the flaky test',
+        command: 'vscode.open',
+        arguments: [vscode.Uri.parse(uri), { selection: new vscode.Range(line, 0, line, 0), preview: true }],
+      };
     } else if (node.kind === 'overlay' && node.url) {
       item.command = { title: 'Open the run in the dashboard', command: 'piwi.openInDashboard', arguments: [node.url] };
     }
     return item;
+  }
+
+  /**
+   * Shows the view with the `Flaky in this run` group of the config at `root` selected and open, else the only one
+   * the tree lists; false when it lists none of them.
+   */
+  async revealFlaky(root?: string): Promise<boolean> {
+    const groups: Array<{ node: FailureNode; root: string }> = [];
+    const find = (nodes: FailureNode[], at: string) => {
+      for (const node of nodes) {
+        const here = node.root ?? at;
+        if (isFlakyGroup(node.key)) groups.push({ node, root: here });
+        else find(node.children, here);
+      }
+    };
+    find(this.roots, '');
+    const group = groups.find((g) => g.root === root) ?? (groups.length === 1 ? groups[0] : undefined);
+    if (!group) return false;
+    await this.view.reveal(group.node, { select: true, focus: true, expand: true });
+    return true;
+  }
+
+  /** The flaky tests the tree lists for the config at `root`. */
+  flakyListed(root: string): number {
+    const counts = flakyTestsByRoot(this.result);
+    return counts.get(root) ?? (counts.size === 1 ? [...counts.values()][0]! : 0);
   }
 
   getChildren(node?: FailureNode): FailureNode[] {

@@ -547,6 +547,16 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.showFlakyTests",
+        "title": "Show the run's flaky tests",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.lookIntoFlake",
+        "title": "Look into this flake…",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.showBrowser",
         "title": "Show the stopped test's browser",
         "icon": "$(browser)",
@@ -673,6 +683,10 @@
         },
         {
           "command": "piwi.reproduceInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.lookIntoFlake",
           "when": "false"
         },
         {
@@ -977,12 +991,12 @@
         },
         {
           "command": "piwi.openInDashboard",
-          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay|flaky)$/",
           "group": "inline@1"
         },
         {
           "command": "piwi.openInDashboard",
-          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay|flaky)$/",
           "group": "3_open@1"
         },
         {
@@ -1044,6 +1058,11 @@
           "command": "piwi.bisectInDesktop",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
           "group": "4_desktop@2"
+        },
+        {
+          "command": "piwi.lookIntoFlake",
+          "when": "view == piwi.failures && viewItem == piwi.flaky",
+          "group": "2_flake@1"
         }
       ],
       "piwi.editorContext": [

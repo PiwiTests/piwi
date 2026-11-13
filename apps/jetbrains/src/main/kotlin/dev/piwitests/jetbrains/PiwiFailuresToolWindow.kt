@@ -5,6 +5,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.ide.CommonActionsManager
 import com.intellij.ide.DefaultTreeExpander
 import com.intellij.ide.OccurenceNavigator
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -17,6 +18,7 @@ import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.IconLoader
@@ -28,6 +30,7 @@ import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
@@ -113,10 +116,30 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         })
         PopupHandler.installPopupMenu(tree, failureMenu(project, selected), "PiwiFailuresPopup")
 
-        val header = JBLabel().apply {
-            border = JBUI.Borders.empty(4, 8)
+        // One line in the small font: the connection, a link to the settings that shortens with an ellipsis, and the
+        // baseline, a link to Compare with… that always shows.
+        fun headerLink(actionId: String) = ActionLink("") { e ->
+            val actions = ActionManager.getInstance()
+            actions.getAction(actionId)?.let { actions.tryToExecute(it, null, e.source as java.awt.Component, "PiwiToolWindow", true) }
+        }.apply {
+            putClientProperty("html.disable", true)
+            font = JBUI.Fonts.smallFont()
+            horizontalAlignment = javax.swing.SwingConstants.LEFT
+        }
+        val connectionLink = headerLink("Piwi.OpenSettings")
+        val baselineDot = JBLabel(" · ").apply {
             componentStyle = UIUtil.ComponentStyle.SMALL
             foreground = UIUtil.getContextHelpForeground()
+        }
+        val baselineLink = headerLink("Piwi.CompareWith")
+        val header = JPanel().apply {
+            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.X_AXIS)
+            border = JBUI.Borders.empty(4, 8)
+            isOpaque = false
+            add(connectionLink)
+            add(baselineDot)
+            add(baselineLink)
+            add(javax.swing.Box.createHorizontalGlue())
         }
         /** The keys of the nodes shown last, and of those expanded: a refresh keeps both. */
         val known = mutableSetOf<String>()
@@ -181,9 +204,16 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
-            val run = Glue.runHeader(result)
-            header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
+            val line = Glue.toolWindowHeader(service.status, result, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
+            connectionLink.text = line.connection
+            connectionLink.toolTipText = Glue.htmlTooltip(line.tooltip)
+            baselineLink.text = line.baseline ?: ""
+            baselineDot.isVisible = line.baseline != null
+            baselineLink.isVisible = line.baseline != null
+            // The connection gives way to the baseline in a narrow window, shortened with an ellipsis.
+            connectionLink.minimumSize = java.awt.Dimension(0, connectionLink.preferredSize.height)
+            baselineLink.minimumSize = baselineLink.preferredSize
+            header.revalidate()
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
@@ -360,7 +390,24 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
     }
 
-    /** An action of the right-click menu on a failure, shown when it applies to the selected one. */
+    /**
+     * A flaky test's actions, as the service lists them: its Flakiness tab, then the Flake Lab commands it can run, each
+     * with the glyph of what it does (the page, the desktop app's job, a command).
+     */
+    private class FlakeActions(private val project: Project, private val selected: () -> Glue.FailureNode?) : ActionGroup(), DumbAware {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun getChildren(e: AnActionEvent?): Array<AnAction> =
+            selected()?.takeIf { it.kind == "flaky" }?.actions.orEmpty().map { command ->
+                val icon = when (command.command) {
+                    "piwi.openInDashboard" -> PiwiIcons.OPEN_IN_DASHBOARD
+                    "piwi.desktopJob" -> PiwiIcons.REPRODUCE
+                    else -> AllIcons.Actions.Execute
+                }
+                DumbAwareAction.create(command.title.orEmpty(), icon) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) }
+            }.toTypedArray()
+    }
+
     /**
      * The tree's right-click menu: the selected config's actions, then the registered `Piwi.Failure.*` actions, which act
      * on the selected failure (`FAILURE_NODE`), their keys shown and Find Action reaching them.
@@ -377,6 +424,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             ConfigAction("Compare with…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
             // The selected node's page, a run's or a failure's (`DASHBOARD_URL`).
             *registered("Piwi.OpenInDashboard"),
+            FlakeActions(project, selected),
             Separator.getInstance(),
             *registered("Piwi.Failure.RunTest"),
             Separator.getInstance(),
@@ -388,12 +436,17 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         )
     }
 
-    /** A failure's line, or a run's page; false for a node that opens nothing. */
+    /** A failure's line, a flaky test's `test(…)` line, or a run's page; false for a node that opens nothing. */
     private fun open(project: Project, node: Glue.FailureNode?): Boolean {
         val failure = node?.failure
         if (failure != null) {
             val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return false
             OpenFileDescriptor(project, file, failure.line, 0).navigate(true)
+            return true
+        }
+        if (node?.uri != null && node.line != null) {
+            val file = VirtualFileManager.getInstance().findFileByUrl(node.uri) ?: return false
+            OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }
         val url = node?.url?.takeIf { node.kind == "overlay" || node.kind == "run" } ?: return false
@@ -424,6 +477,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 "failing", "failed" -> PiwiIcons.FAILED
                 "file", "cluster", "owner" -> AllIcons.Nodes.Folder
                 "history" -> AllIcons.Vcs.History
+                "flaky" -> PiwiIcons.FLAKY
                 else -> AllIcons.RunConfigurations.TestState.Run
             }
             append(node.label)
@@ -460,7 +514,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             return keys
         }
 
-        private fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     }
 }
 

@@ -31,14 +31,14 @@ object PiwiInstance {
     // Node server that takes upgrades for its WebSockets, such as `nuxt dev`, drops the request.
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofSeconds(10))
+        .connectTimeout(Duration.ofSeconds(Glue.CONNECT_TIMEOUT_S.toLong()))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
     /** For an instance on this machine: the IDE's proxy settings never apply to it. */
     private val loopback: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofSeconds(10))
+        .connectTimeout(Duration.ofSeconds(Glue.CONNECT_TIMEOUT_S.toLong()))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .proxy(HttpClient.Builder.NO_PROXY)
         .build()
@@ -101,7 +101,7 @@ object PiwiInstance {
         gson.fromJson(send(url, "/api/extension/connect/token", null, gson.toJson(mapOf("deviceCode" to deviceCode))), SignInAnswer::class.java)
 
     private fun send(url: String, path: String, key: String?, json: String?): String {
-        val request = HttpRequest.newBuilder(URI("$url$path")).timeout(Duration.ofSeconds(15))
+        val request = HttpRequest.newBuilder(URI("$url$path")).timeout(Duration.ofSeconds(Glue.ANSWER_TIMEOUT_S.toLong()))
         if (json == null) request.GET() else request.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(json))
         if (!key.isNullOrEmpty()) request.header("X-API-Key", key)
         val client = if (Glue.isLoopback(url)) loopback else http

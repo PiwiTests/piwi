@@ -580,6 +580,11 @@ object Glue {
         val children: List<FailureNode> = emptyList(),
         /** The lines of its hover, as the service writes them (`FailureTreeNode.tooltip`). */
         val tooltip: List<String> = emptyList(),
+        /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
+        val uri: String? = null,
+        val line: Int? = null,
+        /** On a flaky test: what looks into it, its Flakiness tab first (`FailureTreeNode.actions`). */
+        val actions: List<PiwiCommand> = emptyList(),
     )
 
     /**
@@ -613,6 +618,9 @@ object Glue {
             root = node.root,
             children = node.children.orEmpty().map { draw(it) },
             tooltip = node.tooltip.orEmpty(),
+            uri = node.uri,
+            line = node.line,
+            actions = node.actions.orEmpty().filter { it.title != null && it.command != null },
         )
         return result?.tree.orEmpty().map { draw(it) }
     }
@@ -652,18 +660,35 @@ object Glue {
     fun sameShape(a: List<FailureNode>, b: List<FailureNode>): Boolean =
         a.size == b.size && a.indices.all { a[it].key == b[it].key && sameShape(a[it].children, b[it].children) }
 
+    /** Whether a node of the failures tree is a run's `Flaky in this run` group, a context's or the only run's. */
+    fun isFlakyGroup(key: String): Boolean = key == "flaky" || key.endsWith("\nflaky")
+
     /**
-     * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
-     * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
-     * developer's own runs alone; the baseline alone when it found no run; null when the tree holds a node per
-     * Playwright config, each over its own run.
+     * How many flaky tests the failures tree lists, by the folder of the Playwright config whose run's `Flaky in this
+     * run` group lists them: its `run` or `context` node's `root`, the empty string when no node names one.
      */
-    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? =
-        listOfNotNull(
-            result?.runLabel?.ifBlank { null },
-            result?.runLabel?.let { result.run?.startTime?.let { relativeTime(it, now) } },
-            baselineLine(result?.baseline?.label),
-        ).ifEmpty { null }?.joinToString(" · ")
+    fun flakyTestsByRoot(result: FailuresResult?): Map<String, Int> {
+        val counts = linkedMapOf<String, Int>()
+        fun walk(nodes: List<FailureTreeNode>, root: String) {
+            for (node in nodes) {
+                val at = node.root ?: root
+                if (isFlakyGroup(node.key)) counts[at] = (counts[at] ?: 0) + node.children.orEmpty().size
+                else walk(node.children.orEmpty(), at)
+            }
+        }
+        walk(result?.tree.orEmpty(), "")
+        return counts
+    }
+
+    /** The flaky tests the tree lists for the config at `root`, else those of the only config it lists any for. */
+    fun flakyTestsListed(result: FailuresResult?, root: String?): Int {
+        val counts = flakyTestsByRoot(result)
+        return counts[root] ?: counts.values.singleOrNull() ?: 0
+    }
+
+    /** What opens a config's flaky tests: `Show the run's 2 flaky tests`, as VS Code's status tooltip says it. */
+    fun showFlakyTestsLabel(count: Int): String =
+        if (count == 1) "Show the run's flaky test" else "Show the run's $count flaky tests"
 
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
@@ -1022,6 +1047,40 @@ object Glue {
     }
 
     /**
+     * The Piwi tool window's one line: the connection, short, a link to the settings (its sentence in the tooltip),
+     * and the baseline, a link to Compare with…; the run is the tree's own node.
+     */
+    data class ToolWindowHeader(val connection: String, val tooltip: String, val baseline: String?)
+
+    fun toolWindowHeader(
+        status: StatusResult?,
+        result: FailuresResult?,
+        desktopChosen: Boolean = false,
+        startProblem: String? = null,
+        trusted: Boolean = true,
+        stopped: Boolean = false,
+    ): ToolWindowHeader {
+        val summary = connectionSummary(status, desktopChosen, startProblem, trusted, stopped)
+        val contexts = status?.contexts.orEmpty()
+        val connected = contexts.filter { it.connected }
+        val short = when {
+            connected.isEmpty() -> null
+            contexts.size > 1 -> "${connected.size} of ${contexts.size} Playwright configs connected"
+                .takeIf { connected.size < contexts.size } ?: "${contexts.size} Playwright configs"
+            else -> connected[0].let { c -> (c.projectName ?: "Piwi") + (c.branch?.let { " on $it" } ?: "") }
+        }
+        // The desktop app's hint stays in sight: it says what Connect can switch to.
+        val connection = short?.let { s -> desktopHint(status, desktopChosen).ifEmpty { null }?.let { "$s. $it" } ?: s } ?: summary
+        return ToolWindowHeader(connection, summary, baselineLine(result?.baseline?.label)?.let { "$it ▾" })
+    }
+
+    /**
+     * Whether the status popup offers Open the latest run: not when a row of it already opens the page of the run in
+     * progress that the action would open (`pageIds`, the run pages the popup lists), whatever host each page names.
+     */
+    fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
+
+    /**
      * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
      * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
      */
@@ -1199,23 +1258,70 @@ object Glue {
     fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
 
     /**
-     * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
-     * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it; any
-     * other TLS failure gives its own message.
+     * Why Connect could not reach an instance, one sentence per kind of failure, `{name}` standing for a value: the
+     * editor service's table, `packages/editor/src/connect-failures.json`, which the VS Code extension reads and
+     * `GlueTest` holds this copy to.
+     */
+    val CONNECT_FAILURE_WORDS: Map<String, String> = linkedMapOf(
+        "refused-key" to "the instance refused the key ({status})",
+        "not-piwi" to "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+        "not-piwi-page" to "not a Piwi instance: the address answers with a page, not Piwi's requests",
+        "status" to "the instance answered {status}",
+        "untrusted" to "{client} does not trust the certificate of {host}. {trust}",
+        "expired" to "the certificate of {host} has expired",
+        "not-yet-valid" to "the certificate of {host} is not valid yet: check this machine's clock",
+        "other-name" to "the certificate of {host} names another address: use the address it was issued for",
+        "not-https" to "{host} does not answer HTTPS there: try http://",
+        "timeout" to "no answer within {seconds} seconds",
+        "no-answer" to "no answer in time",
+        "nothing-listening" to "nothing answers there. Is the instance running, on that port?",
+        "unknown-host" to "unknown host {host}",
+        "lookup-failed" to "the name {host} could not be looked up now: is this machine online?",
+    )
+
+    /** How long Connect waits to connect to an instance, then for its answer, in seconds (`PiwiConnect`). */
+    const val CONNECT_TIMEOUT_S = 10
+    const val ANSWER_TIMEOUT_S = 15
+
+    /** The sentence of `kind` in [CONNECT_FAILURE_WORDS], each `{name}` replaced by its value. */
+    fun connectFailureWords(kind: String, vararg values: Pair<String, Any>): String {
+        val named = values.toMap()
+        return Regex("""\{(\w+)\}""").replace(CONNECT_FAILURE_WORDS.getValue(kind)) { m ->
+            named[m.groupValues[1]]?.toString() ?: m.value
+        }
+    }
+
+    /**
+     * Why Connect could not reach `url`, in [CONNECT_FAILURE_WORDS]' words: `status` is the HTTP status the instance
+     * answered, if any. A certificate the IDE does not trust names the host and where to trust it, whatever exception
+     * carries it; one expired, not valid yet or for another name says so; any other TLS failure gives its own message.
      */
     fun connectFailure(e: Throwable, status: Int?, url: String?): String {
         val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() } ?: "the instance"
         val chain = generateSequence(e) { it.cause }.take(10).toList()
+        val says = { text: String -> chain.any { it.message.orEmpty().contains(text, ignoreCase = true) } }
         return when {
-            status == 401 || status == 403 -> "the instance refused the key ($status)"
-            status == 404 -> "not a Piwi instance: nothing answers Piwi's requests at this address (404)"
-            status != null -> "the instance answered $status"
-            chain.any { it is java.security.cert.CertificateException || it.message.orEmpty().contains("PKIX path") } ->
-                "the IDE does not trust the certificate of $host. Add it, or your company's root certificate, in " +
-                    "Settings → Tools → Server Certificates"
-            chain.any { it is java.net.http.HttpConnectTimeoutException } -> "no answer within 10 seconds"
-            chain.any { it is java.net.ConnectException } -> "nothing answers there. Is the instance running, on that port?"
-            chain.any { it is java.net.UnknownHostException } -> "unknown host ${chain.first { it is java.net.UnknownHostException }.message ?: host}"
+            status == 401 || status == 403 -> connectFailureWords("refused-key", "status" to status)
+            status == 404 -> connectFailureWords("not-piwi")
+            status != null -> connectFailureWords("status", "status" to status)
+            chain.any { it is com.google.gson.JsonParseException } -> connectFailureWords("not-piwi-page")
+            chain.any { it is java.security.cert.CertificateExpiredException } -> connectFailureWords("expired", "host" to host)
+            chain.any { it is java.security.cert.CertificateNotYetValidException } ->
+                connectFailureWords("not-yet-valid", "host" to host)
+            says("No subject alternative") || says("No name matching") -> connectFailureWords("other-name", "host" to host)
+            chain.any { it is java.security.cert.CertificateException } || says("PKIX path") ->
+                connectFailureWords(
+                    "untrusted",
+                    "client" to "the IDE",
+                    "host" to host,
+                    "trust" to "Add it, or your company's root certificate, in Settings → Tools → Server Certificates",
+                )
+            says("Unsupported or unrecognized SSL message") -> connectFailureWords("not-https", "host" to host)
+            chain.any { it is java.net.http.HttpConnectTimeoutException } -> connectFailureWords("timeout", "seconds" to CONNECT_TIMEOUT_S)
+            chain.any { it is java.net.http.HttpTimeoutException } -> connectFailureWords("timeout", "seconds" to ANSWER_TIMEOUT_S)
+            chain.any { it is java.net.ConnectException } -> connectFailureWords("nothing-listening")
+            chain.any { it is java.net.UnknownHostException } ->
+                connectFailureWords("unknown-host", "host" to (chain.first { it is java.net.UnknownHostException }.message ?: host))
             else -> e.message ?: e.javaClass.simpleName
         }
     }
