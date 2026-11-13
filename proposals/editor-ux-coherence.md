@@ -35,14 +35,17 @@ broadcast; VS Code's Run the tests that reach this file and 'Piwi: unreachable' 
 Disconnect, and its CI lists open a run with the run pages' globe; `menus.test.ts` and `PiwiPluginTest` fail on a glyph
 two concepts share but those they list (NF1). M5's tray and Runs window: the desktop tray's dot in the outcome palette,
 a run that waits in the pause bar's violet, Piwi Picker's Runs window counting failed and flaky in it, VS Code's flaky
-word after a line in fuchsia (`piwi.flakyForeground`) and the hover's flaky test with the word (IC4 in part). M6: the
-pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20 in part: VS Code's
-Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
-`SpecTest` (TL20). §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+word after a line in fuchsia (`piwi.flakyForeground`) and the hover's flaky test with the word (IC4 in part). Q16: VS
+Code's integration suite stops the editor service and starts it again through Restart the editor service (HM19 in part).
+Q29: Connect's failure words are one table in the editor service (`connect-failures.json`), which VS Code reads and
+`GlueTest` holds the JetBrains plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and
+page answers VS Code said (NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in
+`picker-dom` (IC6). M20 in part: VS Code's Testing view shows each test's average duration, quarantine, Playwright tags
+and owner, from the catalog through `SpecTest` (TL20). §14 adds the findings the code that built the plan raised. The
+live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status
+names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a
+run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is
+on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -1167,7 +1170,7 @@ in…, Paste key… and Remove, a project combo from the instance. The sign-in i
 link (VS Code's gains Copy link); errors come from one table, and waiting for trust and a Node.js start problem become
 states with their fix. **Lives in** `PiwiConnect.kt`, `PiwiConfigurable.kt` and the service's words (FSL). **Replaces**
 up to five modal dialogs, a project typed by hand on the settings page, a page that reads None while connected.
-**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q27](#q27), [Q29](#q29), [M12](#m12).
+**Depends on** [LI6](#li6). **Revisits** no earlier decision. Steps [Q27](#q27), [M12](#m12).
 
 **Messages (principle 8).**
 
@@ -1289,7 +1292,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
-| <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7) |
 | <a id="q30"></a>Q30 | **Small drifts**: Re-run Failing only with failures; Copy the MCP configuration only while connected; Run This Spec's description and docs row; Interact and an accessible name per lane in JetBrains' Worker tab; group and view ids in D25, `editor-ids-register.test.ts` reading them | `ide` | [NF9](#nf9), [NF6](#nf6), [NF10](#nf10) |
 
 ### Medium
@@ -1332,7 +1334,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q8, Q13, Q27 to Q30), each on its own. Then M1, on which most of the rest
+The quick wins that stand alone (Q5, Q8, Q13, Q27, Q28, Q30), each on its own. Then M1, on which most of the rest
 builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
 glyphs and the outcome palette that Q2, Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
@@ -1438,11 +1440,6 @@ an offer, and Connect… on the connect-first answer. ([Q27](#q27))
 panel does (`apps/vscode/src/run-control.ts:1987`), and its accessible name is 'Paused test page' for a running or a CI
 lane (`PiwiRunControl.kt:2482`). **(read)** Fix: Interact at a stop, as the Paused Page offers it, and a name per kind
 of lane, until [M15](#m15) makes one page per worker. ([Q30](#q30))
-
-<a id="nf7"></a>**NF7. Connect's failure words are written twice.** VS Code's `connectFailure`
-(`apps/vscode/src/connect.ts`) and JetBrains' `Glue.connectFailure` name the same causes in the same words, each held by
-its own test (`apps/vscode/tests/connect.test.ts`, `GlueTest`), with nothing tying one to the other. **(read)** Fix: one
-failure table, in the service, read by both clients. ([Q29](#q29))
 
 <a id="nf8"></a>**NF8. New marks and options have no switch or no way out.** The CI positions both editors draw beside
 the lines while a CI run of the branch runs cannot be turned off (`apps/vscode/src/ci-view.ts:49-56, 91-113`,

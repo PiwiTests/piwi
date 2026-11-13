@@ -1175,23 +1175,69 @@ object Glue {
     fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
 
     /**
-     * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
-     * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it; any
-     * other TLS failure gives its own message.
+     * Why Connect could not reach an instance, one sentence per kind of failure, `{name}` standing for a value: the
+     * editor service's table, `packages/editor/src/connect-failures.json`, which the VS Code extension reads and
+     * `GlueTest` holds this copy to.
+     */
+    val CONNECT_FAILURE_WORDS: Map<String, String> = linkedMapOf(
+        "refused-key" to "the instance refused the key ({status})",
+        "not-piwi" to "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+        "not-piwi-page" to "not a Piwi instance: the address answers with a page, not Piwi's requests",
+        "status" to "the instance answered {status}",
+        "untrusted" to "{client} does not trust the certificate of {host}. {trust}",
+        "expired" to "the certificate of {host} has expired",
+        "not-yet-valid" to "the certificate of {host} is not valid yet: check this machine's clock",
+        "other-name" to "the certificate of {host} names another address: use the address it was issued for",
+        "not-https" to "{host} does not answer HTTPS there: try http://",
+        "timeout" to "no answer within {seconds} seconds",
+        "nothing-listening" to "nothing answers there. Is the instance running, on that port?",
+        "unknown-host" to "unknown host {host}",
+        "lookup-failed" to "the name {host} could not be looked up now: is this machine online?",
+    )
+
+    /** How long Connect waits to connect to an instance, then for its answer, in seconds (`PiwiConnect`). */
+    const val CONNECT_TIMEOUT_S = 10
+    const val ANSWER_TIMEOUT_S = 15
+
+    /** The sentence of `kind` in [CONNECT_FAILURE_WORDS], each `{name}` replaced by its value. */
+    fun connectFailureWords(kind: String, vararg values: Pair<String, Any>): String {
+        val named = values.toMap()
+        return Regex("""\{(\w+)\}""").replace(CONNECT_FAILURE_WORDS.getValue(kind)) { m ->
+            named[m.groupValues[1]]?.toString() ?: m.value
+        }
+    }
+
+    /**
+     * Why Connect could not reach `url`, in [CONNECT_FAILURE_WORDS]' words: `status` is the HTTP status the instance
+     * answered, if any. A certificate the IDE does not trust names the host and where to trust it, whatever exception
+     * carries it; one expired, not valid yet or for another name says so; any other TLS failure gives its own message.
      */
     fun connectFailure(e: Throwable, status: Int?, url: String?): String {
         val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() } ?: "the instance"
         val chain = generateSequence(e) { it.cause }.take(10).toList()
+        val says = { text: String -> chain.any { it.message.orEmpty().contains(text, ignoreCase = true) } }
         return when {
-            status == 401 || status == 403 -> "the instance refused the key ($status)"
-            status == 404 -> "not a Piwi instance: nothing answers Piwi's requests at this address (404)"
-            status != null -> "the instance answered $status"
-            chain.any { it is java.security.cert.CertificateException || it.message.orEmpty().contains("PKIX path") } ->
-                "the IDE does not trust the certificate of $host. Add it, or your company's root certificate, in " +
-                    "Settings → Tools → Server Certificates"
-            chain.any { it is java.net.http.HttpConnectTimeoutException } -> "no answer within 10 seconds"
-            chain.any { it is java.net.ConnectException } -> "nothing answers there. Is the instance running, on that port?"
-            chain.any { it is java.net.UnknownHostException } -> "unknown host ${chain.first { it is java.net.UnknownHostException }.message ?: host}"
+            status == 401 || status == 403 -> connectFailureWords("refused-key", "status" to status)
+            status == 404 -> connectFailureWords("not-piwi")
+            status != null -> connectFailureWords("status", "status" to status)
+            chain.any { it is com.google.gson.JsonParseException } -> connectFailureWords("not-piwi-page")
+            chain.any { it is java.security.cert.CertificateExpiredException } -> connectFailureWords("expired", "host" to host)
+            chain.any { it is java.security.cert.CertificateNotYetValidException } ->
+                connectFailureWords("not-yet-valid", "host" to host)
+            says("No subject alternative") || says("No name matching") -> connectFailureWords("other-name", "host" to host)
+            chain.any { it is java.security.cert.CertificateException } || says("PKIX path") ->
+                connectFailureWords(
+                    "untrusted",
+                    "client" to "the IDE",
+                    "host" to host,
+                    "trust" to "Add it, or your company's root certificate, in Settings → Tools → Server Certificates",
+                )
+            says("Unsupported or unrecognized SSL message") -> connectFailureWords("not-https", "host" to host)
+            chain.any { it is java.net.http.HttpConnectTimeoutException } -> connectFailureWords("timeout", "seconds" to CONNECT_TIMEOUT_S)
+            chain.any { it is java.net.http.HttpTimeoutException } -> connectFailureWords("timeout", "seconds" to ANSWER_TIMEOUT_S)
+            chain.any { it is java.net.ConnectException } -> connectFailureWords("nothing-listening")
+            chain.any { it is java.net.UnknownHostException } ->
+                connectFailureWords("unknown-host", "host" to (chain.first { it is java.net.UnknownHostException }.message ?: host))
             else -> e.message ?: e.javaClass.simpleName
         }
     }

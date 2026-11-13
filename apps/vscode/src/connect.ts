@@ -5,6 +5,8 @@
  * uses), which hands over an API key created for this editor.
  */
 
+import { connectFailureWords } from '@piwitests/editor/connect-failures';
+
 export class InstanceError extends Error {
   constructor(readonly status: number) {
     super(`the instance answered ${status}`);
@@ -26,11 +28,15 @@ const UNTRUSTED_CODES = new Set([
 /** A link of an error's chain, as Node.js and undici give them. */
 type ErrorLink = { name?: string; code?: string; message?: string };
 
+/** How long Connect waits for an instance, in seconds. */
+const CONNECT_TIMEOUT_S = 15;
+
 /**
- * Why Connect could not reach `url`, in the JetBrains plugin's words (`Glue.connectFailure`): a refused key, an address
- * that is not a Piwi instance (a 404, or a page where Piwi's API should answer), another status, a certificate the
- * editor does not trust, one expired or for another name, no answer in time, nothing listening, a name not found; else
- * the deepest cause's own message. `editor` names the editor in the advice (`vscode.env.appName`).
+ * Why Connect could not reach `url`, in the words of the editor service's table (`connectFailureWords`), which the
+ * JetBrains plugin says too: a refused key, an address that is not a Piwi instance (a 404, or a page where Piwi's API
+ * should answer), another status, a certificate the editor does not trust, one expired or for another name, no answer
+ * in time, nothing listening, a name not found; else the deepest cause's own message. `editor` names the editor in the
+ * advice (`vscode.env.appName`).
  */
 export function connectFailure(e: unknown, url: string | null, editor = 'VS Code'): string {
   let host = 'the instance';
@@ -40,38 +46,38 @@ export function connectFailure(e: unknown, url: string | null, editor = 'VS Code
     // An address that is not a URL keeps the generic name.
   }
   if (e instanceof InstanceError) {
-    if (e.status === 401 || e.status === 403) return `the instance refused the key (${e.status})`;
-    if (e.status === 404) return "not a Piwi instance: nothing answers Piwi's requests at this address (404)";
-    return `the instance answered ${e.status}`;
+    if (e.status === 401 || e.status === 403) return connectFailureWords('refused-key', { status: e.status });
+    if (e.status === 404) return connectFailureWords('not-piwi');
+    return connectFailureWords('status', { status: e.status });
   }
-  if (e instanceof SyntaxError) return "not a Piwi instance: the address answers with a page, not Piwi's requests";
+  if (e instanceof SyntaxError) return connectFailureWords('not-piwi-page');
   const chain: ErrorLink[] = [];
   for (let c: unknown = e; c && typeof c === 'object' && chain.length < 10; c = (c as { cause?: unknown }).cause) {
     chain.push(c as ErrorLink);
   }
   const code = (test: (code: string) => boolean) => chain.some((c) => !!c.code && test(c.code));
   if (code((c) => UNTRUSTED_CODES.has(c))) {
-    return (
-      `${editor} does not trust the certificate of ${host}. Add the authority that signed it, or your company's root ` +
-      'certificate, to NODE_EXTRA_CA_CERTS in the environment the editor runs extensions in'
-    );
+    return connectFailureWords('untrusted', {
+      client: editor,
+      host,
+      trust:
+        "Add the authority that signed it, or your company's root certificate, to NODE_EXTRA_CA_CERTS in the " +
+        'environment the editor runs extensions in',
+    });
   }
-  if (code((c) => c === 'CERT_HAS_EXPIRED')) return `the certificate of ${host} has expired`;
-  if (code((c) => c === 'CERT_NOT_YET_VALID'))
-    return `the certificate of ${host} is not valid yet: check this machine's clock`;
-  if (code((c) => c === 'ERR_TLS_CERT_ALTNAME_INVALID')) {
-    return `the certificate of ${host} names another address: use the address it was issued for`;
-  }
-  if (code((c) => c === 'ERR_SSL_WRONG_VERSION_NUMBER')) return `${host} does not answer HTTPS there: try http://`;
+  if (code((c) => c === 'CERT_HAS_EXPIRED')) return connectFailureWords('expired', { host });
+  if (code((c) => c === 'CERT_NOT_YET_VALID')) return connectFailureWords('not-yet-valid', { host });
+  if (code((c) => c === 'ERR_TLS_CERT_ALTNAME_INVALID')) return connectFailureWords('other-name', { host });
+  if (code((c) => c === 'ERR_SSL_WRONG_VERSION_NUMBER')) return connectFailureWords('not-https', { host });
   if (
     chain.some((c) => c.name === 'TimeoutError') ||
     code((c) => c === 'UND_ERR_CONNECT_TIMEOUT' || c === 'ETIMEDOUT')
   ) {
-    return 'no answer in time';
+    return connectFailureWords('timeout', { seconds: CONNECT_TIMEOUT_S });
   }
-  if (code((c) => c === 'ECONNREFUSED')) return 'nothing answers there. Is the instance running, on that port?';
-  if (code((c) => c === 'ENOTFOUND')) return `unknown host ${host}`;
-  if (code((c) => c === 'EAI_AGAIN')) return `the name ${host} could not be looked up now: is this machine online?`;
+  if (code((c) => c === 'ECONNREFUSED')) return connectFailureWords('nothing-listening');
+  if (code((c) => c === 'ENOTFOUND')) return connectFailureWords('unknown-host', { host });
+  if (code((c) => c === 'EAI_AGAIN')) return connectFailureWords('lookup-failed', { host });
   const deepest = chain[chain.length - 1];
   return deepest?.message || deepest?.code || (e as Error)?.message || String(e);
 }
@@ -117,7 +123,7 @@ async function send<T>(base: string, path: string, init: { apiKey?: string | nul
       ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(CONNECT_TIMEOUT_S * 1000),
   });
   if (!response.ok) throw new InstanceError(response.status);
   return (await response.json()) as T;

@@ -130,7 +130,7 @@ describe('connectFailure', () => {
       'unknown host piwi.example',
     );
     expect(connectFailure(Object.assign(new Error('aborted'), { name: 'TimeoutError' }), url)).toBe(
-      'no answer in time',
+      'no answer within 15 seconds',
     );
     expect(connectFailure(fetchFailed({ code: 'EAI_AGAIN' }), url)).toBe(
       'the name piwi.corp could not be looked up now: is this machine online?',

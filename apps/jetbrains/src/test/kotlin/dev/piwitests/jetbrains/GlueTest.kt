@@ -2195,6 +2195,43 @@ class GlueTest {
         )
         assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
         assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
+        assertEquals(
+            "no answer within 15 seconds",
+            Glue.connectFailure(java.net.http.HttpTimeoutException("request timed out"), null, "https://piwi.corp"),
+        )
+        assertEquals(
+            "the certificate of piwi.corp has expired",
+            Glue.connectFailure(
+                javax.net.ssl.SSLHandshakeException("handshake").apply { initCause(java.security.cert.CertificateExpiredException("expired")) },
+                null,
+                "https://piwi.corp",
+            ),
+        )
+        assertEquals(
+            "the certificate of piwi.corp names another address: use the address it was issued for",
+            Glue.connectFailure(
+                javax.net.ssl.SSLHandshakeException("No subject alternative DNS name matching piwi.corp found."),
+                null,
+                "https://piwi.corp",
+            ),
+        )
+        assertEquals(
+            "piwi.corp does not answer HTTPS there: try http://",
+            Glue.connectFailure(javax.net.ssl.SSLException("Unsupported or unrecognized SSL message"), null, "https://piwi.corp"),
+        )
+        assertEquals(
+            "not a Piwi instance: the address answers with a page, not Piwi's requests",
+            Glue.connectFailure(com.google.gson.JsonSyntaxException("Expected BEGIN_OBJECT"), null, "https://example.com"),
+        )
+    }
+
+    @Test
+    fun `connect's failure words are the editor service's, which VS Code reads`() {
+        val file = java.io.File("../../packages/editor/src/connect-failures.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val table = com.google.gson.Gson().fromJson(file.readText(), Map::class.java)
+        assertEquals(table, Glue.CONNECT_FAILURE_WORDS)
+        assertEquals(table.keys.toList(), Glue.CONNECT_FAILURE_WORDS.keys.toList())
     }
 
     @Test

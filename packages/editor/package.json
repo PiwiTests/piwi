@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/server.ts",
     "./protocol": "./src/protocol.ts",
+    "./connect-failures": "./src/connect-failures.ts",
     "./discovery": "./src/discovery.ts",
     "./run-host": "./src/run-host.ts",
     "./request-host": "./src/request-host.ts",
