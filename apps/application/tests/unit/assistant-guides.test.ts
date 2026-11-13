@@ -172,10 +172,16 @@ describe('findAnchors', () => {
   });
 
   test('never returns a demo-only anchor', () => {
-    const everything = GUIDE_ANCHORS.map((a) => a.describes).join(' ');
-    expect(ids(guides.findAnchors(everything, facts(ADMIN_ACCESS), null)).some((id) => id.startsWith('demo-'))).toBe(
-      false,
-    );
+    // Each demo anchor searched by its own words: the query most likely to find it.
+    const demoOnly = GUIDE_ANCHORS.filter((a) => a.requires?.demo);
+    expect(demoOnly.length).toBeGreaterThan(0);
+    for (const anchor of demoOnly) {
+      expect(
+        ids(guides.findAnchors(anchor.describes, facts(ADMIN_ACCESS), null)).filter((id) =>
+          demoOnly.some((a) => a.id === id),
+        ),
+      ).toEqual([]);
+    }
     expect(ids(guides.findAnchors('demo personas acting as', facts(ADMIN_ACCESS), null))).not.toContain(
       'demo-personas',
     );
