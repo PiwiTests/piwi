@@ -143,6 +143,15 @@ async function playHub(page: Page, answer: (command: Command) => Record<string, 
   return commands;
 }
 
+/**
+ * Re-runs the failed tests and waits for the shell to start the run's process, which follows the run's baseline (read
+ * in at most 10 s): the tray lists the run before it, and draws it again once its process has a name on the hub.
+ */
+async function rerunFailed(page: Page) {
+  await page.getByRole('button', { name: RERUN_FAILED }).click();
+  await expect.poll(() => page.evaluate(() => window.__runArgs !== undefined), { timeout: 15_000 }).toBe(true);
+}
+
 function tray(page: Page) {
   return page.getByRole('region', { name: 'Local runs' });
 }
@@ -292,7 +301,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect(tray(page)).toBeVisible();
 
     // The run runs: the window holds the hub's stream, and shows the run live once the hub tells it.
@@ -566,7 +575,7 @@ test.describe('Desktop run live view', () => {
     );
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -648,7 +657,7 @@ test.describe('Desktop run live view', () => {
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect(tray(page)).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
@@ -676,7 +685,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     const PICKER = { kind: 'picker', name: 'Piwi Picker' };
@@ -731,7 +740,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     const shared = session(RUNNING);
@@ -769,7 +778,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
@@ -812,7 +821,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     // Turned on before its workers connect: the run is shown by the name its step gave the hub.
@@ -894,11 +903,10 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await holdSwitch(page).click();
-    await expect.poll(() => page.evaluate(() => window.__runArgs !== undefined), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
     // The hub names the run's step as one nobody attends (a run repeating its tests): the switch goes off, and stays.
     const unattended = session(RUNNING);
@@ -924,7 +932,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
@@ -1051,7 +1059,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page, (command) => (command.type === 'openTrace' ? answer : {}));
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
@@ -1142,7 +1150,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
@@ -1279,7 +1287,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, traces: true }));
@@ -1348,7 +1356,7 @@ test.describe('Desktop run live view', () => {
     await page.clock.install();
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
@@ -1486,7 +1494,7 @@ test.describe('Desktop run live view', () => {
     );
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     const send = (event: unknown) => page.evaluate((e) => window.__hub.send(e), event);
@@ -1606,7 +1614,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     // A run another window of the app started runs the same test on the same worker: no row of this run is its.
@@ -1766,7 +1774,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     const send = (event: unknown) => page.evaluate((e) => window.__hub.send(e), event);
@@ -1955,7 +1963,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -2000,7 +2008,7 @@ test.describe('Desktop run live view', () => {
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
     await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
     const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
@@ -2031,7 +2039,7 @@ test.describe('Desktop run live view', () => {
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     // Its output alone does not count it: Playwright's own lines would say 0 of 9.
@@ -2079,7 +2087,7 @@ test.describe('Desktop run live view', () => {
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toBeTruthy();
@@ -2146,7 +2154,7 @@ test.describe('Desktop run live view', () => {
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await rerunFailed(page);
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     const withProgress = (worker: Record<string, unknown>) => {
