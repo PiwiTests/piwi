@@ -2229,6 +2229,15 @@ object Glue {
     /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
 
+    /** The accessible name of the Paused Page tab's image, in the VS Code extension's words. */
+    const val PAUSED_PAGE_NAME = "The page of the paused test"
+
+    /** The accessible name of the Worker tab's image while it watches a worker of a run of this machine. */
+    const val WORKER_PAGE_NAME = "The page of the worker's test"
+
+    /** The accessible name of the Worker tab's image while it watches a CI run's worker. */
+    const val CI_WORKER_PAGE_NAME = "The page of the CI worker's test"
+
     /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
     fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {
         val key = line.ref to line.lane

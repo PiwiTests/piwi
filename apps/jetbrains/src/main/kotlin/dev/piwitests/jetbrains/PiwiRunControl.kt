@@ -2415,12 +2415,14 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
 
     /** The panel of the Worker tab: Watch shows the page of the worker's test, running or stopped. */
     fun forWorker() {
+        picture.accessibleContext.accessibleName = Glue.WORKER_PAGE_NAME
         live.text = "Watch"
         live.toolTipText = "Show the page of the test this worker runs, a few images a second, through its tests and stops. Nothing is stored or shared."
     }
 
     /** The panel of the Worker tab on a CI run's lane: Watch alone, read-only. */
     fun forCiWorker() {
+        picture.accessibleContext.accessibleName = Glue.CI_WORKER_PAGE_NAME
         live.text = "Watch"
         live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Read-only: nothing here acts on CI. Nothing is stored."
     }
@@ -2433,6 +2435,9 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         trace.isVisible = shown
         trace.isEnabled = !asking
     }
+
+    /** The image's accessible name, which says whose page it is: what the tests read. */
+    fun pageName(): String? = picture.accessibleContext.accessibleName
 
     /** Whether **Open the Trace So Far** shows, and takes a press: what the tests read. */
     internal val traceShown: Boolean get() = trace.isVisible
@@ -2667,7 +2672,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         }
         picture.isFocusable = true
         picture.focusTraversalKeysEnabled = false
-        picture.accessibleContext.accessibleName = "Paused test page"
+        picture.accessibleContext.accessibleName = Glue.PAUSED_PAGE_NAME
         picture.addFocusListener(object : FocusAdapter() { override fun focusLost(e: FocusEvent) { release() } })
         picture.addKeyListener(object : KeyAdapter() {
             override fun keyTyped(e: KeyEvent) {
