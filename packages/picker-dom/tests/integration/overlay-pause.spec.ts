@@ -38,6 +38,16 @@ test.describe('showPauseBar', () => {
     await page.evaluate(takePauseState);
     await page.evaluate(showPauseBar, { ...ARG, record: true });
     await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator', 'Record here']);
+    // Each button draws its control's glyph before its words, hidden from assistive technology.
+    const glyphs = bar.locator('button > svg[aria-hidden="true"]');
+    await expect(glyphs).toHaveCount(5);
+    expect(await glyphs.evaluateAll((all) => all.map((svg) => svg.getAttribute('data-piwi-glyph')))).toEqual([
+      'resume',
+      'step',
+      'finish',
+      'pick',
+      'record',
+    ]);
     await bar.getByRole('button', { name: 'Record here' }).click();
     expect(await page.evaluate(takePauseState)).toBe('record');
   });
@@ -47,6 +57,9 @@ test.describe('showPauseBar', () => {
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
     await page.evaluate(showPauseBar, { ...ARG, end: true });
     await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Pick a locator']);
+    await expect(bar.getByRole('button', { name: 'End the test' }).locator('svg[data-piwi-glyph="end"]')).toHaveCount(
+      1,
+    );
     await bar.getByRole('button', { name: 'End the test' }).click();
     expect(await page.evaluate(takePauseState)).toBe('end');
     await page.evaluate(showPauseBar, { ...ARG, end: true, failure: true });
