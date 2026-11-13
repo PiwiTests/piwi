@@ -4,9 +4,7 @@ import com.intellij.notification.Notification
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.util.text.StringUtil
-import javax.swing.Icon
 
 /**
  * What a Piwi notification is, and so its group in **Settings → Appearance & Behavior → Notifications**, where each
@@ -34,7 +32,6 @@ enum class PiwiNotice(val group: String) {
  * icon when it is an information (a warning or an error keeps the platform's icon, which says how serious it is).
  */
 object PiwiNotifier {
-    private val ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiNotifier::class.java)
 
     /**
      * A balloon of `kind` saying `content` (HTML: escape plain text first), not shown until `notify`, titled Piwi or,
@@ -48,7 +45,7 @@ object PiwiNotifier {
     ): Notification =
         NotificationGroupManager.getInstance().getNotificationGroup(kind.group)
             .createNotification(title, content, type)
-            .setIcon(if (type == NotificationType.INFORMATION) ICON else null)
+            .setIcon(if (type == NotificationType.INFORMATION) PiwiIcons.PIWI else null)
             .setSuggestionType(kind == PiwiNotice.OFFER)
 
     /** The kind of a message `PiwiCommands.notify` shows: a warning or an error is a problem, anything else a result. */

@@ -129,14 +129,20 @@ function outlineMark(color, size) {
   return svg(IDE_VIEW, outlineBody(color, size), { width: size, height: size });
 }
 
-/** The outline mark with a dot of `dot` at its lower right, where the drawing leaves room: tests fail. */
+/**
+ * The outline mark with a dot of `dot` in its lower right corner, the mark cut away 1 px around it as the New UI's
+ * badges are: tests fail.
+ */
 function failingOutlineMark(color, dot, size) {
   const r = ideStroke(size, 2.5);
-  const at = IDE_VIEW.x + IDE_VIEW.w - r - ideStroke(size, 0.5);
+  const cx = IDE_VIEW.x + IDE_VIEW.w - r;
+  const cy = IDE_VIEW.y + IDE_VIEW.h - r;
+  const cut =
+    `<mask id="badge"><rect x="${IDE_VIEW.x}" y="${IDE_VIEW.y}" width="${IDE_VIEW.w}" height="${IDE_VIEW.h}" fill="#fff"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${+(r + ideStroke(size, 1)).toFixed(2)}" fill="#000"/></mask>`;
   return svg(
     IDE_VIEW,
-    outlineBody(color, size) +
-      `<circle cx="${at}" cy="${IDE_VIEW.y + IDE_VIEW.h - r - ideStroke(size, 0.5)}" r="${r}" fill="${dot}"/>`,
+    `${cut}<g mask="url(#badge)">${outlineBody(color, size)}</g><circle cx="${cx}" cy="${cy}" r="${r}" fill="${dot}"/>`,
     { width: size, height: size, title: 'Piwi: tests failing' },
   );
 }
@@ -147,6 +153,9 @@ function failingOutlineMark(color, dot, size) {
  */
 function samplePath(d) {
   const tokens = d.match(/[MLCZ]|-?\d*\.?\d+/g);
+  if (tokens.join('').length !== d.replace(/[\s,]/g, '').length || /[^MLCZ\d.\s-]/.test(d)) {
+    throw new Error(`samplePath reads absolute M, L, C and Z commands alone: ${d.slice(0, 40)}…`);
+  }
   const runs = [];
   let run = null;
   let at = null;
@@ -175,6 +184,8 @@ function samplePath(d) {
       at = [x, y];
     } else if (command === 'Z') {
       run.push(run[0]);
+    } else {
+      throw new Error(`samplePath: a coordinate where a command was expected in ${d.slice(0, 40)}…`);
     }
   }
   return runs;

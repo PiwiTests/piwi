@@ -956,9 +956,9 @@ Studio-family and ReSharper keymaps already bind, keys set per client with no co
 
 A concept table gives each concept its glyph in every tool's set (Appendix A).
 `apps/application/scripts/generate-brand-assets.mjs`, which already writes both editors' Piwi mark, also writes what the
-platforms lack, drawn once from Piwi Picker's outline set (`apps/extension/src/shared/icons.ts`): the mark at New UI
-sizes, record, plug, flaky, region, mock, broadcast and the rest Appendix A marks (new), with `_dark` and `expui/`
-variants. A test reads every manifest and icon map and fails on a missing or different glyph. **Lives in**
+platforms lack, drawn once from Piwi Picker's outline set (`apps/extension/src/shared/icons.ts`): record, plug,
+flaky, region, mock, broadcast and the rest Appendix A marks (new), with `_dark` and `expui/` variants, and their VS Code
+glyphs in the icon font beside `$(piwi)`. A test reads every manifest and icon map and fails on a missing or different glyph. **Lives in**
 `packages/editor` or `apps/application/shared` (§13), FSL; the pause bar's glyphs are drawn anew in picker-dom (MIT).
 **Replaces** the film strip for record, the person for Connect, four glyphs with two meanings. **Depends on** nothing.
 **Revisits** [editor-local-runs.md](../adr/editor-local-runs.md) 6b and 6c (each editor chose its tree icons) and the

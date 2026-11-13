@@ -186,7 +186,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertNotNull(file, PiwiIcons::class.java.getResource("/icons/expui/$file"))
             }
         }
-        assertSame(PiwiIcons.PIWI, PiwiIcons.FAILURE_NODES["run"])
+        assertSame(PiwiIcons.RUN_NODE, PiwiIcons.FAILURE_NODES["run"])
     }
 
     fun testEveryIconKeyOfTheFailuresTreeHasItsGlyph() {

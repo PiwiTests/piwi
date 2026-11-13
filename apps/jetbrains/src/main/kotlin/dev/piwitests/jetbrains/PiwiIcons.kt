@@ -27,8 +27,17 @@ object PiwiIcons {
      */
     val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
 
-    /** Piwi's mark: the filled one in the classic UI, the outline one in the New UI (`PiwiIconMappings.json`). */
+    /**
+     * Piwi's mark, the tool window's, the status item's, a notification's and the language server widget's: the filled
+     * one in the classic UI, the outline one in the New UI (`PiwiIconMappings.json`).
+     */
     val PIWI: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiIcons::class.java)
+
+    /** The mark with a red dot, the tool window's while tests fail. */
+    val PIWI_FAILING: Icon = IconLoader.getIcon("/icons/piwi_failing.svg", PiwiIcons::class.java)
+
+    /** The outline mark at a tree node's 16 px in both UIs: the failures tree's run. */
+    val RUN_NODE: Icon = IconLoader.getIcon("/icons/expui/piwi.svg", PiwiIcons::class.java)
 
     /** A failure cluster, as the dashboard and VS Code draw one: Lucide's `layers`. */
     val CLUSTER: Icon = IconLoader.getIcon("/icons/layers.svg", PiwiIcons::class.java)
@@ -39,7 +48,7 @@ object PiwiIcons {
      */
     val FAILURE_NODES: Map<String, Icon> = mapOf(
         "context" to AllIcons.Nodes.Module,
-        "run" to PIWI,
+        "run" to RUN_NODE,
         "history" to AllIcons.Vcs.History,
         "failed" to FAILED,
         "failing" to FAILED,
