@@ -19,7 +19,7 @@ over them, and follow each failing line through your edits until a run covers it
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
-line a failing test failed at (often its call into a page object) is tinted darker, with **✗ Failed here**, the
+line a failing test failed at is tinted darker, with **✗ Failed here**, the
 reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
 On a failure, the quick fixes are:
@@ -67,8 +67,8 @@ follows each failing line through your changes, saved or not:
 - Add or remove lines above a failing line, and its error moves with it, in the Problems panel, the lines above the
   test and the failures view.
 - Rewrite the failing line, and the error turns into an information marker, *Edited since run #120: …*: the run said
-  nothing about the new line. **Run this test** comes first among its quick fixes, and the reason above the line reads
-  *✎ edited since run #120*. The test keeps its failing mark until a run says otherwise.
+  nothing about the new line. The reason above the line reads *✎ edited since run #120*. The test keeps its failing mark
+  until a run says otherwise.
 - Delete the test, and its failure leaves the editor.
 
 The next run that covers the test says what is true: a failure there is an error again, and a pass takes it away.
@@ -90,7 +90,9 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
   hover.
-- **Flaky in this run**: tests that passed on a retry, opened by the status bar's **Show the run's flaky tests**.
+- **Flaky in this run**: tests that passed on a retry, with [Flake Lab](./flake-lab)'s rate (`flaky 18%`). A test's
+  menu offers its Flakiness tab and Flake Lab's commands (**Look into this flake…** in VS Code); the status bar's
+  **Show the run's flaky tests** opens the group.
 
 In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
 named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`), over its tree as
@@ -113,8 +115,8 @@ configurations, **Reload Piwi**, the settings and **Documentation**. The tree is
 moves a failure.
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
-baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
-again on its own too); a desktop app to restart or update; an instance still being read; or no connection, with
+baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (also retried on
+its own); a desktop app to restart or update; an instance still being read; or no connection, with
 **Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
 
 ## Compare with another run
@@ -122,7 +124,7 @@ again on its own too); a desktop app to restart or update; an instance still bei
 By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:
 Compare with…** (**Tools → Piwi → Compare with…** in a JetBrains IDE, and the failures view's title bar) chooses another
 run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
-machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
+machine, without CI. Your runs since are laid over each. The status bar tooltip and the
 failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need
 not have passed: it is not the dashboard's [baseline](/guide/concepts#baseline-last-green-run), the last passing run.
 The choice is kept on this machine, per Playwright config.

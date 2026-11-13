@@ -1159,8 +1159,16 @@ describe('the Piwi language server', () => {
       uri: uri('tests/checkout.spec.ts'),
       line: 2,
       url: `${url}/test-run-cases/950`,
-      description: 'tests/checkout.spec.ts:3 · chromium · passed on retry 1',
+      description: 'tests/checkout.spec.ts:3 · chromium · passed on retry 1 · flaky 18%',
     });
+    // Its Flake Lab line in the hover, and what looks into it in its menu: the lens's commands, in its order.
+    const flaky = failures.tree[0]!.children[1]!.children[0]!;
+    expect(flaky.tooltip).toContain('Flake Lab: flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)');
+    expect(flaky.actions?.map((a) => [a.title, a.command])).toEqual([
+      ['Open its Flakiness tab', 'piwi.openInDashboard'],
+      ['Reproduce this flake', 'piwi.runCommand'],
+      ['Verify the flake fix', 'piwi.runCommand'],
+    ]);
   });
 
   test('groups the failures as the client last asked, for the failures it pushes too', async () => {

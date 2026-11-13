@@ -5,6 +5,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.ide.CommonActionsManager
 import com.intellij.ide.DefaultTreeExpander
 import com.intellij.ide.OccurenceNavigator
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -17,6 +18,7 @@ import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.IconLoader
@@ -388,7 +390,24 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
     }
 
-    /** An action of the right-click menu on a failure, shown when it applies to the selected one. */
+    /**
+     * A flaky test's actions, as the service lists them: its Flakiness tab, then the Flake Lab commands it can run, each
+     * with the glyph of what it does (the page, the desktop app's job, a command).
+     */
+    private class FlakeActions(private val project: Project, private val selected: () -> Glue.FailureNode?) : ActionGroup(), DumbAware {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun getChildren(e: AnActionEvent?): Array<AnAction> =
+            selected()?.takeIf { it.kind == "flaky" }?.actions.orEmpty().map { command ->
+                val icon = when (command.command) {
+                    "piwi.openInDashboard" -> PiwiIcons.OPEN_IN_DASHBOARD
+                    "piwi.desktopJob" -> PiwiIcons.REPRODUCE
+                    else -> AllIcons.Actions.Execute
+                }
+                DumbAwareAction.create(command.title.orEmpty(), icon) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) }
+            }.toTypedArray()
+    }
+
     /**
      * The tree's right-click menu: the selected config's actions, then the registered `Piwi.Failure.*` actions, which act
      * on the selected failure (`FAILURE_NODE`), their keys shown and Find Action reaching them.
@@ -405,6 +424,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             ConfigAction("Compare with…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
             // The selected node's page, a run's or a failure's (`DASHBOARD_URL`).
             *registered("Piwi.OpenInDashboard"),
+            FlakeActions(project, selected),
             Separator.getInstance(),
             *registered("Piwi.Failure.RunTest"),
             Separator.getInstance(),

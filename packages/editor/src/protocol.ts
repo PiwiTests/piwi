@@ -1267,6 +1267,8 @@ export interface FailureTreeNode {
   /** On a flaky test: its spec and the 0-based line of its `test(…)` call, as the file stands. */
   uri?: string;
   line?: number;
+  /** On a flaky test: what looks into it (`FailuresFlaky.actions`), which the clients offer in its menu. */
+  actions?: PiwiCommand[];
   children: FailureTreeNode[];
 }
 
@@ -1284,6 +1286,12 @@ export interface FailuresFlaky {
   retries: number;
   /** Its passing execution's page. */
   url: string;
+  /** Flake Lab's share of its runs that failed at least once: `flaky 18%`; null when Flake Lab has none. */
+  rate: string | null;
+  /** Its Flake Lab line, as above the test: `flaky 18% · top suspect: …`; null when Flake Lab ranks it not. */
+  flakeLab: string | null;
+  /** What looks into it: its Flakiness tab first, then the `piwi flake` commands and the desktop app's job it can run. */
+  actions: PiwiCommand[];
 }
 
 /**

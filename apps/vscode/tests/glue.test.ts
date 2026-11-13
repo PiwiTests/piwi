@@ -1583,6 +1583,13 @@ describe('the failures view', () => {
                   url: 'http://piwi/test-run-cases/25',
                   uri: 'file:///w/tests/cart.spec.ts',
                   line: 2,
+                  actions: [
+                    {
+                      title: 'Open its Flakiness tab',
+                      command: 'piwi.openInDashboard' as const,
+                      arguments: ['http://piwi/test-cases/2?tab=flakiness'],
+                    },
+                  ],
                   children: [],
                 },
               ],
@@ -1598,6 +1605,13 @@ describe('the failures view', () => {
       icon: 'mark:flaky',
       url: 'http://piwi/test-run-cases/25',
       place: { uri: 'file:///w/tests/cart.spec.ts', line: 2 },
+      actions: [
+        {
+          title: 'Open its Flakiness tab',
+          command: 'piwi.openInDashboard',
+          arguments: ['http://piwi/test-cases/2?tab=flakiness'],
+        },
+      ],
     });
     expect(flakyTestsByRoot(flaky)).toEqual(new Map([['', 1]]));
     // With several configs, each config's group is counted under the folder its node names.

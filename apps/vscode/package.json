@@ -552,6 +552,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.lookIntoFlake",
+        "title": "Look into this flake…",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.showBrowser",
         "title": "Show the stopped test's browser",
         "icon": "$(browser)",
@@ -678,6 +683,10 @@
         },
         {
           "command": "piwi.reproduceInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.lookIntoFlake",
           "when": "false"
         },
         {
@@ -1049,6 +1058,11 @@
           "command": "piwi.bisectInDesktop",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
           "group": "4_desktop@2"
+        },
+        {
+          "command": "piwi.lookIntoFlake",
+          "when": "view == piwi.failures && viewItem == piwi.flaky",
+          "group": "2_flake@1"
         }
       ],
       "piwi.editorContext": [

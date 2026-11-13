@@ -250,6 +250,8 @@ reference.
 - A Playwright config's node: `piwi.context`, with `failing` and `run`. It runs **Re-run the failing tests**,
   **Open in dashboard** and **Compare with…** for that config.
 - A run's node runs **Compare with…** for its config (`FailureNode.root`).
+- A flaky test: `piwi.flaky`. **Look into this flake…** (`piwi.lookIntoFlake`) lists its `FailureNode.actions` in a
+  quick pick and runs the one chosen.
 
 **Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
 config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
