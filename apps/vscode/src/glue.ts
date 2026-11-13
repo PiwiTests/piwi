@@ -1707,8 +1707,8 @@ export const QUARANTINED_TAG = 'quarantined';
 /**
  * What the Testing view adds to a test's item, which its gutter and its results do not say, beside the title
  * (`flaky · quarantined · ~1.2 s`) and as tags its filter finds (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`):
- * flaky, for a test the view shows as passed (`testOutcome`), quarantined, its average duration, its Playwright tags and
- * its owner.
+ * flaky, for a test the view shows as passed (`testOutcome`), quarantined, its average duration, its Playwright tags,
+ * which start with `@` as no tag of Piwi's does, and its owner.
  */
 export function testItemExtras(test: TreeTest | null): { description: string | undefined; tags: string[] } {
   if (!test) return { description: undefined, tags: [] };
@@ -1721,7 +1721,7 @@ export function testItemExtras(test: TreeTest | null): { description: string | u
   const tags = [
     ...(flaky ? [FLAKY_TAG] : []),
     ...(test.quarantined ? [QUARANTINED_TAG] : []),
-    ...test.tags,
+    ...test.tags.filter((tag) => tag.startsWith('@')),
     ...(test.owner ? [`owner:${test.owner.replace(/\s+/g, '-')}`] : []),
   ];
   return { description: words.length ? words.join(' · ') : undefined, tags };

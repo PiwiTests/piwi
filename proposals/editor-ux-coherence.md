@@ -486,8 +486,8 @@ the run channel's test events. Local progress is [LR9](#lr9). ([L2](#l2), [LI8](
 
 <a id="tl20"></a>**TL20. VS Code's Testing view publishes its results with no duration: a CI run's header reads "5/7
 1.0ms".** Results are published with none (`apps/vscode/src/test-explorer.ts:347-377`), as `SpecTest` carries only a
-test's average over its recent runs (`durationMs`), which its item shows beside its title with its tags, owner and
-quarantine. **(read)** Fix: each result's own duration, from the run it comes from. ([M20](#m20), [LI8](#li8))
+test's average over the runs the instance keeps (`durationMs`), which its item shows beside its title with its tags,
+owner and quarantine. **(read)** Fix: each result's own duration, from the run it comes from. ([M20](#m20), [LI8](#li8))
 
 ### 5.8 A test card
 

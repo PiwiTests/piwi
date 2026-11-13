@@ -192,13 +192,19 @@ export interface SpecTest {
   failure: TestFailure | null;
   /** Its page in the dashboard; null for a test Piwi does not know. */
   url: string | null;
-  /** The catalog's Playwright tags of the test (`@smoke`); empty for a test Piwi does not know. */
+  /**
+   * The catalog's Playwright tags of the test, as Playwright writes them (`@smoke`); empty for a test Piwi does not
+   * know.
+   */
   tags: string[];
   /** Its `piwi:owner` annotation; null without one. */
   owner: string | null;
   /** Whether the project quarantines it. */
   quarantined: boolean;
-  /** Its average duration over its recent runs, in ms; null for a test Piwi does not know or never saw end. */
+  /**
+   * Its average duration over the runs the instance keeps, in ms; null for a test Piwi does not know or never saw
+   * end.
+   */
   durationMs: number | null;
 }
 

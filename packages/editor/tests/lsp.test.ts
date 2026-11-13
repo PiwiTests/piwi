@@ -380,7 +380,8 @@ beforeAll(async () => {
               title: 'pays',
               filePath: 'tests/checkout.spec.ts',
               status: 'passed',
-              tags: ['@smoke'],
+              // Stored without their '@', the second one as an older instance kept it.
+              tags: ['smoke', '@checkout', 'smoke'],
               owner: 'ada',
               avgDuration: 1234.4,
             },
@@ -1678,7 +1679,7 @@ describe('the test tree', () => {
                   failure: null,
                   url: `${url}/test-cases/1`,
                   // The catalog's tags, owner and average duration, and the project's quarantine.
-                  tags: ['@smoke'],
+                  tags: ['@smoke', '@checkout'],
                   owner: 'ada',
                   quarantined: true,
                   durationMs: 1234,
