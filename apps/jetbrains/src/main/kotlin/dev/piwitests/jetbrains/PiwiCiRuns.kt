@@ -241,12 +241,17 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
         value ?: return
         when (value.kind) {
             "run" -> {
-                icon = AllIcons.Actions.Execute
+                icon = PiwiIcons.CI_RUN
                 append(value.text, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             }
             "open", "watch", "ci-watch" -> {
-                // Watch is `Piwi.WatchWorker`'s eye, an open link Open in dashboard's.
-                icon = if (value.kind == "ci-watch") AllIcons.Actions.Show else PiwiIcons.OPEN_IN_DASHBOARD
+                // Watch is `Piwi.WatchWorker`'s eye, the run's page `Piwi.OpenRunPage`'s globe, a watch on the
+                // dashboard Open in dashboard's.
+                icon = when (value.kind) {
+                    "ci-watch" -> AllIcons.Actions.Show
+                    "open" -> AllIcons.General.Web
+                    else -> PiwiIcons.OPEN_IN_DASHBOARD
+                }
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {

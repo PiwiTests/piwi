@@ -29,10 +29,14 @@ part: VS Code's outcome marks in the dashboard's colors and one flaky glyph, Piw
 icon and JetBrains' CI tab), and Piwi Picker's dots in the same palette, a running ring in both editors where they drew
 a run triangle, all held by `status-mark-colors.test.ts` (copies restated by hand, not generated); and the dashboard's
 Reproduce here as the editors' monitor (IC11); both CI views draw a test's outcome with its line's own mark, JetBrains'
-through one `PiwiIcons.outcome`. §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+through one `PiwiIcons.outcome`. Q26, IC7 and Q9 in part: the JetBrains plugin draws a glyph of its own in `icons/` for
+the 13 actions that had none, Connect's plug and a CI run's cloud, its status item a shared run with Share live's
+broadcast; VS Code's Run the tests that reach this file and 'Piwi: unreachable' leave the glyphs of the Piwi mark and
+Disconnect, and its CI lists open a run with the run pages' globe; `menus.test.ts` and `PiwiPluginTest` fail on a glyph
+two concepts share but those they list (NF1). §14 adds the findings the code that built the plan raised. The live-run
+study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names,
+and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and
+the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
@@ -97,9 +101,9 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 5. **A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the status bars**
    ([NF4](#nf4), [LR10](#lr10)).
 
-6. **One concept has several glyphs, and some glyphs several meanings**: recording is the IDE's macro film strip, flaky
-   still has other marks outside the editors, and a few glyphs of the CI views and status states mean two things
-   ([IC2](#ic2), [IC4](#ic4), [NF1](#nf1)).
+6. **One concept has several glyphs, and some glyphs several meanings**: recording is the IDE's macro film strip, and
+   flaky still has other marks outside the editors
+   ([IC2](#ic2), [IC4](#ic4)).
 
 7. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
    Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
@@ -146,7 +150,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 1. **One name per concept, from the action catalog and a words table that both manifests and both clients are tested
    against, in sentence case in both editors.** ([AC7](#ac7), [AC11](#ac11), [X1](#x1))
 2. **One glyph per concept and one meaning per glyph, from the concept table; a glyph no platform has, Piwi draws
-   once.** ([IC2](#ic2), [IC7](#ic7), [IC9](#ic9))
+   once.** ([IC2](#ic2), [IC9](#ic9))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, restated in each tool and held to them by a
    test, as `coverage-mark-colors.test.ts` holds the coverage marks; flaky, quarantine and history always drawn.**
    ([IC4](#ic4), [TL13](#tl13))
@@ -173,8 +177,7 @@ action catalog of [LI1](#li1), tested against both manifests. ([M1](#m1), [LI1](
 
 <a id="x2"></a>**X2. The same concept is drawn differently in each Piwi tool, and no table or test ties the glyphs
 together.** Record is a gray film strip in JetBrains, `$(record)` in VS Code and a dot in Piwi Picker ([IC2](#ic2));
-flaky still has a hover's '~' and the tray's own amber ([IC4](#ic4)); Connect is a person in JetBrains and a plug
-elsewhere ([IC7](#ic7)). Only the coverage colors are tested
+flaky still has a hover's '~' and the tray's own amber ([IC4](#ic4)). Only the coverage colors are tested
 (`apps/application/tests/unit/coverage-mark-colors.test.ts`). **(read)** Fix: the concept table of [Appendix
 A](#appendix-a-the-concept-table-first-draft), the missing glyphs drawn once, restated in each tool under the
 concept-table test and a `status-mark-colors.test.ts` beside `coverage-mark-colors.test.ts`. ([M4](#m4), [LI2](#li2))
@@ -200,17 +203,11 @@ concept table.
 
 ### 3.1 Actions without a glyph
 
-<a id="ic1"></a>**IC1. Thirteen JetBrains actions, five VS Code commands and four rows of JetBrains' stop popup draw no
-glyph.** The plugin's test lists the 13 actions that wait for a glyph Piwi draws
-(`apps/jetbrains/src/test/kotlin/dev/piwitests/jetbrains/PiwiPluginTest.kt:115-119`): Disconnect, Pair with Piwi Picker,
-Pause and Watch, Assert a Region and Mock a Request at the stop, Run the Tests That Reach This File, Reset the Runs' MCP
-Server Token, Show the Stopped Test's Browser, Share the Stopped Browser with Playwright Tools and the four live-sharing
-actions. At a stop, JetBrains' popup draws Assert a Region and Mock a Request as plain words under three iconed code
-actions (`PiwiIcons.kt:29`), and Show the browser and Share with Playwright tools bare too, as their registered actions
-wait for a glyph, where VS Code's Write code at the stop… draws all five (`apps/vscode/src/run-control.ts:1170-1211`).
-VS Code's Refresh, Run to the cursor, Pause and watch a worker's test and both Stop sharing commands have no `icon`
-(`apps/vscode/package.json:217, 474, 503, 562, 573`). **(read)** Fix: Appendix A's glyphs, as plugin SVGs for the 13
-actions and the popup's rows and as codicons for the five commands. ([Q9](#q9), [M4](#m4), [LI2](#li2))
+<a id="ic1"></a>**IC1. Five VS Code commands draw no glyph.** Reload Piwi, Run to the cursor, Pause and watch a worker's
+test and both Stop sharing commands have no `icon` (`apps/vscode/package.json:217, 474, 503, 562, 573`): no codicon says
+them apart from a glyph another command holds, and `menus.test.ts` lists them as waiting. **(read)** Fix: M4's drawn
+glyphs in VS Code's product-icon font, as the JetBrains plugin draws them in `icons/`. ([Q9](#q9), [M4](#m4),
+[LI2](#li2))
 
 ### 3.2 Recording
 
@@ -250,13 +247,6 @@ glyph. **(read)** Fix: Appendix A's run-control glyphs drawn anew in `picker-dom
 its `apps/extension/src/shared/icons.ts` is FSL. ([M6](#m6), [LI2](#li2))
 
 ### 3.5 Connect, the Piwi mark and the tree
-
-<a id="ic7"></a>**IC7. Connect is the IDE's person glyph in JetBrains, where VS Code, Piwi Picker and the dashboard draw
-a plug.** `AllIcons.General.User`, the glyph of the dialog that asks for a key (`PiwiConnect.kt:264`), marks Connect…
-(`plugin.xml:113`) and the status item's "Piwi: connect" (`PiwiStatusBar.kt:156`), which reads as signing in; Disconnect
-draws none ([IC1](#ic1)). **(read)** Fix: plugin `connect.svg` and `disconnect.svg` drawn from Picker's `plug` and
-`unlink` (`apps/extension/src/shared/icons.ts:129-130`, FSL to FSL), and `General.User` kept for the sign-in dialog and
-the owner. ([Q9](#q9), [M4](#m4), [LI2](#li2))
 
 <a id="ic8"></a>**IC8. Piwi's own mark is off-style or missing in both editors: 13 px filled JetBrains glyphs with no
 New UI sizes, and no Piwi glyph in VS Code's status item or views.**
@@ -327,7 +317,7 @@ one wording per action, from the action catalog both manifests are tested agains
 | Assert | Assert in the stopped test's page | Assert at the Stop | Assert at stop |
 | Region | Assert a region of the stopped test's page | Assert a Region at the Stop | Assert region at stop |
 | Mock | Mock a request of the stopped test | Mock a Request at the Stop | Mock at stop… |
-| Connect | Connect | Connect… | Connect… |
+| Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Settings | Open settings | Settings… | Settings… |
 
 <a id="ac9"></a>**AC9. Record here names two different actions on a paused line, and inside JetBrains each stop control
@@ -908,17 +898,14 @@ Run does (`Glue.kt:2453`), and only the terminal or the Run tab shows the run. *
 session from the command (`Piwi: starting checkout › pays…`, the study's lane state `starting`) with Stop enabled.
 ([M14](#m14))
 
-<a id="lr14"></a>**LR14. A run shared live has four glyphs across the tools, JetBrains draws it with Watch a Worker's
-Test's eye in the same popup, and its link is copied from the share's notification alone.** VS Code draws `broadcast`
-(`apps/vscode/src/run-control.ts:1061-1087`), the dashboard `radio`
-(`apps/application/app/components/desktop/DesktopRunShare.vue:98`), the Runs window `share`, and JetBrains' status item
-an eye (`PiwiStatusBar.kt:139`), which is also `Piwi.WatchWorker`'s icon in the popup that item opens
-(`plugin.xml:245-247`); `Piwi.ShareRunLive` and `Piwi.ShareWindowLive` have no icon (`plugin.xml:274-284`). In VS Code
-`$(eye)` marks both Watch a worker's test (`apps/vscode/package.json:496-501`) and Stop following the active editor
+<a id="lr14"></a>**LR14. A run shared live has three glyphs across the tools, VS Code's Follow takes Watch's eye, and a
+share's link is copied from its notification alone.** VS Code and JetBrains draw a broadcast (`$(broadcast)`,
+`live.svg`, on JetBrains' status item too), the dashboard `radio`
+(`apps/application/app/components/desktop/DesktopRunShare.vue:98`) and the Runs window `share`. In VS Code `$(eye)`
+marks both Watch a worker's test (`apps/vscode/package.json:496-501`) and Stop following the active editor
 (`package.json:359-364`). Copy the run page's link sits in the share's notification only, beside Open and Stop sharing
-(`apps/vscode/src/run-view.ts:1045-1051`, `PiwiRunControl.kt:1589-1595`). **(read)** Fix: one Share live glyph in the
-concept table, on the status item at once, the eye for Watch alone, Follow off `$(eye)`, and Copy, Open and Stop sharing
-wherever the run is listed. ([M4](#m4))
+(`apps/vscode/src/run-view.ts:1045-1051`, `PiwiRunControl.kt:1589-1595`). **(read)** Fix: one Share live glyph in every
+tool, Follow off `$(eye)`, and Copy, Open and Stop sharing wherever the run is listed. ([M4](#m4))
 
 ### 8.7 Words deferred to the study
 
@@ -1041,7 +1028,7 @@ JetBrains color schemes are still to join it. A script writing the copies was dr
 less machinery. **Lives in** `apps/application` and each tool's assets (FSL); the status palette never moves into core,
 where `COVERAGE_MARK_COLORS` stays with its changed and uncovered-change colors. **Replaces** the tray's own palette, an
 amber paused that means did not run elsewhere. **Depends on** nothing. **Revisits**
-[desktop-run-progress.md](desktop-run-progress.md), whose tray dot took colors of its own. Steps [Q2](#q2), [Q26](#q26),
+[desktop-run-progress.md](desktop-run-progress.md), whose tray dot took colors of its own. Steps [Q2](#q2),
 [M5](#m5).
 
 **Places (principles 4 and 5).**
@@ -1307,10 +1294,9 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q2"></a>Q2 | **A fixture check that fails when a flaky test carries no flaky mark**, in both editors | `ide` | [TL13](#tl13) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup (not Open run #78 (running) beside the same run's page row) | `ide` | [HM12](#hm12), [HM3](#hm3) |
-| <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
+| <a id="q9"></a>Q9 | **The last glyphs in VS Code**: the five commands without one take M4's drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
-| <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: unreachable, Run the tests that reach this file and a CI run off shared glyphs, one glyph for Open run #N; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
 | <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7) |
@@ -1322,7 +1308,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
 | <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
-| <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
+| <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **The outcome palette in the desktop tray and Piwi Picker's Runs window** ([LI3](#li3)), a color of its own for paused, the flaky after-text and hover in its words and color, both JetBrains color schemes held by the same test, and the running ring animated | `desktop` | [IC4](#ic4), [TL5](#tl5) |
 | <a id="m6"></a>M6 | **Glyphs on the pause bar**, drawn anew in picker-dom (MIT) | `extension` | [IC6](#ic6) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
@@ -1359,7 +1345,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1, on which most of the rest
 builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
-glyphs and the outcome palette that Q2, Q9, Q26 and IC2's recording wait for. M13 and M15 finish the glance and the
+glyphs and the outcome palette that Q2, Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
@@ -1423,16 +1409,6 @@ whether M14's places are interim.
 The reviews at `b0ff6772` read the code that built the plan and the live-run study's phases against §2's principles.
 Each finding below is new, read in the code at that commit; Kotlin files are cited by name as above. The defects among
 them, NF4, NF5, NF6 and NF9, are filed as #1315, with NF5's stopped-service status in #1255.
-
-<a id="nf1"></a>**NF1. A few glyphs of the CI views and the status states have a second meaning.** In VS Code,
-`$(beaker)` marks Run the tests that reach this file (`apps/vscode/package.json:236`), the run node and the idle status
-item (`apps/vscode/src/glue.ts:293, 388, 512`), and `$(debug-disconnect)` both Disconnect (`package.json:195`) and
-'Piwi: unreachable' (`glue.ts:321`); JetBrains' CI Run tab draws a run with Run the test at the caret's
-`Actions.Execute` (`PiwiCiRuns.kt`). The eye is still the status item's live share beside Watch ([LR14](#lr14)), and
-"Open run #N" is a globe in VS Code's commands and an external link in the CI lists
-(`apps/vscode/src/run-control.ts:2215`). Both CI views draw a test's outcome with its line's own mark. **(read)** Fix:
-unreachable, the file's tests and a CI run take glyphs of their own, one glyph for Open run #N, and Appendix A gains the
-rows they lack. ([Q26](#q26), [M5](#m5))
 
 <a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**
 Open Log and Open the log (`plugin.xml:126`, `apps/vscode/package.json:206`); Turn Hold Failures On or Off and Hold
@@ -1502,14 +1478,15 @@ and views, the test reading them; settle in [L1](#l1) whether the CI list joins 
 
 ## Appendix A. The concept table, first draft
 
-One row per concept, one glyph per tool, as §2 and [LI2](#li2) propose it. **(new)** marks a glyph Piwi draws: a
-JetBrains SVG at 16 px with a `_dark` file and an entry in `PiwiIconMappings.json`, a VS Code glyph in the product-icon
-font, a Piwi Picker key added to `apps/extension/src/shared/icons.ts`. A dash means the tool has no such action.
+One row per concept, one glyph per tool, as §2 and [LI2](#li2) propose it. A JetBrains `*.svg` is Piwi's, in the
+plugin's `icons/` with a `_dark` copy. **(new)** marks a glyph Piwi is still to draw: a JetBrains SVG, a VS Code glyph
+in the product-icon font, a Piwi Picker key added to `apps/extension/src/shared/icons.ts`. A dash means the tool has no
+such action.
 
 | Concept | Dashboard and desktop (lucide) | Piwi Picker (ICONS key) | VS Code (codicon or `$(piwi-*)`) | JetBrains (AllIcons or plugin SVG) |
 |---|---|---|---|---|
 | Connect | `plug` | `plug` | `$(plug)` | `connect.svg` (new) |
-| Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` (new) |
+| Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
 | Record | `circle`, filled | `record` | `$(record)` | `record.svg` (new) |
 | Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` (new) |
 | Stop recording | – | `stop-circle` (new) | `$(stop-circle)` | `stopRecording.svg` (new) |
@@ -1521,19 +1498,20 @@ font, a Piwi Picker key added to `apps/extension/src/shared/icons.ts`. A dash me
 | Stop the run | `square` | `stop` | `$(debug-stop)` | `Actions.Suspend` |
 | Pick | `crosshair` | `pick` | `$(target)` | `General.Locate` |
 | Assert | `check-circle` | `check-circle` | `$(pass)` | `General.InspectionsOK` |
-| Assert a region | `scan` | `viewport` | `$(screen-full)` or `$(piwi-region)` (new) | `region.svg` (new) |
-| Mock a request | `network` | `network` | `$(arrow-swap)` or `$(piwi-mock)` (new) | `mock.svg` (new) |
-| Share live ([LR14](#lr14)) | `radio` | `broadcast` (new) | `$(broadcast)` | `live.svg` (new) |
+| Assert a region | `scan` | `viewport` | `$(screen-full)` or `$(piwi-region)` (new) | `region.svg` |
+| Mock a request | `network` | `network` | `$(arrow-swap)` or `$(piwi-mock)` (new) | `mock.svg` |
+| Share live ([LR14](#lr14)) | `radio` | `broadcast` (new) | `$(broadcast)` | `live.svg` |
+| Stop sharing live | – | – | `$(piwi-stop-live)` (new) | `stopLive.svg` |
 | Watch | `eye` | `eye` | `$(eye)`, built for Watch a worker's test | `Actions.Show`, built for `Piwi.WatchWorker` |
-| Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` (new) |
+| Pause and watch | `pause`, `eye` once stopped | `pause` | `$(piwi-pause-watch)` (new) | `pauseWatch.svg` |
 | Run on my machine | `monitor-play` | – | – | – |
 | Run headed, Hold failures (start options) | – | – | `$(settings)` on Run options… | `Debugger.Db_exception_breakpoint` for Hold failures, none for Run headed ([NF3](#nf3)) |
-| Show the stopped test's browser | – | – | `$(browser)` | none yet (new) |
-| Share with Playwright tools | – | – | `$(tools)` | none yet (new) |
-| Reset the runs' MCP token | – | – | `$(key)` | none yet (new) |
-| Run the tests that reach this file | – | – | `$(beaker)` today, a glyph of its own (new) | none yet (new) |
-| A CI run of the branch | – | – | `$(cloud)` | `Actions.Execute` today, `cloud.svg` (new) ([NF1](#nf1)) |
-| Pair | `link` | `link` | `$(link)` | `pair.svg` (new) |
+| Show the stopped test's browser | – | – | `$(browser)` | `browser.svg` |
+| Share with Playwright tools | – | – | `$(tools)` | `tools.svg` |
+| Reset the runs' MCP token | – | – | `$(key)` | `key.svg` |
+| Run the tests that reach this file | – | – | `$(references)` | `testsForFile.svg` |
+| A CI run of the branch | – | – | `$(cloud)` | `ciRun.svg` |
+| Pair | `link` | `link` | `$(link)` | `pair.svg` |
 | Open in dashboard | `external-link` | `external` | `$(link-external)` | `Ide.External_link_arrow` |
 | Latest run, run node | the Piwi mark | – | `$(piwi)` (new) | `piwi.svg`, 16 px outline (new) |
 | Cluster | `layers` | – | `$(layers)` | `layers.svg` (new) |
@@ -1563,15 +1541,15 @@ first pass found each AllIcons constant above mapped to a New UI icon in both pl
 and each codicon in the `codicon.css` VS Code 1.143.1 bundles; every lucide name is in the dashboard's icon set, though
 `redo-dot`, `arrow-up-from-dot` and `scan` are not used by the dashboard yet.
 
-The draft leaves its collisions to settle, and the concept table's test (§2) should refuse a glyph given to two rows:
-`$(eye)` is also VS Code's Stop following the active editor (`apps/vscode/package.json:359-364`), and JetBrains' status
-item draws the eye for a shared run in the popup that lists Watch with it ([LR14](#lr14)); Verify ×3's `$(sync)` spins
-in the running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and
-Skipped; lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
+The draft leaves its collisions to settle, which `menus.test.ts` and `PiwiPluginTest` list as the glyphs two concepts
+still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/vscode/package.json:359-364`), and
+JetBrains' Pause, Resume and Stop are a recording's and a run's alike ([IC2](#ic2)); Verify ×3's `$(sync)` spins in the
+running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
+lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
 draws `crosshair`, and Piwi Picker's recording bar stops with `stop`, the square
-(`apps/extension/src/content/record-panel.ts:673`). The CI views and status states add three: `$(beaker)`,
-`$(debug-disconnect)` and `Actions.Execute` ([NF1](#nf1)).
+(`apps/extension/src/content/record-panel.ts:673`). VS Code's `$(beaker)` stays the Piwi mark on the status item and the
+run node until `$(piwi)` is drawn.
 
 ## Appendix B. Checked and found sound
 

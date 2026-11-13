@@ -108,30 +108,51 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * Every action draws a platform icon, but a toggle (its menu row shows a check mark) and those waiting for a glyph
-     * Piwi draws; a stop's code actions draw the same in its popups (`PiwiIcons.stopAction`).
+     * Every action draws a platform icon or a glyph Piwi draws, but a toggle (its menu row shows a check mark); a stop's
+     * code actions draw the same in its popups (`PiwiIcons.stopAction`), and a glyph has one meaning.
      */
-    fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
+    fun testEveryActionHasAnIconButToggles() {
         val actions = ActionManager.getInstance()
         val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
-        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
-        val awaiting = setOf(
-            "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
-            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.ShareWindowLive", "Piwi.StopSharingWindowLive",
-        )
         val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
         val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
-        assertEquals(toggles + awaiting, bare)
+        assertEquals(toggles, bare)
         for (id in toggles) assertTrue(id, actions.getAction(id) is com.intellij.openapi.actionSystem.ToggleAction)
         val registered = mapOf(
             Glue.StopAction.PICK to "Piwi.PickAtStop", Glue.StopAction.RECORD to "Piwi.RecordAtStop",
             Glue.StopAction.ASSERT to "Piwi.AssertAtStop", Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
             Glue.StopAction.MOCK to "Piwi.MockAtStop",
         )
-        for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
+        for ((action, id) in registered) assertEquals(id, glyph(PiwiIcons.stopAction(action)), glyph(actions.getAction(id).templatePresentation.icon))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+        assertEquals(glyph(PiwiIcons.CONNECT), glyph(actions.getAction("Piwi.Connect").templatePresentation.icon))
+        // The actions that share a glyph are one concept.
+        val concepts = setOf(
+            setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
+            setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
+            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
+            setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
+            setOf(
+                "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
+                "Piwi.Failure.CopyContext",
+            ),
+            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate"),
+            setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
+            setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
+            setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
+            // Pause, Resume and Stop of a recording and of a run, still to settle.
+            setOf("Piwi.StopRecording", "Piwi.StopRun"),
+            setOf("Piwi.PauseRecording", "Piwi.PauseRun"),
+            setOf("Piwi.ResumeRecording", "Piwi.ResumeRun"),
+        )
+        val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
+            .values.filter { it.size > 1 }.map { it.toSet() }.toSet()
+        assertEquals(concepts, shared)
     }
+
+    /** The resource an icon is loaded from, however it was asked for: `icons/region.svg`. */
+    private fun glyph(icon: javax.swing.Icon?): String =
+        icon.toString().substringAfter("path=").takeWhile { it !in ",])" }.removePrefix("/")
 
     /** A popup's registered action updates with what the popup is about: a run page's row is enabled for its page. */
     fun testAPopupsRegisteredActionUpdatesWithItsData() {

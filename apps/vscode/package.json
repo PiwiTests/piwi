@@ -233,7 +233,7 @@
       {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
-        "icon": "$(beaker)",
+        "icon": "$(references)",
         "category": "Piwi"
       },
       {

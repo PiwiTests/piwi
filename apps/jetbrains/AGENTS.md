@@ -175,10 +175,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
   is about (`STOP`, `TEST_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
   gets an id in D25.
-- **Every action but a toggle draws its concept's platform icon, one with a New UI glyph on 2024.1, or is listed as
-  waiting for Piwi's glyph.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`; the failed mark, Open in
-  dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`
-  (`testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph`); the New UI glyph, by hand.
+- **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
+  on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`
+  lists them; `PiwiIcons` holds those drawn in code. Checked by `PiwiPluginTest` (`testEveryActionHasAnIconButToggles`,
+  which lists the actions that share one); the New UI glyph, by hand.
 - **Every label is in sentence case, as the VS Code extension's**: actions, buttons, dialog and popup titles, tabs and
   settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked

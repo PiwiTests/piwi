@@ -165,7 +165,7 @@ describe('statusBarView', () => {
       null,
     );
     expect(view).toEqual({
-      text: '$(debug-disconnect) Piwi: unreachable',
+      text: '$(warning) Piwi: unreachable',
       tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect](command:piwi.connect)`,
       action: 'retry',
       url: null,

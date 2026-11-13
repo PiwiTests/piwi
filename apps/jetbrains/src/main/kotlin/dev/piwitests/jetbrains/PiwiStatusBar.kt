@@ -141,7 +141,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             recording != null -> PIWI_ICON
             // A held failure shows the error's icon, any other stop the pause's.
             stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
-            shared != null -> AllIcons.Actions.Show
+            shared != null -> PiwiIcons.LIVE
             progress != null -> AnimatedIcon.Default.INSTANCE
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
@@ -162,7 +162,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
     private fun icon(icon: Glue.StatusIcon): Icon = when (icon) {
         Glue.StatusIcon.PIWI -> PIWI_ICON
-        Glue.StatusIcon.CONNECT -> AllIcons.General.User
+        Glue.StatusIcon.CONNECT -> PiwiIcons.CONNECT
         Glue.StatusIcon.UNREACHABLE -> AllIcons.Actions.OfflineMode
         Glue.StatusIcon.RUNNING -> AnimatedIcon.Default.INSTANCE
         Glue.StatusIcon.FAILING -> PiwiIcons.FAILED
@@ -268,7 +268,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         when (entry.kind) {
             Glue.LiveEntryKind.OPEN_PAGE -> AllIcons.General.Web
             Glue.LiveEntryKind.COPY_LINK -> AllIcons.Actions.Copy
-            Glue.LiveEntryKind.STOP_SHARING, Glue.LiveEntryKind.STOP_SHARING_PROJECT -> AllIcons.Actions.Suspend
+            Glue.LiveEntryKind.STOP_SHARING, Glue.LiveEntryKind.STOP_SHARING_PROJECT -> PiwiIcons.STOP_LIVE
         },
     ) {
         init {

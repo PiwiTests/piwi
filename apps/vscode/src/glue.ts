@@ -367,7 +367,7 @@ export function statusBarView(
   }
   if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
-      text: '$(debug-disconnect) Piwi: unreachable',
+      text: '$(warning) Piwi: unreachable',
       tooltip: lines(
         md(shown.problem ?? 'The instance did not answer'),
         which,

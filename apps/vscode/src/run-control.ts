@@ -2510,7 +2510,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         label: `Open run #${session.runId}`,
         description: 'on the dashboard',
         tooltip: `Open CI run #${session.runId} on the dashboard: ${session.url}`,
-        icon: 'link-external',
+        icon: 'globe',
         open: { url: session.url },
         children: [],
       };

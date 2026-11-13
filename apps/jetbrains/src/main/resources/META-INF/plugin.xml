@@ -110,9 +110,9 @@
         <group id="Piwi.Actions" text="Piwi" popup="true" compact="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
-                    icon="AllIcons.General.User"
+                    icon="/icons/connect.svg"
                     description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
-            <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
+            <action id="Piwi.Disconnect" icon="/icons/disconnect.svg" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
                     description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
             <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload Piwi"
                     icon="AllIcons.Actions.BuildAutoReloadChanges"
@@ -126,7 +126,7 @@
             <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open log"
                     icon="AllIcons.Toolwindows.ToolWindowMessages"
                     description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
-            <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
+            <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                     text="Run the tests that reach this file" description="Run them in the Run tool window">
             </action>
             <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
@@ -170,7 +170,7 @@
             <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
                     icon="AllIcons.General.Web"
                     text="Open the latest run in the dashboard" description="Open the run the status bar shows"/>
-            <action id="Piwi.PairPicker" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
+            <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
                     description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                     text="Copy the MCP server configuration"
@@ -184,7 +184,7 @@
                     text="Copy the runs' MCP server configuration for Claude Code or Cursor"
                     icon="AllIcons.Actions.Copy"
                     description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
-            <action id="Piwi.ResetRunsMcpToken" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
+            <action id="Piwi.ResetRunsMcpToken" icon="/icons/key.svg" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
                     text="Reset the runs' MCP server token"
                     description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
@@ -251,7 +251,7 @@
             <action id="Piwi.WatchWorker" class="dev.piwitests.jetbrains.WatchWorkerAction" text="Watch a worker's test"
                     icon="AllIcons.Actions.Show"
                     description="The page of the test a worker runs, a few images a second, in the Piwi tool window"/>
-            <action id="Piwi.PauseAndWatch" class="dev.piwitests.jetbrains.PauseAndWatchAction"
+            <action id="Piwi.PauseAndWatch" icon="/icons/pauseWatch.svg" class="dev.piwitests.jetbrains.PauseAndWatchAction"
                     text="Pause and watch a worker's test"
                     description="Stop a worker before its next call, and watch its page in the Piwi tool window"/>
             <action id="Piwi.OpenTraceSoFar" class="dev.piwitests.jetbrains.OpenTraceSoFarAction"
@@ -267,28 +267,28 @@
             <action id="Piwi.AssertAtStop" class="dev.piwitests.jetbrains.AssertAtStopAction" text="Assert at the stop"
                     icon="AllIcons.General.InspectionsOK"
                     description="Check an element in the stopped test's window: the expect() goes above the stopped line"/>
-            <action id="Piwi.AssertRegionAtStop" class="dev.piwitests.jetbrains.AssertRegionAtStopAction"
+            <action id="Piwi.AssertRegionAtStop" icon="/icons/region.svg" class="dev.piwitests.jetbrains.AssertRegionAtStopAction"
                     text="Assert a region at the stop"
                     description="Pick a region in the stopped test's window: its ARIA snapshot goes above the stopped line"/>
-            <action id="Piwi.MockAtStop" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a request at the stop"
+            <action id="Piwi.MockAtStop" icon="/icons/mock.svg" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a request at the stop"
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
-            <action id="Piwi.ShowBrowser" class="dev.piwitests.jetbrains.ShowBrowserAction"
+            <action id="Piwi.ShowBrowser" icon="/icons/browser.svg" class="dev.piwitests.jetbrains.ShowBrowserAction"
                     text="Show the stopped test's browser"
                     description="Bring the stopped test's window to the front, at a stop of a headed run"/>
             <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
-            <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
+            <action id="Piwi.ShareWithPlaywright" icon="/icons/tools.svg" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
                     text="Share the stopped browser with Playwright tools"
                     description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
             <!-- Asked with a warning the first time in the IDE's session: the run's pages go to the team instance. -->
-            <action id="Piwi.ShareRunLive" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the run live"
+            <action id="Piwi.ShareRunLive" icon="/icons/live.svg" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the run live"
                     description="Let anyone who can open the run on your team's Piwi instance watch its tests' pages from the run page"/>
-            <action id="Piwi.StopSharingRun" class="dev.piwitests.jetbrains.StopSharingRunAction"
+            <action id="Piwi.StopSharingRun" icon="/icons/stopLive.svg" class="dev.piwitests.jetbrains.StopSharingRunAction"
                     text="Stop sharing the run live…"
                     description="End the views of the run on the team instance: nothing more goes there"/>
-            <action id="Piwi.ShareWindowLive" class="dev.piwitests.jetbrains.ShareWindowLiveAction"
+            <action id="Piwi.ShareWindowLive" icon="/icons/live.svg" class="dev.piwitests.jetbrains.ShareWindowLiveAction"
                     text="Share this project's runs live until I stop"
                     description="Share each run of this project live on your team's Piwi instance from now on, until you stop or close the project"/>
-            <action id="Piwi.StopSharingWindowLive" class="dev.piwitests.jetbrains.StopSharingWindowLiveAction"
+            <action id="Piwi.StopSharingWindowLive" icon="/icons/stopLive.svg" class="dev.piwitests.jetbrains.StopSharingWindowLiveAction"
                     text="Stop sharing this project's runs live…"
                     description="Stop sharing every run of this project live: nothing more goes to the team instance"/>
             <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn hold failures on or off"
