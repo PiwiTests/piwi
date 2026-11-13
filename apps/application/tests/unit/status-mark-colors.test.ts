@@ -35,6 +35,19 @@ describe('the outcome marks', () => {
     );
   });
 
+  test('mark a recording with the same glyphs in both editors', () => {
+    for (const [vscode, jetbrains] of [
+      ['recording', 'recording'],
+      ['recording-dark', 'recording_dark'],
+      ['recording-paused', 'recordPaused'],
+      ['recording-paused-dark', 'recordPaused_dark'],
+    ]) {
+      expect(read(`apps/vscode/media/${vscode}.svg`), vscode).toBe(
+        read(`apps/jetbrains/src/main/resources/icons/${jetbrains}.svg`),
+      );
+    }
+  });
+
   test('are Piwi Picker’s dots, in its results panel and its coverage view', () => {
     for (const file of [
       'apps/extension/src/content/results-panel.ts',

@@ -90,7 +90,7 @@ export const WALKTHROUGH = 'piwitests.piwi#getStarted';
 
 export interface StatusBarView {
   text: string;
-  /** Markdown: what the item shows and when it was read, then links to the run, the dashboard and Connect. */
+  /** Markdown: what the item shows and when it was read, then links to the run and the dashboard, or to Connect. */
   tooltip: string;
   /**
    * `refresh` reads the latest run again (`piwi.refreshRun`); `retry` reads the instance again (`piwi.refresh`);
@@ -456,8 +456,8 @@ function withOwnProgress(
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
- * click reads the latest run again; the tooltip names the config when there are several, says when the run was read
- * and links to the run, the dashboard and Connect.
+ * click opens the status menu; the tooltip names the config when there are several, says when the run was read
+ * and links to the run and the dashboard, or to Connect when the editor is not connected.
  */
 export function statusBarView(
   status: StatusResult | null,
@@ -481,7 +481,7 @@ export function statusBarView(
     };
   }
   const hint = desktopHint(status, desktopChosen);
-  const connect = '[Connect](command:piwi.connect)';
+  const connect = '[Connect…](command:piwi.connect)';
   const which = configLine(contexts, shown, activeFile);
   if (!shown.connected && shown.problemKind === 'desktop-unproven') {
     return {
@@ -543,7 +543,7 @@ export function statusBarView(
   const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
   const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
-    const links = linksLine(liveLink(live), dashboard, compare, connect);
+    const links = linksLine(liveLink(live), dashboard, compare);
     if (run?.overlays) {
       // A developer's own runs alone, with no baseline.
       const failing = run.failingTests ?? run.failures;
@@ -579,11 +579,17 @@ export function statusBarView(
   // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
   const failing = run.failingTests ?? r.failedTests;
   const fixed = run.resolved ?? 0;
+  const active = !!live || ACTIVE.has(r.status);
+  // The item counts failing tests, the run line failed results: one test fails once per Playwright project.
+  const tests = !active && !run.overlays && failing !== r.failedTests ? ` (${plural(failing, 'test')})` : '';
+  const failingNow = !active && failing > 0 ? ` · ${failing} failing` : '';
   const tooltip = lines(
-    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed${tests}, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
     which,
     baseline,
-    run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
+    run.overlays
+      ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally${failingNow}`
+      : null,
     progress,
     updated,
     from,
@@ -595,7 +601,6 @@ export function statusBarView(
       flakyLink(connected.root, flakyListed(connected.root)),
       dashboard,
       compare,
-      connect,
     ),
   );
   const view = {
@@ -606,7 +611,7 @@ export function statusBarView(
     error: false,
     flakyRoot: flakyListed(connected.root) > 0 ? connected.root : null,
   };
-  if (live || ACTIVE.has(r.status)) {
+  if (active) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {

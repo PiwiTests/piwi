@@ -171,11 +171,11 @@
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
                 </action>
                 <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause recording"
-                        icon="AllIcons.Actions.Pause"
+                        icon="/icons/recordPaused.svg"
                         description="Stop writing what is done in the browser until Resume">
                 </action>
                 <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume recording"
-                        icon="AllIcons.Actions.Resume"
+                        icon="/icons/record.svg"
                         description="Write what is done in the browser again, over the recorded lines">
                 </action>
                 <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
