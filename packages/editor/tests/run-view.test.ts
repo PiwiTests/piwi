@@ -628,6 +628,21 @@ describe('who is present on a run, and who drives its stop', () => {
     h.sessions.unfollowRun('ed-1');
     expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([{ kind: 'picker', name: 'Piwi Picker' }]);
+    // The desktop app's windows are one tool: a worker's window open hears the main window as itself, and the
+    // other tools hear the app once.
+    const workerWindow = viewer({ kind: 'desktop', name: 'the desktop app' });
+    h.sessions.presentOn(desktop, true);
+    h.sessions.presentOn(workerWindow, true);
+    expect(h.sessions.presenceFor('ed-1', workerWindow)!.presence).toEqual([
+      { kind: 'picker', name: 'Piwi Picker' },
+      { kind: 'desktop', name: 'the desktop app', self: true },
+    ]);
+    expect(h.sessions.presenceFor('ed-1', picker)!.presence).toEqual([
+      { kind: 'picker', name: 'Piwi Picker', self: true },
+      { kind: 'desktop', name: 'the desktop app' },
+    ]);
+    h.sessions.presentOn(workerWindow, false);
+    h.sessions.presentOn(desktop, false);
     expect(paused).not.toBe(since);
     // A second Runs window, of the same name as one present, changes no view of the editor's, and is told all the same;
     // closing it gives back the stop it took, which the agent hears.

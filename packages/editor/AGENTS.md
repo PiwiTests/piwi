@@ -154,7 +154,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   machine (no `Origin`: the desktop app's server), that names it as this machine.** A `Host` other than `127.0.0.1` or
   `localhost` at its port or at one the client forwards (`piwi/hub`, `hubHostPort`), or an `Origin` that is not an
   extension's (`isExtensionOrigin`), gets a 403 first, and commands are read only after `hello` with the hub's token
-  (`sameToken`) within `HUB_HELLO_MS`. A connection that subscribes to observe (`observe`) answers no stop. Checked by
+  (`sameToken`) within `HUB_HELLO_MS`. A connection that subscribes to observe (`observe`) answers no stop, and steers none (`OBSERVER_COMMANDS`). Checked by
   `tests/run-hub.test.ts` ("the handshake", "takes a loopback Host at a port the client forwards …", "takes a process
   of this machine that sends no Origin …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates

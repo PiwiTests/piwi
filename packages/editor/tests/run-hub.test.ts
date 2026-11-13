@@ -892,6 +892,51 @@ describe('a stop nobody else can answer, with the editor’s client unable to', 
       observer.socket.close();
     }
   });
+
+  test('refuses a process that observes the runs every command that steers one, and answers its reads', async () => {
+    const observer = (await open({ origin: '' })) as Client;
+    observer.send({ type: 'hello', token: hub.token });
+    await waitFor(() => observer.messages[0]);
+    observer.send({ type: 'subscribe', id: 1, observe: true });
+    expect(await observer.answer(1)).toMatchObject({ ok: true });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const since = '2026-09-27T12:00:00.000Z';
+    const click = { type: 'mouse', action: 'click', x: 20, y: 90, button: 'left', clickCount: 1 };
+    const steering = [
+      { type: 'hold', ref, on: true },
+      { type: 'share', ref, on: true },
+      { type: 'stop', ref },
+      { type: 'follow', on: true },
+      { type: 'runControl', ref, action: 'pause' },
+      { type: 'runControl', ref, action: 'resume', since },
+      { type: 'view', ref, since, on: true },
+      { type: 'input', ref, since, events: [click] },
+      { type: 'drive', ref, since, on: true },
+      { type: 'pick', ref, since },
+      { type: 'mock', ref, since, request: 1 },
+    ];
+    try {
+      await waitFor(() => observer.session(ref));
+      for (const [i, command] of steering.entries()) {
+        observer.send({ ...command, id: 10 + i });
+        expect(await observer.answer(10 + i), command.type).toEqual({
+          type: 'answer',
+          id: 10 + i,
+          ok: false,
+          message: 'This connection observes the runs: it cannot steer them.',
+        });
+      }
+      // Its reads are answered as any connection's.
+      observer.send({ type: 'requests', id: 30, ref, since });
+      expect((await observer.answer(30)).message).not.toMatch(/observes the runs/);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(worker.heard.some((m) => m.type === 'control')).toBe(false);
+    } finally {
+      worker.socket.destroy();
+      observer.socket.close();
+    }
+  });
 });
 
 /** A hub of its own, its sessions faked, with the keepalive and hello limits it ships with. */

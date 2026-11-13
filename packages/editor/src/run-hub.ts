@@ -12,7 +12,7 @@
  * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
  * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
- * runs for its own surfaces) does not. A failure no pause bar shows waits only in a run whose Hold failures is
+ * runs for its own surfaces) does not, and is refused every command but the reads (`OBSERVER_COMMANDS`). A failure no pause bar shows waits only in a run whose Hold failures is
  * on, which any connection turns over (`hold`); `follow`, a Runs window open, holds nothing. The code actions it starts at a stop (Assert, Assert a region,
  * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
  * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
@@ -114,6 +114,12 @@ export function hubFeatures(
   return options.sharesWindow ? [...features, 'share-window'] : features;
 }
 
+/** The commands a connection that observes (`observe`) may send: it reads the runs, and steers none of them. */
+const OBSERVER_COMMANDS: ReadonlySet<string> = new Set(['subscribe', 'pausedPage', 'requests']);
+
+/** Why any other command is refused to it. */
+const OBSERVES_ONLY = 'This connection observes the runs: it cannot steer them.';
+
 /** Why `openTrace` is refused to a connection that came through a port the client forwards. */
 const TRACE_ELSEWHERE = "Playwright's trace viewer would open on the machine the run runs on, not this one.";
 
@@ -203,7 +209,7 @@ interface Connection {
    */
   forwarded: boolean;
   subscribed: boolean;
-  /** It subscribed only to observe (`observe`): it answers no stop. */
+  /** It subscribed only to observe (`observe`): it answers no stop, and sends `OBSERVER_COMMANDS` alone. */
   observes: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
@@ -625,6 +631,8 @@ export class RunHub {
       return reply({ ok: false, message: `Piwi does not know the command ${JSON.stringify(command.what)}.` });
     }
     if (command.type === 'invalid') return reply({ ok: false, message: command.message });
+    if (connection.observes && !OBSERVER_COMMANDS.has(command.type))
+      return reply({ ok: false, message: OBSERVES_ONLY });
     if (connection.pending >= MAX_HUB_PENDING) {
       return reply({ ok: false, message: 'Too many commands at once: wait for their answers.' });
     }

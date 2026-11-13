@@ -1016,7 +1016,8 @@ ping is dropped, as is one with 32 MB unread.
 not answered the close. A connection being closed holds none of the places counted above.
 
 A subscribed connection is a surface that answers stops, but one that subscribed to observe (`observe`: the desktop
-app's server); a run's Hold failures says whether its failures wait
+app's server), which is refused every command but `subscribe`, `pausedPage` and `requests` (`OBSERVER_COMMANDS`); a
+run's Hold failures says whether its failures wait
 ([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
 `follow` says a Runs window is open, `view` names one stop.
 
@@ -1028,7 +1029,9 @@ editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at
 `AGENT_VIEWER`.
 
 - **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window, or the desktop app's window
-  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does.
+  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does. The
+  desktop app's windows are one tool: a worker's window hears the app's main window as itself (`self`), and the other
+  way around.
 - **A worker's `watchers`**: the viewers of its lane and of its stop's live view, each tool once.
 - **A stop's `driver`**: one at a time. The agent drives a stop it asked for, and one it acts on (`page_act`) while no
   person drives it. A person's click, key, text or wheel on the view (never a pointer passing over it), pick on the
