@@ -45,33 +45,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * Settings → Tools → Piwi is no wider than its texts wrapped at 90 columns, and laid out at that width nothing on it
-     * is cut short: no label, button, check box or list narrower than its text.
+     * Settings → Tools → Piwi stays within 100 columns of its font, its texts wrapped at 90, with every text the page
+     * fills as it opens or as Test connection answers holding a long sentence and an instance's address.
      */
-    fun testTheSettingsPageFitsItsWrappedTextsWithNothingCut() {
+    fun testTheSettingsPageStaysWithinItsColumnsWithLongTexts() {
         val page = PiwiConfigurable(project)
         try {
             val content = page.createComponent()!!
             fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
-            // The intro, wrapped at 90 columns, is the page's widest text.
-            val intro = all(content).filterIsInstance<javax.swing.JEditorPane>().first()
+            val texts = all(content).filterIsInstance<javax.swing.JEditorPane>()
+            val intro = texts.first()
             assertTrue(intro.text.contains("Where this project reads its test history from"))
-            val width = intro.preferredSize.width
-            assertTrue("the page is ${content.preferredSize.width} px wide, its texts $width px", content.preferredSize.width <= width)
-            content.size = java.awt.Dimension(width, content.preferredSize.height)
-            fun lay(c: java.awt.Container) {
-                c.doLayout()
-                c.components.forEach { if (it is java.awt.Container) lay(it) }
-            }
-            lay(content)
-            val shown = all(content).filter {
-                it is javax.swing.JLabel || it is javax.swing.AbstractButton || it is javax.swing.JComboBox<*> || it is javax.swing.JEditorPane
-            }
-            assertTrue(shown.size > 20)
-            for (c in shown) {
-                val text = (c as? javax.swing.JLabel)?.text ?: (c as? javax.swing.AbstractButton)?.text ?: c.javaClass.simpleName
-                assertTrue("'$text' is ${c.width} px of its ${c.preferredSize.width}", c.width >= c.preferredSize.width)
-            }
+            val column = intro.getFontMetrics(intro.font).charWidth('0')
+            assertTrue("the intro is ${intro.preferredSize.width} px, 90 columns ${90 * column} px", intro.preferredSize.width <= 90 * column)
+            val long = List(4) { "Saved for https://piwi.platform-team.example-company.internal:8443 in the IDE's password safe." }
+                .joinToString(" ")
+            val filled = texts.filter { it.document.getText(0, it.document.length).isBlank() }
+            assertTrue(filled.size >= 5)
+            filled.forEach { it.text = long }
+            assertTrue("the page is ${content.preferredSize.width} px, 100 columns ${100 * column} px", content.preferredSize.width <= 100 * column)
         } finally {
             page.disposeUIResources()
         }

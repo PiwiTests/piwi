@@ -1240,9 +1240,10 @@ the descriptor's command line against a stub instance, and reads its answers wit
 session and controls with a fake worker on the run channel among them, and the code from a stop (`piwi/stopRequests`,
 `piwi/stopAction`, the `piwi/stopCode` it sends, `piwi/locatorAtCaret`).
 
-`testTheSettingsPageFitsItsWrappedTextsWithNothingCut` (`PiwiPluginTest`) lays Settings → Tools → Piwi out at the width
-of its intro, wrapped at 90 columns, and fails on a part of the page wider than that or on a label, button, check box or
-list narrower than its text: a label or comment grown too long shows there before it ends in '…' in a Settings dialog.
+`testTheSettingsPageStaysWithinItsColumnsWithLongTexts` (`PiwiPluginTest`) holds Settings → Tools → Piwi within 100
+columns of its font, its intro wrapped at 90, with every text the page fills itself (the connection in use, the key,
+Test connection's answer, the desktop app's state) holding a long sentence and an instance's address: a text that stops
+wrapping, or a label or button grown too long, widens the page past a Settings dialog's.
 
 `PiwiRunControlTest` drives the run controls with the sessions the service would send: the execution point, the inlay,
 the actions, the edits above a stop and Run to caret from them, the paused page of a file the VFS has not loaded, the

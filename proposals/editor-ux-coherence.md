@@ -65,8 +65,8 @@ at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMa
 in a product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and
 VS Code's views (IC8, IC9). Q9: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs and the
 new Reload Piwi (`icons/reload.svg`, JetBrains' too) and Run to the cursor glyphs, at one line weight, so every VS Code
-command draws one (IC1). Q5: `PiwiPluginTest` lays Settings → Tools → Piwi out at the width of its texts wrapped at 90
-columns and fails on a part wider than that, or on a label, button, check box or list cut short (ST14).
+command draws one (IC1). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+the page fills itself holding a long sentence and an address (ST14).
 §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
