@@ -228,7 +228,6 @@ export const PROJECT = {
   USER_PROJECT_ROLES: 'user-project-roles-test',
   VIDEO_ACTIONS: 'video-actions-test',
   VIDEO_REVIEW_FIT: 'video-review-fit-test',
-  VIDEO_TAB_SEARCH: 'video-tab-search-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

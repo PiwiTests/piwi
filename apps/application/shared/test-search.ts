@@ -141,12 +141,6 @@ export const CATALOG_SEARCH_FIELDS: readonly TestSearchField[] = [
   'id',
 ];
 
-/**
- * The qualifiers of the checklist beside a run's videos (the Video tab, the Evidence video review): its rows show a
- * test's title and the worker it ran on, so a word looks in the title alone.
- */
-export const VIDEO_REEL_SEARCH_FIELDS: readonly TestSearchField[] = ['title', 'browser', 'worker', 'shard'];
-
 /** The fields a free word or phrase is looked for in, when the list has them. */
 const FREE_TEXT_FIELDS: readonly TestSearchField[] = ['title', 'describe', 'file', 'error'];
 

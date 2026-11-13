@@ -5,15 +5,6 @@
  * (`focusId`), the playhead starts at it (`startIndex`), and tests listed only for context are dimmed and not played.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
-import {
-  VIDEO_REEL_SEARCH_FIELDS,
-  collectTestSearchValues,
-  compileTestSearch,
-  parseTestSearch,
-  testSearchHighlights,
-  type TestSearchSubject,
-} from '#shared/test-search';
-import { workerNumber } from '#shared/worker-lane';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
 import { statusPalette } from '@piwitests/run-ui/status-palette';
 
@@ -56,38 +47,6 @@ const hasContext = computed(() => props.reel.entries.some((e) => e.context));
 const playedTotal = computed(() => props.reel.entries.filter((e) => !e.context).length);
 const contextTotal = computed(() => props.reel.entries.length - playedTotal.value);
 const isFocus = (entry: ReelEntry) => props.focusId != null && entry.execution.executionId === props.focusId;
-
-// ── Search ──────────────────────────────────────────────────────────────────
-// The checklist's search box speaks the test lists' language (`#shared/test-search`): a word matches the title, and
-// `browser:`, `worker:` and `shard:` the rest a row shows. It only hides rows: the reel, its playing and its ticks stay
-// as they are, and a row keeps its index in the reel.
-const search = useViewState('video-reel:search', () => '');
-function searchSubject(entry: ReelEntry): TestSearchSubject {
-  const { title, browserName, parallelIndex, shardIndex } = entry.execution;
-  return { title, browser: browserName, worker: workerNumber(parallelIndex), shard: shardIndex };
-}
-const subjects = computed(() => props.reel.entries.map(searchSubject));
-const searchValues = computed(() => collectTestSearchValues(subjects.value, VIDEO_REEL_SEARCH_FIELDS));
-const parsedSearch = computed(() => parseTestSearch(search.value, VIDEO_REEL_SEARCH_FIELDS));
-const searching = computed(() => parsedSearch.value.terms.length > 0);
-const titleHighlights = computed(() => (searching.value ? testSearchHighlights(parsedSearch.value).title : null));
-/** The rows the checklist shows, each with its index in the reel. */
-const listed = computed(() => {
-  const rows = props.reel.entries.map((entry, index) => ({ entry, index }));
-  if (!searching.value) return rows;
-  const matches = compileTestSearch(parsedSearch.value);
-  return rows.filter(({ index }) => matches(subjects.value[index]!));
-});
-function clearSearch() {
-  search.value = '';
-}
-/** Escape empties the box, unless it only closed the box's suggestions. */
-function onSearchKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && !event.defaultPrevented && search.value) {
-    event.preventDefault();
-    clearSearch();
-  }
-}
 
 const bar = ref<HTMLElement | null>(null);
 const blocks = ref<HTMLElement[]>([]);
@@ -221,49 +180,15 @@ function blockLabel(entry: ReelEntry): string {
     </div>
 
     <div class="flex min-h-24 min-w-0 flex-1 flex-col lg:min-h-0 lg:flex-none">
-      <TestSearchInput
-        v-model="search"
-        :fields="VIDEO_REEL_SEARCH_FIELDS"
-        :values="searchValues"
-        :find-shortcut="false"
-        placeholder="Search tests"
-        label="Search the tests of this reel"
-        class="mb-2 shrink-0"
-        data-shot="run-video-search"
-        @keydown="onSearchKeydown"
-      />
-      <p
-        v-if="searching"
-        class="mb-1 shrink-0 text-xs text-muted tabular-nums"
-        data-testid="video-checklist-count"
-        aria-live="polite"
-      >
-        {{ listed.length }} of {{ reel.entries.length }}
-        {{ reel.entries.length === 1 ? 'test matches' : 'tests match' }}
-      </p>
-      <p
-        v-else-if="hasContext"
-        class="mb-1 shrink-0 text-xs text-muted tabular-nums"
-        data-testid="video-checklist-count"
-      >
+      <p v-if="hasContext" class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         This test's video · {{ contextTotal }} other {{ contextTotal === 1 ? 'test' : 'tests' }} in its file, not played
       </p>
-      <p v-else class="mb-1 shrink-0 text-xs text-muted tabular-nums" data-testid="video-checklist-count">
+      <p v-else class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         {{ tickedCount }} of {{ playedTotal }} tests · {{ reel.videoCount }}
         {{ reel.videoCount === 1 ? 'video' : 'videos' }}
       </p>
-      <p v-if="listed.length === 0" class="rounded-lg border border-default px-3 py-2 text-sm text-muted">
-        No test matches this search.
-        <button
-          type="button"
-          class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-          @click="clearSearch"
-        >
-          Clear the search
-        </button>
-      </p>
-      <ul v-else class="relative min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
-        <li v-for="{ entry, index: i } in listed" :key="entry.execution.executionId">
+      <ul class="relative min-h-0 overflow-y-auto divide-y divide-default rounded-lg border border-default">
+        <li v-for="(entry, i) in reel.entries" :key="entry.execution.executionId">
           <button
             type="button"
             class="flex w-full items-start gap-2 px-3 py-2 text-left"
@@ -291,7 +216,7 @@ function blockLabel(entry: ReelEntry): string {
             }}</span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm text-highlighted">
-                <SearchHighlight :text="entry.execution.title" :patterns="titleHighlights" />
+                {{ entry.execution.title }}
               </span>
               <span class="block text-xs text-muted">
                 <template v-if="isFocus(entry)">This test · </template>

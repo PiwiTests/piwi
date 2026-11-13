@@ -105,9 +105,6 @@ On a run's and a project's **Tests** tab ([test search](/reference/test-search))
 | `Enter` / `Tab` | Take the highlighted suggestion |
 | `Esc` | Close the suggestions |
 
-The search box of a run's **Video** checklist takes the same keys but `Ctrl` + `F`, and `Esc` with no suggestions open
-clears it.
-
 ## Screenshot viewer
 
 | Keys | Action |

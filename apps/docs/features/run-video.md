@@ -24,21 +24,6 @@ the screen without scrolling the page; only the list of tests scrolls.
 Only the final attempt of a test is listed. A test that has no video stays on the checklist and takes a small block on
 the bar. It is ticked as the reel moves on. The tab is off while the run is live.
 
-When the run has [errors outside the tests](/reference/test-metadata#errors-outside-the-tests), their block sits above
-the tabs. **Collapse** folds it to one line, the first error's message with its whole text on hover, so the video gets
-the height back; **Expand** shows every error again. The browser keeps the choice for every run.
-
-## Search the checklist
-
-The box above the checklist finds a test by its title, ignoring case and accents, and marks what matched. It speaks
-the [test search](/reference/test-search) language of the Tests tab: a word looks in the title, and `browser:`,
-`worker:` and `shard:` pick a test's Playwright project, worker and shard. The line above the list counts the tests
-that match, for example **2 of 119 tests match**. The **×** in the box or `Esc` clears the search, and so does the
-link under **No test matches this search**.
-
-Searching only hides rows: the video keeps playing or stays paused, the bar and its marks stay as they are, and a test
-keeps its tick. Click a test the search found to jump to it in the video.
-
 ## Open a video review from Evidence
 
 On a finished execution that has a video, the Evidence header has an **Open video review** button, beside **Open trace**.
