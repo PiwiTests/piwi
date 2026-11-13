@@ -2,7 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
-import { fireDevtoolsEvent, openDevtoolsPage } from './devtools-stub.js';
+import { fireDevtoolsEvent, openDevtoolsPage, openNetworkTab } from './devtools-stub.js';
 
 /** The shop: two buttons load the cart, by fetch and by XHR, and say how it went and how long it took. */
 const SHOP = `<!doctype html><html><body>
@@ -212,7 +212,7 @@ test('through the debugging protocol: fails an image, takes the whole page offli
   expect(await load(shop, 'image')).toMatchObject({ result: 'image loaded' });
   const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
   const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, { tabId });
-  await panel.getByRole('tab', { name: 'Network' }).click();
+  await openNetworkTab(panel);
   await fireDevtoolsEvent(panel, 'requestFinished', {
     request: { method: 'GET', url: `${site}/pic.png?_=1695820800000` },
     response: { status: 200, content: { mimeType: 'image/png' } },
