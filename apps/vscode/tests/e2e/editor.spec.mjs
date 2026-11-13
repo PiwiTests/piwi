@@ -169,4 +169,8 @@ test('the Testing view lists the spec’s tests with the run’s results', async
   await expand('checkout (Failed)');
   await expect(tree.getByRole('treeitem', { name: 'pays by card (Failed)' })).toBeVisible();
   await expect(tree.getByRole('treeitem', { name: 'removes a row (Passed)' })).toBeVisible();
+  // The view has no flaky result: the catalog's flaky test shows as passed, and its item says flaky.
+  await expand('catalog.spec.ts (Passed)');
+  await expand('catalog (Passed)');
+  await expect(tree.getByRole('treeitem').filter({ hasText: 'filters in-stock products' })).toContainText('flaky');
 });

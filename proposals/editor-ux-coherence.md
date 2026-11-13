@@ -48,17 +48,18 @@ one table in the editor service (`connect-failures.json`), which VS Code reads a
 plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said
 (NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20: VS
 Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
-`SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). §14 adds the
-findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
-P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
-lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
-live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+`SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). Q2: a fixture check
+in each editor fails when a flaky test carries no flaky mark, VS Code's nightly suite reading its Testing item and
+`PiwiPluginTest` its gutter icon through the bundled service (TL13). §14 adds the findings the code that built the plan
+raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
+leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
+each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
+phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
@@ -168,7 +169,7 @@ These rules hold them together; each larger item of §10 carries one or more.
    once.** ([IC2](#ic2), [IC9](#ic9))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, restated in each tool and held to them by a
    test, as `coverage-mark-colors.test.ts` holds the coverage marks; flaky, quarantine and history always drawn.**
-   ([IC4](#ic4), [TL13](#tl13))
+   ([IC4](#ic4))
 4. **One menu shape (Run, Record, Run Control, Dashboard, Agents, Connection, each showing what applies now) and one
    home per editor, with the same tabs, toolbar order and empty states.** ([AC1](#ac1), [HM1](#hm1), [HM6](#hm6))
 5. **The IDE's own places first, with Run, Debug and Coverage meaning what the IDE means; Piwi's own marks only for what
@@ -180,8 +181,8 @@ These rules hold them together; each larger item of §10 carries one or more.
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
    interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [ST8](#st8), [TL4](#tl4))
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
-   `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([TL13](#tl13),
-   [LR6](#lr6), [RD4](#rd4))
+   `examples/sample-app`'s ASP.NET Core backend, and docs that claim only what a check holds.** ([LR6](#lr6),
+   [RD4](#rd4))
 
 <a id="x1"></a>**X1. Every editor action is named and placed by hand twice, so the two editors drift and no check holds
 one to the other.** Each editor's manifest test fails on an action without an icon, but nothing compares
@@ -449,10 +450,6 @@ registers only the recorded-locator fixes (`apps/vscode/src/recording.ts:833-836
 editors, as a refactor-kind action from the service ([TL7](#tl7)). ([M7](#m7), [LI7](#li7))
 
 ### 5.4 The marks
-
-<a id="tl13"></a>**TL13. No fixture check fails when a flaky test carries no flaky mark.** Neither VS Code's nightly
-suite nor `PiwiPluginTest` looks for a flaky mark on the editor fixture's flaky test. **(read)** Fix: the fixture checks
-fail when a flaky test carries no flaky mark. ([Q2](#q2), [L6](#l6), [LI19](#li19))
 
 ### 5.6 Debug
 
@@ -1005,7 +1002,7 @@ JetBrains color schemes are still to join it. A script writing the copies was dr
 less machinery. **Lives in** `apps/application` and each tool's assets (FSL); the status palette never moves into core,
 where `COVERAGE_MARK_COLORS` stays with its changed and uncovered-change colors. **Replaces** the tray's own palette, an
 amber paused that means did not run elsewhere. **Depends on** nothing. **Revisits**
-[desktop-run-progress.md](desktop-run-progress.md), whose tray dot took colors of its own. Steps [Q2](#q2),
+[desktop-run-progress.md](desktop-run-progress.md), whose tray dot took colors of its own. Step
 [M5](#m5).
 
 **Places (principles 4 and 5).**
@@ -1268,7 +1265,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="q2"></a>Q2 | **A fixture check that fails when a flaky test carries no flaky mark**, in both editors | `ide` | [TL13](#tl13) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q9"></a>Q9 | **The last glyphs in VS Code**: the five commands without one take M4's drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
@@ -1309,14 +1305,14 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger | `ide` | [LR3](#lr3) |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: the manifest's handler line in `integrations/aspnetcore` first (MIT; no scope fits, so that commit has none), then the lens (`ide`) and Open in IDE on .NET frames (`ui`) | `ide` | [RD7](#rd7), [RD8](#rd8) |
 | <a id="l5"></a>L5 | **A test card in both editors** (`piwi/testCard`), laid out like the dashboard's test row | `ide` | [TL21](#tl21) |
-| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | [LR6](#lr6), [TL13](#tl13) |
+| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | [LR6](#lr6) |
 | <a id="l7"></a>L7 | **Decide what Piwi is for Playwright on .NET**: a non-goal in `ROADMAP.md`, or a proposal for an MIT NuGet adapter | `docs` | none ([LI17](#li17)) |
 
 ### Sequence
 
 The quick wins that stand alone (Q5, Q13, Q27, Q28, Q30), each on its own. Then M1, on which most of the rest
 builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
-glyphs and the outcome palette that Q2, Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
+glyphs and the outcome palette that Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
@@ -1329,7 +1325,7 @@ whether M14's places are interim.
    the caret take the same word in both clients, or keep each platform's?
 3. **Record's color, and two marks**: flaky takes the dashboard's fuchsia shuffle (§2 principle 3, [IC4](#ic4)). Is
    Record's action icon red like Piwi Picker's dot, or gray, with red kept for the recording state as JetBrains' icon
-   style asks? Can VS Code's margin show the flaky mark beside the Testing view's glyph ([TL13](#tl13)), and can
+   style asks? Can VS Code's margin show the flaky mark beside the Testing view's glyph, and can
    JetBrains' gutter animate the running ring ([TL5](#tl5))?
 4. **Where the concept table lives** (the catalog and the settings registry are in `packages/editor`, [LI1](#li1),
    [LI11](#li11)): `packages/editor`, bundled by both clients, or `apps/application/shared` beside `piwi-features.ts`
