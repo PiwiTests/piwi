@@ -15,11 +15,12 @@ findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so 
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a
 run's balloon titled by its run, VS Code's Connect failures in JetBrains' words (ST20), and Q23, the desktop app's
-product name, Piwi Desktop, which #1317 shipped (AC13). §14 adds the findings the code that built the plan raised. The
-live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status
-names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a
-run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is
-on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+product name, Piwi Desktop, which #1317 shipped (AC13); and M6's End the test off the square and Finish's step-out glyph
+in the Runs window and the desktop app, and the pause bar in the editors' order (IC5). §14 adds the findings the code
+that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10,
+each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document
+owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words
+and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -137,7 +138,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 1. **One name per concept, from the action catalog and a words table that both manifests and both clients are tested
    against, in sentence case in both editors.** ([AC7](#ac7), [AC11](#ac11), [X1](#x1))
 2. **One glyph per concept and one meaning per glyph, from the concept table; a glyph no platform has, Piwi draws
-   once.** ([IC2](#ic2), [IC5](#ic5), [IC7](#ic7), [IC9](#ic9))
+   once.** ([IC2](#ic2), [IC7](#ic7), [IC9](#ic9))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, generated into each tool and tested like
    `coverage-mark-colors.test.ts`; flaky, quarantine and history always drawn.** ([IC4](#ic4), [TL13](#tl13))
 4. **One menu shape (Run, Record, Run Control, Dashboard, Agents, Connection, each showing what applies now) and one
@@ -236,25 +237,10 @@ the hover. Codicons have no shuffle, so VS Code needs `$(piwi-flaky)` ([IC8](#ic
 
 ### 3.4 Run controls
 
-<a id="ic5"></a>**IC5. The desktop app and the Runs window draw End the test as the square that stops the run beside it,
-and Finish as a triangle and a bar where the editors draw step-out.** `packages/run-model/src/controls.ts:53-54` gives
-End the test, and End the test while a Pause waits, the `stop` icon: `i-lucide-square` in the desktop app
-(`apps/application/app/utils/desktop-run-view.ts:263`) and Picker's square in the Runs window
-(`apps/extension/src/shared/icons.ts:58`), the glyph of the run's Stop in the same tray card and window
-(`apps/application/app/components/desktop/DesktopLocalRunsTray.vue:298`, `apps/extension/src/runs/main.ts:2510`); the
-editors end a test with a circle and a slash (`apps/vscode/package.json:488`). Finish is `next` there
-(`controls.ts:52`), drawn as `skip-forward` (`desktop-run-view.ts:262`). **(read)** Fix: Appendix A's End the test
-(`ban`, Picker's `blocked`) and Finish (`arrow-up-from-dot`, Picker's `step-out`) in `packages/run-model`'s icons and
-both maps, and the square for stopping the run alone. [developer-loop-audit.md](developer-loop-audit.md) §9 gives each
-control one word, not one glyph. ([M6](#m6), [LI2](#li2))
-
-<a id="ic6"></a>**IC6. The pause bar every headed stop shows orders its buttons differently from the editors, the Runs
-window and the desktop app, and draws no glyphs.** `packages/picker-dom/src/overlay-pause.ts:105-147` puts Pick a
-locator and Record here between Step and Finish, as text buttons; every other surface puts Resume, Step, Finish and End
-first, then the code actions (`packages/run-model/src/controls.ts:70-73`, which the Runs window and the desktop app
-follow, `apps/vscode/src/run-control.ts:1121-1131`, `Glue.kt:2549-2555`). **(read)** Fix: the same order, a divider
-before the code actions, and Appendix A's run-control glyphs drawn anew in `picker-dom` (MIT) for Piwi Picker to import,
-since its `apps/extension/src/shared/icons.ts` is FSL. ([M6](#m6), [LI2](#li2))
+<a id="ic6"></a>**IC6. The pause bar every headed stop shows draws no glyphs.** Its buttons are text alone
+(`packages/picker-dom/src/overlay-pause.ts`), where the editors, the Runs window and the desktop app draw each control's
+glyph. **(read)** Fix: Appendix A's run-control glyphs drawn anew in `picker-dom` (MIT) for Piwi Picker to import, since
+its `apps/extension/src/shared/icons.ts` is FSL. ([M6](#m6), [LI2](#li2))
 
 ### 3.5 Connect, the Piwi mark and the tree
 
@@ -1381,7 +1367,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1 and M2; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
-| <a id="m6"></a>M6 | **One glyph and one order per run control in the Runs window and the pause bar**: End the test off the square, Finish's step-out glyph, the pause bar's order and glyphs drawn anew in picker-dom (MIT) | `extension` | [IC5](#ic5), [IC6](#ic6) |
+| <a id="m6"></a>M6 | **Glyphs on the pause bar**, drawn anew in picker-dom (MIT) | `extension` | [IC6](#ic6) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context` | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |

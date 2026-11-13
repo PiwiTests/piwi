@@ -102,46 +102,51 @@ export function showPauseBar(arg: PauseBarArg): void {
     delete g.__piwiPauseCleanup;
   };
 
-  const buttons: Array<[label: string, choice: string, hint: string, primary: boolean]> = [
+  type PauseButton = [label: string, choice: string, hint: string, primary: boolean];
+  // The controls first, in the editors' and the Runs window's order (Resume, Step, Finish, End the test), then, past a
+  // divider, the code the stop can write.
+  const steering: PauseButton[] = [
     arg.failure
       ? ['Resume', 'resume', 'Let the test end as it failed (Esc)', true]
       : ['Resume', 'resume', 'Run on to the next breakpoint (Esc)', true],
-    ...(arg.failure
-      ? []
-      : [['Step', 'step', 'Pause again before the next call', false] as [string, string, string, boolean]]),
-    ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
-    ...(arg.record
-      ? [
-          ['Record here', 'record', 'Record steps in this page: the editor writes them before this line', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
-        ]
-      : []),
+    ...(arg.failure ? [] : [['Step', 'step', 'Pause again before the next call', false] as PauseButton]),
     ...(arg.failure
       ? []
       : [
-          ['Finish', 'finish', 'Run the test on without stopping at a breakpoint again in this attempt', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
+          [
+            'Finish',
+            'finish',
+            'Run the test on without stopping at a breakpoint again in this attempt',
+            false,
+          ] as PauseButton,
         ]),
     ...(arg.end && !arg.failure
+      ? [['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as PauseButton]
+      : []),
+  ];
+  const code: PauseButton[] = [
+    ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
+    ...(arg.record
       ? [
-          ['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
+          [
+            'Record here',
+            'record',
+            'Record steps in this page: the editor writes them before this line',
+            false,
+          ] as PauseButton,
         ]
       : []),
   ];
-  for (const [label, choice, hint, primary] of buttons) {
+  const buttons: Array<PauseButton | 'divider'> = [...steering, 'divider', ...code];
+  for (const entry of buttons) {
+    if (entry === 'divider') {
+      const divider = doc.createElement('span');
+      divider.setAttribute('aria-hidden', 'true');
+      divider.style.cssText = 'width:1px;align-self:stretch;margin:2px 4px;background:#374151;';
+      bar.appendChild(divider);
+      continue;
+    }
+    const [label, choice, hint, primary] = entry;
     const btn = doc.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
