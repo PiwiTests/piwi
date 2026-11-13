@@ -2023,6 +2023,10 @@ describe('the Testing view', () => {
       'Timed out\n\nThe line it failed at changed since the run.',
     );
     expect(testOutcome('failed', null)).toEqual({ state: 'failed', message: 'Failed', line: null });
+    // The diagnostic on the line says the headline: the Testing view's message gives the error alone.
+    expect(failureMessage({ ...failure, diagnosed: true })).toBe('Error: locator.click: Timeout 5000ms exceeded.');
+    expect(failureMessage({ ...failure, message: 'Timed out', diagnosed: true })).toBe('Timed out');
+    expect(failureMessage({ ...failure, message: '', diagnosed: true })).toBe('Failed');
   });
 
   test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {

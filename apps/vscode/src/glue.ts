@@ -1728,9 +1728,12 @@ export function testOutcome(status: TestLineStatus | null, failure: TestFailure 
   }
 }
 
-/** The message of a test's failure: its headline, then the error, and a word when the line it failed at changed since. */
+/**
+ * The message of a test's failure: its headline, then the error, and a word when the line it failed at changed since.
+ * The headline is left out where the failure's diagnostic already says it on the same line (`diagnosed`).
+ */
 export function failureMessage(failure: TestFailure | null): string {
-  const headline = failure?.headline?.trim() ?? '';
+  const headline = failure?.diagnosed ? '' : (failure?.headline?.trim() ?? '');
   const message = failure?.message?.trim() ?? '';
   const why = [headline, message && message !== headline ? message : ''].filter(Boolean).join('\n\n') || 'Failed';
   return failure?.state === 'edited' ? `${why}\n\nThe line it failed at changed since the run.` : why;

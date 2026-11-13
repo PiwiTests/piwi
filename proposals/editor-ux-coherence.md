@@ -10,9 +10,9 @@ tools meets one Piwi.
 and trimmed on 2026-11-12 to the work left at `b0ff6772`, where every line reference points. Built and left out of this
 document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and Q24, the medium step M19, the 34
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
-remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Q25 is built too
-(2026-11-13): the JetBrains plugin's labels are in sentence case, as VS Code's, so the plugin's labels quoted below in
-Title Case now read in sentence case. §14 adds the findings the code that built the plan raised. The live-run study,
+remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, with their
+findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
+now read in sentence case) and Q12. §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
 debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
@@ -38,7 +38,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** 13 quick wins, most of them first, then 23 medium and 7 large
+- **Twenty larger items (§10) and a ranked plan (§12):** 12 quick wins, most of them first, then 23 medium and 7 large
   steps, each the size of a pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -484,12 +484,6 @@ light bulb between Heal and TypeScript's Move to file. **(seen)** Fix: one role 
 acts ([TL2](#tl2)), the hover says why, the lens shows evidence, a quick fix only edits ("Piwi: use getByRole(…)"), and
 the service owns every title, the words added to [developer-loop-audit.md](developer-loop-audit.md) §9's table
 ([X1](#x1)). ([M7](#m7), [LI7](#li7))
-
-<a id="tl8"></a>**TL8. VS Code's Testing view repeats a failure's headline inline on the line its diagnostic already
-marks.** The diagnostic's message carries the headline (`packages/editor/src/server.ts:1357`), and the Testing view's
-failure message, placed on the same line (`apps/vscode/src/test-explorer.ts:369-374`), is the headline again, then the
-error (`failureMessage`, `apps/vscode/src/glue.ts:1683-1688`). **(seen)** Fix: `failureMessage` leaves out the headline
-when `failure.diagnosed` is set, as the lens and the hover do. ([Q12](#q12), [LI7](#li7))
 
 <a id="tl9"></a>**TL9. Record here is in JetBrains' Alt+Enter list on any line of a script, imports included, and
 missing from VS Code's Ctrl+.** `RecordHereIntention.kt:22-25` offers it anywhere under a config folder; VS Code
@@ -1192,8 +1186,8 @@ Piwi builds the dashboard's Debug in my editor run (`RunTestsArgs.debug`) for a 
 history, flaky rate, owner and quarantine. **Lives in** `packages/editor` and both clients (FSL). **Replaces** anonymous
 gutter actions, a click that opens a browser, five names for run. **Depends on** [LI1](#li1). **Revisits**
 [developer-loop-audit.md](developer-loop-audit.md) P1 (Run and Verify ×3 on the result icon built, the run line marker
-left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps [Q12](#q12),
-[M7](#m7) to [M9](#m9), [L5](#l5).
+left) and the line's command, `piwi.openInDashboard` (`packages/editor/src/server.ts:3143-3147`). Steps [M7](#m7) to
+[M9](#m9), [L5](#l5).
 
 <a id="li8"></a>
 
@@ -1416,7 +1410,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q5"></a>Q5 | **Test connection beside the URL on the JetBrains settings page, and no clipped text**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST9](#st9), [ST14](#st14) |
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, the failure's headline in one place, Documentation in the gear, one Open in dashboard in the status popup, Reload Piwi with a glyph of its own beside Refresh the latest run; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM9](#hm9), [HM6](#hm6), [HM3](#hm3), [AC10](#ac10), [ST18](#st18) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
-| <a id="q12"></a>Q12 | **A failure's headline said once in VS Code's Testing view**, as the diagnostic already says it | `ide` | [TL8](#tl8) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a balloon titled by its run, Don't Show Again on VS Code's other messages, a gear on the run notices, `piwi.runNotifications` off `always` by default, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
 | <a id="q23"></a>Q23 | **The desktop app's `productName`**, once §13 item 19 settles the upgrade path | `desktop` | [AC13](#ac13) |
@@ -1468,8 +1461,8 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q8, Q12, Q13, Q16, Q27 to Q30), each on its own. Then M1 and M2, on which most of
-the rest builds: the names that still differ (AC7, NF3), the popups built from unregistered actions (AC6, NF2), one Piwi
+The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1 and M2, on which most of the
+rest builds: the names that still differ (AC7, NF3), the popups built from unregistered actions (AC6, NF2), one Piwi
 menu (M3) and the run-control places (M14); M4 and M5 draw the glyphs and the outcome palette that Q2, Q9, Q26 and IC2's
 recording wait for; Q23 waits for §13's productName question. M13 and M15 finish the glance and the page; M16 and M17
 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0 whether M14's places
