@@ -315,6 +315,8 @@
                     icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
             <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
                     icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>
+            <action id="Piwi.ShowFlakyTests" class="dev.piwitests.jetbrains.ShowFlakyTestsAction" icon="/icons/testFlaky.svg"
+                    text="Show the run's flaky tests" description="Open the Piwi tool window on the run's flaky tests"/>
             <action id="Piwi.NodeSettings" class="dev.piwitests.jetbrains.NodeSettingsAction" text="Node.js settings…"
                     icon="AllIcons.General.Settings" description="Choose the Node.js the editor service starts with"/>
             <action id="Piwi.GoToRecordedLines" class="dev.piwitests.jetbrains.GoToRecordedLinesAction"

@@ -109,6 +109,7 @@ describe("the commands' glyphs", () => {
     'piwi.pauseAndWatch': 'Pause and watch',
     'piwi.stopSharingRun': 'Share live, crossed out',
     'piwi.stopSharingWindowLive': 'Share live, crossed out',
+    'piwi.showFlakyTests': 'The flaky mark, as a glyph of the icon font',
   };
 
   test('gives every command a codicon, but those that wait for a glyph Piwi draws', () => {

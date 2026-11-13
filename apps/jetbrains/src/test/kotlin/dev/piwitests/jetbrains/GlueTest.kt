@@ -2924,6 +2924,23 @@ class GlueTest {
         nodes.map { if (it.children.isEmpty()) it.label else listOf("${it.label} (${it.description})", labels(it.children)) }
 
     @Test
+    fun `the flaky tests the tree lists are counted under each run's group`() {
+        val leaf = FailureTreeNode(key = "flaky:1\nchromium", kind = "flaky")
+        val group = FailureTreeNode(key = "flaky", kind = "group", children = listOf(leaf, leaf.copy(key = "flaky:2\nchromium")))
+        val run = FailureTreeNode(key = "run", kind = "run", children = listOf(group))
+        assertEquals(2, Glue.flakyTestsListed(FailuresResult(emptyList(), tree = listOf(run)), "/w"))
+        // Under a context's node, its keys on two lines: counted for the config the node names.
+        val context = FailureTreeNode(key = "context:/w", kind = "context", root = "/w", children = listOf(run.copy(key = "context:/w\nrun", children = listOf(group.copy(key = "context:/w\nflaky")))))
+        val admin = FailureTreeNode(key = "context:/w/admin", kind = "context", root = "/w/admin", children = listOf(group.copy(key = "context:/w/admin\nflaky", children = listOf(leaf))))
+        val several = FailuresResult(emptyList(), tree = listOf(context, admin))
+        assertEquals(mapOf("/w" to 2, "/w/admin" to 1), Glue.flakyTestsByRoot(several))
+        assertEquals(listOf(2, 1, 0), listOf("/w", "/w/admin", "/elsewhere").map { Glue.flakyTestsListed(several, it) })
+        assertEquals(0, Glue.flakyTestsListed(null, "/w"))
+        assertEquals(listOf("Show the run's flaky test", "Show the run's 2 flaky tests"), listOf(1, 2).map(Glue::showFlakyTestsLabel))
+        assertFalse(Glue.isFlakyGroup("group:file:tests/flaky.spec.ts"))
+    }
+
+    @Test
     fun `a flaky test of the tree keeps its spec and line, which the tool window opens`() {
         val leaf = FailureTreeNode(
             key = "flaky:tests/cart.spec.ts\nadds\nchromium", kind = "flaky", label = "adds", icon = "flaky",

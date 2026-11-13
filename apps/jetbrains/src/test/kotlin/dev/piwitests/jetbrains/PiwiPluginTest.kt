@@ -126,11 +126,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for ((action, id) in registered) assertEquals(id, glyph(PiwiIcons.stopAction(action)), glyph(actions.getAction(id).templatePresentation.icon))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
         assertEquals(glyph(PiwiIcons.CONNECT), glyph(actions.getAction("Piwi.Connect").templatePresentation.icon))
-        // Each glyph Piwi draws is a file of the plugin, with its dark copy.
+        // Each glyph Piwi draws is a file of the plugin, with its dark copy but the flaky and running marks, one in both themes.
         for (id in ids.filter { it !in toggles }) {
             val path = glyph(actions.getAction(id).templatePresentation.icon)
             if (!path.startsWith("icons/")) continue
             assertNotNull(id, PiwiIcons::class.java.getResource("/$path"))
+            if (path in setOf("icons/testFlaky.svg", "icons/testRunning.svg")) continue
             assertNotNull(id, PiwiIcons::class.java.getResource("/${path.removeSuffix(".svg")}_dark.svg"))
         }
         // The actions that share a glyph are one concept.
@@ -810,7 +811,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(
                 listOf(
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
-                    "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.OpenLatestRun", "Piwi.CompareWith", "-",
+                    "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.ShowFlakyTests", "Piwi.OpenLatestRun", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
                 ),

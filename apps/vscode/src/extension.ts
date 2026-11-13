@@ -770,12 +770,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
   const ownRunCounts = new OwnRunCounts();
+  /** The flaky tests the failures view lists for a config, once the view exists. */
+  let flakyListed: (root: string) => number = () => 0;
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = serviceDown
       ? serviceDownView()
-      : statusBarView(status, runs, desktopChosen, Date.now(), activeFile(), (ref, instance) =>
-          ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
+      : statusBarView(
+          status,
+          runs,
+          desktopChosen,
+          Date.now(),
+          activeFile(),
+          (ref, instance) => ownRunCounts.count(ref, runSessions().find((s) => s.ref === ref)?.progress, instance),
+          (root) => flakyListed(root),
         );
     statusItem.text = refreshing
       ? refreshingText(view.text)
@@ -846,8 +854,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lc,
     () => status,
     () => runs,
+    () => render(),
   );
   context.subscriptions.push(failuresView);
+  flakyListed = (root) => failuresView.flakyListed(root);
 
   // A command without a ref (the Flake Lab, a trace viewer) runs in the terminal of its directory and environment,
   // reused while it is open.
@@ -1265,6 +1275,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         return;
       }
       await updateStatus();
+    }),
+    // The run's flaky tests, from the status item's tooltip: the failures view with the config's flaky group open.
+    vscode.commands.registerCommand('piwi.showFlakyTests', async (root?: string) => {
+      if (!(await failuresView.revealFlaky(typeof root === 'string' ? root : undefined)))
+        vscode.window.setStatusBarMessage('Piwi: no flaky test in the run', 4000);
     }),
     // A service the client gave up restarting, or one that does not answer, is stopped and started again.
     vscode.commands.registerCommand('piwi.restartService', async () => {

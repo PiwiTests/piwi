@@ -18,6 +18,8 @@ import type {
 } from '@piwitests/editor/protocol';
 import {
   OwnRunCounts,
+  flakyTestsByRoot,
+  isFlakyGroup,
   STATUS_TOOLTIP_COMMANDS,
   serviceDownView,
   heldStops,
@@ -142,6 +144,11 @@ describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
     '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
+  /** The links of a run whose flaky tests the failures view lists: one more, to the config's. */
+  const FLAKY_LINKS = LINKS.replace(
+    ' · [Open in dashboard]',
+    ` · [Show the run's 2 flaky tests](command:piwi.showFlakyTests?${encodeURIComponent('["/w"]')}) · [Open in dashboard]`,
+  );
 
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
@@ -206,6 +213,15 @@ describe('statusBarView', () => {
       liveUrl: null,
       error: false,
     });
+  });
+
+  test("links the run's flaky tests once the failures view lists them, for the config shown", () => {
+    const listed = (root: string) => (root === '/w' ? 2 : 0);
+    expect(statusBarView(connected, run({}), false, Date.now(), null, undefined, listed).tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${FLAKY_LINKS}`,
+    );
+    const one = statusBarView(connected, run({}), false, Date.now(), null, undefined, () => 1).tooltip;
+    expect(one).toContain("[Show the run's flaky test](command:piwi.showFlakyTests?");
   });
 
   test('the tooltip names the reporter the project installs', () => {
@@ -1583,6 +1599,23 @@ describe('the failures view', () => {
       url: 'http://piwi/test-run-cases/25',
       place: { uri: 'file:///w/tests/cart.spec.ts', line: 2 },
     });
+    expect(flakyTestsByRoot(flaky)).toEqual(new Map([['', 1]]));
+    // With several configs, each config's group is counted under the folder its node names.
+    const several = {
+      ...flaky,
+      tree: [{ ...flaky.tree[0]!, key: 'context:/w/apps/admin', root: '/w/apps/admin' }, flaky.tree[0]!],
+    };
+    expect(flakyTestsByRoot(several)).toEqual(
+      new Map([
+        ['/w/apps/admin', 1],
+        ['', 1],
+      ]),
+    );
+    expect([isFlakyGroup('flaky'), isFlakyGroup('/w/apps/admin\nflaky'), isFlakyGroup('flaky:t\nchromium')]).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 
   test('a hover is the service’s lines as Markdown, a failure’s title in bold', () => {

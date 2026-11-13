@@ -245,7 +245,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             }
             val running = Glue.liveRun(service().status, service().runs, shownFile(project))?.takeIf { it.url != null }
             addAll(registered("Piwi.RerunFailing"))
-            addAll(registered("Piwi.OpenFailures"))
+            addAll(registered("Piwi.OpenFailures", "Piwi.ShowFlakyTests"))
             if (Glue.latestRunOffered(running, pages.map { (_, page) -> page.id })) addAll(registered("Piwi.OpenLatestRun"))
             addAll(registered("Piwi.CompareWith"))
             addSeparator()
@@ -353,6 +353,53 @@ class OpenFailuresAction : DumbAwareAction() {
         val project = e.project ?: return
         ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
     }
+}
+
+/**
+ * **Show the run's flaky tests**: the Piwi tool window with the run's `Flaky in this run` group selected and open;
+ * enabled while the tree lists a flaky test.
+ */
+class ShowFlakyTestsAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val project = e.project
+        val service = project?.service<PiwiProjectService>()
+        val listed = service?.let { Glue.flakyTestsListed(it.failuresResult, shownRoot(project, it)) } ?: 0
+        e.presentation.isEnabled = listed > 0
+        if (listed > 0) e.presentation.text = Glue.showFlakyTestsLabel(listed)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val root = shownRoot(project, project.service<PiwiProjectService>())
+        val window = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID) ?: return
+        window.activate {
+            val tree = window.contentManager.contents.firstNotNullOfOrNull {
+                com.intellij.util.ui.UIUtil.findComponentOfType(it.component, com.intellij.ui.treeStructure.Tree::class.java)
+            } ?: return@activate
+            // The model, not the rows: a collapsed config's group has no row.
+            val groups = mutableListOf<Pair<javax.swing.tree.DefaultMutableTreeNode, String>>()
+            fun find(parent: javax.swing.tree.DefaultMutableTreeNode, at: String) {
+                for (child in parent.children().toList().filterIsInstance<javax.swing.tree.DefaultMutableTreeNode>()) {
+                    val node = child.userObject as? Glue.FailureNode
+                    val here = node?.root ?: at
+                    if (node != null && Glue.isFlakyGroup(node.key)) groups += child to here else find(child, here)
+                }
+            }
+            val top = tree.model.root as? javax.swing.tree.DefaultMutableTreeNode ?: return@activate
+            find(top, "")
+            val group = groups.firstOrNull { it.second == root }?.first ?: groups.singleOrNull()?.first ?: return@activate
+            val path = javax.swing.tree.TreePath(group.path)
+            tree.expandPath(path)
+            tree.selectionPath = path
+            tree.scrollPathToVisible(path)
+        }
+    }
+
+    /** The folder of the Playwright config the status bar item speaks for. */
+    private fun shownRoot(project: Project, service: PiwiProjectService): String? =
+        Glue.statusContext(service.status?.contexts.orEmpty(), PiwiStatusBarWidget.shownFile(project))?.root
 }
 
 /** **Node.js settings…**: the interpreter the editor service starts with, the service started again once closed. */

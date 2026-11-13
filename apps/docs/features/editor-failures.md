@@ -90,7 +90,7 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
   hover.
-- **Flaky in this run**: the tests that passed on a retry.
+- **Flaky in this run**: tests that passed on a retry, opened by the status bar's **Show the run's flaky tests**.
 
 In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
 named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`), over its tree as
@@ -109,8 +109,8 @@ run in the dashboard** (the run the status bar shows; in a JetBrains IDE, the pa
 **Compare with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor**, in the `…`
 menu, selects the first failure of the file you switch to, and the badge counts the failing tests, as the tool window's
 title and its icon's red dot do. The JetBrains tool window's gear menu keeps Connect, Piwi Picker's pairing, the MCP
-configurations, **Reload Piwi**, the settings and **Documentation**, and a node's hover says what VS Code's does. The
-tree is read again when a run ends or an edit moves a failure.
+configurations, **Reload Piwi**, the settings and **Documentation**. The tree is read again when a run ends or an edit
+moves a failure.
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
