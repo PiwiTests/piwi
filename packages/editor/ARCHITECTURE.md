@@ -487,7 +487,9 @@ One run's stream (`GET /api/test-runs/:id/stream`) is one connection per instanc
 open has it opened again, so its catch-up reaches every follower, which reads it again as after a dropped connection;
 the stream closes with its last follower. A context opens its run in progress's stream only once the run runs: an
 `initializing` run's stream sends the run's status and closes, so the context waits for the run's `run-started` on the
-instance's stream, or for a read that finds it running.
+instance's stream, or for a read that finds it running. A read the run's `run-started` asked for finds it running
+whatever it answers (it may share a read asked for before the event), and a read that says a status the live run has
+passed (`initializing` after `running`) changes nothing.
 
 Half a second after a run ends, the context reads its latest run again; runs that end together are read once. The poll
 reads it besides:

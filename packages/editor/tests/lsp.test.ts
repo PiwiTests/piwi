@@ -200,6 +200,8 @@ const runStreams = new Map<number, Set<http.ServerResponse>>();
 const runStreamOpens = new Map<number, number>();
 /** Runs as `GET /api/test-runs/:id` answers them. */
 const runDetails = new Map<number, Record<string, unknown>>();
+/** How long `GET /api/test-runs/:id` takes to answer a run as it stood when asked. */
+let detailsDelayMs = 0;
 /** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
 const goneRunStreams = new Map<number, number>();
 /** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
@@ -332,8 +334,11 @@ beforeAll(async () => {
       return;
     }
     const details = /^\/api\/test-runs\/(\d+)$/.exec(u);
-    if (details && runDetails.has(Number(details[1])))
-      return res.end(JSON.stringify(runDetails.get(Number(details[1]))));
+    if (details && runDetails.has(Number(details[1]))) {
+      const answer = JSON.stringify(runDetails.get(Number(details[1])));
+      if (detailsDelayMs > 0) return void setTimeout(() => res.end(answer), detailsDelayMs);
+      return res.end(answer);
+    }
     if (u.startsWith('/api/projects/7/latest-run?')) {
       const query = new URL(u, url).searchParams;
       const ref = query.get('ref') ?? '';
@@ -2918,6 +2923,68 @@ describe('runs as they happen', () => {
     pushRunEvent(64, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
     await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
     runDetails.delete(64);
+  });
+
+  test('the run of a test started here has its stream when it starts before its first read came back', async () => {
+    const command = await runTests();
+    const run = editorRun(65, command.ref, 'initializing', '2026-09-27T12:40:00.000Z');
+    runDetails.set(65, run);
+    detailsDelayMs = 300;
+    try {
+      pushInstanceEvent({ type: 'run-initializing', runId: 65, projectId: 7 });
+      // Its global setup is short: the run starts while the read the first event asked for is on its way.
+      await new Promise((r) => setTimeout(r, 50));
+      runDetails.set(65, { ...run, status: 'running' });
+      pushInstanceEvent({ type: 'run-started', runId: 65, projectId: 7 });
+      await waitFor(() => (runStreams.get(65)?.size === 1 ? true : undefined), 2_000);
+      await new Promise((r) => setTimeout(r, 400));
+      expect(statuses[statuses.length - 1]!.contexts[0]!.live).toMatchObject({
+        runId: 65,
+        status: 'running',
+        own: true,
+      });
+      expect(runStreamOpens.get(65)).toBe(1);
+    } finally {
+      detailsDelayMs = 0;
+    }
+
+    runDetails.set(65, { ...runDetails.get(65), status: 'passed', passedTests: 2 });
+    pushRunEvent(65, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    runDetails.delete(65);
+  });
+
+  test('an initializing run of the branch that starts before its first read came back has its stream', async () => {
+    const run = {
+      id: 66,
+      status: 'initializing',
+      branch: 'main',
+      startTime: '2026-09-27T12:50:00.000Z',
+      metadata: {},
+      totalTests: 2,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    };
+    runDetails.set(66, run);
+    detailsDelayMs = 300;
+    try {
+      pushInstanceEvent({ type: 'run-initializing', runId: 66, projectId: 7 });
+      await new Promise((r) => setTimeout(r, 50));
+      runDetails.set(66, { ...run, status: 'running' });
+      pushInstanceEvent({ type: 'run-started', runId: 66, projectId: 7 });
+      await waitFor(() => (runStreams.get(66)?.size === 1 ? true : undefined), 2_000);
+      await new Promise((r) => setTimeout(r, 400));
+      expect(statuses[statuses.length - 1]!.contexts[0]!.live).toMatchObject({ runId: 66, status: 'running' });
+    } finally {
+      detailsDelayMs = 0;
+    }
+
+    runDetails.set(66, { ...runDetails.get(66), status: 'passed', passedTests: 2 });
+    pushRunEvent(66, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    runDetails.delete(66);
   });
 
   test('a run started here says what it changed once it ended and was read', async () => {
