@@ -237,15 +237,12 @@ function watchersField(watchers: RunPresence[]): { watchers?: RunPresence[] } {
   return watchers.length ? { watchers } : {};
 }
 
-/**
- * The viewers that are someone, as one viewer (`self`) hears them: else as the editor's client hears them. With
- * `oneApp`, the desktop app's windows are one tool: each hears the others as itself.
- */
-function presenceList(viewers: Iterable<Viewer>, self: Viewer | null, oneApp = false): RunPresence[] {
+/** The viewers that are someone, as one viewer (`self`) hears them: else as the editor's client hears them. */
+function presenceList(viewers: Iterable<Viewer>, self: Viewer | null): RunPresence[] {
   const list = new Map<string, RunPresence>();
   for (const viewer of viewers) {
     if (!viewer.who || list.size >= MAX_HUB_PRESENCE) continue;
-    const presence = presenceOf(viewer, self, oneApp && isDesktopWindow(viewer) && !!self && isDesktopWindow(self));
+    const presence = presenceOf(viewer, self);
     // A tool's panels are one tool: its page view and its lane view of a worker are named once.
     list.set(`${presence.kind}\n${presence.name}\n${presence.self ?? ''}`, presence);
   }
@@ -253,11 +250,13 @@ function presenceList(viewers: Iterable<Viewer>, self: Viewer | null, oneApp = f
 }
 
 /**
- * A viewer as `self` hears it: marked `self` when it is that viewer (or `same`, another window of its tool), or, for the
- * editor's client, when it is an editor.
+ * A viewer as `self` hears it: marked `self` when it is that viewer, or another window of the desktop app when `self`
+ * is one (the app's windows are one tool), or, for the editor's client, when it is an editor.
  */
-function presenceOf(viewer: Viewer, self: Viewer | null, same = false): RunPresence {
-  const own = self ? viewer === self || same : viewer.who!.kind === 'editor';
+function presenceOf(viewer: Viewer, self: Viewer | null): RunPresence {
+  const own = self
+    ? viewer === self || (isDesktopWindow(viewer) && isDesktopWindow(self))
+    : viewer.who!.kind === 'editor';
   return { kind: viewer.who!.kind, name: viewer.who!.name, ...(own ? { self: true as const } : {}) };
 }
 
@@ -1076,8 +1075,9 @@ export class RunSessions {
   }
 
   /**
-   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer: who has the run open, who
-   * watches each worker's page, and who drives each worker's stop. Null for a run that is not live.
+   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer (for a window of the desktop
+   * app, any of the app's windows): who has the run open, who watches each worker's page, and who drives each worker's
+   * stop. Null for a run that is not live.
    */
   presenceFor(
     ref: string,
@@ -1111,14 +1111,11 @@ export class RunSessions {
     return `${ids(this.present)}|${this.followedRuns.has(session.ref)}|${workers.join(';')}`;
   }
 
-  /**
-   * Who has the run open: the surfaces present, and the agent while it follows the run. A window of the desktop app
-   * hears the app's other windows as itself.
-   */
+  /** Who has the run open: the surfaces present, and the agent while it follows the run. */
   private presenceIn(session: Session, self: Viewer | null): RunPresence[] {
     const viewers = [...this.present];
     if (this.followedRuns.has(session.ref)) viewers.push(AGENT_VIEWER);
-    return presenceList(viewers, self, true);
+    return presenceList(viewers, self);
   }
 
   /** Who watches a worker's page: its lane's viewers and its stop's. */

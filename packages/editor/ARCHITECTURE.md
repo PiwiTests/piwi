@@ -1038,7 +1038,7 @@ editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at
 - **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window, or the desktop app's window
   while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does. The
   desktop app's windows are one tool: a worker's window hears the app's main window as itself (`self`), and the other
-  way around.
+  way around, in a run's presence, a worker's watchers and a stop's driver alike.
 - **A worker's `watchers`**: the viewers of its lane and of its stop's live view, each tool once.
 - **A stop's `driver`**: one at a time. The agent drives a stop it asked for, and one it acts on (`page_act`) while no
   person drives it. A person's click, key, text or wheel on the view (never a pointer passing over it), pick on the
