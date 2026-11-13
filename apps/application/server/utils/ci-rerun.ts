@@ -37,6 +37,8 @@ import {
   ciActionInputValues,
   ciServerTargetOf,
   pickCiAction,
+  reservedInputMessage,
+  reservedInputName,
   type CiAction,
   type CiActionKind,
   type CiActionsSettings,
@@ -62,6 +64,15 @@ export async function clusterRepositoryUrl(db: DbClient, lastSeenRunId: number):
   const [run] = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, lastSeenRunId));
   const meta = (run?.metadata as RunMetadata | null) ?? null;
   return normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
+}
+
+/** The environment of a cluster's most recent run, or null when it has none. */
+export async function clusterEnvironment(db: DbClient, lastSeenRunId: number): Promise<string | null> {
+  const [run] = await db
+    .select({ environment: testRuns.environment })
+    .from(testRuns)
+    .where(eq(testRuns.id, lastSeenRunId));
+  return run?.environment?.trim() || null;
 }
 
 /** Why a cluster's "Re-run in CI" button is not available, or null when it is. */
@@ -138,7 +149,8 @@ async function dispatchReadiness(
   const settings = await getCiActionsSettings(db, projectId);
   const repositoryUrl = runId ? await clusterRepositoryUrl(db, runId) : null;
   const detected = detectScmProvider(repositoryUrl);
-  const pick = pickCiAction(settings, kind, { provider: detected, actionId });
+  const environment = runId ? await clusterEnvironment(db, runId) : null;
+  const pick = pickCiAction(settings, kind, { provider: detected, environment, actionId });
   const action = pick.action;
   const provider = action ? action.target.type : detected;
   const hasScmToken = Boolean(await resolveScmToken(db, projectId));
@@ -154,6 +166,17 @@ async function dispatchReadiness(
   }
   if (!action) {
     return { available: false, reason: pick.reason, provider, enabled: true, hasToken: hasScmToken, action: null };
+  }
+  const reserved = reservedInputName(action);
+  if (reserved) {
+    return {
+      available: false,
+      reason: reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'),
+      provider,
+      enabled: true,
+      hasToken: hasScmToken,
+      action,
+    };
   }
   if (action.target.type === 'ci-server') {
     const ready = await ciServerReadiness(db, projectId, { ...action, target: action.target }, runId);
@@ -226,6 +249,9 @@ async function dispatchWithAction(
   },
 ): Promise<DispatchedRerun> {
   const { action, args, id } = input;
+  const reserved = reservedInputName(action);
+  if (reserved)
+    throw new Error(reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'));
   const inputs = ciActionInputValues(action);
   const named = input.cases ? { files: rerunFiles(input.cases), tests: input.cases.length } : {};
   const target = action.target;
@@ -279,7 +305,8 @@ async function actionFor(
 ): Promise<CiAction> {
   const settings: CiActionsSettings = await getCiActionsSettings(db, projectId);
   const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
-  const pick = pickCiAction(settings, kind, { provider, actionId });
+  const environment = runId ? await clusterEnvironment(db, runId) : null;
+  const pick = pickCiAction(settings, kind, { provider, environment, actionId });
   if (!pick.action) throw new Error(pick.reason);
   return pick.action;
 }

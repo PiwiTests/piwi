@@ -17,7 +17,13 @@ import {
 } from '../../server/utils/ci-server-dispatch';
 import type { DbClient } from '../../server/database';
 
-const ENV = ['PIWI_CI_SERVER_URL', 'PIWI_CI_SERVER_USER', 'PIWI_CI_SERVER_TOKEN', 'PIWI_CI_SERVER_HOSTS'];
+const ENV = [
+  'PIWI_CI_SERVER_ALLOWED_INPUTS',
+  'PIWI_CI_SERVER_URL',
+  'PIWI_CI_SERVER_USER',
+  'PIWI_CI_SERVER_TOKEN',
+  'PIWI_CI_SERVER_HOSTS',
+];
 const TREE = 'tree=property%5BparameterDefinitions%5Bname%5D%5D';
 
 afterEach(() => {
@@ -263,6 +269,24 @@ describe('checking a job on a CI server', () => {
     expect(seen).toEqual([
       { method: 'GET', url: `/job/good/api/json?${TREE}`, auth: expect.stringMatching(/^Basic /) },
     ]);
+  });
+
+  test('says which inputs the instance credential does not send, and does not ask the job to declare them', async () => {
+    useInstance();
+    const job = target({ preset: 'jenkins', rerun: { job: 'good' } });
+    const [result] = await checkCiServerTarget(db, 1, job, ['TARGET_ENV']);
+    expect(result).toMatchObject({ kind: 'rerun', ok: false, missing: [] });
+    expect(result!.message).toContain('Not sent: TARGET_ENV');
+    expect(result!.message).toContain('PIWI_CI_SERVER_ALLOWED_INPUTS');
+  });
+
+  test('asks the job to declare an input the operator lets the instance credential send', async () => {
+    useInstance();
+    process.env.PIWI_CI_SERVER_ALLOWED_INPUTS = 'TARGET_ENV';
+    const job = target({ preset: 'jenkins', rerun: { job: 'good' } });
+    const [result] = await checkCiServerTarget(db, 1, job, ['TARGET_ENV']);
+    expect(result).toMatchObject({ kind: 'rerun', ok: false, missing: ['TARGET_ENV'] });
+    expect(result!.message).not.toContain('Not sent');
   });
 
   test('names both parameters for a job that takes none, and checks the Flake Lab job too', async () => {

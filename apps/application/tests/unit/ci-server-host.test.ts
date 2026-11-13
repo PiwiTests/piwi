@@ -38,6 +38,7 @@ const request = (): OutgoingCiRequest => ({
   headers: {},
   body: null,
   credential: null,
+  droppedInputs: [],
 });
 
 describe('a private address', () => {

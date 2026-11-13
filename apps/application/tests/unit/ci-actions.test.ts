@@ -4,7 +4,9 @@ import {
   ciActionSentNames,
   ciActionsFromLegacy,
   ciActionsProblem,
+  ciServerTokenBinding,
   pickCiAction,
+  reservedInputName,
   resolveCiActionsSettings,
   type CiAction,
   type CiActionsSettings,
@@ -145,6 +147,49 @@ describe('ciActionsFromLegacy', () => {
     });
   });
 
+  test('keeps the CI server side and the provider side, with the one `via` names as the default', () => {
+    const raw = {
+      enabled: true,
+      ciServer: { preset: 'jenkins', rerun: { job: 'polaris/e2e', ref: 'main' } },
+      github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args' },
+    };
+    const ids = (c: CiActionsSettings) => c.actions.map((a) => a.id);
+    const viaServer = ciActionsFromLegacy(resolveCiRerunSettings({ ...raw, via: 'ci-server' } as never));
+    expect(ids(viaServer).sort()).toEqual(['rerun-ci-server', 'rerun-github']);
+    expect(viaServer.defaults).toEqual({ rerun: 'rerun-ci-server' });
+    const viaProvider = ciActionsFromLegacy(resolveCiRerunSettings({ ...raw, via: 'provider' } as never));
+    expect(ids(viaProvider).sort()).toEqual(['rerun-ci-server', 'rerun-github']);
+    expect(viaProvider.defaults).toEqual({ rerun: 'rerun-github' });
+  });
+
+  test('keeps the ids stable whichever side is the default', () => {
+    const raw = {
+      enabled: true,
+      ciServer: { preset: 'jenkins', rerun: { job: 'e2e' }, flakeLab: { job: 'lab' } },
+      gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
+      flakeLab: { gitlab: { variableName: 'PIWI_LAB' } },
+    };
+    const ids = (via: string) =>
+      ciActionsFromLegacy(resolveCiRerunSettings({ ...raw, via } as never))
+        .actions.map((a) => a.id)
+        .sort();
+    expect(ids('ci-server')).toEqual(ids('provider'));
+    expect(ids('ci-server')).toEqual(['flakelab-ci-server', 'flakelab-gitlab', 'rerun-ci-server', 'rerun-gitlab']);
+  });
+
+  test('keeps a Flake Lab default on the side `via` names', () => {
+    const converted = ciActionsFromLegacy(
+      resolveCiRerunSettings({
+        enabled: true,
+        via: 'provider',
+        ciServer: { preset: 'jenkins', rerun: { job: 'e2e' }, flakeLab: { job: 'lab' } },
+        gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
+        flakeLab: { gitlab: { variableName: 'PIWI_LAB' } },
+      } as never),
+    );
+    expect(converted.defaults).toEqual({ rerun: 'rerun-gitlab', flakeLab: 'flakelab-gitlab' });
+  });
+
   test('keeps the switch, and an empty value has no actions', () => {
     expect(ciActionsFromLegacy(resolveCiRerunSettings({ enabled: false })).enabled).toBe(false);
     expect(ciActionsFromLegacy(resolveCiRerunSettings(null))).toEqual({ enabled: false, actions: [], defaults: {} });
@@ -259,9 +304,128 @@ describe('ciActionsProblem', () => {
     expect(ciActionsProblem({ actions: [github(), gitlab()] })).toBeNull();
   });
 
+  test('refuses a fixed value or an option over 500 characters', () => {
+    const long = 'x'.repeat(501);
+    const withInput = (input: Record<string, unknown>) =>
+      ciActionsProblem({ actions: [github({ inputs: [input as never] })] });
+    expect(withInput({ name: 'A', kind: 'fixed', value: long })).toContain('500');
+    expect(withInput({ name: 'A', kind: 'fixed', value: 'x'.repeat(500) })).toBeNull();
+    expect(withInput({ name: 'A', kind: 'choice', options: ['a', long] })).toContain('500');
+    expect(withInput({ name: 'A', kind: 'choice', options: ['a', 'x'.repeat(500)] })).toBeNull();
+  });
+
+  test('refuses more than 50 options in a choice', () => {
+    const options = (n: number) => Array.from({ length: n }, (_, i) => `v${i}`);
+    const withOptions = (n: number) =>
+      ciActionsProblem({
+        actions: [github({ inputs: [{ name: 'A', kind: 'choice', options: options(n) } as never] })],
+      });
+    expect(withOptions(51)).toContain('50');
+    expect(withOptions(50)).toBeNull();
+  });
+
+  test('refuses a repeated action id', () => {
+    expect(ciActionsProblem({ actions: [github(), github({ name: 'Other' })] })).toContain('"smoke"');
+    expect(ciActionsProblem({ actions: [github(), github({ id: 'other', name: 'Other' })] })).toBeNull();
+  });
+
+  test('refuses a name over 80 characters, and an environment over 80', () => {
+    expect(ciActionsProblem({ actions: [github({ name: 'n'.repeat(81) })] })).toContain('80');
+    expect(ciActionsProblem({ actions: [github({ name: 'n'.repeat(80) })] })).toBeNull();
+    expect(ciActionsProblem({ actions: [github({ environment: 'e'.repeat(81) })] })).toContain('80');
+  });
+
+  test('refuses an input name the CI cannot take', () => {
+    const named = (name: string) =>
+      ciActionsProblem({ actions: [github({ inputs: [{ name, kind: 'fixed', value: 'x' }] })] });
+    expect(named('9LIVES')).toContain('not a valid input name');
+    expect(named('has space')).toContain('not a valid input name');
+    expect(named('a-b')).toContain('not a valid input name');
+    expect(named('_ok_1')).toBeNull();
+  });
+
+  test('refuses the variables GitLab and Bitbucket reserve, whatever their case', () => {
+    const on = (action: CiAction, name: string) =>
+      ciActionsProblem({ actions: [{ ...action, inputs: [{ name, kind: 'fixed', value: 'x' }] }] });
+    expect(on(gitlab(), 'CI_JOB_TOKEN')).toContain('reserves');
+    expect(on(gitlab(), 'gitlab_user_login')).toContain('reserves');
+    expect(
+      on(
+        { ...gitlab(), target: { type: 'bitbucket', pipeline: 'rerun', argsVariable: 'PIWI_RERUN_ARGS' } },
+        'Bitbucket_Branch',
+      ),
+    ).toContain('reserves');
+    expect(on(gitlab(), 'MY_CI_NAME')).toBeNull();
+    expect(on(github(), 'CI_ENV')).toBeNull();
+  });
+
   test('caps the number of actions', () => {
     const many = Array.from({ length: 21 }, (_, i) => github({ id: `a${i}`, name: `Action ${i}` }));
     expect(ciActionsProblem({ actions: many })).toBe('A project can have at most 20 CI actions.');
+  });
+});
+
+describe('reservedInputName', () => {
+  test('names the first reserved input of a GitLab or Bitbucket action, and none on GitHub', () => {
+    const inputs = [
+      { name: 'OK', kind: 'fixed', value: 'x' },
+      { name: 'ci_x', kind: 'fixed', value: 'x' },
+    ] as CiAction['inputs'];
+    expect(reservedInputName(gitlab({ inputs }))).toBe('ci_x');
+    expect(reservedInputName(github({ inputs }))).toBeNull();
+  });
+});
+
+describe('ciServerTokenBinding', () => {
+  const server = (name: string, baseUrl?: string): CiAction =>
+    jenkins({
+      id: name,
+      name,
+      target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' }, ...(baseUrl ? { baseUrl } : {}) },
+    });
+
+  test('answers an error when two actions use different base URLs', () => {
+    const binding = ciServerTokenBinding(
+      settings([server('A', 'https://a.example.com'), server('B', 'https://b.example.com')]),
+      null,
+    );
+    expect(binding.url).toBeNull();
+    expect(binding.error).toContain('2 different base URLs');
+  });
+
+  test('binds to the one URL every action shares, however it is written', () => {
+    expect(
+      ciServerTokenBinding(
+        settings([server('A', 'https://a.example.com'), server('B', 'https://a.example.com/')]),
+        null,
+      ),
+    ).toEqual({ url: 'https://a.example.com/', error: null });
+  });
+
+  test('counts the instance URL as its own value beside an action URL', () => {
+    const binding = ciServerTokenBinding(
+      settings([server('A', 'https://a.example.com'), server('B')]),
+      'https://instance.example.com',
+    );
+    expect(binding.url).toBeNull();
+    expect(binding.error).toContain('2 different base URLs');
+  });
+
+  test('binds to the instance URL when no action has its own, and asks for a URL when there is none', () => {
+    expect(ciServerTokenBinding(settings([server('A')]), 'https://instance.example.com')).toEqual({
+      url: 'https://instance.example.com',
+      error: null,
+    });
+    expect(ciServerTokenBinding(settings([server('A')]), null).error).toContain('base URL');
+  });
+
+  test('ignores actions that are not CI server actions', () => {
+    expect(
+      ciServerTokenBinding(settings([github(), server('A', 'https://a.example.com')]), 'https://instance.example.com'),
+    ).toEqual({
+      url: 'https://a.example.com/',
+      error: null,
+    });
   });
 });
 

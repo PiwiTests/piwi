@@ -323,6 +323,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     const latestRun = latestRunByProjectId.get(project.id) ?? null;
     return {
       ...project,
+      ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
       latestRun: latestRun ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] } : null,
       statusFilter: resolveProjectRunScope(project.statusFilter),
       statusDefaultBranch: statusRuns.defaultBranches.get(project.id) ?? null,

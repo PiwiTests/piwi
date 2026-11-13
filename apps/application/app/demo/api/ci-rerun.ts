@@ -6,12 +6,13 @@
  * (GitHub, GitLab, Bitbucket) answers that the demo cannot dispatch it.
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, projects, users } from '~~/server/database/schema.sqlite';
+import { failureClusters, projects, testRuns, users } from '~~/server/database/schema.sqlite';
 import type { ClusterRerunDispatch } from '#shared/ci-rerun';
 import {
   ciActionInputValues,
   ciActionsProblem,
   ciServerTargetOf,
+  ciServerTokenBinding,
   pickCiAction,
   resolveCiActionsSettings,
   type CiAction,
@@ -71,8 +72,14 @@ async function projectCiActions(db: DemoDB, projectId: number) {
 }
 
 /** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
-function pickRerunAction(settings: CiActionsSettings, actionId?: string | null) {
-  return pickCiAction(settings, 'tests', { provider: null, actionId });
+function pickRerunAction(settings: CiActionsSettings, environment: string | null, actionId?: string | null) {
+  return pickCiAction(settings, 'tests', { provider: null, environment, actionId });
+}
+
+/** The environment of a run, as the server reads it. */
+async function runEnvironment(db: DemoDB, runId: number): Promise<string | null> {
+  const [run] = await db.select({ environment: testRuns.environment }).from(testRuns).where(eq(testRuns.id, runId));
+  return run?.environment?.trim() || null;
 }
 
 /**
@@ -105,7 +112,7 @@ async function availability(
   actionId?: string | null,
 ): Promise<DemoRerunAvailability> {
   const { settings, tokenUrl } = await projectCiActions(db, projectId);
-  const pick = pickRerunAction(settings, actionId);
+  const pick = pickRerunAction(settings, await runEnvironment(db, runId), actionId);
   const action = pick.action;
   const ref = action ? { id: action.id, name: action.name } : null;
   if (!settings.enabled) {
@@ -185,7 +192,7 @@ async function dispatch(
   const ready = await availability(db, input.projectId, input.runId, input.actionId);
   if (!ready.available) throw demoHttpError(400, ready.reason ?? UNAVAILABLE);
   const { settings } = await projectCiActions(db, input.projectId);
-  const action = pickRerunAction(settings, input.actionId).action as
+  const action = pickRerunAction(settings, await runEnvironment(db, input.runId), input.actionId).action as
     | (CiAction & { target: { type: 'ci-server' } })
     | null;
   if (!action) throw demoHttpError(400, NO_TARGET);
@@ -290,10 +297,11 @@ export async function demoCiActionCheck(
 
 /**
  * What the demo stores for a CI server token a save sends: never the token,
- * only the base URL a server would bind it to (the first CI server action's,
- * in the request else the stored settings). `undefined` keeps the stored
- * value, `null` removes it. Throws the server's 400 answers for an invalid or
- * a missing base URL.
+ * only the base URL a server would bind it to (the one every CI server action
+ * sends under, in the request else the stored settings; the demo has no
+ * instance CI server). `undefined` keeps the stored value, `null` removes it.
+ * Throws the server's 400 answers when no base URL is set or the actions use
+ * more than one.
  */
 export async function demoCiServerTokenMarker(
   db: DemoDB,
@@ -305,14 +313,9 @@ export async function demoCiServerTokenMarker(
   if (typeof token !== 'string' || !token.trim()) return null;
   const [row] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
   const settings = resolveCiActionsSettings(body?.ciRerun === undefined ? row?.ciRerun : body.ciRerun);
-  const first = settings.actions.find((a) => a.target.type === 'ci-server');
-  const rawBaseUrl = first?.target.type === 'ci-server' ? first.target.baseUrl : undefined;
-  const baseUrl = normalizeCiServerBaseUrl(rawBaseUrl);
-  if (typeof rawBaseUrl === 'string' && rawBaseUrl.trim() && !baseUrl) {
-    throw demoHttpError(400, 'The CI server base URL must be an http(s) URL');
-  }
-  if (!baseUrl) throw demoHttpError(400, 'Set the CI server base URL before saving its token');
-  return JSON.stringify({ url: baseUrl });
+  const binding = ciServerTokenBinding(settings, null);
+  if (binding.error) throw demoHttpError(400, binding.error);
+  return JSON.stringify({ url: binding.url });
 }
 
 /** The base URL a demo project's stored CI server token is bound to, as `ciServerTokenUrl` answers. */

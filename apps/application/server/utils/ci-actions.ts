@@ -2,7 +2,7 @@
  * CI actions — server-side settings access and Check.
  *
  * The settings live on the project row (`projects.ciRerun`) as a list of named
- * actions (`shared/ci-actions.ts`); a value in the original shape is
+ * actions (`shared/ci-actions.ts`); a value with no `actions` list is
  * converted when read. Check says whether an action's target takes what a
  * dispatch sends, without starting anything.
  */

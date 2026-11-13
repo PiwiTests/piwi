@@ -1,12 +1,12 @@
 /**
- * CI re-run — the original settings shape, and the durable shapes of a
- * dispatch shared by the server, the demo and the tests.
+ * CI re-run — the stored settings of a value with no `actions` list, and the
+ * durable shapes of a dispatch shared by the server, the demo and the tests.
  *
  * From a failure cluster's page, a reporter or admin can ask CI to re-run
  * exactly the affected tests. A project's settings are a list of named
- * actions (`shared/ci-actions.ts`); {@link CiRerunSettings} is the original
- * shape, which `ciActionsFromLegacy` converts. In it, `via` says
- * where a dispatch goes: through the repository host (one block per provider,
+ * actions (`shared/ci-actions.ts`); a value with no `actions` list is a
+ * {@link CiRerunSettings}, which `ciActionsFromLegacy` converts. In it, `via`
+ * says where a dispatch goes: through the repository host (one block per provider,
  * decided by the project's repository URL) or through a CI server (one HTTP
  * request a preset builds, `shared/ci-server.ts`).
  *
@@ -152,7 +152,7 @@ export function flakeLabCiArgs(testCaseId: number, kind: 'reproduce' | 'verify')
 export interface ClusterRerunDispatch {
   /** The dispatch's own id, which the run it starts carries as `PIWI_ORIGIN_REF` when the pipeline passes it on. */
   id?: string;
-  /** The CI action the dispatch went through (`shared/ci-actions.ts`); absent on a record of the original shape. */
+  /** The CI action the dispatch went through (`shared/ci-actions.ts`); a dispatch recorded without an action has none. */
   actionId?: string;
   /** Provider the dispatch went to. */
   provider: CiRerunProvider;

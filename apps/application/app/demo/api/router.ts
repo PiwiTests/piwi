@@ -1026,7 +1026,7 @@ const routes: RouteEntry[] = [
         const update = body as Parameters<typeof updateProject>[2];
         assertDemoCiActions(update);
         const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
-        // As the server: store the normalized actions (what cannot dispatch dropped, the original shape converted).
+        // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
         const project = await updateProject(db, +m[1]!, { ...update, ciRerun, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {

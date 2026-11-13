@@ -26,6 +26,7 @@ vi.mock('../../server/utils/scm', () => ({
 }));
 
 const {
+  dispatchClusterRerun,
   rerunClusterInCi,
   rerunExecutionInCi,
   matchCiRerunRun,
@@ -494,11 +495,12 @@ describe('a CI server dispatch', () => {
     });
   });
 
-  test('sends an action’s inputs beside the arguments, and records the action', async () => {
-    await seed(GITHUB);
+  /** An action with a fixed and a choice input on a Jenkins job, the default for re-runs. */
+  async function useStagingAction(extra: Record<string, unknown> = {}) {
     await db
       .update(schema.projects)
       .set({
+        ...extra,
         ciRerun: {
           enabled: true,
           actions: [
@@ -517,12 +519,77 @@ describe('a CI server dispatch', () => {
         },
       })
       .where(eq(schema.projects.id, 1));
+  }
+
+  test('sends no input on the instance credential unless the operator listed it, and records the action', async () => {
+    await seed(GITHUB);
+    await useStagingAction();
     expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    expect(received[0]!.authorization).toBe(`Basic ${Buffer.from('piwi-bot:instance-secret').toString('base64')}`);
+    const form = new URLSearchParams(received[0]!.body);
+    expect(form.has('TARGET_ENV')).toBe(false);
+    expect(form.has('SUITE')).toBe(false);
+    expect(form.get('PIWI_RERUN_ARGS')).toContain('tests/checkout.spec.ts');
+    expect(form.get('PIWI_ORIGIN_REF')).toBeTruthy();
+    expect(await lastDispatch()).toMatchObject({ actionId: 'staging', provider: 'ci-server' });
+  });
+
+  test('sends the inputs PIWI_CI_SERVER_ALLOWED_INPUTS lists on the instance credential, and no others', async () => {
+    await seed(GITHUB);
+    await useStagingAction();
+    process.env.PIWI_CI_SERVER_ALLOWED_INPUTS = ' TARGET_ENV , OTHER ';
+    try {
+      expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    } finally {
+      delete process.env.PIWI_CI_SERVER_ALLOWED_INPUTS;
+    }
+    const form = new URLSearchParams(received[0]!.body);
+    expect(form.get('TARGET_ENV')).toBe('staging');
+    expect(form.has('SUITE')).toBe(false);
+    expect(form.get('PIWI_RERUN_ARGS')).not.toContain('staging');
+  });
+
+  test('sends every input on the project’s own token', async () => {
+    await seed(GITHUB);
+    process.env.PIWI_SECRET_KEY = 'a-test-key-for-the-ci-server-token';
+    try {
+      const { sealCiServerToken } = await import('../../server/utils/ci-server-dispatch');
+      await useStagingAction({ ciServerToken: sealCiServerToken(base, 'project-secret') });
+      expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+    expect(received[0]!.authorization).toBe(`Basic ${Buffer.from(':project-secret').toString('base64')}`);
     const form = new URLSearchParams(received[0]!.body);
     expect(form.get('TARGET_ENV')).toBe('staging');
     expect(form.get('SUITE')).toBe('full');
-    expect(form.get('PIWI_RERUN_ARGS')).not.toContain('staging');
-    expect(await lastDispatch()).toMatchObject({ actionId: 'staging', provider: 'ci-server' });
+  });
+
+  test('picks the action of the run’s environment', async () => {
+    await seed(GITHUB);
+    const action = (id: string, job: string, environment?: string) => ({
+      id,
+      name: id,
+      target: { type: 'ci-server', preset: 'jenkins', fields: { job } },
+      inputs: [],
+      accepts: ['tests'],
+      ...(environment ? { environment } : {}),
+    });
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [action('main', 'main-job'), action('staging', 'staging-job', 'staging')],
+          defaults: { rerun: 'main' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'main', name: 'main' });
+    await db.update(schema.testRuns).set({ environment: 'staging' }).where(eq(schema.testRuns.id, 1));
+    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'staging', name: 'staging' });
+    expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
+    expect(received[0]!.url).toBe('/job/staging-job/buildWithParameters');
   });
 
   test('sends the action the caller names instead of the default', async () => {
@@ -602,5 +669,60 @@ describe('a CI server dispatch', () => {
     expect(outcome).toMatchObject({ ok: true, dispatch: { provider: 'ci-server', args: 'flake 1' } });
     expect(received[0]!.url).toBe('/job/flake-lab/buildWithParameters');
     expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe('flake 1');
+  });
+});
+
+describe('an action input a repository host reserves', () => {
+  const action = (inputs: Array<Record<string, unknown>>, type: 'gitlab' | 'github') => ({
+    id: 'reserved',
+    name: 'Reserved',
+    target:
+      type === 'gitlab'
+        ? { type: 'gitlab', ref: 'main', argsVariable: 'PIWI_RERUN_ARGS' }
+        : { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args' },
+    inputs,
+    accepts: ['tests'],
+  });
+  const use = (inputs: Array<Record<string, unknown>>, type: 'gitlab' | 'github') =>
+    db
+      .update(schema.projects)
+      .set({ ciRerun: { enabled: true, actions: [action(inputs, type)], defaults: { rerun: 'reserved' } } })
+      .where(eq(schema.projects.id, 1));
+
+  test('is refused at dispatch and reported as unavailable, and nothing is sent', async () => {
+    await seed(GITLAB);
+    await use([{ name: 'CI_JOB_TOKEN', kind: 'fixed', value: 'x' }], 'gitlab');
+    const availability = await ciRerunAvailability(db as never, 1, 1);
+    expect(availability.available).toBe(false);
+    expect(availability.reason).toContain('CI_JOB_TOKEN');
+    expect(await rerunClusterInCi(db as never, 1, { id: null, name: null })).toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+    expect(dispatched).toHaveLength(0);
+  });
+
+  test('is refused by the dispatch itself, which sends nothing, whoever calls it', async () => {
+    await seed(GITLAB);
+    await use([{ name: 'bitbucket_branch', kind: 'fixed', value: 'x' }], 'gitlab');
+    await expect(dispatchClusterRerun(db as never, { id: 1, projectId: 1, lastSeenRunId: 1 })).rejects.toThrow(
+      /bitbucket_branch/,
+    );
+    expect(dispatched).toHaveLength(0);
+  });
+
+  test('is refused whatever its case, and a name that merely contains the prefix is sent', async () => {
+    await seed(GITLAB);
+    await use([{ name: 'gitlab_user_login', kind: 'fixed', value: 'x' }], 'gitlab');
+    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(false);
+    await use([{ name: 'MY_CI_NAME', kind: 'fixed', value: 'x' }], 'gitlab');
+    expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
+    expect(dispatched[0]!.request.inputs).toEqual({ MY_CI_NAME: 'x' });
+  });
+
+  test('is allowed on GitHub, which reserves no names', async () => {
+    await seed(GITHUB);
+    await use([{ name: 'CI_ENV', kind: 'fixed', value: 'x' }], 'github');
+    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(true);
   });
 });
