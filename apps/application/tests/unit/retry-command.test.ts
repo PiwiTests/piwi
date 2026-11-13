@@ -58,12 +58,12 @@ test('empty cases', () => {
 });
 
 test('single case', () => {
-  const cmd = buildRetryCommand([sampleCases[0]]);
+  const cmd = buildRetryCommand([sampleCases[0]!]);
   expect(cmd).toBe('npx playwright test "tests/login.spec.ts:10" --project="chromium"');
 });
 
 test('custom pkgRunner', () => {
-  const cmd = buildRetryCommand([sampleCases[0]], { pkgRunner: 'yarn' });
+  const cmd = buildRetryCommand([sampleCases[0]!], { pkgRunner: 'yarn' });
   expect(cmd).toContain('yarn playwright test');
 });
 

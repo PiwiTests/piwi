@@ -8,11 +8,14 @@ import * as schema from '../../server/database/schema.sqlite';
 import {
   STUCK_FLOOR_MS,
   stuckAttempt,
+  runningUsualDurationTest,
   stuckThresholdMs,
   usualDurationKey,
   usualDurationMs,
 } from '../../shared/stuck-tests';
+import { resolveBrowserName } from '../../shared/browser-name';
 import { joinSuitePath } from '../../shared/utils/suites';
+import { storableRunCase, storedUsualDurationTest } from '../../server/utils/storable-values';
 import { useTimelineModel } from '../../app/composables/useTimelineModel';
 import type { TestCaseResult } from '../../types/api';
 
@@ -94,7 +97,7 @@ beforeEach(async () => {
       id: i + 1,
       projectId: 1,
       status: 'passed',
-      isFullRun: true,
+      isFullRun: 1,
       startTime: new Date(now - (i + 2) * 86_400_000),
     });
     await db.insert(schema.testRunsCases).values({
@@ -217,7 +220,7 @@ describe('the stuck check of a live run', () => {
   });
 
   test("leaves the running attempt as it is for a stop of the test's earlier attempt", async () => {
-    const data = begin({ retries: 1 });
+    const data: Record<string, unknown> = begin({ retries: 1 });
     runEventBus.recordRunningCase(LIVE_RUN, 'k', data);
     const of = { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:12:3', retries: 0 };
     const stop = { reason: 'pause', title: 'Click', file: null, line: null, bar: false, since: now, pausedMs: 0 };
@@ -368,5 +371,50 @@ describe('the usual durations of a run’s project', () => {
     expect(usualOf(2)).toBe(3500);
     // No pass on firefox: no ghost.
     expect(usualOf(3)).toBeNull();
+  });
+
+  test('are found for a running test whose names are stored otherwise than its begin event sends them', async () => {
+    // A title holding a NUL, a describe path long enough to be shortened, and a project named only by its browser.
+    const sent = [
+      { title: 'pays \0with a NUL', suitePath: ['Checkout'], browser: { projectName: 'chromium' } },
+      {
+        title: 'pays from a long describe',
+        suitePath: ['Checkout', 'x'.repeat(3000)],
+        browser: { projectName: 'chromium' },
+      },
+      { title: 'pays without a project', suitePath: ['Checkout'], browser: { browserName: 'chromium' } },
+    ];
+    for (const [i, test] of sent.entries()) {
+      const stored = await storableRunCase({ filePath: PAYPAL.filePath, ...test });
+      await db.insert(schema.testCases).values({
+        id: 10 + i,
+        projectId: 1,
+        filePath: stored.filePath,
+        suitePath: joinSuitePath(stored.suitePath),
+        title: stored.title,
+      });
+      for (const [run, duration] of [2000 + i, 2500 + i].entries()) {
+        await db.insert(schema.testRunsCases).values({
+          testRunId: run + 1,
+          testCaseId: 10 + i,
+          status: 'passed',
+          duration,
+          browserName: resolveBrowserName(stored.browser),
+        });
+      }
+    }
+    const { tests } = await runUsualDurations(db as never, LIVE_RUN);
+    expect(tests.find((t) => t.title === 'pays with a NUL')).toBeDefined();
+    expect(tests.find((t) => t.title === 'pays without a project')?.browser).toBeNull();
+    const usual = new Map(tests.map((test) => [usualDurationKey(test), test.usualMs]));
+
+    for (const [i, test] of sent.entries()) {
+      const running = runningUsualDurationTest(testBeginData({ type: 'begin', ...begin(test) } as never, now) as never);
+      // The names as sent miss the first two; the names as their rows store them find all three.
+      expect(usual.get(usualDurationKey(await storedUsualDurationTest(running)))).toBe(2500 + i);
+      if (i < 2) expect(usual.has(usualDurationKey(running))).toBe(false);
+    }
+    // A begin event naming no Playwright project is keyed by none, as its result is stored, never by its browser.
+    expect(runningUsualDurationTest({ title: 't', browser: { browserName: 'chromium' } }).browser).toBeNull();
   });
 });

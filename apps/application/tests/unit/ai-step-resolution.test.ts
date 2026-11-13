@@ -90,7 +90,7 @@ describe('buildStepResolutionPrompt — wait kind', () => {
 
 describe('STEP_RESOLUTION_SCHEMA', () => {
   it('constrains action to the resolution vocabulary', () => {
-    const actionEnum = (STEP_RESOLUTION_SCHEMA.properties.action as { enum: string[] }).enum;
+    const actionEnum = STEP_RESOLUTION_SCHEMA.properties.action.enum;
     expect(actionEnum).toEqual([...RESOLUTION_ACTIONS]);
   });
 });

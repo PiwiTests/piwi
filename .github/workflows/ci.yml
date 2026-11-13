@@ -322,7 +322,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -369,6 +369,15 @@ jobs:
         working-directory: apps/application
         run: npm run app:typecheck
 
+      # The dashboard's tests and its Playwright config, which knip loads, import the built reporter.
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Typecheck the dashboard's tests
+        working-directory: apps/application
+        run: npm run app:typecheck:tests
+
       # Only the dashboard's install prepares its `.nuxt`; the Runner's window typecheck reads its own.
       - name: Prepare the Runner window
         run: npm run runner:prepare -w apps/runner
@@ -384,11 +393,6 @@ jobs:
           npm run runner:typecheck -w apps/runner
           npm run vscode:typecheck -w apps/vscode
           npm run extension:typecheck -w apps/extension
-
-      # Knip loads the dashboard's Playwright config, which imports the built reporter.
-      - name: Build reporter
-        working-directory: packages/reporter
-        run: npm run reporter:build
 
       # Unused files, exports and dependencies, and imports of packages a workspace does not declare.
       - name: Knip

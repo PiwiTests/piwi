@@ -10,7 +10,7 @@ import { isStuckAttempt, testAttemptKey } from '~/utils/test-attempts';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 import { isEndedAtStop } from '#shared/utils/skip-kind';
 import { workerLane } from '#shared/worker-lane';
-import { usualDurationKey } from '#shared/stuck-tests';
+import { runningUsualDurationTest, usualDurationKey } from '#shared/stuck-tests';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
@@ -258,10 +258,7 @@ export interface TimelineModelInput {
 function usualOf(tc: TestCaseResult, usual: ReadonlyMap<string, number> | null | undefined): number | null {
   if (tc.stuck) return tc.stuck.usualMs;
   if (!usual) return null;
-  const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? null;
-  return (
-    usual.get(usualDurationKey({ filePath: tc.filePath, suitePath: tc.suitePath, title: tc.title, browser })) ?? null
-  );
+  return usual.get(usualDurationKey(runningUsualDurationTest(tc))) ?? null;
 }
 
 /**

@@ -203,22 +203,28 @@ describe('the runs lists', () => {
       [branch, true],
       [partial, true],
     ]);
-    expect(project.unscopedRuns?.filter((run) => run.mine).map((run) => run.id)).toEqual([6, branch, partial, full]);
+    expect(
+      project.unscopedRuns?.filter((run: { mine?: boolean }) => run.mine).map((run: { id: number }) => run.id),
+    ).toEqual([6, branch, partial, full]);
 
     const inProduction = { ...scope, environments: ['production'] };
     expect(
-      (await getProject(db as never, projectId, { scope: inProduction, viewer: avery })).ownRuns?.map((run) => run.id),
+      (await getProject(db as never, projectId, { scope: inProduction, viewer: avery })).ownRuns?.map(
+        (run: { id: number }) => run.id,
+      ),
     ).toEqual([]);
     const inStaging = { ...scope, environments: ['staging'] };
     expect(
-      (await getProject(db as never, projectId, { scope: inStaging, viewer: avery })).ownRuns?.map((run) => run.id),
+      (await getProject(db as never, projectId, { scope: inStaging, viewer: avery })).ownRuns?.map(
+        (run: { id: number }) => run.id,
+      ),
     ).toEqual([6]);
     // A scope that reads every run leaves none out.
     const everything = { environments: [], branches: [], allBranches: true, fullRunsOnly: false };
     expect((await getProject(db as never, projectId, { scope: everything, viewer: avery })).ownRuns).toBeUndefined();
     // Another person's own runs are theirs alone.
     const jordans = await getProject(db as never, projectId, { scope, viewer: { authEnabled: true, userId: JORDAN } });
-    expect(jordans.ownRuns?.map((run) => run.id)).toEqual([4]);
+    expect(jordans.ownRuns?.map((run: { id: number }) => run.id)).toEqual([4]);
     expect(jordans.testRuns.map((run: any) => run.mine)).toEqual([undefined]);
   });
 
@@ -271,7 +277,7 @@ describe('the runs lists', () => {
     await storeRun({ id: 2, isFullRun: 0 });
     await storeRun({ id: 3, origin: 'ci', isFullRun: 0 });
     const project = await getProject(db as never, projectId, { scope, viewer: SOLE_USER });
-    expect(project.ownRuns?.map((run) => run.id)).toEqual([2]);
+    expect(project.ownRuns?.map((run: { id: number }) => run.id)).toEqual([2]);
     const recent = await getRecentTestRuns(db as never, 'all', SOLE_USER);
     expect(recent.map((run) => [run.id, run.mine])).toEqual([
       [3, undefined],

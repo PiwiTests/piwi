@@ -73,7 +73,7 @@ test('project ai-steps endpoint aggregates the reporter AI-step usage manifest',
   // where the healing panel and AI diagnosis read the prompt behind the locator.
   const runRes = await request.get(`/api/test-runs/${runId}`);
   expect(runRes.ok()).toBeTruthy();
-  const run = (await runRes.json()) as { testCases: Array<{ id: number; title: string }> };
+  const run = (await runRes.json()) as { testCases: Array<{ id: number; executionId: number; title: string }> };
   const signIn = run.testCases.find((c) => c.title === 'sign in');
   expect(signIn, 'sign in run case present').toBeTruthy();
 

@@ -10,11 +10,6 @@ import type { ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, and the similarity thresholds are read from the
 // environment at module load — clear all of it before the module under test
@@ -54,8 +49,20 @@ vi.mock('../../server/utils/cluster-adjudicate', () => ({
 const { reconcileNewClusters } = await import('../../server/utils/cluster-reconcile');
 const { embeddingModelTag } = await import('../../server/utils/cluster-similarity');
 
-const embeddingRole: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-embed', baseUrl: null };
-const reasoningRole: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-reason', baseUrl: null };
+const embeddingRole: ResolvedAiRole = {
+  provider: 'openai',
+  apiKey: 'k',
+  model: 'test-embed',
+  baseUrl: null,
+  temperature: null,
+};
+const reasoningRole: ResolvedAiRole = {
+  provider: 'openai',
+  apiKey: 'k',
+  model: 'test-reason',
+  baseUrl: null,
+  temperature: null,
+};
 const TAG = embeddingModelTag('test-embed');
 
 // Cosine anchors: NEAR ≈ 0.995 (auto-merge band), AMBIG ≈ 0.900 (adjudication

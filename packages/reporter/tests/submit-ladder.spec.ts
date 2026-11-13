@@ -25,6 +25,8 @@ import {
 
 const STREAM_PREFIX = 'piwi-dashboard-stream-';
 const SETUP_PREFIX = 'piwi-dashboard-setup-';
+/** The waits of a submitter made here before it asks again: as many tries as the reporter's, without its seconds. */
+const RETRY_DELAYS_MS = [10, 20];
 
 function cleanupProjectArtifacts(projectName: string, server?: FakeServer): void {
   // Stream-buffer files are keyed by a sha1 hash of the project name, so match
@@ -1288,6 +1290,8 @@ describe('RunSubmitter local copies', () => {
       new CrashRecovery(url, projectName, logger),
       sm as any,
       logger,
+      null,
+      RETRY_DELAYS_MS,
     );
   }
 

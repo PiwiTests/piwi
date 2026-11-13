@@ -23,6 +23,7 @@ import {
   type AssistantPageContext,
 } from '#shared/assistant';
 import { assistantActionRequest } from '#shared/assistant-actions';
+import type { AssistantToolBlock } from '#shared/assistant-blocks';
 import { ADMIN_ACCESS, projectScopeFor, type AccessSummary } from '#shared/permissions';
 import { DEMO_ASSISTANT_QUESTIONS, demoQuestionsFor } from '#shared/demo/assistant-questions.mjs';
 import { findGuideAnchor } from '#shared/guide-anchors/index.mjs';
@@ -173,8 +174,8 @@ function pick(answer: DemoAnswer, blockId: string, choiceIds: string[], route: s
 const blocksOf = (answer: DemoAnswer) => answer.parts.flatMap((p) => (p.kind === 'block' ? [p.block] : []));
 const textOf = (answer: DemoAnswer) => answer.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
 const toolsOf = (answer: DemoAnswer) => answer.parts.flatMap((p) => (p.kind === 'tool' ? [p.call.name] : []));
-function only<K extends AssistantBlock['kind']>(answer: DemoAnswer, kind: K) {
-  return blocksOf(answer).filter((b): b is Extract<AssistantBlock, { kind: K }> => b.kind === kind);
+function only<K extends AssistantToolBlock['kind']>(answer: DemoAnswer, kind: K) {
+  return blocksOf(answer).filter((b): b is Extract<AssistantToolBlock, { kind: K }> => b.kind === kind);
 }
 
 /**

@@ -198,7 +198,7 @@ export function extractAccessibleName(ariaSnapshot: string | null): string | nul
   // Match the role line:  - role "name" [...]
   // The name is the first double-quoted string after the role keyword.
   const match = ariaSnapshot.match(/- \w+ "([^"]+)"/);
-  if (match) return match[1];
+  if (match) return match[1]!;
 
   return null;
 }

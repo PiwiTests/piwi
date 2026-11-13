@@ -88,6 +88,7 @@ describe('materializeSelection', () => {
       title: `a rather long descriptive test title number ${i} that eats characters`,
       line: i,
       avgDurationMs: 100,
+      locks: [],
     }));
     const m = materializeSelection(many, 'grep');
     expect(m.format).not.toBe('grep');

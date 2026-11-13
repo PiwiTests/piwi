@@ -55,7 +55,7 @@ beforeEach(async () => {
   await db.delete(schema.testRuns);
   await db
     .insert(schema.testRuns)
-    .values(RUNS.map((r) => ({ ...r, projectId: 1, isFullRun: true, startTime: new Date() })));
+    .values(RUNS.map((r) => ({ ...r, projectId: 1, isFullRun: 1, startTime: new Date() })));
 });
 
 afterEach(() => vi.unstubAllGlobals());

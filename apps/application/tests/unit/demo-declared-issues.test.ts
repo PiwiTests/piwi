@@ -69,7 +69,7 @@ async function failNaming(
     flakyTests: 0,
     isFullRun: true,
     ...finish,
-  });
+  } as TestRunFinishPayload);
   const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, runId));
   return execution!.failureClusterId!;
 }

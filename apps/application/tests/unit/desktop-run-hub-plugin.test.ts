@@ -214,7 +214,17 @@ describe('the window’s hold on its runs’ hub', () => {
 
   test('holds while a run of the tray runs or the stream still has a live one, whatever the hub said last', async () => {
     const { wants, runs, state } = await plugin();
-    runs.value = [{ key: 1, kind: 'tests', status: 'running', steps: [{ args: [] }], hubRefs: ['desktop-3'] }];
+    runs.value = [
+      {
+        key: 1,
+        kind: 'tests',
+        status: 'running',
+        steps: [{ args: [] }],
+        hubRefs: ['desktop-3'],
+        shellId: 3,
+        stopRequested: false,
+      },
+    ];
     await nextTick();
     expect(wants.at(-1)).toBe(true);
     state.sessions = { 'desktop-3': session('desktop-3') };
@@ -230,9 +240,33 @@ describe('the window’s hold on its runs’ hub', () => {
     const { shows, runs, holds, trayOpen } = await plugin();
     expect(shows).toEqual([[]]);
     runs.value = [
-      { key: 1, kind: 'reproduce', status: 'running', steps: [{ args: [] }], hubRefs: ['desktop-5'] },
-      { key: 2, kind: 'tests', status: 'running', steps: [{ args: [] }], hubRefs: ['desktop-6'] },
-      { key: 3, kind: 'bisect', status: 'running', steps: [], hubRefs: ['desktop-7'] },
+      {
+        key: 1,
+        kind: 'reproduce',
+        status: 'running',
+        steps: [{ args: [] }],
+        hubRefs: ['desktop-5'],
+        shellId: 5,
+        stopRequested: false,
+      },
+      {
+        key: 2,
+        kind: 'tests',
+        status: 'running',
+        steps: [{ args: [] }],
+        hubRefs: ['desktop-6'],
+        shellId: 6,
+        stopRequested: false,
+      },
+      {
+        key: 3,
+        kind: 'bisect',
+        status: 'running',
+        steps: [],
+        hubRefs: ['desktop-7'],
+        shellId: 7,
+        stopRequested: false,
+      },
     ];
     await nextTick();
     expect(shows.at(-1)).toEqual(['desktop-5']);

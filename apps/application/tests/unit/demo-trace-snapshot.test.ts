@@ -22,7 +22,7 @@ const TRACE_CASES = [
 ];
 
 /** The demo service worker's trace path: DataView + DecompressionStream. */
-async function browserPathSnapshot(zip: Uint8Array): Promise<DomSnapshotResult> {
+async function browserPathSnapshot(zip: Uint8Array<ArrayBuffer>): Promise<DomSnapshotResult> {
   const traceEntries = (await readZipEntries(zip, (name) => name.endsWith('.trace'))).sort(
     (a, b) => traceFileRank(a.name) - traceFileRank(b.name),
   );

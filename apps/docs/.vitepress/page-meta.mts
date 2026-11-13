@@ -42,7 +42,7 @@ export function openingParagraph(markdown: string): string {
     }
     const open = /^<(script|style)\b/.exec(text)
     if (open) {
-      if (!text.includes(`</${open[1]}`)) block = open[1]
+      if (!text.includes(`</${open[1]}`)) block = open[1]!
       continue
     }
     if (/^:::+\s*\S/.test(text)) {
@@ -76,7 +76,7 @@ export function toPlainText(markdown: string): string {
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/(\*\*|__)(.+?)\1/g, '$2')
     .replace(/(\*|_)(.+?)\1/g, '$2')
-    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => code[Number(index)])
+    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => code[Number(index)]!)
     .replace(/\s+/g, ' ')
     .trim()
 }

@@ -26,6 +26,8 @@ import {
 } from './run-stream.js';
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
+/** The order a run's statuses come in while it is in progress. */
+const PHASES = ['initializing', 'running', 'finalizing'];
 /** The wait after a run ends before its context reads the latest run again: runs that end together are read once. */
 const SETTLE_MS = 500;
 /** While a run is live, the client hears of it at most this often. */
@@ -64,6 +66,11 @@ export function countsOf(data: Record<string, unknown>): Pick<LiveRun, 'done' | 
   const n = (key: string) => (typeof data[key] === 'number' ? (data[key] as number) : 0);
   const done = n('passedTests') + n('failedTests') + n('flakyTests') + n('skippedTests') + n('didNotRunTests');
   return { done, total: Math.max(n('totalTests'), done), failed: n('failedTests') };
+}
+
+/** Whether `run` is a read of the live run older than what the live run already says: a status it has passed. */
+function staleFor(live: LiveRun | null, run: RunDetails): boolean {
+  return live?.runId === run.id && PHASES.indexOf(run.status) < PHASES.indexOf(live.status);
 }
 
 function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveRun {
@@ -506,7 +513,9 @@ export class RunWatch {
     const run = await client.runDetails(live.runId).catch(() => null);
     if (!run || context.live?.runId !== live.runId) return false;
     if (!ACTIVE.has(run.status)) return true;
+    if (staleFor(context.live, run)) return false;
     context.live = liveOf(run, live.own, live.ref ?? null);
+    this.followLive(context);
     this.progress();
     return false;
   }
@@ -537,6 +546,13 @@ export class RunWatch {
       this.options.instanceEvent?.(context, event);
       switch (event.type) {
         case 'run-started':
+          if (context.live?.runId === event.runId && context.live.status === 'initializing') {
+            context.live = { ...context.live, status: 'running' };
+            this.followLive(context);
+            this.progress();
+          }
+          void this.started(context, event.runId, true);
+          break;
         case 'run-initializing':
           void this.started(context, event.runId);
           break;
@@ -558,19 +574,23 @@ export class RunWatch {
   /**
    * A run of the context's project started. A run carrying the ref of a command built for the context is that
    * command's run, the editor's own, when it is neither the run found last nor one of the command's known runs: its
-   * first run, or a rerun with the same ref, whatever was found before. Any other run is followed when it runs on the
-   * context's branch.
+   * first run, or a rerun with the same ref, whatever was found before; when it is the run found last and the context
+   * follows it, the read updates it. Any other run is followed when it runs on the context's branch. After the run's
+   * `run-started`, a read that still finds it initializing is older than the event (a read on its way is shared): the
+   * run is running.
    */
-  private async started(context: PiwiContext, runId: number): Promise<void> {
+  private async started(context: PiwiContext, runId: number, running = false): Promise<void> {
     const client = context.client;
     if (!client || context.live?.runId === runId) return;
-    const run = await client.runDetails(runId).catch(() => null);
+    const read = await client.runDetails(runId).catch(() => null);
+    const run = read && running && read.status === 'initializing' ? { ...read, status: 'running' } : read;
     if (!run || this.disposed || context.client?.connection.serverUrl !== client.connection.serverUrl) return;
     this.options.runStarted?.(context, run);
     const ref = editorRef(run);
     const w = ref ? this.watches.get(ref) : undefined;
     if (w && w.context === context && this.current(w)) {
       if (w.found !== run.id && !w.known.has(run.id)) this.found(w, run);
+      else if (w.found === run.id && context.live?.runId === run.id) this.follow(context, run, true);
       return;
     }
     if (run.branch && (run.branch === context.runBranch || run.branch === context.checkedOutBranch)) {
@@ -580,7 +600,7 @@ export class RunWatch {
 
   /**
    * Follow a run in progress as the context's live run, the editor's own before any other; a run that already ended
-   * is read with the context's latest run instead.
+   * is read with the context's latest run instead. A read of the live run with a status it has passed changes nothing.
    */
   private follow(context: PiwiContext, run: RunDetails, own: boolean): void {
     if (!ACTIVE.has(run.status)) {
@@ -588,9 +608,25 @@ export class RunWatch {
       return;
     }
     if (context.live?.own && !own && context.live.runId !== run.id) return;
+    if (staleFor(context.live, run)) return;
     context.live = liveOf(run, own, own ? this.refOf(context, run.id) : null);
-    if (this.followed.get(context)?.runId !== run.id) this.followStream(context, run.id);
+    this.followLive(context);
     this.progress();
+  }
+
+  /**
+   * Follow the stream of the context's live run once it runs. An initializing run's stream sends its status and
+   * closes, so it opens on the run's `run-started`, or on a read that finds it running.
+   */
+  private followLive(context: PiwiContext): void {
+    const live = context.live;
+    if (!live || this.followed.get(context)?.runId === live.runId) return;
+    if (live.status !== 'initializing') {
+      this.followStream(context, live.runId);
+      return;
+    }
+    this.unfollow(context);
+    this.clearTests(context);
   }
 
   private followStream(context: PiwiContext, runId: number): void {
@@ -616,8 +652,7 @@ export class RunWatch {
 
   /**
    * An event of the live run's stream. `init`, `run-progress` and `run-finished` carry its counts; a test's end
-   * (`test-completed`) does not, and the counts of its batch follow it. `run-finished` with a final status ends it: an
-   * initializing run's stream says `run-finished` with its status, then closes, and is opened again.
+   * (`test-completed`) does not, and the counts of its batch follow it. `run-finished` with a final status ends it.
    */
   private onRunEvent(context: PiwiContext, runId: number, event: RunEvent): void {
     const followed = this.followed.get(context);

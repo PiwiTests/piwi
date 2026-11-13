@@ -164,22 +164,54 @@ export interface PrNewLeaks {
 /** Max new leaks listed in the pull-request comment. */
 const MAX_LEAKS_LISTED = 10;
 
+/** How the reporter's detail of a probable leak names one only hooks opened (`resource-verdicts.ts`). */
+export const HOOK_OPENED = 'a beforeAll or afterAll hook';
+
+/** A leak that `leakCheck: 'fail'` fails its test on: one a test opened itself, past its test. */
+function isTestLeak(finding: WireResourceFinding): boolean {
+  return (
+    finding.verdict === 'leaked' &&
+    finding.scope !== 'describe' &&
+    !finding.where.startsWith('fixture "') &&
+    !finding.closedByPiwi
+  );
+}
+
+/**
+ * Where a leak's close goes: a fixture's teardown, an `afterAll` for what a
+ * `beforeAll` opened (a probable leak says so in its detail, as the reporter
+ * writes it), else its own test.
+ */
+function leakFix(finding: WireResourceFinding): string {
+  if (finding.verdict === 'leaked' && finding.where.startsWith('fixture "')) {
+    return "close it in the fixture's teardown, after `use()`";
+  }
+  if (finding.verdict === 'leaked' && finding.scope === 'describe') return 'close it in an `afterAll`';
+  if (finding.verdict === 'probable' && finding.detail?.endsWith(HOOK_OPENED)) return 'close it in an `afterAll`';
+  return 'close it before its test ends';
+}
+
 /**
  * Render the new-leaks section: one line per leak the base branch never
- * showed, with the line or fixture that opened it. Null when there is none.
+ * showed, with the line or fixture that opened it, its facts, its last use
+ * and where its close goes. Null when there is none.
  */
 export function renderNewLeaks(nl: PrNewLeaks): string | null {
   if (nl.leaks.length === 0) return null;
   const n = nl.leaks.length;
-  const lines = nl.leaks.slice(0, MAX_LEAKS_LISTED).map((finding) => {
+  const listed = nl.leaks.slice(0, MAX_LEAKS_LISTED);
+  const lines = listed.map((finding) => {
     const view = findingView(finding);
-    const facts = view.facts.slice(0, 3).join(' · ');
+    const facts = view.facts.join(' · ');
     const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
-    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse}`;
+    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
   });
+  const leakCheck = nl.leaks.some(isTestLeak)
+    ? " Set `leakCheck: 'fail'` to catch the next one a test leaves open, locally."
+    : '';
   const blocks = [
     `#### 🟠 Left open by this change (${n})`,
-    `Never seen on ${codeSpan(nl.baseBranch)}. Close each before its test ends, or set \`leakCheck: 'fail'\` to catch the next one locally.`,
+    `Never seen on ${codeSpan(nl.baseBranch)}.${leakCheck}`,
     lines.join('\n'),
   ];
   if (n > MAX_LEAKS_LISTED) blocks.push(`…and ${n - MAX_LEAKS_LISTED} more`);

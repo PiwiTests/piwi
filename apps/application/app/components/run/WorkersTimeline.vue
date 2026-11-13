@@ -3,7 +3,8 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, shallowRef 
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { UsualDuration } from '#shared/handlers/stuck-tests';
-import { usualDurationKey } from '#shared/stuck-tests';
+import { runningUsualDurationTest, usualDurationKey } from '#shared/stuck-tests';
+import { storedUsualDurationTest } from '~~/server/utils/storable-values';
 import type { SeriesPoint } from '#shared/types';
 import {
   useTimelineModel,
@@ -89,6 +90,49 @@ watch(
 );
 watch(() => [props.runId, props.live], loadUsualDurations);
 
+// The usual durations are keyed by each test's names as its rows store them; a running attempt's begin event sends
+// them as the test named them. Each running test whose stored names differ (a NUL dropped, a long identity shortened,
+// `storedUsualDurationTest`) is learned once, and its usual duration is also kept under the key of its sent names.
+const storedKeyOf = new Map<string, string | null>();
+const sentKeyAliases = shallowRef<ReadonlyMap<string, string>>(new Map());
+async function learnStoredKeys(testCases: readonly TestCaseResult[]): Promise<void> {
+  const learned: [string, string][] = [];
+  await Promise.all(
+    testCases.map(async (tc) => {
+      if (tc.status !== 'running') return;
+      const sent = runningUsualDurationTest(tc);
+      const sentKey = usualDurationKey(sent);
+      if (storedKeyOf.has(sentKey)) return;
+      storedKeyOf.set(sentKey, null);
+      try {
+        const storedKey = usualDurationKey(await storedUsualDurationTest(sent));
+        storedKeyOf.set(sentKey, storedKey);
+        if (storedKey !== sentKey) learned.push([sentKey, storedKey]);
+      } catch {
+        // Without a hash (Web Crypto needs a secure context), the test goes without its ghost.
+      }
+    }),
+  );
+  if (learned.length) sentKeyAliases.value = new Map([...sentKeyAliases.value, ...learned]);
+}
+watch(
+  () => (props.live && usualDurations.value ? props.testCases : null),
+  (testCases) => {
+    if (testCases) void learnStoredKeys(testCases);
+  },
+  { immediate: true },
+);
+const usualDurationsBySentKey = computed<ReadonlyMap<string, number> | null>(() => {
+  const usual = usualDurations.value;
+  if (!usual || sentKeyAliases.value.size === 0) return usual;
+  const map = new Map(usual);
+  for (const [sentKey, storedKey] of sentKeyAliases.value) {
+    const usualMs = usual.get(storedKey);
+    if (usualMs !== undefined) map.set(sentKey, usualMs);
+  }
+  return map;
+});
+
 // The run's clock while it is live, read every second once mounted: the browser's, unless the results put the run's
 // ahead of it (`liveRunNow`).
 const browserNow = ref<number | null>(null);
@@ -136,7 +180,7 @@ const modelInput = {
     return props.live ? runNow.value : null;
   },
   get usualDurations() {
-    return usualDurations.value;
+    return usualDurationsBySentKey.value;
   },
   get showHooks() {
     return showHooks.value;

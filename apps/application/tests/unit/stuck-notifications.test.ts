@@ -46,7 +46,7 @@ async function liveRun(run: { metadata?: Record<string, unknown> | null; isFullR
     id: LIVE_RUN,
     projectId: 1,
     status: run.status ?? 'running',
-    isFullRun: run.isFullRun ?? true,
+    isFullRun: run.isFullRun === false ? 0 : 1,
     startTime: new Date(now - 10 * 60_000),
     metadata,
     origin: runOrigin(metadata),
@@ -117,7 +117,7 @@ describe('the stuck check of a run a local hub steers', () => {
         id: i + 1,
         projectId: 1,
         status: 'passed',
-        isFullRun: true,
+        isFullRun: 1,
         startTime: new Date(now - (i + 2) * 86_400_000),
       });
       await db
