@@ -21,6 +21,7 @@ import { NOTICE_KEYS } from '@piwitests/editor/protocol';
 import {
   DONT_SHOW_AGAIN,
   noticeShown,
+  withHiddenMessage,
   OwnRunCounts,
   flakyTestsByRoot,
   isFlakyGroup,
@@ -1127,12 +1128,22 @@ describe('a notice of the service', () => {
       text: 'Piwi: the [locator] (command:x) it saw',
       actions: [],
     });
-    const again = { message: 'An agent acts on the page.', key: 'agent-acting' as const };
-    expect(noticeShown(again, ['run-not-reached'])).toEqual({
-      text: 'Piwi: An agent acts on the page.',
+    const again = { message: 'Run #77 is shared live.', key: 'window-shared' as const };
+    expect(noticeShown(again, ['reporter-missing'])).toEqual({
+      text: 'Piwi: Run #77 is shared live.',
       actions: [DONT_SHOW_AGAIN],
     });
-    expect(noticeShown(again, ['agent-acting'])).toBeNull();
+    expect(noticeShown(again, ['window-shared'])).toBeNull();
+    // A value written by hand that is no list hides nothing, and its strings alone count.
+    expect(noticeShown(again, 'window-shared')).not.toBeNull();
+    expect(noticeShown(again, [42, 'window-shared'])).toBeNull();
+  });
+
+  test('adds a kind to the hidden messages once, keeping what was there', () => {
+    expect(withHiddenMessage(undefined, 'window-shared')).toEqual(['window-shared']);
+    expect(withHiddenMessage(['reporter-missing'], 'window-shared')).toEqual(['reporter-missing', 'window-shared']);
+    expect(withHiddenMessage(['window-shared'], 'window-shared')).toBeNull();
+    expect(withHiddenMessage('reporter-missing', 'window-shared')).toEqual(['window-shared']);
   });
 
   test('can be hidden by every kind the service names, in the settings', () => {

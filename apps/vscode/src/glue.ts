@@ -1700,10 +1700,21 @@ export const DONT_SHOW_AGAIN = "Don't Show Again";
  */
 export function noticeShown(
   notice: Pick<Notice, 'message' | 'key'>,
-  hidden: readonly string[],
+  hidden: unknown,
 ): { text: string; actions: string[] } | null {
-  if (notice.key && hidden.includes(notice.key)) return null;
+  if (notice.key && hiddenMessages(hidden).includes(notice.key)) return null;
   return { text: inertLinks(`Piwi: ${notice.message}`), actions: notice.key ? [DONT_SHOW_AGAIN] : [] };
+}
+
+/** The kinds `piwi.hiddenMessages` holds, as read from the settings: its strings alone, whatever was written there. */
+export function hiddenMessages(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** `piwi.hiddenMessages` with `key` added, or null when it holds it already. */
+export function withHiddenMessage(value: unknown, key: string): string[] | null {
+  const hidden = hiddenMessages(value);
+  return hidden.includes(key) ? null : [...hidden, key];
 }
 
 /**

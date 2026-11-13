@@ -634,7 +634,6 @@ describe('a run’s session, with a client that does not answer stops', () => {
         message:
           'Piwi resumed the test stopped at cart.page.ts:30: no pause bar shows in a headless browser, and neither ' +
           'this editor nor Piwi Picker shows where a run stops. Run it headed to pause there.',
-        key: 'headless-resumed',
       });
       worker.send({ type: 'running', stop: 1 });
       worker.stopAt(2, 31);
@@ -1013,7 +1012,7 @@ describe('RunSessions', () => {
     const notices: string[] = [];
     const { sessions, attach } = harness({
       holdsFailures: (ref) => ref !== 'ed-9',
-      notice: (_root, _severity, message) => void notices.push(message),
+      notice: (_root, _severity, message, key) => void notices.push(key ? `${key}: ${message}` : message),
     });
     const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
     const controls = (socket: ReturnType<typeof fakeSocket>) => lines(socket).filter((m) => m.type === 'control');
@@ -1038,7 +1037,9 @@ describe('RunSessions', () => {
       { type: 'control', action: 'resume', stop: 2 },
     ]);
     expect(controls(attended.socket)).toEqual([]);
-    expect(notices).toEqual(['Piwi let the test stopped at a.spec.ts:4 go on: nobody attends this run.']);
+    expect(notices).toEqual([
+      'unattended-resumed: Piwi let the test stopped at a.spec.ts:4 go on: nobody attends this run.',
+    ]);
     // A Pause someone asked for waits there too.
     unattended.read({ type: 'running', stop: 2 });
     unattended.read(stop(3, 'pause'));

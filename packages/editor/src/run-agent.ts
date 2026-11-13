@@ -1498,7 +1498,6 @@ export class RunAgent {
     this.options.notice(
       stop.root,
       `An agent acts on the page stopped at ${path.basename(fileOf(stop.uri, stop.root))}:${stop.line + 1}: each action shows in the page, and ${this.words.steps}.`,
-      'agent-acting',
     );
   }
 

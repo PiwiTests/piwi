@@ -294,9 +294,9 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 - each last with **Settings**, which opens the Settings editor at `piwi.runNotifications`.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
-when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says. One with a `key`, which comes
-unasked and may come again, also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages`; a key that
-setting holds is not shown (`noticeShown`).
+when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+One with a `key` also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages` (`withHiddenMessage`,
+one write after the other); a key that setting holds is not shown (`noticeShown`).
 
 A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result.
 `runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a

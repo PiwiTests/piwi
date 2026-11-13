@@ -392,10 +392,11 @@ describe("an agent's tools for the runs of the editor window", () => {
     expect(page).toContain('- - heading "Shop" [level=1] [ref=e1]');
     expect(page).toContain('+ - heading "Cart" [level=1] [ref=e1]');
     expect(page).not.toContain('Add a mug" [ref=e2]\n+');
-    // A person watching hears it once for this stop.
-    await waitFor(() =>
+    // A person watching hears it once for this stop, in a notice no client lets them hide.
+    const acting = await waitFor(() =>
       ide.notices.find((n) => n.message.startsWith('An agent acts on the page stopped at cart.spec.ts:5')),
     );
+    expect(acting.key).toBeUndefined();
     for (const [args, says] of [
       [{ run: ref, stop: since, target: 'e2', action: 'evaluate', value: '1' }, '`action` one of click'],
       [{ run: ref, stop: since, target: 'e2', action: 'click', value: 'x' }, '`action` one of click'],

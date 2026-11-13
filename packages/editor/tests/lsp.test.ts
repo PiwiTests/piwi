@@ -2741,7 +2741,7 @@ describe('runs as they happen', () => {
         root: dir,
         severity: 'warning',
         message: `The run ended (exit code 1) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
-        key: 'run-not-reached',
+        key: 'reporter-missing',
       },
     ]);
     // Once the wait is over, the instance is not asked for either command's run again.
@@ -3204,7 +3204,7 @@ describe('runs as they happen', () => {
         root: dir,
         severity: 'warning',
         message: `The run ended (exit code 0) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
-        key: 'run-not-reached',
+        key: 'reporter-missing',
       },
       { root: dir, severity: 'information', message: 'None of 3 runs failed: tests/checkout.spec.ts:3' },
     ]);

@@ -2621,7 +2621,6 @@ export class RunSessions {
       `Piwi resumed the test stopped at ${path.basename(place.file)}:${place.line}: no pause bar shows in a headless ` +
         `browser, and neither ${this.options.surfaces ?? 'this editor'} nor Piwi Picker shows where a run stops. Run ` +
         'it headed to pause there.',
-      'headless-resumed',
     );
   }
 

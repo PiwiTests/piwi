@@ -195,6 +195,7 @@ import {
   openLinkMissing,
   resolveOpenFile,
   noticeShown,
+  withHiddenMessage,
   DONT_SHOW_AGAIN,
   runTaskName,
   type FailureNode,
@@ -717,6 +718,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
+  /** The writes of `piwi.hiddenMessages`, one after the other, each adding its key to what the last one wrote. */
+  let hiding: Promise<void> = Promise.resolve();
+  const hideMessage = (key: string) => {
+    hiding = hiding.then(async () => {
+      const piwi = vscode.workspace.getConfiguration('piwi');
+      const hidden = withHiddenMessage(piwi.get('hiddenMessages'), key);
+      if (!hidden) return;
+      try {
+        await piwi.update('hiddenMessages', hidden, vscode.ConfigurationTarget.Global);
+      } catch (e) {
+        void vscode.window.showWarningMessage(
+          `Piwi: could not hide the message in the settings: ${(e as Error).message}`,
+        );
+      }
+    });
+  };
   /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
   const connectedOrSay = (): boolean => {
     const notice = notConnectedNotice(status);
@@ -1891,21 +1908,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     lc.onNotification(NOTICE_NOTIFICATION, async (notice: Notice) => {
       // A notice may quote what a tested page wrote (a debug run's suggested locator): it shows as text alone.
-      const shown = noticeShown(
-        notice,
-        vscode.workspace.getConfiguration('piwi').get<string[]>('hiddenMessages') ?? [],
-      );
+      const shown = noticeShown(notice, vscode.workspace.getConfiguration('piwi').get('hiddenMessages'));
       if (!shown) return;
       const picked = await (notice.severity === 'warning'
         ? vscode.window.showWarningMessage(shown.text, ...shown.actions)
         : vscode.window.showInformationMessage(shown.text, ...shown.actions));
-      if (picked === DONT_SHOW_AGAIN && notice.key) {
-        const piwi = vscode.workspace.getConfiguration('piwi');
-        const now = piwi.get<string[]>('hiddenMessages') ?? [];
-        if (!now.includes(notice.key)) {
-          await piwi.update('hiddenMessages', [...now, notice.key], vscode.ConfigurationTarget.Global);
-        }
-      }
+      if (picked === DONT_SHOW_AGAIN && notice.key) hideMessage(notice.key);
     }),
   );
   context.subscriptions.push(...registerDesktopJobs(lc));

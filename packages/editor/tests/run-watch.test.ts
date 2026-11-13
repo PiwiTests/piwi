@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { PiwiContext } from '../src/context';
-import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch } from '../src/run-watch';
+import { catalogCaseOf, exitVerdict, repeatVerdict, RunWatch, unreachedNotice } from '../src/run-watch';
 import type { InstanceEvent, RunStreams } from '../src/run-stream';
 
 describe('the test a live run event names by its title', () => {
@@ -72,6 +72,21 @@ describe('the verdict of a run of each test several times', () => {
     expect(exitVerdict(3, null, 'tests/checkout.spec.ts:42').message).toBe(
       'The 3 runs of tests/checkout.spec.ts:42 ended without an exit code: see the output.',
     );
+  });
+});
+
+describe('a run that ended without reaching the instance', () => {
+  test('may be hidden when the config has no Piwi reporter, never when its reporter ran', () => {
+    expect(unreachedNotice(' (exit code 1)', 'https://piwi.example.com', false)).toEqual({
+      severity: 'warning',
+      message:
+        'The run ended (exit code 1) but did not reach https://piwi.example.com: is the Piwi reporter in the ' +
+        'Playwright config?',
+      key: 'reporter-missing',
+    });
+    const ran = unreachedNotice('', 'https://piwi.example.com', true);
+    expect(ran.message).toContain('though its Piwi reporter ran');
+    expect(ran.key).toBeUndefined();
   });
 });
 
