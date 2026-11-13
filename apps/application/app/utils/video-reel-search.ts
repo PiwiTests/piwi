@@ -34,3 +34,11 @@ export function searchReelEntries(entries: readonly ReelEntry[], query: string):
     highlights: testSearchHighlights(parsed),
   };
 }
+
+/**
+ * The line over a searched checklist: how many tests match of how many are listed, the noun following the count listed
+ * and the verb the count matching (`1 of 11 tests matches`, `2 of 11 tests match`, `1 of 1 test matches`).
+ */
+export function reelSearchCount(matched: number, total: number): string {
+  return `${matched} of ${total} ${total === 1 ? 'test' : 'tests'} ${matched === 1 ? 'matches' : 'match'}`;
+}

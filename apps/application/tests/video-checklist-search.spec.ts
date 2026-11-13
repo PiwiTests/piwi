@@ -143,6 +143,25 @@ test.describe('Video checklist search', () => {
     await expect(rows(page)).toHaveCount(TITLES.length);
   });
 
+  test('says "matches" for one match, and keeps the search when the grouping changes', async ({ page }) => {
+    await openVideoTab(page);
+    await box(page).fill('coupon');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(tab(page).getByText(`1 of ${TITLES.length} tests matches`)).toBeVisible();
+
+    // Grouping by file shows another reel; the search stays and still filters it.
+    const byFile = tab(page).getByRole('button', { name: 'File', exact: true });
+    await byFile.click();
+    await expect(byFile).toHaveAttribute('aria-pressed', 'true');
+    await expect(box(page)).toHaveValue('coupon');
+    expect(await rowTitles(page)).toEqual(['applies a coupon']);
+    await expect(tab(page).getByText(/^1 of \d+ tests? matches$/)).toBeVisible();
+
+    await tab(page).getByRole('button', { name: 'Worker', exact: true }).click();
+    await expect(box(page)).toHaveValue('coupon');
+    await expect(rows(page)).toHaveCount(1);
+  });
+
   test('changes neither the play state, the current block, the bar nor the ticks while filtering', async ({ page }) => {
     await openVideoTab(page);
 

@@ -5,12 +5,13 @@
  * (`focusId`), the playhead starts at it (`startIndex`), and tests listed only for context are dimmed and not played.
  *
  * On the Video tab (`searchable`) a box above the checklist searches the tests' titles the way the Tests tab does. It
- * only hides rows: each row keeps its index in the reel, so playing, the ticks and the bar never change with it.
+ * only hides rows: each row keeps its index in the reel, so playing, the ticks and the bar never change with it. The
+ * Video tab holds the search (`v-model:search`), so it stays when the tab shows another worker or groups by file.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
 import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
 import { statusPalette } from '@piwitests/run-ui/status-palette';
-import { REEL_SEARCH_FIELDS, searchReelEntries } from '~/utils/video-reel-search';
+import { REEL_SEARCH_FIELDS, reelSearchCount, searchReelEntries } from '~/utils/video-reel-search';
 
 const props = defineProps<{
   reel: Reel;
@@ -52,7 +53,7 @@ const hasContext = computed(() => props.reel.entries.some((e) => e.context));
 /** The tests the reel plays; the others of a file are listed beside the one in focus. */
 const playedTotal = computed(() => props.reel.entries.filter((e) => !e.context).length);
 const contextTotal = computed(() => props.reel.entries.length - playedTotal.value);
-const search = ref('');
+const search = defineModel<string>('search', { default: '' });
 const searched = computed(() => searchReelEntries(props.reel.entries, props.searchable ? search.value : ''));
 const isFocus = (entry: ReelEntry) => props.focusId != null && entry.execution.executionId === props.focusId;
 
@@ -197,8 +198,7 @@ function blockLabel(entry: ReelEntry): string {
         class="mb-2 shrink-0"
       />
       <p v-if="searched.highlights" class="mb-1 shrink-0 text-xs text-muted tabular-nums" aria-live="polite">
-        {{ searched.rows.length }} of {{ reel.entries.length }} {{ reel.entries.length === 1 ? 'test' : 'tests' }}
-        match
+        {{ reelSearchCount(searched.rows.length, reel.entries.length) }}
       </p>
       <p v-else-if="hasContext" class="mb-1 shrink-0 text-xs text-muted tabular-nums">
         This test's video · {{ contextTotal }} other {{ contextTotal === 1 ? 'test' : 'tests' }} in its file, not played

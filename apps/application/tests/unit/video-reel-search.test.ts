@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReelEntry } from '#shared/video-reel';
-import { searchReelEntries } from '../../app/utils/video-reel-search';
+import { reelSearchCount, searchReelEntries } from '../../app/utils/video-reel-search';
 
 function entry(executionId: number, title: string, filePath = 'tests/checkout.spec.ts'): ReelEntry {
   return {
@@ -73,5 +73,15 @@ describe('searchReelEntries', () => {
 
   it('keeps no row when nothing matches', () => {
     expect(indices('zzz')).toEqual([]);
+  });
+});
+
+describe('reelSearchCount', () => {
+  it('fits the noun to the tests listed and the verb to the tests that match', () => {
+    expect(reelSearchCount(2, 11)).toBe('2 of 11 tests match');
+    expect(reelSearchCount(1, 11)).toBe('1 of 11 tests matches');
+    expect(reelSearchCount(0, 11)).toBe('0 of 11 tests match');
+    expect(reelSearchCount(1, 1)).toBe('1 of 1 test matches');
+    expect(reelSearchCount(0, 1)).toBe('0 of 1 test match');
   });
 });
