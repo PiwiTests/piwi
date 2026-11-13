@@ -150,8 +150,9 @@ object PiwiCommands {
         val verdict = Glue.runVerdict(ended, setting) ?: return
         val notification = PiwiNotifier.create(
             PiwiNotice.RESULT,
-            verdict.text,
+            verdict.text.removePrefix("Run #${ended.runId} · "),
             if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION,
+            Glue.runVerdictTitle(ended.runId),
         )
         for (label in verdict.actions) {
             notification.addAction(

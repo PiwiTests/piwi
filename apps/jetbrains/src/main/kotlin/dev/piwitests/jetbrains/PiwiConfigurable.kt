@@ -124,7 +124,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
                         .label("When a run started here ends:", LabelPosition.TOP)
-                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "always" })
+                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "failures" })
                         .comment(
                             "A balloon says what the run changed: the failures it fixed, those still failing, its new ones. " +
                                 "Kept for you only, in .idea/workspace.xml",

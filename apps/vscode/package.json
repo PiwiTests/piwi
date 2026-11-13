@@ -1192,7 +1192,7 @@
             "Only when the run failed a test.",
             "Never: the status bar, the gutter and the failures view still show it."
           ],
-          "default": "always",
+          "default": "failures",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         },
         "piwi.failureSeverity": {

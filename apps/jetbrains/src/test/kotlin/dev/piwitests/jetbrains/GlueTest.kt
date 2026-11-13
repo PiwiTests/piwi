@@ -3108,6 +3108,8 @@ class GlueTest {
         )
         val passed = ended.copy(failed = 0, repeat = RepeatVerdict("Passed 3 of 3", failed = false))
         assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the failures", "Open in dashboard")), Glue.runVerdict(passed, "failures"))
+        // The balloon is titled by its run, so two runs' balloons read apart.
+        assertEquals("Piwi: run #124", Glue.runVerdictTitle(124))
     }
 
     @Test

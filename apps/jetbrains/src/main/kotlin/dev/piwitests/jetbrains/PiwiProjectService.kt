@@ -105,7 +105,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var playwrightRunner: Boolean = false,
         var runHeaded: Boolean = false,
         var runHoldFailures: String = "auto",
-        var runNotifications: String = "always",
+        var runNotifications: String = "failures",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",

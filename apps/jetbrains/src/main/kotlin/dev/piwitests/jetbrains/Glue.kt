@@ -889,6 +889,9 @@ object Glue {
     const val ONLY_ON_FAILURE_SET =
         "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
 
+    /** The title of a run's verdict balloon, which tells two runs' balloons apart: `Piwi: run #124`. */
+    fun runVerdictTitle(runId: Int): String = "Piwi: run #$runId"
+
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
 

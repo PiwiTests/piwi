@@ -154,7 +154,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
-| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
+| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
 | `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
@@ -277,8 +277,8 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 ### Run notifications and tests in progress
 
-When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as
-the `piwi.runNotifications` setting allows (`always`, `failures`, `never`):
+When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as the
+`piwi.runNotifications` setting allows (`always`, `failures`, the default, `never`):
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;

@@ -13,11 +13,12 @@ findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M1
 remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, with their
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
-hover alone and Reload Piwi with a glyph of its own (HM9, ST18). §14 adds the findings the code that built the plan
-raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
-leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
-each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
-phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a
+run's balloon titled by its run. §14 adds the findings the code that built the plan raised. The live-run study,
+[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
+of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
+debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -790,15 +791,12 @@ description. ([Q8](#q8), [LI5](#li5))
 
 ### 7.4 Notifications
 
-<a id="hm15"></a>**HM15. VS Code notifies the end of every run by default, none of its other messages can be turned off,
-and neither client's run notice leads to its setting.** `piwi.runNotifications` defaults to `always`
-(`apps/vscode/package.json:1173-1187`): ten passing re-runs give ten toasts until Only on Failure is picked. None of the
-extension's 85 `show*Message` calls offers Don't Show Again, the run notices of both clients carry no gear
-(`apps/vscode/src/extension.ts:1755-1779`, `PiwiCommands.kt:148-173`), and no test checks the group each JetBrains
-balloon goes to, where some go astray ([NF5](#nf5)). Every JetBrains balloon is titled 'Piwi', a run's verdict too, so
-two runs' balloons read alike (`PiwiNotifier.kt:42, 55`). **(read)** Fix: `failures` as the default, Don't Show Again on
-VS Code's repeated messages, a gear on the run toast and balloon, a run's balloon titled by its run, and a platform test
-of every balloon's group. ([Q13](#q13), [LI14](#li14))
+<a id="hm15"></a>**HM15. None of VS Code's other messages can be turned off, and neither client's run notice leads to
+its setting.** None of the extension's 85 `show*Message` calls offers Don't Show Again, the run notices of both clients
+carry no gear (`apps/vscode/src/extension.ts:1755-1779`, `PiwiCommands.kt:148-173`), and no test checks the group each
+JetBrains balloon goes to, where some go astray ([NF5](#nf5)). **(read)** Fix: Don't Show Again on VS Code's repeated
+messages, a gear on the run toast and balloon, and a platform test of every balloon's group. ([Q13](#q13),
+[LI14](#li14))
 
 <a id="hm16"></a>**HM16. The end-of-run verdict comes only for runs Piwi started, and each client words it on its own.**
 `piwi/runEnded` goes to `context.ownRuns` alone (`packages/editor/src/run-watch.ts:740`), and a terminal run records the
@@ -1382,7 +1380,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
-| <a id="q13"></a>Q13 | **The rest of the notification policy**: a balloon titled by its run, Don't Show Again on VS Code's other messages, a gear on the run notices, `piwi.runNotifications` off `always` by default, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
+| <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
 | <a id="q23"></a>Q23 | **The desktop app's `productName`**, once §13 item 19 settles the upgrade path | `desktop` | [AC13](#ac13) |
 | <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: the CI rows from the gutter's outcome marks and Appendix A's rows, unreachable and Run the tests that reach this file off shared glyphs; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
