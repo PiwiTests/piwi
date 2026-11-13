@@ -57,7 +57,9 @@ Code's Testing view shows each test's average duration, quarantine, Playwright t
 `SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). Q2: a fixture check
 in each editor fails when a flaky test loses its flaky mark, VS Code's nightly suite reading its Testing item and its
 line's mark, `PiwiPluginTest` the bundled service's answer for its line and the result icon that answer draws (TL13).
-Q13 in part: VS Code's run verdict ends with **Settings**, which opens `piwi.runNotifications` (HM15 in part). M4 in
+Q13 in part: VS Code's run verdict ends with **Settings**, which opens `piwi.runNotifications`; a service notice that
+comes unasked and may come again carries a key (`NOTICE_KEYS`), and VS Code offers **Don't Show Again** on it, kept in
+`piwi.hiddenMessages`; JetBrains' gear and balloon test remain (HM15 in part). M4 in
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye

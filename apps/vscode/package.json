@@ -1291,6 +1291,32 @@
           "default": "auto",
           "markdownDescription": "**Hold failures** of each run Piwi starts from this window: a failed test waits at its line, its page open, until you answer in the run. A run's own **Hold failures** still turns it on or off while it runs. **Piwi: Run options…** changes it."
         },
+        "piwi.hiddenMessages": {
+          "type": "array",
+          "scope": "application",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "agent-acting",
+              "agent-let-go",
+              "window-shared",
+              "unattended-resumed",
+              "headless-resumed",
+              "run-not-reached"
+            ],
+            "enumDescriptions": [
+              "An agent acts on the page a test stopped at.",
+              "A stop an agent held goes on once the agent went idle.",
+              "A run is shared live, as this window's runs are.",
+              "A test stopped where nobody attends the run goes on.",
+              "A test stopped in a headless browser, which no pause bar shows, goes on.",
+              "A run ended without reaching the instance."
+            ]
+          },
+          "default": [],
+          "markdownDescription": "The messages Piwi no longer shows: each message's **Don't Show Again** adds its kind here. Remove one to see it again."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [

@@ -159,6 +159,7 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
 | `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)), `failures` by default.                         |
+| `piwi.hiddenMessages`    | `[]`, the `NOTICE_KEYS`                  | The service notices **Don't Show Again** hid ([Runs](#runs)). Application scope.                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
 | `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
@@ -293,7 +294,9 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 - each last with **Settings**, which opens the Settings editor at `piwi.runNotifications`.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
-when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says. One with a `key`, which comes
+unasked and may come again, also offers **Don't Show Again**, which adds the key to `piwi.hiddenMessages`; a key that
+setting holds is not shown (`noticeShown`).
 
 A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result.
 `runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a

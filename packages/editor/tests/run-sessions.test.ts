@@ -634,6 +634,7 @@ describe('a run’s session, with a client that does not answer stops', () => {
         message:
           'Piwi resumed the test stopped at cart.page.ts:30: no pause bar shows in a headless browser, and neither ' +
           'this editor nor Piwi Picker shows where a run stops. Run it headed to pause there.',
+        key: 'headless-resumed',
       });
       worker.send({ type: 'running', stop: 1 });
       worker.stopAt(2, 31);

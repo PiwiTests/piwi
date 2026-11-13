@@ -1059,7 +1059,29 @@ export interface Notice {
   root: string;
   severity: 'information' | 'warning';
   message: string;
+  /**
+   * The kind of a notice that comes unasked and may come again, which the client offers to stop showing; absent for
+   * a notice that answers what the developer did.
+   */
+  key?: NoticeKey;
 }
+
+/**
+ * The notices a client may hide: `agent-acting`, an agent's first action at a stop; `agent-let-go`, a stop an agent
+ * held let go once it went idle; `window-shared`, a run shared live as the window's runs are; `unattended-resumed`, a
+ * stop nobody attends let go on; `headless-resumed`, a stop no surface shows resumed; `run-not-reached`, a run that
+ * ended without reaching the instance.
+ */
+export const NOTICE_KEYS = [
+  'agent-acting',
+  'agent-let-go',
+  'window-shared',
+  'unattended-resumed',
+  'headless-resumed',
+  'run-not-reached',
+] as const;
+
+export type NoticeKey = (typeof NOTICE_KEYS)[number];
 
 export const NOTICE_NOTIFICATION = 'piwi/notice';
 

@@ -194,7 +194,8 @@ import {
   openLink,
   openLinkMissing,
   resolveOpenFile,
-  inertLinks,
+  noticeShown,
+  DONT_SHOW_AGAIN,
   runTaskName,
   type FailureNode,
   type ProxySettings,
@@ -1888,12 +1889,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       // A service started again hears the editor's breakpoints, for a run a terminal starts.
       else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),
-    lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
+    lc.onNotification(NOTICE_NOTIFICATION, async (notice: Notice) => {
       // A notice may quote what a tested page wrote (a debug run's suggested locator): it shows as text alone.
-      const text = inertLinks(`Piwi: ${notice.message}`);
-      void (notice.severity === 'warning'
-        ? vscode.window.showWarningMessage(text)
-        : vscode.window.showInformationMessage(text));
+      const shown = noticeShown(
+        notice,
+        vscode.workspace.getConfiguration('piwi').get<string[]>('hiddenMessages') ?? [],
+      );
+      if (!shown) return;
+      const picked = await (notice.severity === 'warning'
+        ? vscode.window.showWarningMessage(shown.text, ...shown.actions)
+        : vscode.window.showInformationMessage(shown.text, ...shown.actions));
+      if (picked === DONT_SHOW_AGAIN && notice.key) {
+        const piwi = vscode.workspace.getConfiguration('piwi');
+        const now = piwi.get<string[]>('hiddenMessages') ?? [];
+        if (!now.includes(notice.key)) {
+          await piwi.update('hiddenMessages', [...now, notice.key], vscode.ConfigurationTarget.Global);
+        }
+      }
     }),
   );
   context.subscriptions.push(...registerDesktopJobs(lc));

@@ -497,7 +497,7 @@ export class RunWatch {
         ? `The run ended${code} but did not reach ${w.serverUrl}, though its Piwi reporter ran: its lines in the run's ` +
           'output say why (its server address, its key, or an instance that refused it).'
         : `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`;
-      this.options.notice({ root: context.root, severity: 'warning', message });
+      this.options.notice({ root: context.root, severity: 'warning', message, key: 'run-not-reached' });
     } else {
       w.known.add(ended);
     }

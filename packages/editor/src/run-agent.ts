@@ -35,7 +35,7 @@ import {
   type RunActAction,
   type RunEvent,
 } from '@piwitests/core/run-channel';
-import type { RunSession, RunStop, RunTest, StopCode } from './protocol.js';
+import type { NoticeKey, RunSession, RunStop, RunTest, StopCode } from './protocol.js';
 import type { AgentAnswer, RunHeard, RunSessions, StopRef } from './run-sessions.js';
 import type { AgentCodeInput } from './stop-actions.js';
 import { relativeTo } from './workspace.js';
@@ -163,7 +163,7 @@ export interface RunAgentOptions {
    */
   writeCode(stop: StopRef, input: AgentCodeInput): { ok: boolean; message: string; code?: StopCode };
   /** A sentence for the client about a run's folder, for a person watching what the agent does. */
-  notice(root: string | null, message: string): void;
+  notice(root: string | null, message: string, key?: NoticeKey): void;
   /** The command line of a run the service built; null for another. */
   command(ref: string): string | null;
   /** The canonical locators the suite of a run's folder already uses, preferred among an element's locators. */
@@ -922,7 +922,11 @@ export class RunAgent {
       if (worker.stop.driver && worker.stop.driver.kind !== 'agent') continue;
       const stop = { ref, worker: worker.worker, action: 'resume' as const, since: worker.stop.since };
       if (!this.options.sessions.control(stop, 'agent').ok) continue;
-      this.options.notice(session!.root, letGo(this.options.followIdleMs ?? FOLLOW_IDLE_S * 1000, failure));
+      this.options.notice(
+        session!.root,
+        letGo(this.options.followIdleMs ?? FOLLOW_IDLE_S * 1000, failure),
+        'agent-let-go',
+      );
     }
     for (const event of this.logs.get(ref)?.events ?? []) {
       if (!event.page || !TOLD_KINDS.has(event.kind)) continue;
@@ -1494,6 +1498,7 @@ export class RunAgent {
     this.options.notice(
       stop.root,
       `An agent acts on the page stopped at ${path.basename(fileOf(stop.uri, stop.root))}:${stop.line + 1}: each action shows in the page, and ${this.words.steps}.`,
+      'agent-acting',
     );
   }
 

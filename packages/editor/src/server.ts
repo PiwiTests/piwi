@@ -2055,8 +2055,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
       runHub?.shareWindowChanged(on);
     },
-    notice: (root, severity, message) =>
-      void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
+    notice: (root, severity, message, key) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message, key } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
     rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
     writesCode: () => writesCode,
@@ -2210,11 +2210,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const { ok, message } = stopActions.agentCode(stop, input);
       return { ok, message };
     },
-    notice: (root, message) =>
+    notice: (root, message, key) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, {
         root: root ?? folders[0] ?? '',
         severity: 'information',
         message,
+        key,
       } satisfies Notice),
     command: (ref) => runCommands.get(ref) ?? null,
     startRun: (start) => startAgentRun(start),
