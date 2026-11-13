@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 import { dataUrlBytes, decodeImage, likeness } from '../lib/likeness.mjs';
@@ -65,9 +66,85 @@ describe('the likeness of an image of a page and a screenshot of it', () => {
     assert.ok(squeezed.correlation > 0.95, 'alike but for its shape');
   });
 
+  test('reads a page with only its fields emptied as another', () => {
+    // The page's four fields each hold a line of text, which the image shown does not.
+    const filled = pageImage(800, 460);
+    for (let i = 0; i < 4; i++) {
+      const y0 = Math.floor((0.22 + i * 0.15) * 460);
+      for (let y = y0; y < y0 + 14; y++) {
+        for (let x = 80; x < 240; x += 3) filled.data.set([60, 60, 60, 255], (y * 800 + x) * 4);
+      }
+    }
+    const result = likeness(decodeImage(jpeg(pageImage(800, 460))), decodeImage(png(filled)));
+    assert.equal(result.same, false, JSON.stringify(result));
+  });
+
   test('reads the bytes of a base64 data URL', () => {
     const bytes = jpeg(pageImage(80, 46));
     assert.deepEqual(dataUrlBytes(`data:image/jpeg;base64,${bytes.toString('base64')}`), bytes);
     assert.throws(() => dataUrlBytes('blob:http://x/1'), /not a base64 data URL/);
+  });
+});
+
+/** An image of the showcase's stop, or of the sample app, kept beside the tests. */
+const fixture = (name) => decodeImage(fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url)));
+
+/** `image` with each pixel `paint(x, y, pixel)` returns in place of its own, and the others as they are. */
+function painted(image, paint) {
+  const data = new Uint8Array(image.data);
+  for (let y = 0; y < image.height; y++) {
+    for (let x = 0; x < image.width; x++) {
+      const i = (y * image.width + x) * 4;
+      const pixel = paint(x, y, image.data.subarray(i, i + 4));
+      if (pixel) data.set(pixel, i);
+    }
+  }
+  return { width: image.width, height: image.height, data };
+}
+
+describe("the likeness of the showcase's stop image and its page", () => {
+  // The sample app's checkout, paused at the showcase's stop: its navigation ends 78 pixels down, and its three
+  // fields hold a name, an address and a city.
+  const page = fixture('stop-page.png');
+  const background = [244, 247, 250, 255];
+
+  test('reads the Runs window image of the stop as its page', () => {
+    const result = likeness(fixture('stop-image.jpg'), page);
+    assert.equal(result.same, true, JSON.stringify(result));
+  });
+
+  test('reads the page through a coarse JPEG as the page', () => {
+    const result = likeness(decodeImage(jpeg(page, 20)), page);
+    assert.equal(result.same, true, JSON.stringify(result));
+  });
+
+  test('reads the page blank below its header as another', () => {
+    const result = likeness(
+      painted(page, (x, y) => y >= 78 && background),
+      page,
+    );
+    assert.equal(result.same, false, JSON.stringify(result));
+  });
+
+  test('reads the page cut off halfway down as another', () => {
+    const result = likeness(
+      painted(page, (x, y) => y >= page.height / 2 && background),
+      page,
+    );
+    assert.equal(result.same, false, JSON.stringify(result));
+  });
+
+  test('reads the form with its fields emptied as another', () => {
+    const field = (y) => (y > 253 && y < 293) || (y > 338 && y < 378) || y > 423;
+    const result = likeness(
+      painted(page, (x, y) => x > 45 && x < 500 && field(y) && [255, 255, 255, 255]),
+      page,
+    );
+    assert.equal(result.same, false, JSON.stringify(result));
+  });
+
+  test('reads another page of the sample app as another', () => {
+    const result = likeness(fixture('cart.jpg'), fixture('checkout.jpg'));
+    assert.equal(result.same, false, JSON.stringify(result));
   });
 });
