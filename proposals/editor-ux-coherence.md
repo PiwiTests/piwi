@@ -65,7 +65,9 @@ at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMa
 in a product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and
 VS Code's views (IC8, IC9). Q9: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs and the
 new Reload Piwi (`icons/reload.svg`, JetBrains' too) and Run to the cursor glyphs, at one line weight, so every VS Code
-command draws one (IC1). §14 adds the findings the code that built the plan raised. The live-run study,
+command draws one (IC1). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+the page fills itself holding a long sentence and an address (ST14).
+§14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
 debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
@@ -573,13 +575,6 @@ that do not exist in Rider.** The sentence closes nine comments
 (`PiwiConfigurable.kt:107, 125, 135, 143, 151, 163, 173, 188, 197-198`), and in Rider both files sit under
 `.idea/.idea.<Name>/.idea/` (`Glue.projectFolder`). **(read)** Fix: one comment per storage group, its path computed
 from the project's store directory. ([M10](#m10), [LI11](#li11))
-
-<a id="st14"></a>**ST14. Nothing checks Settings → Tools → Piwi for clipped text: the JetBrains screenshot script has no
-scene of the page.** Its two scenes are the failures and a heal (`apps/jetbrains/scripts/take-screenshots.mjs:499-539`),
-and no test measures the page, whose comments run to three lines (`PiwiConfigurable.kt:185-199`). A label or comment
-that outgrows a 1440×900 window ends in '…' above a horizontal scrollbar, and no run of the script shows it. **(read)**
-Fix: a settings scene with a clipped-text check like the one in
-[extension-localization.md](../adr/extension-localization.md). ([Q5](#q5), [LI11](#li11))
 
 <a id="st15"></a>**ST15. Neither the JetBrains settings page nor its Connect dialogs link to the documentation, and the
 Settings dialog's help button gives nothing for Piwi.** `PiwiConfigurable.kt:34` sets no help topic and no
@@ -1101,7 +1096,7 @@ and the walkthrough's settings step. New switches go through it: `piwi.codeLens`
 `locatorWarnings`, `failingTestTint`, `statusBarAlert` ([HM2](#hm2)), read by the service to filter once for both
 clients. **Lives in** `packages/editor` (FSL). **Replaces** an alphabetical list of code values, scopes that differ per
 editor, comments naming wrong paths in Rider. **Depends on** nothing. **Revisits** no decision; each new key joins the
-list of [1.0-stabilization.md](1.0-stabilization.md) D25 in the pull request that adds it. Steps [Q5](#q5), [M10](#m10).
+list of [1.0-stabilization.md](1.0-stabilization.md) D25 in the pull request that adds it. Step [M10](#m10).
 
 <a id="li12"></a>
 
@@ -1242,7 +1237,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a key on each service notice and Don't Show Again on VS Code's repeated messages, a gear on JetBrains' run balloon, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
@@ -1286,7 +1280,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-The quick wins that stand alone (Q5, Q13, Q27, Q28, Q30), each on its own. Then M1, on which most of the rest
+The quick wins that stand alone (Q13, Q27, Q28, Q30), each on its own. Then M1, on which most of the rest
 builds: the names that still differ (AC7, NF3), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the
 glyphs and the outcome palette that Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
