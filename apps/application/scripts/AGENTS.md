@@ -106,6 +106,7 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
   the browser extension's, the VS Code extension's and the JetBrains plugin's icons (the editors' outline mark among
   them: the plugin's `icons/expui/` and `PiwiIconMappings.json`, VS Code's `media/piwi-icons.woff`, built with
   `svgicons2svgfont`, `svg2ttf` and `ttf2woff` from fills, as an icon font takes no strokes), and
-  `shared/brand-mark.json`.
+  `shared/brand-mark.json`. The font also draws the plugin's `testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg` and
+  `reload.svg` (`ICON_FONT_GLYPHS`): regenerate after editing one.
   Never edit one by hand: change the script and regenerate them all.
 - **The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.**

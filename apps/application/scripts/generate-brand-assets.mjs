@@ -6,11 +6,12 @@
 //
 //   npm run app:generate:brand
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { SVGPathData } from 'svg-pathdata';
 import svg2ttf from 'svg2ttf';
 import { SVGIcons2SVGFontStream } from 'svgicons2svgfont';
 import ttf2woff from 'ttf2woff';
@@ -188,6 +189,7 @@ function samplePath(d) {
       at = [x, y];
     } else if (command === 'Z') {
       run.push(run[0]);
+      at = run[0];
     } else {
       throw new Error(`samplePath: a coordinate where a command was expected in ${d.slice(0, 40)}…`);
     }
@@ -256,6 +258,66 @@ function outlineGlyph() {
     (_, x, y) => `${(+x - IDE_VIEW.x).toFixed(1)} ${(+y - IDE_VIEW.y).toFixed(1)}`,
   );
   return svg({ x: 0, y: 0, w: IDE_VIEW.w, h: IDE_VIEW.h }, `<path d="${d}" fill="#000"/>`, { width: 16, height: 16 });
+}
+
+/**
+ * A glyph the JetBrains plugin draws (`icons/<file>`, strokes on its own grid), as the icon font's: its view mapped
+ * onto the font's square, its paths read as absolute lines and curves, its strokes as fills. Its filled shapes (the
+ * flaky mark's disc) are left out: a font glyph has one color.
+ */
+function pluginGlyph(file) {
+  return svgGlyph(readFileSync(resolve(ROOT, 'apps/jetbrains/src/main/resources/icons', file), 'utf-8'), file);
+}
+
+/**
+ * Run to the cursor in VS Code, which no codicon draws: an arrow running into a text caret, as the JetBrains
+ * platform's own Run to Cursor icon, which the plugin draws in its place.
+ */
+const RUN_TO_CURSOR =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5">' +
+  '<path d="M3.5 12h11"/><path d="M11 8.5l3.5 3.5-3.5 3.5"/><path d="M19 4.5v15"/><path d="M17 4.5h4"/>' +
+  '<path d="M17 19.5h4"/></svg>';
+
+/** An SVG of strokes on a square view (`file` names it in an error), as the icon font's glyph: see `pluginGlyph`. */
+function svgGlyph(source, file) {
+  const [vx, vy, vw, vh] = source
+    .match(/viewBox="([^"]+)"/)[1]
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  if (vw !== vh) throw new Error(`${file}: a glyph's view is square, this one is ${vw} × ${vh}`);
+  const k = IDE_VIEW.w / vw;
+  // The editors' line weight, whatever the drawing's own: the font's glyphs stand side by side.
+  const width = IDE_LINE;
+  const paths = [];
+  for (const [, tag, attributes] of source.matchAll(/<(path|line|circle|ellipse|rect|polyline|polygon)\b([^>]*)>/g)) {
+    const d = tag === 'path' ? attributes.match(/\bd=["']([^"']+)["']/)?.[1] : undefined;
+    const filledOnly = /\bfill=["'](?!none)/.test(attributes) && !/\bstroke=/.test(attributes);
+    if (d) paths.push(d);
+    else if (!filledOnly) throw new Error(`${file}: the font reads strokes drawn as <path d>, not this <${tag}>`);
+  }
+  const fills = paths
+    .map((d) =>
+      strokeAsFill(
+        new SVGPathData(d)
+          .toAbs()
+          .normalizeST()
+          .qtToC()
+          .aToC()
+          .normalizeHVZ(false)
+          .translate(-vx, -vy)
+          .scale(k)
+          .round(100)
+          .encode()
+          .replace(/z/g, 'Z'),
+        width,
+      ),
+    )
+    .join('');
+  return svg({ x: 0, y: 0, w: IDE_VIEW.w, h: IDE_VIEW.h }, `<path d="${fills}" fill="#000"/>`, {
+    width: 16,
+    height: 16,
+  });
 }
 
 /**
@@ -442,9 +504,18 @@ function markData(png) {
   };
 }
 
-// VS Code's product icon font: `$(piwi-mark)` in the status item and the failures view, from the outline mark. Each glyph
-// has a fixed code point, so it keeps its character across runs; the font carries no build time.
-const ICON_FONT_GLYPHS = [{ name: 'piwi-mark', codepoint: 0xe000, svg: outlineGlyph() }];
+// VS Code's product icon font: `$(piwi-mark)` in the status item and the failures view, from the outline mark, and the
+// plugin's glyphs for the commands no codicon draws. Each glyph has a fixed code point, so it keeps its character
+// across runs; the font carries no build time.
+const ICON_FONT_GLYPHS = [
+  { name: 'piwi-mark', codepoint: 0xe000, svg: outlineGlyph() },
+  // The JetBrains plugin's own glyphs, for the commands no codicon draws.
+  { name: 'piwi-flaky', codepoint: 0xe001, svg: pluginGlyph('testFlaky.svg') },
+  { name: 'piwi-pause-watch', codepoint: 0xe002, svg: pluginGlyph('pauseWatch.svg') },
+  { name: 'piwi-stop-live', codepoint: 0xe003, svg: pluginGlyph('stopLive.svg') },
+  { name: 'piwi-reload', codepoint: 0xe004, svg: pluginGlyph('reload.svg') },
+  { name: 'piwi-run-to-cursor', codepoint: 0xe005, svg: svgGlyph(RUN_TO_CURSOR, 'RUN_TO_CURSOR') },
+];
 
 /** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */
 async function iconFont(glyphs) {

@@ -102,21 +102,14 @@ describe("a spec's editor title", () => {
 
 describe("the commands' glyphs", () => {
   const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
-  /** The commands that wait for a glyph Piwi draws: no codicon says what they do. */
-  const awaiting: Record<string, string> = {
-    'piwi.refresh': 'Reload Piwi, a glyph of its own beside Refresh the latest run',
-    'piwi.runToCursor': 'Run to the cursor: VS Code has no codicon for it',
-    'piwi.pauseAndWatch': 'Pause and watch',
-    'piwi.stopSharingRun': 'Share live, crossed out',
-    'piwi.stopSharingWindowLive': 'Share live, crossed out',
-    'piwi.showFlakyTests': 'The flaky mark, as a glyph of the icon font',
-    'piwi.lookIntoFlake': 'The flaky mark, as a glyph of the icon font',
-  };
-
-  test('gives every command a codicon, but those that wait for a glyph Piwi draws', () => {
-    const bare = commands.filter((c) => !c.icon).map((c) => c.command);
-    expect(bare.sort()).toEqual(Object.keys(awaiting).sort());
+  test('gives every command a codicon or a glyph of Piwi’s own', () => {
+    expect(commands.filter((c) => !c.icon).map((c) => c.command)).toEqual([]);
     for (const c of commands.filter((c) => c.icon)) expect(c.icon, c.command).toMatch(/^\$\([a-z-]+\)$/);
+    // A glyph of Piwi's own is one the extension contributes.
+    const own = Object.keys(manifest.contributes.icons);
+    for (const c of commands.filter((c) => c.icon?.startsWith('$(piwi'))) {
+      expect(own, c.command).toContain(c.icon!.slice(2, -1));
+    }
   });
 
   test('draws Piwi’s own glyphs from the icon font the brand asset generator writes', () => {
@@ -125,7 +118,14 @@ describe("the commands' glyphs", () => {
       string,
       { default: { fontPath: string; fontCharacter: string } }
     >;
-    expect(Object.keys(icons)).toEqual(['piwi-mark']);
+    expect(Object.keys(icons)).toEqual([
+      'piwi-mark',
+      'piwi-flaky',
+      'piwi-pause-watch',
+      'piwi-stop-live',
+      'piwi-reload',
+      'piwi-run-to-cursor',
+    ]);
     for (const id of Object.keys(icons)) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
     for (const icon of Object.values(icons)) {
       expect(fs.existsSync(path.resolve(__dirname, '..', icon.default.fontPath)), icon.default.fontPath).toBe(true);
@@ -150,6 +150,8 @@ describe("the commands' glyphs", () => {
       ['piwi.reproduceInDesktop', 'piwi.desktopJob'],
       ['piwi.openTrace', 'piwi.openTraceSoFar'],
       ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
+      ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
+      ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
       // Follow the active editor and Watch a worker's test, still to settle.
       ['piwi.stopFollowingEditor', 'piwi.watchWorker'],
     ];
