@@ -924,8 +924,11 @@ runs the performance check.
 ## Risks
 
 - **Watching becomes observable.** Masking every local image runs on the test's own thread (about 48 ms an image at
-  640 px, 2 a second at most while a masked field shows). A watched test runs slower than an unwatched one. One size
-  per sink bounds it, and masking can move to a worker thread if the budget fails.
+  640 px, and about 170 ms at 1000 × 640 measured on a 4-core VM; 2 a second at most while a masked field shows). A
+  watched test runs slower than an unwatched one. One size per sink bounds it, and masking can move to a worker thread
+  if the budget fails. A masked image is also longer than the frame it replaces at the same quality: `jpeg-js` encodes
+  without chroma subsampling and with its fixed Huffman tables, so a 1000 × 640 image takes about 18 KB even when
+  blank, at any quality, against about 7 to 9 KB for Chrome's frame of a simple page.
 - **More traffic through one server.** A view that follows its lane keeps images flowing for minutes. Hidden views
   close after 10 minutes, and Watch all bounds by bytes.
 - **A local stop reaches the instance as text**, whoever watches: the same class of data as a live step,
