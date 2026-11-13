@@ -256,7 +256,7 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     override fun update(e: AnActionEvent) {
         val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
-        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the latest run in the dashboard"
+        e.presentation.text = live?.let { "Open run #${it.runId} (running)" } ?: "Open the latest run in the dashboard"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -274,8 +274,8 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     }
 }
 
-/** Opens the page of a run started or followed here, on the instance it reports to: `Open Run #78`. */
-class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}", null, AllIcons.General.Web), DumbAware {
+/** Opens the page of a run started or followed here, on the instance it reports to: `Open run #78`. */
+class OpenRunPageAction(private val page: RunPage) : AnAction("Open run #${page.id}", null, AllIcons.General.Web), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {

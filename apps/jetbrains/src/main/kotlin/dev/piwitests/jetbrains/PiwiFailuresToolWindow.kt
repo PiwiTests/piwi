@@ -59,7 +59,7 @@ import javax.swing.tree.TreePath
  * config's (Re-run the failing tests, Compare with…, Open in dashboard, for that config); Next and Previous Occurrence
  * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
  * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, the Group
- * By menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
+ * by menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
  * configurations, Refresh and the settings are in the gear menu. The tab is Failures, and the tool window's icon has a
  * red dot while tests fail.
  */

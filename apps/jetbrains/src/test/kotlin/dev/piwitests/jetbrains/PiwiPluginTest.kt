@@ -130,14 +130,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
     }
 
-    /** Every action's text is in sentence case, as the VS Code extension's: a capital only first or in a proper noun. */
+    /**
+     * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
+     * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.
+     */
     fun testEveryActionsTextIsInSentenceCase() {
         val actions = ActionManager.getInstance()
-        val proper = setOf("Piwi", "Picker", "Playwright", "MCP", "Claude", "Code", "Cursor", "Node.js", "CI", "I")
+        val proper = listOf("Piwi Picker", "Claude Code", "Flake Lab", "Piwi", "Playwright", "MCP", "Cursor", "Node.js", "CI", "Rider", "I")
         for (id in actions.getActionIdList("Piwi.")) {
             val text = actions.getAction(id).templatePresentation.text ?: continue
-            val words = text.removePrefix("Piwi: ").split(' ').drop(1)
-            val capitals = words.filter { it.firstOrNull()?.isUpperCase() == true && it.trimEnd('…', '?') !in proper }
+            val sentence = text.removePrefix("Piwi: ")
+            assertTrue("$id: $text", sentence.first().isUpperCase())
+            val rest = proper.fold(sentence.substringAfter(' ', "")) { s, noun -> s.replace(Regex("(?<!\\w)${Regex.escape(noun)}(?!\\w)"), "") }
+            val capitals = rest.split(' ').filter { word -> word.trimStart('(', '\'', '"').firstOrNull()?.isUpperCase() == true }
             assertTrue("$id: $text", capitals.isEmpty())
         }
     }
