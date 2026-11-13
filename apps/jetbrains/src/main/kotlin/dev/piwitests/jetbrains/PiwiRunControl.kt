@@ -152,7 +152,7 @@ import javax.swing.text.DefaultHighlighter
  * marked as the execution point (a range highlighter in [EXECUTION_POINT], the debugger's colors by default, with an
  * arrow in the gutter, a failure's icon at a failure, whose click offers the controls), with a block inlay above it
  * saying what is about to run, or how the test failed, and offering **Resume**, **Step**, **Run to caret** and
- * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a locator**, **Record here**,
+ * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a locator**, **Record**,
  * **Assert**, **Assert a region**, **Mock a request**); a stop no pause bar shows (a headless run's) shows an image of
  * its page in the Piwi tool window's **Paused page** tab, where a click picks the element under it (`piwi/pickAt`)
  * when its worker takes it. The code a stop makes (`piwi/stopCode`) is written in one
@@ -162,8 +162,8 @@ import javax.swing.text.DefaultHighlighter
  * run's start filters them. A run's lines are those of the documents as they stood when it started: the edits since
  * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
  * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
- * and debug runs it follows too. **Share the run live** shares a run on the team instance its reporter reports to
- * (`piwi/shareRun`), after a warning the first time in the project, and **Stop sharing the run live…** ends it;
+ * and debug runs it follows too. **Share the run live on the team instance** shares a run on the team instance its reporter reports to
+ * (`piwi/shareRun`), after a warning the first time in the project, and **Stop sharing the run live** ends it;
  * the status bar says how a shared run stands. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
@@ -1757,7 +1757,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     .addAction(NotificationAction.createSimpleExpiring("Copy the run page's link") {
                         CopyPasteManager.getInstance().setContents(StringSelection(page))
                     })
-                    .addAction(NotificationAction.createSimpleExpiring("Stop sharing…") { shareLive(false, ref) })
+                    .addAction(NotificationAction.createSimpleExpiring("Stop sharing") { shareLive(false, ref) })
                     .notify(project)
             }
         }
@@ -1930,7 +1930,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun share(stop: Glue.ShownStop) {
         val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
-        val yes = MessageDialogBuilder.yesNo("Share the stopped browser with Playwright tools?", Glue.SHARE_WARNING)
+        val yes = MessageDialogBuilder.yesNo("Share the stopped test's browser with Playwright tools?", Glue.SHARE_WARNING)
             .yesText("Share")
             .noText("Cancel")
             .ask(project)
@@ -3328,7 +3328,7 @@ class ResumeRunAction : StopControlAction(Glue.StopControl.RESUME) {
 /** **Step**: the stopped test stops again before its next call. */
 class StepRunAction : StopControlAction(Glue.StopControl.STEP)
 
-/** **Run to caret**: the stopped test stops at the first call on the caret's line, or at a breakpoint before it. */
+/** **Run to the caret**: the stopped test stops at the first call on the caret's line, or at a breakpoint before it. */
 class RunToCaretAction : StopControlAction(Glue.StopControl.RUN_TO_CARET)
 
 /** **Finish**: the stopped test runs on without stopping at a breakpoint again in this attempt. */
@@ -3446,7 +3446,7 @@ abstract class StopCodeAction(private val action: Glue.StopAction) : RunControlA
 /** **Pick a locator**: the pause bar's pick in the test's window, the locator replacing the one on the stopped line. */
 class PickAtStopAction : StopCodeAction(Glue.StopAction.PICK)
 
-/** **Record here**: what is done in the test's window, recorded above the stopped line. */
+/** **Record at the stop**: what is done in the test's window, recorded above the stopped line. */
 class RecordAtStopAction : StopCodeAction(Glue.StopAction.RECORD)
 
 /** **Assert**: a check of an element in the test's window, written above the stopped line. */
@@ -3459,7 +3459,7 @@ class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
 class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
 
 /**
- * **Share the run live**: the run on the team instance its reporter reports to, for anyone who can open it there, once
+ * **Share the run live on the team instance**: the run on the team instance its reporter reports to, for anyone who can open it there, once
  * the person said yes to what it sends (the first time in the project since it opened); a run that cannot be shared
  * says why.
  */
@@ -3489,7 +3489,7 @@ class HoldFailuresAction : RunControlAction() {
     }
 }
 
-/** **Stop sharing the run live…**: once the person confirms, the views of the run on the team instance end, and nothing more goes there. */
+/** **Stop sharing the run live**: once the person confirms, the views of the run on the team instance end, and nothing more goes there. */
 class StopSharingRunAction : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.liveShared
 
@@ -3515,7 +3515,7 @@ class ShareWindowLiveAction : AnAction(), DumbAware {
     }
 }
 
-/** **Stop sharing this project's runs live…**: once the person confirms, every shared run of the project stops being shared. */
+/** **Stop sharing this project's runs live**: once the person confirms, every shared run of the project stops being shared. */
 class StopSharingWindowLiveAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -3542,7 +3542,7 @@ class ShowBrowserAction : RunControlAction() {
 }
 
 /**
- * **Share the stopped browser with Playwright tools**: the stop at the caret's line among those whose reporter takes it,
+ * **Share the stopped test's browser with Playwright tools**: the stop at the caret's line among those whose reporter takes it,
  * else the only one, else the one chosen, shared once the person said yes to the warning, until its test ends.
  */
 class ShareWithPlaywrightAction : RunControlAction() {

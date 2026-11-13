@@ -129,11 +129,11 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
-test('a spec’s editor title offers Record here, and its Run button the spec’s runs', async () => {
+test('a spec’s editor title offers Record here…, and its Run button the spec’s runs', async () => {
   await clearNotifications(page);
   await openFile(page, SPEC_FILE);
   const actions = page.locator('.editor-actions');
-  await expect(actions.getByRole('button', { name: 'Record here' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'Record here…' })).toBeVisible();
   await actions
     .getByRole('button', { name: /More Actions|Run or Debug/ })
     .first()

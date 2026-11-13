@@ -17,16 +17,15 @@ second of its end.
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
-  on a spec, and under VS Code's editor title Run button (**Run the test at the caret** and **Run this spec** in a
-  JetBrains IDE). Both save the spec first. **Run** in VS Code's test hover runs it, as
+  on a spec, and under VS Code's editor title Run button (the caret in a JetBrains IDE). Both save the spec first. **Run** in VS Code's test hover runs it, as
   [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know yet, such as one you just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
   (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the test at the caret ×3**) runs that test three times as a
   [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
-  [code reach](/features/code-reach); also in the editor's **Piwi** submenu.
-- **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
+  [code reach](/features/code-reach); also in the editor's and the file tree's **Piwi** submenu.
+- **Piwi: Run a saved selection…** runs a [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
 folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** starts it again), in the Run tool
@@ -113,7 +112,7 @@ while the event stream is connected, `· read every minute` without it).
 
 In VS Code, a click reads the latest run and its failures again (**Piwi: Refresh the latest run**), without the indexes
 **Reload Piwi** fetches, and the tooltip ends with **Open run #120**, **Open in dashboard**, **Compare with…** and
-**Connect**. When the extension is not connected, the item says why, and a click runs **Piwi: Connect**, or retries an
+**Connect**. When the extension is not connected, the item says why, and a click runs **Piwi: Connect…**, or retries an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or of
@@ -128,4 +127,4 @@ run**, **Reload Piwi** for an unreachable instance or a desktop app to restart, 
 - [Failures in the editor](./editor-failures): the failures a run leaves, at their lines and in the failures view.
 - [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
-- [Test selection](/features/test-selection): the saved selections **Run selection…** runs.
+- [Test selection](/features/test-selection): the selections **Run a saved selection…** runs.

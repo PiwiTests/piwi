@@ -10,12 +10,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiFile
 
 /**
- * **Piwi: Record here** under Alt+Enter, at the bottom of the list: the same recording as the Record here action, at
+ * **Piwi: Record here…** under Alt+Enter, at the bottom of the list: the same recording as the Record here action, at
  * the caret, in a JavaScript or TypeScript file under one of the project's Playwright config folders. It opens the
  * recording's questions once the intention list has closed, and changes nothing itself.
  */
 class RecordHereIntention : IntentionAction, LowPriorityAction, DumbAware {
-    override fun getText(): String = "Piwi: Record here"
+    override fun getText(): String = "Piwi: Record here…"
 
     override fun getFamilyName(): String = "Piwi: Record here"
 

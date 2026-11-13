@@ -119,7 +119,7 @@
     "viewsWelcome": [
       {
         "view": "piwi.failures",
-        "contents": "Piwi is not connected to an instance, so it has no run to show.\n[Connect](command:piwi.connect)",
+        "contents": "Piwi is not connected to an instance, so it has no run to show.\n[Connect…](command:piwi.connect)",
         "when": "piwi.failuresView == disconnected"
       },
       {
@@ -157,7 +157,7 @@
           {
             "id": "connect",
             "title": "Connect to your Piwi instance",
-            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already.\n[Connect](command:piwi.connect)",
+            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already.\n[Connect…](command:piwi.connect)",
             "media": {
               "markdown": "walkthrough/connect.md"
             },
@@ -194,7 +194,7 @@
           {
             "id": "record",
             "title": "Record a test",
-            "description": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the cursor. No instance needed.\n[Record a new test file](command:piwi.recordFile)",
+            "description": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the cursor. No instance needed.\n[Record a new test file…](command:piwi.recordFile)",
             "media": {
               "markdown": "walkthrough/record.md"
             },
@@ -231,7 +231,7 @@
     "commands": [
       {
         "command": "piwi.connect",
-        "title": "Connect",
+        "title": "Connect…",
         "icon": "$(plug)",
         "category": "Piwi"
       },
@@ -303,7 +303,7 @@
       },
       {
         "command": "piwi.runSelection",
-        "title": "Run selection…",
+        "title": "Run a saved selection…",
         "icon": "$(checklist)",
         "category": "Piwi"
       },
@@ -333,7 +333,7 @@
       },
       {
         "command": "piwi.holdFailures",
-        "title": "Hold failures: turn on or off for the run",
+        "title": "Turn hold failures on or off for the run",
         "category": "Piwi",
         "icon": "$(debug-breakpoint-unsupported)"
       },
@@ -345,13 +345,13 @@
       },
       {
         "command": "piwi.copyMcpConfiguration",
-        "title": "Copy the MCP server configuration",
+        "title": "Copy the MCP server configuration…",
         "icon": "$(copy)",
         "category": "Piwi"
       },
       {
         "command": "piwi.copyRunsMcpConfiguration",
-        "title": "Copy the runs' MCP server configuration for agents",
+        "title": "Copy the runs' MCP server configuration for agents…",
         "icon": "$(copy)",
         "category": "Piwi"
       },
@@ -417,7 +417,7 @@
       },
       {
         "command": "piwi.toggleCoverage",
-        "title": "Toggle the coverage marks",
+        "title": "Show or hide the coverage marks",
         "icon": "$(run-coverage)",
         "category": "Piwi"
       },
@@ -465,13 +465,13 @@
       },
       {
         "command": "piwi.record",
-        "title": "Record here",
+        "title": "Record here…",
         "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordFile",
-        "title": "Record a new test file",
+        "title": "Record a new test file…",
         "icon": "$(new-file)",
         "category": "Piwi"
       },
@@ -525,13 +525,13 @@
       },
       {
         "command": "piwi.finishRun",
-        "title": "Finish the test without stopping again",
+        "title": "Finish the test",
         "category": "Piwi",
         "icon": "$(debug-step-out)"
       },
       {
         "command": "piwi.endTest",
-        "title": "End the test here, skipping the rest of it",
+        "title": "End the test",
         "category": "Piwi",
         "icon": "$(circle-slash)"
       },
@@ -561,31 +561,31 @@
       },
       {
         "command": "piwi.pickAtStop",
-        "title": "Pick a locator in the stopped test's page",
+        "title": "Pick a locator at the stop",
         "icon": "$(target)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordAtStop",
-        "title": "Record in the stopped test's page",
+        "title": "Record at the stop",
         "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertAtStop",
-        "title": "Assert in the stopped test's page",
+        "title": "Assert at the stop",
         "icon": "$(pass)",
         "category": "Piwi"
       },
       {
         "command": "piwi.assertRegionAtStop",
-        "title": "Assert a region of the stopped test's page",
+        "title": "Assert a region at the stop",
         "icon": "$(screen-full)",
         "category": "Piwi"
       },
       {
         "command": "piwi.mockAtStop",
-        "title": "Mock a request of the stopped test",
+        "title": "Mock a request at the stop…",
         "icon": "$(arrow-swap)",
         "category": "Piwi"
       },
@@ -653,6 +653,10 @@
     "submenus": [
       {
         "id": "piwi.editorContext",
+        "label": "Piwi"
+      },
+      {
+        "id": "piwi.explorerContext",
         "label": "Piwi"
       }
     ],
@@ -1163,6 +1167,30 @@
           "command": "piwi.resumeRecording",
           "group": "3_recording@3",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
+        }
+      ],
+      "explorer/context": [
+        {
+          "submenu": "piwi.explorerContext",
+          "group": "piwi@1",
+          "when": "piwi.active && resourceScheme =~ /^(file|vscode-remote)$/"
+        }
+      ],
+      "piwi.explorerContext": [
+        {
+          "command": "piwi.runSpec",
+          "group": "1_run@1",
+          "when": "!explorerResourceIsFolder && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runTestsForFile",
+          "group": "1_run@2",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|html|json|yaml|yml|properties|po|resx|cs|cshtml|razor)$/"
+        },
+        {
+          "command": "piwi.recordFile",
+          "group": "2_record@1",
+          "when": "!piwi.recording"
         }
       ]
     },

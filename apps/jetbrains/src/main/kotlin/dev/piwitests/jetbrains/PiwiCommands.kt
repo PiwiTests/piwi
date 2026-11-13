@@ -398,7 +398,7 @@ object PiwiCommands {
      * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
      * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone. One
      * saying the service does not run or did not answer is a warning, a problem, and offers Restart the editor service
-     * and Open log.
+     * and Open the log.
      */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
         val fixes = Glue.offersServiceFixes(message)

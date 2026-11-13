@@ -771,7 +771,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * The status bar's menu on a share leads with the run page, its link and Stop sharing…, which stops the share only
+     * The status bar's menu on a share leads with the run page, its link and Stop sharing, which stops the share only
      * once the person confirms; while a test is stopped, the share's entries follow the run's controls.
      */
     fun testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking() {
@@ -784,7 +784,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         fun entries() = statusBar.actions().getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }
         val first = entries().take(3)
         assertEquals(
-            listOf("Open the run page", "Copy the run page's link", "Stop sharing the run…"),
+            listOf("Open the run page", "Copy the run page's link", "Stop sharing the run"),
             first.map { it.templatePresentation.text },
         )
         // The run's page is offered once.
@@ -812,7 +812,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(stopped("ed-live", file, 3, bar = true, since = "2026-10-25T10:00:04.000Z").copy(live = RunLive(true, null, page, 1)))
         statusBar.update()
         val labels = entries().map { it.templatePresentation.text }
-        assertTrue(labels.indexOf("Stop sharing the run…") > labels.indexOf("Stop the run"))
+        assertTrue(labels.indexOf("Stop sharing the run") > labels.indexOf("Stop the run"))
     }
 
     /**

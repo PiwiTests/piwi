@@ -100,7 +100,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
     fun testAltEnterOffersARecordingAndChangesNothingItself() {
         myFixture.configureByText("intention.spec.ts", "test('t', async ({ page }) => {\n  <caret>\n});\n")
         val intention = RecordHereIntention()
-        assertEquals("Piwi: Record here", intention.text)
+        assertEquals("Piwi: Record here…", intention.text)
         assertFalse(intention.startInWriteAction())
         assertTrue(com.intellij.codeInsight.intention.IntentionManager.getInstance().availableIntentions.any { it is RecordHereIntention ||
             (it as? com.intellij.codeInsight.intention.IntentionActionDelegate)?.delegate is RecordHereIntention })

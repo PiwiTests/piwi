@@ -63,7 +63,7 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
-/** Piwi: Record here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
+/** Piwi: Record here… — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

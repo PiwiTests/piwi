@@ -223,7 +223,7 @@ the service pushes the marks it moved. The service's hover names the tests behin
 mean, since VS Code shows no hover on a decoration's border. What the service computes:
 [Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
 
-**Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
+**Piwi: Show or hide the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
 (`piwi.coverageShown`, shown by default). The command is in the palette only once a file showed marks
 (`piwi.hasCoverage`), so a workspace without coverage shows nothing of it.
 
@@ -268,7 +268,7 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
   reveals the active file's first failure. It is in the title's `…` menu, worded by its state, with **Connect**,
   **Open settings** and **Open the log**; the run's actions are the title's icons.
 - The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
-  Group by…, Run selection…, Run the tests that reach this file) show in the palette and the view's title only while a
+  Group by…, Run a saved selection…, Run the tests that reach this file) show in the palette and the view's title only while a
   context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance
   that does not answer, with **Retry**, one still being read, or `NOT_CONNECTED` with **Connect**. Re-run the failing
   tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
@@ -323,7 +323,9 @@ folder and environment.
 
 Three commands, in the palette, in the **Piwi** submenu of the editor's context menu on a spec
 (`piwi.editorContext` in `contributes.submenus`, the same sections in the same order as the JetBrains plugin's
-`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button
+`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button; the explorer's
+**Piwi** submenu (`piwi.explorerContext`) runs a spec or the tests that reach a file, and records a new test file in a
+folder or beside a file, as the JetBrains project view's does
 (`editor/title/run`), the spec first. The title also holds one Piwi button by state (`editor/title`): Stop recording
 while a recording runs, else Resume at a stop, else Record here on a spec, and in its `…` menu the run's other
 controls and the recording's, each as the palette offers it. Each button has a glyph no other command has, but Record
@@ -345,7 +347,7 @@ on.
 Every test run takes the person's start options (`withRunStart` in `src/glue.ts`, `RunStartOptions`), read from
 `piwi.runHeaded` and `piwi.runHoldFailures` at each run: `headed: true` when Run headed is on, `holdFailures` when Hold
 failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
-Testing view's and Verify ×3 included, and **Run selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
+Testing view's and Verify ×3 included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
 **Piwi: Run options…** (`piwi.runOptions`) changes them in a QuickPick, writing the workspace's settings when they hold a
 value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
 
@@ -354,7 +356,7 @@ value (`runOptionTarget`), else the user's, and the status bar item's tooltip en
 Every test run passes the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows
 (on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
 **Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
-tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
+tests**) and **Run a saved selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
 a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). A run with breakpoints stays headless unless
 **Run headed** is on ([How a run starts](#how-a-run-starts)) or the service makes it headed for a reporter that stops at
 none headless (`breakpointRunHeaded`), and its stops show in the editor as any headless stop does.
@@ -649,11 +651,11 @@ counts the window's runs from the same events, with or without an instance.
   a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
-  linking it, **Piwi: Restart the editor service** and **Piwi: Connect**;
+  linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Reload Piwi**; the service also reads it again as the restarted app rewrites its discovery
   file;
-- not connected: **Piwi: Connect**;
+- not connected: **Piwi: Connect…**;
 - the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
   (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
   tooltip offering **Open the log**;
@@ -773,9 +775,9 @@ service's reference.
 
 `src/recording.ts` records a test from the editor.
 
-- **Piwi: Record here** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
+- **Piwi: Record here…** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
   test, function and class it records a new `test`; anywhere else, `steps` there.
-- **Piwi: Record a new test file** creates a spec first (`file`), next to the active test file or in the config's
+- **Piwi: Record a new test file…** creates a spec first (`file`), next to the active test file or in the config's
   `testDir`.
 
 The start page and the page expression (asked when there are several candidates) are kept in workspace state, with the
@@ -882,7 +884,7 @@ ring. The API `activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect
 
-**Piwi: Connect** (`connect` in `src/extension.ts`):
+**Piwi: Connect…** (`connect` in `src/extension.ts`):
 
 1. When the desktop app runs, it first lists the app beside the instance the workspace names (`connectChoices` in
    `src/glue.ts`).

@@ -126,6 +126,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/context.ts`: one Playwright config of the workspace (`PiwiContext`): its connection, project, branch and cached
   indexes.
 - `src/workspace.ts`: the configs the workspace holds and the git reads (`committedTextAt`, `mergeBase`, `headFiles`).
+- `src/actions.ts`: the editors' action catalog: each action's VS Code command id, JetBrains action ids and title,
+  which `tests/actions.test.ts` holds both manifests to.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).

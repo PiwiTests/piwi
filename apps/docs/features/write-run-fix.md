@@ -25,7 +25,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 
 | Step | In the editor | Outside the editor | Read on |
 |---|---|---|---|
-| Write the test | **Record a new test file**, or **Record here** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
+| Write the test | **Record a new test file…**, or **Record here…** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
 | Run it | **Run with Piwi** from the gutter, the Testing view or the test at the cursor; **Verify ×3** | the desktop app's **Re-run** of tests | [Runs from the editor](./editor-runs), [Desktop app runs](./desktop-runs) |
 | Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Live view of a run](./live-view), [Runs window](./runs-window) |
 | Stop it | a breakpoint, **Pause**, **Step**, **Run to cursor** | the pause bar in the test's page | [Breakpoints in the browser](./editor-breakpoints), [Pause and step from the editor](./editor-run-control) |
@@ -34,7 +34,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 
 ## Write it
 
-**Record a new test file** offers the spec beside the one you are in, else in the config's `testDir`, and writes what
+**Record a new test file…** offers the spec beside the one you are in, else in the config's `testDir`, and writes what
 you do in the browser as a test, with locators verified on the page and the page objects of your suite where they
 match. **Record here** writes steps at the cursor, in a test, a page object or a helper. A flow recorded in Piwi Picker
 lands at the cursor the same way through **Send to editor**: at the top level of a spec, as a new test.

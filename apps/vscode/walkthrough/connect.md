@@ -4,7 +4,7 @@ A workspace set up for the Piwi reporter needs nothing more: the extension reads
 and `PIWI_PROJECT_NAME` from the environment or from the `.env` next to the Playwright config. With none of them, it
 uses the Piwi desktop app while it runs.
 
-Otherwise, **Piwi: Connect**:
+Otherwise, **Piwi: Connect…**:
 
 1. lists the desktop app when it runs, or asks for the instance's address, such as `https://piwi.example.com`;
 2. signs you in with the browser, which creates an API key for this editor, or takes a key you paste;

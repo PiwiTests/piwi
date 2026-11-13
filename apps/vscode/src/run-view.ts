@@ -7,7 +7,7 @@
  * keys; End the test has no key). A stop opens its file at its line, taking the focus only as the first stop shown or
  * one of the worker slot the person is on, else beside the editor in use (`StopsShown`), marked as the execution point
  * (an arrow in the gutter and the line's background), with a CodeLens above it saying what is about to run, or how the
- * test failed, and offering the controls and the code actions its worker takes there (Pick a locator, Record here,
+ * test failed, and offering the controls and the code actions its worker takes there (Pick a locator, Record,
  * Assert, Assert a region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the
  * `piwi.runCan…` context keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image
  * of its page in a webview beside the editor, which keeps the stop it shows while that stop is held, and where a click
