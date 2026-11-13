@@ -83,7 +83,9 @@ Stop recording with a ring around a square, and a recording's gutter mark and ba
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
 recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
 `status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
-tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4); both editors tint a failing test, its failing line and a recording in
+`STATUS_COLORS`' failed and running fills, the JetBrains schemes blending them over classic Default's or Darcula's background, and VS Code's
+held failure's arrow takes the failed fill (LI3). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
@@ -895,8 +897,8 @@ any. Steps [M4](#m4).
 `STATUS_COLORS` (`apps/application/shared/status-colors.ts`) and the dashboard's `getStatusIcon` shapes become every
 tool's outcome marks, plus the states only the editors draw: unknown, paused, held failure, recording. Each tool
 restates them, VS Code's `media/test-*.svg`, the JetBrains plugin's flaky and running marks and Piwi Picker's dots so
-far, the desktop tray's dot and Piwi Picker's waiting count, and `status-mark-colors.test.ts` holds every copy; the held
-failure's execution point and both JetBrains color schemes are still to join it. A script writing the copies was dropped: a test holds them as well, with
+far, the desktop tray's dot, Piwi Picker's waiting count, both editors' failing and recording tints and the held
+failure's arrow, and `status-mark-colors.test.ts` holds every copy. A script writing the copies was dropped: a test holds them as well, with
 less machinery. **Lives in** `apps/application` and each tool's assets (FSL); the status palette never moves into core,
 where `COVERAGE_MARK_COLORS` stays with its changed and uncovered-change colors. **Replaces** the tray's own palette, an
 amber paused that means did not run elsewhere. **Depends on** nothing. **Revisits**
@@ -1174,7 +1176,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): the glyphs Appendix A still marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [LR14](#lr14) |
-| <a id="m5"></a>M5 | **The rest of one outcome palette** ([LI3](#li3)): both JetBrains color schemes and the held failure's execution point held to `STATUS_COLORS` by `status-mark-colors.test.ts`, and the running ring animated | `ide` | [TL5](#tl5) |
+| <a id="m5"></a>M5 | **The running ring animated** ([LI3](#li3)) where the gutter allows it (§13, question 3) | `ide` | [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
