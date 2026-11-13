@@ -1,6 +1,7 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.util.Disposer
@@ -176,6 +177,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
      * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
      * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.
      */
+    fun testEveryIconKeyOfTheFailuresTreeHasItsGlyph() {
+        // The keys the editor service sends (`FailureTreeIcon`), each drawn, and none drawn that it never sends.
+        val protocol = java.io.File("../../packages/editor/src/protocol.ts").readText()
+        val union = Regex("export type FailureTreeIcon =([^;]+);").find(protocol)!!.groupValues[1]
+        val keys = Regex("'([a-z-]+)'").findAll(union).map { it.groupValues[1] }.toSet()
+        assertEquals(keys, PiwiIcons.FAILURE_NODES.keys)
+        // The groupings draw what they group, not folders.
+        assertSame(PiwiIcons.CLUSTER, PiwiIcons.FAILURE_NODES["cluster"])
+        assertFalse(listOf("file", "cluster", "owner").any { PiwiIcons.FAILURE_NODES[it] == AllIcons.Nodes.Folder })
+    }
+
     fun testEveryActionsTextIsInSentenceCase() {
         val actions = ActionManager.getInstance()
         val proper = listOf("Piwi Picker", "Claude Code", "Flake Lab", "Piwi", "Playwright", "MCP", "Cursor", "Node.js", "CI", "Rider", "I")

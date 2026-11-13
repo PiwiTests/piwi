@@ -127,6 +127,7 @@ tasks {
         systemProperty("piwi.editor.server", languageServer.asFile.absolutePath)
         // Files of the editor service the tests read: a change to one runs them again, past the build cache.
         inputs.file("../../packages/editor/src/connect-failures.json").withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.file("../../packages/editor/src/protocol.ts").withPathSensitivity(PathSensitivity.RELATIVE)
         inputs.file(languageServer).optional().withPathSensitivity(PathSensitivity.RELATIVE)
     }
     // WebStorm 2024.1's Swagger plugin declares a test service whose class ships with its own tests only.

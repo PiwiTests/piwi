@@ -27,6 +27,28 @@ object PiwiIcons {
      */
     val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
 
+    /** A failure cluster, as the dashboard and VS Code draw one: Lucide's `layers`. */
+    val CLUSTER: Icon = IconLoader.getIcon("/icons/layers.svg", PiwiIcons::class.java)
+
+    /**
+     * The glyph of each icon key of the failures tree (`FailureTreeIcon` in the editor service's protocol), as VS Code's
+     * `FAILURE_ICONS` draws the same nodes; `PiwiPluginTest` holds it to the protocol's keys.
+     */
+    val FAILURE_NODES: Map<String, Icon> = mapOf(
+        "context" to AllIcons.Nodes.Module,
+        "run" to AllIcons.RunConfigurations.TestState.Run,
+        "history" to AllIcons.Vcs.History,
+        "failed" to FAILED,
+        "failing" to FAILED,
+        "passed" to AllIcons.RunConfigurations.TestPassed,
+        "fixed" to AllIcons.RunConfigurations.TestPassed,
+        "edited" to AllIcons.Actions.Edit,
+        "file" to AllIcons.FileTypes.Any_type,
+        "cluster" to CLUSTER,
+        "owner" to AllIcons.General.User,
+        "flaky" to FLAKY,
+    )
+
     /** A test's outcome as its line's result icon draws it, which the CI run tab draws too. */
     fun outcome(status: String?): Icon = when (status) {
         "failed" -> FAILED

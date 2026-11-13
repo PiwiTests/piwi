@@ -603,7 +603,7 @@ export interface FailureNode {
   children: FailureNode[];
 }
 
-/** The codicon of each icon of the service's tree. */
+/** The codicon of each icon of the service's tree, as the JetBrains plugin's `PiwiIcons.FAILURE_NODES` draws it. */
 const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   context: 'root-folder',
   run: 'beaker',
@@ -611,7 +611,7 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   failed: 'error',
   passed: 'pass',
   file: 'file',
-  cluster: 'symbol-namespace',
+  cluster: 'layers',
   owner: 'person',
   failing: 'error',
   edited: 'edit',
