@@ -11,11 +11,12 @@ import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * What watching a running test costs its worker, in a real Playwright run through the built package: one worker runs
- * the same test on the same pages twice, unwatched, then with a fake editor service watching its lane (`view-lane`),
- * as Piwi Picker's Runs window does when a person clicks Watch on a running row. Each test measures its worker's CPU
- * time (`process.cpuUsage`) over the same stretch of wall time, on a page that paints all the time, then on one that
- * also shows a typed password field, which every image is masked for. The watched test's CPU time stays within its
- * page's `BUDGET_MS_PER_S` of the unwatched one's, per second of the stretch.
+ * a test on each page unwatched, then the same tests with a fake editor service watching its lane (`view-lane`), as
+ * Piwi Picker's Runs window does when a person clicks Watch on a running row. The pages are one that paints all the
+ * time and the same with a typed password field, which every image is masked for. Each test measures its worker's CPU
+ * time (`process.cpuUsage`) over the same stretch of wall time on its page. Unwatched, a page's test stays within
+ * `UNWATCHED_MS_PER_S`, and sends no frame; watched, it sends frames, and its CPU time stays within its page's
+ * `BUDGET_MS_PER_S` of the unwatched one's, per second of the stretch.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -31,11 +32,20 @@ const SETTLE_MS = 500;
 const MEASURE_MS = 3000;
 /**
  * The most CPU time watching adds to the worker, in ms a second of the measured stretch, by page. On a 4-core Linux
- * machine, idle or with every core kept busy by other processes, it measured at most 160 on the painting page (10
- * frames a second) and 350 on the masked page (2 images a second at most, each decoded, painted and encoded again at
- * 1000 by 640 pixels); masking every image the masked page paints measured 840 to 920.
+ * machine, idle or with every core kept busy by other processes, it measured 150 to 235 on the painting page (10
+ * frames a second) and 230 to 350 on the masked page (2 images a second at most, each decoded, painted and encoded
+ * again at 1000 by 640 pixels); masking every image the masked page paints measured 840 to 920.
  */
 const BUDGET_MS_PER_S = { animated: 400, masked: 600 } as const;
+/**
+ * The most CPU time the worker spends on a page's test unwatched, in ms a second of the stretch: it measured 10 at
+ * most on the same machine, the worker waiting while the browser paints.
+ */
+const UNWATCHED_MS_PER_S = 100;
+/** The fewest frames a watched page's test sends over its stretch: one a second. */
+const MIN_FRAMES = MEASURE_MS / 1000;
+const PAGES = ['animated', 'masked'] as const;
+const WATCHES = ['unwatched', 'watched'] as const;
 
 /** A page that paints all the time. */
 const ANIMATED = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; font: 16px sans-serif }
@@ -59,12 +69,13 @@ async function measure(page, route) {
   const used = process.cpuUsage(cpu);
   return { cpuMs: (used.user + used.system) / 1000, wallMs: performance.now() - wall };
 }
-for (const title of ['unwatched', 'watched']) {
-  test(title, async ({ page }) => {
-    const animated = await measure(page, '/animated');
-    const masked = await measure(page, '/masked');
-    fs.writeFileSync(require('node:path').join(__dirname, '..', title + '.json'), JSON.stringify({ animated, masked }));
-  });
+for (const watch of ${JSON.stringify(WATCHES)}) {
+  for (const route of ${JSON.stringify(PAGES)}) {
+    test(watch + ' ' + route, async ({ page }, testInfo) => {
+      const measured = await measure(page, '/' + route);
+      fs.writeFileSync(require('node:path').join(__dirname, '..', testInfo.title + '.json'), JSON.stringify(measured));
+    });
+  }
 }
 `;
 
@@ -76,7 +87,9 @@ module.exports = class {
 };
 `;
 
-type Measured = Record<'animated' | 'masked', { cpuMs: number; wallMs: number }>;
+type Page = (typeof PAGES)[number];
+type Watch = (typeof WATCHES)[number];
+type Measured = Record<Page, { cpuMs: number; wallMs: number }>;
 
 let server: FakeServer;
 let hub: net.Server;
@@ -85,10 +98,10 @@ let socket: net.Socket | null = null;
 const heard: RunToHub[] = [];
 /** The test the worker runs, by Playwright's id. */
 const titles: Record<string, string> = {};
-/** How many lane frames the editor heard of each test, by title. */
+/** How many lane frames the editor heard of each test, by title (`<watch> <page>`). */
 const frames: Record<string, number> = {};
 let tests: Array<{ title: string; status: string }> = [];
-let measured: Record<'unwatched' | 'watched', Measured> | null = null;
+let measured: Record<Watch, Measured> | null = null;
 let output = '';
 
 let requests = 0;
@@ -96,10 +109,12 @@ function ask(message: Record<string, unknown> & { what: string }): void {
   socket!.write(`${JSON.stringify({ type: 'request', request: ++requests, ...message } as HubToRun)}\n`);
 }
 
-/** The editor's side: the lane watched from the end of the unwatched test on. */
+/** The editor's side: the lane watched from the end of the last unwatched test on. */
 function onMessage(message: RunToHub): void {
   if (message.type === 'test-begin') titles[message.testId] = message.title[message.title.length - 1]!;
-  if (message.type === 'test-end' && titles[message.testId] === 'unwatched') ask({ what: 'view-lane', on: true });
+  if (message.type === 'test-end' && titles[message.testId] === `unwatched ${PAGES[PAGES.length - 1]}`) {
+    ask({ what: 'view-lane', on: true });
+  }
   if (message.type === 'lane-frame' && 'data' in message && message.test) {
     const title = titles[message.test]!;
     frames[title] = (frames[title] ?? 0) + 1;
@@ -185,8 +200,9 @@ module.exports = defineConfig({
   });
   const results = path.join(project, 'results.json');
   tests = fs.existsSync(results) ? JSON.parse(fs.readFileSync(results, 'utf8')) : [];
-  if (tests.every((t) => t.status === 'passed')) {
-    measured = { unwatched: read('unwatched.json'), watched: read('watched.json') };
+  if (tests.length && tests.every((t) => t.status === 'passed')) {
+    const of = (watch: Watch) => Object.fromEntries(PAGES.map((page) => [page, read(`${watch} ${page}.json`)]));
+    measured = { unwatched: of('unwatched') as Measured, watched: of('watched') as Measured };
   }
 }, 120_000);
 
@@ -198,27 +214,28 @@ afterAll(async () => {
   await server?.close();
 });
 
+const perSecond = (m: { cpuMs: number; wallMs: number }) => (m.cpuMs * 1000) / m.wallMs;
+
 describe('the CPU time watching a running test costs its worker', () => {
-  it('runs the test unwatched, then watched, its lane’s frames going only while watched', () => {
+  it('runs each page’s test unwatched, then watched, its lane’s frames going only while watched', () => {
     expect(
       tests.map((t) => [t.title, t.status]),
       output,
-    ).toEqual([
-      ['unwatched', 'passed'],
-      ['watched', 'passed'],
-    ]);
-    expect(frames.unwatched ?? 0).toBe(0);
-    // Ten frames a second at most on the painting page, two on the masked one: more than one a second in all.
-    expect(frames.watched ?? 0).toBeGreaterThan((2 * MEASURE_MS) / 1000);
+    ).toEqual(WATCHES.flatMap((watch) => PAGES.map((page) => [`${watch} ${page}`, 'passed'])));
+    // Ten frames a second at most on the painting page, two on the masked one: one a second at least on each.
+    for (const page of PAGES) {
+      expect(frames[`unwatched ${page}`] ?? 0, JSON.stringify(frames)).toBe(0);
+      expect(frames[`watched ${page}`] ?? 0, JSON.stringify(frames)).toBeGreaterThanOrEqual(MIN_FRAMES);
+    }
   });
 
-  it.each(['animated', 'masked'] as const)(
-    'adds at most its budget of CPU time to the worker while watched, on the %s page',
-    (page) => {
-      const { unwatched, watched } = measured!;
-      const perSecond = (m: { cpuMs: number; wallMs: number }) => (m.cpuMs * 1000) / m.wallMs;
-      const added = perSecond(watched[page]) - perSecond(unwatched[page]);
-      expect(added, JSON.stringify(measured)).toBeLessThanOrEqual(BUDGET_MS_PER_S[page]);
-    },
-  );
+  it.each(PAGES)('spends at most its own ceiling of CPU time on the %s page unwatched', (page) => {
+    expect(perSecond(measured!.unwatched[page]), JSON.stringify(measured)).toBeLessThanOrEqual(UNWATCHED_MS_PER_S);
+  });
+
+  it.each(PAGES)('adds at most its budget of CPU time to the worker while watched, on the %s page', (page) => {
+    const { unwatched, watched } = measured!;
+    const added = perSecond(watched[page]) - perSecond(unwatched[page]);
+    expect(added, JSON.stringify(measured)).toBeLessThanOrEqual(BUDGET_MS_PER_S[page]);
+  });
 });
