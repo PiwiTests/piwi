@@ -7655,5 +7655,71 @@
   },
   "runs_shareRefusedUnknown": {
     "message": "Esta ejecución no puede compartirse en directo: el reporter de Piwi no dio a sus workers ninguna clave de vista en directo."
+  },
+  "runs_answerPausing": {
+    "message": "Pausando en la próxima llamada."
+  },
+  "runs_answerStepping": {
+    "message": "Avanzando a la próxima llamada."
+  },
+  "runs_answerResuming": {
+    "message": "Reanudando."
+  },
+  "runs_answerFinishing": {
+    "message": "Terminando la prueba sin detenerse en un punto de interrupción."
+  },
+  "runs_answerEndingSkipped": {
+    "message": "Terminando la prueba: se informa como omitida."
+  },
+  "runs_answerEndingFailed": {
+    "message": "La prueba ya falló: termina como fallida."
+  },
+  "runs_answerWentOn": {
+    "message": "La prueba siguió."
+  },
+  "runs_answerRunning": {
+    "message": "La prueba se está ejecutando."
+  },
+  "runs_answerStoppedAlready": {
+    "message": "La prueba ya está detenida."
+  },
+  "runs_answerDriveOn": {
+    "message": "Controlas esta parada: un agente esperaría hasta que la devuelvas."
+  },
+  "runs_answerDriveTaken": {
+    "message": "Controlas esta parada: el agente espera hasta que la devuelvas."
+  },
+  "runs_answerDriveBack": {
+    "message": "Devolviste esta parada: un agente puede actuar en ella."
+  },
+  "runs_answerDriveNone": {
+    "message": "No controlabas esta parada."
+  },
+  "runs_answerHoldOn": {
+    "message": "Un fallo que ninguna barra de pausa muestra espera en su línea en esta ejecución hasta que alguien lo responda."
+  },
+  "runs_answerHoldOff": {
+    "message": "Un fallo de esta ejecución que ninguna barra de pausa muestra sigue al instante."
+  },
+  "runs_answerHoldUnattended": {
+    "message": "Nadie atiende una ejecución de este tipo: sus fallos siguen al instante, la mire quien la mire."
+  },
+  "runs_answerShareOn": {
+    "message": "Compartiendo la ejecución en directo en $instance$: quien pueda abrirla allí puede ver las páginas de sus pruebas mientras alguien lo hace.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_answerShareOff": {
+    "message": "Se dejó de compartir la ejecución: no se envía nada más a $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
   }
 }

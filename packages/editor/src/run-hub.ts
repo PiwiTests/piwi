@@ -8,7 +8,8 @@
  * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
  * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
- * set, checked field by field and answered once; nothing it asks evaluates code or reaches an instance, and none names
+ * set, checked field by field and answered once, an answer whose sentence a surface may say in its own words with its
+ * code (`HubAnswer.code`); nothing it asks evaluates code or reaches an instance, and none names
  * a file: `openTrace` starts the project's own Playwright on the one its worker names, once it passed the checks.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
  * is, a stop no pause bar shows waits for it; one that only observes (`observe`: the desktop app's server, reading the
@@ -72,7 +73,14 @@ import {
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { LaneViewFrame, LaneViewLayer, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import {
+  answerCodeOf,
+  type LaneViewFrame,
+  type LaneViewLayer,
+  type RunSessions,
+  type ViewFrame,
+  type Viewer,
+} from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -619,14 +627,17 @@ export class RunHub {
     command: ParsedHubCommand,
     respond: (answer: HubAnswer) => void,
   ): Promise<void> {
-    const reply = (result: RunControlResult, extra: Partial<HubAnswer> = {}) =>
+    const reply = (result: RunControlResult, extra: Partial<HubAnswer> = {}) => {
+      const code = answerCodeOf(result.message);
       respond({
         type: 'answer',
         id: command.id,
         ok: result.ok,
         message: cut(result.message, MAX_HUB_MESSAGE)!,
+        ...(code ? { code } : {}),
         ...extra,
       });
+    };
     if (command.type === 'unknown') {
       return reply({ ok: false, message: `Piwi does not know the command ${JSON.stringify(command.what)}.` });
     }
@@ -727,14 +738,18 @@ export class RunHub {
             ...(picked.taken !== undefined ? { taken: picked.taken } : {}),
           });
         }
-        case 'share':
-          if (command.scope !== 'window') return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'share': {
+          if (command.scope !== 'window') {
+            const shared = sessions.share({ ref: command.ref, on: command.on });
+            return reply(shared, shared.ok ? { code: command.on ? 'share-on' : 'share-off' } : {});
+          }
           if (!this.options.sharesWindow) {
             return reply({ ok: false, message: 'This hub shares one run at a time: share each run from its card.' });
           }
           return reply(
             sessions.share({ on: command.on, scope: 'window', ...(command.ref !== null ? { ref: command.ref } : {}) }),
           );
+        }
         case 'hold':
           return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
         case 'stop':

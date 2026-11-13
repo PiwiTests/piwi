@@ -964,7 +964,10 @@ The intents, `requests` and `mock` go through the same `StopActions` as the clie
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
 
 Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage`, `requests`
-for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
+for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). An answer whose
+sentence is one of `ANSWER_SENTENCES` (`src/run-sessions.ts`, which says them from that table) carries its `code`
+(`HUB_ANSWER_CODES` in `@piwitests/core/run-hub`), and `share` once done `share-on` or `share-off`, so Piwi Picker says
+it in its own language. A command of
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and

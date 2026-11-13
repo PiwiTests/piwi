@@ -7655,5 +7655,71 @@
   },
   "runs_shareRefusedUnknown": {
     "message": "Dieser Lauf kann nicht live geteilt werden: Der Piwi-Reporter hat seinen Workern keinen Schlüssel für die Live-Ansicht gegeben."
+  },
+  "runs_answerPausing": {
+    "message": "Hält beim nächsten Aufruf an."
+  },
+  "runs_answerStepping": {
+    "message": "Geht zum nächsten Aufruf."
+  },
+  "runs_answerResuming": {
+    "message": "Wird fortgesetzt."
+  },
+  "runs_answerFinishing": {
+    "message": "Der Test läuft zu Ende, ohne an einem Haltepunkt anzuhalten."
+  },
+  "runs_answerEndingSkipped": {
+    "message": "Der Test wird beendet: Er wird als übersprungen gemeldet."
+  },
+  "runs_answerEndingFailed": {
+    "message": "Der Test ist bereits fehlgeschlagen: Er endet als fehlgeschlagen."
+  },
+  "runs_answerWentOn": {
+    "message": "Der Test ist weitergelaufen."
+  },
+  "runs_answerRunning": {
+    "message": "Der Test läuft."
+  },
+  "runs_answerStoppedAlready": {
+    "message": "Der Test ist bereits angehalten."
+  },
+  "runs_answerDriveOn": {
+    "message": "Sie steuern diesen Halt: Ein Agent würde warten, bis Sie ihn zurückgeben."
+  },
+  "runs_answerDriveTaken": {
+    "message": "Sie steuern diesen Halt: Der Agent wartet, bis Sie ihn zurückgeben."
+  },
+  "runs_answerDriveBack": {
+    "message": "Sie haben diesen Halt zurückgegeben: Ein Agent darf darauf handeln."
+  },
+  "runs_answerDriveNone": {
+    "message": "Sie haben diesen Halt nicht gesteuert."
+  },
+  "runs_answerHoldOn": {
+    "message": "Ein Fehlschlag, den keine Pausenleiste zeigt, wartet in diesem Lauf an seiner Zeile, bis jemand antwortet."
+  },
+  "runs_answerHoldOff": {
+    "message": "Ein Fehlschlag dieses Laufs, den keine Pausenleiste zeigt, läuft sofort weiter."
+  },
+  "runs_answerHoldUnattended": {
+    "message": "Einen Lauf dieser Art betreut niemand: Seine Fehlschläge laufen sofort weiter, wer auch immer zusieht."
+  },
+  "runs_answerShareOn": {
+    "message": "Der Lauf wird live auf $instance$ geteilt: Wer ihn dort öffnen darf, kann die Seiten seiner Tests ansehen, während jemand zusieht.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_answerShareOff": {
+    "message": "Der Lauf wird nicht mehr geteilt: Nichts mehr geht an $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
   }
 }

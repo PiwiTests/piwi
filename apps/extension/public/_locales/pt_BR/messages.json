@@ -7655,5 +7655,71 @@
   },
   "runs_shareRefusedUnknown": {
     "message": "Esta execução não pode ser compartilhada ao vivo: o reporter do Piwi não deu aos workers dela nenhuma chave de visualização ao vivo."
+  },
+  "runs_answerPausing": {
+    "message": "Pausando na próxima chamada."
+  },
+  "runs_answerStepping": {
+    "message": "Avançando para a próxima chamada."
+  },
+  "runs_answerResuming": {
+    "message": "Retomando."
+  },
+  "runs_answerFinishing": {
+    "message": "Concluindo o teste sem parar em um ponto de interrupção."
+  },
+  "runs_answerEndingSkipped": {
+    "message": "Encerrando o teste: ele é reportado como ignorado."
+  },
+  "runs_answerEndingFailed": {
+    "message": "O teste já falhou: ele termina como falhou."
+  },
+  "runs_answerWentOn": {
+    "message": "O teste seguiu."
+  },
+  "runs_answerRunning": {
+    "message": "O teste está em execução."
+  },
+  "runs_answerStoppedAlready": {
+    "message": "O teste já está parado."
+  },
+  "runs_answerDriveOn": {
+    "message": "Você controla esta parada: um agente esperaria até você devolvê-la."
+  },
+  "runs_answerDriveTaken": {
+    "message": "Você controla esta parada: o agente espera até você devolvê-la."
+  },
+  "runs_answerDriveBack": {
+    "message": "Você devolveu esta parada: um agente pode agir nela."
+  },
+  "runs_answerDriveNone": {
+    "message": "Você não controlava esta parada."
+  },
+  "runs_answerHoldOn": {
+    "message": "Uma falha que nenhuma barra de pausa mostra espera na sua linha nesta execução até alguém respondê-la."
+  },
+  "runs_answerHoldOff": {
+    "message": "Uma falha desta execução que nenhuma barra de pausa mostra segue na hora."
+  },
+  "runs_answerHoldUnattended": {
+    "message": "Ninguém acompanha uma execução deste tipo: as falhas dela seguem na hora, seja quem for que a assista."
+  },
+  "runs_answerShareOn": {
+    "message": "Compartilhando a execução ao vivo em $instance$: quem puder abri-la lá pode assistir às páginas dos testes dela enquanto alguém assiste.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_answerShareOff": {
+    "message": "A execução não é mais compartilhada: nada mais vai para $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
   }
 }
