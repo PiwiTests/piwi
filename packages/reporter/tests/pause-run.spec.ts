@@ -358,6 +358,8 @@ module.exports = defineConfig({
   });
   const results = path.join(project, 'results.json');
   tests = fs.existsSync(results) ? (JSON.parse(fs.readFileSync(results, 'utf8')) as DumpedTest[]) : [];
+  // Every case reads this one run: one that showed no stop fails here, with what the run printed.
+  if (stops.length === 0) throw new Error(`the run showed no stop (exit code ${exitCode}):\n${output}`);
 }, 150_000);
 
 afterAll(async () => {
