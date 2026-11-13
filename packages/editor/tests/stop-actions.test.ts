@@ -753,6 +753,126 @@ describe('code from a stop, with a client that writes it', () => {
   });
 });
 
+describe('code from a stop of a job the desktop app runs in a throwaway checkout', () => {
+  let svc: Service;
+  let checkout = '';
+  beforeAll(async () => {
+    svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    checkout = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-checkout-')));
+    fs.mkdirSync(path.join(checkout, 'tests'));
+    fs.writeFileSync(path.join(checkout, 'tests/checkout.spec.ts'), SPEC);
+  });
+  afterAll(() => {
+    svc.stop();
+    fs.rmSync(checkout, { recursive: true, force: true });
+  });
+
+  /** A worker of the desktop app's job `ref`, its run in the checkout, stopped at the spec's Pay line. */
+  async function stoppedInCheckout(ref: string, reason: 'breakpoint' | 'failure' = 'breakpoint') {
+    const { channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, checkout).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    worker.begin('pays');
+    worker.send({
+      type: 'stopped',
+      stop: 1,
+      reason,
+      title: reason === 'failure' ? 'Failed: Timed out' : "Click getByRole('button', { name: 'Pay' })",
+      place: { file: 'tests/checkout.spec.ts', line: 5, column: 5 },
+      locator: "getByRole('button', { name: 'Pay' })",
+      bar: false,
+    });
+    const stop = await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+    return { worker, stop };
+  }
+
+  test('shows its stop at the checkout’s file, as the reproduction’s at its commit, its failures held from the start', async () => {
+    const ref = 'desktop-7-at-abc1234def01';
+    const { worker, stop } = await stoppedInCheckout(ref, 'failure');
+    try {
+      const session = svc.latest(ref)!;
+      expect(session).toMatchObject({ root: null, checkout: { commit: 'abc1234def01' } });
+      expect(session.terminal).toBeUndefined();
+      expect(session.hold).toEqual({ on: true, by: 'start' });
+      expect(stop.uri).toBe(pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('offers the code made at its stop to copy, never to write, saying why', async () => {
+    const ref = 'desktop-8-at-abc1234';
+    const { worker, stop } = await stoppedInCheckout(ref);
+    const before = svc.codes.length;
+    try {
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- heading "Summary"' });
+      const code = await waitFor(() => svc.codes[before]);
+      const why = 'This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file.';
+      expect(code).toMatchObject({
+        ref,
+        since: stop.since,
+        action: 'assert-region',
+        uri: pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href,
+        line: 4,
+        copy: true,
+        message: why,
+      });
+      expect(code.code).toContain("await expect(page.getByTestId('summary')).toMatchAriaSnapshot(`");
+      // The checkout's file is as it was: nothing is written there.
+      expect(fs.readFileSync(path.join(checkout, 'tests/checkout.spec.ts'), 'utf8')).toBe(SPEC);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('records nothing into the checkout’s file, saying why', async () => {
+    const ref = 'desktop-10-at-abc1234';
+    const { channel } = await svc.command();
+    const { worker } = await stoppedInCheckout(ref);
+    const handoff = net.connect(channel.path);
+    handoff.setEncoding('utf8');
+    let heard = '';
+    handoff.on('data', (data) => (heard += data));
+    try {
+      handoff.write(
+        `${JSON.stringify({
+          type: 'attach',
+          token: channel.token,
+          file: path.join(checkout, 'tests/checkout.spec.ts'),
+          line: 5,
+          reason: 'breakpoint',
+          testIdAttribute: null,
+          baseURL: null,
+        })}\n`,
+      );
+      const refused = await waitFor(() => heard.split('\n').find((line) => line.includes('"refused"')));
+      expect(JSON.parse(refused)).toEqual({
+        type: 'refused',
+        message: 'this reproduction runs at commit abc1234 in a throwaway checkout: record in your own file.',
+      });
+    } finally {
+      handoff.destroy();
+      worker.socket.destroy();
+    }
+  });
+
+  test('refuses the code of a stop outside the workspace in a run that is no such job', async () => {
+    const ref = 'desktop-9';
+    const { worker } = await stoppedInCheckout(ref);
+    const notices = svc.notices.length;
+    try {
+      expect(svc.latest(ref)!.checkout).toBeUndefined();
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- text: x' });
+      const notice = await waitFor(() => svc.notices[notices]);
+      expect(notice.message).toBe(
+        `No Playwright config of this workspace holds ${pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href}.`,
+      );
+      expect(svc.codes.filter((c) => c.ref === ref)).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+});
+
 describe('code from a stop, with a client that writes none', () => {
   test('refuses the actions that write code, and lets Pick and Record through', async () => {
     const svc = await service(dir, true, { distDir: dist });

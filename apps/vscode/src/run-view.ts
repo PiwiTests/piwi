@@ -446,7 +446,7 @@ export function registerRunControl(
     const present = stopPresence(stop, sessions);
     const hover = new vscode.MarkdownString(
       [
-        markdown(pausedText(stop.stop, stop.test, stop.terminal, stop.runner)),
+        markdown(pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)),
         ...(present ? [markdown(present)] : []),
         controls.join(' · '),
         ...(actions.length ? [actions.join(' · ')] : []),
@@ -1187,7 +1187,7 @@ export function registerRunControl(
     if (!offered.length) return say('no code can be written from this stop.');
     const picked = await vscode.window.showQuickPick(
       offered.map((a) => ({ label: `${a.icon} ${a.title}`, detail: a.detail, action: a.action })),
-      { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}: write what?` },
+      { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)}: write what?` },
     );
     if (picked) await startAction(picked.action, targetOf(stop));
   };
@@ -1205,6 +1205,16 @@ export function registerRunControl(
    * else the file as saved). The block is shown without taking the focus, and the sentence and warnings said.
    */
   const write = async (code: StopCode) => {
+    // Code of a desktop app's throwaway checkout is offered to copy, its sentence saying why; no file is edited.
+    if (code.copy) {
+      const copy = 'Copy the code';
+      const notice = stopCodeNotice(code);
+      const picked = await (notice.severity === 'warning'
+        ? vscode.window.showWarningMessage(`Piwi: ${notice.text}`, copy)
+        : vscode.window.showInformationMessage(`Piwi: ${notice.text}`, copy));
+      if (picked === copy) await vscode.env.clipboard.writeText(code.code);
+      return;
+    }
     const uri = vscode.Uri.parse(code.uri);
     const name = decodeURIComponent(code.uri.slice(code.uri.lastIndexOf('/') + 1));
     const document = await Promise.resolve(vscode.workspace.openTextDocument(uri)).catch(() => null);
@@ -1396,7 +1406,7 @@ export function registerRunControl(
               const target = [targetOf(s)];
               return [
                 new vscode.CodeLens(range, {
-                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test, s.terminal, s.runner)}`,
+                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test, s.terminal, s.runner, s.checkout)}`,
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),
@@ -1420,7 +1430,12 @@ export function registerRunControl(
         if (!sessions.size) say('no run started from the editor is running.');
         return;
       }
-      if (!options.terminate(ref)) say('the run was not started in this window: stop it in its terminal.');
+      if (options.terminate(ref)) return;
+      say(
+        sessions.get(ref)?.checkout
+          ? 'the desktop app runs this reproduction: stop it there.'
+          : 'the run was not started in this window: stop it in its terminal.',
+      );
     }),
     vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => endTest(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.resume, (arg?: unknown) => answerStop('resume', arg)),

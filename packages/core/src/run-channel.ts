@@ -73,6 +73,25 @@ export function isUnattendedRef(ref: string): boolean {
 }
 
 /**
+ * The ref of a job the desktop app runs in a throwaway checkout of a commit on an editor's run channel (a reproduction,
+ * a bisect step, a Flake Lab): `desktop-<id>-at-<commit>`, the commit's first 7 to 12 hex digits, before the
+ * `-unattended` of a job nobody attends. The editor shows its stops as the reproduction's and offers their code to
+ * copy, never to write; the desktop app knows the job by its ref without the checkout (`withoutCheckout`).
+ */
+const CHECKOUT_REF = /^(desktop-\d{1,10})-at-([0-9a-f]{7,12})((?:-unattended)?)$/;
+
+/** The commit of the throwaway checkout a desktop app's job runs in, as its ref names it (`CHECKOUT_REF`); else null. */
+export function checkoutCommitOf(ref: string): string | null {
+  return CHECKOUT_REF.exec(ref)?.[2] ?? null;
+}
+
+/** A job's ref without its checkout (`desktop-<id>[-unattended]`), as the desktop app knows it; any other as it is. */
+export function withoutCheckout(ref: string): string {
+  const match = CHECKOUT_REF.exec(ref);
+  return match ? `${match[1]}${match[3]}` : ref;
+}
+
+/**
  * A line of the user's code: its file relative to the run's working directory, with forward slashes (`..` for a file
  * above it), and the 1-based line and column.
  */

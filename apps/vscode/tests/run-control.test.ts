@@ -234,6 +234,11 @@ describe('what the Testing view writes of a run', () => {
     expect(sessionLines(begun, retried)[0]?.text).toBe('Worker 1 · checkout › pays · attempt 2');
     const terminal = { ...stopped, terminal: true };
     expect(sessionLines(begun, terminal)[0]?.text).toMatch(/ · run in a terminal$/);
+    // A job the desktop app runs in a throwaway checkout says so, and at which commit.
+    const checkout = { ...stopped, checkout: { commit: 'abc1234def01' } };
+    expect(sessionLines(begun, checkout)[0]?.text).toMatch(
+      / · the desktop app's reproduction at commit abc1234, in a throwaway checkout$/,
+    );
   });
 });
 
@@ -337,6 +342,12 @@ describe('what the controls offer', () => {
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
+  });
+
+  test('no Stop for a job the desktop app runs in a throwaway checkout: the app stops it', () => {
+    const job = { ...session('desktop-3-at-abc1234', [worker(0, 'running')]), checkout: { commit: 'abc1234' } };
+    expect(controlState(sessionsOf(job)).stoppable).toBe(false);
+    expect(controlState(sessionsOf(session('ed-1', [worker(0, 'running')]))).stoppable).toBe(true);
   });
 
   test('Show the browser at a stop its pause bar shows, whose reporter brings its window forward', () => {

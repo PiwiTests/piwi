@@ -222,6 +222,8 @@ export interface ShownStop {
   showsWindow?: boolean;
   terminal?: boolean;
   runner?: boolean;
+  /** The commit of the throwaway checkout a desktop app's job runs in (`RunSession.checkout`). */
+  checkout?: string;
 }
 
 /** Every stopped worker of the sessions, in their order. */
@@ -240,6 +242,7 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
               ...(w.showsWindow ? { showsWindow: true } : {}),
               ...(s.terminal ? { terminal: true } : {}),
               ...(s.terminal && s.runner ? { runner: true } : {}),
+              ...(s.checkout ? { checkout: s.checkout.commit } : {}),
             },
           ]
         : [],
@@ -532,10 +535,23 @@ export function asideColumn(
  * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
  * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
-export function pausedText(stop: RunStop, test: RunTest | null, terminal = false, runner = false): string {
+export function pausedText(
+  stop: RunStop,
+  test: RunTest | null,
+  terminal = false,
+  runner = false,
+  checkout: string | null = null,
+): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
-  // A run started in a terminal, or by the editor's own test runner, says so: its process is theirs.
-  const where = !terminal ? '' : runner ? " · run by the editor's test runner" : ' · run in a terminal';
+  // A run started in a terminal, or by the editor's own test runner, says so: its process is theirs. So does a job the
+  // desktop app runs in a throwaway checkout of a commit (`checkout`), whose code is offered to copy.
+  const where = checkout
+    ? ` · the desktop app's reproduction at commit ${checkout.slice(0, 7)}, in a throwaway checkout`
+    : !terminal
+      ? ''
+      : runner
+        ? " · run by the editor's test runner"
+        : ' · run in a terminal';
   if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
   // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
   const reason = stop.reason as Exclude<RunStop['reason'], 'failure'>;
@@ -583,10 +599,13 @@ export function sessionLines(before: RunSession | undefined, now: RunSession): S
       lines.push({ text: `${who} · ${testTitle(worker.test!)}${attempt}`, test, at: null });
     }
     if (worker.stop && worker.stop.since !== was?.stop?.since) {
-      const text = `${who} · ${pausedText(worker.stop, worker.test, !!now.terminal, !!now.runner)}`.replace(
-        /\s+/g,
-        ' ',
-      );
+      const text = `${who} · ${pausedText(
+        worker.stop,
+        worker.test,
+        !!now.terminal,
+        !!now.runner,
+        now.checkout?.commit,
+      )}`.replace(/\s+/g, ' ');
       lines.push({ text, test, at: { uri: worker.stop.uri, line: worker.stop.line } });
     } else if (!worker.stop && was?.stop && !started) {
       lines.push({ text: `${who} · goes on`, test, at: null });
@@ -781,7 +800,7 @@ export function stopPresence(stop: ShownStop, sessions: Sessions): string | null
  */
 export function stopCaption(stop: ShownStop, sessions: Sessions): string {
   const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
-  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
+  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout);
   const present = stopPresence(stop, sessions);
   return `${said} · ${file}:${stop.stop.line + 1}${present ? ` · ${present}` : ''}`;
 }
@@ -862,7 +881,7 @@ export function laneShown(session: RunSession | undefined, lane: number, stops: 
     return { worker, stop: null, caption: `${name} · ${worker.pausing ? 'Pausing' : 'Running'} · ${title}${seen}` };
   }
   const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
-  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
+  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout);
   const present = presentAt(stop.stop, stop.takes, worker);
   return { worker, stop, caption: `${name} · ${said} · ${file}:${stop.stop.line + 1}${present}` };
 }
@@ -1499,7 +1518,10 @@ export function stopActions(stop: ShownStop): StopAction[] {
 export interface ControlState {
   /** A run is live. */
   active: boolean;
-  /** A run this window started is live: Stop. A run started in a terminal is the terminal's to stop. */
+  /**
+   * A run this window started is live: Stop. A run started in a terminal is the terminal's to stop, and a desktop app's
+   * job in a throwaway checkout the app's.
+   */
   stoppable: boolean;
   /** A worker runs a test or is between tests, no Pause reached it, and its test can stop: Pause. */
   pausable: boolean;
@@ -1573,7 +1595,7 @@ export function controlState(sessions: Sessions): ControlState {
   const offered = new Set(stopsOf(sessions).flatMap((s) => stopActions(s).map((a) => a.action)));
   return {
     active: sessions.size > 0,
-    stoppable: [...sessions.values()].some((s) => !s.terminal),
+    stoppable: [...sessions.values()].some((s) => !s.terminal && !s.checkout),
     pausable: workers.some(canPauseWorker),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
@@ -1755,7 +1777,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}`,
+    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · ${workerName(stop.slot)}`,
   };
 }

@@ -1530,6 +1530,25 @@ class GlueTest {
     }
 
     @Test
+    fun `a job the desktop app runs in a throwaway checkout is none to stop, and says so where it stops`() {
+        val job = RunSession(
+            "desktop-3-at-abc1234def01",
+            null,
+            listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5))),
+            checkout = RunCheckout("abc1234def01"),
+        )
+        val sessions = mapOf("desktop-3-at-abc1234def01" to job)
+        assertFalse(Glue.runControls(sessions).stoppable)
+        val stop = Glue.stopsOf(sessions).single()
+        assertEquals("abc1234def01", stop.checkout)
+        assertEquals(
+            "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · the desktop app's reproduction at commit abc1234, in a throwaway checkout",
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout),
+        )
+        assertNull(Glue.ownRunInProgress(emptyList(), mapOf("desktop-3-at-abc1234def01" to job.copy(progress = RunProgress(done = 1, total = 3, status = "running")))))
+    }
+
+    @Test
     fun `a run the IDE's own test runner started is none to stop, and says so where it stops`() {
         val stopped = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))
         val runner = RunSession("terminal-42-1", "/work/shop", stopped, terminal = true, runner = true)

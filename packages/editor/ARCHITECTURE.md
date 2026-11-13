@@ -718,6 +718,14 @@ lines of its code: the files as they stand when its first connection opens. Its 
 a failure stops a worker of it and goes on at once, until a person or an agent turns it on.
 It ends 5 s after its last worker and its process left, having no command.
 
+A job the desktop app runs in a throwaway checkout of a commit of a folder this workspace holds (a reproduction, a
+bisect step, a Flake Lab) attaches too, the app's shell having given it this service's run channel, under a ref that
+names the commit (`desktop-<id>-at-<commit>`, `checkoutCommitOf` in `@piwitests/core/run-channel`). Its folder is no
+context's (`root` null), so its stops are at the checkout's files; its session says so (`RunSession.checkout`), and the
+clients name the reproduction and its commit where it stops and offer no Stop, the app's to give (`canStopRun`). A
+reproduction holds its failures from its start (`watched`); a bisect step or a Flake Lab, a run nobody attends, none.
+The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record here is refused there.
+
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
 files it by Playwright's worker index, with:
@@ -1188,6 +1196,13 @@ service holds it, which the client applies as one edit. It goes only to a client
 (`InitializationOptions.stopCode`); without it, Assert, Assert a region and Mock a request are refused (`NO_CODE`) from
 both surfaces, and not offered to Piwi Picker (`intentsOf`). `pick` and `record` are the pause bar's own intents, whose
 results take their own paths (Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
+
+At a stop of a job the desktop app runs in a throwaway checkout (`RunSession.checkout`), the file is no context's: its
+code is made from the checkout's file as it is on disk (`StopActionsOptions.copy`, a regular file of 2 MB at most) and
+sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
+checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record here is refused
+there (`checkoutRecordWhy`), and the job's picks go to the desktop app's window, to copy, never to this editor's Send
+to editor, whose `piwi/applyPick` would write in the workspace's file of the same path.
 
 **Where the stopped statement stands now** (`src/run-lines.ts`, `RunLines`). The stop names a line of the run's code.
 `RunLines` keeps the file as the service held it when the run started:

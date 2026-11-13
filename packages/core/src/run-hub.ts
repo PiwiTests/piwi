@@ -35,7 +35,7 @@ import {
   type RunPage,
 } from './run-channel';
 import { readLaneLayers, type LaneLayer } from './live-layers';
-import { readLaneLayerData, type LaneLayerData } from './run-channel';
+import { checkoutCommitOf, readLaneLayerData, type LaneLayerData } from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
@@ -91,9 +91,11 @@ const KNOWN_FEATURES: readonly HubFeature[] = [...HUB_FEATURES, 'share-window'];
 /**
  * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
  * process said it ended (`progress.status`), nor one started in a terminal (`terminal`, an editor's test runner's run
- * included), whose Stop stays where it was started.
+ * included), nor a job the desktop app runs in a throwaway checkout (`checkoutCommitOf` its ref), whose Stop stays where
+ * it was started.
  */
-export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal' | 'progress'>): boolean {
+export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal' | 'progress'> & { ref?: string }): boolean {
+  if (session.ref !== undefined && checkoutCommitOf(session.ref) !== null) return false;
   return !session.ended && !session.terminal && (session.progress?.status ?? 'running') === 'running';
 }
 

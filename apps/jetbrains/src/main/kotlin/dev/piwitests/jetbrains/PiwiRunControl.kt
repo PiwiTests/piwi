@@ -2033,6 +2033,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (!ApplicationManager.getApplication().isDispatchThread) {
             return ApplicationManager.getApplication().invokeLater({ write(code, opened) }, gone)
         }
+        // Code of a desktop app's throwaway checkout is offered to copy, its sentence saying why; no file is edited.
+        if (code.copy) return offerCopy(code)
         val name = code.uri.orEmpty().substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, Charsets.UTF_8) }.getOrDefault(it) }
         val file = fileOf(code.uri) ?: return notWritten(code, "$name could not be found, so the code was not written.")
         val document = FileDocumentManager.getInstance().getDocument(file)
@@ -2073,6 +2075,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             else openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
         }
         openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
+    }
+
+    /** The code a stop made offered to copy, with its sentence and what its reader should check. */
+    private fun offerCopy(code: StopCode) {
+        val notice = Glue.stopCodeNotice(code)
+        PiwiNotifier.create(PiwiNotice.RESULT, StringUtil.escapeXmlEntities(notice.text), if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+            .addAction(NotificationAction.createSimpleExpiring("Copy the Code") { CopyPasteManager.getInstance().setContents(StringSelection(code.code.orEmpty())) })
+            .notify(project)
     }
 
     /** Why the code a stop made was not written, with the code to copy. */
@@ -3041,7 +3051,7 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
 
     override fun getTooltipText(): String = Glue.htmlTooltip(
         listOfNotNull(
-            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout),
             Glue.stopPresence(stop, sessions.sessions),
         ).joinToString("\n"),
     )
@@ -3051,7 +3061,7 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
     override fun getClickAction(): AnAction = object : AnAction() {
         override fun actionPerformed(e: AnActionEvent) {
             val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-                Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
+                Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout),
                 sessions.stopActions(stop),
                 e.dataContext,
                 JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
@@ -3072,7 +3082,7 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
  * Caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
-    val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)
+    val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)
 
     /** The links after the text, in order. */
     val links: List<Glue.StopLink> = Glue.stopControls(stop) + Glue.stopActions(stop)
@@ -3254,7 +3264,7 @@ class StopRunAction : RunControlAction() {
         val stop = { ref: String ->
             if (!sessions.stopRun(ref)) PiwiCommands.notify(project, "The run was not started from this IDE: stop it where it runs.")
         }
-        val live = sessions.sessions.values.filter { !it.terminal }
+        val live = sessions.sessions.values.filter { !it.terminal && it.checkout == null }
         if (live.size < 2) return live.firstOrNull()?.ref?.let(stop) ?: Unit
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(live)

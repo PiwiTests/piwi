@@ -21,7 +21,9 @@ import {
   RUN_TAKES,
   parseHubToRun,
   parseHubToMain,
+  checkoutCommitOf,
   endedAtStopIn,
+  withoutCheckout,
   isSnapshotRef,
   parseRunMainToHub,
   parseRunToHub,
@@ -1227,5 +1229,32 @@ describe('a teammate’s ask to watch, between the run’s own process and its h
       after: 77,
     });
     expect(parseHubToRun(JSON.stringify({ type: 'share', on: true, after: 'x' }))).toEqual({ type: 'share', on: true });
+  });
+});
+
+describe('a job the desktop app runs in a throwaway checkout', () => {
+  test('names its commit in its ref, before the mark of a job nobody attends', () => {
+    expect(checkoutCommitOf('desktop-12-at-abc1234')).toBe('abc1234');
+    expect(checkoutCommitOf('desktop-3-at-0123456789ab-unattended')).toBe('0123456789ab');
+    for (const ref of [
+      'desktop-12',
+      'desktop-12-unattended',
+      'terminal-1-2',
+      'terminal-1-at-abc1234',
+      'desktop-12-at-abc12',
+      'desktop-12-at-ABC1234',
+      'desktop-12-at-0123456789abc',
+      'desktop-x-at-abc1234',
+      'desktop-12-at-abc1234-more',
+    ]) {
+      expect(checkoutCommitOf(ref), ref).toBeNull();
+    }
+  });
+
+  test('is known by the desktop app under the name of its run alone', () => {
+    expect(withoutCheckout('desktop-12-at-abc1234')).toBe('desktop-12');
+    expect(withoutCheckout('desktop-3-at-0123456789ab-unattended')).toBe('desktop-3-unattended');
+    expect(withoutCheckout('desktop-12-unattended')).toBe('desktop-12-unattended');
+    expect(withoutCheckout('terminal-1-at-abc1234')).toBe('terminal-1-at-abc1234');
   });
 });

@@ -954,6 +954,9 @@ describe('Stop for a whole run on the hub', () => {
     expect(canStopRun({ ended: false })).toBe(true);
     expect(canStopRun({ ended: true })).toBe(false);
     expect(canStopRun({ ended: false, terminal: true })).toBe(false);
+    // A job the desktop app runs in a throwaway checkout: the app stops it.
+    expect(canStopRun({ ref: 'desktop-4-at-abc1234', ended: false })).toBe(false);
+    expect(canStopRun({ ref: 'desktop-4', ended: false })).toBe(true);
     // A run whose own process said it ended, its session left a moment longer.
     const progress = { done: 3, total: 3, failed: 0, flaky: 0, skipped: 0, status: 'passed' as const, failure: null };
     expect(canStopRun({ ended: false, progress })).toBe(false);
