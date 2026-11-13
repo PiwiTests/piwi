@@ -26,7 +26,7 @@ import { playwrightVersionAtLeast } from '../support/playwright-version.js';
  * call on one of them that Playwright's debugger can stop at (a navigation, a
  * click, a key press, an assertion, a read such as `textContent`) stops before
  * it runs, through that debugger (`context.debugger`), with Piwi's pause bar in
- * the browser: Resume, Step, Pick a locator, Finish. A locator picked there is
+ * the browser: Resume, Step, Finish, then Pick a locator. A locator picked there is
  * folded into the run's snapshots, printed, and posted to the editor that
  * started the run (`PIWI_EDITOR_SEND`, its Send to editor pairing address) with
  * the line it was picked at.
@@ -942,8 +942,8 @@ export async function pauseHere(
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
             `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
         : `[piwi] Paused at ${callSiteLine(point.location)} before ${call}` +
-            `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''}, Finish` +
-            `${point.end ? ' or End the test' : ''} in the browser (Esc resumes).`,
+            `: Resume, Step, Finish${point.end ? ', End the test' : ''}, then Pick a locator` +
+            `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes).`,
     );
     // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
     // one, a few times in a row at most. A closed page, or anything else, resumes.
