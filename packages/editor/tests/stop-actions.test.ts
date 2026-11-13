@@ -824,6 +824,33 @@ describe('code from a stop of a job the desktop app runs in a throwaway checkout
     }
   });
 
+  test('offers the code to copy once the editor opened the checkout’s file, at the line as it stands there', async () => {
+    const ref = 'desktop-11-at-abc1234';
+    const { worker } = await stoppedInCheckout(ref);
+    const file = pathToFileURL(path.join(checkout, 'tests/checkout.spec.ts')).href;
+    const before = svc.codes.length;
+    const notices = svc.notices.length;
+    try {
+      // The editor reveals the stop: it opens the checkout's file, and a line is added above the stopped call there.
+      await svc.client.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: file, languageId: 'typescript', version: 1, text: SPEC },
+      });
+      await svc.client.sendNotification('textDocument/didChange', {
+        textDocument: { uri: file, version: 2 },
+        contentChanges: [{ range: { start: { line: 4, character: 0 }, end: { line: 4, character: 0 } }, text: '\n' }],
+      });
+      // The service has read both before the worker's answer comes.
+      await svc.client.sendRequest('piwi/status');
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- heading "Summary"' });
+      const code = await waitFor(() => svc.codes[before] ?? svc.notices[notices]);
+      expect(code).toMatchObject({ ref, action: 'assert-region', uri: file, line: 5, copy: true });
+      expect(fs.readFileSync(path.join(checkout, 'tests/checkout.spec.ts'), 'utf8')).toBe(SPEC);
+    } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: file } });
+      worker.socket.destroy();
+    }
+  });
+
   test('records nothing into the checkout’s file, saying why', async () => {
     const ref = 'desktop-10-at-abc1234';
     const { channel } = await svc.command();

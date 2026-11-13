@@ -9,7 +9,7 @@
  * code goes above the stopped statement where it stands now: the stopped line, the run's, mapped through the edits made
  * since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included; at a stop of a
  * job the desktop app runs in a throwaway checkout, outside the workspace, the code is made from the checkout's file
- * as it is on disk and offered to copy (`StopCode.copy`, `checkoutCopyWhy`), never written. An action that
+ * as the editor holds it, else as it is on disk, and offered to copy (`StopCode.copy`, `checkoutCopyWhy`), never written. An action that
  * writes code is refused when the client writes none, and before it starts when nothing can be written at the stopped
  * line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): that the code was sent to
  * the editor to write, with its warnings (the editor, which can still refuse the write, says itself whether it wrote

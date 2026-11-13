@@ -1920,6 +1920,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return false;
     }
   };
+  /** Whether a worker of a job the desktop app runs in a throwaway checkout stands stopped in `file`. */
+  const inCheckoutStop = (file: string): boolean =>
+    runSessions.current().some(
+      (session) =>
+        !!session.checkout &&
+        session.workers.some((worker) => {
+          const stopped = worker.stop ? uriToPath(worker.stop.uri) : null;
+          return stopped !== null && lineKey(stopped) === lineKey(file);
+        }),
+    );
   /** The files the editor holds with changes it has not saved, which a run starting now does not have. */
   const unsavedFiles = (): string[] =>
     documents.all().flatMap((document) => {
@@ -2083,16 +2093,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
       };
     },
-    // A stop of a job the desktop app runs in a throwaway checkout: its code is made from the checkout's file as it is
-    // on disk, to copy.
+    // A stop of a job the desktop app runs in a throwaway checkout: its code is made from the checkout's file as the
+    // editor holds it, else as it is on disk, to copy.
     copy: (stop, file) => {
       const commit = checkoutCommitOf(stop.ref);
-      const text = commit && isCheckoutFile(file) ? (diskFile(file)?.text ?? null) : null;
+      const open = commit && isCheckoutFile(file) ? openDocument(file) : undefined;
+      const text = commit && isCheckoutFile(file) ? (open?.getText() ?? diskFile(file)?.text ?? null) : null;
       if (!commit || text === null) return null;
       return {
         why: checkoutCopyWhy(commit),
         target: {
-          uri: pathToFileURL(file).href,
+          uri: open?.uri ?? pathToFileURL(file).href,
           text,
           version: null,
           preferLocators: new Set<string>(),
@@ -2586,7 +2597,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   documents.onDidOpen((e) => {
     const file = uriToPath(e.document.uri);
-    if (file && contextFor(file)) runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    if (file && (contextFor(file) || inCheckoutStop(file))) {
+      runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    }
     schedule(e.document, 0);
   });
   documents.onDidChangeContent((e) => schedule(e.document));

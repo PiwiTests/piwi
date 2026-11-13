@@ -1198,8 +1198,9 @@ both surfaces, and not offered to Piwi Picker (`intentsOf`). `pick` and `record`
 results take their own paths (Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
 
 At a stop of a job the desktop app runs in a throwaway checkout (`RunSession.checkout`), the file is no context's: its
-code is made from the checkout's file as it is on disk (`StopActionsOptions.copy`, a regular file of 2 MB at most) and
-sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
+code is made from the checkout's file as the editor holds it, else as it is on disk (`StopActionsOptions.copy`, a
+regular file of 2 MB at most), its line followed through the editor's edits as a workspace file's (the service follows
+a document it opens of a file a checkout's worker stands stopped in, `inCheckoutStop`), and sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
 checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record here is refused
 there (`checkoutRecordWhy`), and the job's picks go to the desktop app's window, to copy, never to this editor's Send
 to editor, whose `piwi/applyPick` would write in the workspace's file of the same path.
