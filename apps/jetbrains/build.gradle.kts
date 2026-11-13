@@ -9,7 +9,7 @@ plugins {
     id("java")
     // The newest Kotlin that still compiles language version 1.9 (see `kotlin` below): 2.4 needs 2.0 or later.
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("org.jetbrains.intellij.platform") version "2.19.0"
+    id("org.jetbrains.intellij.platform") version "2.20.0"
 }
 
 group = "dev.piwitests"
