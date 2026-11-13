@@ -55,13 +55,14 @@ Q13 in part: VS Code's run verdict ends with **Settings**, which opens `piwi.run
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye
-at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMappings.json`, VS Code's `$(piwi-mark)` in a
-product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and VS
-Code's views (IC8, IC9). §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMappings.json`, VS Code's `$(piwi-mark)`
+in a product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and
+VS Code's views (IC8, IC9). Q9 in part: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs,
+at one line weight, for the five commands that drew none (IC1 in part). §14 adds the findings the code that built the
+plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
+leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
+each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
+phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -226,11 +227,10 @@ concept table.
 
 ### 3.1 Actions without a glyph
 
-<a id="ic1"></a>**IC1. Five VS Code commands draw no glyph.** Reload Piwi, Run to the cursor, Pause and watch a worker's
-test and both Stop sharing commands have no `icon` (`apps/vscode/package.json:217, 474, 503, 562, 573`): no codicon says
-them apart from a glyph another command holds, and `menus.test.ts` lists them as waiting. **(read)** Fix: M4's drawn
-glyphs in VS Code's product-icon font, as the JetBrains plugin draws them in `icons/`. ([Q9](#q9), [M4](#m4),
-[LI2](#li2))
+<a id="ic1"></a>**IC1. Two VS Code commands draw no glyph.** Reload Piwi and Run to the cursor have no `icon`
+(`apps/vscode/package.json`): no codicon says them apart from a glyph another command holds, the JetBrains plugin draws
+them with platform icons, and `menus.test.ts` lists them as waiting. **(read)** Fix: a glyph of each drawn for both
+editors, in VS Code's product icon font and as plugin SVGs. ([Q9](#q9), [M4](#m4), [LI2](#li2))
 
 ### 3.2 Recording
 
@@ -1241,7 +1241,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
-| <a id="q9"></a>Q9 | **The last glyphs in VS Code**: the five commands without one take M4's drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
+| <a id="q9"></a>Q9 | **The last glyphs in VS Code**: Reload Piwi and Run to the cursor take a drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a key on each service notice and Don't Show Again on VS Code's repeated messages, a gear on JetBrains' run balloon, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |

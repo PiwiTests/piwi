@@ -6,11 +6,12 @@
 //
 //   npm run app:generate:brand
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { SVGPathData } from 'svg-pathdata';
 import svg2ttf from 'svg2ttf';
 import { SVGIcons2SVGFontStream } from 'svgicons2svgfont';
 import ttf2woff from 'ttf2woff';
@@ -259,6 +260,45 @@ function outlineGlyph() {
 }
 
 /**
+ * A glyph the JetBrains plugin draws (`icons/<file>`, strokes on its own grid), as the icon font's: its view mapped
+ * onto the font's square, its paths read as absolute lines and curves, its strokes as fills. Its filled shapes (the
+ * flaky mark's disc) are left out: a font glyph has one color.
+ */
+function pluginGlyph(file) {
+  const source = readFileSync(resolve(ROOT, 'apps/jetbrains/src/main/resources/icons', file), 'utf-8');
+  const [vx, vy, vw] = source
+    .match(/viewBox="([^"]+)"/)[1]
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  const k = IDE_VIEW.w / vw;
+  // The editors' line weight, whatever the drawing's own: the font's glyphs stand side by side.
+  const width = IDE_LINE;
+  const fills = [...source.matchAll(/<path d="([^"]+)"/g)]
+    .map(([, d]) =>
+      strokeAsFill(
+        new SVGPathData(d)
+          .toAbs()
+          .normalizeST()
+          .qtToC()
+          .aToC()
+          .normalizeHVZ(false)
+          .translate(-vx, -vy)
+          .scale(k)
+          .round(100)
+          .encode()
+          .replace(/z/g, 'Z'),
+        width,
+      ),
+    )
+    .join('');
+  return svg({ x: 0, y: 0, w: IDE_VIEW.w, h: IDE_VIEW.h }, `<path d="${fills}" fill="#000"/>`, {
+    width: 16,
+    height: 16,
+  });
+}
+
+/**
  * An app icon: the mark on a violet tile with rounded corners (`radius` as a share of the side, 0 for a full-bleed
  * square that the platform masks itself), the full mark or the small one, filling `scale` of the tile's height, with
  * `inset` units of transparent margin on a 512-unit side. `size` is the SVG's display size.
@@ -442,9 +482,16 @@ function markData(png) {
   };
 }
 
-// VS Code's product icon font: `$(piwi-mark)` in the status item and the failures view, from the outline mark. Each glyph
-// has a fixed code point, so it keeps its character across runs; the font carries no build time.
-const ICON_FONT_GLYPHS = [{ name: 'piwi-mark', codepoint: 0xe000, svg: outlineGlyph() }];
+// VS Code's product icon font: `$(piwi-mark)` in the status item and the failures view, from the outline mark, and the
+// plugin's glyphs for the commands no codicon draws. Each glyph has a fixed code point, so it keeps its character
+// across runs; the font carries no build time.
+const ICON_FONT_GLYPHS = [
+  { name: 'piwi-mark', codepoint: 0xe000, svg: outlineGlyph() },
+  // The JetBrains plugin's own glyphs, for the commands no codicon draws.
+  { name: 'piwi-flaky', codepoint: 0xe001, svg: pluginGlyph('testFlaky.svg') },
+  { name: 'piwi-pause-watch', codepoint: 0xe002, svg: pluginGlyph('pauseWatch.svg') },
+  { name: 'piwi-stop-live', codepoint: 0xe003, svg: pluginGlyph('stopLive.svg') },
+];
 
 /** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */
 async function iconFont(glyphs) {

@@ -60,12 +60,13 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 
 **Glyphs.** Every command in `package.json` has a codicon from the concept table of
 [editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), checked by
-hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Reload Piwi, Run to the cursor, Pause and
-watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
-context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
-`tests/menus.test.ts` holds both. Piwi's own mark is `$(piwi-mark)`, a glyph of the product icon font the brand asset
-generator writes (`media/piwi-icons.woff`, `contributes.icons`): the idle status item and the failures view's run
-draw it.
+hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), or a glyph of Piwi's own, but two that wait for
+one (Reload Piwi, Run to the cursor). VS Code draws them in title bars, a view's inline row and a quick pick, not in the
+palette or a context menu. The stop's code actions show their command's glyph in the choice among them
+(`STOP_ACTIONS.icon`). `tests/menus.test.ts` holds both. Piwi's own glyphs are those of the product icon font the brand
+asset generator writes (`media/piwi-icons.woff`, `contributes.icons`, ids of two segments as VS Code takes them):
+`$(piwi-mark)`, which the idle status item and the failures view's run draw, and the JetBrains plugin's flaky, Pause and
+watch and Stop sharing glyphs (`$(piwi-flaky)`, `$(piwi-pause-watch)`, `$(piwi-stop-live)`), at one line weight.
 
 ## Service, lenses and credentials
 
