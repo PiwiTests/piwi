@@ -22,16 +22,19 @@ menu and failures tree built from registered actions, the tree's as new `Piwi.Fa
 and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Point's key, `Piwi.OpenRunPage`,
 `Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
-say Open the screenshot (HM11). M2 is built. §14 adds the findings the code that built the plan raised. The live-run
-study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names,
-and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and
-the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
-fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
+say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
+and Open run #78 (running) beside the same run's page row joins Q8's one Open in dashboard; its three new groups
+(`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. §14 adds the
+findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
+P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
+lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
+live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
+restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
+step moves the document to `adr/`.
 
 **Summary.**
 
@@ -80,8 +83,8 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
    counts one run twice in two wordings ([HM1](#hm1), [HM2](#hm2), [LR1](#lr1), [LR18](#lr18)).
 
 3. **A stopped Piwi run's controls are missing where JetBrains' debugger keeps its own**: no Run menu, editor menu or
-   Run tab entries, no way back to the stopped line in VS Code and only unregistered status-popup rows in JetBrains, and
-   no page per worker carrying the controls ([LR3](#lr3), [LR4](#lr4), [LR8](#lr8)).
+   Run tab entries, no way back to the stopped line in VS Code, and no page per worker carrying the controls
+   ([LR3](#lr3), [LR4](#lr4), [LR8](#lr8)).
 
 4. **From a test's own line, neither editor offers more than Run and Verify ×3, and nothing debugs it**: JetBrains'
    result icon opens a browser, VS Code's Testing menus have no Piwi entry and no Debug profile ([TL2](#tl2),
@@ -149,7 +152,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
    client lacks.** ([AC11](#ac11), [HM8](#hm8), [HM16](#hm16))
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
-   has an icon and a when clause.** ([AC12](#ac12))
+   has an icon and a when clause.** ([LI1](#li1))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
    interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [ST8](#st8), [TL4](#tl4))
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
@@ -301,8 +304,6 @@ submenu on files and folders in both, the same group in Solution Explorer and th
 descriptor, and New → Playwright Test (Recorded)…, which [record-from-the-ide.md](record-from-the-ide.md) Part 2 plans,
 on config folders only. ([M3](#m3), [M17](#m17), [LI4](#li4), [LI16](#li16))
 
-### 4.3 Registered and discoverable
-
 ### 4.4 Names
 
 <a id="ac7"></a>**AC7. The two clients name at least thirteen shared actions differently, End the test has four
@@ -321,7 +322,7 @@ one wording per action, from the action catalog both manifests are tested agains
 |---|---|---|---|
 | Coverage marks | Toggle the coverage marks | Show Coverage Marks | Show coverage marks |
 | The run shown | Open the latest run | Open the Latest Run in the Dashboard | Open latest run |
-| Screenshot | Open the failure screenshot | Open the Screenshot | Open screenshot |
+| Screenshot | Open the screenshot | Open the screenshot | Open screenshot |
 | End | End the test here, skipping the rest of it; End test | End the Test; End Test | End test |
 | Record at a stop | Record in the stopped test's page | Record Here at the Stop | Record at stop |
 | Assert | Assert in the stopped test's page | Assert at the Stop | Assert at stop |
@@ -1309,7 +1310,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="q2"></a>Q2 | **A flaky test marked flaky in JetBrains**: the outcome palette's flaky glyph ([M5](#m5)) on the result icon and in the CI Run tab, where the warning and the amber `TestFailed` draw it now; a fixture check fails when a flaky test carries no flaky mark | `ide` | [TL13](#tl13), [IC4](#ic4) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
-| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup | `ide` | [HM12](#hm12), [HM3](#hm3) |
+| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup (not Open run #78 (running) beside the same run's page row) | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
@@ -1328,7 +1329,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
 | <a id="m6"></a>M6 | **Glyphs on the pause bar**, drawn anew in picker-dom (MIT) | `extension` | [IC6](#ic6) |
-| <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context` | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
+| <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
 | <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8) |

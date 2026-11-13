@@ -36,6 +36,7 @@ import com.intellij.util.ui.NamedColorUtil
 import java.awt.Point
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseEvent
+import com.intellij.xdebugger.XDebugSession
 import javax.swing.Icon
 import javax.swing.JComponent
 
@@ -209,10 +210,14 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
                 // Each stop as the registered Go to the stopped line, acting on it (`STOP`), named as the choice names it.
                 stops.forEach { stop ->
                     val icon = if (Glue.isFailure(stop.stop)) PiwiIcons.FAILED else AllIcons.Debugger.NextStatement
-                    registeredWith("Piwi.ShowStop", Glue.stopLabel(stop), icon) { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
+                    val presence = listOfNotNull("Go to the line the test is stopped at", Glue.stopPresence(stop, runs.sessions))
+                    registeredWith("Piwi.ShowStop", Glue.stopLabel(stop), icon, presence.joinToString(". ")) {
+                        it.add(PiwiRunSessions.STOP, stop)
+                    }?.let(::add)
                 }
                 if (stops.isNotEmpty()) addSeparator()
-                addAll(registered(*RUN_ACTIONS))
+                // The share's own entries already stop it: their Stop sharing rows are not offered twice.
+                addAll(registered(*RUN_ACTIONS).filter { live.isEmpty() || manager.getId(it) !in SHARE_STOPS })
                 addSeparator()
             }
             if (!shareShown) addLive()
@@ -253,7 +258,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         popup.show(RelativePoint(label, Point(0, -popup.content.preferredSize.height)))
     }
 
-
     /**
      * An entry of the menu on a share (`Glue.liveMenu`): the run page opened in the browser, its link copied, or the
      * share stopped once the person confirms (`PiwiRunSessions.shareLive`, `shareWindow`).
@@ -283,8 +287,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
     }
 
-
-
     companion object {
         /**
          * The `Piwi.RunControl` group's actions, in its order (its controls, the page, the code actions, sharing, Stop),
@@ -298,6 +300,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             "Piwi.StopSharingWindowLive", "Piwi.HoldFailures", "Piwi.StopRun",
         )
 
+        /** The run actions the share's own entries stand for while they show. */
+        val SHARE_STOPS = setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive")
+
         /** The path of the selected editor's file, whose Playwright config the item speaks for; null with none open. */
         fun shownFile(project: Project): String? = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.path
     }
@@ -305,7 +310,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
 /** Piwi's icon, the tool window's. */
 private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiStatusBarWidget::class.java)
-
 
 /**
  * The item's label: an icon and a text in the status bar's font and insets, the text in the status bar's foreground,
@@ -372,6 +376,9 @@ class GoToRecordedLinesAction : DumbAwareAction() {
  */
 class ShowStopAction : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.stopped
+
+    /** Show Execution Point acts on a suspended debug session alone: the key is Piwi's otherwise. */
+    override fun givesWayTo(debugSessions: List<XDebugSession>) = debugSessions.any { it.isSuspended }
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return

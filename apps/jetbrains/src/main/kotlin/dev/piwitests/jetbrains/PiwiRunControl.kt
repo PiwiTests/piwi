@@ -17,7 +17,6 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
-import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -66,7 +65,6 @@ import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAware
-import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
@@ -3364,6 +3362,9 @@ class EndTestAction : StopControlAction(Glue.StopControl.END) {
  * on, as the tab's button does; enabled while that test's worker can open it.
  */
 class OpenTraceSoFarAction : RunControlAction() {
+    /** The Worker tab's slot and its asks are the event thread's. */
+    override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) = sessions(e)?.traceOpenable() == true
 
     override fun actionPerformed(e: AnActionEvent) {

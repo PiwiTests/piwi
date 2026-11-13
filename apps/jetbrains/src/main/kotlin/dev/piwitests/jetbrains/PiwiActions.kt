@@ -191,6 +191,8 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repea
         val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
         val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
         val line = e.getData(TEST_LINE)
+        // A popup's test whose text was deleted has no line left: nothing runs.
+        if (line != null && line < 0) return
         PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat)
     }
 }
@@ -208,6 +210,7 @@ fun registeredWith(
     id: String,
     label: String? = null,
     icon: javax.swing.Icon? = null,
+    description: String? = null,
     data: (com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder) -> Unit,
 ): AnAction? {
     val registered = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return null
@@ -215,11 +218,20 @@ fun registeredWith(
         init {
             if (label != null) templatePresentation.setText(label, false)
             if (icon != null) templatePresentation.icon = icon
+            if (description != null) templatePresentation.description = description
         }
 
+        override fun getActionUpdateThread() = registered.actionUpdateThread
+
+        /**
+         * The registered action's own update, with the data: `AnActionWrapper.update` would read a popup's update
+         * session, which builds the delegate's event from the popup's context, without it.
+         */
         override fun update(e: AnActionEvent) {
-            super.update(e.withDataContext(withData(e.dataContext)))
+            registered.update(e.withDataContext(withData(e.dataContext)))
             if (label != null) e.presentation.setText(label, false)
+            if (icon != null) e.presentation.icon = icon
+            if (description != null) e.presentation.description = description
         }
 
         override fun actionPerformed(e: AnActionEvent) {
@@ -256,6 +268,11 @@ class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
+        // On a node of the Piwi tool window, the node's own page alone; elsewhere this file's test or the latest run.
+        if (e.getData(FAILURE_NODE) != null) {
+            e.presentation.isEnabledAndVisible = e.getData(DASHBOARD_URL) != null
+            return
+        }
         e.presentation.isEnabled = e.getData(DASHBOARD_URL) != null || piwiConnected(e.project)
     }
 

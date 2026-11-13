@@ -133,6 +133,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
     }
 
+    /** A popup's registered action updates with what the popup is about: a run page's row is enabled for its page. */
+    fun testAPopupsRegisteredActionUpdatesWithItsData() {
+        val page = registeredWith("Piwi.OpenRunPage", "Open run #78") { it.add(RUN_PAGE, RunPage(78, "https://piwi.example/runs/78")) }!!
+        val shown = myFixture.testAction(page)
+        assertTrue(shown.isEnabled)
+        assertEquals("Open run #78", shown.text)
+        // With no page named and no run of this project, there is nothing to open.
+        assertFalse(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.OpenRunPage")).isEnabled)
+    }
+
     /**
      * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
      * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.

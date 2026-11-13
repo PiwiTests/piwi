@@ -123,13 +123,13 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             fun lineNow(): Int? = at.takeIf { it.isValid }?.let { it.document.getLineNumber(it.startOffset) }
             // The registered runs, their keys shown, acting on this test's line rather than the caret's.
             val onLine = { builder: com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder ->
-                lineNow()?.let { builder.add(TEST_LINE, it) }
+                builder.add(TEST_LINE, lineNow() ?: -1)
                 Unit
             }
             return DefaultActionGroup(
                 listOfNotNull(
-                    registeredWith("Piwi.RunTestAtCursor", "Run with Piwi", AllIcons.Actions.Execute, onLine),
-                    registeredWith("Piwi.VerifyTestAtCursor", "Verify ×3 with Piwi", AllIcons.Actions.Rerun, onLine),
+                    registeredWith("Piwi.RunTestAtCursor", "Run with Piwi", AllIcons.Actions.Execute, data = onLine),
+                    registeredWith("Piwi.VerifyTestAtCursor", "Verify ×3 with Piwi", AllIcons.Actions.Rerun, data = onLine),
                 ),
             )
         }

@@ -57,7 +57,7 @@ The IDE's LSP client shows warnings, quick fixes (Alt+Enter) and hover in open f
   <figcaption>The heal of a broken locator, offered with Alt+Enter.</figcaption>
 </figure>
 
-The rest is native, and every action is under **Tools → Piwi**:
+The rest is native, and every action that is not about a selected item is under **Tools → Piwi**:
 
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
   since the IDE highlights open files only.
