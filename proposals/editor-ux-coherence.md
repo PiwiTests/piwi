@@ -14,11 +14,12 @@ remaining rows no longer name; git keeps their record. The defects still open ar
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a
-run's balloon titled by its run, and VS Code's Connect failures in JetBrains' words (ST20). §14 adds the findings the
-code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to
-P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this
-document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model,
-its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+run's balloon titled by its run, VS Code's Connect failures in JetBrains' words (ST20), and Q23, the desktop app's
+product name, Piwi Desktop, which #1317 shipped (AC13). §14 adds the findings the code that built the plan raised. The
+live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status
+names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a
+run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is
+on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -40,7 +41,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** 12 quick wins, most of them first, then 23 medium and 7 large
+- **Twenty larger items (§10) and a ranked plan (§12):** 11 quick wins, most of them first, then 23 medium and 7 large
   steps, each the size of a pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -404,15 +405,6 @@ editors. ([M16](#m16), [LI15](#li15))
 | Mac OS X 10.5+, VSCode OSX, Sublime Text (Mac OS X), macOS System Shortcuts (Cmd) | `ForceRefresh` | free | free |
 
 ### 4.6 Names across tools
-
-<a id="ac13"></a>**AC13. The desktop app installs as Piwi Dashboard, the name the Start menu, the Dock and the app list
-show, while its window, its tray, Piwi Picker and the dashboard call it Piwi Desktop.**
-`apps/desktop/src-tauri/tauri.conf.json:3` sets `productName` to Piwi Dashboard, beside the window's title and the
-tray's `APP_NAME`, Piwi Desktop (`tauri.conf.json:14`, `apps/desktop/src-tauri/src/lib.rs:422`), and the MCP server
-tells a user to start Piwi Desktop by finding Piwi Dashboard in the Start menu
-(`apps/desktop/src-tauri/src/mcp_stdio.rs:155`). **(read)** Fix: Piwi Desktop as the product name once the installers'
-upgrade path is checked (the identifier stays), and `apps/application/tests/unit/desktop-app-name.test.ts` holding
-`productName` to `ECOSYSTEM_PIECES` too. ([Q23](#q23), [LI20](#li20))
 
 ## 5. The test line
 
@@ -1343,8 +1335,7 @@ an editor whose source is the desktop app opens pages through `piwi://open/<page
 Open' there (the study's P5) and offers Back to the failure in the editor. A test holds every label to the table, and
 the docs' hand-offs table is generated from it. **Lives in** a table beside the concept table (FSL). **Replaces** one
 destination under two names, 'Connect' meaning two things. **Depends on** [LI2](#li2). **Revisits**
-[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card and
-`tauri.conf.json`'s productName 'Piwi Dashboard'. Steps [Q23](#q23), [M24](#m24).
+[bug-report-to-failing-test.md](../adr/bug-report-to-failing-test.md)'s 'Connect Piwi Picker' card. Step [M24](#m24).
 
 ## 11. Defects filed
 
@@ -1375,7 +1366,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
-| <a id="q23"></a>Q23 | **The desktop app's `productName`**, once §13 item 19 settles the upgrade path | `desktop` | [AC13](#ac13) |
 | <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: the CI rows from the gutter's outcome marks and Appendix A's rows, unreachable and Run the tests that reach this file off shared glyphs; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
@@ -1427,9 +1417,8 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 The quick wins that stand alone (Q5, Q8, Q13, Q16, Q27 to Q30), each on its own. Then M1 and M2, on which most of the
 rest builds: the names that still differ (AC7, NF3), the popups built from unregistered actions (AC6, NF2), one Piwi
 menu (M3) and the run-control places (M14); M4 and M5 draw the glyphs and the outcome palette that Q2, Q9, Q26 and IC2's
-recording wait for; Q23 waits for §13's productName question. M13 and M15 finish the glance and the page; M16 and M17
-close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0 whether M14's places
-are interim.
+recording wait for. M13 and M15 finish the glance and the page; M16 and M17 close #1117 and #1118; L1's Runs home
+settles where the CI list goes (NF10); L3 decides before 1.0 whether M14's places are interim.
 
 ## 13. Open questions
 
@@ -1483,9 +1472,7 @@ are interim.
 18. **The in-editor debug action's name**: 'Debug with Piwi', pairing with Run with Piwi, the dashboard's 'Debug in my
     editor', or 'Debug this failure' on a failure node? The choice goes in the catalog and in
     [developer-loop-audit.md](developer-loop-audit.md) §9.
-19. **The desktop app's productName** ([AC13](#ac13)): what happens to installed copies on upgrade, on Windows and
-    macOS?
-20. **Playwright for .NET, Java and Python** ([LI17](#li17)): a non-goal stated everywhere a .NET user looks, or a NuGet
+19. **Playwright for .NET, Java and Python** ([LI17](#li17)): a non-goal stated everywhere a .NET user looks, or a NuGet
     adapter in `integrations/`? The maintainer's scope decision.
 
 ## 14. Found since: what building the plan added
