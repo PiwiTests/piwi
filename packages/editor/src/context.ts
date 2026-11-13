@@ -753,7 +753,9 @@ export class PiwiContext {
         const commits = new Set([next.run?.commit, ...(next.overlays ?? []).map((o) => o.commit)]);
         for (const [key, entry] of this.commitTexts) if (!commits.has(entry.commit)) this.commitTexts.delete(key);
       }
-      const listed = new Set([...next.failures, ...(next.resolved ?? [])].map((f) => f.executionId));
+      const listed = new Set(
+        [...next.failures, ...(next.resolved ?? []), ...(next.flaky ?? [])].map((f) => f.executionId),
+      );
       for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
       this.runBranch = branch;
       this.checkedOutBranch = checkedOut;

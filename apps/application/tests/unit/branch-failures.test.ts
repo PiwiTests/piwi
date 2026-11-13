@@ -7,8 +7,14 @@ import { migrateToLatest } from './temp-db';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { BranchFailuresRunError, errorFrames, errorMessage, getBranchFailures, parseBranchFailuresQuery } =
-  await import('../../server/utils/branch-failures');
+const {
+  BranchFailuresRunError,
+  errorFrames,
+  errorMessage,
+  getBranchFailures,
+  parseBranchFailuresQuery,
+  readBranchFailures,
+} = await import('../../server/utils/branch-failures');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -26,6 +32,7 @@ beforeAll(async () => {
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' },
     { id: 2, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'adds' },
+    { id: 3, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'checks out' },
   ]);
   await db.insert(schema.testRuns).values([
     { id: 1, projectId: 1, status: 'failed', branch: 'main', startTime: new Date(1000_000), totalTests: 2 },
@@ -68,6 +75,17 @@ beforeAll(async () => {
       browserName: 'chromium',
       status: 'passed',
       line: 3,
+      passedAfterFailure: true,
+    },
+    // Test 3 is flaky alone: no attempt of it failed last.
+    {
+      id: 27,
+      testRunId: 4,
+      testCaseId: 3,
+      retries: 1,
+      browserName: 'chromium',
+      status: 'passed',
+      line: 12,
       passedAfterFailure: true,
     },
     // A second repetition of test 1 on chromium passes on its retry, but another repetition failed: not flaky.
@@ -138,6 +156,23 @@ describe('getBranchFailures', () => {
     expect(result.failures.map((f) => [f.executionId, f.testCaseId])).toEqual([[22, 1]]);
   });
 
+  test('a flaky test renamed in place gives the answer another version', async () => {
+    const version = async () =>
+      JSON.stringify(
+        await (
+          await readBranchFailures(db as never, 1, { branch: 'feature/retry' }, (_, message) => new Error(message))
+        ).version(),
+      );
+    const before = await version();
+    const { eq } = await import('drizzle-orm');
+    await db.update(schema.testCases).set({ title: 'checks out twice' }).where(eq(schema.testCases.id, 3));
+    try {
+      expect(await version()).not.toBe(before);
+    } finally {
+      await db.update(schema.testCases).set({ title: 'checks out' }).where(eq(schema.testCases.id, 3));
+    }
+  });
+
   test('lists the run’s flaky tests apart, but a test that failed in another repetition', async () => {
     const result = await getBranchFailures(db as never, 1, 'feature/retry');
     expect(result.flaky).toEqual([
@@ -147,6 +182,15 @@ describe('getBranchFailures', () => {
         title: 'adds',
         file: 'tests/cart.spec.ts',
         line: 3,
+        browserName: 'chromium',
+        retries: 1,
+      },
+      {
+        executionId: 27,
+        testCaseId: 3,
+        title: 'checks out',
+        file: 'tests/checkout.spec.ts',
+        line: 12,
         browserName: 'chromium',
         retries: 1,
       },

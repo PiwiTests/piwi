@@ -1138,7 +1138,7 @@ describe('the Piwi language server', () => {
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],
-      ['flaky', ['flaky:tests/checkout.spec.ts\npays\nchromium']],
+      ['flaky', ['flaky:1\nchromium']],
     ]);
     // The flaky test at its test(…) line as the spec stands, its result's page one click away.
     expect(failures.tree[0]!.children[1]!.children[0]).toMatchObject({

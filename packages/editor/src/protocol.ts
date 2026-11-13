@@ -1272,6 +1272,7 @@ export interface FailureTreeNode {
 
 /** A flaky test of a context's run, placed on its spec as it stands: the tree's `Flaky in this run` group lists it. */
 export interface FailuresFlaky {
+  testCaseId: number;
   uri: string;
   /** 0-based. */
   line: number;

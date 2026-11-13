@@ -210,6 +210,7 @@ describe('the failures tree', () => {
   test('lists the run’s flaky tests under one closed group, after the failures, and with none failing too', () => {
     const flaky = [
       {
+        testCaseId: 2,
         uri: 'file:///w/tests/cart.spec.ts',
         line: 2,
         title: 'adds',
@@ -220,7 +221,7 @@ describe('the failures tree', () => {
       },
     ];
     const [run] = failureTree({ ...result, flaky }, 'file');
-    const group = run!.children.at(-1)!;
+    const group = run!.children[run!.children.length - 1]!;
     expect([group.key, group.kind, group.label, group.description, group.icon, group.expanded]).toEqual([
       'flaky',
       'group',
@@ -231,7 +232,7 @@ describe('the failures tree', () => {
     ]);
     expect(group.children).toEqual([
       {
-        key: 'flaky:tests/cart.spec.ts\nadds\nchromium',
+        key: 'flaky:2\nchromium',
         kind: 'flaky',
         label: 'adds',
         description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1',

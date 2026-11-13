@@ -10,6 +10,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNull, max, notInArray, or, sq
 import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/core/error-parse';
 import { failureClusters, files, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { caseHeadline } from '#shared/failure-verdict';
 import { failurePageFirst, isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
@@ -517,7 +518,9 @@ function branchOverlay(o: BranchFailuresRuns['overlays'][number]): BranchOverlay
  *   repetition) and the sum of their test ids (an execution moved to another test by a merge);
  * - each failed execution, with what may change once it is stored: its test, failure cluster and whether it is a new
  *   regression, the cluster's title, its test's title, file and owner, and its stored files (how many, the newest,
- *   on `idx_files_test_runs_case_id`).
+ *   on `idx_files_test_runs_case_id`);
+ * - each flaky execution of the latest complete run (`flakyResultSql`), with its test's title and file: a verdict a
+ *   backfill writes, or a test renamed in place, changes the answer.
  *
  * The rest of an execution (its status, error, steps, line, duration, attempt, project, repetition) never changes
  * once stored. Never reads an error, steps or a file's content.
@@ -566,9 +569,23 @@ async function branchFailuresVersion(
     .leftJoin(failureClusters, eq(failureClusters.id, testRunsCases.failureClusterId))
     .where(and(ofRuns, inArray(testRunsCases.status, FAIL_STATUSES)))
     .orderBy(asc(testRunsCases.id));
+  const flaky = runs.run
+    ? await db
+        .select({
+          id: testRunsCases.id,
+          testCaseId: testRunsCases.testCaseId,
+          title: testCases.title,
+          file: testCases.filePath,
+        })
+        .from(testRunsCases)
+        .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
+        .where(and(eq(testRunsCases.testRunId, runs.run.id), flakyResultSql()))
+        .orderBy(asc(testRunsCases.id))
+    : [];
   return {
     ...shown,
     executions: executions.map((e) => [e.runId, e.count, e.newest, e.tests]),
+    flaky: flaky.map((f) => [f.id, f.testCaseId, f.title, f.file]),
     failed: failed.map((f) => [
       f.id,
       f.testCaseId,
@@ -809,9 +826,9 @@ async function failuresOfRuns(
 }
 
 /**
- * The flaky tests of a run: each final attempt that passed after an earlier attempt failed (`passed_after_failure`,
- * on `idx_trc_passed_after_failure`), once per test and project, leaving out a test and project that failed in another
- * repetition (`failed`, by `testKey`).
+ * The flaky tests of a run: each final attempt that passed after an earlier attempt failed (`flakyResultSql`, which the
+ * partial index `idx_trc_passed_after_failure` repeats), once per test and project, leaving out a test and project that
+ * failed in another repetition (`failed`, by `testKey`).
  */
 async function flakyOfRun(db: DrizzleDB, runId: number, failed: ReadonlySet<string>): Promise<BranchFlaky[]> {
   const rows = await db
@@ -826,13 +843,7 @@ async function flakyOfRun(db: DrizzleDB, runId: number, failed: ReadonlySet<stri
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
-    .where(
-      and(
-        eq(testRunsCases.testRunId, runId),
-        eq(testRunsCases.finalAttempt, true),
-        eq(testRunsCases.passedAfterFailure, true),
-      ),
-    )
+    .where(and(eq(testRunsCases.testRunId, runId), flakyResultSql()))
     .orderBy(asc(testCases.filePath), asc(testRunsCases.line), asc(testRunsCases.id));
   const listed = new Map<string, BranchFlaky>();
   for (const r of rows) {

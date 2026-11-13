@@ -188,7 +188,7 @@ function flakyGroup(flaky: FailuresFlaky[] | undefined): FailureTreeNode[] {
       expanded: false,
       url: null,
       children: flaky.map((f) => ({
-        key: `flaky:${f.file}\n${f.title}\n${f.browserName ?? ''}`,
+        key: `flaky:${f.testCaseId}\n${f.browserName ?? ''}`,
         kind: 'flaky' as const,
         label: f.title,
         description: [`${f.file}:${f.line + 1}`, f.browserName, `passed on retry ${f.retries}`]
