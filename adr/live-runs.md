@@ -1,5 +1,8 @@
 # Live runs across the tools
 
+- Status: accepted
+- Date: 2026-11-13
+
 An analysis of how a running Playwright run is followed and watched in every Piwi tool, and a plan to make it one
 experience. A run can start from a terminal, CI, VS Code, a JetBrains IDE, the desktop app or a coding agent, and be
 watched from the dashboard's run page, the editor, Piwi Picker's Runs window, the desktop app's tray, an agent's MCP
@@ -286,9 +289,9 @@ to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mar
 machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
 `stuck-notifications` use of `run-eligibility.ts`. #1112 is fixed on its own: the default trace takes no ARIA
 snapshots. Nothing
-here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](live-view-next.md) and extends
-decisions of [`run-control.md`](../adr/run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
-The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilization.md).
+here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](../proposals/live-view-next.md) and extends
+decisions of [`run-control.md`](run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
+The contracts it adds are entry D63 of [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 
 **Summary.**
 
@@ -307,7 +310,7 @@ The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilizatio
   pending requests, a text (ARIA) view, a filmstrip of the test's calls, a crop of the element it waits on, and
   Playwright's own trace viewer on the growing trace. Pixels stay on by default in a focused view, and a tap away on a
   phone.
-- **The team instance still never steers a run** ([run-control D8](../adr/run-control.md)). It shows CI and shared
+- **The team instance still never steers a run** ([run-control D8](run-control.md)). It shows CI and shared
   runs, carries a teammate's request to watch, and learns that a local test is stopped as text, never as frames.
 
 ## Terms
@@ -488,7 +491,7 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written when the project's trace sets `snapshots.aria`; `wrapConfig`'s does not), else `ariaSnapshot` on request | A few KB, hundreds of KB on a heavy page; 120 to 300 ms there if taken | Phones, agents, screen readers |
 | Filmstrip | One thumbnail per finished call of the current test, for a late joiner | The view's own masked frames, locally and for the team, taken only while someone watches, kept in the worker's memory | A thumbnail a call while watched | A strip under the view |
 | Lanes at a glance | A bar per attempt per lane, the usual duration as a ghost, Stuck?, tiles of every lane at 1 fps | Lane state, the last ten passes per test | One query a run; tiles at 1/s | The run page, the desktop run page |
-| The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
+| The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](../proposals/live-view-next.md) | File reads | A hand-off locally |
 | Presence | Who watches, who drives, who paused, who set Hold failures | The hub's clients; the instance's viewer count | Bytes | Every surface |
 | Terminal | One start line with the link, stop and stuck lines, OSC 8 links, OSC 9;4 progress (error after a failure, warning while a test waits) | The reporter's main process | None | Terminals, CI logs |
 | OS presence | Running, failing or waiting for you on the taskbar, Dock and tray; one flash per job | The desktop app, fed from every local run | None | The desktop app |
@@ -538,9 +541,9 @@ A person learns one model, and every surface renders it.
 | D4 | **The call is the unit, and pixels one layer of it.** Each layer is keyed by the call's id and produced only while subscribed, reusing what the trace already writes. | Revises live-view-next D1's first half; keeps its second. Generalizes "no image while nobody watches" to every layer. |
 | D5 | **The lane model lives in `@piwitests/core/live-lane` (MIT, written anew): ids, states, a reducer.** The hub and the instance reduce; surfaces receive ready lane state. | The Kotlin plugin cannot run a TypeScript reducer, and a window that reduces on its own can drift from its hub: one reducer per producer side keeps every surface in step. |
 | D6 | **Words stay in the FSL surfaces; core carries enums.** A drift test holds the dashboard's, the desktop's and the extension's words for each enum together. | The root guide forbids moving FSL code into MIT packages; enums are new code. |
-| D7 | **The team instance never steers** ([run-control D8](../adr/run-control.md) stands). It may carry a request (**Ask to watch**) that a local tool shows for the developer to accept, and it receives a local stop as text. It never learns a hub's address. | Consent stays local. A stop as text is the same class of data as a live step, but goes whoever watches: the stuck check reads it, and it is a few words per stop. Widened by [run-on-my-machine.md](run-on-my-machine.md) to starting and stopping a run a person asked for, which the local tool shows first. |
+| D7 | **The team instance never steers** ([run-control D8](run-control.md) stands). It may carry a request (**Ask to watch**) that a local tool shows for the developer to accept, and it receives a local stop as text. It never learns a hub's address. | Consent stays local. A stop as text is the same class of data as a live step, but goes whoever watches: the stuck check reads it, and it is a few words per stop. Widened by [run-on-my-machine.md](../proposals/run-on-my-machine.md) to starting and stopping a run a person asked for, which the local tool shows first. |
 | D8 | **Hubs accept a native client without an `Origin` that holds the discovery token**, so the desktop server can read an editor's sessions and `npx @piwitests/reporter mcp` can reach every hub. This widens run-control's D8 ("a WebSocket only from the extension's origin") and is recorded as superseding that point when it ships. | Web pages still always send an `Origin` and stay refused. The token is the user's own, in an owner-only folder; the Windows check of that folder needs the same review. |
-| D9 | **One owner per run, and no daemon** (amended by [run-on-my-machine.md](run-on-my-machine.md): Piwi Runner is one more program, a run target and never a hub). The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended by default (open question 3). | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
+| D9 | **One owner per run, and no daemon** (amended by [run-on-my-machine.md](../proposals/run-on-my-machine.md): Piwi Runner is one more program, a run target and never a hub). The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended by default (open question 3). | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
 | D10 | **Peers name hubs, never their tokens.** A hub tells its clients of the other hubs in `~/.piwi/editors`; the desktop hub is named without the desktop token, and Piwi Picker pairs with the desktop app through its own **Allow**. | The desktop token opens the app's whole API; handing it on would skip the user's consent. |
 | D11 | **Features, not versions.** `run-attach`, the hub's `welcome` and the desktop's live answer carry `features: string[]`; readers treat an unknown state as `other`. Lenient readers ship a release before any new state. | Six release trains (two marketplaces, a browser store, the desktop updater, npm, the instance) update independently, and `RUN_TAKES` is at its 16-entry cap (`packages/core/src/run-channel.ts:127-146`). |
 | D12 | **`follow` splits into `presence` and `hold`.** `presence` says a window shows the run and turns events on; `hold` is the run's policy with who set it. The desktop hub's `show`, which means Hold failures today, keeps that meaning. | A hidden Runs window holding every failure (RW19) comes from one word meaning two things. |
@@ -897,22 +900,22 @@ runs the performance check.
 
 ## Changes to other plans
 
-- **[live-view-next.md](live-view-next.md)** (its PRs 1 to 3 are built): P0 to P3 here come before its PR 4. Its D1 is
+- **[live-view-next.md](../proposals/live-view-next.md)** (its PRs 1 to 3 are built): P0 to P3 here come before its PR 4. Its D1 is
   revised (the call is the base, pixels a layer); its D2 amended (pausable runs get their call log from the in-process
   listener); its D10 widened (a team filmstrip from the view's own masked images); Part 1's Stuck? reads stop state;
   Part 5's Follow becomes the default lane view, with **Follow what needs attention** a mode, Watch all built on lane
   watches (answering its open question 6), and "the last 30 seconds" becoming the call-indexed filmstrip; Part 6 is
   rewritten onto the lane view and the local hub; Part 7 also applies to the local sink. D12, VP9 and holding a failing
   CI test (Part 8) stay as written, after P11.
-- **[run-control.md](../adr/run-control.md)** (shipped): this plan's ADR supersedes what it extends. Parts 2 and 6: a
+- **[run-control.md](run-control.md)** (shipped): this plan's ADR supersedes what it extends. Parts 2 and 6: a
   lane-scoped view needs no stop. D5: the desktop app is the fallback hub, piped runs attach unattended. D7: every
   image hides the pause bar and the local stop view is masked. D8: a hub accepts native clients that hold its token.
   D10: an interactive run's stops reach the instance as text. Of its Status's left-out items, the Runs window naming an
   agent's stop is delivered (P6); so are two limits its Status records for the built PRs: the last call ticking and
   the verdict (P4, P5), and code from a desktop run reaching an editor (P7).
-- **[desktop-run-progress.md](desktop-run-progress.md)**: the OS surfaces are fed from every local run; the amber
+- **[desktop-run-progress.md](../proposals/desktop-run-progress.md)**: the OS surfaces are fed from every local run; the amber
   state comes from stops; app jobs flash once; the thumbnail's buttons act on one run.
-- **[developer-loop-audit.md](developer-loop-audit.md)**: §9's one vocabulary is carried out by D6; V1 and V2 are built
+- **[developer-loop-audit.md](../proposals/developer-loop-audit.md)**: §9's one vocabulary is carried out by D6; V1 and V2 are built
   and P0 closes what they left (RT2, DB2), V4 closes with P6, V6 with P6 and P7, R5 with P3, S6 and S7 with P3, R13 with
   P5, D9, D11 and D12 with P5 and P6.
 - **Reporter contracts**: contract 3 changes (the stop text of an interactive run while someone has it open; the local

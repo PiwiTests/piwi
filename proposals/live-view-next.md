@@ -12,7 +12,7 @@ from more places. Where it revisits a decision of the [run control ADR](../adr/r
 view of a CI run, **Stuck?** with `test.stuck` (Part 1, as it now describes them; how long the step a stuck test is
 in usually takes is not built), and the secret fields masked with the project's own list (Part 2). PR 4 is built
 without video (Part 7: images as bytes, at the size the viewer shows them), and of PR 7, **Watch all** and **Follow
-what needs attention** as [`live-runs.md`](live-runs.md) P10 revises them (one watch connection a page, 16 a run and a
+what needs attention** as [`live-runs.md`](../adr/live-runs.md) P10 revises them (one watch connection a page, 16 a run and a
 byte rate, the follow a mode of the lane view); the last passing run's image is not. PR 6 is built, as **Inspect** in
 the run page's lane panel (`live-runs.md` P11's team half): the page at each call (Part 4), before it, at its action
 and after it, read from the runner's growing trace or a live trace of the worker's own (D6), sent only while a viewer
@@ -27,7 +27,7 @@ what a viewer of the DOM receives (D5, D9, D7). Safari is the one browser no spi
 outside the repository then drove the sample shop through Parts 1, 2, 4 and 5 and the video of Part 7; it found the
 defect listed under [Defects found while researching this plan](#defects-found-while-researching-this-plan), fixed
 before PR 1. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
-of [`1.0-stabilization.md`](1.0-stabilization.md). [`live-runs.md`](live-runs.md) proposes its P0 to P3 before PR 4
+of [`1.0-stabilization.md`](1.0-stabilization.md). [`live-runs.md`](../adr/live-runs.md) proposes its P0 to P3 before PR 4
 here, and revises D1, D2, D10 and Parts 1 and 5 to 7 (its section "Changes to other plans").
 
 **Summary.** What the plan delivers, in the order it should be built:
