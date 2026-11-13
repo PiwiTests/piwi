@@ -241,7 +241,7 @@ describe('statusMenu', () => {
 describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
-    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
+    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith)';
   /** The links of a run whose flaky tests the failures view lists: one more, to the config's. */
   const FLAKY_LINKS = LINKS.replace(
     ' · [Open in dashboard]',
@@ -259,7 +259,7 @@ describe('statusBarView', () => {
     );
     expect(view).toMatchObject({
       text: '$(plug) Piwi: connect',
-      tooltip: 'No project chosen.\n\n[Connect](command:piwi.connect)',
+      tooltip: 'No project chosen.\n\n[Connect…](command:piwi.connect)',
       action: 'connect',
     });
   });
@@ -272,7 +272,7 @@ describe('statusBarView', () => {
     );
     expect(view).toEqual({
       text: '$(server) Piwi: unreachable',
-      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect](command:piwi.connect)`,
+      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect…](command:piwi.connect)`,
       action: 'retry',
       url: null,
       liveUrl: null,
@@ -294,7 +294,7 @@ describe('statusBarView', () => {
     );
     expect(view).toEqual({
       text: '$(warning) Piwi: restart the desktop app',
-      tooltip: `${problem}\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      tooltip: `${problem}\n\n[Retry](command:piwi.refresh) · [Connect…](command:piwi.connect)`,
       action: 'retry',
       url: null,
       liveUrl: null,
@@ -371,19 +371,40 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
     expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
     expect(view.tooltip).toBe(
-      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally\n\n${FROM}\n\n${LINKS}`,
+      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
     expect(statusBarView(connected, local({ failingTests: 0, resolved: 3, overlays: 1 }))).toMatchObject({
       text: '$(pass) Piwi: 3 fixed locally',
+      tooltip: expect.stringContaining('\n\n1 local run since · 3 tests fixed locally\n\n'),
       error: false,
     });
     expect(statusBarView(connected, local({ failingTests: 1, resolved: 0, overlays: 1 }))).toMatchObject({
       text: '$(error) Piwi: 1 failing',
-      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally\n\n'),
+      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally · 1 failing\n\n'),
     });
+    // A local run that broke more tests than the run failed counts them all as failing, never as still failing.
+    expect(statusBarView(connected, local({ failingTests: 5, resolved: 0, overlays: 1 })).tooltip).toContain(
+      ': 115 passed, 3 failed, 0 flaky, 0 skipped\n\n1 local run since · 0 tests fixed locally · 5 failing\n\n',
+    );
     expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
       'local run',
     );
+  });
+
+  test('says how many tests the failed results are when a test fails on several Playwright projects', () => {
+    const projects = (status: string): RunStatusResult => {
+      const runs = run({ status, failedTests: 2, passedTests: 116, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, failingTests: 1, resolved: 0, overlays: 0 }] };
+    };
+    const view = statusBarView(connected, projects('failed'));
+    expect(view.text).toBe('$(error) Piwi: 1 failing');
+    expect(view.tooltip).toMatch(
+      /^Run #41 of Acme on feature\/pay: 116 passed, 2 failed \(1 test\), 0 flaky, 0 skipped\n/,
+    );
+    // While the run goes on, the item and the tooltip count its failed results alike.
+    const running = statusBarView(connected, projects('running'));
+    expect(running.text).toBe('$(sync~spin) Piwi: 118/120 · 2 failing');
+    expect(running.tooltip).toMatch(/: 116 passed, 2 failed, 0 flaky, 0 skipped\n/);
   });
 
   test('the count the editor’s own run told last, kept past its session until the instance’s reaches it or the run ends', () => {
@@ -503,7 +524,7 @@ describe('statusBarView', () => {
     };
     expect(statusBarView(connected, first)).toMatchObject({
       text: '$(sync~spin) Piwi: run #124 · 0/9 · yours',
-      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
+      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith)`,
       action: 'refresh',
     });
   });
@@ -557,7 +578,7 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
     expect(view).toMatchObject({
       text: '$(piwi-mark) Piwi: no run',
-      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
+      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith)`,
       action: 'refresh',
     });
   });

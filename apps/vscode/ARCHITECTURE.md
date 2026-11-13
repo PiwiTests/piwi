@@ -669,14 +669,16 @@ the item's own action (a recording's controls follow it), which depends on the s
 
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:
 
-- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`);
-- the baseline, the local runs and the run in progress;
+- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`),
+  with the tests the failed results are when a test failed on several Playwright projects (`2 failed (1 test)`);
+- the baseline, the local runs with what they fixed and the tests failing after them (the item's count), and the run
+  in progress;
 - when the run was read, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every
   30 s);
 - the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and
   a hint when the desktop app runs but is not in use, or was chosen but does not run;
-- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, to `piwi.refresh`
-  (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
+- links to `piwi.openRun`, `piwi.openInDashboard` and `piwi.compareWith`, to `piwi.connect` only while not connected,
+  to `piwi.refresh` (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
   failures view lists flaky tests for it (`flakyTestsByRoot`; the view draws the item again once it has read its tree),
   which selects and opens that config's **Flaky in this run** group (`FailuresView.revealFlaky`).
 
@@ -792,8 +794,9 @@ Playwright project, which is asked only when `piwi/record` answers with the list
 Nothing is written before the first `piwi/recordingChanged`. Each one then replaces the recorded block (the first one
 at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit. While it records:
 
-- the block is tinted with `piwi.recordingBlockBackground`, with a CodeLens above it: the state, the step count, and
-  Stop, Pause or Resume;
+- the block is tinted with `piwi.recordingBlockBackground`, its first line marked in the gutter with a red dot in a
+  ring (`media/recording.svg`), a gray ring while paused or after an edit of the block (`media/recording-paused.svg`),
+  each with a `-dark` copy, the JetBrains plugin's glyphs byte for byte (a mark, not a menu), with a CodeLens above it: the state, the step count, and Stop, Pause or Resume;
 - the status bar shows the recording;
 - the recording's warnings are diagnostics. Each stays after Stop until its line is edited in place (`editedLine`); an
   edit that adds or removes a line of the block removes them all.

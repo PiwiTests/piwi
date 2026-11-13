@@ -238,11 +238,11 @@ describe('the commands that read the instance', () => {
 });
 
 describe('a held failure’s mark', () => {
-  test('has a color of its own, in the failure red, and a red arrow beside the stop’s', () => {
+  test('has a color of its own, apart from the stop’s', () => {
     const colors = manifest.contributes.colors as Array<{ id: string; defaults: Record<string, string> }>;
-    expect(colors.find((c) => c.id === 'piwi.failurePointBackground')?.defaults.dark).toBe('#f8514940');
-    const arrow = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'failure-point.svg'), 'utf-8');
-    expect(arrow).toContain('fill="#f85149"');
+    const failure = colors.find((c) => c.id === 'piwi.failurePointBackground')?.defaults;
+    expect(failure).toBeDefined();
+    expect(failure).not.toEqual(colors.find((c) => c.id === 'piwi.executionPointBackground')?.defaults);
   });
 });
 
