@@ -1530,6 +1530,12 @@ object Glue {
     /** Whether a command chains several (`a && b`): a shell runs it, each one only once the one before it passed. */
     fun chained(command: String): Boolean = CHAIN in splitCommand(command)
 
+    /**
+     * A run's Run tab or run configuration name with who started it when a person did not (`RunCommand.label`), as the
+     * VS Code extension names its task: `Piwi: a.spec.ts · Started by Claude Code`.
+     */
+    fun labeledRunName(name: String, label: String?): String = if (label.isNullOrBlank()) name else "$name · $label"
+
     /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
     fun playwrightRunName(args: List<String>): String {
         val targets = args.filter { TEST_FILE_ARG.matches(it) }
@@ -2195,7 +2201,8 @@ object Glue {
 
     /**
      * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
-     * of how many they hold, how many failed, and how many were ended at a stop; null while no run says.
+     * of how many they hold, how many failed, and how many were ended at a stop, then who started the one run that says
+     * when a person did not (`RunSession.label`); null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
         val told = sessions.values.filter { it.progress != null }
@@ -2204,9 +2211,10 @@ object Glue {
         val failed = progress.sumOf { it.failed }
         val endedAtStop = progress.sumOf { it.endedAtStop ?: 0 }
         val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        val by = told.singleOrNull()?.label?.let { " · $it" }.orEmpty()
         return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
             (if (failed > 0) " · $failed failed" else "") +
-            if (endedAtStop > 0) " · $endedAtStop ended at a stop" else ""
+            (if (endedAtStop > 0) " · $endedAtStop ended at a stop" else "") + by
     }
 
     /** Whether a test of the runs failed so far, as their own processes say: the status bar's count takes the error color. */

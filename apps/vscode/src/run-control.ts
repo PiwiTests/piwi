@@ -1066,12 +1066,14 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     const text = presenceText(s);
     return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text}`)] : [];
   });
+  // Who started the one run that says, when a person did not: an agent's run never reads as the person's own.
+  const by = told.length === 1 ? [...sessions.values()].find((s) => s.progress)?.label : undefined;
   return {
     name: 'Piwi: Run progress',
-    text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
+    text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}${by ? ` · ${by}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
-      `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.` +
+      `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${by ? ` ${escapedMarkdown(by)}.` : ''}` +
       `${workers.length ? `\n\n${workers.join('\n\n')}` : ''}${links.length ? `\n\n${links.join(' · ')}` : ''}` +
       `${holds.length ? `\n\n${holds.join('\n\n')}` : ''}` +
       `${present.length ? `\n\n${present.join('\n\n')}` : ''}`,

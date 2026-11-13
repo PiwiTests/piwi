@@ -442,6 +442,8 @@ export interface RunSessionsOptions {
    * stop no one asked for (a `page.pause()`) goes on at once; a Pause, a Step or a Run to someone asked for waits.
    */
   holdsFailures?(ref: string): boolean;
+  /** Who started the run of `ref` when a person did not (`Started by Claude Code`, an agent's); null for a person. */
+  labelOf?(ref: string): string | null;
   /**
    * A session starts: a run's first connection opened, its own process's or a worker's, the run's command being one
    * the service built or one it did not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
@@ -2713,6 +2715,8 @@ export class RunSessions {
       ...(session.terminal ? { terminal: true } : {}),
       ...(session.runner ? { runner: true } : {}),
     };
+    const label = this.options.labelOf?.(session.ref);
+    if (label) view.label = label;
     const commit = checkoutCommitOf(session.ref);
     if (commit) view.checkout = { commit };
     const live = this.liveOf(session);

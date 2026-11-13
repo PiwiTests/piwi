@@ -284,12 +284,13 @@ object PiwiCommands {
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
-                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref) }.getOrDefault(false)
-                if (!started) run(project, cwd, line, env, ref)
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
+                    .getOrDefault(false)
+                if (!started) run(project, cwd, line, env, ref, command.label)
             }, project.disposed)
             return true
         }
-        run(project, cwd, line, env, command.ref)
+        run(project, cwd, line, env, command.ref, command.label)
         return true
     }
 
@@ -340,9 +341,10 @@ object PiwiCommands {
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
      * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
      * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included,
-     * once the process ended and the service heard so: the rerun's workers start a session of their own.
+     * once the process ended and the service heard so: the rerun's workers start a session of their own. Its tab says
+     * who started it when a person did not (`label`).
      */
-    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
+    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null, label: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
@@ -378,11 +380,11 @@ object PiwiCommands {
                     handler.destroyProcess()
                 } else {
                     RunContentExecutor(project, handler)
-                        .withTitle(Glue.runTabName(command))
+                        .withTitle(Glue.labeledRunName(Glue.runTabName(command), label))
                         .withFilter(RunOutputLinks(project, cwd))
                         .withActivateToolWindow(true)
                         .withRerun {
-                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref) }
+                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label) }
                             handler.destroyProcess()
                         }
                         .run()

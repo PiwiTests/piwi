@@ -1332,7 +1332,8 @@ arguments read one by one (`Args`, an unknown one refused) and a JSON schema tha
 - **Starting a run.** `run_start { file, line?, headed?, hold?, agent? }` builds the run as `piwi/runArgs` builds a
   person's (`runCommandFor`, from the spec and, for a line, the line of the test holding it as a location), holding
   failures unless `hold` is false, and asks the client to run it (`piwi/startRun`, `RunCommand.label`:
-  `Started by <agent>`, the name without its control and direction characters, `agentLabel`); a file no folder of the
+  `Started by <agent>`, the name without its control and direction characters, `agentLabel`, which the run's session
+  carries too, `RunSession.label`, for the clients to name it beside the run); a file no folder of the
   workspace holds, through a link too, or that is no spec of a config runs nothing. It is listed only for a client
   that sent `InitializationOptions.startsRuns`. The run is followed from its start: `run_list` lists it as `starting`
   and `run_follow` waits on it until its workers connect, and a command that ends before any does

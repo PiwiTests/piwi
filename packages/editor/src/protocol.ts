@@ -1906,6 +1906,11 @@ export interface RunSession {
    */
   checkout?: { commit: string };
   /**
+   * Who started the run when a person did not (`Started by Claude Code`, an agent's `run_start`), as its command's
+   * `RunCommand.label` says: the clients name it beside the run, never as the person's own. Absent for a person's run.
+   */
+  label?: string;
+  /**
    * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
    * `share`; absent for one whose reporter predates it.
    */

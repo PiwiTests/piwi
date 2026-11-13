@@ -126,6 +126,9 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.runTabName(chain))
         assertEquals("Piwi: piwi flake 12", Glue.runTabName("npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000"))
         assertEquals("Piwi: piwi flake verify 12", Glue.runTabName("npx @piwitests/reporter flake verify 12"))
+        // An agent's run says who started it.
+        assertEquals("Piwi: a.spec.ts:3 · Started by Claude Code", Glue.labeledRunName("Piwi: a.spec.ts:3", "Started by Claude Code"))
+        assertEquals("Piwi: a.spec.ts:3", Glue.labeledRunName("Piwi: a.spec.ts:3", null))
         // A chain is the shell's: the IDE's runner takes none.
         assertTrue(Glue.chained(chain))
         assertNull(Glue.playwrightTestArgs(chain))
@@ -847,6 +850,9 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // An agent's run says so, never reading as the person's own.
+        val agents = counted.copy(label = "Started by Claude Code")
+        assertEquals("Piwi: 3 of 9 · Started by Claude Code", Glue.runProgressText(mapOf("ed-1" to agents)))
         // A failure so far takes the error color, as the hub counts it.
         assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
         assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))

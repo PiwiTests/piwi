@@ -1920,6 +1920,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * hold their failures, by ref.
    */
   const watchedRuns = new Set<string>();
+  /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
+  const runLabels = new Map<string, string>();
   /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
   const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
@@ -1986,6 +1988,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     watched: (ref) => watchedRuns.has(ref) || (checkoutCommitOf(ref) !== null && !isUnattendedRef(ref)),
     // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
     holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
+    labelOf: (ref) => runLabels.get(ref) ?? null,
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -3595,6 +3598,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runCommands.delete(oldest);
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+    for (const ref of runLabels.keys()) if (!runCommands.has(ref)) runLabels.delete(ref);
     runLines.started(run.ref, unsavedFiles);
     return run;
   };
@@ -3812,6 +3816,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     if (!command?.ref) return { ok: false, message: `Piwi could not build a command that runs ${relative}.` };
     const label = `Started by ${start.agent}`;
+    runLabels.set(command.ref, label);
     try {
       const answer = (await connection.sendRequest(START_RUN_REQUEST, {
         command: { ...command, ref: command.ref, label },

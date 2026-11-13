@@ -30,11 +30,20 @@ object PlaywrightRunnerGate {
  * once [PlaywrightRunnerGate.available].
  */
 internal object PlaywrightRunnerLauncher {
-    /** The temporary configuration, made and selected; null when the runner does not take it. On the event thread. */
-    fun configure(project: Project, cwd: String, args: List<String>, env: Map<String, String>): RunnerAndConfigurationSettings? {
+    /**
+     * The temporary configuration, made and selected, named with who started the run when a person did not
+     * (`label`); null when the runner does not take it. On the event thread.
+     */
+    fun configure(
+        project: Project,
+        cwd: String,
+        args: List<String>,
+        env: Map<String, String>,
+        label: String? = null,
+    ): RunnerAndConfigurationSettings? {
         val type = ConfigurationTypeUtil.findConfigurationType(PlaywrightRunnerGate.TYPE_ID) ?: return null
         val manager = RunManager.getInstance(project)
-        val settings = manager.createConfiguration(Glue.playwrightRunName(args), type.configurationFactories.single())
+        val settings = manager.createConfiguration(Glue.labeledRunName(Glue.playwrightRunName(args), label), type.configurationFactories.single())
         val configuration = settings.configuration as? PlaywrightRunConfiguration ?: return null
         configuration.settings = PlaywrightRunSettings.Builder().apply {
             workingDir = cwd
@@ -50,8 +59,8 @@ internal object PlaywrightRunnerLauncher {
      * configuration ([PiwiRunSessions.followRunner]): Stop ends its process, and the service hears it end. On the event
      * thread.
      */
-    fun start(project: Project, cwd: String, args: List<String>, env: Map<String, String>, ref: String?): Boolean {
-        val settings = configure(project, cwd, args, env) ?: return false
+    fun start(project: Project, cwd: String, args: List<String>, env: Map<String, String>, ref: String?, label: String? = null): Boolean {
+        val settings = configure(project, cwd, args, env, label) ?: return false
         val environment = ExecutionEnvironmentBuilder.createOrNull(DefaultRunExecutor.getRunExecutorInstance(), settings)
             ?.build() ?: return false
         if (ref != null) project.service<PiwiRunSessions>().followRunner(settings.configuration, ref)

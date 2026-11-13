@@ -964,6 +964,19 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
+  test('names who started a run when a person did not, and nothing on a person’s run', async () => {
+    const { sent, sessions, attach } = harness({
+      labelOf: (ref) => (ref === 'ed-2' ? 'Started by Claude Code' : null),
+    });
+    attach(0, { ref: 'ed-2' });
+    attach(0, { ref: 'ed-1' });
+    const agent = await waitFor(() => sent.find((s) => s.ref === 'ed-2'));
+    const person = await waitFor(() => sent.find((s) => s.ref === 'ed-1'));
+    expect(agent.label).toBe('Started by Claude Code');
+    expect(person).not.toHaveProperty('label');
+    sessions.dispose();
+  });
+
   test('holds no failure in a run its host says holds none, whoever watches it, and tells its workers so', () => {
     const { sessions, attach } = harness({
       watched: () => true,

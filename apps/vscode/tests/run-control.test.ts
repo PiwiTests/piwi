@@ -716,6 +716,10 @@ describe('Share live', () => {
       progress: { total: 2, done: 2, failed: 0, flaky: 0, skipped: 1, endedAtStop: 1, status: 'passed', failure: null },
     };
     expect(progressItem(sessionsOf(ended))?.tooltip).toMatch(/^Piwi: the run ran 2 of 2 tests: 1 ended at a stop\./);
+    // An agent's run says who started it, never reading as the person's own.
+    const agents = progressItem(sessionsOf({ ...counted('ed-1', 3, 9), label: 'Started by Claude Code' }))!;
+    expect(agents.text).toBe('$(beaker) 3 of 9 · Started by Claude Code');
+    expect(agents.tooltip).toMatch(/^Piwi: the run ran 3 of 9 tests\. Started by Claude Code\./);
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({

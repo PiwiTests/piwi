@@ -348,7 +348,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
   controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
   progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
-  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
+  the desktop app as the instance too, an agent's run ending with its label (`RunSession.label`), as its Run tab
+  does (`Glue.labeledRunName`). Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 · cart › adds a mug · stopped`);
 - while a run is shared live: the share's entries, the run page, its link and **Stop Sharing…**, which asks first
   ([Run control](#run-control)).
 
