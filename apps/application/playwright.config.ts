@@ -18,6 +18,9 @@ if (e2eTarget.desktop) process.env.PIWI_BASE_URL = e2eTarget.baseUrl;
 const useBuiltServer = !!process.env.CI;
 const serverCommand = useBuiltServer ? 'node .output/server/index.mjs' : 'npm run app:dev';
 
+/** The run origins the desktop app's shell stamps on a run it starts (`PIWI_ORIGIN`). */
+const DESKTOP_SHELL_ORIGINS = new Set(['desktop', 'reproduce', 'bisect']);
+
 /** An already-installed Chromium to use instead of the revision Playwright pins. */
 const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() || '';
 
@@ -226,9 +229,10 @@ export default process.env.CI
       // Stream this suite's own results to the desktop app too, authenticated
       // with its token. Left unset (and so no bearer) against the local server.
       ...(e2eTarget.token ? { apiKey: e2eTarget.token } : {}),
-      // A run the desktop app started reports to the app, whose run page and tray follow it; any other run reports to
-      // the server under test.
-      ...(process.env.PIWI_ORIGIN === 'desktop' ? { desktopApp: 'prefer' as const } : {}),
+      // A run the desktop app started (the origins its shell stamps) reports to the app, whose run page and tray
+      // follow it; any other run reports to the server under test. `PIWI_DESKTOP_APP` in the environment wins over
+      // this, as it does for the app's own worktree jobs.
+      ...(DESKTOP_SHELL_ORIGINS.has(process.env.PIWI_ORIGIN ?? '') ? { desktopApp: 'prefer' as const } : {}),
       projectName: 'Piwi Dashboard',
       projectDescription: 'The Piwi Dashboard project',
       streaming: true,

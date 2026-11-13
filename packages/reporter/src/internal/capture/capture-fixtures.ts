@@ -60,8 +60,7 @@ import {
 } from './page-inventory.js';
 import { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
 
-// Re-exported from this entry for a fixtures file that rebuilds this wrapper
-// and must record pages the same way.
+// The page log, re-exported from this entry.
 export { LocatorPageLog, noteLocatorCall, noteNavigation } from './locator-pages.js';
 import {
   isProbeMode,
@@ -244,11 +243,11 @@ import {
 } from './api-requests.js';
 
 // Re-exported: probeElementAttrs lives in @piwitests/picker-dom (shared with
-// the dashboard's snapshot picker), and this package's own tests import it
-// from here, with the quiet-capture helpers and the page interaction read.
+// the dashboard's snapshot picker), and this package's tests import it from
+// here, with the quiet-capture helpers and the page interaction read.
 export { probeElementAttrs, internalCall, boxCaptureFrames, callMethod, readPageInteraction };
 export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
-// The resource ledger, for a fixtures file that runs it from its own fixtures.
+// The resource ledger, re-exported from this entry.
 export { activeResourceLedger, noteResourceUse, recordResourceCensus, startResourceLedger, stopResourceLedger };
 export type { ProbeArg, ProbedAttrs };
 
@@ -1286,8 +1285,8 @@ const EARLY_READ_TRUSTED_MS = 250;
  * action. `tagRoles`/`inputRoles` are the shared role maps (single source of
  * truth in `locator-healing.ts`), and `roleSources` is the CSS selector for
  * every element the probe can resolve a role for — all derived from the map so
- * nothing is hand-maintained twice. Exported so a fixtures file that probes
- * elements itself reuses the same assembled object.
+ * nothing is hand-maintained twice. Exported so every caller of the probe
+ * passes the same assembled object.
  */
 export const CAPTURED_ATTRS_ARG: ProbeArg = {
   keep: [...CAPTURED_ATTRIBUTES],

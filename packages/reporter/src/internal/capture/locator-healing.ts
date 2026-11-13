@@ -69,8 +69,7 @@ export function dedupeSnapshotsByLocation(snaps: LocatorSnapshot[]): LocatorSnap
 
 /**
  * Page-level locator-building methods wrapped by the capture proxy
- * (`capture-fixtures.ts`), exported for a fixtures file that wraps locators
- * the same way.
+ * (`capture-fixtures.ts`).
  */
 export const LOCATOR_METHODS: string[] = [...LOCATOR_BUILDER_METHODS];
 
@@ -514,7 +513,7 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       continue;
     }
     // The fixtures proxy that called us — `capture-fixtures.*` in this
-    // package, `fixtures.*` in a project's own copy. Skip only when it directly
+    // package, `fixtures.*` in the project that composes them. Skip only when it directly
     // follows this module, so a user's own `fixtures.*` deeper down is kept.
     if (prevWasCaptureModule && /[\\/](?:capture-)?fixtures\.[a-z]+$/i.test(file)) {
       prevWasCaptureModule = false;
