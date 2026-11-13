@@ -70,6 +70,22 @@ When the editor closes, or its service stops, the connection closes, and a stop 
 of the editor's connection reaches the run's workers alone, out of the tests' environment while they run, as for a run
 the editor starts.
 
+## A reproduction from the desktop app
+
+A job [the desktop app](./desktop) runs in a throwaway worktree of a commit (**Reproduce here**, a bisect step, a
+[Flake Lab](./flake-lab) run) follows the editor window whose workspace holds the project's linked folder, by the same
+rules, else the app as before. A bisect step or a Flake Lab run, which nobody attends, follows only an editor
+extension that knows such runs.
+
+- **Its stops show in the editor** at the failing line of the worktree's file, outside the workspace, marked
+  **the desktop app's reproduction at commit abc1234, in a throwaway checkout**. A reproduction holds its failures from
+  its start, as in the app.
+- **Its code is to copy.** Assert, Assert a region and Mock a request offer the code with **Copy the code** and write
+  nothing: "This reproduction runs at commit abc1234 in a throwaway checkout: copy the code into your own file."
+  Record here is refused there, and a pick goes to the app's window, to copy.
+- **The app keeps it.** Its Local runs tray says where its tests wait (**In Visual Studio Code**), read only, stops it,
+  and shows its verdict when it ends; the editor offers no Stop.
+
 ## Limits
 
 - **Under the desktop app, a pick comes to its window to copy**, and Record here and Assert, which need an editor, are

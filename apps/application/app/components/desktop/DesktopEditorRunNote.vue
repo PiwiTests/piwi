@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: the runs of an editor of this machine that report to this run's page, as the server observes
- * them (`useDesktopEditorRuns`): each worker that waits at a stop, its test and its place, which opens in the IDE, and
+ * Desktop shell only: the runs of an editor of this machine that report to this run's page, or that are a run of the
+ * Local runs tray the shell ran on that editor's run channel, as the server observes them (`useDesktopEditorRuns`):
+ * each worker that waits at a stop, its test and its place, which opens in the IDE, and
  * the editor that answers it. Read only: the app steers none of an editor's runs, so the page says the run waits rather
  * than runs while the editor holds it.
  */

@@ -188,10 +188,13 @@ DK5 in part). DK22 is done: the desktop page documents the taskbar, Dock, title,
 **Pick a locator** in a terminal's run an editor follows: the editor's discovery file names where a run's picks go
 (`send`, the client's Send to editor pairing, from `InitializationOptions.runPairing` and `piwi/setRunPairing`), which
 the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page says where an editor's run that reports
-to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
-reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
-worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
-be decided. The tray's **Compact list** shows each run as one line with the one action it needs now. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
+to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Then P7's last
+piece (IO6): a job the desktop app runs in a throwaway worktree of a linked folder (a reproduction, a bisect step, a
+Flake Lab run) runs on the run channel of the live editor whose workspace holds the folder, as the server picks it from
+the editors' discovery files (`GET /api/desktop/run-channel?folder=`, the shell alone), under a ref naming the commit
+(`desktop-<id>-at-<commit>`); decided: its stop shows in the editor at the worktree's file, marked the desktop app's
+reproduction at that commit in a throwaway checkout, and its code is offered to copy, never written (`StopCode.copy`),
+while the tray says where it waits (**In Visual Studio Code**, read only) and keeps its verdict. The tray's **Compact list** shows each run as one line with the one action it needs now. Then P8, agents are clients like any other: `npx @piwitests/reporter mcp`
 routes an agent's calls to every host of the machine as one set of tools under one user-scope entry, with no run logic
 of its own (each editor's discovery file names its agents' server, `agents`, and the desktop app's `/mcp` is reached
 once its server proved its token): `run_list` asks every host and names each run's host, `run_start` goes to the
@@ -273,8 +276,7 @@ VS Code's line highlight, JetBrains' inlay), the watched page's errors in VS Cod
 Page tab, the editors' own run counted from the hub's events and VS Code's Testing view showing each test as a worker
 begins it, the Live item's menu with a confirmed **Stop sharing** (F10), and E10 answered (open question 10): a
 breakpoint makes a run headed only for a reporter that cannot stop headless (older than 0.62.0, or unknown, or no run
-channel). Left of the plan, planned and not deferred: P7's IO6; the plan stays here until it is built or recorded as
-deferred. The bugs the analysis
+channel). Left of the plan: nothing. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

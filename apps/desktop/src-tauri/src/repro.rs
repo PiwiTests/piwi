@@ -81,7 +81,7 @@ fn spec_dir_in_repo(root: &Path, spec: &Path) -> Option<String> {
 }
 
 /// Percent-encodes a query value, keeping unreserved characters and `/`.
-fn query_escape(value: &str) -> String {
+pub(crate) fn query_escape(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {

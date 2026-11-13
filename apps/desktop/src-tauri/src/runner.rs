@@ -804,6 +804,78 @@ fn bundled_run_channel(port: u16, token: String) -> Option<(String, Option<Strin
     Some((channel, picks))
 }
 
+/// What the bundled server names for a job in a throwaway checkout of the
+/// linked folder `folder` (`GET /api/desktop/run-channel?folder=…`): its own run
+/// channel, where picks go, and the run channel of the live editor whose
+/// workspace holds the folder (`editor`), which a job nobody attends
+/// (`attended` false) is given only by an editor that knows such runs. Asked
+/// with the desktop token once the server at the port proved it holds it; None
+/// when it does not answer a channel.
+fn bundled_job_channel(
+    port: u16,
+    token: String,
+    folder: &Path,
+    attended: bool,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let server = crate::mcp_clients::ServerInfo { port, token };
+    let path = format!(
+        "/api/desktop/run-channel?folder={}&attended={}",
+        crate::repro::query_escape(&folder.to_string_lossy()),
+        if attended { 1 } else { 0 }
+    );
+    let body = crate::repro::local_get_json(&server, &path).ok()?;
+    let channel = body.get("runChannel")?.as_str()?.to_string();
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+    };
+    let editor = body
+        .get("editor")
+        .and_then(|editor| editor.get("runChannel"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    Some((channel, text("picks"), editor))
+}
+
+/// The environment of job `id`, which the shell runs in a throwaway checkout
+/// of `commit` of the linked folder `folder`: on the run channel of the live
+/// editor whose workspace holds the folder, as the bundled server names it,
+/// else on the bundled server's ([`crate::hub_env::job_hub_env`]).
+pub(crate) async fn job_hub_env(
+    app: &AppHandle,
+    id: u32,
+    attended: bool,
+    folder: &Path,
+    commit: &str,
+) -> Vec<(&'static str, String)> {
+    let (port, token) = {
+        let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
+            return crate::hub_env::hub_env(None, None, id, attended);
+        };
+        (server.port, server.token.clone())
+    };
+    let folder = folder.to_path_buf();
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        bundled_job_channel(port, token, &folder, attended)
+    })
+    .await
+    .ok()
+    .flatten();
+    let (channel, picks, editor) = match found {
+        Some((channel, picks, editor)) => (Some(channel), picks, editor),
+        None => (None, None, None),
+    };
+    crate::hub_env::job_hub_env(
+        channel.as_deref(),
+        picks.as_deref(),
+        editor.as_deref(),
+        id,
+        attended,
+        commit,
+    )
+}
+
 /// The environment naming the bundled server as run `id`'s hub, and as where
 /// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
 /// the run starts; the run's name alone when the server names no hub.

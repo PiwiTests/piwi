@@ -12,9 +12,11 @@ import {
   desktopRunHoldRefusal,
   desktopRunHolds,
   desktopRunOf,
+  desktopShellIdOf,
   desktopRunRef,
   desktopSessionsOfRun,
   desktopEditorRunOf,
+  desktopEditorRunsOf,
   desktopFailedExecution,
   desktopFailedStep,
   desktopRunProgress,
@@ -177,6 +179,10 @@ describe('a worker of a desktop run', () => {
     // A run nobody attends is the tray's run of the same step, its mark left out.
     expect(desktopRunOf('desktop-7-unattended')).toBe('desktop-7');
     expect(desktopRunOf('desktop-7')).toBe('desktop-7');
+    // A job run on an editor's channel in a throwaway checkout is the tray's run of its step, its commit left out.
+    expect(desktopRunOf('desktop-7-at-abc1234')).toBe('desktop-7');
+    expect(desktopRunOf('desktop-7-at-abc1234-unattended')).toBe('desktop-7');
+    expect(desktopShellIdOf('desktop-7-at-abc1234')).toBe(7);
     expect(isUnattendedDesktopRun('desktop-7-unattended')).toBe(true);
     expect(isUnattendedDesktopRun('desktop-7')).toBe(false);
     expect(desktopRunName({ project: null, label: 'shop' })).toBe('shop');
@@ -1277,6 +1283,21 @@ describe('Share live in the window', () => {
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.off })).toBe(true);
     expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.local })).toBe(false);
     expect(desktopShareOffered(null)).toBe(false);
+  });
+});
+
+describe('a job of the tray an editor’s hub owns', () => {
+  test('is the editor’s run of the job’s step, in a throwaway checkout, until it ends', () => {
+    const editorRun = (ref: string, ended = false) => ({
+      client: 'Visual Studio Code',
+      session: { ref, root: null, workers: [], ended },
+    });
+    const repro = editorRun('desktop-7-at-abc1234');
+    const bisect = editorRun('desktop-7-at-0123456789ab-unattended');
+    const runs = [repro, bisect, editorRun('desktop-8-at-abc1234'), editorRun('terminal-1-2'), editorRun('desktop-7')];
+    expect(desktopEditorRunsOf({ hubRefs: ['desktop-7'] }, runs)).toEqual([repro, bisect]);
+    expect(desktopEditorRunsOf({ hubRefs: ['desktop-7'] }, [editorRun('desktop-7-at-abc1234', true)])).toEqual([]);
+    expect(desktopEditorRunsOf({ hubRefs: [] }, runs)).toEqual([]);
   });
 });
 

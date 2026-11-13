@@ -41,6 +41,14 @@ beforeAll(async () => {
       origin: 'reproduce',
       metadata: reproduceOf42('desktop-2-unattended'),
     },
+    {
+      id: 13,
+      projectId: 1,
+      status: 'failed',
+      startTime: at(15),
+      origin: 'reproduce',
+      metadata: reproduceOf42('desktop-4-at-abc1234'),
+    },
   ]);
 });
 
@@ -59,6 +67,15 @@ describe('the latest run a launcher stamped with an origin and a reference', () 
     expect(await lookup(['desktop-2', 'desktop-2-unattended'])).toMatchObject({ id: 12 });
     // A run the reporter recorded no name for still matches.
     expect(await lookup(['desktop-3'])).toEqual({ id: 10, status: 'passed', name: null });
+  });
+
+  test('finds a job the app ran on an editor’s channel, in a throwaway checkout, by its name without the checkout', async () => {
+    const lookup = (runs: string[]) => getProjectLatestRun(db, 1, { kind: 'reproduce', ref: '42', runs });
+    expect(await lookup(['desktop-4', 'desktop-4-unattended'])).toEqual({
+      id: 13,
+      status: 'failed',
+      name: 'desktop-4-at-abc1234',
+    });
   });
 });
 

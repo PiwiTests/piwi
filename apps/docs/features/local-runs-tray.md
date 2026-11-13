@@ -32,6 +32,11 @@ several Playwright projects reports one run for each: the failure is the first o
 in that project's run. **Run again**
 starts an ended run as it ran, with its options and its **Hold failures**.
 
+A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
+([A reproduction from the desktop app](./terminal-runs#a-reproduction-from-the-desktop-app)) says where its tests wait,
+**In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line reads **Waiting** while
+one does, **Stop** still ends it, and it ends with its own verdict.
+
 ## Compact list
 
 **Compact list**, in the tray's head, shows each run as one line: its state (**Running**, **Waiting** at a stop,

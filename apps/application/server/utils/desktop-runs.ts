@@ -28,6 +28,7 @@ import {
 } from '@piwitests/editor/shell-runs';
 import { desktopPicksToken } from './desktop-access';
 import { askWindowToStart } from './desktop-agent-runs';
+import { editorHubFor, type DesktopEditorHub } from './desktop-editor-hub';
 import { EditorRuns, type EditorRun } from './desktop-editor-runs';
 import { DesktopInspects } from './desktop-inspect';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
@@ -128,6 +129,8 @@ export class DesktopRuns extends ShellRuns<DesktopInspectEvent> {
   private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
   /** **Inspect** of the lanes the windows have it open on, read from their tests' own traces. */
   readonly inspects: DesktopInspects;
+  /** The editors' discovery folder. */
+  private readonly editorsFolder: string;
 
   private constructor(desktop: DesktopRunsOptions) {
     super({
@@ -141,6 +144,7 @@ export class DesktopRuns extends ShellRuns<DesktopInspectEvent> {
       picksToken: desktopPicksToken,
       peers: () => readLiveHubs(desktop.editorsDir ?? editorsDir()),
     });
+    this.editorsFolder = desktop.editorsDir ?? editorsDir();
     this.inspects = new DesktopInspects({
       sessions: this.sessions,
       send: (viewer, event) => this.sendToWindow(viewer, event),
@@ -162,6 +166,14 @@ export class DesktopRuns extends ShellRuns<DesktopInspectEvent> {
       runs.editors.start();
     }
     return runs;
+  }
+
+  /**
+   * The live editor a job the shell runs in a throwaway checkout of the linked folder `folder` runs on (`editorHubFor`),
+   * from the editors' discovery folder this server reads; `attended`: whether a person attends the job. Null for none.
+   */
+  editorHubFor(folder: string, attended: boolean): DesktopEditorHub | null {
+    return editorHubFor(folder, attended, this.editorsFolder);
   }
 
   /** The editors' live runs, as their hubs tell them (`EditorRuns`): none while the server does not observe them. */

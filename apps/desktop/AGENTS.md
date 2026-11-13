@@ -71,7 +71,9 @@ shell and are feature-equivalent.
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
   `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
-  `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
+  `desktop-<run id>`, which the window knows the run by). A job in a throwaway worktree (`worktree.rs`) runs instead on
+  the run channel of the live editor whose workspace holds its linked folder, when one does (`job_hub_env`, from the
+  route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server. A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--ui`, or with `--repeat-each` above 1 unless it stops at its first failure) ends its ref in `-unattended`
   (`attended_args`, mirrored by `desktopArgsAttended`), and the server never holds its failures. The hub's WebSocket
   takes the desktop token in `hello`; it is `ShellRuns` (`packages/editor/src/shell-runs.ts`), which

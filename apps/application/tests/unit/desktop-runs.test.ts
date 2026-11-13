@@ -319,6 +319,35 @@ describe('the run channel the shell names in a run', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
+    'is an editor’s for a job in a throwaway checkout of a folder its workspace holds, named to the shell alone',
+    () => {
+      onTestFinished(() => {
+        for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
+      });
+      expect(runs.editorHubFor(folder, true)).toBeNull();
+      // An editor whose channel is a socket of this user's, in a folder no other user enters: the server's own here.
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: channel,
+        recorderBundle: null,
+      });
+      expect(runs.editorHubFor(folder, true)).toEqual({
+        runChannel: `${channel.path}#${channel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A job nobody attends stays on the app's channel with an editor that does not know such runs.
+      expect(runs.editorHubFor(folder, false)).toBeNull();
+      expect(runs.editorHubFor(worktree, true)).toBeNull();
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
     'is cleared as the server starts when a server that was killed left it, and kept while one listens',
     async () => {
       const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-tmp-')));

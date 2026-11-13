@@ -127,7 +127,8 @@ for an agent that left.
 - **No recording.** **Record here**, and **Pick** and **Assert** in the test's window, end in an editor: run the test
   from VS Code or a JetBrains IDE to use them.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
-  stops make no code.
+  stops make no code here. With an editor open on the linked folder, the job runs on that editor instead, which offers
+  its code to copy ([A reproduction from the desktop app](./terminal-runs#a-reproduction-from-the-desktop-app)).
 - **A file changed since the run started** makes no code: run the test again.
 - **Run to cursor** stays in the editor, which has the file.
 

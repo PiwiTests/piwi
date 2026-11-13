@@ -13,7 +13,7 @@ import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
 import { hideSecretsInText } from '@piwitests/core/mask';
-import { MAX_RUN_FAILURE_TEXT } from '@piwitests/core/run-channel';
+import { MAX_RUN_FAILURE_TEXT, checkoutCommitOf, withoutCheckout } from '@piwitests/core/run-channel';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -22,10 +22,12 @@ export function desktopRunRef(shellId: number): string {
 
 /**
  * The name the window knows a hub's run by (`desktopRunRef`): its own, the mark of a run nobody attends left out (a
- * Flake Lab's `desktop-7-unattended` is the tray's `desktop-7`).
+ * Flake Lab's `desktop-7-unattended` is the tray's `desktop-7`), and the commit of the throwaway checkout a job runs in
+ * on an editor's channel (`desktop-7-at-abc1234`, `withoutCheckout`).
  */
 export function desktopRunOf(ref: string): string {
-  return isUnattendedDesktopRun(ref) ? ref.slice(0, -UNATTENDED_RUN_SUFFIX.length) : ref;
+  const own = withoutCheckout(ref);
+  return isUnattendedDesktopRun(own) ? own.slice(0, -UNATTENDED_RUN_SUFFIX.length) : own;
 }
 
 /** The shell's id of the run a hub's run names (`desktopRunRef`), null for a name the shell did not give. */
@@ -259,6 +261,22 @@ export function desktopSessionsOfRun(
 
 /** The names of this machine's loopback interface, one server whatever name its address takes. */
 const LOOPBACK_NAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * The editors' live runs that are steps of a run of the tray (`hubRefs`): the jobs the shell ran on an editor's run
+ * channel, in a throwaway checkout of a folder the editor's workspace holds, which that editor's hub owns.
+ */
+export function desktopEditorRunsOf<T extends { session: Pick<HubSession, 'ref' | 'ended'> }>(
+  run: { hubRefs: readonly string[] },
+  editorRuns: readonly T[],
+): T[] {
+  return editorRuns.filter(
+    (editorRun) =>
+      !editorRun.session.ended &&
+      checkoutCommitOf(editorRun.session.ref) !== null &&
+      run.hubRefs.includes(desktopRunOf(editorRun.session.ref)),
+  );
+}
 
 /**
  * Whether an editor's run reports to the run `runId` of the server at `origin`: its page (`HubSession.page`) is that

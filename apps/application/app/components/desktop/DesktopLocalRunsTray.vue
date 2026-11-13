@@ -35,6 +35,10 @@
  * progress and the one action it needs now: show its stop, stop it, open its
  * failure or its run, run it again), a click expanding it to its whole card.
  *
+ * A reproduction, a bisect step or a Flake Lab the shell ran on an editor's run channel (the editor's workspace holds
+ * the linked folder) is the editor's to steer: its run says where its tests wait, in that editor, read only
+ * (`DesktopEditorRunNote`), with no Hold failures switch, and still ends with its own verdict.
+ *
  * A run's output can move to a separate window of the app (`separate`,
  * `DesktopRunOutputWindows`), which stays open when the tray closes or
  * reloads, and closes with the run's entry or when the person closes it.
@@ -48,7 +52,7 @@ import {
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
-import { desktopRunOf } from '~/utils/desktop-run-view';
+import { desktopEditorRunsOf, desktopRunOf } from '~/utils/desktop-run-view';
 import { desktopStopSaid, desktopWorkerKey } from '@piwitests/run-ui/run-view';
 import { progressWords } from '@piwitests/run-model/outcome';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
@@ -74,6 +78,17 @@ function runOf(session: HubSession): LocalRun | undefined {
 /** The hub's live runs of a run of the tray: those of its steps' names. */
 function sessionsOf(run: LocalRun): HubSession[] {
   return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
+}
+
+const editorRuns = useDesktopEditorRuns();
+
+/**
+ * The editors' runs of a run of the tray: its steps the shell ran on an editor's run channel, in a throwaway checkout
+ * of a folder the editor's workspace holds. The editor's hub owns their stops and Hold failures: the tray says where
+ * they wait, read only, and the run's own verdict when it ends.
+ */
+function editorRunsOf(run: LocalRun) {
+  return desktopEditorRunsOf(run, editorRuns.value);
 }
 
 /** The hub's live runs no run of the tray names: another window started them. */
@@ -220,6 +235,9 @@ function lineState(run: LocalRun): { label: string; color: 'info' | 'warning' | 
   }
   if (run.stopRequested) return { label: 'Stopping…', color: 'neutral' };
   if (stoppedOf(run)) return { label: 'Waiting', color: 'warning' };
+  if (editorRunsOf(run).some((editorRun) => editorRun.session.workers.some((worker) => worker.stop))) {
+    return { label: 'Waiting', color: 'warning' };
+  }
   return { label: 'Running', color: 'info' };
 }
 
@@ -445,7 +463,7 @@ function lineAction(run: LocalRun): LineAction | null {
               {{ localRunDetail(run) }}
             </p>
             <DesktopRunHoldSwitch
-              v-if="run.status === 'running'"
+              v-if="run.status === 'running' && !editorRunsOf(run).length"
               :run="run"
               :described-id="`desktop-run-hold-${run.key}`"
               class="mt-1.5"
@@ -486,6 +504,7 @@ function lineAction(run: LocalRun): LineAction | null {
               </UButton>
             </div>
             <template v-if="isExpanded(run)">
+              <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
               <DesktopRunSession
                 v-for="session in sessionsOf(run)"
                 :key="session.ref"

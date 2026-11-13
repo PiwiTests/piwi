@@ -119,6 +119,61 @@ pub(crate) fn hub_env(
     env
 }
 
+/// The name a job the shell runs in a throwaway checkout of `commit` gives the
+/// editor's hub it runs on (`PIWI_RUN_REF`): `desktop-<id>-at-<commit>`, the
+/// commit's first 12 hex digits, before the `-unattended` of a job nobody
+/// attends. The editor reads the commit from it (`checkoutCommitOf` of
+/// `@piwitests/core/run-channel`), says its stops are the reproduction's and
+/// offers their code to copy; the window knows the job by its run's name.
+pub(crate) fn checkout_run_ref(id: u32, attended: bool, commit: &str) -> String {
+    let short = &commit[..commit.len().min(12)];
+    if attended {
+        format!("desktop-{id}-at-{short}")
+    } else {
+        format!("desktop-{id}-at-{short}{UNATTENDED}")
+    }
+}
+
+/// Whether `commit` reads as a commit's id the shell checks out: 7 to 40
+/// lowercase hex digits.
+fn is_commit(commit: &str) -> bool {
+    (7..=40).contains(&commit.len())
+        && commit
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// The environment of job `id`, which the shell runs in a throwaway checkout of
+/// `commit` (a reproduction, a bisect step, a Flake Lab): on the run channel of
+/// the editor whose workspace holds the linked folder (`editor`, as the bundled
+/// server names it), which is its record channel too, so that editor's hub owns
+/// its stops and its Hold failures, under a name that carries the commit
+/// ([`checkout_run_ref`]); its picks still go to the bundled server
+/// (`PIWI_EDITOR_SEND`), whose window offers them to copy. With no editor, or
+/// something that is not a channel or a commit, the bundled server is its hub
+/// ([`hub_env`]).
+pub(crate) fn job_hub_env(
+    channel: Option<&str>,
+    picks: Option<&str>,
+    editor: Option<&str>,
+    id: u32,
+    attended: bool,
+    commit: &str,
+) -> Vec<(&'static str, String)> {
+    let Some(editor) = editor.filter(|value| is_run_channel(value) && is_commit(commit)) else {
+        return hub_env(channel, picks, id, attended);
+    };
+    let mut env = vec![
+        ("PIWI_RUN_CHANNEL", editor.to_string()),
+        ("PIWI_RECORD_CHANNEL", editor.to_string()),
+        ("PIWI_RUN_REF", checkout_run_ref(id, attended, commit)),
+    ];
+    if let Some(address) = picks.filter(|value| is_picks_address(value)) {
+        env.push(("PIWI_EDITOR_SEND", address.to_string()));
+    }
+    env
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +285,77 @@ mod tests {
         ] {
             assert!(!attended_args(&unattended), "{unattended:?}");
         }
+    }
+
+    #[test]
+    fn runs_a_job_in_a_checkout_on_the_editor_whose_workspace_holds_the_folder() {
+        let bundled = format!("/tmp/piwi-record-x1/channel.sock#{TOKEN}");
+        let editor = format!("/tmp/piwi-record-ed/channel.sock#{TOKEN}");
+        let picks = format!("http://127.0.0.1:4318/api/desktop/runs/picks#{TOKEN}");
+        let commit = "abc1234def0123456789abc1234def0123456789";
+        // The editor's channel, its record channel too, the job named with its commit, and its picks to this app.
+        assert_eq!(
+            job_hub_env(Some(&bundled), Some(&picks), Some(&editor), 4, true, commit),
+            vec![
+                ("PIWI_RUN_CHANNEL", editor.clone()),
+                ("PIWI_RECORD_CHANNEL", editor.clone()),
+                ("PIWI_RUN_REF", "desktop-4-at-abc1234def01".to_string()),
+                ("PIWI_EDITOR_SEND", picks.clone()),
+            ]
+        );
+        assert_eq!(
+            job_hub_env(Some(&bundled), None, Some(&editor), 5, false, "0123456")[2],
+            (
+                "PIWI_RUN_REF",
+                "desktop-5-at-0123456-unattended".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn runs_a_job_on_the_apps_own_channel_with_no_editor_of_its_folder() {
+        let bundled = format!("/tmp/piwi-record-x1/channel.sock#{TOKEN}");
+        let commit = "abc1234def01";
+        // No editor holds the folder (none runs, or each holds another folder, or its discovery file was stale).
+        assert_eq!(
+            job_hub_env(Some(&bundled), None, None, 6, true, commit),
+            hub_env(Some(&bundled), None, 6, true)
+        );
+        // An editor's channel that is not one, or a commit that is none: the app's own channel too.
+        for (editor, commit) in [
+            ("/tmp/channel.sock#short".to_string(), commit),
+            (String::new(), commit),
+            (format!("/tmp/piwi-record-ed/channel.sock#{TOKEN}"), "abc12"),
+            (
+                format!("/tmp/piwi-record-ed/channel.sock#{TOKEN}"),
+                "ABC1234",
+            ),
+            (
+                format!("/tmp/piwi-record-ed/channel.sock#{TOKEN}"),
+                "abc1234-x",
+            ),
+        ] {
+            assert_eq!(
+                job_hub_env(Some(&bundled), None, Some(&editor), 6, true, commit),
+                hub_env(Some(&bundled), None, 6, true),
+                "{editor:?} at {commit:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn names_a_job_in_a_checkout_as_the_hubs_commands_take_it() {
+        for id in [0, 1, u32::MAX] {
+            for attended in [true, false] {
+                let name = checkout_run_ref(id, attended, &"f".repeat(40));
+                assert!(name.len() <= 64, "{name}");
+                assert!(name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+                assert!(name.starts_with(&run_ref(id, true)));
+            }
+        }
+        assert_eq!(checkout_run_ref(9, true, "abc1234"), "desktop-9-at-abc1234");
     }
 
     #[test]
