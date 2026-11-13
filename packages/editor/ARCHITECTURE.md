@@ -485,7 +485,11 @@ A connection that brings nothing for 45 s is opened again: the instance sends a 
 One run's stream (`GET /api/test-runs/:id/stream`) is one connection per instance, key and run, whoever follows the run
 (`RunStreams`): a context's run in progress, another context's, a CI session. A follower that joins a stream already
 open has it opened again, so its catch-up reaches every follower, which reads it again as after a dropped connection;
-the stream closes with its last follower.
+the stream closes with its last follower. A context opens its run in progress's stream only once the run runs: an
+`initializing` run's stream sends the run's status and closes, so the context waits for the run's `run-started` on the
+instance's stream, or for a read that finds it running. A read the run's `run-started` asked for finds it running
+whatever it answers (it may share a read asked for before the event), and a read that says a status the live run has
+passed (`initializing` after `running`) changes nothing.
 
 Half a second after a run ends, the context reads its latest run again; runs that end together are read once. The poll
 reads it besides:
@@ -515,7 +519,8 @@ result:
 - a test on several Playwright projects shows the first of running, failed, flaky, passed, skipped.
 
 `piwi/fileSummary` gives that result as the test line's `status`, and `piwi/runStatus` gives it in `liveTests`, so the
-clients draw the files again.
+clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
+its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
 Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what the run
 changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries the ref of the command
@@ -962,7 +967,10 @@ The intents, `requests` and `mock` go through the same `StopActions` as the clie
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
 
 Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage`, `requests`
-for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
+for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). An answer whose
+sentence is one of `ANSWER_SENTENCES` (`src/run-sessions.ts`, which says them from that table) carries its `code`
+(`HUB_ANSWER_CODES` in `@piwitests/core/run-hub`), and `share` once done `share-on` or `share-off`, so Piwi Picker says
+it in its own language. A command of
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and
@@ -1015,7 +1023,8 @@ ping is dropped, as is one with 32 MB unread.
 not answered the close. A connection being closed holds none of the places counted above.
 
 A subscribed connection is a surface that answers stops, but one that subscribed to observe (`observe`: the desktop
-app's server); a run's Hold failures says whether its failures wait
+app's server), which is refused every command but `subscribe`, `pausedPage` and `requests` (`OBSERVER_COMMANDS`); a
+run's Hold failures says whether its failures wait
 ([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
 `follow` says a Runs window is open, `view` names one stop.
 
@@ -1027,7 +1036,9 @@ editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at
 `AGENT_VIEWER`.
 
 - **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window, or the desktop app's window
-  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does.
+  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does. The
+  desktop app's windows are one tool: a worker's window hears the app's main window as itself (`self`), and the other
+  way around, in a run's presence, a worker's watchers and a stop's driver alike.
 - **A worker's `watchers`**: the viewers of its lane and of its stop's live view, each tool once.
 - **A stop's `driver`**: one at a time. The agent drives a stop it asked for, and one it acts on (`page_act`) while no
   person drives it. A person's click, key, text or wheel on the view (never a pointer passing over it), pick on the
@@ -1327,7 +1338,8 @@ arguments read one by one (`Args`, an unknown one refused) and a JSON schema tha
 - **Starting a run.** `run_start { file, line?, headed?, hold?, agent? }` builds the run as `piwi/runArgs` builds a
   person's (`runCommandFor`, from the spec and, for a line, the line of the test holding it as a location), holding
   failures unless `hold` is false, and asks the client to run it (`piwi/startRun`, `RunCommand.label`:
-  `Started by <agent>`, the name without its control and direction characters, `agentLabel`); a file no folder of the
+  `Started by <agent>`, the name without its control and direction characters, `agentLabel`, which the run's session
+  carries too, `RunSession.label`, for the clients to name it beside the run); a file no folder of the
   workspace holds, through a link too, or that is no spec of a config runs nothing. It is listed only for a client
   that sent `InitializationOptions.startsRuns`. The run is followed from its start: `run_list` lists it as `starting`
   and `run_follow` waits on it until its workers connect, and a command that ends before any does

@@ -1,11 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
-import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
+import { test, expect, extensionWorker, openOptions, launchWithEditedManifest } from './fixtures.js';
 import { dispatchRuntimeMessage, readStoredEvents, storedText, stubChromeStorage } from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
@@ -537,14 +535,11 @@ test.describe('Report a bug', () => {
     // A copy of the build whose manifest grants the shop's origin: what the
     // popup's per-origin request grants, which a test cannot click through.
     // Without `debugger`, as in Firefox: the evidence comes from the page.
-    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-bug-'));
-    cpSync(DIST, dir, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-    manifest.host_permissions = [`${SHOP_ORIGIN}/*`];
-    manifest.permissions = manifest.permissions.filter((p: string) => p !== 'debugger');
-    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-
-    const context = await launchWithExtension(dir);
+    const context = await launchWithEditedManifest((manifest) => ({
+      ...manifest,
+      host_permissions: [`${SHOP_ORIGIN}/*`],
+      permissions: manifest.permissions.filter((p) => p !== 'debugger'),
+    }));
     try {
       await routeShop(context, { fixed: false });
       const worker = await extensionWorker(context);

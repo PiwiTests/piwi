@@ -903,9 +903,8 @@ describe('the lanes the windows have Inspect open on', () => {
     await waitFor(() => own.inspects.calls(VIEWER, 'desktop-7', 0)?.refused === untraced);
     held.release();
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(own.heard.filter((h) => h.event.refused).map((h) => [h.event.attempt, h.event.refused])).toEqual([
-      ['t2#0', untraced],
-    ]);
+    const refusals = own.heard.map((h) => h.event as { attempt: string | null; refused?: string });
+    expect(refusals.filter((e) => e.refused).map((e) => [e.attempt, e.refused])).toEqual([['t2#0', untraced]]);
     expect(own.inspects.calls(VIEWER, 'desktop-7', 0)).toMatchObject({ attempt: 't2#0', refused: untraced });
     own.inspects.dispose();
   });

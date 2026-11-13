@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, PlaywrightWorkerArgs } from '@playwright/test';
 import { buildZip } from '../server/utils/trace-zip';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { createHash } from 'node:crypto';
@@ -13,7 +13,7 @@ import { buildBlobReport, buildTraceArchive, errorContextMarkdown } from './util
  * `duplicate` where it asserts `imported`. Both suites below run serially,
  * where one failure replays every test in the block.
  */
-async function resetImportProjects(playwright: typeof import('@playwright/test').playwright, names: string[]) {
+async function resetImportProjects(playwright: PlaywrightWorkerArgs['playwright'], names: string[]) {
   const api = await playwright.request.newContext({ baseURL: test.info().project.use.baseURL });
   try {
     const response = await api.get('/api/projects/menu');

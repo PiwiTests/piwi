@@ -19,6 +19,7 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
     ownership: { owner: null, source: null },
     verify: {
       command: 'npx playwright test tests/checkout.spec.ts',
+      cases: [{ filePath: 'tests/checkout.spec.ts', title: 'checkout completes' }],
       expectation: 'When these pass, Piwi records the fix.',
       commitTrailer: 'Piwi-Cluster: 7',
     },
@@ -63,7 +64,9 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
       clusterId: 7,
       repositoryUrl: 'https://github.com/acme/web',
       bisectedCommit: null,
+      flakeArm: null,
     },
+    issue: null,
     suspectLines: null,
     fixedBefore: [],
     ...overrides,
@@ -179,6 +182,9 @@ describe('fixPlanToMarkdown', () => {
     const md = fixPlanToMarkdown(
       makePlan({
         diagnosis: {
+          id: 1,
+          provider: 'openai',
+          model: 'gpt-test',
           category: 'test-bug',
           confidence: 'high',
           rootCause: 'The locator no longer matches.',

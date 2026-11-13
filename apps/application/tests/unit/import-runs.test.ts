@@ -68,6 +68,7 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
     projectNames: ['chromium'],
     scm: null,
     runErrors: [],
+    runner: null,
     cases,
   };
 }

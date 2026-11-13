@@ -138,6 +138,11 @@ function runInvocations(page: Page) {
   return page.evaluate(() => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_run_local_tests'));
 }
 
+/** Waits for the shell to start the run's process, which follows the run's baseline (read in at most 10 s). */
+async function processStarted(page: Page) {
+  await expect.poll(async () => (await runInvocations(page)).length, { timeout: 15_000 }).toBeGreaterThan(0);
+}
+
 test.describe('Desktop local run', () => {
   let runId: number;
   let projectId: number;
@@ -321,6 +326,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
@@ -343,13 +349,17 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
     await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
     await tray(page).getByRole('button', { name: 'Force stop' }).click();
 
-    const stops = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
-    );
-    expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
+        ),
+      )
+      .toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
   test("the tray's Stop stops the run as its own Stop does", async ({ page }) => {
@@ -358,6 +368,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // The tray's item names the run by the shell id of its current step.

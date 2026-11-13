@@ -89,7 +89,7 @@ test.describe.serial('Delete a run that has evidence', () => {
 
 /** Upload a run whose `caseCount` cases all point at the same shared trace blob. */
 async function uploadRunSharingOneTrace(request: APIRequestContext, projectName: string, caseCount: number) {
-  const multipart: Record<string, unknown> = {
+  const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
     projectName,
     testRun: JSON.stringify({
       status: 'failed',

@@ -114,7 +114,7 @@ describe('every attempt', () => {
     for (const scenario of simulator.DEMO_SCENARIOS) {
       for (const test of scenario.tests()) {
         for (const attempt of test.attempts) {
-          if (attempt.status === 'skipped') continue;
+          if ((attempt.status as string) === 'skipped') continue;
           const types = (attempt.testAnnotations ?? []).map((a) => a.type);
           expect(types, `${scenario.id}: ${test.title}`).not.toContain('fixme');
         }

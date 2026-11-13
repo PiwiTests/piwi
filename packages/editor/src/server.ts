@@ -282,6 +282,7 @@ import {
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
+  type LiveTestStatus,
   type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
@@ -664,7 +665,8 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
  * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
  * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
  * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
- * runs`, `never run`, `no recent result`).
+ * runs`, `never run`, `no recent result`). A CI run in progress follows that result, named as CI's (`passed in its
+ * latest run · running in CI run #130`).
  */
 function testVerdict(
   context: PiwiContext,
@@ -673,11 +675,36 @@ function testVerdict(
   fixed: BranchResolved | undefined,
   failure: TestFailure | undefined,
 ): string {
-  const live = context.liveTests.get(found.id);
-  if (live && context.live) {
-    const run = `${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
-    return `${live === 'failed' ? 'failing' : statusWords(live)} in ${run}`;
+  const lineLive = lineLiveState(context, found.id);
+  if (lineLive && context.live) {
+    return `${liveWords(lineLive)} in ${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
   }
+  const settled = settledVerdict(context, found, failed, fixed, failure);
+  const ci = context.live?.ci ? context.liveTests.get(found.id) : undefined;
+  return ci ? `${settled} · ${liveWords(ci)} in CI run #${context.live!.runId}` : settled;
+}
+
+/** A test's state in the run in progress, in the dashboard's words: `running`, `failing`, `passed`. */
+function liveWords(live: LiveTestStatus): string {
+  return live === 'failed' ? 'failing' : statusWords(live);
+}
+
+/**
+ * A test's state in the run in progress that its line takes: none from a CI run's, which the line names beside its own
+ * result and never draws as the developer's tests running.
+ */
+function lineLiveState(context: PiwiContext, testCaseId: number): LiveTestStatus | undefined {
+  return context.live?.ci ? undefined : context.liveTests.get(testCaseId);
+}
+
+/** A test's result in the latest run the failures are read from, else the catalog's: `testVerdict` without a live run. */
+function settledVerdict(
+  context: PiwiContext,
+  found: CatalogCase,
+  failed: BranchFailure | undefined,
+  fixed: BranchResolved | undefined,
+  failure: TestFailure | undefined,
+): string {
   if (failed) {
     const otherBranch =
       context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : '';
@@ -1330,7 +1357,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       projectName: c.project?.name ?? null,
       baseline: c.baseline.kind === 'ladder' ? null : c.baselineLabel || null,
     }));
-    return { ...answer, view: failuresView(states, answer.items.length > 0) };
+    return { ...answer, view: failuresView(states, answer.failing) };
   };
   /** The failures last sent in `piwi/failuresChanged`. */
   let failuresSent = JSON.stringify(failuresAnswer([], 'file'));
@@ -1899,6 +1926,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * hold their failures, by ref.
    */
   const watchedRuns = new Set<string>();
+  /** Who started a run the service built when a person did not (`Started by Claude Code`), by ref. */
+  const runLabels = new Map<string, string>();
   /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
   const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
@@ -1965,6 +1994,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     watched: (ref) => watchedRuns.has(ref) || (checkoutCommitOf(ref) !== null && !isUnattendedRef(ref)),
     // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
     holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
+    labelOf: (ref) => runLabels.get(ref) ?? null,
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -3135,7 +3165,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           }),
       };
       const status =
-        context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
+        lineLiveState(context, found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
       return { call, found, failed, fixed, failure, status };
     });
   };
@@ -3578,6 +3608,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runCommands.delete(oldest);
     }
     for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+    for (const ref of runLabels.keys()) if (!runCommands.has(ref)) runLabels.delete(ref);
     runLines.started(run.ref, unsavedFiles);
     return run;
   };
@@ -3795,6 +3826,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     if (!command?.ref) return { ok: false, message: `Piwi could not build a command that runs ${relative}.` };
     const label = `Started by ${start.agent}`;
+    runLabels.set(command.ref, label);
     try {
       const answer = (await connection.sendRequest(START_RUN_REQUEST, {
         command: { ...command, ref: command.ref, label },

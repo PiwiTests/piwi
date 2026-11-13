@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import type { BrowserContext, Page, Worker } from '@playwright/test';
 import {
   DESKTOP_CHALLENGE_HEADER,
@@ -44,7 +44,7 @@ import {
   StopActions,
   type StopCode,
 } from '../../../../packages/editor/src/run-host.js';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
 
 /**
  * The editor the Runs window follows: the real editor service, started in-process on a workspace folder as its own
@@ -54,9 +54,6 @@ import { extensionWorker, launchWithExtension } from './fixtures.js';
  * request carrying a challenge with the proof that it holds the pairing's token. A run is a fake worker on the run
  * channel its command names (`FakeWorker`), played by the spec, as is the test's half of a check's hand-off.
  */
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 export const PAIRING_TOKEN = 'pairing_token_0123456789';
 
@@ -143,43 +140,49 @@ export async function pairedExtension(
   editor: Pick<Editor, 'origin'> | null,
   options: { deviceScaleFactor?: number; language?: string; desktop?: Pick<Desktop, 'origin'> } = {},
 ): Promise<{ context: BrowserContext; worker: Worker; extensionId: string }> {
-  const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-runs-'));
-  cpSync(DIST, dir, { recursive: true });
-  const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-  manifest.host_permissions = [editor, options.desktop].filter((paired) => !!paired).map((p) => `${p!.origin}/*`);
-  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-  const context = await launchWithExtension(dir, options);
-  const worker = await extensionWorker(context);
-  if (options.desktop) {
-    await worker.evaluate(
-      (desktop) =>
-        new Promise<void>((resolve, reject) => {
-          const open = indexedDB.open('piwi-secrets', 1);
-          open.onupgradeneeded = () => {
-            if (!open.result.objectStoreNames.contains('secrets')) open.result.createObjectStore('secrets');
-          };
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const transaction = open.result.transaction('secrets', 'readwrite');
-            transaction.objectStore('secrets').put(desktop, 'desktop');
-            transaction.oncomplete = () => {
-              open.result.close();
-              // As the settings page says a pairing changed: the worker asks the app for its runs' hub.
-              void chrome.storage.local.set({ piwiDesktopPairedAt: Date.now() }).then(() => resolve());
+  const context = await launchWithEditedManifest(
+    (manifest) => ({
+      ...manifest,
+      host_permissions: [editor, options.desktop].filter((paired) => !!paired).map((p) => `${p!.origin}/*`),
+    }),
+    options,
+  );
+  try {
+    const worker = await extensionWorker(context);
+    if (options.desktop) {
+      await worker.evaluate(
+        (desktop) =>
+          new Promise<void>((resolve, reject) => {
+            const open = indexedDB.open('piwi-secrets', 1);
+            open.onupgradeneeded = () => {
+              if (!open.result.objectStoreNames.contains('secrets')) open.result.createObjectStore('secrets');
             };
-            transaction.onerror = () => reject(transaction.error);
-          };
-        }),
-      { url: options.desktop.origin, token: DESKTOP_TOKEN },
-    );
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const transaction = open.result.transaction('secrets', 'readwrite');
+              transaction.objectStore('secrets').put(desktop, 'desktop');
+              transaction.oncomplete = () => {
+                open.result.close();
+                // As the settings page says a pairing changed: the worker asks the app for its runs' hub.
+                void chrome.storage.local.set({ piwiDesktopPairedAt: Date.now() }).then(() => resolve());
+              };
+              transaction.onerror = () => reject(transaction.error);
+            };
+          }),
+        { url: options.desktop.origin, token: DESKTOP_TOKEN },
+      );
+    }
+    if (editor) {
+      await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
+        url: `${editor.origin}/piwi/send`,
+        token: PAIRING_TOKEN,
+      });
+    }
+    return { context, worker, extensionId: worker.url().split('/')[2]! };
+  } catch (error) {
+    await context.close();
+    throw error;
   }
-  if (editor) {
-    await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
-      url: `${editor.origin}/piwi/send`,
-      token: PAIRING_TOKEN,
-    });
-  }
-  return { context, worker, extensionId: worker.url().split('/')[2]! };
 }
 
 /** The paired desktop app's token, which its hub takes in `hello`. */

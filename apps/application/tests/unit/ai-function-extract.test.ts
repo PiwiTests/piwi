@@ -15,7 +15,7 @@ vi.mock('../../server/utils/ai-provider', () => ({
 
 const { extractTestFunctionFromCode } = await import('../../server/utils/ai-function-extract');
 
-const role: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-model', baseUrl: null };
+const role: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-model', baseUrl: null, temperature: null };
 
 const validResponse = {
   name: 'login',

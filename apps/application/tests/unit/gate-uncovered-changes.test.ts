@@ -7,7 +7,7 @@ import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole } from '#shared/permissions';
 import type { ChangeCoverage } from '#shared/handlers/change-coverage';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
-import { migrateToLatest } from './temp-db';
+import { migrateToLatest, type TempDb } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -107,7 +107,9 @@ describe('the gate’s warn-only uncovered changes', () => {
     const warning =
       '7 uncovered changes (threshold 0): changed files no test reached (src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts, and 2 more) — warn-only.';
     expect(result.warnings).toEqual([warning]);
-    const [stored] = await state.db.select({ warnings: schema.gateEvaluations.warnings }).from(schema.gateEvaluations);
+    const [stored] = await (state.db as TempDb)
+      .select({ warnings: schema.gateEvaluations.warnings })
+      .from(schema.gateEvaluations);
     expect(stored?.warnings).toEqual([warning]);
   });
 

@@ -28,7 +28,7 @@ function read(relPath: string): string {
 function handlerCommands(libRs: string): string[] {
   const block = libRs.match(/generate_handler!\[([\s\S]*?)\]/);
   if (!block) throw new Error('generate_handler![…] block not found in lib.rs');
-  return block[1]
+  return block[1]!
     .split(',')
     .map((s) => s.trim())
     .filter((s) => /^[a-z][a-z0-9_]*$/.test(s));
@@ -38,7 +38,7 @@ function handlerCommands(libRs: string): string[] {
 function runnerHandlerCommands(runnerAppRs: string): string[] {
   const block = runnerAppRs.match(/generate_handler!\[([\s\S]*?)\]/);
   if (!block) throw new Error('generate_handler![…] block not found in runner_app.rs');
-  return block[1]
+  return block[1]!
     .split(',')
     .map((s) => s.trim().split('::').pop() ?? '')
     .filter((s) => /^[a-z][a-z0-9_]*$/.test(s));
@@ -48,7 +48,7 @@ function runnerHandlerCommands(runnerAppRs: string): string[] {
 function manifestCommands(buildRs: string): string[] {
   const block = buildRs.match(/\.commands\(&\[([\s\S]*?)\]\)/);
   if (!block) throw new Error('.commands(&[…]) block not found in build.rs');
-  return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  return [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
 }
 
 /** `allow-*` app-command grants in a capability's `permissions` array. */

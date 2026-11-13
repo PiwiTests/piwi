@@ -49,14 +49,13 @@ const config: KnipConfig = {
         // What `#components` resolves to under Vitest (vitest.config.ts): Nuxt resolves it everywhere else.
         'tests/unit/stubs/nuxt-components.ts',
       ],
-      // `nitropack` comes with Nuxt; Nuxt Icon loads the installed `@iconify-json/*` collections; `nuxt typecheck`
-      // runs `vue-tsc`. `@emnapi/*` keeps the runtime of the WASM fallback bindings (oxc, Tailwind's oxide) in the
-      // lockfile, which `npm ci` needs on every platform.
+      // `nitropack` comes with Nuxt; Nuxt Icon loads the installed `@iconify-json/*` collections. `@emnapi/*` keeps
+      // the runtime of the WASM fallback bindings (oxc, Tailwind's oxide) in the lockfile, which `npm ci` needs on
+      // every platform.
       ignoreDependencies: [
         'nitropack',
         '@iconify-json/lucide',
         '@iconify-json/simple-icons',
-        'vue-tsc',
         '@emnapi/core',
         '@emnapi/runtime',
       ],

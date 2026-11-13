@@ -60,6 +60,7 @@ import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 import { formatNumber, formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
+  ANSWER_KEYS,
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
@@ -347,12 +348,21 @@ function toolName(hub: string): string {
   return found?.desktop ? t('runs_desktopName') : (found?.client ?? t('runs_editor'));
 }
 
-/** What an answer says, the worker's own failures naming the tool whose hub it did not reach (`toolName`). */
-function failureText(answer: RunsAnswer, hub: string): string {
+/**
+ * What an answer says: the worker's own failures naming the tool whose hub it did not reach (`toolName`), then the
+ * hub's sentence in the window's language for a code it knows (the instance a run is shared on named from `run`), else
+ * the hub's sentence as it came.
+ */
+function answerText(answer: RunsAnswer, hub: string, run?: RunsRun): string {
   if (answer.failure === 'offline') return t('runs_failOffline', { tool: toolName(hub) });
   if (answer.failure === 'timeout') return t('runs_failTimeout', { tool: toolName(hub) });
   if (answer.failure === 'unwatched') return t('runs_failUnwatched');
-  return answer.message;
+  if (!answer.code || !(answer.code in ANSWER_KEYS)) return answer.message;
+  if (answer.code === 'share-on' || answer.code === 'share-off') {
+    const instance = instanceOf({ page: run?.session.live?.page ?? null });
+    return t(answer.code === 'share-on' ? 'runs_answerShareOn' : 'runs_answerShareOff', { instance });
+  }
+  return t(ANSWER_KEYS[answer.code]);
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -402,7 +412,7 @@ function say(
   options: { sent?: boolean; warnings?: string[]; rich?: boolean; copy?: string | null } = {},
 ): void {
   const { sent = false, warnings = [], rich = false, copy = null } = options;
-  const text = answer.ok ? answer.message : failureText(answer, key.split('|')[0]!);
+  const text = answerText(answer, key.split('|')[0]!);
   answers.set(key, {
     ok: answer.ok,
     text,
@@ -450,7 +460,9 @@ async function share(run: RunsRun, on: boolean, byWindow = false): Promise<void>
   if (byWindow && answer.ok && state?.hubs.find((h) => h.id === run.hub)?.windowShared !== on) {
     windowsAsked.add(run.hub);
   }
-  const text = answer.ok ? answer.message : failureText(answer, run.hub);
+  // A run that cannot be shared is refused with the reporter's reason, which the window says in its own words.
+  const text =
+    answer.ok || answer.failure || answer.code ? answerText(answer, run.hub, run) : refusalText(answer.message);
   if (!answer.ok) shareRefusals.set(key, text);
   if (text) announce(text);
   render();
@@ -521,7 +533,7 @@ async function stopWindow(hub: string): Promise<void> {
   const answer = await answered((id) => ({ type: 'unshare-window', id, hub }), OFFLINE, TIMEOUT);
   windowStopping.delete(hub);
   if (answer.ok && state?.hubs.find((h) => h.id === hub)?.windowShared) windowsAsked.add(hub);
-  const text = answer.ok ? answer.message : failureText(answer, hub);
+  const text = answerText(answer, hub);
   if (!answer.ok) windowStopRefusals.set(hub, text);
   if (text) announce(text);
   render();
@@ -568,7 +580,9 @@ async function mockRequest(run: RunsRun, worker: number, since: string, request:
   if (!answer) return;
   // The hub said what the code came to before this answer, with what to review in it: the answer says it again.
   const shown = answers.get(key);
-  if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, { sent: true });
+  if (!(answer.ok && shown?.since === since && shown.text === answerText(answer, run.hub))) {
+    say(key, answer, since, { sent: true });
+  }
   if (answer.ok) closeRequests(key);
   render();
 }
@@ -629,7 +643,7 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       since: stop.since,
       loading: false,
       img,
-      note: img ? '' : failureText(answer, run.hub),
+      note: img ? '' : answerText(answer, run.hub),
       viewport,
       ...(answer.failure === 'offline' ? { lost: run.hub } : {}),
     });
@@ -862,7 +876,7 @@ async function giveBack(run: RunsRun, worker: number, since: string): Promise<vo
   const answer = await command(run.hub, run.session.ref, worker, 'drive', since, { on: false });
   if (stopNow(run, worker) !== since) return;
   if (!answer.ok) say(workerKey(run.hub, run.session.ref, { worker }), answer, since);
-  else if (answer.message) announce(answer.message);
+  else if (answer.message) announce(answerText(answer, run.hub));
   render();
 }
 
@@ -909,7 +923,7 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
       // A view asked as its hub's connection was lost ends as the loss does, to start again once it answers.
       const lost = answer.failure === 'offline';
       view.status = lost ? 'ended' : 'refused';
-      view.note = lost ? t('runs_liveLost', { tool: toolName(run.hub) }) : failureText(answer, run.hub);
+      view.note = lost ? t('runs_liveLost', { tool: toolName(run.hub) }) : answerText(answer, run.hub);
       view.next = null;
       announce(view.note);
     }
@@ -966,7 +980,7 @@ async function sendInput(at: RunsView, slot: string, showing: () => boolean, eve
   const answer = await command(at.hub, at.ref, at.worker, 'input', at.since, { events });
   if (answer.ok && events.some((e) => e.type !== 'mouse' || e.action !== 'move')) inputAt.set(slot, at.since);
   if (answer.ok || !showing()) return answer.ok;
-  if (answers.get(key)?.text !== failureText(answer, at.hub)) {
+  if (answers.get(key)?.text !== answerText(answer, at.hub)) {
     say(key, answer, at.since);
     render();
   }
@@ -1133,7 +1147,7 @@ function askLane(slot: string, lane: LaneView): void {
       // A lane asked as its hub's connection was lost ends as the loss does, to be asked again once it answers.
       const lost = answer.failure === 'offline';
       lane.status = lost ? 'ended' : 'refused';
-      lane.note = lost ? t('runs_liveLost', { tool: toolName(lane.hub) }) : failureText(answer, lane.hub);
+      lane.note = lost ? t('runs_liveLost', { tool: toolName(lane.hub) }) : answerText(answer, lane.hub);
       lane.waitAway = lost;
       lane.refusedAt = lost || !state ? null : lanePlace(state, lane);
       lane.next = null;
@@ -1464,7 +1478,7 @@ function askText(slot: string, on: boolean): void {
     (answer) => {
       if (lanes.get(slot) !== lane || answer.ok || !lane.textAsking) return;
       lane.textAsking = false;
-      lane.textNote = failureText(answer, lane.hub);
+      lane.textNote = answerText(answer, lane.hub);
       render();
     },
   );
@@ -2938,7 +2952,7 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
     runBusy.delete(key);
     for (const worker of workers) busy.delete(worker);
     const refused = said.find((answer) => !answer.ok);
-    if (refused) announce(failureText(refused, run.hub));
+    if (refused) announce(answerText(refused, run.hub));
     render();
   };
   const buttons: HTMLButtonElement[] = [];
@@ -2990,8 +3004,8 @@ function renderStopRun(run: RunsRun): HTMLElement {
       render();
       const answer = await command(run.hub, run.session.ref, null, 'stop', null);
       stopping.delete(key);
-      if (!answer.ok) stopRefusals.set(key, failureText(answer, run.hub));
-      announce(answer.ok ? answer.message : failureText(answer, run.hub));
+      if (!answer.ok) stopRefusals.set(key, answerText(answer, run.hub));
+      announce(answerText(answer, run.hub));
       render();
     },
     { icon: 'stop', small: true, tone: 'remove', title: t('runs_stopRunTitle') },
@@ -3014,7 +3028,7 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
   render();
   const answer = await command(run.hub, run.session.ref, null, 'hold', null, { on });
   holding.delete(key);
-  const text = answer.ok ? answer.message : failureText(answer, run.hub);
+  const text = answerText(answer, run.hub);
   if (!answer.ok && text) holdRefusals.set(key, text);
   if (text) announce(text);
   render();
@@ -3715,7 +3729,7 @@ async function drive(
   const answer = await send(run, worker, 'drive', since, { on });
   if (!answer) return;
   if (!answer.ok) say(workerKey(run.hub, run.session.ref, { worker }), answer, since);
-  else if (answer.message && !(on && before === 'agent')) announce(answer.message);
+  else if (answer.message && !(on && before === 'agent')) announce(answerText(answer, run.hub));
   render();
 }
 

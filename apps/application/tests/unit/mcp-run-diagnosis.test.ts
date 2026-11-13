@@ -27,7 +27,7 @@ const config: AiConfig = {
   ...role,
   autoDiagnose: false,
   source: 'settings',
-  roles: { diagnosis: role, research: null, embedding: null },
+  roles: { diagnosis: role, research: null, embedding: null, assistant: null },
 };
 
 // `hold`, when set, keeps the next model call waiting until it resolves: a diagnosis in flight.

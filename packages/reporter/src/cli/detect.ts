@@ -126,13 +126,13 @@ function stringList(value: unknown): string[] {
 function yamlScalar(text: string): string {
   const value = text.trim();
   const quoted = /^(['"])(.*?)\1/.exec(value);
-  return quoted ? quoted[2] : value.replace(/\s+#.*$/, '').trim();
+  return quoted ? quoted[2]! : value.replace(/\s+#.*$/, '').trim();
 }
 
 /** The `packages` globs of a pnpm-workspace.yaml: a block list under the key, or a flow list beside it. */
 function pnpmWorkspaceGlobs(yaml: string): string[] {
   const flow = /^packages\s*:\s*\[([^\]]*)\]/m.exec(yaml);
-  if (flow) return flow[1].split(',').map(yamlScalar).filter(Boolean);
+  if (flow) return flow[1]!.split(',').map(yamlScalar).filter(Boolean);
   const lines = yaml.split(/\r?\n/);
   const start = lines.findIndex((line) => /^packages\s*:\s*(#.*)?$/.test(line));
   if (start === -1) return [];
@@ -141,7 +141,7 @@ function pnpmWorkspaceGlobs(yaml: string): string[] {
     if (/^\s*(#.*)?$/.test(line)) continue;
     const item = /^\s*-\s+(.*)$/.exec(line);
     if (!item) break;
-    globs.push(yamlScalar(item[1]));
+    globs.push(yamlScalar(item[1]!));
   }
   return globs.filter(Boolean);
 }
@@ -198,7 +198,7 @@ function expandGlob(root: string, glob: string): string[] {
       found.push(dir);
       return;
     }
-    const segment = segments[index];
+    const segment = segments[index]!;
     if (segment === '**') {
       walk(dir, index + 1);
       for (const child of subfolders(dir)) walk(child, index);

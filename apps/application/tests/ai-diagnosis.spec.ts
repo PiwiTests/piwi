@@ -578,11 +578,11 @@ test.describe.serial('AI diagnosis endpoints', () => {
 
     const group = (groups as Array<{ clusterId: number; diagnosis: { status: string; category: string } | null }>).find(
       (g) => g.clusterId === clusterId,
-    );
+    )!;
     expect(group).toBeDefined();
     expect(group.diagnosis).toBeDefined();
-    expect(group.diagnosis.status).toBe('completed');
-    expect(group.diagnosis.category).toBe('app-bug');
+    expect(group.diagnosis!.status).toBe('completed');
+    expect(group.diagnosis!.category).toBe('app-bug');
   });
 
   test('a configured researchModel runs a two-stage pipeline', async ({ request }) => {
@@ -939,7 +939,7 @@ test.describe.serial('AI diagnosis — a model that rejects images', () => {
 function vecFor(input: string): number[] {
   const m = /EMBVEC=((?:v\d+[ ,]*)+)/i.exec(input);
   if (m) {
-    const nums = [...m[1].matchAll(/v(\d+)/gi)].map((x) => Number(x[1]));
+    const nums = [...m[1]!.matchAll(/v(\d+)/gi)].map((x) => Number(x[1]));
     if (nums.length) return nums;
   }
   return [1, 1, 1];

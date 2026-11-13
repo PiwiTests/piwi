@@ -129,6 +129,7 @@ export class RunSubmitter {
    * @param streamManager Streaming session (may be `null` when streaming is disabled).
    * @param logger        Prefixed logger.
    * @param failureLinks  Failed tests collected during the run, for the per-failure links.
+   * @param retryDelaysMs The waits before each repeat of a request whose answer may have been lost.
    */
   constructor(
     private readonly httpClient: HttpClient,
@@ -137,6 +138,7 @@ export class RunSubmitter {
     private readonly streamManager: StreamManager | null,
     private readonly logger: Logger = new Logger(),
     private readonly failureLinks: FailureLinks | null = null,
+    private readonly retryDelaysMs: readonly number[] = RETRY_DELAYS_MS,
   ) {}
 
   /**
@@ -450,7 +452,7 @@ export class RunSubmitter {
   }
 
   /**
-   * Make `request`, and make it again after each of `RETRY_DELAYS_MS` while its answer may have been lost
+   * Make `request`, and make it again after each of `retryDelaysMs` while its answer may have been lost
    * (`answerMayBeLost`), the waits ending with the budget. `request` gets the number of the try, from 0. Throws the
    * last failure.
    */
@@ -459,7 +461,7 @@ export class RunSubmitter {
       try {
         return await request(attempt);
       } catch (error) {
-        const delay = RETRY_DELAYS_MS[attempt];
+        const delay = this.retryDelaysMs[attempt];
         if (delay === undefined || this.httpClient.closed || !answerMayBeLost(error)) throw error;
         this.logger.warn(`${what} failed (${errorMessage(error)}), perhaps after the dashboard took it: asking again.`);
         // The wait ends with the budget: a request after it fails at once.

@@ -39,6 +39,8 @@ function traceData(frameSnapshots: TraceFrameSnapshot[]): ParsedTraceData {
     frameSnapshots,
     failingAction: null,
     failingActionIndex: -1,
+    contexts: [],
+    errors: [],
     eventCount: 0,
     timeoutFallback: false,
     traceEndTime: 0,

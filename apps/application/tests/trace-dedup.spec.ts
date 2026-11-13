@@ -137,8 +137,8 @@ test.describe('Trace deduplication — upload', () => {
     const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
     // Content-addressed path inside the blobs directory
-    expect(traces[0].filePath).toContain('/blobs/');
-    expect(traces[0].filePath).toContain(hash);
+    expect(traces[0]!.filePath).toContain('/blobs/');
+    expect(traces[0]!.filePath).toContain(hash);
   });
 
   test('uploading the same trace twice stores only one blob', async ({ request }) => {
@@ -151,7 +151,7 @@ test.describe('Trace deduplication — upload', () => {
 
     const { traces: t1 } = await getFirstCaseTraces(request, (await r1.json()).runId);
     const { traces: t2 } = await getFirstCaseTraces(request, (await r2.json()).runId);
-    expect(t1[0].filePath).toBe(t2[0].filePath);
+    expect(t1[0]!.filePath).toBe(t2[0]!.filePath);
   });
 
   test('a trace that is not a ZIP is stored as uploaded, in the blob store', async ({ request }) => {
@@ -163,8 +163,8 @@ test.describe('Trace deduplication — upload', () => {
 
     const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
-    expect(traces[0].filePath).toContain(`/blobs/${sha256(traceData)}`);
-    const served = await request.get(`/api/files/${traces[0].filePath}`);
+    expect(traces[0]!.filePath).toContain(`/blobs/${sha256(traceData)}`);
+    const served = await request.get(`/api/files/${traces[0]!.filePath}`);
     expect(Buffer.from(await served.body()).equals(traceData)).toBe(true);
   });
 });
@@ -183,7 +183,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     expect(traces).toHaveLength(1);
 
     // Fetch the trace via the file serve endpoint — it should be reconstructed with the resource
-    const fileRes = await request.get(`/api/files/${traces[0].filePath}`);
+    const fileRes = await request.get(`/api/files/${traces[0]!.filePath}`);
     expect(fileRes.ok()).toBe(true);
     expect(fileRes.headers()['content-type']).toContain('application/zip');
 
@@ -217,7 +217,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
 
     async function getResourceEntries(runId: number) {
       const { traces } = await getFirstCaseTraces(request, runId);
-      const fileRes = await request.get(`/api/files/${traces[0].filePath}`);
+      const fileRes = await request.get(`/api/files/${traces[0]!.filePath}`);
       expect(fileRes.ok()).toBe(true);
       return await parseZip(Buffer.from(await fileRes.body()));
     }
@@ -247,7 +247,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     const { runId } = await uploadRes.json();
     const { traces } = await getFirstCaseTraces(request, runId);
 
-    const fileRes = await request.get(`/api/files/${traces[0].filePath}`);
+    const fileRes = await request.get(`/api/files/${traces[0]!.filePath}`);
     const entries = await parseZip(Buffer.from(await fileRes.body()));
 
     expect(entries.find((e) => e.name === 'trace.trace')).toBeDefined();

@@ -561,12 +561,45 @@ export type ParsedHubCommand =
   /** A command of a known type with a field it cannot take, and why. */
   | { type: 'invalid'; id: number; message: string };
 
+/**
+ * The codes an answer may carry beside its sentence (`HubAnswer.code`), each for one sentence of the service's, which a
+ * surface says in its own language: a control's, a stop driven or given back, Hold failures and Share live turned on or
+ * off. An answer with any other sentence carries none.
+ */
+export const HUB_ANSWER_CODES = [
+  'pausing',
+  'stepping',
+  'resuming',
+  'finishing',
+  'ending-skipped',
+  'ending-failed',
+  'went-on',
+  'running',
+  'stopped-already',
+  'drive-on',
+  'drive-taken',
+  'drive-back',
+  'drive-none',
+  'hold-on',
+  'hold-off',
+  'hold-unattended',
+  'share-on',
+  'share-off',
+] as const;
+
+export type HubAnswerCode = (typeof HUB_ANSWER_CODES)[number];
+
 /** The answer to a command: whether it was done, or why not, in one sentence a person can read. */
 export interface HubAnswer {
   type: 'answer';
   id: number;
   ok: boolean;
   message: string;
+  /**
+   * What the sentence says, as a code a surface maps to its own words, keeping the sentence for a code it does not
+   * know; absent from a hub that predates the codes, and for a sentence that has none.
+   */
+  code?: HubAnswerCode;
   /** For `pausedPage`: the image, null when there is none. */
   image?: HubImage | null;
   /** For `requests`: the responses the test kept, oldest first; empty when it was refused. */
@@ -1315,6 +1348,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       const { id, ok, message } = value;
       if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, MAX_HUB_MESSAGE) === null) return null;
       const answer: HubAnswer = { type: 'answer', id, ok, message: message as string };
+      // A code this version does not know is left out: the sentence stays.
+      if ((HUB_ANSWER_CODES as readonly unknown[]).includes(value.code)) answer.code = value.code as HubAnswerCode;
       if (value.requests !== undefined) {
         if (!Array.isArray(value.requests) || value.requests.length > 50) return null;
         const requests = value.requests.map(readKeptRequest);
