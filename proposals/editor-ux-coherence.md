@@ -80,7 +80,9 @@ still refreshes. M13 in part: VS Code's status tooltip links Connect only while 
 failing count after the local runs, and says how many tests the failed results are when a test failed on several
 Playwright projects (HM1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
-ring while paused, and VS Code a paused recording with `$(circle-large-outline)` (IC2 in part). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
+ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
+recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
+`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
@@ -149,8 +151,8 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 5. **A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the status bars**
    ([NF4](#nf4), [LR10](#lr10)).
 
-6. **One concept has several glyphs, and some glyphs several meanings**: recording is the IDE's macro film strip
-   ([IC2](#ic2)).
+6. **Most of Piwi's glyphs are tied to no table or test across its tools**: only the outcome, coverage and
+   recording marks are ([X2](#x2)).
 
 7. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
    Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
@@ -197,7 +199,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 1. **One name per concept, from the action catalog and a words table that both manifests and both clients are tested
    against, in sentence case in both editors.** ([AC11](#ac11))
 2. **One glyph per concept and one meaning per glyph, from the concept table; a glyph no platform has, Piwi draws
-   once.** ([IC2](#ic2))
+   once.** ([X2](#x2))
 3. **One outcome palette: `STATUS_COLORS` and the dashboard's status glyphs, restated in each tool and held to them by a
    test, as `coverage-mark-colors.test.ts` holds the coverage marks; flaky, quarantine and history always drawn.**
    ([LI3](#li3))
@@ -216,8 +218,7 @@ These rules hold them together; each larger item of §10 carries one or more.
    [RD4](#rd4))
 
 <a id="x2"></a>**X2. The same concept is drawn differently in each Piwi tool, and no table or test ties the glyphs
-together.** Record is a gray film strip in JetBrains, `$(record)` in VS Code and a dot in Piwi Picker ([IC2](#ic2)). Only the
-coverage colors are tested
+together.** Only the coverage colors are tested
 (`apps/application/tests/unit/coverage-mark-colors.test.ts`). **(read)** Fix: the concept table of [Appendix
 A](#appendix-a-the-concept-table-first-draft), the missing glyphs drawn once, restated in each tool under the
 concept-table test and a `status-mark-colors.test.ts` beside `coverage-mark-colors.test.ts`. ([M4](#m4), [LI2](#li2))
@@ -234,19 +235,8 @@ after. Every id a step adds is registered in D25 in the same pull request.
 ## 3. Icons and the visual language
 
 What works: the coverage marks are one palette across the dashboard and both editors, held by
-`apps/application/tests/unit/coverage-mark-colors.test.ts`. **(read)** The rest is one concept drawn several ways, one
-glyph with several meanings, and actions with none. [Appendix A](#appendix-a-the-concept-table-first-draft) drafts the
-concept table.
-
-### 3.1 Actions without a glyph
-
-### 3.2 Recording
-
-<a id="ic2"></a>**IC2. Recording's Pause and Resume reuse the run's debugger glyphs in JetBrains, and VS Code tints a recording
-with no gutter mark.** Pause and Resume Recording draw `Actions.Pause` and `Resume` (`plugin.xml`), as the run's two do,
-in the same Tools → Piwi menu. VS Code tints the block in the running blue with no gutter mark
-(`piwi.recordingBlockBackground` in `apps/vscode/package.json`). **(seen)** Fix: a recording's Pause and Resume glyphs of their own, and a gutter
-mark on VS Code's recorded block, as JetBrains' red dot in a ring and gray ring. ([M4](#m4), [LI2](#li2))
+`apps/application/tests/unit/coverage-mark-colors.test.ts`. **(read)** The glyphs still to draw are those
+[Appendix A](#appendix-a-the-concept-table-first-draft), the concept table, marks as new.
 
 ## 4. Menus, actions, keys and names
 
@@ -1183,7 +1173,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [X3](#x3) |
-| <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): record, and the glyphs Appendix A marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [IC2](#ic2), [LR14](#lr14) |
+| <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): the glyphs Appendix A still marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **The rest of one outcome palette** ([LI3](#li3)): both JetBrains color schemes and the held failure's execution point held to `STATUS_COLORS` by `status-mark-colors.test.ts`, and the running ring animated | `ide` | [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
@@ -1216,8 +1206,8 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 ### Sequence
 
 The quick wins that stand alone (Q13, Q27, Q28, Q30), each on its own. Then, on the action catalog, one Piwi menu
-(M3) and the run-control places (M14); M4 and M5 draw the
-glyphs and the outcome palette that Q9 and IC2's recording wait for. M13 and M15 finish the glance and the
+(M3) and the run-control places (M14); M4 draws the glyphs
+Appendix A still marks, and M5 animates the running ring. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
@@ -1396,7 +1386,7 @@ such action.
 
 The last seven rows are `STATUS_COLORS` (`apps/application/shared/status-colors.ts:36-45`) with the dashboard's
 `getStatusIcon` glyphs (`apps/application/app/utils/index.ts:311-331`). The outcome palette adds four states with no key
-there: unknown (JetBrains draws `TestNotRan`, VS Code nothing), paused, a held failure and recording ([IC2](#ic2)).
+there: unknown (JetBrains draws `TestNotRan`, VS Code nothing), paused, a held failure and recording.
 
 Every platform constant is to be checked on 241 and 262, and every codicon against the 1.91 engines floor, before use. A
 first pass found each AllIcons constant above mapped to a New UI icon in both platforms' `PlatformIconMappings.json`,
@@ -1404,8 +1394,7 @@ and each codicon in the `codicon.css` VS Code 1.143.1 bundles; every lucide name
 `redo-dot` and `arrow-up-from-dot` are not used by the dashboard yet.
 
 The draft leaves its collisions to settle, which `menus.test.ts` and `PiwiPluginTest` list as the glyphs two concepts
-still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/vscode/package.json:359-364`), and
-JetBrains' Pause, Resume and Stop are a recording's and a run's alike ([IC2](#ic2)); Verify ×3's `$(sync)` spins in the
+still share: `$(eye)` is also VS Code's Stop following the active editor (`apps/vscode/package.json:359-364`); Verify ×3's `$(sync)` spins in the
 running status item (`apps/vscode/src/glue.ts:164`); `RunConfigurations.TestIgnored` is both End the test and Skipped;
 lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The desktop app's Pick on the image draws
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
@@ -1420,7 +1409,7 @@ What the slices and the two hands-on runs checked and found right, kept here so 
 - **The protocol and the runs.** The parity of [developer-loop-audit.md](developer-loop-audit.md) §8 still holds, and
   both clients build the same run arguments from the service's answers: the gaps above are in what each client draws,
   places and words **(read)**.
-- **The platform's icons.** Of the 36 `AllIcons` constants the plugin used at `e82b429f`, all but [IC2](#ic2)'s film
+- **The platform's icons.** Of the 36 `AllIcons` constants the plugin used at `e82b429f`, all but the macro film
   strip have a New UI icon in 262's `PlatformIconMappings.json`; in 241's, `Actions.GroupByFile` and
   `Debugger.NextStatement` have none either. `TestState.Run` and `Debugger.NextStatement` are 12 px gutter glyphs, 14 px
   in 262's New UI. Appendix A's constants exist on both with a New UI icon **(read)**.
