@@ -1357,7 +1357,7 @@ describe('the recording’s controls', () => {
       tooltip: 'Recording into checkout.spec.ts. Click to stop.',
     });
     expect(recordingView('paused', 1, false, 'a.spec.ts')).toMatchObject({
-      title: '$(debug-pause) Paused · 1 step',
+      title: '$(circle-large-outline) Paused · 1 step',
       actions: [
         { title: 'Stop', command: 'piwi.stopRecording' },
         { title: 'Resume', command: 'piwi.resumeRecording' },
@@ -1370,7 +1370,7 @@ describe('the recording’s controls', () => {
 
   test('an edit in the block pauses it, with Resume and Keep my edits', () => {
     expect(recordingView('recording', 2, true, 'a.spec.ts')).toMatchObject({
-      title: '$(debug-pause) Paused while you edit · 2 steps',
+      title: '$(circle-large-outline) Paused while you edit · 2 steps',
       actions: [
         { title: 'Resume', command: 'piwi.resumeRecording' },
         { title: 'Keep my edits', command: 'piwi.stopRecording' },

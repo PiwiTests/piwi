@@ -191,20 +191,20 @@
                     description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record here"
-                    icon="AllIcons.Ide.Macro.Recording_1"
+                    icon="/icons/record.svg"
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
                 <synonym text="Playwright codegen"/>
                 <synonym text="Record a test"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
-                    text="Record a new test file…" icon="AllIcons.Ide.Macro.Recording_1"
+                    text="Record a new test file…" icon="/icons/record.svg"
                     description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
                 <add-to-group group-id="NewGroup" anchor="last"/>
                 <synonym text="Playwright codegen"/>
             </action>
             <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
-                    icon="AllIcons.Actions.Suspend"
+                    icon="/icons/stopRecording.svg"
                     description="Close the recording's browser; the recorded lines stay, one undo away">
                 <!-- Record here's chord: the two never apply to the same file at once. -->
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
@@ -264,7 +264,7 @@
                     icon="AllIcons.General.Locate"
                     description="Pick an element in the stopped test's window: its locator replaces the one on the stopped line"/>
             <action id="Piwi.RecordAtStop" class="dev.piwitests.jetbrains.RecordAtStopAction" text="Record here at the stop"
-                    icon="AllIcons.Ide.Macro.Recording_1"
+                    icon="/icons/record.svg"
                     description="Record what you do in the stopped test's window above the stopped line"/>
             <action id="Piwi.AssertAtStop" class="dev.piwitests.jetbrains.AssertAtStopAction" text="Assert at the stop"
                     icon="AllIcons.General.InspectionsOK"
@@ -361,7 +361,7 @@
             <reference ref="Piwi.ResumeRecording"/>
         </group>
         <action id="Piwi.RecordHereGenerate" class="dev.piwitests.jetbrains.RecordHereGenerateAction" text="Piwi: Record here…"
-                icon="AllIcons.Ide.Macro.Recording_1"
+                icon="/icons/record.svg"
                 description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
             <add-to-group group-id="GenerateGroup" anchor="last"/>
         </action>

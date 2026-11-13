@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
-import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -719,7 +718,7 @@ private class StartMark(document: Document) : BasicUndoableAction(document) {
 
 /** The recorded block's mark in the gutter: what the recording does, and Stop, Pause or Resume on a click. */
 private class RecordingGutter(private val session: RecordingSession) : GutterIconRenderer(), DumbAware {
-    override fun getIcon(): Icon = AllIcons.Ide.Macro.Recording_1
+    override fun getIcon(): Icon = PiwiIcons.recording(session.state)
 
     override fun getTooltipText(): String = Glue.htmlTooltip(session.view.text)
 

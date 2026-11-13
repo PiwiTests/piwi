@@ -65,7 +65,9 @@ at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMa
 in a product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and
 VS Code's views (IC8, IC9). Q9: the font also takes the plugin's flaky, Pause and watch and Stop sharing glyphs and the
 new Reload Piwi (`icons/reload.svg`, JetBrains' too) and Run to the cursor glyphs, at one line weight, so every VS Code
-command draws one (IC1). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+command draws one (IC1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+Stop recording with a ring around a square, and a recording's gutter mark and banner with a red disc, a gray ring while
+paused, and VS Code a paused recording with `$(circle-large-outline)` (IC2 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14).
 §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
@@ -238,20 +240,11 @@ concept table.
 
 ### 3.2 Recording
 
-<a id="ic2"></a>**IC2. Recording has no glyph of its own in JetBrains: the IDE's gray macro film strip, with no New UI
-variant, marks every recording entry point, and recording's Pause, Resume and Stop reuse the run's debugger glyphs.**
-`AllIcons.Ide.Macro.Recording_1`, a `#6E6E6E` film strip with no entry in the 241 or 262 `PlatformIconMappings.json`,
-marks Record Here, Record a New Test File, Record Here at the Stop and the Generate entry (`plugin.xml:191, 196, 256,
-314`), the stop popup's Record (`PiwiIcons.kt:27`), the recorded block's gutter mark (`PiwiRecording.kt:722`) and its
-banner (`PiwiRecordingViews.kt:33`), paused or not. Pause, Resume and Stop Recording draw `Actions.Pause`, `Resume` and
-`Suspend` (`plugin.xml:207, 211, 201`), as the run's three do (`:223, 226, 289`), in the same Tools → Piwi menu. The
-other tools mark a recording their own way: VS Code tints the block in the running blue with no gutter mark and shows a
-paused recording with `$(debug-pause)`, a held run's glyph (`apps/vscode/package.json:1309-1316`,
-`apps/vscode/src/glue.ts:1219-1229`); Piwi Picker shows a red dot, gray when paused
-(`apps/extension/src/content/record-panel.ts:627-630`). **(seen)** Fix: one record family drawn from Picker's dot, red
-while recording and gray when paused: Appendix A's three record rows on every recording surface and control in both
-editors, and the run's glyphs for the run alone. [record-from-the-ide.md](record-from-the-ide.md) Part 2 puts "●
-Recording" in the status bar and names no icon. ([M4](#m4), [LI2](#li2))
+<a id="ic2"></a>**IC2. Recording's Pause and Resume reuse the run's debugger glyphs in JetBrains, and VS Code tints a recording
+with no gutter mark.** Pause and Resume Recording draw `Actions.Pause` and `Resume` (`plugin.xml`), as the run's two do,
+in the same Tools → Piwi menu. VS Code tints the block in the running blue with no gutter mark
+(`apps/vscode/package.json:1309-1316`). **(seen)** Fix: a recording's Pause and Resume glyphs of their own, and a gutter
+mark on VS Code's recorded block, as JetBrains' red disc and gray ring. ([M4](#m4), [LI2](#li2))
 
 ### 3.3 Outcomes
 
@@ -1419,9 +1412,9 @@ such action.
 |---|---|---|---|---|
 | Connect | `plug` | `plug` | `$(plug)` | `connect.svg` |
 | Disconnect | `unplug` | `unlink` | `$(debug-disconnect)` | `disconnect.svg` |
-| Record | `circle`, filled | `record` | `$(record)` | `record.svg` (new) |
-| Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` (new) |
-| Stop recording | – | `stop-circle` (new) | `$(stop-circle)` | `stopRecording.svg` (new) |
+| Record | `circle`, filled | `record` | `$(record)` | `record.svg`, gray; `recording.svg`, red, while recording |
+| Recording paused | – | `record`, gray | `$(circle-large-outline)` | `recordPaused.svg` |
+| Stop recording | – | `stop-circle` (new) | `$(stop-circle)` | `stopRecording.svg` |
 | Resume | `play` | `play` | `$(debug-continue)` | `Actions.Resume` |
 | Pause | `pause` | `pause` | `$(debug-pause)` | `Actions.Pause` |
 | Step | `redo-dot` | `skip` | `$(debug-step-over)` | `Actions.TraceOver` |
