@@ -21,7 +21,6 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -79,7 +78,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val draw = {
             val failing = service.failuresResult?.failing ?: 0
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
-            toolWindow.setIcon(if (failing == 0) PIWI_ICON else FAILING_ICON)
+            toolWindow.setIcon(if (failing == 0) PiwiIcons.PIWI else PiwiIcons.PIWI_FAILING)
         }
         service.onChange(toolWindow.disposable, draw)
         draw()
@@ -487,11 +486,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
 
         /** The tool window's tab, named as the status bar's Open the failures and a run's notification name it. */
         const val TAB_NAME = "Failures"
-
-        private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiFailuresToolWindowFactory::class.java)
-
-        /** The tool window's icon while tests fail: the Piwi mark with a red dot. */
-        private val FAILING_ICON: Icon = IconLoader.getIcon("/icons/piwi_failing.svg", PiwiFailuresToolWindowFactory::class.java)
 
         private fun nodeOf(value: Any?): Glue.FailureNode? = (value as? DefaultMutableTreeNode)?.userObject as? Glue.FailureNode
 

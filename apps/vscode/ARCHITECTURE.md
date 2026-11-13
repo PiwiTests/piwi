@@ -63,7 +63,9 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 hand against the codicons of VS Code 1.91 (`@vscode/codicons` 0.0.36), but four that wait for a glyph Piwi draws (Reload Piwi, Run to the cursor, Pause and
 watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
 context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
-`tests/menus.test.ts` holds both.
+`tests/menus.test.ts` holds both. Piwi's own mark is `$(piwi-mark)`, a glyph of the product icon font the brand asset
+generator writes (`media/piwi-icons.woff`, `contributes.icons`): the idle status item and the failures view's run
+draw it.
 
 ## Service, lenses and credentials
 

@@ -82,6 +82,8 @@
         <colorSettingsPage implementation="dev.piwitests.jetbrains.PiwiColorSettingsPage"/>
         <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/PiwiDarcula.xml"/>
+        <!-- The New UI's outline mark at 16 and 20 px in place of the classic filled one, written by the brand generator. -->
+        <iconMapper mappingFile="PiwiIconMappings.json"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
         <!-- The Paused page and Worker tabs close; the failures tab does not (isCloseable = false). -->
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg" canCloseContents="true"

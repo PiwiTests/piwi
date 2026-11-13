@@ -10,7 +10,6 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.Lsp4jClient
@@ -53,11 +52,9 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
 
     /** The service's entry in the Language Services widget: Piwi's icon, and the gear that opens **Settings → Tools → Piwi**. */
     override fun createLspServerWidgetItem(lspServer: LspServer, currentFile: VirtualFile?): LspServerWidgetItem =
-        LspServerWidgetItem(lspServer, currentFile, ICON, PiwiConfigurable::class.java)
+        LspServerWidgetItem(lspServer, currentFile, PiwiIcons.PIWI, PiwiConfigurable::class.java)
 
     companion object {
-        private val ICON = IconLoader.getIcon("/icons/piwi.svg", PiwiLspServerSupportProvider::class.java)
-
         fun isSupported(file: VirtualFile): Boolean =
             file.isInLocalFileSystem && (file.extension?.lowercase() ?: "") in Glue.SUPPORTED_EXTENSIONS
     }

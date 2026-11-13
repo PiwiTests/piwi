@@ -21,7 +21,6 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.CustomStatusBarWidget
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
@@ -146,7 +145,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             else -> view.text
         }
         label.icon = when {
-            recording != null -> PIWI_ICON
+            recording != null -> PiwiIcons.PIWI
             // A held failure shows the error's icon, any other stop the pause's.
             stopped != null -> if (runs()?.let { Glue.heldFailuresOnly(it.stops()) } == true) PiwiIcons.FAILED else AllIcons.Actions.Pause
             shared != null -> PiwiIcons.LIVE
@@ -169,7 +168,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     }
 
     private fun icon(icon: Glue.StatusIcon): Icon = when (icon) {
-        Glue.StatusIcon.PIWI -> PIWI_ICON
+        Glue.StatusIcon.PIWI -> PiwiIcons.PIWI
         Glue.StatusIcon.CONNECT -> PiwiIcons.CONNECT
         Glue.StatusIcon.UNREACHABLE -> AllIcons.Actions.OfflineMode
         Glue.StatusIcon.RUNNING -> AnimatedIcon.Default.INSTANCE
@@ -319,9 +318,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         fun shownFile(project: Project): String? = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.path
     }
 }
-
-/** Piwi's icon, the tool window's. */
-private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiStatusBarWidget::class.java)
 
 /**
  * The item's label: an icon and a text in the status bar's font and insets, the text in the status bar's foreground,

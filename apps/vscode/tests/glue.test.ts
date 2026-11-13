@@ -151,7 +151,7 @@ describe('statusBarView', () => {
   );
 
   test('without a Playwright config, says so', () => {
-    expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
+    expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(piwi-mark) Piwi', action: 'none' });
   });
 
   test('when not connected, offers Connect with the reason', () => {
@@ -457,7 +457,7 @@ describe('statusBarView', () => {
   test('a branch without a run', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
     expect(view).toMatchObject({
-      text: '$(beaker) Piwi: no run',
+      text: '$(piwi-mark) Piwi: no run',
       tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
       action: 'refresh',
     });
@@ -996,7 +996,7 @@ describe('Compare with…', () => {
       ],
     };
     expect(statusBarView(connected, none)).toMatchObject({
-      text: '$(beaker) Piwi: no run',
+      text: '$(piwi-mark) Piwi: no run',
       tooltip: expect.stringContaining('No run of Acme on release yet\n\nBaseline: release (no run)'),
     });
   });
@@ -1537,7 +1537,7 @@ describe('the failures view', () => {
       kind: 'run',
       label: 'Run #120 · CI · feature/x · 2 failing',
       description: '4 min ago',
-      icon: 'beaker',
+      icon: 'piwi-mark',
       state: 'expanded',
       url: 'http://piwi/test-runs/120',
     });

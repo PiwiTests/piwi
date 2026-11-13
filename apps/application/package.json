@@ -105,6 +105,9 @@
     "monocart-reporter": "^2.15.1",
     "playwright": "^1.63.0",
     "read-excel-file": "^9.3.12",
+    "svg2ttf": "^6.1.0",
+    "svgicons2svgfont": "^15.0.1",
+    "ttf2woff": "^3.0.0",
     "vue-tsc": "3.3.11",
     "ws": "^8.22.0"
   },
