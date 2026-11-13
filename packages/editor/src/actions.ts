@@ -94,6 +94,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Open the screenshot', vscode: 'piwi.openScreenshot', jetbrains: ['Piwi.Failure.OpenScreenshot'] },
   { title: 'Record here…', vscode: 'piwi.record', jetbrains: ['Piwi.RecordHere', 'Piwi.RecordHereGenerate'] },
   { title: 'Record a new test file…', vscode: 'piwi.recordFile', jetbrains: ['Piwi.RecordNewFile'] },
+  { title: 'Playwright test (recorded)…', jetbrains: ['Piwi.NewRecordedTest'] },
   { title: 'Stop recording', vscode: 'piwi.stopRecording', jetbrains: ['Piwi.StopRecording'] },
   { title: 'Pause recording', vscode: 'piwi.pauseRecording', jetbrains: ['Piwi.PauseRecording'] },
   { title: 'Resume recording', vscode: 'piwi.resumeRecording', jetbrains: ['Piwi.ResumeRecording'] },

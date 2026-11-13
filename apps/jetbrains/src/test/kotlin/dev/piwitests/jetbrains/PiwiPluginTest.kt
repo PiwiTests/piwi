@@ -181,7 +181,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
                 "Piwi.Failure.CopyContext",
             ),
-            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
+            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.NewRecordedTest", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
             setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
@@ -596,6 +596,43 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.searchPlaywright()
         }
         assertFalse(service.hasPlaywrightConfig())
+    }
+
+    /** New offers a recorded Playwright test on a folder of a Playwright config, and on no other folder. */
+    fun testNewOffersARecordedTestOnAPlaywrightConfigsFoldersAlone() {
+        val actions = ActionManager.getInstance()
+        val newGroup = actions.getAction("NewGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        val listed = newGroup.childActionsOrStubs.mapNotNull { actions.getId(it) }.filter { it.startsWith("Piwi.") }
+        assertEquals(listOf("Piwi.NewRecordedTest"), listed)
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
+        val nested = File(base, "e2e/tests/cart").apply { mkdirs() }
+        val other = File(base, "src").apply { mkdirs() }
+        try {
+            config.writeText("export default {};\n")
+            service.searchPlaywright()
+            val action = actions.getAction("Piwi.NewRecordedTest")
+            fun shownOn(folder: File): Boolean {
+                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(folder)!!
+                val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+                    .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+                    .add(com.intellij.openapi.actionSystem.CommonDataKeys.VIRTUAL_FILE, file)
+                    .build()
+                val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("NewGroup", null, context)
+                action.update(event)
+                return event.presentation.isEnabledAndVisible
+            }
+            assertTrue(shownOn(config.parentFile))
+            assertTrue(shownOn(nested))
+            assertFalse(shownOn(other))
+            assertFalse(shownOn(base))
+        } finally {
+            config.delete()
+            nested.parentFile.deleteRecursively()
+            other.delete()
+            service.searchPlaywright()
+        }
     }
 
     /** A message that the service did not answer is a warning, a problem, with Restart and the log, whatever its caller said. */
