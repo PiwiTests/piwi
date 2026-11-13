@@ -180,7 +180,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     /**
      * The popup's actions: while a run started here is live, each stop, named as the choice among several names it,
      * which goes to its line, and the run's controls; while a run is shared live, the share's own entries
-     * (`Glue.liveMenu`: the run page, its link, Stop sharing…), first while the item shows the share; then what the
+     * (`Glue.liveMenu`: the run page, its link, Stop sharing), first while the item shows the share; then what the
      * item's state calls for (going to the recorded lines while a recording runs, with its controls), then the failing
      * tests, the failures, the dashboard and the baseline, the test at the caret and Record here, then Reload Piwi,
      * Connect and the settings. The registered actions keep their own logic, and the popup leaves out those that do not

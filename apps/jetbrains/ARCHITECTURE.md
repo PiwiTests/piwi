@@ -205,7 +205,7 @@ service's hover names the tests behind a line; the lines on a function come in `
 - A file renamed or moved, itself or with its folder (`VFS_CHANGES`), loses its marks and is asked again under its new
   URI. A deleted file is forgotten.
 
-**Show coverage marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
+**Show or hide the coverage marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
 `PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks. A file
 without line coverage draws nothing.
 
@@ -243,7 +243,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
   dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
   and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
-  and the MCP configurations, Reload Piwi, Restart the editor service, Open log, Settings… and Documentation.
+  and the MCP configurations, Reload Piwi, Restart the editor service, Open the log, Settings… and Documentation.
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
   `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
   are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
@@ -278,7 +278,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 The panel is an `OccurenceNavigator`: Next and Previous Occurrence, and the toolbar's arrows, go from failure to
 failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page. The panel
 gives the selected node's page as `DASHBOARD_URL`, which Open in dashboard opens before the file's test or the latest
-run. Open in dashboard and Run selection… are enabled only while a context is connected (`piwiConnected`), Open in
+run. Open in dashboard and Run a saved selection… are enabled only while a context is connected (`piwiConnected`), Open in
 dashboard also on a selected page, and Re-run the failing tests while failures are listed; `PiwiPluginTest` holds both.
 
 The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`, a failure's entries as the
@@ -360,7 +360,7 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
 - the service that ran stopped (`Piwi: not running`, `PiwiProjectService.serviceStopped`): **Restart the editor
-  service**, then **Open log**; the tool window's header and the settings page say `Glue.NOT_RUNNING`;
+  service**, then **Open the log**; the tool window's header and the settings page say `Glue.NOT_RUNNING`;
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's controls
@@ -379,14 +379,14 @@ sharing, then Stop. Every row that a registered action does is that action, the 
 pages as `Piwi.OpenRunPage`, each wrapped to act on its stop or page (`registeredWith`). Then come the registered
 actions, by id: Re-run the failing tests, Open the failures (the tool window), Show the run's flaky tests
 (`Piwi.ShowFlakyTests`, enabled while the tool window lists flaky tests for the item's config, `Glue.flakyTestsListed`;
-it selects and opens that config's group, found in the tree's model, not its rows), Open the latest run in the dashboard
+it selects and opens that config's group, found in the tree's model, not its rows), Open the latest run
 (unless a row above opens its page: one entry per page), Compare with…, Run the test at the caret, Record here, Reload
 Piwi, Connect (in this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
 run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project installs.
 
-**Open the latest run in the dashboard** (`Piwi.OpenLatestRun`, under **Tools → Piwi** and in the status bar's popup)
+**Open the latest run** (`Piwi.OpenLatestRun`, under **Tools → Piwi** and in the status bar's popup)
 opens the run the status bar shows.
 
 ## Runs
@@ -456,8 +456,11 @@ information as a weak warning.
 
 Three actions, under **Tools → Piwi** and in the **Piwi** submenu of the editor's menu on a spec (`Glue.isSpecFile`)
 in a project with a Playwright config (`RunInSpecAction`). The submenu, `Piwi.EditorPopup` (`PiwiEditorPopupGroup`),
-holds the VS Code extension's sections in its order (run, record, a recording's controls), and it and **Tools → Piwi**
-(`Piwi.Actions`, `compact`) leave out what does not apply; `PiwiPluginTest` holds both:
+holds the VS Code extension's sections in its order (run, record, a recording's controls); the project view's
+(`Piwi.ProjectViewPopup`) holds Run this spec, Run the tests that reach this file and Record a new test file… on a file
+or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six compact groups in this order:
+`Piwi.Run`, `Piwi.Record`, `Piwi.RunControl` (while a run is live), `Piwi.Dashboard`, `Piwi.Agents` and
+`Piwi.Connection`. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
 
 - **Run the test at the caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
 - **Verify the test at the caret ×3** (`Piwi.VerifyTestAtCursor`);
@@ -476,7 +479,7 @@ Every test run takes the person's start options (`Glue.withRunStart`, `RunStartO
 is on, nothing otherwise (the service runs it headless but for a spec with a `page.pause()`, and for a run with
 breakpoints while the project's reporter is older than 0.62.0 or of a version unknown, or the run has no run channel),
 `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
-`PiwiCommands.runTests`, a verification included, and **Run selection…**; a debug run (`RunTestsArgs.debug`) is sent as
+`PiwiCommands.runTests`, a verification included, and **Run a saved selection…**; a debug run (`RunTestsArgs.debug`) is sent as
 built. **Tools → Piwi → Run headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold failures from each run's start…**
 (`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.
 
@@ -484,7 +487,7 @@ built. **Tools → Piwi → Run headed** (`Piwi.RunHeaded`, a `ToggleAction`), *
 
 Every test run passes the IDE's breakpoints to the service: `PiwiCommands.runTests` (Code Vision, **Run this test**,
 **Run the test at the caret**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**)
-and **Run selection…**. The breakpoints come from `PiwiProjectService.breakpoints`:
+and **Run a saved selection…**. The breakpoints come from `PiwiProjectService.breakpoints`:
 
 1. `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, keeping the enabled `XLineBreakpoint`s in
    local files, in a read action;
@@ -1071,12 +1074,12 @@ item's tooltip of a run names the other tools that have each run open (`Glue.run
 `RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
 off, Escape included, gives it back.
 
-**Share the run live** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
+**Share the run live on the team instance** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
 instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, `RunSession.live`): the only run it
 fits, else the one chosen (`Glue.liveTarget`). The first share in the project since it opened asks what goes out and
 to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`), a run its workers have not said anything of yet
 included; a run known not to be shareable is asked without it, and the service says why. Shared, the notification
-offers **Copy the run page's link** and **Stop sharing…**, as does **Stop sharing the run live…**
+offers **Copy the run page's link** and **Stop sharing…**, as does **Stop sharing the run live**
 (`StopSharingRunAction`, while one is shared). The status bar item counts the views open of every shared run
 (`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`), and its menu holds
 the share's entries (`Glue.liveMenu`: **Open the run page**, **Copy the run page's link**, **Stop sharing the run…**
@@ -1136,7 +1139,7 @@ logged at debug, a cancel not at all, and a failed Connect at info. An action th
 `Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Restart the editor service), and
 `Glue.SERVICE_NO_ANSWER` when the running service did not answer, in a balloon and in the Paused page and Worker tabs
 alike; `PiwiCommands.notify` shows a balloon that says either as a warning, with **Restart the editor service** and
-**Open log** (`Glue.offersServiceFixes`). An action that needs an instance says `Glue.CONNECT_FIRST` with **Connect…**
+**Open the log** (`Glue.offersServiceFixes`). An action that needs an instance says `Glue.CONNECT_FIRST` with **Connect…**
 while none is connected.
 
 ## The log
@@ -1156,7 +1159,7 @@ channel does, its last `Glue.LOG_LINES` lines (`Glue.LogBuffer`):
   (`PiwiLog.logged`) that watches every request's future, whoever waits for it.
 
 `Lsp4jClient.logMessage` is final, and wrapping its `LspServerNotificationsHandler` would call an override-only API, so
-`window/logMessage` stays the platform's. **Open log** (`Piwi.OpenLog`) opens the tab, a read-only console, closable;
+`window/logMessage` stays the platform's. **Open the log** (`Piwi.OpenLog`) opens the tab, a read-only console, closable;
 **Restart the editor service** (`Piwi.RestartService`, `restartService`) writes its line, then `restartServer`; with no
 service running and no test file open, the IDE has no file to start it for, and a balloon says to open one.
 

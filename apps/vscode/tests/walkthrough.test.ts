@@ -44,7 +44,7 @@ describe('the walkthrough', () => {
         const [kind, name] = event.split(/:(.*)/);
         if (kind === 'onCommand') expect(commands.has(name), event).toBe(true);
         else if (kind === 'onView') expect(views.has(name), event).toBe(true);
-        else if (kind === 'onContext') expect(sources, event).toContain(`'setContext', '${name}'`);
+        else if (kind === 'onContext') expect(sources, event).toContain(`setContextKey('${name}'`);
         else throw new Error(`unexpected completion event ${event}`);
       }
     }

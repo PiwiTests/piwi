@@ -117,7 +117,7 @@ class RestartServiceAction : AnAction(), DumbAware {
     }
 }
 
-/** Open log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
+/** Open the log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
 class OpenLogAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -301,14 +301,14 @@ class OpenInDashboardAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Open the latest run in the dashboard — the run the status bar shows. */
+/** Piwi: Open the latest run — the run the status bar shows. */
 class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
-        e.presentation.text = live?.let { "Open run #${it.runId} (running)" } ?: "Open the latest run in the dashboard"
+        e.presentation.text = live?.let { "Open run #${it.runId} (running)" } ?: "Open the latest run"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -428,7 +428,7 @@ class RerunFailingAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
+/** Piwi: Run a saved selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

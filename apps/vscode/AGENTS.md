@@ -13,6 +13,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 
 - **No logic that the JetBrains plugin would need too.** Diagnostics, quick fixes, hover and every other answer come
   from the service; this extension draws them, and a new feature starts as a service request.
+- **A command's title is the action catalog's title** (`packages/editor/src/actions.ts`), the same as JetBrains' but
+  the cursor for the caret and the window for the project. `packages/editor/tests/actions.test.ts` holds `package.json`
+  to it.
 - **The command ids the service names are part of the protocol.** They are the ids of `PiwiCommand.command` in
   `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
@@ -177,7 +180,7 @@ npm run vscode:package            # dist/piwi.vsix
   runs Connect.
 - `src/glue.ts`: the pure half (status bar, failures view nodes, MCP configuration, open links, recorded blocks,
   Testing view tree), tested without an editor.
-- `src/connect.ts`: the instance's side of **Piwi: Connect**, and the API key's secret name.
+- `src/connect.ts`: the instance's side of **Piwi: Connect…**, and the API key's secret name.
 - `src/failures-view.ts`: the **Failures** view of the **Piwi** panel.
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
