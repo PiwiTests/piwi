@@ -1,9 +1,8 @@
 /**
  * Names of the `testInfo` attachments the dashboard fixtures produce and the
  * reporter parses. Single source of truth — imported by the producer
- * (`capture-fixtures.ts`), the consumers (`reporter.ts` / `file-handler.ts`), and
- * the dogfooding `application/tests/fixtures.ts`, so producer and consumer can
- * never drift on a name.
+ * (`capture-fixtures.ts`) and the consumers (`reporter.ts` / `file-handler.ts`),
+ * so producer and consumer can never drift on a name.
  */
 export const ATTACHMENT_NAMES = {
   locators: 'piwi-locators',

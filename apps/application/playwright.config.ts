@@ -226,6 +226,9 @@ export default process.env.CI
       // Stream this suite's own results to the desktop app too, authenticated
       // with its token. Left unset (and so no bearer) against the local server.
       ...(e2eTarget.token ? { apiKey: e2eTarget.token } : {}),
+      // A run the desktop app started reports to the app, whose run page and tray follow it; any other run reports to
+      // the server under test.
+      ...(process.env.PIWI_ORIGIN === 'desktop' ? { desktopApp: 'prefer' as const } : {}),
       projectName: 'Piwi Dashboard',
       projectDescription: 'The Piwi Dashboard project',
       streaming: true,
