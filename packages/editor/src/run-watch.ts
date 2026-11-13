@@ -507,6 +507,7 @@ export class RunWatch {
     if (!run || context.live?.runId !== live.runId) return false;
     if (!ACTIVE.has(run.status)) return true;
     context.live = liveOf(run, live.own, live.ref ?? null);
+    this.followLive(context);
     this.progress();
     return false;
   }
@@ -537,6 +538,13 @@ export class RunWatch {
       this.options.instanceEvent?.(context, event);
       switch (event.type) {
         case 'run-started':
+          if (context.live?.runId === event.runId && context.live.status === 'initializing') {
+            context.live = { ...context.live, status: 'running' };
+            this.followLive(context);
+            this.progress();
+          }
+          void this.started(context, event.runId);
+          break;
         case 'run-initializing':
           void this.started(context, event.runId);
           break;
@@ -589,8 +597,23 @@ export class RunWatch {
     }
     if (context.live?.own && !own && context.live.runId !== run.id) return;
     context.live = liveOf(run, own, own ? this.refOf(context, run.id) : null);
-    if (this.followed.get(context)?.runId !== run.id) this.followStream(context, run.id);
+    this.followLive(context);
     this.progress();
+  }
+
+  /**
+   * Follow the stream of the context's live run once it runs. An initializing run's stream sends its status and
+   * closes, so it opens on the run's `run-started`, or on a read that finds it running.
+   */
+  private followLive(context: PiwiContext): void {
+    const live = context.live;
+    if (!live || this.followed.get(context)?.runId === live.runId) return;
+    if (live.status !== 'initializing') {
+      this.followStream(context, live.runId);
+      return;
+    }
+    this.unfollow(context);
+    this.clearTests(context);
   }
 
   private followStream(context: PiwiContext, runId: number): void {
@@ -616,8 +639,7 @@ export class RunWatch {
 
   /**
    * An event of the live run's stream. `init`, `run-progress` and `run-finished` carry its counts; a test's end
-   * (`test-completed`) does not, and the counts of its batch follow it. `run-finished` with a final status ends it: an
-   * initializing run's stream says `run-finished` with its status, then closes, and is opened again.
+   * (`test-completed`) does not, and the counts of its batch follow it. `run-finished` with a final status ends it.
    */
   private onRunEvent(context: PiwiContext, runId: number, event: RunEvent): void {
     const followed = this.followed.get(context);

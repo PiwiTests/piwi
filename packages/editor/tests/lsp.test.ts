@@ -196,6 +196,8 @@ const RUNS_KEY = 'pd_runs';
 const instanceStreams = new Set<http.ServerResponse>();
 /** One run's event streams, by run. */
 const runStreams = new Map<number, Set<http.ServerResponse>>();
+/** How many times each run's stream was asked for. */
+const runStreamOpens = new Map<number, number>();
 /** Runs as `GET /api/test-runs/:id` answers them. */
 const runDetails = new Map<number, Record<string, unknown>>();
 /** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
@@ -311,6 +313,7 @@ beforeAll(async () => {
     const streamed = runStream ? runDetails.get(Number(runStream[1])) : undefined;
     if (runStream && streamed) {
       const id = Number(runStream[1]);
+      runStreamOpens.set(id, (runStreamOpens.get(id) ?? 0) + 1);
       openEvents(res);
       const { status, totalTests, passedTests, failedTests, skippedTests } = streamed;
       sendEvent(res, {
@@ -318,6 +321,11 @@ beforeAll(async () => {
         data: { id, status, totalTests, passedTests, failedTests, skippedTests },
         seq: 0,
       });
+      // As the instance does for a run that is not running yet: its status, and the stream closes.
+      if (status === 'initializing') {
+        sendEvent(res, { type: 'run-finished', data: { status }, seq: 1 });
+        return res.end();
+      }
       const open = runStreams.get(id) ?? new Set();
       runStreams.set(id, open.add(res));
       res.on('close', () => open.delete(res));
@@ -2849,6 +2857,40 @@ describe('runs as they happen', () => {
     expect(ended).toMatchObject({ progress: { status: 'passed' }, watchable: false });
     expect(ended.tests[0]).toMatchObject({ at: null, watch: null });
     await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+  });
+
+  test('an initializing run of the branch has its stream opened once it runs, not while it initializes', async () => {
+    const run = {
+      id: 64,
+      status: 'initializing',
+      branch: 'main',
+      startTime: '2026-09-27T12:30:00.000Z',
+      metadata: {},
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    };
+    runDetails.set(64, run);
+    pushInstanceEvent({ type: 'run-initializing', runId: 64, projectId: 7 });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 64));
+    expect(statuses[statuses.length - 1]!.contexts[0]!.live).toMatchObject({ status: 'initializing' });
+    await new Promise((r) => setTimeout(r, 1_500));
+    expect(runStreamOpens.get(64)).toBeUndefined();
+
+    runDetails.set(64, { ...run, status: 'running', totalTests: 2 });
+    pushInstanceEvent({ type: 'run-started', runId: 64, projectId: 7 });
+    await waitFor(() => (runStreams.get(64)?.size === 1 ? true : undefined));
+    await waitFor(() =>
+      statuses.find((s) => s.contexts[0]?.live?.runId === 64 && s.contexts[0].live.status === 'running'),
+    );
+    expect(runStreamOpens.get(64)).toBe(1);
+
+    runDetails.set(64, { ...runDetails.get(64), status: 'passed', passedTests: 2 });
+    pushRunEvent(64, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    runDetails.delete(64);
   });
 
   test('a run started here says what it changed once it ended and was read', async () => {

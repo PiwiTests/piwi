@@ -484,7 +484,9 @@ A connection that brings nothing for 45 s is opened again: the instance sends a 
 One run's stream (`GET /api/test-runs/:id/stream`) is one connection per instance, key and run, whoever follows the run
 (`RunStreams`): a context's run in progress, another context's, a CI session. A follower that joins a stream already
 open has it opened again, so its catch-up reaches every follower, which reads it again as after a dropped connection;
-the stream closes with its last follower.
+the stream closes with its last follower. A context opens its run in progress's stream only once the run runs: an
+`initializing` run's stream sends the run's status and closes, so the context waits for the run's `run-started` on the
+instance's stream, or for a read that finds it running.
 
 Half a second after a run ends, the context reads its latest run again; runs that end together are read once. The poll
 reads it besides:
