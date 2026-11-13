@@ -3461,6 +3461,15 @@ function instrumentContext(context: BrowserContext): void {
 }
 
 /**
+ * Whether these options turn scripts off, so the capture leaves the page
+ * alone: the probe, the stops and code reach all run in the page, and a read
+ * of theirs waits out the test's timeout where nothing evaluates.
+ */
+function runsNoScript(options: { javaScriptEnabled?: boolean } | undefined): boolean {
+  return options?.javaScriptEnabled === false;
+}
+
+/**
  * Patch a browser so any page or context created directly from it is
  * instrumented. This is what makes capture work for suites that build their own
  * pages from the worker-scoped `browser` (e.g. `browser.newPage()` /
@@ -3474,6 +3483,7 @@ function patchBrowser(browser: Browser): void {
   const originalNewPage = browser.newPage.bind(browser);
   browser.newPage = async (...args: Parameters<Browser['newPage']>): Promise<Page> => {
     const page = await originalNewPage(...args);
+    if (runsNoScript(args[0])) return page;
     instrumentPage(page);
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
@@ -3488,6 +3498,7 @@ function patchBrowser(browser: Browser): void {
     const emulation = flake?.role === 'target' ? flakeContextOptions(flake.plan) : null;
     const context = await originalNewContext(...(emulation ? ([{ ...args[0], ...emulation }] as const) : args));
     if (emulation) markFlakeContext(context);
+    if (runsNoScript(args[0])) return context;
     instrumentContext(context);
     await armStops([context]);
     return context;
