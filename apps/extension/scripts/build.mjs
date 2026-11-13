@@ -40,7 +40,10 @@ export function chromiumManifest(manifest) {
  * it), without `minimum_chrome_version`, a Chromium key Firefox does not
  * know: its floor is `browser_specific_settings.gecko.strict_min_version`, and
  * without a command's `global`, which Firefox does not have either: its
- * commands work while Firefox has the focus.
+ * commands work while Firefox has the focus. Its extension pages get Chrome's
+ * script rule without `upgrade-insecure-requests`, which Firefox's default
+ * policy adds: the upgrade turns the hubs' `ws://127.0.0.1` into a `wss://`
+ * they do not serve, and an instance's `http://` into an `https://`.
  */
 export function firefoxManifest(manifest) {
   const { minimum_chrome_version: _chromiumOnly, ...rest } = manifest;
@@ -51,8 +54,12 @@ export function firefoxManifest(manifest) {
     ...rest,
     commands,
     permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger'),
+    content_security_policy: { extension_pages: FIREFOX_EXTENSION_PAGES_CSP },
   };
 }
+
+/** Firefox's extension pages policy: scripts of the extension alone, and no upgrade of an `http:` or `ws:` request. */
+const FIREFOX_EXTENSION_PAGES_CSP = "script-src 'self';";
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
 const STANDALONE_ENTRIES = [
