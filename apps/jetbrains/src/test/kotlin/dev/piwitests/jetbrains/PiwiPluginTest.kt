@@ -185,8 +185,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
             setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
-            // Pause, Resume and Stop of a recording and of a run, still to settle.
-            setOf("Piwi.StopRecording", "Piwi.StopRun"),
+            // Pause and Resume of a recording and of a run, still to settle.
             setOf("Piwi.PauseRecording", "Piwi.PauseRun"),
             setOf("Piwi.ResumeRecording", "Piwi.ResumeRun"),
         )

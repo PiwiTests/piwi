@@ -94,11 +94,18 @@ object PiwiIcons {
     /** A stop's code actions, as `plugin.xml` draws `Piwi.PickAtStop` and the others. */
     fun stopAction(action: Glue.StopAction): Icon = when (action) {
         Glue.StopAction.PICK -> AllIcons.General.Locate
-        Glue.StopAction.RECORD -> AllIcons.Ide.Macro.Recording_1
+        Glue.StopAction.RECORD -> piwi("record")
         Glue.StopAction.ASSERT -> AllIcons.General.InspectionsOK
         Glue.StopAction.ASSERT_REGION -> piwi("region")
         Glue.StopAction.MOCK -> piwi("mock")
     }
+
+    /**
+     * A recording in progress, in the red JetBrains keeps for it, a dot in a ring a breakpoint's disc is not; paused, or
+     * paused by an edit of its block, the gray ring.
+     */
+    fun recording(state: String, edited: Boolean): Icon =
+        if (state == "paused" || edited) piwi("recordPaused") else piwi("recording")
 
     private fun piwi(name: String): Icon = IconLoader.getIcon("/icons/$name.svg", PiwiIcons::class.java)
 }

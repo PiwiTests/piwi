@@ -1417,17 +1417,17 @@ export function recordingView(
   const resume: RecordingAction = { title: 'Resume', command: 'piwi.resumeRecording' };
   if (edited) {
     return {
-      title: `$(debug-pause) Paused while you edit · ${count}`,
+      title: `$(circle-large-outline) Paused while you edit · ${count}`,
       actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(debug-pause) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: paused · ${count}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
   if (state === 'paused') {
     return {
-      title: `$(debug-pause) Paused · ${count}`,
+      title: `$(circle-large-outline) Paused · ${count}`,
       actions: [stop, resume],
-      status: `$(debug-pause) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: paused · ${count}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }
