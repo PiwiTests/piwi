@@ -635,6 +635,22 @@ class GlueTest {
     }
 
     @Test
+    fun `New offers a recorded test on a config's folders, apart from node_modules and hidden folders`() {
+        val root = Path.of("/work/shop")
+        val dirs = listOf(root, root.resolve("e2e"))
+        assertEquals(true, Glue.newSpecFolder(root, dirs))
+        assertEquals(true, Glue.newSpecFolder(root.resolve("e2e/tests/cart"), dirs))
+        assertEquals(true, Glue.newSpecFolder(root.resolve("src/Shop.Api"), dirs))
+        assertEquals(false, Glue.newSpecFolder(root.resolve("node_modules/pkg"), dirs))
+        assertEquals(false, Glue.newSpecFolder(root.resolve("e2e/node_modules"), dirs))
+        assertEquals(false, Glue.newSpecFolder(root.resolve(".github/workflows"), dirs))
+        assertEquals(false, Glue.newSpecFolder(Path.of("/work/other"), dirs))
+        assertEquals(false, Glue.newSpecFolder(null, dirs))
+        // A config folder that is itself hidden still offers it.
+        assertEquals(true, Glue.newSpecFolder(Path.of("/work/.e2e/tests"), listOf(Path.of("/work/.e2e"))))
+    }
+
+    @Test
     fun `a service that stopped while starting is started again, a few times only`() {
         val start = 1_000_000L
         assertEquals(true, Glue.restartsService(start, start + 2_000, emptyList()))

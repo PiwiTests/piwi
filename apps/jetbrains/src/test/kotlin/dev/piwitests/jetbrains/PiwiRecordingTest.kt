@@ -114,7 +114,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
     }
 
     fun testRegistersTheRecordingActionsBannerAnnotatorAndColor() {
-        for (id in listOf("Piwi.RecordHere", "Piwi.RecordHereGenerate", "Piwi.RecordNewFile", "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording")) {
+        for (id in listOf("Piwi.RecordHere", "Piwi.RecordHereGenerate", "Piwi.RecordNewFile", "Piwi.NewRecordedTest", "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
         val generate = ActionManager.getInstance().getAction("GenerateGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup

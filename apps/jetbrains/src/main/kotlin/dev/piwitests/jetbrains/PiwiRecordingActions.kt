@@ -122,14 +122,23 @@ open class RecordNewFileAction : AnAction(), DumbAware {
 }
 
 /**
- * New → Playwright test (recorded)…: Record a new test file… among the file kinds of New, on a folder of a Playwright
- * config alone.
+ * New → Playwright test (recorded)…: Record a new test file… among the file kinds of New, on a folder a new spec may go
+ * in (`Glue.newSpecFolder`). The spec is offered in that folder when a test folder holds it, else in its config's test
+ * folder.
  */
 class NewRecordedTestAction : RecordNewFileAction() {
     override fun update(e: AnActionEvent) {
         val service = e.project?.service<PiwiProjectService>()
         val folder = directoryAtHand(e)?.nioPathOrNull()
-        e.presentation.isEnabledAndVisible = service != null && Glue.inConfigDirs(folder, service.playwrightConfigDirs())
+        e.presentation.isEnabledAndVisible = service != null && Glue.newSpecFolder(folder, service.playwrightConfigDirs())
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val service = project.service<PiwiProjectService>()
+        val folder = directoryAtHand(e) ?: return
+        val fallback = folder.nioPathOrNull()?.takeIf { Glue.newSpecFolder(it, service.playwrightConfigDirs()) } ?: return
+        PiwiRecordFlow.recordNewFile(project, folder, fallback)
     }
 }
 

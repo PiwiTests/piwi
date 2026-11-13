@@ -824,7 +824,8 @@ the steps there, which the service refuses where they cannot go. Without an answ
 - **A tab closed** while `piwi/record` is pending cancels the recording, in a balloon.
 
 **Record a new test file…** (under **New** as **Playwright test (recorded)…**, `NewRecordedTestAction`, on a folder of
-a Playwright config alone) creates the spec first, where `piwi/newTestFile` offers it: beside the
+a Playwright config apart from `node_modules` and hidden folders, `Glue.newSpecFolder`, asking where with that folder)
+creates the spec first, where `piwi/newTestFile` offers it: beside the
 spec at hand in a test folder, else in the test folder of the config holding the file at hand, created when it does
 not exist yet. Its name dialog says why a name is refused (`InputValidatorEx`).
 

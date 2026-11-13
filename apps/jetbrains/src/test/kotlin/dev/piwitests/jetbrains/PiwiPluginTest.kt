@@ -604,10 +604,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val newGroup = actions.getAction("NewGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         val listed = newGroup.childActionsOrStubs.mapNotNull { actions.getId(it) }.filter { it.startsWith("Piwi.") }
         assertEquals(listOf("Piwi.NewRecordedTest"), listed)
+        // Tools → Piwi records a new test file under its own name, once.
+        val record = (actions.getAction("Piwi.Record") as com.intellij.openapi.actionSystem.DefaultActionGroup)
+            .childActionsOrStubs.mapNotNull { actions.getId(it) }
+        assertTrue(record.toString(), "Piwi.RecordNewFile" in record && "Piwi.NewRecordedTest" !in record)
         val service = project.getService(PiwiProjectService::class.java)
         val base = File(project.basePath!!)
         val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
         val nested = File(base, "e2e/tests/cart").apply { mkdirs() }
+        val helper = File(nested, "helper.ts").apply { writeText("export {};\n") }
+        val modules = File(base, "e2e/node_modules/pkg").apply { mkdirs() }
         val other = File(base, "src").apply { mkdirs() }
         try {
             config.writeText("export default {};\n")
@@ -625,12 +631,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
             }
             assertTrue(shownOn(config.parentFile))
             assertTrue(shownOn(nested))
+            // A file in such a folder, as the project view selects it, offers it in its folder.
+            assertTrue(shownOn(helper))
+            assertFalse(shownOn(modules))
             assertFalse(shownOn(other))
             assertFalse(shownOn(base))
         } finally {
             config.delete()
-            nested.parentFile.deleteRecursively()
+            config.parentFile.deleteRecursively()
             other.delete()
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshIoFiles(listOf(config.parentFile, other))
             service.searchPlaywright()
         }
     }

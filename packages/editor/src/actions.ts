@@ -5,7 +5,8 @@
  * A title is in sentence case. It ends with an ellipsis when the action asks for a choice from a list or for typed input
  * before it acts (a name, a start page, a request to mock); a pick in the test's page and a confirmation take none. Two
  * words are each editor's own: `{cursor}` (VS Code's cursor, JetBrains' caret) and `{window}` (what a VS Code window or
- * a JetBrains project holds).
+ * a JetBrains project holds). An entry of a platform's New menu is titled by the file it creates, a noun, in an entry of
+ * its own beside the action it runs.
  */
 export interface EditorAction {
   title: string;
