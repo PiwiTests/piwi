@@ -195,6 +195,12 @@ export function baselineLine(label: string | undefined): string | null {
   return label ? `Baseline: ${label}` : null;
 }
 
+/** The failures view's description: how it groups, and the baseline it compares with (`by file · Baseline: …`). */
+export function failuresViewDescription(grouping: FailuresGrouping, baseline: string | undefined): string {
+  const by = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)?.label.toLowerCase() ?? grouping}`;
+  return [by, baselineLine(baseline)].filter(Boolean).join(' · ');
+}
+
 /**
  * The item's text while a run this editor started holds a stop and the item counts that run (`StatusBarView.ownLive`):
  * no spinner, as no test runs there, but the pause's icon, or the error's while every stop held is a failure. Any other

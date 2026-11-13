@@ -28,6 +28,7 @@ import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
@@ -113,10 +114,30 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         })
         PopupHandler.installPopupMenu(tree, failureMenu(project, selected), "PiwiFailuresPopup")
 
-        val header = JBLabel().apply {
-            border = JBUI.Borders.empty(4, 8)
+        // One line in the small font: the connection, a link to the settings that shortens with an ellipsis, and the
+        // baseline, a link to Compare with… that always shows.
+        fun headerLink(actionId: String) = ActionLink("") { e ->
+            val actions = ActionManager.getInstance()
+            actions.getAction(actionId)?.let { actions.tryToExecute(it, null, e.source as java.awt.Component, "PiwiToolWindow", true) }
+        }.apply {
+            putClientProperty("html.disable", true)
+            font = JBUI.Fonts.smallFont()
+            horizontalAlignment = javax.swing.SwingConstants.LEFT
+        }
+        val connectionLink = headerLink("Piwi.OpenSettings")
+        val baselineDot = JBLabel(" · ").apply {
             componentStyle = UIUtil.ComponentStyle.SMALL
             foreground = UIUtil.getContextHelpForeground()
+        }
+        val baselineLink = headerLink("Piwi.CompareWith")
+        val header = JPanel().apply {
+            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.X_AXIS)
+            border = JBUI.Borders.empty(4, 8)
+            isOpaque = false
+            add(connectionLink)
+            add(baselineDot)
+            add(baselineLink)
+            add(javax.swing.Box.createHorizontalGlue())
         }
         /** The keys of the nodes shown last, and of those expanded: a refresh keeps both. */
         val known = mutableSetOf<String>()
@@ -181,9 +202,16 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
-            val run = Glue.runHeader(result)
-            header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
+            val line = Glue.toolWindowHeader(service.status, result, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
+            connectionLink.text = line.connection
+            connectionLink.toolTipText = Glue.htmlTooltip(line.tooltip)
+            baselineLink.text = line.baseline ?: ""
+            baselineDot.isVisible = line.baseline != null
+            baselineLink.isVisible = line.baseline != null
+            // The connection gives way to the baseline in a narrow window, shortened with an ellipsis.
+            connectionLink.minimumSize = java.awt.Dimension(0, connectionLink.preferredSize.height)
+            baselineLink.minimumSize = baselineLink.preferredSize
+            header.revalidate()
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
@@ -460,7 +488,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             return keys
         }
 
-        private fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     }
 }
 

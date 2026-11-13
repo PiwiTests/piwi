@@ -42,6 +42,8 @@ class GlueTest {
             Glue.statusView(null, null, stopped = true),
         )
         assertEquals(Glue.NOT_RUNNING, Glue.connectionSummary(null, stopped = true))
+        // The tool window's header says it too, as its connection link.
+        assertEquals(Glue.NOT_RUNNING, Glue.toolWindowHeader(null, null, stopped = true).connection)
         // Trust and a start that failed say more than that it stopped.
         assertEquals("Piwi: waiting for trust", Glue.statusView(null, null, trusted = false, stopped = true).text)
         assertEquals(Glue.StatusAction.NODE_SETTINGS, Glue.statusView(null, null, startProblem = "no node", stopped = true).action)
@@ -2237,6 +2239,43 @@ class GlueTest {
         )
         assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
         assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
+        assertEquals(
+            "no answer within 15 seconds",
+            Glue.connectFailure(java.net.http.HttpTimeoutException("request timed out"), null, "https://piwi.corp"),
+        )
+        assertEquals(
+            "the certificate of piwi.corp has expired",
+            Glue.connectFailure(
+                javax.net.ssl.SSLHandshakeException("handshake").apply { initCause(java.security.cert.CertificateExpiredException("expired")) },
+                null,
+                "https://piwi.corp",
+            ),
+        )
+        assertEquals(
+            "the certificate of piwi.corp names another address: use the address it was issued for",
+            Glue.connectFailure(
+                javax.net.ssl.SSLHandshakeException("No subject alternative DNS name matching piwi.corp found."),
+                null,
+                "https://piwi.corp",
+            ),
+        )
+        assertEquals(
+            "piwi.corp does not answer HTTPS there: try http://",
+            Glue.connectFailure(javax.net.ssl.SSLException("Unsupported or unrecognized SSL message"), null, "https://piwi.corp"),
+        )
+        assertEquals(
+            "not a Piwi instance: the address answers with a page, not Piwi's requests",
+            Glue.connectFailure(com.google.gson.JsonSyntaxException("Expected BEGIN_OBJECT"), null, "https://example.com"),
+        )
+    }
+
+    @Test
+    fun `connect's failure words are the editor service's, which VS Code reads`() {
+        val file = java.io.File("../../packages/editor/src/connect-failures.json")
+        assertTrue(file.absolutePath, file.isFile)
+        val table = com.google.gson.Gson().fromJson(file.readText(), Map::class.java)
+        assertEquals(table, Glue.CONNECT_FAILURE_WORDS)
+        assertEquals(table.keys.toList(), Glue.CONNECT_FAILURE_WORDS.keys.toList())
     }
 
     @Test
@@ -2971,8 +3010,15 @@ class GlueTest {
         assertEquals("running 4/9", admin.children.single().description)
         // A run node that names no config: the editor's own run shows on it.
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
-        // The header names no run: each config's node carries its own.
-        assertEquals(null, Glue.runHeader(several, treeNow))
+    }
+
+    @Test
+    fun `the status popup offers Open the latest run unless a row of it opens that run's page`() {
+        val live = LiveRun(runId = 78, url = "http://127.0.0.1:3000/test-runs/78")
+        assertTrue(Glue.latestRunOffered(null, listOf(78)))
+        assertTrue(Glue.latestRunOffered(live, listOf(77)))
+        // By the run's id, whatever host the reporter's page names.
+        assertFalse(Glue.latestRunOffered(live, listOf(78)))
     }
 
     @Test
@@ -2987,11 +3033,29 @@ class GlueTest {
     }
 
     @Test
-    fun `without a tree nothing is drawn, and the header names the run with or without a failure`() {
+    fun `without a tree nothing is drawn, and the header names the connection and the baseline, not the run`() {
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(FailuresResult(emptyList(), treeFailures.run)))
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(null))
-        assertEquals("Run #120 · CI · feature/x · 2 failing · 4 min ago", Glue.runHeader(treeFailures, treeNow))
-        assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
+        // One line: the project and branch, the sentence in the tooltip; the run is the tree's own node.
+        val header = Glue.toolWindowHeader(connected, treeFailures)
+        assertEquals(Glue.ToolWindowHeader("Acme on main", Glue.connectionSummary(connected), null), header)
+        // The desktop app's hint stays in sight.
+        assertEquals(
+            "Acme on main. The Piwi desktop app runs on this machine: Connect to use it.",
+            Glue.toolWindowHeader(connected.copy(desktopUrl = "http://127.0.0.1:3000"), null).connection,
+        )
+        // Several configs read as their count, and how many are connected when not all are.
+        val admin = connected.contexts!!.first().copy(root = "/w/apps/admin")
+        assertEquals("2 Playwright configs", Glue.toolWindowHeader(connected.copy(contexts = connected.contexts!! + admin), null).connection)
+        assertEquals(
+            "1 of 2 Playwright configs connected",
+            Glue.toolWindowHeader(connected.copy(contexts = connected.contexts!! + admin.copy(connected = false)), null).connection,
+        )
+        // Not connected, waiting for trust or a start that failed: the sentence itself.
+        val none = connected.copy(contexts = connected.contexts!!.map { it.copy(connected = false, problem = "No API key.") })
+        assertEquals(Glue.connectionSummary(none), Glue.toolWindowHeader(none, null).connection)
+        assertEquals(Glue.WAITING_FOR_TRUST, Glue.toolWindowHeader(null, null, trusted = false).connection)
+        assertEquals("Node.js 18 is too old", Glue.toolWindowHeader(null, null, startProblem = "Node.js 18 is too old").connection)
         assertEquals(
             RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
             Glue.failureRunArgs(editedFailure.copy(root = "/w/apps/admin", uri = "file:///w/shared/pages/admin.ts")),
@@ -3056,12 +3120,15 @@ class GlueTest {
         assertEquals(true, Glue.statusView(connected, ladder).tooltip.startsWith("Run #41 of Acme on main (feature/cart has no run yet)"))
         val label = "CI run #120 on feature/x"
         assertEquals(
-            "Run #120 · CI · feature/x · 2 failing · 4 min ago · Baseline: $label",
-            Glue.runHeader(treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label)), treeNow),
+            "Baseline: $label ▾",
+            Glue.toolWindowHeader(connected, treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label))).baseline,
         )
         assertEquals(
-            "Baseline: release (no run)",
-            Glue.runHeader(FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)"))),
+            "Baseline: release (no run) ▾",
+            Glue.toolWindowHeader(
+                connected,
+                FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)")),
+            ).baseline,
         )
     }
 
@@ -3075,7 +3142,7 @@ class GlueTest {
         assertEquals("Piwi: 1 failing", view.text)
         assertEquals(true, view.tooltip.startsWith("2 local runs of Acme on main, 1 test failing\nBaseline: your local runs only"))
         val alone = treeFailures.copy(run = null, baseline = local, runLabel = "Your local runs · 2 failing")
-        assertEquals("Your local runs · 2 failing · Baseline: your local runs only", Glue.runHeader(alone, treeNow))
+        assertEquals("Baseline: your local runs only ▾", Glue.toolWindowHeader(connected, alone).baseline)
     }
 
     @Test

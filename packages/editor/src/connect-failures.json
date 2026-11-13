@@ -1,0 +1,16 @@
+{
+  "refused-key": "the instance refused the key ({status})",
+  "not-piwi": "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+  "not-piwi-page": "not a Piwi instance: the address answers with a page, not Piwi's requests",
+  "status": "the instance answered {status}",
+  "untrusted": "{client} does not trust the certificate of {host}. {trust}",
+  "expired": "the certificate of {host} has expired",
+  "not-yet-valid": "the certificate of {host} is not valid yet: check this machine's clock",
+  "other-name": "the certificate of {host} names another address: use the address it was issued for",
+  "not-https": "{host} does not answer HTTPS there: try http://",
+  "timeout": "no answer within {seconds} seconds",
+  "no-answer": "no answer in time",
+  "nothing-listening": "nothing answers there. Is the instance running, on that port?",
+  "unknown-host": "unknown host {host}",
+  "lookup-failed": "the name {host} could not be looked up now: is this machine online?"
+}
