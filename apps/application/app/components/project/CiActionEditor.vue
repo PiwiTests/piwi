@@ -6,7 +6,15 @@
  * accepts, its environment, and which kinds it is the default for. Saving hands
  * the action to the list; nothing is stored until the settings are saved.
  */
-import { CI_ACTION_KIND_LABELS, CI_ACTION_KINDS, type CiAction, type CiActionKind } from '#shared/ci-actions';
+import {
+  CI_ACTION_KIND_LABELS,
+  CI_ACTION_KINDS,
+  MAX_CI_ACTION_NAME_LENGTH,
+  MAX_CI_ENVIRONMENT_LENGTH,
+  MAX_CI_INPUT_VALUE_LENGTH,
+  type CiAction,
+  type CiActionKind,
+} from '#shared/ci-actions';
 import {
   CI_ACTION_TARGET_ITEMS,
   ciActionDraft,
@@ -23,13 +31,12 @@ const props = defineProps<{
   /** The names the project's other actions have. */
   otherNames: string[];
   instanceUrl: string | null;
+  /** Whether the project holds a CI server token, and the base URL it is bound to. */
   hasToken: boolean;
   tokenUrl: string | null;
-  saving: boolean;
 }>();
-const emit = defineEmits<{ save: [action: CiAction, defaultFor: CiActionKind[]]; removeToken: [] }>();
+const emit = defineEmits<{ save: [action: CiAction, defaultFor: CiActionKind[]] }>();
 const open = defineModel<boolean>('open', { default: false });
-const token = defineModel<string>('token', { required: true });
 
 const draft = ref<CiActionDraft>(ciActionDraft(null));
 const error = ref<string | null>(null);
@@ -44,15 +51,14 @@ watch(open, (isOpen) => {
 const isCiServer = computed(() => draft.value.type === 'jenkins' || draft.value.type === 'custom');
 const sendsInputs = computed(() => draft.value.type !== 'custom');
 
-const KIND_HELP: Record<CiActionKind, string> = {
+const KIND_HELP: Partial<Record<CiActionKind, string>> = {
   tests: 'Re-run the failed tests of a cluster or one test',
-  suite: 'Run the whole suite from the project page',
   flakeLab: 'Run a Flake Lab experiment for a flaky test',
 };
 const kindItems = CI_ACTION_KINDS.map((kind) => ({ kind, label: CI_ACTION_KIND_LABELS[kind], help: KIND_HELP[kind] }));
 const defaultLabels: Record<CiActionKind, string> = {
   tests: 'Default for re-runs',
-  suite: 'Default for Run on CI',
+  suite: `Default for ${CI_ACTION_KIND_LABELS.suite}`,
   flakeLab: 'Default for Flake Lab',
 };
 
@@ -112,7 +118,7 @@ function submit() {
             <UInput
               v-model="draft.name"
               placeholder="e.g. Smoke · staging"
-              maxlength="80"
+              :maxlength="MAX_CI_ACTION_NAME_LENGTH"
               class="w-full"
               data-testid="ci-action-name"
             />
@@ -176,13 +182,10 @@ function submit() {
         <div v-else class="rounded-md border border-default p-3">
           <CiServerTargetFields
             v-model="draft.ciServer"
-            v-model:token="token"
             :instance-url="instanceUrl"
             :has-token="hasToken"
             :token-url="tokenUrl"
-            :saving="saving"
             :inputs="inputPairs"
-            @remove-token="emit('removeToken')"
           />
         </div>
 
@@ -190,7 +193,8 @@ function submit() {
           <legend class="text-sm text-highlighted">Inputs</legend>
           <p class="text-xs text-muted">
             Sent with every dispatch, beside the arguments and never inside them. A fixed input always has one value; a
-            choice has a default and the options a button can offer.
+            choice has a default and a list of options. Names start with a letter or an underscore, then letters, digits
+            and underscores.
           </p>
           <div
             v-for="(row, index) in draft.inputs"
@@ -200,6 +204,7 @@ function submit() {
             <UInput
               v-model="row.name"
               placeholder="name, e.g. TARGET_ENV"
+              maxlength="100"
               :aria-label="`Input ${index + 1} name`"
               class="font-mono"
             />
@@ -215,6 +220,7 @@ function submit() {
               v-if="row.kind === 'fixed'"
               v-model="row.value"
               placeholder="value, e.g. staging"
+              :maxlength="MAX_CI_INPUT_VALUE_LENGTH"
               :aria-label="`Input ${index + 1} value`"
               class="font-mono"
             />
@@ -230,6 +236,7 @@ function submit() {
               <UInput
                 v-model="row.default"
                 placeholder="default option (the first when empty)"
+                :maxlength="MAX_CI_INPUT_VALUE_LENGTH"
                 :aria-label="`Input ${index + 1} default`"
                 class="w-full font-mono"
               />
@@ -277,7 +284,7 @@ function submit() {
           <UInput
             v-model="draft.environment"
             placeholder="optional, e.g. staging"
-            maxlength="80"
+            :maxlength="MAX_CI_ENVIRONMENT_LENGTH"
             class="w-full sm:max-w-xs"
           />
         </UFormField>

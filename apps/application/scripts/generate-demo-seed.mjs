@@ -213,7 +213,7 @@ const PROJECTS = [
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
-    // the Source control settings list its CI actions.
+    // the CI settings list its CI actions.
     ci_rerun: {
       enabled: true,
       actions: [

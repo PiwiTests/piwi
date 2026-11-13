@@ -494,7 +494,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses, CI actions and generated specs.',
+      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses and generated specs.',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
@@ -510,15 +510,27 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-ci',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'ci' } }],
+    describes:
+      'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, and the one CI server token they share.',
+    doc: 'features/ci-rerun',
+    requires: { permission: 'project:manage' },
+    sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
+  },
+  {
     id: 'project-ci-rerun',
     kind: 'field',
     pages: ['/projects/[id]'],
-    reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
+    reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
       'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests, with inputs and defaults, that re-run tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
     doc: 'features/ci-rerun',
-    sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
+    requires: { permission: 'project:manage' },
+    sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
   },
   {
     id: 'project-settings-ai',

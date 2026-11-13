@@ -172,8 +172,7 @@ The experiment is recorded with the source `ci`. Exit code 1 (nothing reproduced
 `continue-on-error: true` to the step when you only want the result on the tab.
 
 To start it from a failure's next step (**Reproduce in CI**, **Verify in CI**), make the input the command's arguments
-(<code v-pre>npx @piwitests/reporter ${{ inputs.piwi_flake }}</code>) and add the workflow as a CI action that accepts **Flake Lab**, in the project's
-[CI actions](./ci-rerun#ci-actions). It receives `flake 1842` or `flake verify 1842`.
+(<code v-pre>npx @piwitests/reporter ${{ inputs.piwi_flake }}</code>) and add the workflow as a CI action that accepts **Flake Lab**, in the project's **CI** settings ([CI actions](./ci-rerun#ci-actions)). It receives `flake 1842` or `flake verify 1842`.
 
 ## Without the dashboard
 

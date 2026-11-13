@@ -3,9 +3,10 @@ import { PROJECT } from '#shared/test-project-names';
 import { waitForHydration } from './utils';
 
 /**
- * A project's CI actions: the settings are a list of named actions, each with
- * its own target, inputs, what it accepts, an environment and defaults. The
- * settings of the original shape are converted when they are read.
+ * A project's CI actions, in the CI section of its settings: a list of named
+ * actions, each with its own target, inputs, what it accepts, an environment
+ * and defaults, and one CI server token for all of them. A value with no
+ * actions list is converted when it is read.
  */
 test.describe.serial('CI actions', () => {
   let projectId: number;
@@ -30,7 +31,7 @@ test.describe.serial('CI actions', () => {
     expect(reset.ok()).toBeTruthy();
   });
 
-  test('settings of the original shape are read as CI actions', async ({ request }) => {
+  test('a value with no actions list is read as CI actions', async ({ request }) => {
     const saved = await request.patch(`/api/projects/${projectId}`, {
       data: { ciRerun: { enabled: true, github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args' } } },
     });
@@ -74,7 +75,7 @@ test.describe.serial('CI actions', () => {
 
   test('add an action, duplicate it, make it the default, save and reload', async ({ page, request }) => {
     await request.patch(`/api/projects/${projectId}`, { data: { ciRerun: null } });
-    await page.goto(`/projects/${projectId}?tab=settings&section=source-control`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
     await waitForHydration(page);
 
     const settings = page.getByTestId('ci-actions');
@@ -109,8 +110,8 @@ test.describe.serial('CI actions', () => {
     await expect(rows.nth(1)).toContainText('Default for re-runs');
     await expect(rows.first()).not.toContainText('Default for re-runs');
 
-    await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByText('Source control saved', { exact: true })).toBeVisible();
+    await page.getByTestId('ci-save').click();
+    await expect(page.getByText('CI saved', { exact: true })).toBeVisible();
 
     await page.reload();
     await waitForHydration(page);
@@ -126,8 +127,20 @@ test.describe.serial('CI actions', () => {
     expect(stored.ciRerun.defaults.rerun).toBe(stored.ciRerun.actions[1]!.id);
   });
 
-  test('an action needs a name no other action has', async ({ page }) => {
+  test('the CI actions are in the CI section, not in Source control', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=settings&section=source-control`);
+    await waitForHydration(page);
+    await expect(page.getByRole('heading', { name: 'Source control', exact: true })).toBeVisible();
+    await expect(page.getByTestId('ci-actions')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'CI', exact: true }).click();
+    await expect(page).toHaveURL(/[?&]section=ci/);
+    await expect(page.getByRole('heading', { name: 'CI', exact: true })).toBeVisible();
+    await expect(page.getByTestId('ci-actions')).toBeVisible();
+  });
+
+  test('an action needs a name no other action has', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
     await waitForHydration(page);
 
     await page.getByTestId('ci-action-add').click();
@@ -159,7 +172,7 @@ test.describe.serial('CI actions', () => {
     });
     expect(saved.ok()).toBeTruthy();
 
-    await page.goto(`/projects/${projectId}?tab=settings&section=source-control`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
     await waitForHydration(page);
     const row = page.getByTestId('ci-action-row');
     await row.getByTestId('ci-action-check').click();
@@ -180,5 +193,46 @@ test.describe.serial('CI actions', () => {
     });
     expect(res.ok()).toBeTruthy();
     expect(await res.json()).toMatchObject({ ok: null, missing: [] });
+  });
+
+  test('one CI server token is bound to one base URL: two URLs refuse it, one shows in the field', async ({
+    page,
+    request,
+  }) => {
+    const server = (id: string, baseUrl: string) => ({
+      id,
+      name: id,
+      target: { type: 'ci-server', preset: 'jenkins', baseUrl, fields: { job: 'e2e' } },
+      inputs: [],
+      accepts: ['tests'],
+    });
+    const two = await request.patch(`/api/projects/${projectId}`, {
+      data: {
+        ciRerun: {
+          enabled: true,
+          actions: [server('a', 'https://ci-a.example.com/'), server('b', 'https://ci-b.example.com/')],
+          defaults: {},
+        },
+        ciServerToken: 'secret',
+      },
+    });
+    expect(two.status()).toBe(400);
+    expect(((await two.json()) as { message: string }).message).toContain('different base URLs');
+
+    const one = await request.patch(`/api/projects/${projectId}`, {
+      data: {
+        ciRerun: {
+          enabled: true,
+          actions: [server('a', 'https://ci-a.example.com/'), server('b', 'https://ci-a.example.com/')],
+          defaults: {},
+        },
+      },
+    });
+    expect(one.ok()).toBeTruthy();
+
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
+    await waitForHydration(page);
+    await expect(page.getByTestId('ci-server-token')).toBeVisible();
+    await expect(page.getByTestId('ci-server-token-description')).toContainText('https://ci-a.example.com');
   });
 });

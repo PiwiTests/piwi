@@ -2,8 +2,9 @@
 /**
  * The CI server target of a CI action: the preset (Jenkins, or a Custom
  * request), the base URL and credential, the preset's fields, and the request a
- * dispatch would send. The token is write-only: a blank field keeps the stored
- * one, which is sent only under the base URL it was saved with.
+ * dispatch would send. The project's CI server token is not set here: it is one
+ * field in the CI section, bound to one base URL, and this form only says
+ * whether it applies to the request.
  */
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import {
@@ -19,17 +20,13 @@ const props = defineProps<{
   hasToken: boolean;
   /** The base URL the stored token is bound to. */
   tokenUrl: string | null;
-  saving: boolean;
   /** The action's inputs as name and value pairs, shown in the request preview. */
   inputs?: [string, string][];
 }>();
 const state = defineModel<CiServerFormState>({ required: true });
-const token = defineModel<string>('token', { required: true });
-const emit = defineEmits<{ removeToken: [] }>();
 
 const previewOpts = computed(() => ({
   instanceUrl: props.instanceUrl,
-  typedToken: Boolean(token.value.trim()),
   tokenUrl: props.hasToken ? props.tokenUrl : null,
   inputs: props.inputs,
 }));
@@ -44,19 +41,21 @@ const tokenDescription = computed(() => {
   const request = preview.value;
   if (request.carriesAuth === false) return 'This request carries no credential: its auth is none.';
   if (tokenState.value === 'bound') {
-    return `A token is stored for ${props.tokenUrl} and sent only under it. Leave empty to keep it.`;
+    return `The project’s CI server token (${props.tokenUrl}) is sent with this request. Set it in the CI section.`;
   }
   if (tokenState.value === 'elsewhere') {
-    return `The stored token is bound to ${props.tokenUrl}, so a request outside it goes without it: enter it again.`;
+    return `The project’s CI server token is bound to ${props.tokenUrl}, so a request outside it goes without it. Set it again in the CI section.`;
   }
   if (state.value.preset === 'custom') {
-    return 'Sent with every request. A Custom request never carries the instance token.';
+    return 'A Custom request carries the project’s CI server token, set in the CI section, and never the instance token.';
   }
-  if (!props.instanceUrl) return 'The instance has no CI server, so no token is sent unless one is entered here.';
+  if (!props.instanceUrl) {
+    return 'The instance has no CI server, so no token is sent unless the CI section holds one for this base URL.';
+  }
   if (request.url && !isUnderBaseUrl(props.instanceUrl, request.url)) {
-    return `This request is not under the instance CI server URL (${props.instanceUrl}), so no token is sent unless one is entered here.`;
+    return `This request is not under the instance CI server URL (${props.instanceUrl}), so no token is sent unless the CI section holds one for it.`;
   }
-  return 'Leave empty to use the instance token, sent only under the instance CI server URL.';
+  return 'The instance token is sent, only under the instance CI server URL. The CI section can hold a project token instead.';
 });
 
 function customize() {
@@ -80,42 +79,16 @@ function customize() {
       </UFormField>
     </div>
 
-    <div class="grid gap-2 sm:grid-cols-2">
-      <UFormField label="User" name="ciServerUser">
-        <UInput
-          v-model="state.user"
-          placeholder="the user the token belongs to"
-          autocomplete="off"
-          aria-label="CI server user"
-          class="w-full font-mono"
-        />
-      </UFormField>
-      <UFormField label="API token" name="ciServerToken">
-        <UInput
-          v-model="token"
-          type="password"
-          autocomplete="off"
-          :placeholder="hasToken ? '•••••••• (unchanged)' : 'API token'"
-          aria-label="CI server API token"
-          class="w-full font-mono"
-        />
-      </UFormField>
-    </div>
-    <p class="text-xs text-muted">
-      {{ tokenDescription }}
-      <UButton
-        v-if="hasToken"
-        size="xs"
-        color="error"
-        variant="link"
-        class="px-0"
-        icon="i-lucide-trash-2"
-        :disabled="saving"
-        @click="emit('removeToken')"
-      >
-        Remove stored token
-      </UButton>
-    </p>
+    <UFormField label="User" name="ciServerUser" class="sm:max-w-sm">
+      <UInput
+        v-model="state.user"
+        placeholder="the user the token belongs to"
+        autocomplete="off"
+        aria-label="CI server user"
+        class="w-full font-mono"
+      />
+    </UFormField>
+    <p class="text-xs text-muted">{{ tokenDescription }}</p>
 
     <template v-if="state.preset === 'jenkins'">
       <div class="space-y-2">

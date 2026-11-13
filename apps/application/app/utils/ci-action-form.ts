@@ -5,9 +5,16 @@
 import {
   CI_ACTION_DEFAULT_KEYS,
   CI_ACTION_KINDS,
+  CI_INPUT_NAME,
   MAX_CI_ACTION_INPUTS,
+  MAX_CI_ACTION_NAME_LENGTH,
+  MAX_CI_CHOICE_OPTIONS,
+  MAX_CI_ENVIRONMENT_LENGTH,
+  MAX_CI_INPUT_VALUE_LENGTH,
   builtInInputNames,
   newCiActionId,
+  reservedInputMessage,
+  reservedInputName,
   type CiAction,
   type CiActionInput,
   type CiActionKind,
@@ -146,18 +153,30 @@ function inputsFromDraft(
   for (const row of draft.inputs) {
     const name = row.name.trim();
     if (!name && !row.value.trim() && !row.options.trim()) continue;
-    if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,99}$/.test(name)) {
-      return { inputs, error: `"${name}" is not a valid input name: use letters, digits, ".", "-" and "_".` };
+    if (!CI_INPUT_NAME.test(name)) {
+      return {
+        inputs,
+        error: `"${name}" is not a valid input name: start with a letter or "_", then letters, digits and "_" (at most 100).`,
+      };
     }
     if (taken.has(name.toLowerCase())) {
       return { inputs, error: `The input "${name}" is already sent by this action: names must be unique.` };
     }
     taken.add(name.toLowerCase());
     if (row.kind === 'fixed') {
+      if (row.value.trim().length > MAX_CI_INPUT_VALUE_LENGTH) {
+        return { inputs, error: `The value of "${name}" is at most ${MAX_CI_INPUT_VALUE_LENGTH} characters.` };
+      }
       inputs.push({ name, kind: 'fixed', value: row.value.trim() });
     } else {
       const options = lines(row.options);
       if (options.length === 0) return { inputs, error: `The choice "${name}" needs at least one option.` };
+      if (options.length > MAX_CI_CHOICE_OPTIONS) {
+        return { inputs, error: `The choice "${name}" has at most ${MAX_CI_CHOICE_OPTIONS} options.` };
+      }
+      if (options.some((option) => option.length > MAX_CI_INPUT_VALUE_LENGTH)) {
+        return { inputs, error: `An option of "${name}" is at most ${MAX_CI_INPUT_VALUE_LENGTH} characters.` };
+      }
       const chosen = row.default.trim();
       inputs.push({ name, kind: 'choice', options, default: options.includes(chosen) ? chosen : options[0]! });
     }
@@ -228,6 +247,9 @@ export function ciActionFromDraft(
 ): { action: CiAction; error: null } | { action: null; error: string } {
   const name = draft.name.trim();
   if (!name) return { action: null, error: 'Give the action a name.' };
+  if (name.length > MAX_CI_ACTION_NAME_LENGTH) {
+    return { action: null, error: `A name is at most ${MAX_CI_ACTION_NAME_LENGTH} characters.` };
+  }
   if (opts.otherNames.some((other) => other.toLowerCase() === name.toLowerCase())) {
     return { action: null, error: `Another action is named "${name}": names must be unique.` };
   }
@@ -237,15 +259,32 @@ export function ciActionFromDraft(
   if (inputs.error) return { action: null, error: inputs.error };
   if (draft.accepts.length === 0) return { action: null, error: 'Choose what the action accepts.' };
   const environment = draft.environment.trim();
-  return {
-    action: {
-      id: draft.id,
-      name,
-      target: target.target,
-      inputs: inputs.inputs,
-      accepts: CI_ACTION_KINDS.filter((kind) => draft.accepts.includes(kind)),
-      ...(environment ? { environment } : {}),
-    },
-    error: null,
+  if (environment.length > MAX_CI_ENVIRONMENT_LENGTH) {
+    return { action: null, error: `An environment is at most ${MAX_CI_ENVIRONMENT_LENGTH} characters.` };
+  }
+  const action: CiAction = {
+    id: draft.id,
+    name,
+    target: target.target,
+    inputs: inputs.inputs,
+    accepts: CI_ACTION_KINDS.filter((kind) => draft.accepts.includes(kind)),
+    ...(environment ? { environment } : {}),
   };
+  const reserved = reservedInputName(action);
+  if (reserved) {
+    return {
+      action: null,
+      error: reservedInputMessage(reserved, target.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'),
+    };
+  }
+  return { action, error: null };
+}
+
+/** The name a duplicate of an action gets: `name (copy)`, or `(copy 2)` and up, within the name limit and unlike any taken name. */
+export function duplicateCiActionName(name: string, taken: string[]): string {
+  const used = new Set(taken.map((other) => other.toLowerCase()));
+  const named = (suffix: string) => `${name.slice(0, MAX_CI_ACTION_NAME_LENGTH - suffix.length).trimEnd()}${suffix}`;
+  let candidate = named(' (copy)');
+  for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = named(` (copy ${n})`);
+  return candidate;
 }

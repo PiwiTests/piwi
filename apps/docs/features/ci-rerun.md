@@ -16,8 +16,9 @@ that run has no branch. An execution's Verify section offers **Re-run this test 
 cluster in CI**; both are recorded as the cluster's last re-run, which says where it went, when, by whom, and links to
 the build.
 
-It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
-under **CI actions**: a list of named [CI actions](#ci-actions), each saying where Piwi starts CI and what it sends.
+It is **off by default** and configured per project in the **CI** section of the project's **Settings** tab (under
+Integrations, beside **Issue tracker**): a list of named [CI actions](#ci-actions), each saying where Piwi starts CI and
+what it sends.
 
 Its buttons show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once an action serves the
 run; through the repository, an SCM token must be set too.
@@ -37,12 +38,14 @@ A CI action is a named way to start CI. It has:
 - a **target**: a GitHub workflow, a GitLab or Bitbucket pipeline, a Jenkins job or a Custom request;
 - **inputs**: a *fixed* value (`TARGET_ENV=staging`) or a *choice* with a default and options. They are sent beside the
   Playwright arguments, never inside them: as workflow inputs on GitHub, variables on GitLab and Bitbucket, and
-  parameters on Jenkins. A Custom request sends none;
+  parameters on Jenkins. A name is letters, digits and `_`, and on GitLab and Bitbucket cannot start with `CI_`,
+  `GITLAB_` or `BITBUCKET_`. A Custom request sends none;
 - what it **accepts**: re-runs, Run on CI, Flake Lab;
-- an optional **environment**, such as `staging`;
+- an optional **environment**, such as `staging`, which a run in that environment picks first;
 - the kinds it is the **default** for.
 
-A button uses the project's default action for what it starts; MCP and the API can name another by id or name. A
+A button uses the action of the run's environment, else the project's default for what it starts; MCP and the API can
+name another by id or name. A
 repository action serves only a run whose repository is on that host; a CI server action serves any run. Settings
 saved before CI actions existed were converted when read: each configured target is now an action, and nothing needs
 re-entering.
@@ -70,9 +73,8 @@ jobs:
           TARGET_ENV: ${{ inputs.TARGET_ENV }}
 ```
 
-*Smoke · staging* and *Smoke · production* both target `e2e.yml` with `args` as the arguments input, and each has
-one fixed input, `TARGET_ENV=staging` or `TARGET_ENV=production`. Check on either confirms the workflow declares
-`args` and `TARGET_ENV`.
+*Smoke · staging* and *Smoke · production* both target `e2e.yml`, each with one fixed input, `TARGET_ENV=staging` or
+`TARGET_ENV=production`.
 
 ## Repository host
 
@@ -114,13 +116,12 @@ pipelines:
 
 :::
 
-GitHub returns no run id, so its link goes to the workflow's runs page for the branch; GitLab and Bitbucket link to the
-pipeline.
+GitHub returns no run id, so its link goes to the workflow's runs page for the branch; GitLab and Bitbucket link to
+the pipeline.
 
 ## CI server
 
 A CI server action is a **preset**, which builds the request from a few fields, or a **Custom request** you write.
-The form shows the request a re-run sends, with sample values and the credential masked.
 
 **Jenkins** takes the job as Jenkins shows its path (`polaris/e2e`; `polaris/e2e/{branch}` for a multibranch pipeline)
 and posts to its `buildWithParameters` with `PIWI_RERUN_ARGS` (the arguments) and `PIWI_ORIGIN_REF` (the dispatch id),
@@ -145,10 +146,9 @@ pipeline {
 }
 ```
 
-**Check** reads the Jenkins job as it is in the form, unsaved fields included, without starting it, and says whether
-it declares the parameters a dispatch sends, the inputs included. Jenkins drops a parameter its job does not declare,
-so a re-run would fail or never be matched. A Pipeline job declares its Jenkinsfile's parameters on its first build: run
-a new job once, then check it. A multibranch pipeline is checked on its default branch.
+**Check** reads the Jenkins job as it is in the form, unsaved fields included. Jenkins drops a parameter its job does
+not declare, so a re-run would fail or never be matched. A Pipeline job declares its Jenkinsfile's parameters on its
+first build: run a new job once, then check it. A multibranch pipeline is checked on its default branch.
 
 ### Flake Lab on Jenkins
 
@@ -178,7 +178,7 @@ pipeline {
 }
 ```
 
-On a Windows agent use `bat` steps, and read `%PIWI_RERUN_ARGS%`.
+On a Windows agent use `bat` steps and read `%PIWI_RERUN_ARGS%`.
 
 ### Custom requests
 
@@ -200,14 +200,16 @@ refused. In a JSON body it fills a whole string value.
 
 ### The credential and the hosts
 
-The token is project-wide and write-only: leave the field empty to keep it. It is stored with the base URL of the first
-CI server action (else `PIWI_CI_SERVER_URL`) and sent only to URLs under it, so changing that URL asks for the token
-again. A project without a token uses the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`), only with a
-preset's request under that URL. A base URL or request path is refused when a segment would climb once a server decodes
+The **CI server token** is one write-only field of the **CI** section: leave it empty to keep it. It is stored with the
+one base URL the CI server actions send under (an action's own, else `PIWI_CI_SERVER_URL`), which the field states, and
+sent only under it. Saving it while the actions use more than one base URL is refused. A project without a token uses
+the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`), only with a preset's request under that URL, and then
+sends only the inputs the operator lists in `PIWI_CI_SERVER_ALLOWED_INPUTS` (comma-separated, empty by default);
+**Check** names the ones left out. A base URL or request path is refused when a segment would climb once a server decodes
 it (`..%2F`, `..;`).
 
-A request never follows a redirect, and a link from the answer is kept only when it is an `http(s)` URL or a path from
-the base URL's root. A CI server is reached over `https`; over `http` or on a private address it is reached only when
+A request never follows a redirect, and a link from the answer is kept only as an `http(s)` URL or a path from the
+base URL's root. A CI server is reached over `https`; over `http` or on a private address it is reached only when
 it is the host and port of `PIWI_CI_SERVER_URL` or is listed in `PIWI_CI_SERVER_HOSTS` (the desktop app reaches any
 address). See the [configuration reference](/reference/configuration).
 
@@ -249,8 +251,8 @@ files.
 ## Limits
 
 - A dispatch is one request: Piwi does not poll the CI, it waits for the run to report.
-- The demo records a CI server action's dispatch without sending it. Its Check sends nothing either: it answers as a
-  job that declares the default parameters. It runs only CI server actions.
+- The demo runs only CI server actions: it records a dispatch without sending it, and its Check answers as a job that
+  declares the default parameters.
 
 ## Related
 

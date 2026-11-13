@@ -2,30 +2,21 @@
 /**
  * Project settings → Source control: the repository, its token and default branch,
  * whether quarantined failures fail the commit status, whether the gate verdict
- * gets a commit status of its own, the CI actions Piwi starts (their targets,
- * inputs, defaults and the CI server credential), and where the specs generated
- * from bug reports go. The tokens are write-only: a blank field keeps the stored
- * one.
+ * gets a commit status of its own, and where the specs generated from bug
+ * reports go. The token is write-only: a blank field keeps the stored one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
-import type { CiActionsSettings } from '#shared/ci-actions';
 
 const props = defineProps<{ project: ProjectWithTestRuns; showGeneratedSpecs: boolean }>();
 const emit = defineEmits<{ saved: [] }>();
 const isDesktop = useIsDesktop();
 
 const { state, dirty } = useStoredForm(() => {
-  const ci = props.project.ciRerun;
   return {
     repositoryUrl: props.project.repositoryUrl || '',
     defaultBranch: props.project.defaultBranch || '',
     quarantineFailsStatus: props.project.quarantineFailsStatus === true,
     gateStatus: props.project.gateStatus === true,
-    ciRerun: {
-      enabled: ci?.enabled ?? false,
-      actions: ci?.actions ?? [],
-      defaults: ci?.defaults ?? {},
-    } satisfies CiActionsSettings,
     generatedSpecs: {
       bugsFolder: props.project.generatedSpecs?.bugsFolder ?? '',
       testImport: props.project.generatedSpecs?.testImport ?? '',
@@ -34,25 +25,17 @@ const { state, dirty } = useStoredForm(() => {
 });
 const scmToken = ref('');
 const hasToken = computed(() => Boolean(props.project.hasScmToken));
-const ciServerToken = ref('');
 
 const { saving, save } = useProjectPatch(() => props.project.id);
-
-/** Whether a CI server token is sent: only while CI actions are on and one of them targets a CI server. */
-const ciServerActive = computed(
-  () => state.value.ciRerun.enabled && state.value.ciRerun.actions.some((a) => a.target.type === 'ci-server'),
-);
 
 async function submit() {
   const stored = await save(
     {
       scmToken: scmToken.value.trim() || undefined,
-      ciServerToken: (ciServerActive.value && ciServerToken.value.trim()) || undefined,
       repositoryUrl: state.value.repositoryUrl.trim() || null,
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
       gateStatus: state.value.gateStatus,
-      ciRerun: state.value.ciRerun,
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
         bugsFolder: state.value.generatedSpecs.bugsFolder.trim() || null,
@@ -62,16 +45,11 @@ async function submit() {
   );
   if (!stored) return;
   scmToken.value = '';
-  ciServerToken.value = '';
   emit('saved');
 }
 
 async function removeToken() {
   if (await save({ scmToken: null }, 'SCM token removed')) emit('saved');
-}
-
-async function removeCiServerToken() {
-  if (await save({ ciServerToken: null }, 'CI server token removed')) emit('saved');
 }
 </script>
 
@@ -156,26 +134,6 @@ async function removeCiServerToken() {
         </UFormField>
 
         <UFormField
-          name="ciRerun"
-          data-tour="project-ci-rerun"
-          description="Named ways to start CI from a failure's page: each action has its own target, inputs and environment. Maintainers, Project admins and administrators can use them. Off by default."
-        >
-          <template #label>
-            <span class="inline-flex items-center gap-1">CI actions <HelpHint topic="project.ci-rerun" /></span>
-          </template>
-          <ProjectCiActions
-            v-model="state.ciRerun"
-            v-model:token="ciServerToken"
-            :project-id="project.id"
-            :instance-url="project.ciServerInstanceUrl ?? null"
-            :has-token="Boolean(project.hasCiServerToken)"
-            :token-url="project.ciServerTokenUrl ?? null"
-            :saving="saving"
-            @remove-token="removeCiServerToken"
-          />
-        </UFormField>
-
-        <UFormField
           v-if="showGeneratedSpecs"
           name="generatedSpecs"
           description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
@@ -202,12 +160,7 @@ async function removeCiServerToken() {
 
       <template #footer>
         <div class="flex justify-end">
-          <UButton
-            type="submit"
-            icon="i-lucide-check"
-            :loading="saving"
-            :disabled="!dirty && !scmToken.trim() && !(ciServerActive && ciServerToken.trim())"
-          >
+          <UButton type="submit" icon="i-lucide-check" :loading="saving" :disabled="!dirty && !scmToken.trim()">
             Save changes
           </UButton>
         </div>
