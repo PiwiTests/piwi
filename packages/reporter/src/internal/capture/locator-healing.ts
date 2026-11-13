@@ -37,8 +37,6 @@ export type {
   ElementAttributes,
   LocatorSnapshot,
   RankedLocator,
-  RolePosition,
-  SelectorCounts,
 } from '@piwitests/core/locator-healing-types';
 
 import type { LocatorSnapshot } from '@piwitests/core/locator-healing-types';
@@ -68,10 +66,8 @@ export function dedupeSnapshotsByLocation(snaps: LocatorSnapshot[]): LocatorSnap
 // ── Playwright method surface (shared with the fixture proxy) ────────────────
 
 /**
- * Page-level locator-building methods wrapped by the capture proxy. Imported by
- * both the capture fixtures (`capture-fixtures.ts`) and the dogfooding
- * `application/tests/fixtures.ts` so the two stay in sync (a prior drift missed
- * `scrollIntoViewIfNeeded`).
+ * Page-level locator-building methods wrapped by the capture proxy
+ * (`capture-fixtures.ts`).
  */
 export const LOCATOR_METHODS: string[] = [...LOCATOR_BUILDER_METHODS];
 
@@ -515,7 +511,7 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       continue;
     }
     // The fixtures proxy that called us — `capture-fixtures.*` in this
-    // package, `fixtures.*` in the dogfood mirror. Skip only when it directly
+    // package, `fixtures.*` in the project that composes them. Skip only when it directly
     // follows this module, so a user's own `fixtures.*` deeper down is kept.
     if (prevWasCaptureModule && /[\\/](?:capture-)?fixtures\.[a-z]+$/i.test(file)) {
       prevWasCaptureModule = false;

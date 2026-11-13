@@ -1049,8 +1049,7 @@ external.
 - The package entries (`index`, `global-setup-module`) stay at `dist/` root so `package.json`
   `main`/`types`/`exports` don't move.
 - The CLI is its own entry (`dist/cli/index.js`, the `piwi` bin), so the main bundle carries no CLI code.
-- The capture modules the dashboard dogfoods (`locator-healing`, `capture-fixtures`, `inspect-on-failure`,
-  `pick-on-failure`, `attachments`) are emitted as their own entries, so their `dist/internal/capture/` paths are
-  preserved: `apps/application/tests/fixtures.ts` imports them from there.
+- `capture-fixtures` is emitted as its own entry, at `dist/internal/capture/capture-fixtures.js`, because the public
+  entry's types re-export `piwiFixtures` and `extendPiwiFixtures` from it.
 - `templates/` ships beside `dist/` (`files` in `package.json`); `findTemplatesDir` finds it from `dist/cli/` and
   from `src/cli/` alike.

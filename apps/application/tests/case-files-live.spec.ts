@@ -387,7 +387,20 @@ test.describe.serial('Live upload trace resource deduplication', () => {
  */
 function runReporterScript(cjsScript: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolveP) => {
-    const proc = spawn('node', ['--input-type=commonjs'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    // The script's reporter reports where the script says. Leave out the connection the runner's own environment
+    // carries, so a desktop app running on this machine does not take its place.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of [
+      'PIWI_DASHBOARD_URL',
+      'PIWI_API_KEY',
+      'PIWI_PROJECT_NAME',
+      'PIWI_DESKTOP_APP',
+      'PIWI_DESKTOP_CONFIG',
+      'PIWI_DESKTOP_KEY',
+    ]) {
+      delete env[name];
+    }
+    const proc = spawn('node', ['--input-type=commonjs'], { stdio: ['pipe', 'pipe', 'pipe'], env });
     let stdout = '';
     let stderr = '';
     proc.stdout!.on('data', (chunk: Buffer) => {

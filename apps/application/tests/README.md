@@ -171,7 +171,9 @@ database backend:
 5. **Waiting**: Use built-in auto-waiting, avoid manual waits
 6. **Data**: Create the data a test reads, under a project name from `#shared/test-project-names`; never rely on data
    another spec or a seed left
-7. **Fixtures**: Import `test` from `./fixtures` in all UI tests for automatic network and web vitals capture
+7. **Fixtures**: Import `test` from `./fixtures` in every spec: it is Playwright's `test` with the reporter's capture
+   fixtures (`extendPiwiFixtures`), so a run records what a user's project records and can be watched and paused
+   from the desktop app, an editor or Piwi Picker
 
 ## Troubleshooting
 
