@@ -307,6 +307,9 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
 
   test('are hidden in a URL in prose, the punctuation that ends it kept', () => {
     expect(hideSecretsInText('(see https://x.test/?token=abc123)')).toBe(`(see https://x.test/?token=${HIDDEN_VALUE})`);
+    expect(hideSecretsInText('((see https://x.test/a_(b)?token=abc123)).')).toBe(
+      `((see https://x.test/a_(b)?token=${HIDDEN_VALUE})).`,
+    );
     expect(hideSecretsInText('see https://x.test/?token=abc123.')).toBe(`see https://x.test/?token=${HIDDEN_VALUE}.`);
     for (const end of [',', ';', ':', '!', '?', ']', '),', '...']) {
       expect(hideSecretsInText(`see https://x.test/?token=abc123${end} then`), end).toBe(

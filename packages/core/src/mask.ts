@@ -329,6 +329,8 @@ const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s"'<>`]+/gi;
  * `,`, `;`, `:`, `!` or `?`, and a `)` or `]` the URL did not open itself, as a linkifier reads it.
  */
 function urlEndInText(url: string): number {
+  const counts: Record<string, number> = { '(': 0, ')': 0, '[': 0, ']': 0 };
+  for (const c of url) if (c in counts) counts[c]!++;
   let end = url.length;
   while (end > 0) {
     const last = url[end - 1]!;
@@ -337,9 +339,8 @@ function urlEndInText(url: string): number {
       continue;
     }
     const open = last === ')' ? '(' : last === ']' ? '[' : '';
-    if (!open) break;
-    const head = url.slice(0, end);
-    if (head.split(open).length >= head.split(last).length) break;
+    if (!open || counts[open]! >= counts[last]!) break;
+    counts[last]!--;
     end--;
   }
   return end;
