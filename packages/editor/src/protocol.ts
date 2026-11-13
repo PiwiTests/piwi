@@ -206,6 +206,11 @@ export interface SpecTest {
    * end.
    */
   durationMs: number | null;
+  /**
+   * Its latest result's own duration, in ms, from the execution the instance stored last; null for a test Piwi does not
+   * know, and from an instance that does not say it.
+   */
+  resultDurationMs: number | null;
 }
 
 /** The tests of one spec. */

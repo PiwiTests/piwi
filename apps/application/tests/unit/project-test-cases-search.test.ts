@@ -52,7 +52,7 @@ async function seedCase(seed: CaseSeed): Promise<void> {
     testCaseId: inserted[0]!.id,
     repeatEachIndex: 1,
     status: 'passed',
-    duration: 100,
+    duration: 300,
     line: at.line + 500,
     column: 1,
     createdAt: new Date(now - ((at.daysAgo ?? 0) + 3) * DAY_MS),
@@ -232,6 +232,13 @@ describe('file order', () => {
       ['adds 100% of items', 8, 3],
       ['legacy cart', null, null],
     ]);
+  });
+
+  test('gives each case its latest execution’s own duration beside the average', async () => {
+    const page = await getProjectTestCases(db, 1, { sort: 'file', dir: 'asc' });
+    const signsIn = page.items.find((item: any) => item.title === 'signs in');
+    expect([signsIn.lastDuration, signsIn.avgDuration]).toEqual([100, 200]);
+    expect(page.items.find((item: any) => item.title === 'legacy cart').lastDuration).toBeNull();
   });
 
   test('descending reverses it and keeps a case with no position last', async () => {

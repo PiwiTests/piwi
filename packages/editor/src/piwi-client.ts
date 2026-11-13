@@ -92,6 +92,8 @@ export interface CatalogCase {
   owner?: string | null;
   /** Its average duration over the runs the instance keeps, in ms. */
   avgDuration?: number | null;
+  /** Its latest execution's duration, in ms; absent from an older instance. */
+  lastDuration?: number | null;
 }
 
 /** The stored alternatives of one call site. */

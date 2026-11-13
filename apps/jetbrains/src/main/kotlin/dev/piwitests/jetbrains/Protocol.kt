@@ -98,6 +98,8 @@ data class SpecTest(
     val owner: String? = null,
     val quarantined: Boolean = false,
     val durationMs: Long? = null,
+    /** Its latest result's own duration, in ms; null for a test Piwi does not know. */
+    val resultDurationMs: Long? = null,
 )
 
 /** The tests of one spec, `file` relative to its Playwright config's folder. */

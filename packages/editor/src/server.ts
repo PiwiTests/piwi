@@ -3495,6 +3495,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           owner: found?.owner?.trim() || null,
           quarantined: found ? context.quarantined.has(found.id) : false,
           durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
+          resultDurationMs: typeof found?.lastDuration === 'number' ? Math.round(found.lastDuration) : null,
         }),
       );
       specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);

@@ -1113,7 +1113,10 @@ function executionInProject(projectId: number, scopeConditions: SQL[] | null): S
 }
 
 /** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
-function latestExecutionColumn(projectId: number, column: typeof testRunsCases.line | typeof testRunsCases.column) {
+function latestExecutionColumn(
+  projectId: number,
+  column: typeof testRunsCases.line | typeof testRunsCases.column | typeof testRunsCases.duration,
+) {
   return sql<number | null>`(
       SELECT ${column}
       FROM ${testRunsCases}
@@ -1235,6 +1238,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   // Where the test sits in its file, as its latest execution reported it.
   const line = latestExecutionColumn(projectId, testRunsCases.line);
   const column = latestExecutionColumn(projectId, testRunsCases.column);
+  // Its latest result's own duration, which an editor shows with that result.
+  const lastDuration = latestExecutionColumn(projectId, testRunsCases.duration);
 
   // Each sort is a list of keys; `file` is the order the tests are declared in,
   // file by file, which is the order Playwright lists and runs them.
@@ -1294,6 +1299,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       avgDuration: aggregates.avgDuration,
       lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
+      lastDuration,
       line,
       column,
     })

@@ -1989,6 +1989,7 @@ describe('the Testing view', () => {
     owner: null,
     quarantined: false,
     durationMs: null,
+    resultDurationMs: null,
     ...over,
   });
   const answer: TestItemsResult = {
@@ -2092,6 +2093,7 @@ describe('the Testing view', () => {
       owner: null,
       quarantined: false,
       durationMs: null,
+      resultDurationMs: null,
       root: '/w',
       uri: 'file:///w/checkout.spec.ts',
     });
