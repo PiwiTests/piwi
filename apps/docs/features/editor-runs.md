@@ -110,8 +110,8 @@ Its tooltip names the config (`The active file's Playwright config, in apps/admi
 counts, the baseline, your local runs since, the run in progress, and when the run was read (`Updated 12 s ago · live`
 while the event stream is connected, `· read every minute` without it).
 
-In VS Code, a click opens **Piwi: Open the Piwi menu**, in the JetBrains menu's order, its first entry chosen: Enter
-reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches.
+In VS Code, a click opens **Piwi: Open the Piwi menu**, in the JetBrains menu's sections, the item's own action first:
+Enter reads the latest run and its failures again (**Refresh the latest run**), without the indexes **Reload Piwi** fetches.
 When the extension is not connected, the item says why, and its first entry is **Connect…**, or **Reload Piwi** for an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 

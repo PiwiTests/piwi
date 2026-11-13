@@ -390,6 +390,7 @@ export function registerRunControl(
       ticking = null;
     }
     setContextKey('piwi.runActive', state.active);
+    setContextKey('piwi.runStoppable', state.stoppable);
     setContextKey('piwi.runPausable', state.pausable);
     setContextKey('piwi.runStopped', state.stopped);
     setContextKey('piwi.runFailed', state.failed);

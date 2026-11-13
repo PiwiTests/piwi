@@ -75,8 +75,8 @@ AC10, AC9 and NF3 in part). M3 in part: JetBrains' Tools → Piwi in six compact
 dashboard, agents, connection), its editor submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu
 in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
 part). M3's status menu: a click on VS Code's status item opens **Open the Piwi menu**
-(`piwi.statusMenu`), a quick pick in the JetBrains popup's sections and order, its first row the item's own action,
-chosen as it opens, so Enter still refreshes (HM1 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
+(`piwi.statusMenu`), a quick pick in the JetBrains popup's sections, its first row the item's own action, so Enter
+still refreshes (HM1 in part). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
 of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the

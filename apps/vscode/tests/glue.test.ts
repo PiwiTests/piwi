@@ -145,10 +145,11 @@ describe('statusMenu', () => {
   const idle = {
     action: 'refresh' as const,
     recording: null,
-    run: { active: false, stopped: false, pausable: false, page: false },
+    run: { active: false, stopped: false, failed: false, pausable: false, stoppable: false, page: false },
     failing: false,
-    flaky: false,
+    flakyRoot: null,
     connected: true,
+    latestRun: true,
     spec: false,
   };
   const commands = (entries: ReturnType<typeof statusMenu>) =>
@@ -178,19 +179,15 @@ describe('statusMenu', () => {
     ]);
   });
 
-  test('puts a recording’s controls first, and the run’s controls while a run is live', () => {
+  test('puts a recording’s controls after the item’s action, so Enter never stops a recording', () => {
     const recording = commands(statusMenu({ ...idle, recording: 'paused', spec: true }));
-    expect(recording.slice(0, 3)).toEqual(['piwi.stopRecording', 'piwi.resumeRecording', 'piwi.refreshRun']);
+    expect(recording.slice(0, 3)).toEqual(['piwi.refreshRun', 'piwi.stopRecording', 'piwi.resumeRecording']);
     expect(recording).not.toContain('piwi.record');
-    const stopped = commands(
-      statusMenu({
-        ...idle,
-        run: { active: true, stopped: true, pausable: false, page: true },
-        failing: true,
-        flaky: true,
-      }),
-    );
-    expect(stopped).toEqual([
+  });
+
+  test('offers the run’s controls while a run is live, each where its command acts', () => {
+    const run = { active: true, stopped: true, failed: false, pausable: false, stoppable: true, page: true };
+    expect(commands(statusMenu({ ...idle, run, failing: true, flakyRoot: '/ws/app' }))).toEqual([
       'piwi.refreshRun',
       '— Run control',
       'piwi.resumeRun',
@@ -208,6 +205,21 @@ describe('statusMenu', () => {
       'piwi.connect',
       'piwi.openSettings',
     ]);
+    // A held failure takes no Step, and a run another window or a terminal started is theirs to stop.
+    const held = commands(statusMenu({ ...idle, run: { ...run, failed: true, stoppable: false } }));
+    expect(held).toContain('piwi.resumeRun');
+    expect(held).not.toContain('piwi.stepRun');
+    expect(held).not.toContain('piwi.stopRun');
+  });
+
+  test('opens the flaky tests of the item’s config, and the latest run only while its page is known', () => {
+    expect(statusMenu({ ...idle, flakyRoot: '/ws/app' })).toContainEqual({
+      command: 'piwi.showFlakyTests',
+      label: "Show the run's flaky tests",
+      args: ['/ws/app'],
+    });
+    expect(commands(statusMenu({ ...idle, latestRun: false }))).not.toContain('piwi.openRun');
+    expect(commands(statusMenu({ ...idle, connected: false }))).not.toContain('piwi.compareWith');
   });
 
   test('offers the test at the cursor and Record here on a spec, titled as the catalog titles them', () => {
@@ -293,7 +305,7 @@ describe('statusBarView', () => {
       url: 'http://piwi/test-runs/41',
       liveUrl: null,
       error: false,
-      flaky: false,
+      flakyRoot: null,
     });
   });
 

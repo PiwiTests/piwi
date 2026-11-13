@@ -105,32 +105,36 @@ export interface StatusBarView {
   error: boolean;
   /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
   ownLive?: boolean;
-  /** The failures view lists flaky tests for the config the item speaks for. */
-  flaky?: boolean;
+  /** The config the item speaks for, while the failures view lists flaky tests for it. */
+  flakyRoot?: string | null;
 }
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
 /** What the status menu offers depends on. */
 export interface StatusMenuState {
-  /** The item's own action, offered first and preselected, so Enter does what a click on the item did. */
+  /** The item's own action, the menu's first row, so Enter does what a click on the item did. */
   action: StatusBarView['action'];
   recording: 'recording' | 'paused' | null;
-  run: { active: boolean; stopped: boolean; pausable: boolean; page: boolean };
+  run: { active: boolean; stopped: boolean; failed: boolean; pausable: boolean; stoppable: boolean; page: boolean };
   failing: boolean;
-  flaky: boolean;
+  /** The config whose flaky tests the failures view lists, for the item's config. */
+  flakyRoot: string | null;
   connected: boolean;
+  /** The latest run's page is known: Open the latest run opens it. */
+  latestRun: boolean;
   /** The active editor holds a spec. */
   spec: boolean;
 }
 
-/** A row of the status menu: a command and its title, or a separator naming the section after it. */
-export type StatusMenuEntry = { command: string; label: string } | { separator: string };
+/** A row of the status menu: a command, its arguments and its title, or a separator naming the section after it. */
+export type StatusMenuEntry = { command: string; label: string; args?: unknown[] } | { separator: string };
 
 /**
- * The status menu, in the JetBrains plugin's status popup's order: the item's action (with Open the log beside a
- * restart, and a recording's controls while one runs), the run's controls while a run is live, the failures and the
- * dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action catalog.
+ * The status menu, in the JetBrains plugin's status popup's sections: the item's action first (with Open the log beside
+ * a restart, and a recording's controls after it while one runs), the run's controls while a run is live, the failures
+ * and the dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action
+ * catalog, and offered only where its command acts.
  */
 export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
   const title = (command: string) => {
@@ -141,9 +145,6 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
     [
       '',
       [
-        ...(state.recording
-          ? ['piwi.stopRecording', state.recording === 'paused' ? 'piwi.resumeRecording' : 'piwi.pauseRecording']
-          : []),
         {
           refresh: 'piwi.refreshRun',
           retry: 'piwi.refresh',
@@ -152,6 +153,9 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
           none: false as const,
         }[state.action],
         state.action === 'restart' && 'piwi.openLog',
+        !!state.recording && 'piwi.stopRecording',
+        state.recording === 'paused' && 'piwi.resumeRecording',
+        state.recording === 'recording' && 'piwi.pauseRecording',
       ],
     ],
     [
@@ -159,11 +163,11 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
       state.run.active
         ? [
             state.run.stopped && 'piwi.resumeRun',
-            state.run.stopped && 'piwi.stepRun',
+            state.run.stopped && !state.run.failed && 'piwi.stepRun',
             state.run.stopped && 'piwi.showPausedPage',
             state.run.pausable && 'piwi.pauseRun',
             state.run.page && 'piwi.openRunPage',
-            'piwi.stopRun',
+            state.run.stoppable && 'piwi.stopRun',
           ]
         : [],
     ],
@@ -171,8 +175,8 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
       'Dashboard',
       [
         state.failing && 'piwi.rerunFailing',
-        state.flaky && 'piwi.showFlakyTests',
-        state.connected && 'piwi.openRun',
+        state.flakyRoot !== null && 'piwi.showFlakyTests',
+        state.connected && state.latestRun && 'piwi.openRun',
         state.connected && 'piwi.compareWith',
       ],
     ],
@@ -187,7 +191,8 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
     if (entries.length) entries.push({ separator: name });
     for (const command of shown) {
       seen.add(command);
-      entries.push({ command, label: title(command) });
+      const args = command === 'piwi.showFlakyTests' && state.flakyRoot !== null ? [state.flakyRoot] : undefined;
+      entries.push({ command, label: title(command), ...(args ? { args } : {}) });
     }
   }
   return entries;
@@ -599,7 +604,7 @@ export function statusBarView(
     url: r.url,
     liveUrl,
     error: false,
-    flaky: flakyListed(connected.root) > 0,
+    flakyRoot: flakyListed(connected.root) > 0 ? connected.root : null,
   };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
