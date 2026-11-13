@@ -129,7 +129,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
  * and the failures tool window render. The service pushes each answer when it
  * changes (`piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`):
  * they are kept as they come, and read whole only when the plugin starts and
- * when it asks the service for something new (Refresh, the credentials).
+ * when it asks the service for something new (Reload Piwi, the credentials).
  */
 @Service(Service.Level.PROJECT)
 class PiwiProjectService(private val project: Project) : Disposable {

@@ -93,7 +93,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "[Refresh](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "[Reload Piwi](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == desktop-unproven"
       },
       {

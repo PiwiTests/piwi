@@ -240,7 +240,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
   Dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
   and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
-  and the MCP configurations, Refresh and Settings….
+  and the MCP configurations, Reload Piwi, Restart the editor service, Open log, Settings… and Documentation.
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
   `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
   are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
@@ -350,8 +350,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
-Then come the registered actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the Latest
-Run in the Dashboard, Open in dashboard, Compare with…, Run the test at the caret, Record here, Refresh, Connect (in
+Then come the registered actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest
+run in the dashboard, Open in dashboard, Compare with…, Run the test at the caret, Record here, Reload Piwi, Connect (in
 this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
