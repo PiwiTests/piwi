@@ -1070,6 +1070,9 @@ object Glue {
     const val SERVICE_NO_ANSWER =
         "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows its log."
 
+    /** What an action that needs an instance says while none is connected, beside **Connect…**. */
+    const val CONNECT_FIRST = "Connect to an instance first."
+
     /** What Restart the Editor Service says with no service running and no test file open: the IDE starts it for one. */
     const val SERVICE_NEEDS_A_FILE = "The Piwi editor service starts for a test file: open one of this project's."
 

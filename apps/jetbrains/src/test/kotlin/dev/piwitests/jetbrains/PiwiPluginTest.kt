@@ -479,6 +479,28 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /** A message that the service did not answer is a warning, a problem, with Restart and the log, whatever its caller said. */
+    fun testAServiceThatDidNotAnswerIsSaidAsAProblemWithItsFixes() {
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    shown += notification
+                }
+            },
+        )
+        PiwiCommands.notify(project, "The recording did not start. ${Glue.SERVICE_NO_ANSWER}")
+        PiwiCommands.notify(project, "The run took it.")
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val (unanswered, answered) = shown
+        assertEquals(com.intellij.notification.NotificationType.WARNING, unanswered.type)
+        assertEquals(PiwiNotice.PROBLEM.group, unanswered.groupId)
+        assertEquals(Glue.SERVICE_FIXES.map { it.label }, unanswered.actions.map { it.templateText })
+        assertEquals(com.intellij.notification.NotificationType.INFORMATION, answered.type)
+        assertEquals(emptyList<String>(), answered.actions.map { it.templateText })
+    }
+
     /**
      * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
      * failures and the documentation, once per installation.

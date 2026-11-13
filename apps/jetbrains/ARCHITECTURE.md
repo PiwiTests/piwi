@@ -410,8 +410,9 @@ to run (`cmd.exe /c`, `/bin/sh -c`), never the IDE's Playwright runner's. The ta
 verdict, a job, a recording), `Piwi requests` for what waits for an answer (Debug in my editor, a run shared live, a
 shared browser), sticky, `Piwi suggestions` for an offer made once (the MCP server, the desktop app, the first run), as
 a suggestion, `Piwi problems` for what went wrong, and `Piwi confirmations` for what the person just did (Copied.,
-Connected to …, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an error as a problem, anything
-else, a refusal of the service included, as a result. An information carries Piwi's icon; a warning or an error keeps
+Connected to …, the MCP configurations copied, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an
+error as a problem, anything else, a refusal of the service included, as a result; a message that the service does not
+run or did not answer is always a warning. An information carries Piwi's icon; a warning or an error keeps
 the platform's, which says how serious it is. D25 lists the five group ids, which users' notification settings name. A `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded`
 (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing**
 when something fails, or **Only on Failure** when nothing does while the setting is `always`. The run's balloon follows
@@ -763,7 +764,7 @@ The balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…** (`PiwiCo
 A trusted project with no Playwright config whose MSBuild project (a `.csproj`, `.fsproj`, `.vbproj` or
 `Directory.Build.props`, in the folders and repository the configs are searched in, `Glue.searchedFolders`) references
 Playwright for .NET (`Glue.holdsDotnetPlaywright`) hears once, per project (`piwi.dotnetPlaywrightNoted`), that Piwi
-reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a result balloon,
+reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a suggestion,
 `PiwiProjectService.noteDotnetPlaywright`). A reference added later is heard once the project opens again.
 
 ## Recording
@@ -1097,8 +1098,10 @@ A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` w
 once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
 logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
 `Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Restart the Editor Service), and
-`Glue.SERVICE_NO_ANSWER` when the running service did not answer; `PiwiCommands.notify` adds **Restart the Editor
-Service** and **Open Log** to a balloon that says either (`Glue.offersServiceFixes`).
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer, in a balloon and in the Paused Page and Worker
+tabs alike; `PiwiCommands.notify` shows a balloon that says either as a warning, with **Restart the Editor Service** and
+**Open Log** (`Glue.offersServiceFixes`). An action that needs an instance says `Glue.CONNECT_FIRST` with **Connect…**
+while none is connected.
 
 ## The log
 

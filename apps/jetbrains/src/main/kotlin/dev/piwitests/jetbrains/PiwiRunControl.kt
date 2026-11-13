@@ -1024,7 +1024,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
             ApplicationManager.getApplication().invokeLater({
-                if (pageStop == Glue.stopKey(stop)) panel.note(answer?.message ?: "The editor service did not answer.")
+                if (pageStop == Glue.stopKey(stop)) panel.note(answer?.message ?: Glue.SERVICE_NO_ANSWER)
             }, gone)
         }
     }
@@ -1072,7 +1072,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 panel.letGo()
                 stopPageView()
                 panel.watching(false)
-                panel.note(result?.message ?: "The editor service did not answer.")
+                panel.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
                 panel.liveWanted = false
             }
         }
@@ -1096,7 +1096,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val result = runCatching { remote.driveStop(params) }.getOrNull()
             ApplicationManager.getApplication().invokeLater({
                 if (result?.ok != true && pageStop == key) {
-                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
+                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
                 }
             }, gone)
         }
@@ -1386,7 +1386,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             ApplicationManager.getApplication().invokeLater({
                 traceAsking.remove(slot)
                 drawTrace()
-                val message = if (answer == null) "The editor service did not answer." else answer.message.orEmpty()
+                val message = if (answer == null) Glue.SERVICE_NO_ANSWER else answer.message.orEmpty()
                 val said = Glue.traceAnswerText(slot, laneTarget, message)
                 PiwiCommands.notify(project, said, if (answer?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING)
             }, gone)
@@ -1454,7 +1454,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             watchingCi = null
             // A request the service did not answer in time may have opened the watch: it is let go.
             if (result == null) requestCiWatch(params.copy(on = false))
-            val why = result?.message ?: "The editor service did not answer."
+            val why = result?.message ?: Glue.SERVICE_NO_ANSWER
             panel.note(why)
             panel.liveWanted = false
             val dashboard = lane.dashboard ?: return@requestCiWatch
@@ -1539,7 +1539,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 relayer()
             } else {
                 stopLaneView()
-                panel.note(result?.message ?: "The editor service did not answer.")
+                panel.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
                 panel.liveWanted = false
             }
         }
@@ -1627,7 +1627,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 if (watchingPage !== own) return@sendQueued
                 pageInputBusy = false
                 if (result?.ok != true) {
-                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
+                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: Glue.SERVICE_NO_ANSWER)
                     pageInputs.removeAll { it is PageInput }
                     if (!release) pageRelease = true
                 }
@@ -1689,7 +1689,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
-                result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                result == null -> PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
             }
             if (settled != null) ApplicationManager.getApplication().invokeLater({ settled(result) }, gone)
@@ -1744,7 +1744,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val answer = remote.shareRun(ShareRunParams(ref, on))
             val page = live?.page
             when {
-                answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                answer == null -> PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
                 !answer.ok || !on || page == null -> PiwiCommands.notify(project, answer.message.orEmpty())
                 else -> PiwiNotifier.create(PiwiNotice.REQUEST, answer.message.orEmpty())
                     .addAction(NotificationAction.createSimpleExpiring("Open the Run Page") { BrowserUtil.browse(page) })
@@ -1774,7 +1774,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.shareRun(ShareRunParams(ref, on, "window"))
-            PiwiCommands.notify(project, answer?.message ?: "The editor service did not answer.")
+            PiwiCommands.notify(project, answer?.message ?: Glue.SERVICE_NO_ANSWER)
         }
     }
 
@@ -1837,7 +1837,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun holdRun(ref: String, on: Boolean) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.holdRun(HoldRunParams(ref, on))
-            PiwiCommands.notify(project, answer?.message ?: "The editor service did not answer.")
+            PiwiCommands.notify(project, answer?.message ?: Glue.SERVICE_NO_ANSWER)
         }
     }
 
@@ -1956,7 +1956,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             val shared = remote.bind(StopBindParams(stop.ref, stop.worker, since, true))
             val command = shared?.command
-            if (shared == null) return@executeOnPooledThread PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+            if (shared == null) return@executeOnPooledThread PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
             if (!shared.ok || command == null) return@executeOnPooledThread PiwiCommands.notify(project, shared.message.orEmpty())
             PiwiNotifier.create(PiwiNotice.REQUEST, Glue.sharedText(shared), NotificationType.WARNING)
                 .addAction(NotificationAction.createSimpleExpiring("Copy the Command") {
@@ -1965,7 +1965,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") {
                     ApplicationManager.getApplication().executeOnPooledThread {
                         val stopped = remote.bind(StopBindParams(stop.ref, stop.worker, since, false))
-                        PiwiCommands.notify(project, stopped?.message ?: "The editor service did not answer.")
+                        PiwiCommands.notify(project, stopped?.message ?: Glue.SERVICE_NO_ANSWER)
                     }
                 })
                 .notify(project)
@@ -1982,7 +1982,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.action(StopActionParams(stop.ref, stop.worker, since, "front", null))
             when {
-                result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                result == null -> PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The test did not take it.")
             }
         }
@@ -2009,14 +2009,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 val listed = remote.requests(StopRequestsParams(stop.ref, stop.worker, since))
                 val requests = Glue.requestsToMock(listed?.requests)
                 return@executeOnPooledThread when {
-                    listed == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                    listed == null -> PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
                     !listed.ok || requests.isEmpty() -> PiwiCommands.notify(project, listed.message ?: "The test kept no response.")
                     else -> ApplicationManager.getApplication().invokeLater({ chooseRequest(requests) { start(stop, action, it.id) } }, gone)
                 }
             }
             val result = remote.action(StopActionParams(stop.ref, stop.worker, since, action.action, request))
             when {
-                result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                result == null -> PiwiCommands.notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
                 !result.ok || action != Glue.StopAction.MOCK -> PiwiCommands.notify(project, result.message ?: "The test did not take it.")
             }
         }

@@ -327,7 +327,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             if (!Glue.holdsDotnetPlaywright(Glue.searchedFolders(found.roots, home)) || gone.value(null)) return
             properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
         }
-        PiwiNotifier.create(PiwiNotice.RESULT, Glue.DOTNET_PLAYWRIGHT_NOTE)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.DOTNET_PLAYWRIGHT_NOTE)
             .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
             .notify(project)
     }

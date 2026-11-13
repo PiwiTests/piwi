@@ -388,7 +388,7 @@ object PiwiRecordFlow {
                 val placement = result?.placement
                 val projects = result?.projects.orEmpty()
                 when {
-                    result == null -> PiwiCommands.notify(project, "The Piwi editor service did not start the recording.", NotificationType.WARNING)
+                    result == null -> PiwiCommands.notify(project, "The recording did not start. ${Glue.SERVICE_NO_ANSWER}", NotificationType.WARNING)
                     !result.ok && projects.isNotEmpty() -> ApplicationManager.getApplication().invokeLater({
                         askProject(project, projects) { chosen ->
                             project.service<PiwiProjectService>().local().recordProject = chosen
