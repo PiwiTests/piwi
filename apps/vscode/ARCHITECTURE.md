@@ -789,8 +789,9 @@ Playwright project, which is asked only when `piwi/record` answers with the list
 Nothing is written before the first `piwi/recordingChanged`. Each one then replaces the recorded block (the first one
 at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit. While it records:
 
-- the block is tinted with `piwi.recordingBlockBackground`, with a CodeLens above it: the state, the step count, and
-  Stop, Pause or Resume;
+- the block is tinted with `piwi.recordingBlockBackground`, its first line marked in the gutter with a red dot in a
+  ring (`media/recording.svg`), the gray ring while paused (`media/recording-paused.svg`), as the JetBrains plugin marks
+  it, with a CodeLens above it: the state, the step count, and Stop, Pause or Resume;
 - the status bar shows the recording;
 - the recording's warnings are diagnostics. Each stays after Stop until its line is edited in place (`editedLine`); an
   edit that adds or removes a line of the block removes them all.

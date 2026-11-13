@@ -853,8 +853,9 @@ thread.
 - **The block** is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark that offers Stop, Pause and Resume. The mark
   and the banner draw `PiwiIcons.recording`: a red dot in a ring while recording (`icons/recording.svg`), apart from a
   breakpoint's disc, and a gray ring while paused or after an edit of the block (`icons/recordPaused.svg`), the mark
-  set again on each change of the state; the actions that start one draw the gray disc (`icons/record.svg`), and Stop
-  recording a ring around a square (`icons/stopRecording.svg`).
+  set again on each change of the state; the actions that start one, and Resume recording, draw the gray disc
+  (`icons/record.svg`), Pause recording the gray ring, and Stop recording a ring around a square
+  (`icons/stopRecording.svg`), as VS Code draws them.
 - **Warnings.** The recording's warnings are weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop
   until their line changes.
 - **Quick fixes.** Once the recording stopped, a warning on a step with other verified locators
