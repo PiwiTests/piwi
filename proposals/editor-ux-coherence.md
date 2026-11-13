@@ -76,8 +76,9 @@ dashboard, agents, connection), its editor submenu with Record a new test file�
 in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
 part). M3's status menu: a click on VS Code's status item opens **Open the Piwi menu**
 (`piwi.statusMenu`), a quick pick in the JetBrains popup's sections, its first row the item's own action, so Enter
-still refreshes; its tooltip links Connect only while not connected, and ends the run's line with the tests still
-failing when later runs changed the count (HM1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
+still refreshes. M13 in part: VS Code's status tooltip links Connect only while not connected, gives the item's
+failing count after the local runs, and says how many tests the failed results are when a test failed on several
+Playwright projects (HM1). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)` (IC2 in part). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
@@ -134,8 +135,7 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
    ([AC9](#ac9), [AC11](#ac11), [NF3](#nf3)). A stop control's short labels, the recording's words and the start
    options differ from one client to the other.
 
-2. **The status item behaves differently in each editor.** A click opens the status popup in JetBrains but refreshes in
-   VS Code, which paints the item red for CI failures the developer did not cause, shows up to nine run items, and
+2. **The status item behaves differently in each editor.** VS Code paints the item red for CI failures the developer did not cause, shows up to nine run items, and
    counts one run twice in two wordings ([HM2](#hm2), [LR1](#lr1), [LR18](#lr18)).
 
 3. **A stopped Piwi run's controls are missing where JetBrains' debugger keeps its own**: no Run menu, editor menu or

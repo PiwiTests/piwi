@@ -667,8 +667,9 @@ the item's own action (a recording's controls follow it), which depends on the s
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:
 
 - the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`),
-  ending with the tests still failing, the item's count, when later runs changed the run's (`· 2 still failing`);
-- the baseline, the local runs and the run in progress;
+  with the tests the failed results are when a test failed on several Playwright projects (`2 failed (1 test)`);
+- the baseline, the local runs with what they fixed and the tests failing after them (the item's count), and the run
+  in progress;
 - when the run was read, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every
   30 s);
 - the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and

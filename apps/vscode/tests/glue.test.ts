@@ -366,19 +366,40 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
     expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
     expect(view.tooltip).toBe(
-      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped · 2 still failing\n\n2 local runs since · 1 test fixed locally\n\n${FROM}\n\n${LINKS}`,
+      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
     expect(statusBarView(connected, local({ failingTests: 0, resolved: 3, overlays: 1 }))).toMatchObject({
       text: '$(pass) Piwi: 3 fixed locally',
+      tooltip: expect.stringContaining('\n\n1 local run since · 3 tests fixed locally\n\n'),
       error: false,
     });
     expect(statusBarView(connected, local({ failingTests: 1, resolved: 0, overlays: 1 }))).toMatchObject({
       text: '$(error) Piwi: 1 failing',
-      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally\n\n'),
+      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally · 1 failing\n\n'),
     });
+    // A local run that broke more tests than the run failed counts them all as failing, never as still failing.
+    expect(statusBarView(connected, local({ failingTests: 5, resolved: 0, overlays: 1 })).tooltip).toContain(
+      ': 115 passed, 3 failed, 0 flaky, 0 skipped\n\n1 local run since · 0 tests fixed locally · 5 failing\n\n',
+    );
     expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
       'local run',
     );
+  });
+
+  test('says how many tests the failed results are when a test fails on several Playwright projects', () => {
+    const projects = (status: string): RunStatusResult => {
+      const runs = run({ status, failedTests: 2, passedTests: 116, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, failingTests: 1, resolved: 0, overlays: 0 }] };
+    };
+    const view = statusBarView(connected, projects('failed'));
+    expect(view.text).toBe('$(error) Piwi: 1 failing');
+    expect(view.tooltip).toMatch(
+      /^Run #41 of Acme on feature\/pay: 116 passed, 2 failed \(1 test\), 0 flaky, 0 skipped\n/,
+    );
+    // While the run goes on, the item and the tooltip count its failed results alike.
+    const running = statusBarView(connected, projects('running'));
+    expect(running.text).toBe('$(sync~spin) Piwi: 118/120 · 2 failing');
+    expect(running.tooltip).toMatch(/: 116 passed, 2 failed, 0 flaky, 0 skipped\n/);
   });
 
   test('the count the editor’s own run told last, kept past its session until the instance’s reaches it or the run ends', () => {

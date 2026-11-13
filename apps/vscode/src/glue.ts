@@ -90,7 +90,7 @@ export const WALKTHROUGH = 'piwitests.piwi#getStarted';
 
 export interface StatusBarView {
   text: string;
-  /** Markdown: what the item shows and when it was read, then links to the run, the dashboard and Connect. */
+  /** Markdown: what the item shows and when it was read, then links to the run and the dashboard, or to Connect. */
   tooltip: string;
   /**
    * `refresh` reads the latest run again (`piwi.refreshRun`); `retry` reads the instance again (`piwi.refresh`);
@@ -456,8 +456,8 @@ function withOwnProgress(
  * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
  * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
  * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
- * click reads the latest run again; the tooltip names the config when there are several, says when the run was read
- * and links to the run, the dashboard and Connect.
+ * click opens the status menu; the tooltip names the config when there are several, says when the run was read
+ * and links to the run and the dashboard, or to Connect when the editor is not connected.
  */
 export function statusBarView(
   status: StatusResult | null,
@@ -579,13 +579,17 @@ export function statusBarView(
   // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
   const failing = run.failingTests ?? r.failedTests;
   const fixed = run.resolved ?? 0;
-  // The item's count, when later runs changed the run's: the tooltip says both, one after the other.
-  const still = failing !== r.failedTests ? ` · ${failing} still failing` : '';
+  const active = !!live || ACTIVE.has(r.status);
+  // The item counts failing tests, the run line failed results: one test fails once per Playwright project.
+  const tests = !active && !run.overlays && failing !== r.failedTests ? ` (${plural(failing, 'test')})` : '';
+  const failingNow = !active && failing > 0 ? ` · ${failing} failing` : '';
   const tooltip = lines(
-    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${still}`,
+    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed${tests}, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
     which,
     baseline,
-    run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
+    run.overlays
+      ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally${failingNow}`
+      : null,
     progress,
     updated,
     from,
@@ -607,7 +611,7 @@ export function statusBarView(
     error: false,
     flakyRoot: flakyListed(connected.root) > 0 ? connected.root : null,
   };
-  if (live || ACTIVE.has(r.status)) {
+  if (active) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {
