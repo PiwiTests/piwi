@@ -20,7 +20,7 @@ does with it. It is reference material: open the section for the area you change
 - [Tool window](#tool-window)
   - [Tree and nodes](#tree-and-nodes)
   - [Navigation and actions](#navigation-and-actions)
-  - [Compare With](#compare-with)
+  - [Compare with](#compare-with)
 - [Status bar](#status-bar)
 - [Runs](#runs)
   - [Playwright runner](#playwright-runner)
@@ -238,7 +238,7 @@ With no failure, the empty text is `Glue.failuresEmpty` of the state the service
 links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare with…).
 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
-  Dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
+  dashboard**, **Compare with…** and the **Group by** drop-down, then the navigation (previous and next failure, expand
   and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
   and the MCP configurations, Refresh and Settings….
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
@@ -269,7 +269,7 @@ The panel is an `OccurenceNavigator`: Next and Previous Occurrence, and the tool
 failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page. The panel
 gives the selected node's page as `DASHBOARD_URL`, which Open in dashboard opens before the file's test or the latest
 run. Open in dashboard and Run selection… are enabled only while a context is connected (`piwiConnected`), Open in
-Dashboard also on a selected page, and Re-run the failing tests while failures are listed; `PiwiPluginTest` holds both.
+dashboard also on a selected page, and Re-run the failing tests while failures are listed; `PiwiPluginTest` holds both.
 
 The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`:
 
@@ -284,8 +284,8 @@ The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommand
 a New UI glyph on 2024.1 and 2026.3 (checked by hand against each `PlatformIconMappings.json`). The exceptions are the
 two toggles, whose menu rows show a check mark; the record actions' `Ide.Macro.Recording_1`, which waits for Piwi's
 record glyph; and the actions that wait for a glyph of their own: Disconnect, Pair, Pause and Watch, Assert a region,
-Mock a request, Share the run live, Stop sharing, and the four no mapped platform icon says (Run the Tests That Reach
-This File, Reset the runs' MCP server token, Show the stopped test's browser, Share with Playwright tools). The icons
+Mock a request, Share the run live, Stop sharing, and the four no mapped platform icon says (Run the tests that reach
+this file, Reset the runs' MCP server token, Show the stopped test's browser, Share with Playwright tools). The icons
 drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree and a
 held failure, Open in dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a branch)
 and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
@@ -295,7 +295,7 @@ and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
 (`Glue.failingRuns`). **Run this test** runs `Glue.failureRunArgs`. Both name the failure's config
 (`WorkspaceFailure.root`).
 
-### Compare With
+### Compare with
 
 **Compare with…** (`Piwi.CompareWith`, under **Tools → Piwi** and in the toolbar) is a popup of
 `Glue.baselineEntries`, for the context of the file at hand or of the node it runs from (`CompareWithAction.choose`).
@@ -350,8 +350,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
-Then come the registered actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the Latest
-Run in the Dashboard, Open in dashboard, Compare with…, Run the test at the caret, Record here, Refresh, Connect (in
+Then come the registered actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest
+run in the dashboard, Open in dashboard, Compare with…, Run the test at the caret, Record here, Refresh, Connect (in
 this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
@@ -555,8 +555,8 @@ press starts no debug session. While a run is live, `PiwiRunActionPromoter` (an 
 the actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
 `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
 
-**The Worker tab.** **Tools → Piwi → Watch a worker's test** (`WatchWorkerAction`) and **Pause and Watch a Worker's
-Test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
+**The Worker tab.** **Tools → Piwi → Watch a worker's test** (`WatchWorkerAction`) and **Pause and watch a worker's
+test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused page's, which takes the input, as any
@@ -1092,8 +1092,8 @@ A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` w
 once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
 logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
 `Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Restart the editor service), and
-`Glue.SERVICE_NO_ANSWER` when the running service did not answer; `PiwiCommands.notify` adds **Restart the Editor
-Service** and **Open log** to a balloon that says either (`Glue.offersServiceFixes`).
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer; `PiwiCommands.notify` adds **Restart the editor
+service** and **Open log** to a balloon that says either (`Glue.offersServiceFixes`).
 
 ## The log
 
@@ -1107,7 +1107,7 @@ channel does, its last `Glue.LOG_LINES` lines (`Glue.LogBuffer`):
   frames continue the line before them (`Glue.logLines`);
 - each end and its exit code (`watchServer`). The end of the latest process drops the pushed answers, without asking a
   service that is gone, and the tool window says the service stopped, with **Restart the editor service** and **Open
-  Log** (`Glue.serviceDownText`), until a process starts again;
+  log** (`Glue.serviceDownText`), until a process starts again;
 - each failed request under its method, once a minute per method: `piwiServer()` hands out a proxy of the service
   (`PiwiLog.logged`) that watches every request's future, whoever waits for it.
 
