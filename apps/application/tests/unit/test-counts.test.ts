@@ -193,9 +193,9 @@ describe('summarizeRunCases', () => {
 describe('distinctRunCountsFromAttempts', () => {
   test('collapses retry rows to the final attempt per (test, browser)', () => {
     const counts = distinctRunCountsFromAttempts([
-      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 1, browserName: 'chromium', retries: 1, status: 'passed' },
-      { testCaseId: 2, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 2, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
     ]);
     // Test 1 flaked (failed then passed), test 2 is a hard failure.
     expect(counts).toEqual({
@@ -210,8 +210,8 @@ describe('distinctRunCountsFromAttempts', () => {
 
   test('folds timed-out into failedTests', () => {
     const counts = distinctRunCountsFromAttempts([
-      { testCaseId: 1, browserName: '', retries: 0, status: 'timedout' },
-      { testCaseId: 2, browserName: '', retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: '', repeatEachIndex: 0, retries: 0, status: 'timedout' },
+      { testCaseId: 2, browserName: '', repeatEachIndex: 0, retries: 0, status: 'failed' },
     ]);
     expect(counts.failedTests).toBe(2);
     expect(counts.totalTests).toBe(2);
@@ -219,8 +219,8 @@ describe('distinctRunCountsFromAttempts', () => {
 
   test('keeps the same test in different browsers separate', () => {
     const counts = distinctRunCountsFromAttempts([
-      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'passed' },
-      { testCaseId: 1, browserName: 'firefox', retries: 0, status: 'passed' },
+      { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'passed' },
+      { testCaseId: 1, browserName: 'firefox', repeatEachIndex: 0, retries: 0, status: 'passed' },
     ]);
     expect(counts.totalTests).toBe(2);
     expect(counts.passedTests).toBe(2);
@@ -232,17 +232,17 @@ describe('distinctRunCountsFromAttempts', () => {
     // rows carry status 'failed', so a naive per-attempt tally reports 7
     // failures — but only 3 tests actually failed.
     const rows = [
-      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 2, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 3, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 4, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 4, browserName: 'chromium', retries: 1, status: 'passed' },
-      { testCaseId: 5, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 5, browserName: 'chromium', retries: 1, status: 'passed' },
-      { testCaseId: 6, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 6, browserName: 'chromium', retries: 1, status: 'passed' },
-      { testCaseId: 7, browserName: 'chromium', retries: 0, status: 'failed' },
-      { testCaseId: 7, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 2, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 3, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 4, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 4, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 5, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 5, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 6, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 6, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 7, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 7, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
     ];
     expect(rows.filter((r) => r.status === 'failed').length).toBe(7);
 
@@ -390,7 +390,7 @@ describe('flaky results', () => {
       },
     ];
     const filled = withAttemptHistory(rows);
-    expect(filled[1]!.attempts).toEqual([
+    expect((filled[1] as { attempts?: unknown }).attempts).toEqual([
       { retry: 0, status: 'passed', duration: 5, startedAt: 10 },
       { retry: 1, status: 'passed', duration: 5, startedAt: 20 },
     ]);

@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { DEFAULT_POLICIES } from '#shared/integrations/binding';
 import { migrateToLatest } from './temp-db';
 
 /**
@@ -167,7 +168,7 @@ async function setPolicies(policies: { resolveOnClose?: boolean; reopenOnTicketR
     connectionId,
     projectKey: 'PROJ',
     issueType: 'Bug',
-    policies: { resolveOnClose: false, reopenOnTicketReopen: false, ...policies },
+    policies: { ...DEFAULT_POLICIES, resolveOnClose: false, reopenOnTicketReopen: false, ...policies },
   });
 }
 
@@ -339,11 +340,15 @@ describe('sync policies act on a move of the ticket', () => {
       })
       .returning({ id: schema.failureClusters.id });
     categories.set('PROJ-900', 'indeterminate');
-    const link = await createEnrichedLink(dbc, {
-      entityType: 'failure_cluster',
-      entityId: cluster!.id,
-      url: `${SITE}/browse/PROJ-900`,
-    });
+    const link = await createEnrichedLink(
+      dbc,
+      {
+        entityType: 'failure_cluster',
+        entityId: cluster!.id,
+        url: `${SITE}/browse/PROJ-900`,
+      },
+      new Set(),
+    );
     expect(link?.connectionId).toBe(connectionId);
     expect((link?.metadata as { statusCategory?: string } | null)?.statusCategory).toBe('indeterminate');
 

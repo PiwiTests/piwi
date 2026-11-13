@@ -56,7 +56,7 @@ describe('createTestCaseKeyLoader', () => {
   });
 
   test('splits more than a hundred keys into requests of a hundred', async () => {
-    const fetchCases = vi.fn(async () => answer({}));
+    const fetchCases = vi.fn(async (_keys: string[]) => answer({}));
     const { loader, tick } = setup(fetchCases);
     for (let i = 0; i < 130; i++) loader.load(`SHOP-T${i}`);
     await tick();

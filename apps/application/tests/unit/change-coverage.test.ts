@@ -268,7 +268,7 @@ describe('computeChangeCoverage', () => {
   test('a changed page file is reached through its page node', async () => {
     const checkout = await seedCase('checks out', 'tests/checkout.spec.ts');
     const runId = await seedRun([checkout]);
-    await seedReachEdge(checkout, 'page', pageNodeKey('/orders/123'));
+    await seedReachEdge(checkout, 'page', pageNodeKey('/orders/123')!);
 
     const cc = await computeChangeCoverage(db, 1, {
       changedFiles: [{ filePath: 'app/pages/orders/[id].vue', additions: 2, deletions: 1 }],

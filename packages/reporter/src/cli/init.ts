@@ -510,7 +510,7 @@ async function choosePackage(packages: string[], ask: Ask): Promise<string | nul
     const answer = (await ask(`Which one should init wire? [1-${packages.length}, Enter for none] `))?.trim();
     if (!answer) return null;
     const choice = Number(answer);
-    if (Number.isInteger(choice) && choice >= 1 && choice <= packages.length) return packages[choice - 1];
+    if (Number.isInteger(choice) && choice >= 1 && choice <= packages.length) return packages[choice - 1]!;
   }
 }
 
@@ -521,7 +521,7 @@ async function choosePackage(packages: string[], ask: Ask): Promise<string | nul
 async function chooseWorkspacePackage(root: string, ask: Ask | null): Promise<WorkspaceChoice | null> {
   const packages = workspacePackagesWithConfig(root);
   if (!packages.length) return null;
-  if (packages.length === 1) return { root, packages, wired: packages[0] };
+  if (packages.length === 1) return { root, packages, wired: packages[0]! };
   return { root, packages, wired: ask ? await choosePackage(packages, ask) : null };
 }
 

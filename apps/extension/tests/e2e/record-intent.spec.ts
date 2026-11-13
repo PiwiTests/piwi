@@ -1,11 +1,7 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { fireDevtoolsEvent, openDevtoolsPage, selectElement } from './devtools-stub.js';
 
 /**
@@ -16,9 +12,6 @@ import { fireDevtoolsEvent, openDevtoolsPage, selectElement } from './devtools-s
  * each is allowed, and each grant fires `chrome.permissions.onAdded` as the
  * prompt's Allow does.
  */
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 /** `chrome.developerPrivate`, which only `chrome://extensions` has. */
 interface DeveloperChrome {
@@ -50,14 +43,10 @@ const test = base.extend<Fixtures>({
     server.close();
   },
   context: async ({}, use) => {
-    const extension = mkdtempSync(path.join(tmpdir(), 'piwi-intent-ext-'));
-    cpSync(DIST, extension, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-    writeFileSync(
-      path.join(extension, 'manifest.json'),
-      JSON.stringify({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+    const context = await launchWithEditedManifest(
+      (manifest) => ({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+      { developerMode: true },
     );
-    const context = await launchWithExtension(extension, { developerMode: true });
     await use(context);
     await context.close();
   },

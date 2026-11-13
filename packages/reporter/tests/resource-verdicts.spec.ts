@@ -10,6 +10,7 @@ import type {
 } from '../src/internal/capture/resource-ledger.js';
 import {
   buildResourceReport,
+  fixturesTornDownOf,
   formatHeld,
   formatResourceSummary,
   parseResourceCensus,
@@ -968,6 +969,24 @@ describe('userFixturesOf', () => {
   });
 });
 
+describe('fixturesTornDownOf', () => {
+  it('lists the fixtures the test’s After Hooks tore down, not a worker cleanup’s', () => {
+    const step = (title: string, category: string, steps: TestStep[] = [], file?: string) =>
+      ({ title, category, steps, location: file ? { file: path.resolve(file), line: 2, column: 1 } : undefined }) as unknown as TestStep;
+    expect(
+      fixturesTornDownOf([
+        step('Before Hooks', 'hook', [step('Fixture "slowCtx"', 'fixture', [], SPEC)]),
+        step('After Hooks', 'hook', [
+          step('Fixture "slowCtx"', 'fixture', [], SPEC),
+          step('Fixture "context"', 'fixture'),
+          step('afterEach hook', 'hook', [step('Fixture "helper"', 'fixture', [], SPEC)]),
+        ]),
+        step('Worker Cleanup', 'hook', [step('Fixture "workerCtx"', 'fixture', [], SPEC)]),
+      ]),
+    ).toEqual([`slowCtx|${SPEC}:2`]);
+  });
+});
+
 describe('parsing', () => {
   it('reads a census and rejects what is not one', () => {
     const valid = census(1, test('t1'));
@@ -1076,6 +1095,33 @@ describe('fixture scope, implicit browsers and folded pages', () => {
     });
     expect(leaks(once.findings)).toEqual([]);
     expect(leaks(twoTests({ fixture: { title: 'slowCtx', location: `${SPEC}:2` } }).findings)).toEqual([]);
+  });
+
+  it('reports what a timed fixture of one test never closes, once its test tore it down', () => {
+    const oneTest = (
+      testFixtures: Map<string, string[]>,
+      fixture: { title: string; location: string; worker: boolean; timed?: boolean } = timed,
+    ) =>
+      buildResourceReport({
+        censuses: [
+          census(1000, test('t1'), {
+            born: [birth(1, 'context', { fixture, site: `${SPEC}:3` }), birth(2, 'page', { parent: 1, site: `${SPEC}:9` })],
+            open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
+          }),
+          census(3000, null, { closed: [1, 2].map((id) => close(id, { at: 3000, phase: 'worker', test: null })) }),
+        ],
+        testFixtures,
+      });
+    expect(leaks(oneTest(new Map([['t1', [`slowCtx|${SPEC}:2`]]])).findings)).toEqual([
+      expect.objectContaining({ kind: 'context', where: `fixture "slowCtx" at ${SPEC}:3`, count: 1, pages: 1 }),
+    ]);
+    // Without the teardown step, the fixture reads as worker-scoped: its context is held, its page is the test's.
+    expect(leaks(oneTest(new Map([['t1', [`otherCtx|${SPEC}:2`]]])).findings).map((f) => f.kind)).toEqual(['page']);
+    // A timeout of its own equal to the project's leaves no `timed` mark: the teardown step alone tells its scope.
+    const { timed: _, ...sameTimeout } = timed;
+    expect(leaks(oneTest(new Map([['t1', [`slowCtx|${SPEC}:2`]]]), sameTimeout).findings)).toEqual([
+      expect.objectContaining({ kind: 'context', where: `fixture "slowCtx" at ${SPEC}:3`, count: 1, pages: 1 }),
+    ]);
   });
 
   it('folds the browser launchPersistentContext opened into its context, with the page', () => {

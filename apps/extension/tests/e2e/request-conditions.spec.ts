@@ -1,15 +1,8 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { fireDevtoolsEvent, openDevtoolsPage } from './devtools-stub.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 /** The shop: two buttons load the cart, by fetch and by XHR, and say how it went and how long it took. */
 const SHOP = `<!doctype html><html><body>
@@ -104,15 +97,11 @@ const test = base.extend<Fixtures>({
     server.close();
   },
   context: async ({ debuggingProtocol }, use) => {
-    const extension = mkdtempSync(path.join(tmpdir(), 'piwi-conditions-ext-'));
-    cpSync(DIST, extension, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-    const permissions = (manifest.permissions as string[]).filter((p) => debuggingProtocol || p !== 'debugger');
-    writeFileSync(
-      path.join(extension, 'manifest.json'),
-      JSON.stringify({ ...manifest, permissions, host_permissions: ['http://127.0.0.1/*'] }),
-    );
-    const context = await launchWithExtension(extension);
+    const context = await launchWithEditedManifest((manifest) => ({
+      ...manifest,
+      permissions: manifest.permissions.filter((p) => debuggingProtocol || p !== 'debugger'),
+      host_permissions: ['http://127.0.0.1/*'],
+    }));
     await use(context);
     await context.close();
   },

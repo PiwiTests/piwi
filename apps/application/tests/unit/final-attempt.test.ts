@@ -154,7 +154,7 @@ async function testCaseId(title: string): Promise<number> {
   return row!.id;
 }
 
-type Execution = ReturnType<typeof attempt> | Omit<ReturnType<typeof attempt>, 'attempts'>;
+type Execution = ReturnType<typeof attempt> | Omit<ReturnType<typeof attempt>, 'attempts' | 'browser'>;
 
 /** A streamed run through the server's ingest or the demo's, and how to send it one execution. */
 const streams = {
@@ -305,6 +305,7 @@ function blobReport(cases: ImportedRunCase[]): ParsedBlobReport {
     projectNames: ['chromium'],
     scm: null,
     runErrors: [],
+    runner: null,
     cases,
   };
 }

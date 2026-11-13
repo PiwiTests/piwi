@@ -181,7 +181,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
+            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted(), service.serviceStopped)
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
             // A baseline chosen that found no run says so.

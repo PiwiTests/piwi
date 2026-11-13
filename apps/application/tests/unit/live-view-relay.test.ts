@@ -118,7 +118,11 @@ function relay(now = () => 1_000_000) {
 /** A JPEG's first bytes, then `n`: images told apart. */
 const image = (n: number) => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, n]);
 
-const frame = (worker: number, bytes: Uint8Array, shard: number | null = null): LiveRelayMessage => ({
+const frame = (
+  worker: number,
+  bytes: Uint8Array,
+  shard: number | null = null,
+): Extract<LiveRelayMessage, { type: 'frame'; image: Uint8Array }> => ({
   type: 'frame',
   shard,
   worker,

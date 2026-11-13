@@ -116,7 +116,7 @@ test.describe.serial('Flaky tests endpoint', () => {
     const { items: tests } = await res.json();
     expect(Array.isArray(tests)).toBe(true);
 
-    const flakyTest = (tests as FlakyTestResult[]).find((t) => t.title === 'login flaky test');
+    const flakyTest = (tests as FlakyTestResult[]).find((t) => t.title === 'login flaky test')!;
     expect(flakyTest).toBeDefined();
     expect(flakyTest.retryPassRuns).toBeGreaterThanOrEqual(3);
     expect(flakyTest.score).toBeGreaterThan(0);
@@ -164,7 +164,7 @@ test.describe.serial('Flaky tests endpoint', () => {
     expect(res.ok()).toBeTruthy();
     const { items: tests } = await res.json();
 
-    const altTest = (tests as FlakyTestResult[]).find((t) => t.title === 'alternating test');
+    const altTest = (tests as FlakyTestResult[]).find((t) => t.title === 'alternating test')!;
     expect(altTest).toBeDefined();
     expect(altTest.alternations).toBeGreaterThanOrEqual(2);
     expect(altTest.score).toBeGreaterThan(0);

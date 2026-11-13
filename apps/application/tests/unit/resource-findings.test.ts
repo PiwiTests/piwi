@@ -346,7 +346,10 @@ describe('finding history', () => {
       count: 1,
     }));
     await record(
-      await run({ findings: elsewhere, counts: { leaked: 2, idle: 100, piling: 0, handle: 0, probable: 0 } }),
+      await run({
+        findings: elsewhere,
+        counts: { leaked: 2, lingering: 0, idle: 100, piling: 0, handle: 0, probable: 0 },
+      }),
     );
     expect(await cleanRuns()).toEqual({ 'tests/cart.spec.ts:10': 0, 'tests/fixtures.ts:14': 0 });
 

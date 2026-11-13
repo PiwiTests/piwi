@@ -31,6 +31,8 @@ function makeParsed(overrides: Partial<ParsedTraceData> = {}): ParsedTraceData {
     frameSnapshots: [],
     failingAction,
     failingActionIndex: failingAction ? 0 : -1,
+    contexts: [],
+    errors: [],
     eventCount: 0,
     timeoutFallback: false,
     traceEndTime: 0,

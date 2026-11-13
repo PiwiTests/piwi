@@ -527,7 +527,7 @@ export class StreamManager {
             const half = Math.ceil(chunk.length / 2);
             chunks.unshift(chunk.slice(0, half), chunk.slice(half));
           } else {
-            this.dropOversized(chunk[0]);
+            this.dropOversized(chunk[0]!);
           }
           continue;
         }

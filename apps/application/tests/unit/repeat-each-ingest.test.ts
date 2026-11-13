@@ -243,7 +243,7 @@ describe('a streamed --repeat-each run', () => {
         params: { id: String(runId) },
         body: {
           streamToken,
-          testCases: REPEATED.map((r) => ({ type: 'begin', title: r.title, location: r.location, ...r })),
+          testCases: REPEATED.map((r) => ({ type: 'begin', ...r })),
         },
       });
       await events({

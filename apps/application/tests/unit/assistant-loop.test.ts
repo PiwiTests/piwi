@@ -489,7 +489,8 @@ describe('assistantHistory', () => {
           },
         ],
       }) satisfies AssistantMessageView;
-    const line = (view: AssistantMessageView) => assistantHistory([message(1, 'user', 'Resolve it'), view])[1]!.text;
+    const line = (view: AssistantMessageView) =>
+      (assistantHistory([message(1, 'user', 'Resolve it'), view])[1] as { text: string }).text;
     expect(line(proposal())).toBe(
       '[Proposed: Resolve the cart cluster (resolve-cluster on Cart total is stale); not applied yet]',
     );

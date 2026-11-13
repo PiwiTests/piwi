@@ -63,7 +63,7 @@ describe('a desktop local run and the Piwi run it produces', () => {
     const lookup = deferred<{ id: number } | null>();
     const { store, invoked } = await storeWith({ latestRun: () => lookup.promise, linkedRun: () => ({ id: 8 }) });
 
-    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await new Promise((r) => setTimeout(r, 20));
     expect(invoked).toEqual([]);
 
@@ -81,7 +81,7 @@ describe('a desktop local run and the Piwi run it produces', () => {
       onSpawn: () => (latest = 8),
     });
 
-    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await new Promise((r) => setTimeout(r, 20));
     lookup.resolve();
     await until(() => invoked.length === 1);
@@ -95,7 +95,11 @@ describe('a desktop local run and the Piwi run it produces', () => {
     const lookup = deferred<{ id: number } | null>();
     const { store, invoked } = await storeWith({ latestRun: () => lookup.promise, linkedRun: () => ({ id: 8 }) });
 
-    const run = store.startReproduce({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }], commit: 'abc1234' })!;
+    const run = store.startReproduce({
+      projectId: 3,
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
+      commit: 'abc1234',
+    })!;
     await store.stopRun(run);
     lookup.resolve({ id: 7 });
 
@@ -138,7 +142,12 @@ describe('two local runs with the same origin reference', () => {
       linkedRun: (query) => linked.current(query),
       shellIds: true,
     });
-    const input = { projectId: 3, cases: [{ filePath: 'cart.spec.ts' }], commit: 'abc1234', clusterId: 42 };
+    const input = {
+      projectId: 3,
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
+      commit: 'abc1234',
+      clusterId: 42,
+    };
     const first = store.startReproduce(input)!;
     const second = store.startReproduce(input)!;
     await until(() => invoked.length === 2 && first.hubRefs.length === 1 && second.hubRefs.length === 1);
@@ -190,13 +199,13 @@ describe('the end of a local run', () => {
 
     const bisect = store.startBisect({
       projectId: 3,
-      cases: [{ filePath: 'cart.spec.ts' }],
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
       good: 'a'.repeat(40),
       bad: 'b'.repeat(40),
     })!;
     await until(() => bisect.shellId != null);
     const newer = Array.from({ length: 15 }, () =>
-      store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!,
+      store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!,
     );
     await until(() => newer.every((run) => run.shellId != null));
     for (const run of newer) exit(run.shellId, 0);

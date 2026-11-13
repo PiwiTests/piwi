@@ -279,10 +279,10 @@ describe('an issue about a run', () => {
     const first = await file('test_run', 7, { submissionId });
     const again = await file('test_run', 7, { submissionId });
     expect(first?.submissionFiled).toBeUndefined();
-    expect(again).toMatchObject({ status: 'done', key: first.key, submissionFiled: true });
+    expect(again).toMatchObject({ status: 'done', key: first!.key, submissionFiled: true });
     expect(again?.alreadyFiled).toBeUndefined();
     const other = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000003' });
-    expect(other?.key).not.toBe(first.key);
+    expect(other?.key).not.toBe(first!.key);
     expect(creates).toHaveLength(2);
   });
 });

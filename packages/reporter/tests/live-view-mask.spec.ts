@@ -59,6 +59,11 @@ test('${TEST_TITLE}', async ({ page }) => {
   await page.screencast.start({ onFrame: () => {} });
   await page.setViewportSize({ width: 1000, height: 800 });
   await new Promise((resolve) => setTimeout(resolve, 3000));
+  // The view is watched until an image of the resized viewport reached the instance.
+  for (let tries = 0; tries < 60; tries++) {
+    if ((await (await fetch('${base}/resized')).json()).seen) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   await page.screencast.stop();
   await fetch('${base}/unwatch');
   await expect(page.locator('#code')).toHaveValue('424242');
@@ -89,6 +94,16 @@ const jpeg = (
     jpegjs: { decode(data: Buffer, options: { useTArray: true; formatAsRGBA: true }): Image };
   }
 ).jpegjs;
+
+/** A JPEG's size, from its frame header; null when it has none. */
+function jpegSize(data: Buffer): { width: number; height: number } | null {
+  for (let i = 2; i + 9 < data.length; i += 2 + data.readUInt16BE(i + 2)) {
+    if (data[i] !== 0xff) return null;
+    const marker = data[i + 1]!;
+    if (marker >= 0xc0 && marker <= 0xc3) return { height: data.readUInt16BE(i + 5), width: data.readUInt16BE(i + 7) };
+  }
+  return null;
+}
 
 let server: FakeServer;
 const streams: http.ServerResponse[] = [];
@@ -223,6 +238,14 @@ beforeAll(async () => {
       }
       sayViewers(1);
       return res.end();
+    }
+    if (route === '/resized') {
+      const seen = posts.some(({ message }) => {
+        if (message.type !== 'frame' || !('data' in message) || message.test !== TEST_TITLE) return false;
+        const size = jpegSize(Buffer.from(message.data, 'base64'));
+        return !!size && size.width / size.height <= 1.5;
+      });
+      return jsonRes(res, 200, { seen });
     }
     if (route === '/unwatch') {
       sayViewers(0);

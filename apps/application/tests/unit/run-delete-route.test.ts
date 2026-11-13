@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
-import { openTempDb, type TempDb } from './temp-db';
+import { openTempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
 import { buildAccessSummary, InstanceRole, ProjectRole } from '#shared/permissions';
 import { recordRouteMeta, type RouteAccessState } from './route-access';
@@ -48,7 +48,7 @@ const ROLES = {
   [ADMIN]: ProjectRole.PROJECT_ADMIN,
 };
 
-let temp: TempDb;
+let temp: Awaited<ReturnType<typeof openTempDb>>;
 let teamRun: number;
 let privateRun: number;
 

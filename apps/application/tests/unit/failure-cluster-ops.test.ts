@@ -9,11 +9,6 @@ import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 delete process.env.PIWI_DATABASE_URL;
 
 const {

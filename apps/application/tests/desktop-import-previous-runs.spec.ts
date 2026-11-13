@@ -240,7 +240,7 @@ test.describe('Desktop import of previous runs', () => {
 
     await expect(page.getByText('Imported').first()).toBeVisible();
     expect(importBodies).toHaveLength(1);
-    expect(importBodies[0].path).toBe('/home/dev/acme/blob-report/report-9.zip');
-    expect(importBodies[0].projectName).toBe(PROJECT.DESKTOP_IMPORT_PREV);
+    expect(importBodies[0]!.path).toBe('/home/dev/acme/blob-report/report-9.zip');
+    expect(importBodies[0]!.projectName).toBe(PROJECT.DESKTOP_IMPORT_PREV);
   });
 });
