@@ -74,6 +74,15 @@ class OpenSettingsAction : AnAction(), DumbAware {
     }
 }
 
+/** Documentation: Piwi's page for the JetBrains IDEs, in the browser. */
+class OpenDocumentationAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        com.intellij.ide.BrowserUtil.browse(Glue.JETBRAINS_DOCS_URL)
+    }
+}
+
 class RefreshAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 

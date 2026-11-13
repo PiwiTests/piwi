@@ -306,7 +306,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
 
     /**
      * The tool window's gear menu: the connection, Piwi Picker's pairing, the MCP configurations, and the reading, the
-     * editor service, its log and the settings of Piwi itself.
+     * editor service, its log, the settings of Piwi itself and its documentation.
      */
     private fun gearActions(): DefaultActionGroup {
         val actions = ActionManager.getInstance()
@@ -316,7 +316,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             addSeparator()
             addAll(registered("Piwi.PairPicker", "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration"))
             addSeparator()
-            addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings"))
+            addAll(registered("Piwi.Refresh", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenSettings", "Piwi.OpenDocumentation"))
         }
     }
 
@@ -428,7 +428,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         return true
     }
 
-    /** A failure: its title, why it failed, its run, and where; a group or a run: its label and its counts. */
+    /**
+     * A failure: its title, its run and where, and why it failed in its hover, as the service places it; a group or a
+     * run: its label and its counts.
+     */
     private class FailureRenderer : ColoredTreeCellRenderer() {
         override fun customizeCellRenderer(
             tree: JTree,
@@ -455,9 +458,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             if (failure == null) {
                 if (node.description.isNotEmpty()) append("  ${node.description}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 return
-            }
-            if (!Glue.isFixedLocally(failure) && !failure.headline.isNullOrBlank()) {
-                append("  ${failure.headline}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
             }
             node.note?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
             append("  ${node.description}", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)

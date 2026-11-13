@@ -114,12 +114,12 @@
                     description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
             <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
                     description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
-            <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
-                    icon="AllIcons.Actions.Refresh"
+            <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Reload Piwi"
+                    icon="AllIcons.Actions.BuildAutoReloadChanges"
                     description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
             <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the latest run"
                     icon="AllIcons.Actions.Refresh"
-                    description="Read the latest run and its failures again, not the indexes Refresh fetches"/>
+                    description="Read the latest run and its failures again, not the indexes Reload Piwi fetches"/>
             <action id="Piwi.RestartService" class="dev.piwitests.jetbrains.RestartServiceAction"
                     text="Restart the editor service" icon="AllIcons.Actions.Restart"
                     description="Stop the Piwi editor service and start it again, or start it for the open test files when it does not run"/>
@@ -292,6 +292,9 @@
             <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
                     icon="AllIcons.General.Settings"
                     description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
+            <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"
+                    icon="AllIcons.Actions.Help"
+                    description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
         </group>
         <!--
           Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS

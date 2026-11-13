@@ -450,11 +450,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
         changed()
         if (problem == null) return
         PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
-            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
+            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js settings") { openNodeSettings() })
             .notify(project)
     }
 
-    /** The id of the Node.js settings page, which **Node.js Settings…** opens. */
+    /** The id of the Node.js settings page, which **Node.js settings…** opens. */
     val nodeSettingsId get() = NODE_SETTINGS_ID
 
     /** The Node.js settings, then the service started again with the interpreter chosen there. */
@@ -470,7 +470,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /**
      * Search for Playwright configs again a second after one is created, removed, renamed or moved, or a folder that may
      * hold one (a branch checked out): a project gains or loses the tool window, the status bar item and the service
-     * without **Refresh**.
+     * without **Reload Piwi**.
      */
     fun watchConfigs() {
         project.messageBus.connect(this).subscribe(
@@ -755,7 +755,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .firstOrNull()?.piwiServer()
 
     /**
-     * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
+     * Read the latest run and its failures again, not the indexes **Reload Piwi** fetches (`piwi/refreshRun`), then the
      * status, on a pooled thread: the status bar item's click and **Refresh the latest run**. `refreshing` is set
      * meanwhile, and the listeners are told as it is.
      */

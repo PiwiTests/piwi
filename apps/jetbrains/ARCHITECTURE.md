@@ -82,8 +82,8 @@ Otherwise:
 
 - the start fails with that reason, which `PiwiProjectService.startFailed` keeps (`startProblem`) and says once;
 - the status bar item reads `Piwi: Node.js`, and its menu opens the Node.js settings first (`openNodeSettings`,
-  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Refresh** while it does
-  not run.
+  `settings.nodejs`), after which the service starts again (`restartServer`), as it does on **Reload Piwi** while it
+  does not run.
 
 **The first file.** The service starts with the first supported file opened, since 2024.1 has no way to start it
 without one. Until then the status is null, and the status bar and the tool window say so.
@@ -223,7 +223,7 @@ The service pushes each of the three answers when it changes (`piwi/statusChange
 event thread, for all the pushes received meanwhile.
 
 It reads the three answers whole (`refreshStatus`) only when the plugin starts (the tool window and the status bar item
-are created), on **Refresh**, on **Refresh the latest run** (`Piwi.RefreshRun`), and after new credentials. One read
+are created), on **Reload Piwi**, on **Refresh the latest run** (`Piwi.RefreshRun`), and after new credentials. One read
 runs at a time, and a read asked for meanwhile follows it. A push that arrives during a read wins over the answer read.
 
 ## Tool window
@@ -254,10 +254,10 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 - **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
   as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
   session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
-- **A row.** A `ColoredTreeCellRenderer` draws a failure's title, headline, run and place. The run is
-  `Glue.FailureNode.note`, which the service writes with `failureRunNote` in `packages/editor/src/failure-tree.ts`:
-  `your run #N`, `edited since run #N` with the information icon, `fixed` with the passed icon. `TreeSpeedSearch` finds
-  a title.
+- **A row.** A `ColoredTreeCellRenderer` draws a failure's title, run and place; its headline is in the hover, the
+  service's tooltip, as in the VS Code extension. The run is `Glue.FailureNode.note`, which the service writes with
+  `failureRunNote` in `packages/editor/src/failure-tree.ts`: `your run #N`, `edited since run #N` with the information
+  icon, `fixed` with the passed icon. `TreeSpeedSearch` finds a title.
 - **Updates.** The tree is built again only when its nodes changed, for instance when `piwi/failuresChanged` reports
   that edits moved them. It keeps the expanded and selected nodes by key. When only what the nodes say changed
   (`Glue.sameShape`, such as the editor's own run counting its tests), each row is redrawn in place.
@@ -335,8 +335,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 
 - connected: **Refresh the latest run** (`Piwi.RefreshRun`, `PiwiProjectService.refreshRun`: `piwi/refreshRun`, then
   `refreshStatus`, on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
-- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Refresh**;
-- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Refresh**; the
+- the instance does not answer (`Piwi: unreachable`, `problemKind`): **Reload Piwi**;
+- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Reload Piwi**; the
   service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
@@ -735,7 +735,7 @@ Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwrig
 The tool window, the status bar item and the service wait for the search. The service's workspace folders are the
 folders it searched (`createInitializeParams`).
 
-**Searching again.** **Refresh** searches again, and so does `watchConfigs`, a second after the IDE reports one of
+**Searching again.** **Reload Piwi** searches again, and so does `watchConfigs`, a second after the IDE reports one of
 these changes:
 
 - a config created, removed, renamed or moved (`Glue.isPlaywrightConfig`: every name Playwright reads a config from,
@@ -946,7 +946,7 @@ one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.
 **Tools → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and
 Disconnect save the connection themselves, then the page shows the connection rows as saved, and its other edits stay
 pending until Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
-(`sendCredentials`) and, while the service cannot start, **Node.js Settings…**, which selects the Node.js page of the
+(`sendCredentials`) and, while the service cannot start, **Node.js settings…**, which selects the Node.js page of the
 open Settings dialog and starts the service again as the dialog closes; then the instance, whose **Test connection**
 reaches the URL in the field, saved or not, with Connect's `reach` and says the answer under it
 (`Glue.testConnectionText`, `Glue.testConnectionFailure`); then the desktop app, whose field reads **Desktop app

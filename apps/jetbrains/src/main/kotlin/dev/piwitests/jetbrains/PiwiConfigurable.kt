@@ -64,7 +64,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     button("Reconnect") { service.sendCredentials() }
                         .comment("Hand the connection to the editor service again, which reads everything with it")
-                    nodeButton = button("Node.js Settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
+                    nodeButton = button("Node.js settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
             group("Instance") {
@@ -214,7 +214,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         return content
     }
 
-    /** Whether **Node.js Settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
+    /** Whether **Node.js settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
     private var nodeSettingsShown = false
 
     /** The Node.js page in this Settings dialog, else in a dialog of its own. */

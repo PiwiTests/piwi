@@ -399,7 +399,7 @@ object Glue {
         }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
-            val tooltip = "$problem$config\nPiwi reads it again on its own; Refresh reads it now.$hint"
+            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload Piwi reads it now.$hint"
             return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
         if (!shown.connected) {
@@ -462,7 +462,7 @@ object Glue {
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
-    const val NODE_SETTINGS_LINK = "Node.js Settings…"
+    const val NODE_SETTINGS_LINK = "Node.js settings…"
 
 
 
@@ -493,6 +493,9 @@ object Glue {
 
     /** The editor extensions' documentation, which the first-run notification's **Learn more** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
+
+    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Documentation**). */
+    const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
      * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a

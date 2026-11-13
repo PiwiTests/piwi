@@ -51,7 +51,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   2026.2). `Lsp4jAccess` takes the lsp4j proxy from a `sendRequestSync` that sends nothing; `Lsp4jAccessTest` checks
   it. ([LSP integration](ARCHITECTURE.md#lsp-integration))
 - **A push from the service is never answered with a read of the same answer.** `PiwiProjectService` keeps each pushed
-  answer, and reads the three answers whole only at start, on Refresh, on Refresh the latest run and after new
+  answer, and reads the three answers whole only at start, on Reload Piwi, on Refresh the latest run and after new
   credentials (`refreshStatus`). ([Native views and pushes](ARCHITECTURE.md#native-views-and-pushes))
 - **Open files are drawn again with `DaemonCodeAnalyzer.restart(PsiFile)`, and only those a change shows in, never
   with the whole daemon's `restart()`** (`Glue.redraw`).

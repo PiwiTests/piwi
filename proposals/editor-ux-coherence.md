@@ -12,7 +12,8 @@ document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and 
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
 remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Built since, with their
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
-now read in sentence case), Q12, and Q5's Test connection (ST9). §14 adds the findings the code that built the plan
+now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
+hover alone and Reload Piwi with a glyph of its own (HM9, ST18). §14 adds the findings the code that built the plan
 raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
 leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
 each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
@@ -365,14 +366,12 @@ lists Record Here at the Stop beside Record Here in the status popup during a st
 **(seen)** Fix: a full name and a short label per control in the action catalog (Finish test and Finish), with Record
 here for the caret only. ([M1](#m1), [LI1](#li1))
 
-<a id="ac10"></a>**AC10. Labels that mislead: look-alike refreshes in both clients, a Run selection… that runs a saved
-selection rather than the selected text, and a Record Here that opens a dialog with no ellipsis.** VS Code lists Refresh
-beside Refresh the latest run (`apps/vscode/package.json:218, 229`; Run selection… at `:259`), JetBrains Refresh beside
-Refresh the Latest Run with one icon, `Actions.Refresh` (`plugin.xml:117-122`; Run Selection… at `:146`), and JetBrains'
-Record Here opens the recording's dialog (`PiwiRecordingActions.kt:330`) under a label with no ellipsis, which only its
-Generate entry has (`plugin.xml:190, 313`). **(read)** Fix: Reload Piwi (`piwi.refresh`, `Piwi.Refresh`) with an icon of
-its own, and Reconnect on the settings page ([ST18](#st18)); Run saved selection…; an ellipsis wherever input follows.
-([Q8](#q8), [M1](#m1), [LI1](#li1))
+<a id="ac10"></a>**AC10. Labels that mislead: a Run selection… that runs a saved selection rather than the selected
+text, and a Record here that opens a dialog with no ellipsis.** VS Code's Run selection…
+(`apps/vscode/package.json:259`) and JetBrains' (`plugin.xml:146`) run one of the project's saved selections, and
+JetBrains' Record here opens the recording's dialog (`PiwiRecordingActions.kt:330`) under a label with no ellipsis,
+which only its Generate entry has (`plugin.xml:190, 313`). **(read)** Fix: Run saved selection…; an ellipsis wherever
+input follows. ([M1](#m1), [LI1](#li1))
 
 <a id="ac11"></a>**AC11. The stop's control labels and the recording's words exist twice, in the VS Code extension and
 `Glue.kt`, with no test between them, and differ.** `apps/vscode/src/run-control.ts:1127` says Run to cursor where
@@ -679,14 +678,6 @@ connected, and a browser opened in another profile leaves Cancel as the only way
 [LI13](#li13)'s Connect panel, in the settings page and as one dialog, and a non-modal sign-in with Copy code, Copy link
 and Open browser again, as VS Code's notification also gets. ([M12](#m12), [LI13](#li13))
 
-<a id="st18"></a>**ST18. JetBrains names three refresh scopes with two words: Refresh and Refresh the Latest Run share
-the word and the icon, beside the settings page's Reconnect.** `Piwi.Refresh` fetches the indexes and the run again and
-starts a stopped service, `Piwi.RefreshRun` reads the run alone, both drawn with `AllIcons.Actions.Refresh`
-(`plugin.xml:117-122`), and Reconnect hands the connection over again (`PiwiConfigurable.kt:64-65`). A developer waiting
-for a CI run that just landed tells the two Refresh actions apart only by their descriptions. **(read)** Fix: one word
-and one icon per scope, Reload Piwi for `Piwi.Refresh` as [AC10](#ac10) words it
-([developer-loop-audit.md](developer-loop-audit.md) §9). ([Q8](#q8), [M1](#m1))
-
 <a id="st20"></a>**ST20. VS Code's Connect words a certificate error or a 404 raw.** Any failure but a refused key shows
 the error's own message (`apps/vscode/src/extension.ts:2041-2046`), so an untrusted certificate reads 'fetch failed',
 with no host or place to trust it, and a 404 'the instance answered 404' (`apps/vscode/src/connect.ts:8-13`), where
@@ -744,15 +735,12 @@ the baseline that a run started here or local edits produced, until the next run
 alert alone; 'Piwi: 2 failing' as the text; a setting, `piwi.statusBarAlert` (`new`, `any`, `never`) and its JetBrains
 twin. What counts as new is open (§13). ([M13](#m13), [LI6](#li6))
 
-<a id="hm3"></a>**HM3. JetBrains' status popup lists two refreshes under one glyph, two entries for the latest run's
-page, and a live run's 20 actions in one block.** Refresh the Latest Run leads the popup and Refresh, which also fetches
-the indexes or restarts the service, closes it, both `AllIcons.Actions.Refresh` (`PiwiStatusBar.kt:177, 206`,
-`plugin.xml:117-122`); for a file with no test, Open the Latest Run and Open in Dashboard open the same page
+<a id="hm3"></a>**HM3. JetBrains' status popup lists two entries for the latest run's page, and a live run's 20 actions
+in one block.** For a file with no test, Open the latest run and Open in dashboard open the same page
 (`PiwiStatusBar.kt:202`, `PiwiActions.kt:218-255`). While a run is live, a Go to row per stop and the 20 `RUN_ACTIONS`
 lead in one block, Pause after the code actions and the browser's rows (`PiwiStatusBar.kt:187-193, 264-269`): the
-developer scans twenty rows for Pause. **(read)** Fix: `Piwi.Refresh` as Reload Piwi, with a glyph of its own
-([AC10](#ac10)); one Open in dashboard; the registered Run Control group, as controls | page | code actions | sharing |
-Stop. ([Q8](#q8), [LI4](#li4))
+developer scans twenty rows for Pause. **(read)** Fix: one Open in dashboard; the registered Run Control group, as
+controls | page | code actions | sharing | Stop. ([Q8](#q8), [LI4](#li4))
 
 <a id="hm4"></a>**HM4. One status state wears different glyphs in the two editors, and both print a run's raw status.**
 Recording, live sharing and Connect are the Piwi mark, an eye and a person in JetBrains
@@ -764,12 +752,10 @@ dashboard's words, from the service. ([M13](#m13), [LI6](#li6))
 
 ### 7.2 The homes
 
-<a id="hm6"></a>**HM6. The Piwi tool window's gear has no Documentation, and its Re-run Failing stays enabled once every
-listed test is fixed locally.** The gear holds the connection, Pair, the MCP copies, Refresh, Restart, Open Log and
-Settings… (`PiwiFailuresToolWindow.kt:306-316`), nothing that opens `jetbrains.md`. Re-run Failing is enabled while any
-failure is listed, fixed ones included (`PiwiActions.kt:343-347`, [NF9](#nf9)): with the last failure fixed, the button
-looks ready and answers 'No failing test to re-run.' (`PiwiCommands.kt:127`). **(read)** Fix: Documentation in the gear;
-Re-run Failing enabled only while a test fails. ([Q8](#q8), [Q30](#q30), [LI5](#li5))
+<a id="hm6"></a>**HM6. The Piwi tool window's Re-run failing stays enabled once every listed test is fixed locally.** It
+is enabled while any failure is listed, fixed ones included (`PiwiActions.kt:343-347`, [NF9](#nf9)): with the last
+failure fixed, the button looks ready and answers 'No failing test to re-run.' (`PiwiCommands.kt:127`). **(read)** Fix:
+Re-run failing enabled only while a test fails. ([Q30](#q30), [LI5](#li5))
 
 <a id="hm8"></a>**HM8. The Piwi tool window's header calls an instance that does not answer 'Not connected', above an
 empty text that says it does not answer.** `Glue.connectionSummary` starts every unconnected state with 'Not connected.'
@@ -779,13 +765,6 @@ as a lost connection. A desktop app that fails the proof gets Retry alone in Jet
 Open the log in VS Code (`apps/vscode/package.json:94-98`), and no check on the editor fixture covers any state.
 **(read)** Fix: the header in the service's state and words; the same links per state in both clients; each state
 checked on the editor fixture in both. ([Q27](#q27), [LI5](#li5))
-
-<a id="hm9"></a>**HM9. A failure's headline shows in the row in JetBrains but only in the hover in VS Code.** The
-service puts it in each failure node's tooltip, not its description (`packages/editor/src/failure-tree.ts:100-108`), and
-VS Code draws both as sent (`apps/vscode/src/failures-view.ts:174-176`); JetBrains' renderer also appends the headline
-after the title (`PiwiFailuresToolWindow.kt:454-456`) and repeats it in the hover (`:438`). Scanning the list, a
-developer reads each cause in Rider and hovers each row in VS Code. **(read)** Fix: the headline in one place, the same
-in both clients, as the service's node places it. ([Q8](#q8), [LI5](#li5))
 
 <a id="hm10"></a>**HM10. The status item counts '1 flaky', but neither editor lists which test is flaky.** Both items
 append '· N flaky' (`Glue.kt:443`, `apps/vscode/src/glue.ts:428`), while the failures tree holds failing, edited and
@@ -1401,7 +1380,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="q2"></a>Q2 | **A flaky test marked flaky in JetBrains**: the outcome palette's flaky glyph ([M5](#m5)) on the result icon and in the CI Run tab, where the warning and the amber `TestFailed` draw it now; a fixture check fails when a flaky test carries no flaky mark | `ide` | [TL13](#tl13), [IC4](#ic4) |
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
-| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, the failure's headline in one place, Documentation in the gear, one Open in dashboard in the status popup, Reload Piwi with a glyph of its own beside Refresh the latest run; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM9](#hm9), [HM6](#hm6), [HM3](#hm3), [AC10](#ac10), [ST18](#st18) |
+| <a id="q8"></a>Q8 | **The rest of the Piwi tool window**: a one-line header, one Open in dashboard in the status popup; the popup's run section after M2 | `ide` | [HM12](#hm12), [HM3](#hm3) |
 | <a id="q9"></a>Q9 | **The last glyphs**: the 13 JetBrains actions and 5 VS Code commands without one take a platform glyph or M4's drawn one, and JetBrains' Connect leaves `General.User`; the manifest tests' waiting lists shrink to none | `ide` | [IC1](#ic1), [IC7](#ic7) |
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a balloon titled by its run, Don't Show Again on VS Code's other messages, a gear on the run notices, `piwi.runNotifications` off `always` by default, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |

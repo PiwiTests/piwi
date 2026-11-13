@@ -215,7 +215,7 @@
       },
       {
         "command": "piwi.refresh",
-        "title": "Refresh",
+        "title": "Reload Piwi",
         "category": "Piwi"
       },
       {
