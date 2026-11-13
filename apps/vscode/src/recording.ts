@@ -152,6 +152,15 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     overviewRulerColor: new vscode.ThemeColor('piwi.recordingBlockBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
+  /** The block's first line, in the gutter: a red dot in a ring while recording, the gray ring while paused. */
+  const gutterMark = (name: string) =>
+    vscode.window.createTextEditorDecorationType({
+      light: { gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `${name}.svg`) },
+      dark: { gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `${name}-dark.svg`) },
+      gutterIconSize: 'contain',
+    });
+  const recordingMark = gutterMark('recording');
+  const pausedMark = gutterMark('recording-paused');
 
   const running = () => [...sessions.values()].filter((s) => !s.finished);
   const runningIn = (uri: string) => running().find((s) => s.uri === uri);
@@ -166,6 +175,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
 
   /** The status bar item and the context keys of the menus, for the current recording. */
   const refresh = () => {
+    for (const r of running()) decorate(r.uri);
     const s = current();
     setContextKey('piwi.recording', !!s);
     setContextKey('piwi.recordingPaused', !!s && (s.edited || s.state === 'paused'));
@@ -181,12 +191,17 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     statusItem.show();
   };
 
-  /** The tint over the block of a recording, in each editor that shows its file. */
+  /** The tint over the block of a recording and its gutter mark, in each editor that shows its file. */
   const decorate = (uri: string) => {
     const s = runningIn(uri);
     const ranges = s?.written ? [new vscode.Range(s.block.range.start.line, 0, s.block.range.end.line, 0)] : [];
+    const first = ranges.map((r) => new vscode.Range(r.start, r.start));
+    const paused = !!s && (s.edited || s.state === 'paused');
     for (const editor of vscode.window.visibleTextEditors) {
-      if (editor.document.uri.toString() === uri) editor.setDecorations(blockBackground, ranges);
+      if (editor.document.uri.toString() !== uri) continue;
+      editor.setDecorations(blockBackground, ranges);
+      editor.setDecorations(recordingMark, paused ? [] : first);
+      editor.setDecorations(pausedMark, paused ? first : []);
     }
   };
 
@@ -800,6 +815,8 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     diagnostics,
     statusItem,
     blockBackground,
+    recordingMark,
+    pausedMark,
     vscode.commands.registerCommand('piwi.record', () => recordHere()),
     vscode.commands.registerCommand('piwi.recordFile', (file?: unknown) =>
       recordNewFile(file instanceof vscode.Uri ? file : undefined),

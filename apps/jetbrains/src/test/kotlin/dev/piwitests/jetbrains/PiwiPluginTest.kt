@@ -181,13 +181,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
                 "Piwi.Failure.CopyContext",
             ),
-            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate"),
+            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
             setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
-            // Pause and Resume of a recording and of a run, still to settle.
-            setOf("Piwi.PauseRecording", "Piwi.PauseRun"),
-            setOf("Piwi.ResumeRecording", "Piwi.ResumeRun"),
         )
         val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
             .values.filter { it.size > 1 }.map { it.toSet() }.toSet()
