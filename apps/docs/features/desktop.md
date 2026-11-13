@@ -43,14 +43,14 @@ hidden in the tray. The windows open where you left them. The app has its own
 [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
 While a test waits at a stop for you, the tray menu's **Show the stopped test** opens the window on it. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
-While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
-or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
-Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs, or of an
-editor's, waits at a stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome as it ends, whatever
-else runs, and, failed while you look away, bounces the Dock icon or flashes the taskbar button, a bisect or a lab only
-at its verdict; an editor's, a terminal's or CI's run, or one from before a reload, never does. On Windows, the taskbar
-button's thumbnail has **Open**, which restores the window, and **Stop**, which stops the window's run started last, the
-next one at a second click. In the background,
+While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
+the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on Windows)
+says how it stands: blue while it runs, red once a test failed, violet while a test of the app's runs, or of an
+editor's, waits at a stop for you (`1 test waits for you`). A run the window started from its tray flashes its outcome
+as it ends (slate when interrupted), whatever else runs, and, failed while you look away, bounces the Dock icon or
+flashes the taskbar button, a bisect or a lab only at its verdict; an editor's, a terminal's or CI's run, or one from
+before a reload, never does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and
+**Stop**, which stops the window's run started last, the next one at a second click. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
 

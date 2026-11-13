@@ -759,14 +759,14 @@ function testCounts(tests: Array<{ status: string | null }>): string {
   return [failing ? `${failing} failing` : null, flaky ? `${flaky} flaky` : null].filter(Boolean).join(' · ');
 }
 
-/** A test's latest result as a hover lists it. */
+/** A test's latest result as a hover lists it: a mark, and a flaky test's pass with the word. */
 function statusIcon(status: string | null): string {
   return status === 'passed'
     ? '✓'
     : status === 'failed'
       ? '✗'
       : status === 'flaky'
-        ? '~'
+        ? '✓ *flaky*'
         : status === 'skipped'
           ? '−'
           : '·';
