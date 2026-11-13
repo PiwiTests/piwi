@@ -87,7 +87,7 @@ watch(group, () => (chosenKey.value = null));
         This run has more tests than the tab lists: the first {{ LISTED_LIMIT.toLocaleString() }} with a video and the
         first {{ LISTED_LIMIT.toLocaleString() }} without are shown.
       </p>
-      <RunVideoReel :key="`${group}:${reel.key}`" :reel="reel" :group="group" />
+      <RunVideoReel :key="`${group}:${reel.key}`" :reel="reel" :group="group" searchable />
     </div>
   </div>
 </template>
