@@ -94,9 +94,6 @@ export const RUN_WORDS_EN = {
   runs_announceFailed: '$test$ failed at $place$.',
   // The test's page: its card, its tools, its image and its live view.
   runs_pageCaption: 'The test’s page',
-  runs_live: 'Watch live',
-  runs_liveTitle:
-    'Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it',
   runs_watch: 'Watch',
   runs_watchTitle:
     'Show the test’s page as it runs, through its stops and its next tests: at a stop, Interact sends your clicks and keys to it',
@@ -161,7 +158,13 @@ export const RUN_WORDS_EN = {
   runs_filmstripNone: 'Each call’s page shows here once the call ends.',
   runs_filmstripAlt: 'The page after $call$',
   runs_filmstripClose: 'Close',
-  // How a run came out, beyond its status: one key per plural form, said through `RunSpeaker.count`.
+  // How far a run is, and how it came out beyond its status: one key per plural form, said through `RunSpeaker.count`.
+  runs_progress_one: '$done$ of $count$ test',
+  runs_progress_other: '$done$ of $count$ tests',
+  runs_progressFailed_one: '$count$ failed',
+  runs_progressFailed_other: '$count$ failed',
+  runs_progressFlaky_one: '$count$ flaky',
+  runs_progressFlaky_other: '$count$ flaky',
   runs_progressEndedAtStop_one: '$count$ ended at a stop',
   runs_progressEndedAtStop_other: '$count$ ended at a stop',
   // The CI runs of a project in progress, listed read-only.
@@ -171,7 +174,7 @@ export const RUN_WORDS_EN = {
   runs_ciWhereProject: '$project$, on $branch$',
   runs_ciProject: '$project$',
   runs_ciReadOnly:
-    'Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.',
+    'Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',
@@ -200,8 +203,13 @@ export interface RunMessage {
 /** How a surface says the run model's words: a message by its key, a message that counts, and names listed in a sentence. */
 export interface RunSpeaker {
   say(key: RunWordKey, args?: RunWordArgs): string;
-  /** The message of `key` in the plural form the surface's language gives `count`, its `$count$` the number formatted. */
-  count(key: RunCountKey, count: number): string;
+  /**
+   * The message of `key` in the plural form the surface's language gives `count`, its `$count$` the number formatted
+   * and its other placeholders the values of `args`.
+   */
+  count(key: RunCountKey, count: number, args?: RunWordArgs): string;
+  /** A number as the surface's language writes it, as `count` writes `$count$`: `1,500` in English. */
+  number(value: number): string;
   /** `A`, `A and B`, `A, B, and C`, as the surface's language lists names. */
   list(items: readonly string[]): string;
 }
@@ -219,9 +227,10 @@ export const englishRunSpeaker: RunSpeaker = {
       (_whole, name: string) => values.get(name.toLowerCase()) ?? '',
     );
   },
-  count(key, count) {
+  count(key, count, args = {}) {
     const form = englishPlural.select(count) === 'one' ? 'one' : 'other';
-    return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { count: englishNumber.format(count) });
+    return englishRunSpeaker.say(`${key}_${form}` as RunWordKey, { ...args, count: englishNumber.format(count) });
   },
+  number: (value) => englishNumber.format(value),
   list: (items) => englishList.format(items),
 };

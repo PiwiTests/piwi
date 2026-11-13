@@ -115,6 +115,7 @@ describe('the hub’s address', () => {
         // Unbundled, the service has no recorder bundle beside it.
         recorderBundle: null,
         unattended: true,
+        checkout: true,
       },
     ]);
     expect(hub.token).toMatch(/^[\w-]{32}$/);
@@ -326,7 +327,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace'],
+      features: ['peers', 'lanes', 'hold', 'presence', 'stop', 'layers', 'trace', 'share-window'],
     });
     client.socket.close();
   });
@@ -738,6 +739,50 @@ describe('the commands', () => {
     }
   });
 
+  test('share the window’s runs as a connection asks, every connection hearing the window’s state', async () => {
+    const client = await paired();
+    const other = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    other.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    await other.answer(1);
+    // After the runs, the window's state.
+    expect(await waitFor(() => other.messages.find((m) => m.type === 'share-window'))).toEqual({
+      type: 'share-window',
+      on: false,
+    });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const page = 'https://piwi.example.com/test-runs/43';
+    const windowStates = () => other.messages.filter((m) => m.type === 'share-window');
+    try {
+      worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await waitFor(() => other.session(ref)?.live);
+      client.send({ type: 'share', id: 2, ref, on: true, scope: 'window' });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/^Sharing this window's runs live until you stop/),
+      });
+      expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+      expect(await waitFor(() => (windowStates().length === 2 ? windowStates()[1] : undefined))).toEqual({
+        type: 'share-window',
+        on: true,
+      });
+      // Stopping names no run: every run of the window stops sharing.
+      client.send({ type: 'share', id: 3, on: false, scope: 'window' });
+      expect(await client.answer(3)).toMatchObject({ ok: true, message: "Stopped sharing this window's runs live." });
+      expect(await worker.next('share', 1)).toEqual({ type: 'share', on: false });
+      expect(await waitFor(() => (windowStates().length === 3 ? windowStates()[2] : undefined))).toEqual({
+        type: 'share-window',
+        on: false,
+      });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+      other.socket.close();
+    }
+  });
+
   test('end a stop the worker ended unanswered, refusing what names it, and say why a stop has no image', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });
@@ -918,6 +963,29 @@ describe('stopping a whole run', () => {
       expect(answer).toEqual({ type: 'answer', id: 4, ok: true, message: 'Test Editor stops the run.' });
       expect(stopped).toEqual(['ed-1']);
     } finally {
+      own.close();
+    }
+  });
+
+  test('leaves the window’s share out where the host is no editor window, refusing it with a sentence', async () => {
+    const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      const welcome = await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      expect(welcome).toMatchObject({ features: ['peers', 'lanes', 'hold', 'presence', 'layers'] });
+      socket.send(JSON.stringify({ type: 'share', id: 5, on: true, scope: 'window' }));
+      expect(await waitFor(() => heard.find((m) => m.type === 'answer'))).toEqual({
+        type: 'answer',
+        id: 5,
+        ok: false,
+        message: 'This hub shares one run at a time: share each run from its card.',
+      });
+    } finally {
+      socket.close();
       own.close();
     }
   });

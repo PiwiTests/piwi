@@ -114,7 +114,7 @@ folder, **without touching your checkout**:
 - **Reproduce here** checks out the failing commit in a throwaway
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
   unchanged lockfile outside a workspace) and any missing browser, and runs the failing test with that commit's own
-  Playwright.
+  Playwright, [stopping in your editor](./terminal-runs#a-reproduction-from-the-desktop-app) when one is open.
 - **Find the breaking commit here** bisects between the last green commit and the failing one, with live progress and
   a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The first bad commit
   is linked to your SCM host and recorded on the failure cluster.

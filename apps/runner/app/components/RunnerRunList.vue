@@ -2,7 +2,8 @@
 /**
  * The runs of this window: what each is, where it stands, and Stop while it runs; then, live, its workers as the hub
  * tells them (`DesktopRunSession`, the layer's, as the dashboard's tray shows them): each worker's test, Pause, Step,
- * Resume and the stopped test's page, with **Hold failures**, which keeps a failure no pause bar shows waiting here.
+ * Resume and the stopped test's page, with **Hold failures**, which keeps a failure no pause bar shows waiting here,
+ * and its number and page on the instance (**Run #78 · Open**), which stay once the run ended.
  * The code made at a stop and the locators picked wait above the runs, to copy (`DesktopRunCopyList`). Its output
  * follows. A run nobody attends offers no Hold failures. A run the hub still has that this window holds no entry for (the
  * window was reloaded while it went on) shows live under its name, with Stop.
@@ -99,6 +100,7 @@ function announce(text: string) {
         />
         <DesktopRunSession :session="sessionOf(run)!" @announce="announce" />
       </template>
+      <DesktopRunPageLink v-else-if="run.page" :page="run.page" />
       <details v-if="run.lines.length">
         <summary class="cursor-pointer text-xs text-muted">Output</summary>
         <pre class="mt-2 max-h-72 overflow-auto rounded bg-elevated p-2 text-xs">{{ output(run) }}</pre>

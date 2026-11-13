@@ -31,7 +31,8 @@ shell and are feature-equivalent.
     `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
     over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
-    IPC.
+    IPC. A reload of the dashboard window closes none: its next page asks for them, and closes those no run of it
+    shows (`desktop_close_other_output_windows`); the dashboard window's end closes all.
   - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<lane>`, the ref checked by
     `is_run_ref`) shows the dashboard's `/desktop/run-worker` page, kept above the other windows, stays on the
     sidecar's origin and holds no IPC grant: the page reads the runs' hub through the routes behind the desktop guard,
@@ -70,7 +71,9 @@ shell and are feature-equivalent.
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
   `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
-  `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
+  `desktop-<run id>`, which the window knows the run by). A job in a throwaway worktree (`worktree.rs`) runs instead on
+  the run channel of the live editor whose workspace holds its linked folder, when one does (`job_hub_env`, from the
+  route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server. A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--ui`, or with `--repeat-each` above 1 unless it stops at its first failure) ends its ref in `-unattended`
   (`attended_args`, mirrored by `desktopArgsAttended`), and the server never holds its failures. The hub's WebSocket
   takes the desktop token in `hello`; it is `ShellRuns` (`packages/editor/src/shell-runs.ts`), which

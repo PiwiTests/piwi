@@ -6,6 +6,7 @@ import {
   EDITORS_DIR_PARTS,
   editorForRun,
   readLiveEditors,
+  writtenSinceBoot,
   type DiscoveryFolder,
   type EditorDiscovery,
 } from '@piwitests/core/editor-discovery';
@@ -15,7 +16,7 @@ import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, UNATTENDED_REF_SUFFI
 import { isRunOriginKind, type RunInteractive } from '@piwitests/core/wire';
 import { detectCi } from '../support/ci.js';
 import { isMergeReports } from '../support/run-mode.js';
-import { defaultDesktopConfigPath, ownProcessAlive, readDesktopHub, sinceBoot, type DesktopHub } from './desktop.js';
+import { defaultDesktopConfigPath, ownProcessAlive, readDesktopHub, type DesktopHub } from './desktop.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from './env.js';
 
 /**
@@ -115,8 +116,7 @@ function privateFolder(dir: string): boolean {
  * user's cannot be in. A named pipe tells no owner, and a file with no time passes as far as the time goes.
  */
 export function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
-  const written = Date.parse(editor.startedAt);
-  if (Number.isFinite(written) && !sinceBoot(written, now)) return false;
+  if (!writtenSinceBoot(editor, now, os.uptime() * 1000)) return false;
   if (!editor.runChannel || process.platform === 'win32') return true;
   return privateFolder(path.dirname(editor.runChannel.path)) && ownSocket(editor.runChannel.path);
 }

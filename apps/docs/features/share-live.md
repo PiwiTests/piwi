@@ -21,11 +21,11 @@ whose project enables live view, and connect to an editor or the desktop app for
 |---|---|---|
 | VS Code | **Piwi: Share the run live on the team instance**, or the status bar's broadcast icon | **Piwi: Stop sharing the run live**, or **Stop sharing…** in the menu of the status bar's **Live**, beside **Open the run page** and **Copy the run page's link**, after a confirmation |
 | JetBrains IDEs | **Tools → Piwi → Share the Run Live** | **Tools → Piwi → Stop Sharing the Run Live…**, or **Stop Sharing the Run…** in the status bar item's menu, after a confirmation |
-| Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing** |
-| The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing** |
+| Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing**, after a confirmation |
+| The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing…**, after a confirmation |
 
-The first share asks for confirmation; in an editor, it also asks whether to share this run or
-[the window's runs](#a-window-s-runs). The shared run shows its destination, viewer count and a link to copy.
+The first share asks for confirmation; in an editor, and in the Runs window for an editor's run, it also asks whether
+to share this run or [the window's runs](#a-window-s-runs). The shared run shows its destination, viewer count and a link to copy.
 
 Until then, its workers send nothing, and the run's **Tests** tab says **Not shared live** once, beside its search,
 with [**Ask to watch**](#ask-to-watch) for a teammate who may ask; its running tests say where they
@@ -57,10 +57,19 @@ $env:PIWI_SHARE_LIVE='1'; npx playwright test
 
 ### A window's runs
 
-**Piwi: Share this window's runs live until I stop** in VS Code, and **Tools → Piwi → Share This Project's Runs Live
-Until I Stop** in a JetBrains IDE, share each run the window starts from then on, each one said as it is shared, until
-you stop (**…Stop sharing this window's runs live**, or the menu of the status bar's **Live · this window**) or close
-the window. On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who
+**Piwi: Share this window's runs live until I stop** in VS Code, **Tools → Piwi → Share This Project's Runs Live
+Until I Stop** in a JetBrains IDE, and **Share this editor window's runs** under an editor's run in Piwi Picker's Runs
+window share each run the window starts from then on, each one said as it is shared, until you stop (**…Stop sharing
+this window's runs live**, the menu of the status bar's **Live · this window**, or **Stop sharing this window's runs**
+on the Runs window's line that says the window shares its runs, whatever runs it lists) or close the window. A run's
+own **Stop sharing** in the Runs window stops that run alone.
+
+<figure>
+  <img src="/screenshots/picker-runs-share-window.png" width="488" alt="The Runs window under its heading saying Visual Studio Code's window shares its runs live until you stop, with Stop sharing this window's runs under that line, and a run shared as one of them, with its own Stop sharing">
+  <figcaption>An editor window's runs, shared from the Runs window.</figcaption>
+</figure>
+
+On the team instance, the page of the run before says **Continued in run #78**, linked, and a teammate who
 has it open is taken to the new run, on the worker they were watching.
 
 ## Ask to watch
@@ -97,7 +106,7 @@ shared: **Share live**, above the run's workers, asks first the first time since
 A run that reports to the [desktop app](./desktop-runs) itself (a reproduction, a bisect, a **Re-run** in a folder
 that names no instance, a run your editor started) cannot be shared: the app hands out no live view key, since no
 teammate reaches it. Its tray offers no **Share live** for it, the app's project settings have no **Live view**
-section, and on the run's page its running tests offer [**Watch** and **Pause and watch**](./desktop-runs#watch-live),
+section, and on the run's page its running tests offer [**Watch** and **Pause and watch**](./desktop-runs#watch),
 shown in the app's tray from the app itself. A run your editor started says **See its page at a stop** there: its page
 shows where the editor steers it.
 

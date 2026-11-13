@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import type { LocalRunLine } from '../../app/composables/useDesktopLocalRuns';
-import { mergeRunOutputLines, runOutputWindowName, type RunOutputState } from '../../app/utils/run-output-channel';
+import {
+  mergeRunOutputLines,
+  outputWindowNameOf,
+  runOutputWindowName,
+  type RunOutputState,
+} from '../../app/utils/run-output-channel';
 
 const line = (id: number): LocalRunLine => ({ id, text: `line ${id}`, error: false });
 const lines = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => line(from + i));
@@ -36,4 +41,12 @@ describe('mergeRunOutputLines', () => {
 
 test('an output window name is one the shell takes', () => {
   expect(runOutputWindowName(12)).toMatch(/^[a-z0-9-]{1,64}$/);
+});
+
+test('an output window is known by its name from the label the shell gave it, whatever page opened it', () => {
+  expect(outputWindowNameOf(`output-${runOutputWindowName(12)}_3`)).toBe(runOutputWindowName(12));
+  expect(outputWindowNameOf(`output-${runOutputWindowName(12)}_14`)).toBe(runOutputWindowName(12));
+  expect(outputWindowNameOf('worker-desktop-41-0')).toBeNull();
+  expect(outputWindowNameOf('output-piwi-run-output-12')).toBeNull();
+  expect(outputWindowNameOf('main')).toBeNull();
 });

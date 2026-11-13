@@ -205,12 +205,12 @@ Alternatives:
 | --- | --- |
 | A `piwi://run?…` link per request (#1163 option 1) | Any page can open the link, so it must carry a secret or the app must hold a key anyway. The browser asks for each click (Safari every time), the page cannot tell whether the link was taken, and Stop needs another link. |
 | Piwi Picker carries the request (runs-from-the-dashboard D2) | It checks that a person clicked (`isTrusted`), which this route cannot. But it needs the extension in the browser, and a QA engineer may not have it. |
-| The page calls the target on `127.0.0.1` (#1163 option 3) | Rejected by #1163 and by [live-runs.md](live-runs.md) for the same reasons: Chrome's local network access prompt, mixed content in Safari, and any page could try the port. |
+| The page calls the target on `127.0.0.1` (#1163 option 3) | Rejected by #1163 and by [live-runs.md](../adr/live-runs.md) for the same reasons: Chrome's local network access prompt, mixed content in Safari, and any page could try the port. |
 
 No **Links only** mode: links never carry runs.
 
 Amends: [run-control.md](../adr/run-control.md) D8 ("the team instance never steers a run") and
-[live-runs.md](live-runs.md) D7, which already lets the instance carry a request that a local tool shows for the person
+[live-runs.md](../adr/live-runs.md) D7, which already lets the instance carry a request that a local tool shows for the person
 to accept (**Ask to watch**). This plan widens that exception to starting and stopping a run, and nothing else: the
 instance never pauses, steps or drives a page.
 
@@ -353,7 +353,7 @@ after it; IDE windows are not a target in this plan.
 - **IDE windows** stay with runs-from-the-dashboard, which may later take this plan's request object and stream for its
   open question 2 (a route without Piwi Picker).
 
-Amends: [live-runs.md](live-runs.md) D9 ("no daemon"). Piwi Runner is one more program to install and secure, which D9
+Amends: [live-runs.md](../adr/live-runs.md) D9 ("no daemon"). Piwi Runner is one more program to install and secure, which D9
 avoids; it is the price of a target without the dashboard, which the issue's author asks for so that a QA engineer
 need not install the dashboard, reproduce, bisect, Flake Lab and MCP. It stays a target and the hub of its own runs
 only: it does not become the fallback hub of terminal runs, which stays the desktop app (live-runs P7).
@@ -451,7 +451,7 @@ The browser and branch checks also serve **Run locally**, which lacks them today
 **Recommended.** The confirmation has a **Share live with the team** box, off by default and shown only when the
 project's live view is on. Ticked, the target shares the run as **Share live** does today, so teammates can **Watch**
 it. The person who asked sees the real browser on their screen and needs no relay. This follows
-[live-runs.md](live-runs.md) D14 (pixels go through the instance for CI and shared runs only) and P9 (share by intent).
+[live-runs.md](../adr/live-runs.md) D14 (pixels go through the instance for CI and shared runs only) and P9 (share by intent).
 
 ### D14. How a requested run counts, and who sees it (settled for who sees it)
 
@@ -725,9 +725,9 @@ folder's path.
 
 ## What changes in other records
 
-- [run-control.md](../adr/run-control.md) D8 and [live-runs.md](live-runs.md) D7: the instance carries a request to
+- [run-control.md](../adr/run-control.md) D8 and [live-runs.md](../adr/live-runs.md) D7: the instance carries a request to
   start or stop a run, which the machine accepts; it still never steers.
-- [live-runs.md](live-runs.md) D9: Piwi Runner is one more program, a target and the hub of its own runs only.
+- [live-runs.md](../adr/live-runs.md) D9: Piwi Runner is one more program, a target and the hub of its own runs only.
 - [`1.0-stabilization.md`](1.0-stabilization.md) D36 and D51: the desktop app holds a target key, never the team's key.
   Entry D64 lists this plan's contracts.
 - [desktop-native.md](desktop-native.md) "The team's CI on the developer's desk": the target key and `piwi://connect`

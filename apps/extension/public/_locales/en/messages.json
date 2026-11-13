@@ -7548,12 +7548,22 @@
     "description": "Runs window, the same button once the run shortcut has a key."
   },
   "runs_failOffline": {
-    "message": "The editor’s service is not connected: Piwi Picker connects again.",
-    "description": "Runs window, under a button whose command could not reach the editor’s service."
+    "message": "Not connected to $tool$: Piwi Picker connects again.",
+    "description": "Runs window, under a test, when a command could not reach the tool whose hub follows the run: the worker connects again. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_failTimeout": {
-    "message": "The editor did not answer in time.",
-    "description": "Runs window, under a button whose command the editor did not answer."
+    "message": "No answer in time from $tool$.",
+    "description": "Runs window, under a test, when the tool whose hub follows the run did not answer a command in time. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_announceEnded": {
     "message": "$run$: the run ended.",
@@ -7615,7 +7625,7 @@
   },
   "runs_editor": {
     "message": "your editor",
-    "description": "Runs window, in runs_reconnecting when the editor does not say its name. Lower case."
+    "description": "Runs window, the editor inside a sentence when it does not say its name: in runs_reconnecting, runs_failOffline, runs_failTimeout and runs_liveLost. Lower case."
   },
   "runs_following_one": {
     "message": "Following $count$ editor window",
@@ -7703,7 +7713,7 @@
   },
   "runs_desktopName": {
     "message": "the desktop app",
-    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
+    "description": "Runs window, the Piwi desktop app as its hub’s runs name it inside a sentence: in runs_reconnecting, runs_runAway, runs_failOffline, runs_failTimeout and runs_liveLost. Lower case."
   },
   "runs_followingDesktop": {
     "message": "Following the desktop app",
@@ -8639,14 +8649,6 @@
     "message": "size unknown",
     "description": "Runs window, in a request of the list, in place of its size when the response did not state one (its body came in chunks). Short."
   },
-  "runs_live": {
-    "message": "Watch live",
-    "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
-  },
-  "runs_liveTitle": {
-    "message": "Show the test’s page as it paints, in place of its image: Interact then sends your clicks and keys to it",
-    "description": "Runs window, the Watch live button’s tooltip."
-  },
   "runs_interact": {
     "message": "Interact",
     "description": "Runs window, a toggle in the stopped page’s card: on, the person’s clicks, wheel and keys on the live view go to the test’s page, and they drive the stop."
@@ -8672,8 +8674,13 @@
     "description": "Runs window, under the image while the live view starts."
   },
   "runs_liveLost": {
-    "message": "The connection to the editor was lost: the live view starts again once it is back.",
-    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
+    "message": "The connection to $tool$ was lost: the live view starts again once it is back.",
+    "description": "Runs window, under a live view or a watched lane that ended because the connection to the tool whose hub follows the run was lost. $tool$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "tool": {
+        "content": "$1"
+      }
+    }
   },
   "runs_liveHint": {
     "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks a locator.",
@@ -8701,7 +8708,7 @@
   },
   "runs_watchToUse": {
     "message": "Watch to use",
-    "description": "Runs window, the tooltip of Pick, Record and Assert, held, at a stop no pause bar shows (a headless test) that this window does not watch: they work once the person turns on Watch (runs_watch) or Watch live (runs_live). Short."
+    "description": "Runs window, the tooltip of Pick, Record and Assert, held, at a stop no pause bar shows (a headless test) that this window does not watch: they work once the person turns on Watch (runs_watch). Short."
   },
   "runs_laneRunning": {
     "message": "Running…",
@@ -8791,6 +8798,70 @@
     "message": "End the views of this run on the instance: nothing more goes there",
     "description": "Runs window, the Stop sharing button’s tooltip."
   },
+  "runs_shareWindow": {
+    "message": "Share this editor window’s runs",
+    "description": "Runs window, a button beside Share live (runs_shareLive) under a run an editor window started: shares this run and each run that editor window starts from then on, until the person stops or closes that window. A button: keep it short."
+  },
+  "runs_shareWindowTitle": {
+    "message": "Share this run and each run this editor window starts from now on, live on your team’s Piwi instance, until you stop or close that window",
+    "description": "Runs window, the tooltip of Share this editor window’s runs (runs_shareWindow)."
+  },
+  "runs_sharedByWindow": {
+    "message": "Shared as one of this editor window’s runs, until you stop.",
+    "description": "Runs window, under a shared run while its editor window shares each of its runs until the person stops."
+  },
+  "runs_stopSharingWindow": {
+    "message": "Stop sharing this window’s runs",
+    "description": "Runs window, the button that stops sharing every run of an editor window that shares its runs until the person stops; it asks to confirm first. A button: keep it short."
+  },
+  "runs_stopSharingWindowTitle": {
+    "message": "End the views of this editor window’s runs on the instance: the runs it starts next stay on this machine",
+    "description": "Runs window, the tooltip of Stop sharing this window’s runs (runs_stopSharingWindow)."
+  },
+  "runs_stopSharingAsk": {
+    "message": "Stop sharing this run live? Its views on the team instance close.",
+    "description": "Runs window, the question Stop sharing asks before it stops sharing a run, with Stop sharing and Cancel under it."
+  },
+  "runs_stopSharingWindowAsk": {
+    "message": "Stop sharing this editor window’s runs live? Their views on the team instance close, and the runs it starts next stay on this machine.",
+    "description": "Runs window, the question Stop sharing this window’s runs asks before it stops sharing every run of the editor window, with Stop sharing and Cancel under it."
+  },
+  "runs_windowShared": {
+    "message": "$editor$: this window’s runs are shared live, each one it starts, until you stop.",
+    "description": "Runs window, a status line under the heading while an editor window shares each of its runs live until the person stops. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceSharedWindow": {
+    "message": "$run$: shared live, as one of its editor window’s runs.",
+    "description": "Runs window, read out as a run is shared live because its editor window shares each of its runs. $run$ is the run’s name.",
+    "placeholders": {
+      "run": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowShared": {
+    "message": "$editor$: this window’s runs are shared live until you stop.",
+    "description": "Runs window, read out as an editor window starts sharing each of its runs live, turned on in the editor. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_announceWindowUnshared": {
+    "message": "$editor$: this window’s runs are no longer shared live.",
+    "description": "Runs window, read out as an editor window stops sharing its runs live, turned off in the editor. $editor$ is the editor’s name (Visual Studio Code) or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1"
+      }
+    }
+  },
   "runs_copyRunPage": {
     "message": "Copy the run page’s link",
     "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
@@ -8862,16 +8933,146 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Open a run’s page to watch a running test.",
-    "description": "Runs window, under the list of CI runs in progress: they are read-only, and a running test is watched from the run’s page on the instance (Open)."
+    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are read-only, and Watch (runs_watch) on a running test shows its page in the window."
+  },
+  "runs_ciTests": {
+    "message": "Tests running now",
+    "description": "Runs window, the accessible name of the list of the tests a CI run runs now, under its tally."
+  },
+  "runs_ciWorker": {
+    "message": "Worker $worker$",
+    "description": "Runs window, a test a CI run runs now: the worker it runs in, counted from 1 ($worker$ is a number). Short.",
+    "placeholders": {
+      "worker": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciShardWorker": {
+    "message": "Shard $shard$, worker $worker$",
+    "description": "Runs window, a test a sharded CI run runs now: its shard and the worker it runs in, both numbers counted from 1. Short.",
+    "placeholders": {
+      "shard": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciWatchTitle": {
+    "message": "Show this test’s page as it runs on CI, through its worker’s next tests: read-only, nothing here reaches it",
+    "description": "Runs window, the tooltip of Watch (runs_watch) on a test a CI run runs now: it shows the page here, read-only."
+  },
+  "runs_ciWatchDashboard": {
+    "message": "Watch on the dashboard",
+    "description": "Runs window, the button beside Watch on a test a CI run runs now, and under a watch that ended: opens the worker’s view on the run’s page on the dashboard. A button: keep it short."
+  },
+  "runs_ciWatchDashboardTitle": {
+    "message": "Open this worker’s view on the run’s page",
+    "description": "Runs window, the tooltip of Watch on the dashboard (runs_ciWatchDashboard)."
+  },
+  "runs_ciWatching": {
+    "message": "Watching CI run #$id$: $worker$.",
+    "description": "Runs window, read out once a CI run’s worker is watched. $id$ is the run’s number on the instance; $worker$ is runs_ciWorker or runs_ciShardWorker.",
+    "placeholders": {
+      "id": {
+        "content": "$1"
+      },
+      "worker": {
+        "content": "$2"
+      }
+    }
+  },
+  "runs_ciLiveAlt": {
+    "message": "Live view of the CI test’s page, read-only",
+    "description": "Runs window, the name of the watched image of a CI run’s test page, read-only."
+  },
+  "runs_ciRefusedUnlisted": {
+    "message": "This CI run is no longer in progress.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the run is no longer listed in progress."
+  },
+  "runs_ciRefusedUnfollowed": {
+    "message": "Piwi Picker follows three CI runs at a time, the newest: this run’s tests show again once a newer one ends.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the run is listed, but its workers are not followed now, three newer runs’ being."
+  },
+  "runs_ciRefusedUnwatchable": {
+    "message": "This run’s tests cannot be watched: its project’s live view is off, or the run holds no key.",
+    "description": "Runs window, under a CI run’s running tests, and why one could not be watched: the project’s live view is off on the instance, or the run holds no live view key."
+  },
+  "runs_ciRefusedNoTest": {
+    "message": "No test ran in this worker’s lane yet.",
+    "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
+  },
+  "runs_ciRefusedOffline": {
+    "message": "The instance did not answer.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the Piwi instance did not answer."
+  },
+  "runs_ciRefusedLate": {
+    "message": "The instance did not open the watch in time: try again in a moment.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance did not open the watch in time."
+  },
+  "runs_ciRefusedOlder": {
+    "message": "This instance’s live view is not one Piwi Picker reads: watch the test on the dashboard.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance is older and its live view is read only by the dashboard."
+  },
+  "runs_ciRefusedStatus": {
+    "message": "The instance answered $status$.",
+    "description": "Runs window, why a CI run’s worker could not be watched: the instance refused with this HTTP status and no sentence. $status$ is a number such as 503.",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "runs_ciEndRun": {
+    "message": "The CI run ended.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the run ended."
+  },
+  "runs_ciEndOff": {
+    "message": "The project’s live view was turned off.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the project’s live view was turned off on the instance."
+  },
+  "runs_ciEndReplaced": {
+    "message": "The instance closed this watch: you opened more watches of this run elsewhere than it keeps for one person.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the person opened more watches of the run elsewhere (the dashboard, an editor) than the instance keeps for one person (four)."
+  },
+  "runs_ciEndTest": {
+    "message": "The test ended.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: its test ended."
+  },
+  "runs_ciEndWorkerLeft": {
+    "message": "No worker runs in this lane any more.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: no worker runs in its lane any more."
+  },
+  "runs_ciEndUnshared": {
+    "message": "The run is no longer shared.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the run is no longer shared."
+  },
+  "runs_ciEndSilent": {
+    "message": "The instance stopped answering.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the instance sent nothing, not even its heartbeat, for 45 seconds."
+  },
+  "runs_ciEndClosed": {
+    "message": "The instance closed the watch.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the instance closed it without saying why."
+  },
+  "runs_ciEndBroken": {
+    "message": "The connection to the instance dropped.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: the connection to the instance dropped."
+  },
+  "runs_ciEndMoved": {
+    "message": "Another Runs window watches another worker now: Piwi Picker watches one CI worker at a time.",
+    "description": "Runs window, why the watch of a CI run’s worker ended: another Runs window watches another CI worker now, and Piwi Picker watches one at a time."
   },
   "runs_pageAtStop": {
-    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
-    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."
+    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch then shows it as it paints.",
+    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch is the button’s name (runs_watch)."
   },
   "runs_pageAtStopDesktop": {
-    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch live then shows it as it paints.",
-    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch live is the button’s name (runs_live)."
+    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch then shows it as it paints.",
+    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch is the button’s name (runs_watch)."
   },
   "runs_shareRefusedLocal": {
     "message": "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team’s instance in PIWI_DASHBOARD_URL to share a run there.",

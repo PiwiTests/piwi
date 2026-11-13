@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endedAtStopOf, endedAtStopWords } from '../src/outcome';
+import { endedAtStopOf, endedAtStopWords, progressWords } from '../src/outcome';
 import { englishRunSpeaker as en } from '../src/words';
 
 describe('how a run came out beyond its status', () => {
@@ -15,5 +15,22 @@ describe('how a run came out beyond its status', () => {
     expect(endedAtStopWords(1, en)).toBe('1 ended at a stop');
     expect(endedAtStopWords(3, en)).toBe('3 ended at a stop');
     expect(endedAtStopWords(0, en)).toBeNull();
+  });
+
+  it('says how far a run is: its tests that ended of all it holds, then what failed, was flaky or ended at a stop', () => {
+    const progress = { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0 };
+    expect(progressWords(progress, en)).toEqual(['3 of 9 tests']);
+    expect(progressWords({ ...progress, total: 1, done: 0 }, en)).toEqual(['0 of 1 test']);
+    expect(progressWords({ ...progress, failed: 2, flaky: 1, skipped: 1, endedAtStop: 1 }, en)).toEqual([
+      '3 of 9 tests',
+      '2 failed',
+      '1 flaky',
+      '1 ended at a stop',
+    ]);
+  });
+
+  it('writes how many ended as it writes how many the run holds', () => {
+    const progress = { total: 2000, done: 1500, failed: 0, flaky: 0, skipped: 0 };
+    expect(progressWords(progress, en)).toEqual(['1,500 of 2,000 tests']);
   });
 });

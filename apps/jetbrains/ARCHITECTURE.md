@@ -596,7 +596,7 @@ its worker takes `pick-at` and the image names its viewport (`Glue.picksOnImage`
 element under it (`piwi/pickAt`, the point scaled to the page's CSS pixels by `Glue.pagePoint`), its locator going
 where a pick goes, the answer said under the image.
 
-For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
+For a stop taking `view`, **Watch** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
 checkboxes keep **Interact** off until chosen; input goes through `piwi/pageInput`, at most one batch in flight, with
 coalesced pointer moves, and a release only after the input queued before it. A stop without `input-clicks` gets a
@@ -610,15 +610,15 @@ going off, whatever turns it off, gives back the stop it was last on for (`Pause
 before was answered. The give-back goes from the input queue (`pageInputs`): once the input queued before it, the
 click held back and the release included, was sent and answered, and before the input queued after it, so that input
 drives the stop no more. A watch ending sends what was queued for it, in order, then `piwi/pageView` off
-(`stopPageView`); where Interact is on as it ends (Watch live off, the tab hidden or closed, a watch refused, another
+(`stopPageView`); where Interact is on as it ends (Watch off, the tab hidden or closed, a watch refused, another
 slot's stop), Interact goes off first (`PausedPagePanel.letGo`), so the input held, the give-back and the watch-off
 reach the service in that order. Escape while Interact is on lets go of the input held, then turns Interact off and
 focuses its checkbox, but goes to the page while an action runs in the test's window there (`PausedPagePanel.acting`,
 from the stop's `acting`). Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
 worker's new stop does not.
-Watch live is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
-Watch live stays on (`Glue.keepsInteract`, `PiwiRunSessions.pageSlot`), disabled until that stop's watch is accepted
-and taking input then. It goes off as it is unchecked or Escape is pressed, as Watch live is turned off or refused, as
+Watch is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
+Watch stays on (`Glue.keepsInteract`, `PiwiRunSessions.pageSlot`), disabled until that stop's watch is accepted
+and taking input then. It goes off as it is unchecked or Escape is pressed, as Watch is turned off or refused, as
 the tab hides (between stops too: `PausedPagePanel.ended` keeps a listener for it) or closes, at another slot's stop,
 at a stop that takes no input (`PausedPagePanel.watching` and `configureLive` with `keepInteract`) and as its run ends
 or every run goes away (`PiwiRunSessions.runGone`, queued from `heard` before the draw, so a rerun under the ref starts

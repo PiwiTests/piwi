@@ -202,6 +202,23 @@ export function desktopLiveText(live: HubLive): string {
 }
 
 /**
+ * What **Stop sharing** asks before it stops sharing a run live: the run by its number once its process named its page,
+ * what closes on the instance, and that nothing more of the run goes there.
+ */
+export function desktopStopSharingQuestion(session: {
+  page?: { id: number } | null;
+  live: Pick<HubLive, 'page' | 'viewers'>;
+}): { title: string; body: string } {
+  const title = `Stop sharing ${session.page ? `run #${session.page.id}` : 'the run'} live?`;
+  const instance = desktopLiveInstance(session.live) ?? 'the team instance';
+  const viewers = session.live.viewers;
+  if (viewers === 0) return { title, body: `Nothing more of it goes to ${instance}.` };
+  const views =
+    viewers === 1 ? `The view open on ${instance} closes` : `The ${viewers} views open on ${instance} close`;
+  return { title, body: `${views}, and nothing more of the run goes there.` };
+}
+
+/**
  * What a code made at a stop is, as its heading in the window says. The steps, an assertion and a locator for the
  * stopped line come from an agent alone here (the app takes no Record nor Assert), and say so.
  */

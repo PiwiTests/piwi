@@ -1067,7 +1067,7 @@ const tests = {
         () => (api.pausedPage()?.image ? api.pausedPage() : null),
         'the paused page in sight',
       );
-      // Watch live, its answer held: Interact is not offered, turning it on changes nothing, and the input the page
+      // Watch, its answer held: Interact is not offered, turning it on changes nothing, and the input the page
       // posts reaches no worker.
       const inputs = () => worker.heard.filter((m) => m.type === 'request' && m.what === 'input').length;
       const answered = worker.answers.view;
@@ -1140,7 +1140,7 @@ const tests = {
       worker.socket.destroy();
     }
     await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
-    // A rerun under the same ref starts with Interact off, Watch live still on.
+    // A rerun under the same ref starts with Interact off, Watch still on.
     worker = attach();
     stopped(worker, 1, 5, "getByLabel('Coupon code')", 'Fill "MORNING10"');
     try {

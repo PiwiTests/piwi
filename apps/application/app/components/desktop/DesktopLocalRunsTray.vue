@@ -28,27 +28,38 @@
  * bisect, a run repeating its tests or in UI mode) holds none, and its switch
  * says why.
  *
- * A run's output can move to a separate window of the app
- * (`DesktopRunOutputWindow`), which stays open when the tray closes, and
- * closes with the run's entry, with this component, and when the dashboard
- * window loads another page.
+ * A running run counts its tests as its own process does (`3 of 9 tests · 1
+ * failed`, `useDesktopRunBadge`); a failed one that reported a Piwi run leads
+ * to its failure (**Open the failure**, `failurePage`). **Compact list**, a
+ * choice the window remembers, shows each run as one line (its state, name,
+ * progress and the one action it needs now: show its stop, stop it, open its
+ * failure or its run, run it again), a click expanding it to its whole card.
+ *
+ * A reproduction, a bisect step or a Flake Lab the shell ran on an editor's run channel (the editor's workspace holds
+ * the linked folder) is the editor's to steer: its run says where its tests wait, in that editor, read only
+ * (`DesktopEditorRunNote`), with no Hold failures switch, and still ends with its own verdict.
+ *
+ * A run's output can move to a separate window of the app (`separate`,
+ * `DesktopRunOutputWindows`), which stays open when the tray closes or
+ * reloads, and closes with the run's entry or when the person closes it.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import {
-  flakeLabOutcome,
   localRunCompareTo,
+  localRunDetail,
   localRunDuration,
+  localRunProgressLabel,
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
-import { desktopRunOf } from '~/utils/desktop-run-view';
+import { desktopEditorRunsOf, desktopRunOf } from '~/utils/desktop-run-view';
 import { desktopStopSaid, desktopWorkerKey } from '@piwitests/run-ui/run-view';
-import { endedAtStopWords } from '@piwitests/run-model/outcome';
+import { progressWords } from '@piwitests/run-model/outcome';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, shownWorker, activeCount, trayMounts } = store;
-const toast = useToast();
+const { runs, trayOpen, shownWorker, activeCount, trayMounts, separate } = store;
+const { badge, count } = useDesktopRunBadge();
 
 const available = ref(false);
 onMounted(() => {
@@ -69,7 +80,18 @@ function sessionsOf(run: LocalRun): HubSession[] {
   return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
-/** The hub's live runs no run of the tray names: another window started them, or this one before a reload. */
+const editorRuns = useDesktopEditorRuns();
+
+/**
+ * The editors' runs of a run of the tray: its steps the shell ran on an editor's run channel, in a throwaway checkout
+ * of a folder the editor's workspace holds. The editor's hub owns their stops and Hold failures: the tray says where
+ * they wait, read only, and the run's own verdict when it ends.
+ */
+function editorRunsOf(run: LocalRun) {
+  return desktopEditorRunsOf(run, editorRuns.value);
+}
+
+/** The hub's live runs no run of the tray names: another window started them. */
 const otherSessions = computed(() => liveSessions.value.filter((session) => !runOf(session)));
 
 /** What the live region reads out: a test stopped, what a command answered. */
@@ -124,15 +146,27 @@ onBeforeUnmount(() => {
 // reporter checking in counts) re-checks pending local runs.
 useRunStream(() => store.correlatePiwiRuns());
 
+/** Each run as one line, a click expanding it: the window's choice, kept. */
+const compact = useLocalStorage('piwi:desktop-local-runs-compact', false);
+
 /** Manual expand/collapse choices; unset falls back to the default below. */
 const expandedByKey = ref<Record<number, boolean>>({});
 
+/** A run shows whole: in the compact list once opened, else by default while it runs, and the newest one. */
 function isExpanded(run: LocalRun): boolean {
-  return expandedByKey.value[run.key] ?? (run.status === 'running' || run.key === runs.value[0]?.key);
+  const chosen = expandedByKey.value[run.key];
+  if (compact.value) return chosen ?? false;
+  return chosen ?? (run.status === 'running' || run.key === runs.value[0]?.key);
 }
 
-function toggleExpanded(run: LocalRun) {
-  expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
+function setExpanded(run: LocalRun, on: boolean) {
+  expandedByKey.value = { ...expandedByKey.value, [run.key]: on };
+}
+
+/** Moves the focus to a worker once it is drawn. */
+async function focusWorker(ref: string, worker: number) {
+  await nextTick();
+  document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(ref, worker)}"]`)?.focus();
 }
 
 /**
@@ -144,38 +178,31 @@ async function showAsked(shown: { ref: string; worker: number } | null) {
   shownWorker.value = null;
   const session = hub.state.sessions[shown.ref];
   const run = session ? runOf(session) : undefined;
-  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  if (run) setExpanded(run, true);
   const lane = session?.workers.find((worker) => worker.worker === shown.worker)?.parallelIndex;
   if (lane !== undefined) hub.chooseTab(shown.ref, lane);
-  await nextTick();
-  document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
+  await focusWorker(shown.ref, shown.worker);
 }
 watch(shownWorker, (shown) => void showAsked(shown));
 // One asked before this tray was mounted, as the page changed to one that holds it.
 onMounted(() => void showAsked(shownWorker.value));
 
-/** The runs whose output shows in a separate window instead of the tray. */
-const separateByKey = ref<Record<number, boolean>>({});
-const separateRuns = computed(() => runs.value.filter((run) => separateByKey.value[run.key]));
-
-function setSeparate(run: LocalRun, on: boolean) {
-  separateByKey.value = { ...separateByKey.value, [run.key]: on };
+/** The first worker of a run that stands at a stop, with its run on the hub; null while none does. */
+function stoppedOf(run: LocalRun): { session: HubSession; worker: HubWorker } | null {
+  for (const session of sessionsOf(run)) {
+    const worker = session.workers.find((one) => one.state === 'stopped');
+    if (worker) return { session, worker };
+  }
+  return null;
 }
 
 /** What the run's window button does: open its output in a separate window, or bring it back here. */
 function separateLabel(run: LocalRun): string {
-  return separateByKey.value[run.key] ? 'Show the output here' : 'Open the output in a separate window';
+  return separate.value[run.key] ? 'Show the output here' : 'Open the output in a separate window';
 }
 
-function separateClosed(run: LocalRun, opened: boolean) {
-  setSeparate(run, false);
-  if (!opened) {
-    toast.add({
-      title: 'Could not open a separate window',
-      description: 'The output stays in the tray.',
-      color: 'error',
-    });
-  }
+function toggleSeparate(run: LocalRun) {
+  separate.value = { ...separate.value, [run.key]: !separate.value[run.key] };
 }
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
@@ -184,44 +211,97 @@ function duration(run: LocalRun): string {
   return localRunDuration(run.startedAt, run.finishedAt, now.value);
 }
 
-/** How many tests of a run's steps were ended at a stop (End the test), as the hub heard them end. */
-function endedAtStopIn(run: LocalRun): number {
-  return Object.entries(hub.state.endedAtStop).reduce(
-    (sum, [ref, count]) => sum + (run.hubRefs.includes(desktopRunOf(ref)) ? count : 0),
-    0,
-  );
-}
-
-function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
-  switch (run.status) {
-    case 'running':
-      return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
-    case 'passed': {
-      if (run.kind === 'flake') {
-        return flakeLabOutcome(run.exitCode) === 'reproduced'
-          ? { label: 'Reproduced', color: 'success' }
-          : { label: 'Not reproduced', color: 'neutral' };
-      }
-      // A test ended at a stop is skipped: the run passed, marked so.
-      const ended = endedAtStopWords(endedAtStopIn(run), englishRunSpeaker);
-      return { label: ended ? `Passed · ${ended}` : 'Passed', color: 'success' };
-    }
-    case 'failed':
-      return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
-    case 'stopped':
-      return { label: 'Stopped', color: 'neutral' };
-    default:
-      return { label: 'Could not run', color: 'error' };
-  }
-}
-
 const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'));
 
-/** The row's second line: the project, then the command the current step runs, when it has one. */
-function runDetail(run: LocalRun): string {
-  const project = run.projectLabel || `Project ${run.projectId}`;
-  const command = run.steps[run.stepIndex]?.display;
-  return command ? `${project} · ${command}` : project;
+/** Opens the page a failed run's end leads to: its first failure, else its run. */
+async function openFailure(run: LocalRun) {
+  const page = await store.failurePage(run);
+  trayOpen.value = false;
+  await navigateTo(page);
+}
+
+/** Whether a run offers Run again: one it can start as it ran. */
+function rerunnable(run: LocalRun): boolean {
+  return (run.kind !== 'flake' || !!run.flake) && run.kind !== 'request';
+}
+
+// ── The compact list ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A run's state on its line: waiting at a stop, stopping, running, or how it ended. */
+function lineState(run: LocalRun): { label: string; color: 'info' | 'warning' | 'neutral' | 'success' | 'error' } {
+  if (run.status !== 'running') {
+    const ended = badge(run);
+    return { label: ended.label, color: ended.color as 'neutral' | 'success' | 'error' };
+  }
+  if (run.stopRequested) return { label: 'Stopping…', color: 'neutral' };
+  if (stoppedOf(run)) return { label: 'Waiting', color: 'warning' };
+  if (editorRunsOf(run).some((editorRun) => editorRun.session.workers.some((worker) => worker.stop))) {
+    return { label: 'Waiting', color: 'warning' };
+  }
+  return { label: 'Running', color: 'info' };
+}
+
+/** How far a run is on its line: its tests as its process counts them, else its phase; empty when nothing says. */
+function lineProgress(run: LocalRun): string {
+  const counted = count(run);
+  if (counted) return progressWords(counted, englishRunSpeaker).join(' · ');
+  if (run.status !== 'running') return duration(run);
+  const label = localRunProgressLabel(run);
+  return label === 'Running…' || label === 'Stopping…' ? '' : label;
+}
+
+/** The one action a run needs now, on its line. */
+interface LineAction {
+  label: string;
+  icon: string;
+  /** Stop is the error tone the card's Stop has; every other action is neutral, outlined. */
+  color: 'error' | 'neutral';
+  run: () => void;
+}
+
+function lineAction(run: LocalRun): LineAction | null {
+  if (run.status === 'running') {
+    const stopped = stoppedOf(run);
+    if (stopped) {
+      return {
+        label: 'Show the stop',
+        icon: 'i-lucide-circle-pause',
+        color: 'neutral',
+        run: () => {
+          setExpanded(run, true);
+          hub.chooseTab(stopped.session.ref, stopped.worker.parallelIndex);
+          void focusWorker(stopped.session.ref, stopped.worker.worker);
+        },
+      };
+    }
+    return run.stopRequested
+      ? { label: 'Force stop', icon: 'i-lucide-square', color: 'error', run: () => void store.stopRun(run) }
+      : { label: 'Stop', icon: 'i-lucide-square', color: 'error', run: () => void store.stopRun(run) };
+  }
+  if (run.status === 'failed' && run.piwiRunId != null) {
+    return {
+      label: 'Open the failure',
+      icon: 'i-lucide-external-link',
+      color: 'neutral',
+      run: () => void openFailure(run),
+    };
+  }
+  if (run.piwiRunId != null) {
+    const to = `/test-runs/${run.piwiRunId}`;
+    return {
+      label: `Open run #${run.piwiRunId}`,
+      icon: 'i-lucide-external-link',
+      color: 'neutral',
+      run: () => {
+        trayOpen.value = false;
+        void navigateTo(to);
+      },
+    };
+  }
+  if (rerunnable(run)) {
+    return { label: 'Run again', icon: 'i-lucide-rotate-ccw', color: 'neutral', run: () => void store.rerun(run) };
+  }
+  return null;
 }
 </script>
 
@@ -233,12 +313,25 @@ function runDetail(run: LocalRun): string {
       v-if="available && trayOpen"
       aria-label="Local runs"
       class="fixed bottom-4 right-4 z-40 w-[600px] max-w-[calc(100vw-2rem)] rounded-lg border border-default bg-default shadow-xl"
+      :data-compact="compact || undefined"
     >
       <header class="flex items-center gap-2 px-3 py-2 border-b border-default">
         <UIcon name="i-lucide-terminal" class="size-4 text-muted shrink-0" />
         <h2 class="text-sm font-semibold">Local runs</h2>
         <UBadge v-if="activeCount > 0" color="info" variant="subtle" size="sm">{{ activeCount }} active</UBadge>
         <span class="flex-1" />
+        <UTooltip :text="compact ? 'Show each run whole' : 'Show each run as one line'">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-rows-3"
+            aria-label="Compact list"
+            :aria-pressed="compact"
+            :class="compact ? PRESSED_TOGGLE_CLASS : ''"
+            @click="compact = !compact"
+          />
+        </UTooltip>
         <UTooltip v-if="hasFinished" text="Clear finished runs">
           <UButton
             size="xs"
@@ -277,118 +370,154 @@ function runDetail(run: LocalRun): string {
           />
         </section>
 
-        <article v-for="run in runs" :key="run.key" class="px-3 py-2">
-          <div class="flex items-center gap-2 min-w-0">
-            <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
-              {{ badge(run).label }}
-            </UBadge>
-            <span class="text-sm font-medium truncate flex-1 min-w-0" :title="localRunTitle(run)">
-              {{ localRunTitle(run) }}
-            </span>
-            <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
-            <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
-              <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
-                Force stop
-              </UButton>
-            </UTooltip>
+        <template v-for="run in runs" :key="run.key">
+          <div
+            v-if="compact && !isExpanded(run)"
+            class="flex items-center gap-2 px-3 py-1.5 min-w-0"
+            data-shot="desktop-run-line"
+            :data-run="run.key"
+          >
+            <button
+              type="button"
+              class="flex flex-1 items-center gap-2 min-w-0 rounded-md py-0.5 text-left hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+              aria-expanded="false"
+              :title="`Show ${localRunTitle(run)} whole`"
+              @click="setExpanded(run, true)"
+            >
+              <UBadge :color="lineState(run).color" variant="subtle" size="sm" class="shrink-0">
+                {{ lineState(run).label }}
+              </UBadge>
+              <span class="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
+                <span class="text-sm font-medium truncate min-w-0 sm:flex-1">{{ localRunTitle(run) }}</span>
+                <span v-if="lineProgress(run)" class="text-xs text-muted tabular-nums truncate sm:shrink-0">
+                  {{ lineProgress(run) }}
+                </span>
+              </span>
+            </button>
             <UButton
-              v-else-if="run.status === 'running'"
+              v-if="lineAction(run)"
               size="xs"
-              color="error"
-              variant="soft"
-              icon="i-lucide-square"
-              @click="store.stopRun(run)"
+              :color="lineAction(run)!.color"
+              :variant="lineAction(run)!.color === 'error' ? 'soft' : 'outline'"
+              :icon="lineAction(run)!.icon"
+              class="shrink-0"
+              @click="lineAction(run)!.run()"
             >
-              Stop
+              {{ lineAction(run)!.label }}
             </UButton>
-            <UTooltip
-              v-else-if="(run.kind !== 'flake' || run.flake) && run.kind !== 'request'"
-              :text="`Run again: ${localRunTitle(run)}, with the same options`"
-            >
+          </div>
+          <article v-else class="px-3 py-2" :data-run="run.key">
+            <div class="flex items-center gap-2 min-w-0">
+              <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
+                {{ badge(run).label }}
+              </UBadge>
+              <span class="text-sm font-medium truncate flex-1 min-w-0" :title="localRunTitle(run)">
+                {{ localRunTitle(run) }}
+              </span>
+              <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
+              <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
+                <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
+                  Force stop
+                </UButton>
+              </UTooltip>
               <UButton
+                v-else-if="run.status === 'running'"
                 size="xs"
-                color="neutral"
+                color="error"
                 variant="soft"
-                icon="i-lucide-rotate-ccw"
-                aria-label="Run again"
-                @click="store.rerun(run)"
-              />
-            </UTooltip>
-            <UTooltip :text="separateLabel(run)">
+                icon="i-lucide-square"
+                @click="store.stopRun(run)"
+              >
+                Stop
+              </UButton>
+              <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-rotate-ccw"
+                  aria-label="Run again"
+                  @click="store.rerun(run)"
+                />
+              </UTooltip>
+              <UTooltip :text="separateLabel(run)">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  :icon="separate[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
+                  :aria-label="separateLabel(run)"
+                  @click="toggleSeparate(run)"
+                />
+              </UTooltip>
               <UButton
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                :icon="separateByKey[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
-                :aria-label="separateLabel(run)"
-                @click="setSeparate(run, !separateByKey[run.key])"
+                :icon="isExpanded(run) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-left'"
+                :aria-label="compact ? 'Show as one line' : isExpanded(run) ? 'Collapse output' : 'Expand output'"
+                @click="setExpanded(run, !isExpanded(run))"
               />
-            </UTooltip>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              :icon="isExpanded(run) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-left'"
-              :aria-label="isExpanded(run) ? 'Collapse output' : 'Expand output'"
-              @click="toggleExpanded(run)"
+            </div>
+            <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="localRunDetail(run)">
+              {{ localRunDetail(run) }}
+            </p>
+            <DesktopRunHoldSwitch
+              v-if="run.status === 'running' && !editorRunsOf(run).length"
+              :run="run"
+              :described-id="`desktop-run-hold-${run.key}`"
+              class="mt-1.5"
+              data-shot="desktop-run-hold"
             />
-          </div>
-          <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="runDetail(run)">{{ runDetail(run) }}</p>
-          <DesktopRunHoldSwitch
-            v-if="run.status === 'running'"
-            :run="run"
-            :described-id="`desktop-run-hold-${run.key}`"
-            class="mt-1.5"
-            data-shot="desktop-run-hold"
-          />
-          <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-external-link"
-              :to="`/test-runs/${run.piwiRunId}`"
-              @click="trayOpen = false"
-            >
-              Open run #{{ run.piwiRunId }}
-            </UButton>
-            <UButton
-              v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-git-compare"
-              :to="localRunCompareTo(run)!"
-              :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
-              @click="trayOpen = false"
-            >
-              Compare with run #{{ run.sourceRunId }}
-            </UButton>
-          </div>
-          <template v-if="isExpanded(run)">
-            <DesktopRunSession
-              v-for="session in sessionsOf(run)"
-              :key="session.ref"
-              :session="session"
-              class="mt-2"
-              @announce="announce"
-            />
-            <p v-if="separateByKey[run.key]" class="mt-2 text-xs text-muted">The output is in a separate window.</p>
-            <DesktopLocalRunConsole v-else :lines="run.lines" class="mt-2" />
-          </template>
-        </article>
+            <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
+              <UButton
+                v-if="run.status === 'failed'"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-external-link"
+                @click="openFailure(run)"
+              >
+                Open the failure
+              </UButton>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-external-link"
+                :to="`/test-runs/${run.piwiRunId}`"
+                @click="trayOpen = false"
+              >
+                Open run #{{ run.piwiRunId }}
+              </UButton>
+              <UButton
+                v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-git-compare"
+                :to="localRunCompareTo(run)!"
+                :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
+                @click="trayOpen = false"
+              >
+                Compare with run #{{ run.sourceRunId }}
+              </UButton>
+            </div>
+            <template v-if="isExpanded(run)">
+              <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
+              <DesktopRunSession
+                v-for="session in sessionsOf(run)"
+                :key="session.ref"
+                :session="session"
+                class="mt-2"
+                @announce="announce"
+              />
+              <p v-if="separate[run.key]" class="mt-2 text-xs text-muted">The output is in a separate window.</p>
+              <DesktopLocalRunConsole v-else :lines="run.lines" class="mt-2" />
+            </template>
+          </article>
+        </template>
       </div>
     </section>
-
-    <DesktopRunOutputWindow
-      v-for="run in separateRuns"
-      :key="run.key"
-      :run="run"
-      :title="localRunTitle(run)"
-      :status="badge(run)"
-      :detail="runDetail(run)"
-      @stop="store.stopRun(run)"
-      @closed="(opened: boolean) => separateClosed(run, opened)"
-    />
   </Teleport>
 </template>

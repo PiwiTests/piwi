@@ -42,7 +42,7 @@ import {
  * worker the spec plays, with the image of the stopped page, a run started in a terminal named as one. At a stop it
  * starts the code the editor writes there (Assert, Assert a region, Mock a request, as the worker's reporter takes
  * them), and holds a failed test, a headless one only while a Runs window is open. A page served from 127.0.0.1 never
- * reaches the hub. Watch live shows a stop's frames, the clicks and keys on them reach the page, Pick on the image
+ * reaches the hub. A stop's Watch shows its frames, the clicks and keys on them reach the page, Pick on the image
  * names the element under a click, and a headless stop takes Pick, Record and the checks once watched; an older editor
  * service shows none of it. Watch shows a worker's page while its test runs, through its tests and stops, the last
  * frame dimmed until the next one comes, and its frames are the stop's live view; a reporter that cannot show it is
@@ -51,6 +51,13 @@ import {
  */
 
 let editor: Editor;
+
+/**
+ * A stop's own Watch, which watches its live view (a worker whose lane cannot be watched, a stop outside a test), and
+ * the lane's Watch: one name for one view, told apart by what they toggle.
+ */
+const WATCH_STOP = 'button[data-focus$="|live"]';
+const WATCH_LANE = 'button[data-focus$="|watch"]';
 
 test.beforeAll(async () => {
   editor = await startEditor();
@@ -608,7 +615,16 @@ test('Share live says what it sends the first time, shares the run, says who wat
       run.worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
       await expect(card.getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
       await expect(card.getByRole('button', { name: 'Copy the run page’s link' })).toBeVisible();
+      // Stop sharing asks first, every time: Cancel keeps the run shared.
       await card.getByRole('button', { name: 'Stop sharing' }).click();
+      const stopping = card.getByRole('group', { name: 'Stop sharing' });
+      await expect(stopping).toContainText('Stop sharing this run live? Its views on the team instance close.');
+      await expect(stopping.getByRole('button', { name: 'Stop sharing' })).toBeFocused();
+      await stopping.getByRole('button', { name: 'Cancel' }).click();
+      await expect(card.getByRole('group', { name: 'Stop sharing' })).toHaveCount(0);
+      expect(shares()).toHaveLength(1);
+      await card.getByRole('button', { name: 'Stop sharing' }).click();
+      await stopping.getByRole('button', { name: 'Stop sharing' }).click();
       expect(await run.worker.next('share', 1)).toEqual({ type: 'share', on: false });
       run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
       // Asked once in this window: a second share goes at once.
@@ -646,6 +662,68 @@ test('Share live says what it sends the first time, shares the run, says who wat
       expect(refused.worker.heard.filter((m) => m.type === 'share')).toEqual([]);
     } finally {
       await endRun(refused);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('Share this editor window’s runs shares each run the window starts until stopped, said as each is shared', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  const page = 'https://piwi.example.com/test-runs/42';
+  try {
+    const runs = await openRuns(context, extensionId);
+    const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+    let next: Awaited<ReturnType<typeof startRun>> | null = null;
+    try {
+      const card = liveRun(runs);
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await card.getByRole('button', { name: 'Share this editor window’s runs' }).click();
+      // The first share in this window says what goes out, and offers both scopes.
+      const asked = card.getByRole('group', { name: 'Share live' });
+      await expect(card.locator('.share-warning')).toContainText('While this run is shared on piwi.example.com');
+      await expect(asked.getByRole('button', { name: 'Share this editor window’s runs' })).toBeFocused();
+      await asked.getByRole('button', { name: 'Share this editor window’s runs' }).click();
+      expect(await run.worker.next('share')).toEqual({ type: 'share', on: true });
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+      await expect(runs.locator('#hubs')).toContainText('this window’s runs are shared live, each one it starts');
+      await expect(card.getByText('Shared as one of this editor window’s runs, until you stop.')).toBeVisible();
+      await endRun(run);
+
+      // The next run the window starts is shared as it starts, and the window says so.
+      next = await startRun(editor, 'ships', [...RUN_TAKES]);
+      expect(await next.worker.next('share')).toMatchObject({ type: 'share', on: true });
+      next.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+      await expect(runs.locator('#announce')).toContainText('shared live, as one of its editor window’s runs');
+
+      // The run's own Stop sharing stops it alone: the window's runs stay shared.
+      const nextCard = liveRun(runs);
+      await nextCard.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+      const stopping = nextCard.getByRole('group', { name: 'Stop sharing' });
+      await expect(stopping).toContainText('Stop sharing this run live?');
+      await stopping.getByRole('button', { name: 'Stop sharing' }).click();
+      expect(await next.worker.next('share', 1)).toEqual({ type: 'share', on: false });
+      next.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      await expect(nextCard.getByRole('button', { name: 'Share live' })).toBeVisible();
+      const hubs = runs.locator('#hubs');
+      await expect(hubs).toContainText('this window’s runs are shared live');
+      await endRun(next);
+      next = null;
+
+      // With no shared run listed, the line that says the window's runs are shared stops them, asked first.
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      const stopAsked = hubs.getByRole('group', { name: 'Stop sharing this window’s runs' });
+      await expect(stopAsked).toContainText('the runs it starts next stay on this machine');
+      await expect(stopAsked.getByRole('button', { name: 'Stop sharing' })).toBeFocused();
+      await stopAsked.getByRole('button', { name: 'Cancel' }).click();
+      await expect(hubs.getByRole('group')).toHaveCount(0);
+      await hubs.getByRole('button', { name: 'Stop sharing this window’s runs' }).click();
+      await stopAsked.getByRole('button', { name: 'Stop sharing' }).click();
+      await expect(hubs).not.toContainText('this window’s runs are shared live');
+      await expect(runs.locator('#announce')).toContainText('Stopped sharing this window');
+    } finally {
+      if (next) await endRun(next);
+      await endRun(run).catch(() => undefined);
     }
   } finally {
     await context.close();
@@ -1306,7 +1384,7 @@ async function at(image: ReturnType<Page['locator']>, fx: number, fy: number): P
 }
 
 test.describe('the live view', () => {
-  test('Watch live shows a headless stop’s frames in place of its image, offers Pick and Record there, and stops', async () => {
+  test('a stop’s Watch shows a headless stop’s frames in place of its image, offers Pick and Record there, and stops', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1318,7 +1396,7 @@ test.describe('the live view', () => {
         const hint = card.locator('.page-hint');
         await expect(hint).toHaveText(
           'A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. ' +
-            'Watch live then shows it as it paints.',
+            'Watch then shows it as it paints.',
         );
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
@@ -1341,7 +1419,7 @@ test.describe('the live view', () => {
         ]);
         await expectWatchToUse(card);
         await card.getByRole('button', { name: 'Pick', exact: true }).click({ force: true });
-        const watch = card.getByRole('button', { name: 'Watch live' });
+        const watch = card.locator(WATCH_STOP);
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
         await expect(card.getByRole('button', { name: 'Pick on the image' })).toBeVisible();
 
@@ -1406,7 +1484,7 @@ test.describe('the live view', () => {
         );
         expect(stored).not.toContain(after.slice(0, 200));
 
-        // Watch live off: the worker stops the view, and the image is back, with the actions of a headless stop.
+        // The stop's Watch off: the worker stops the view, and the image is back, with the actions of a headless stop.
         await watch.click();
         expect(await answerView(run.worker, false)).toMatchObject({ what: 'view', stop: 1, on: false });
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
@@ -1449,7 +1527,7 @@ test.describe('the live view', () => {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
-        const watch = card.getByRole('button', { name: 'Watch live' });
+        const watch = card.locator(WATCH_STOP);
         await watch.click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
@@ -1587,7 +1665,7 @@ test.describe('the live view', () => {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         await card.getByRole('button', { name: 'Interact' }).click();
@@ -1647,7 +1725,7 @@ test.describe('the live view', () => {
         await expect(pickAt).toHaveAttribute('aria-pressed', 'false');
 
         // On the live view, a Shift+click picks, and goes to the page as no click; a locator is shown as text.
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         const live = card.locator('img.live');
@@ -1696,12 +1774,12 @@ test.describe('the live view', () => {
       try {
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
-        await liveRun(first).getByRole('button', { name: 'Watch live' }).click();
+        await liveRun(first).locator(WATCH_STOP).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         await expect(liveRun(first).locator('img.live')).toHaveAttribute('src', `data:image/jpeg;base64,${before}`);
         const second = await openRuns(context, extensionId);
-        await liveRun(second).getByRole('button', { name: 'Watch live' }).click();
+        await liveRun(second).locator(WATCH_STOP).click();
         await expect(liveRun(second).locator('img.live')).toHaveAttribute('src', `data:image/jpeg;base64,${before}`);
         // One connection to the hub watches for both: the worker was asked once.
         expect(heardRequests(run.worker, 'view').map((r) => [r.stop, r.on])).toEqual([[1, true]]);
@@ -1733,7 +1811,7 @@ test.describe('the live view', () => {
         // Watched here: the window says so, as you; nobody drives the stop and no agent follows the run, so nothing
         // offers to take it.
         stopAtCheckout(run.worker, 1, { bar: false });
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await answerView(run.worker);
         await expect(card.locator('.watchers')).toHaveText('Watched by you');
         await expect(other.locator('.watchers')).toHaveText('Watched by Piwi Picker');
@@ -1792,13 +1870,13 @@ test.describe('the live view', () => {
         await card.getByRole('button', { name: 'Give back' }).click();
         await expect(interact).toHaveAttribute('aria-pressed', 'false');
         await expect(card.locator('.run-driver')).toHaveCount(0);
-        // Watch live turned off with Interact on gives the stop back, as such, before the view ends.
+        // The stop's Watch turned off with Interact on gives the stop back, as such, before the view ends.
         await expect(interact).not.toHaveAttribute('aria-disabled');
         await interact.click();
         await view.click({ position: { x: 40, y: 40 } });
         await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
         await runs.evaluate(() => (document.getElementById('announce')!.textContent = ''));
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
         await expect(card.locator('.run-driver')).toHaveCount(0);
         await expect(card.locator('img.live')).toHaveCount(0);
@@ -1812,7 +1890,7 @@ test.describe('the live view', () => {
     }
   });
 
-  test('Watch live stays on as the extension’s worker restarts, and the view is asked again', async () => {
+  test('a stop’s Watch stays on as the extension’s worker restarts, and the view is asked again', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1823,7 +1901,7 @@ test.describe('the live view', () => {
         const views = () => heardRequests(run.worker, 'view').map((r) => [r.stop, r.on]);
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
-        const watch = card.getByRole('button', { name: 'Watch live' });
+        const watch = card.locator(WATCH_STOP);
         await watch.click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
@@ -1859,7 +1937,7 @@ test.describe('the live view', () => {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await answerView(run.worker);
         await expect(card.getByText('Starting the live view…')).toBeVisible();
         const refused = 'This page is too heavy for the live view: each image of it is over 384 KB.';
@@ -1867,9 +1945,9 @@ test.describe('the live view', () => {
         await expect(card.locator('.view-note')).toHaveText(refused);
         await expect(card.getByText('Starting the live view…')).toHaveCount(0);
         await expect(runs.locator('#announce')).toHaveText(refused);
-        // The stop's image stays, and Watch live stays on.
+        // The stop's image stays, and its Watch stays on.
         await expect(card.getByRole('img', { name: /^The test’s page, stopped before/ })).toBeVisible();
-        await expect(card.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(card.locator(WATCH_STOP)).toHaveAttribute('aria-pressed', 'true');
         sendFrame(run.worker, 1, before);
         await expect(card.locator('img.live')).toBeVisible();
         await expect(card.getByText(refused)).toHaveCount(0);
@@ -1881,7 +1959,7 @@ test.describe('the live view', () => {
     }
   });
 
-  test('a new stop needs a new view, asked again while Watch live stays on, and none while the window is hidden or gone', async () => {
+  test('a new stop needs a new view, asked again while the stop’s Watch stays on, and none while the window is hidden or gone', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -1891,7 +1969,7 @@ test.describe('the live view', () => {
         const card = liveRun(runs);
         const views = () => heardRequests(run.worker, 'view').map((r) => [r.stop, r.on]);
         stopAtCheckout(run.worker, 1, { bar: false });
-        await card.getByRole('button', { name: 'Watch live' }).click();
+        await card.locator(WATCH_STOP).click();
         await answerView(run.worker);
         sendFrame(run.worker, 1, before);
         await expect(card.locator('img.live')).toBeVisible();
@@ -1904,7 +1982,7 @@ test.describe('the live view', () => {
         run.worker.send({ type: 'running', stop: 1 });
         await expect(card.getByText('Running')).toBeVisible();
         await expect(card.locator('img.live')).toHaveCount(0);
-        // At the next stop, Watch live left on asks for its own view.
+        // At the next stop, the stop's Watch left on asks for its own view.
         stopAtCheckout(run.worker, 2, { bar: false });
         await expect.poll(views).toEqual([
           [1, true],
@@ -2027,7 +2105,7 @@ test.describe('the live view', () => {
       await runs.keyboard.press('ArrowLeft');
       await expect(runs.getByRole('tab', { name: 'worker 1' })).toHaveAttribute('aria-selected', 'true');
       await expect(runs.getByRole('tab', { name: 'worker 1' })).toBeFocused();
-      await expect(runs.getByRole('button', { name: 'Watch live' })).toHaveCount(0);
+      await expect(runs.locator(WATCH_STOP)).toHaveCount(0);
       await expect(runs.getByRole('button', { name: 'Pick on the image' })).toHaveCount(0);
       await expect(runs.locator('.page-tools')).toHaveCount(0);
       expect(
@@ -2138,8 +2216,8 @@ test.describe('watching a running test', () => {
         await expect(card.getByRole('button', { name: 'Resume' })).toBeInViewport();
         await expect(lane).toHaveClass(/\bstale\b/);
         await expect(card.locator('.live-badge')).toHaveCount(0);
-        // Watch, in place of Watch live, and the stop's actions as a watched stop takes them.
-        await expect(card.getByRole('button', { name: 'Watch live' })).toHaveCount(0);
+        // The lane's Watch, in place of the stop's own, and the stop's actions as a watched stop takes them.
+        await expect(card.locator(WATCH_STOP)).toHaveCount(0);
         await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await expect(card.locator('.controls button')).toHaveText([
           'Resume',
@@ -2520,7 +2598,7 @@ test.describe('watching a running test', () => {
     }
   });
 
-  test('a watched lane’s stop outside a test, which the lane does not show, has Watch live', async () => {
+  test('a watched lane’s stop outside a test, which the lane does not show, has its own Watch', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -2537,10 +2615,10 @@ test.describe('watching a running test', () => {
         await expect(card.getByText('Between tests')).toBeVisible();
         stopAtCheckout(run.worker, 1, { bar: false });
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
-        // Its own view, Watch live, and the actions in the test's window held until it is watched.
-        const live = card.getByRole('button', { name: 'Watch live' });
+        // Its own view, its own Watch, and the actions in the test's window held until it is watched.
+        const live = card.locator(WATCH_STOP);
         await expect(live).toBeVisible();
-        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveCount(0);
+        await expect(card.locator(WATCH_LANE)).toHaveCount(0);
         await expectWatchToUse(card);
         await answerImage(run.worker, before);
         await live.click();
@@ -2579,7 +2657,8 @@ test.describe('watching a running test', () => {
         }).observe(announce, { childList: true, characterData: true, subtree: true });
       });
       const said = () => runs.evaluate(() => (window as unknown as { said: string[] }).said);
-      const lost = 'The connection to the editor was lost: the live view starts again once it is back.';
+      // The desktop app's run names the desktop app, not an editor.
+      const lost = 'The connection to the desktop app was lost: the live view starts again once it is back.';
       await desktop.close();
       await expect.poll(said).toContain(lost);
       await runs.waitForTimeout(1500);
@@ -2669,7 +2748,7 @@ test.describe('watching a running test', () => {
     }
   });
 
-  test('a reporter that cannot show a running test says to update it, and keeps Watch live at its stops', async () => {
+  test('a reporter that cannot show a running test says to update it, and keeps a stop’s Watch at its stops', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
       const runs = await openRuns(context, extensionId);
@@ -2682,11 +2761,11 @@ test.describe('watching a running test', () => {
         await expect(watch).toHaveAttribute('title', 'Update the reporter to watch a running test');
         await expect(watch).not.toHaveAttribute('aria-pressed');
         await watch.click({ force: true });
-        // Its stops are shown as before: the page shows there, and Watch live watches it.
+        // Its stops are shown as before: the page shows there, and the stop's Watch watches it.
         await expect(card.locator('.page-hint')).toBeVisible();
         stopAtCheckout(run.worker, 1, { bar: false });
-        await expect(card.getByRole('button', { name: 'Watch live' })).toBeVisible();
-        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveCount(0);
+        await expect(card.locator(WATCH_STOP)).toBeVisible();
+        await expect(card.locator(WATCH_LANE)).toHaveCount(0);
         expect(heardRequests(run.worker, 'view-lane')).toEqual([]);
       } finally {
         await endRun(run);
@@ -2711,6 +2790,8 @@ test.describe('the desktop app’s runs', () => {
       // A line for each paired tool.
       await expect(runs.locator('#hubs > p')).toHaveText(['Following 1 editor window', 'Following the desktop app']);
 
+      // The shell named the command it started the run with, which the run shows as an editor's run does.
+      desktop.commands.set('desktop-7', 'npx playwright test tests/cart.spec.ts --headed');
       const run = new FakeWorker(desktop.channel.path, editor.dir).attach(desktop.channel.token, 'desktop-7', 0, [
         ...RUN_TAKES,
       ]);
@@ -2718,11 +2799,12 @@ test.describe('the desktop app’s runs', () => {
       try {
         const card = runs.getByRole('region', { name: path.basename(editor.dir) });
         await expect(card.getByText('Desktop app', { exact: true })).toBeVisible();
+        await expect(card.locator('.command')).toHaveText('npx playwright test tests/cart.spec.ts --headed');
         await expect(card.getByText('cart › pays')).toBeVisible();
         // The desktop app sets no breakpoints: its run names the other ways a test stops.
         await expect(card.locator('.page-hint')).toHaveText(
           'A test’s page shows here when it stops: at page.pause(), or once you pause it. ' +
-            'Watch live then shows it as it paints.',
+            'Watch then shows it as it paints.',
         );
         await card.getByRole('button', { name: 'Pause' }).click();
         expect(await run.next('control')).toEqual({ type: 'control', action: 'pause' });

@@ -128,6 +128,7 @@ entries and dialogs of the hold are not recorded. Playwright's own trace and vid
 
 - **Runs Piwi started only**, with a reporter that takes the actions; an editor extension older than the reporter
   holds no failure.
+- **A desktop reproduction's** code is [to copy](./terminal-runs#a-reproduction-from-the-desktop-app).
 - **Assert offers what a recording's check panel offers**: a value, a text, a name, visible or hidden, enabled or
   disabled, with no `toBeChecked` or `toHaveCount` choice.
 - **Assert a region** leaves out the value of a password, one-time code or card field, in a shadow root too, and a link

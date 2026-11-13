@@ -955,7 +955,8 @@ data class RunWaiting(
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
  * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
  * the run stands on the team instance's live view (Share live), for a run whose reporter shares it, and `progress`
- * how far it is, as its own process says.
+ * how far it is, as its own process says. `checkout` marks a job the desktop app runs in a throwaway checkout of a
+ * commit, outside the workspace: its code is offered to copy (`StopCode.copy`), and the app stops it.
  */
 data class RunSession(
     val ref: String? = null,
@@ -964,6 +965,7 @@ data class RunSession(
     val ended: Boolean = false,
     val terminal: Boolean = false,
     val runner: Boolean = false,
+    val checkout: RunCheckout? = null,
     val live: RunLive? = null,
     val progress: RunProgress? = null,
     /** The run's page on the instance once its own process names it: its number there and its address. */
@@ -982,6 +984,9 @@ data class RunSession(
  * last (`by`: `start`, `person` or `agent`).
  */
 data class RunHoldFailures(val on: Boolean = false, val by: String? = null)
+
+/** The throwaway checkout a desktop app's job runs in: its commit's first 7 to 12 hex digits. */
+data class RunCheckout(val commit: String = "")
 
 /** A run's page on an instance: its number there (`#78`) and its address. */
 data class RunPage(val id: Int = 0, val url: String = "")
@@ -1336,7 +1341,8 @@ data class LocatorAtCaretResult(val ok: Boolean = false, val message: String? = 
  * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`, and an agent's `steps` and `locator`, whose
  * edit replaces the stopped line's locator), from the IDE, Piwi Picker or an agent, for the IDE to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
  * file's text at `version` (null for the file as saved), made together as one edit; the block as written (`code`),
- * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`).
+ * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`). With `copy`, the
+ * code is offered to copy, never written: the stop is in a desktop app's throwaway checkout, and `message` says so.
  */
 data class StopCode(
     val ref: String? = null,
@@ -1350,6 +1356,7 @@ data class StopCode(
     val edits: List<FileEdit>? = null,
     val message: String? = null,
     val warnings: List<String>? = null,
+    val copy: Boolean = false,
 )
 
 /**

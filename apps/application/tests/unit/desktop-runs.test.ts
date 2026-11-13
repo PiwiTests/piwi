@@ -46,6 +46,13 @@ import {
   presentsDesktopPicksToken,
 } from '../../server/utils/desktop-access';
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
+import type { DesktopAgentRun } from '#shared/desktop-agent-runs';
+import {
+  answerAgentRun,
+  askWindowToStart,
+  subscribeAgentRuns,
+  waitingAgentRuns,
+} from '../../server/utils/desktop-agent-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 /** How long an agent follows a run after its last call, short for the test that waits it out. */
@@ -312,6 +319,117 @@ describe('the run channel the shell names in a run', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
+    'is an editor’s for a job in a throwaway checkout of a folder its workspace holds, named to the shell alone',
+    () => {
+      onTestFinished(() => {
+        for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
+      });
+      expect(runs.editorHubFor(folder, true)).toBeNull();
+      // An editor whose channel is a socket of this user's, in a folder no other user enters: the server's own here.
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: channel,
+        recorderBundle: null,
+        checkout: true,
+      });
+      expect(runs.editorHubFor(folder, true)).toEqual({
+        runChannel: `${channel.path}#${channel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A job nobody attends stays on the app's channel with an editor that does not know such runs.
+      expect(runs.editorHubFor(folder, false)).toBeNull();
+      expect(runs.editorHubFor(worktree, true)).toBeNull();
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'names an editor’s channel to the shell alone: never to a browser’s request, nor in a window’s stream',
+    async () => {
+      // The editor's own run channel, apart from the server's: a socket of this user's in a folder no other user enters.
+      const editorDir = fs.mkdtempSync(path.join(editors, 'channel-'));
+      fs.chmodSync(editorDir, 0o700);
+      const editorChannel = { path: path.join(editorDir, 'channel.sock'), token: 'Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed' };
+      const editorSocket = net.createServer();
+      await new Promise<void>((resolve) => editorSocket.listen(editorChannel.path, resolve));
+      vi.doMock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
+      vi.doMock('../../server/utils/desktop-runs', () => ({ desktopRuns: async () => runs }));
+      vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+      vi.stubGlobal('defineRouteMeta', () => {});
+      vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+      vi.stubGlobal('setResponseHeader', () => {});
+      vi.stubGlobal('getQuery', (e: { path: string }) =>
+        Object.fromEntries(new URL(e.path, 'http://127.0.0.1').searchParams),
+      );
+      const window = await openWindow();
+      onTestFinished(async () => {
+        window.close();
+        vi.doUnmock('../../server/utils/auth');
+        vi.doUnmock('../../server/utils/desktop-runs');
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+        await new Promise<void>((resolve) => editorSocket.close(() => resolve()));
+        fs.rmSync(editors, { recursive: true, force: true });
+        fs.mkdirSync(editors, { mode: 0o700 });
+      });
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: editorChannel,
+        recorderBundle: null,
+        unattended: true,
+        checkout: true,
+      });
+      const route = (await import('../../server/api/desktop/run-channel.get')).default as unknown as (
+        event: unknown,
+      ) => Promise<Record<string, unknown>>;
+      const ask = (headers: Record<string, string>) =>
+        route({
+          path: `/api/desktop/run-channel?folder=${encodeURIComponent(folder)}&attended=1`,
+          node: { req: { headers: { host: '127.0.0.1:3000', ...headers } }, res: {} },
+          context: {},
+        });
+
+      // The shell hears the editor's channel.
+      expect((await ask({ 'x-piwi-token': TOKEN })).editor).toEqual({
+        runChannel: `${editorChannel.path}#${editorChannel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A request a browser sends is refused, the editor's channel named nowhere in the refusal.
+      for (const browser of [{ origin: ORIGIN }, { 'sec-fetch-site': 'same-origin' }]) {
+        const refused = await ask({ 'x-piwi-token': TOKEN, ...browser }).then(
+          () => null,
+          (error: { statusCode?: number }) => error,
+        );
+        expect(refused?.statusCode, JSON.stringify(browser)).toBe(403);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.token);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.path);
+      }
+
+      // A job of the server's channel runs and stops as the window watches: nothing of the editor's channel reaches it.
+      const ref = 'desktop-7-at-abc1234';
+      const worker = new Worker(worktree).attach(ref);
+      worker.begin();
+      worker.stop(1);
+      await waitFor(() => window.session(ref)?.workers[0]?.stop);
+      worker.socket.destroy();
+      const heard = JSON.stringify([window.events, runs.editorRuns(), runs.live()]);
+      expect(heard).not.toContain(editorChannel.token);
+      expect(heard).not.toContain(editorChannel.path);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
     'is cleared as the server starts when a server that was killed left it, and kept while one listens',
     async () => {
       const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-tmp-')));
@@ -425,6 +543,30 @@ describe('the hub Piwi Picker reaches', () => {
     worker.socket.destroy();
     window.close();
     other.close();
+    picker.socket.close();
+  });
+
+  it('names the command the shell started a run with to Piwi Picker and to an agent, as an editor names its own', async () => {
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    expect(runs.started('desktop-41', ['tests/checkout.spec.ts:3', '--headed'])).toBeNull();
+    const worker = new Worker(folder).attach('desktop-41');
+    const command = 'npx playwright test tests/checkout.spec.ts:3 --headed';
+    expect((await waitFor(() => picker.session('desktop-41')?.command)) ?? null).toBe(command);
+    const listed = await runs.agent.call('run_list', {});
+    const text = listed.content[0]!.type === 'text' ? listed.content[0]!.text : '{}';
+    const run = (JSON.parse(text) as { runs: Array<{ run: string; command: string | null }> }).runs.find(
+      (r) => r.run === 'desktop-41',
+    );
+    expect(run?.command).toBe(command);
+    // A run the shell said nothing of names no command.
+    const other = new Worker(folder).attach('desktop-42');
+    await waitFor(() => picker.session('desktop-42'));
+    expect(picker.session('desktop-42')?.command).toBeNull();
+    expect(runs.started('terminal-3', [])).toMatch(/no run the shell starts/);
+    worker.socket.destroy();
+    other.socket.destroy();
     picker.socket.close();
   });
 
@@ -1526,6 +1668,74 @@ describe("the agents' tools for the desktop app's runs", () => {
     worker.socket.destroy();
     picker.socket.close();
     window.close();
+  });
+
+  it('start a spec of a linked folder in the window as a person’s run, labeled with the agent, and none without a window', async () => {
+    expect((await call('run_start', { file: 'tests/checkout.spec.ts', agent: 'Claude Code' })).piwi).toEqual({
+      ok: false,
+      message: "No window of the desktop app is open: open the app's window, then start the run again.",
+    });
+    const heard: DesktopAgentRun[] = [];
+    const stop = subscribeAgentRuns((run) => {
+      heard.push(run);
+      expect(answerAgentRun({ id: run.id, ref: 'desktop-61' })).toBe(true);
+    });
+    try {
+      const started = await call('run_start', { file: 'tests/checkout.spec.ts', line: 4, agent: 'Claude Code' });
+      expect(started.piwi).toEqual({
+        ok: true,
+        message:
+          'tests/checkout.spec.ts:3 started in the desktop app\'s window, as "Started by Claude Code". Follow it with run_follow.',
+        run: 'desktop-61',
+      });
+      expect(heard).toEqual([
+        {
+          id: expect.stringMatching(/^[0-9a-f]{32}$/),
+          projectId: 3,
+          file: 'tests/checkout.spec.ts',
+          line: 3,
+          headed: false,
+          hold: true,
+          title: 'Started by Claude Code',
+        },
+      ]);
+      // An answer comes once: a second, or one for a run never asked, is not taken.
+      expect(answerAgentRun({ id: heard[0]!.id, ref: 'desktop-62' })).toBe(false);
+      // Listed from its start, before its workers connect.
+      const listed = await call('run_list');
+      expect(listed.piwi.runs).toContainEqual(expect.objectContaining({ run: 'desktop-61', starting: true }));
+      // A spec outside the linked folders is refused before the window hears of it.
+      const outside = await call('run_start', { file: path.join(worktree, 'tests', 'checkout.spec.ts') });
+      expect(outside.piwi.message).toBe(
+        `${path.join(worktree, 'tests', 'checkout.spec.ts')} is in no folder linked to a project: the desktop app runs the specs of its linked folders alone.`,
+      );
+      expect(heard).toHaveLength(1);
+    } finally {
+      stop();
+    }
+    // The window that does not answer, and one that refuses, are said.
+    const quiet = subscribeAgentRuns(() => {});
+    const start = { projectId: 3, file: 'tests/checkout.spec.ts', line: null, headed: false, hold: true, title: 'x' };
+    expect(await askWindowToStart(start, 20)).toEqual({
+      refused: "The desktop app's window did not start the run: open its main window, then start the run again.",
+    });
+    quiet();
+    const refusing = subscribeAgentRuns((run) => answerAgentRun({ id: run.id, error: 'The project has no folder.' }));
+    expect(await askWindowToStart(start, 1000)).toEqual({ refused: 'The project has no folder.' });
+    refusing();
+    // A run still waiting is sent again to a window that connects; once answered, or past the wait, it is not, and a
+    // late answer is not taken.
+    const sent: DesktopAgentRun[] = [];
+    const late = subscribeAgentRuns((run) => sent.push(run));
+    const waited = askWindowToStart(start, 1000);
+    expect(waitingAgentRuns()).toEqual(sent);
+    expect(answerAgentRun({ id: sent[0]!.id, ref: 'desktop-63' })).toBe(true);
+    expect(await waited).toEqual({ ref: 'desktop-63' });
+    expect(waitingAgentRuns()).toEqual([]);
+    await askWindowToStart(start, 20);
+    expect(waitingAgentRuns()).toEqual([]);
+    expect(answerAgentRun({ id: sent[1]!.id, ref: 'desktop-64' })).toBe(false);
+    late();
   });
 
   it('pause a run only while a window can show its stop, which goes on once the agent calls no more', async () => {

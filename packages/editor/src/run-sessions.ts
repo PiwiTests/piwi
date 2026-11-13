@@ -36,6 +36,7 @@ import type * as net from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   RUN_INTENT_NAMES,
+  checkoutCommitOf,
   parseRunMainToHub,
   parseRunToHub,
   type ActAnswer,
@@ -2698,6 +2699,8 @@ export class RunSessions {
       ...(session.terminal ? { terminal: true } : {}),
       ...(session.runner ? { runner: true } : {}),
     };
+    const commit = checkoutCommitOf(session.ref);
+    if (commit) view.checkout = { commit };
     const live = this.liveOf(session);
     if (live) view.live = live;
     if (session.progress) view.progress = { ...session.progress };

@@ -19,7 +19,7 @@ teammate's paused test, without waiting for the trace. Nothing you do in the vie
 |---|---|
 | A CI run, or a run shared from a developer's machine | Its page on the team instance: **Watch** |
 | A run you start from VS Code, a JetBrains IDE or a terminal | Its browser when headed; Piwi Picker's [Runs window](./runs-window#watch-live) and the editor's [worker view](./watch-running-test), running or stopped |
-| A run the desktop app starts | Its [Local runs](./desktop-runs#watch-live) tray and the Runs window, running or stopped |
+| A run the desktop app starts | Its [Local runs](./desktop-runs#watch) tray and the Runs window, running or stopped |
 
 A stop is a breakpoint, a `page.pause()` or **Pause**. A run that reports to the desktop app gets no live view key, so
 no team **Watch**.

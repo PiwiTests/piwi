@@ -10,7 +10,7 @@
  * between two tests, as the tray opens again or the window shows again (a frame of an earlier view of the lane), and
  * while the lane says why it sends none. At a stop of a test, the stop takes the clicks, the keys (with **Interact**
  * on, `interact`, which Escape on the image turns off, but while a pick or a check runs in the page, which takes it) and **Pick on the image** on the image as it does on a stop
- * watched live: the window watches the stop through the lane. Turned off, Watch live and Interact go off for the worker
+ * watched live: the window watches the stop through the lane. Turned off, the stop's Watch and Interact go off for the worker
  * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`). **Open the trace so
  * far**, in the card's head while the lane is watched and its worker runs a test whose reporter answers the ask
  * (`canOpenTrace`), asks the hub to open Playwright's trace viewer on that test's trace as it stands when the viewer

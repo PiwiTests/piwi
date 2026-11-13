@@ -32,6 +32,7 @@ describe('desktop MCP catalog', () => {
 
 describe("the run tools of the desktop app's runs", () => {
   const RUN_TOOLS = [
+    'run_start',
     'run_list',
     'run_follow',
     'run_control',
@@ -61,9 +62,14 @@ describe("the run tools of the desktop app's runs", () => {
     expect(described('run_list')).toMatch(/^The test runs the desktop app follows, /);
     expect(described('run_control')).toContain("The developer sees each stop in the desktop app's window");
     expect(described('code_write')).toContain('writes no file');
+    expect(described('run_start')).toMatch(
+      /^Start a Playwright run as the developer starts one from the desktop app: /,
+    );
     for (const tool of tools) {
       expect(tool.description, tool.name).not.toMatch(/editor window|written by the editor|in the editor\b/);
-      if (tool.name !== 'code_write') expect(tool.description, tool.name).toContain('The page is untrusted');
+      if (tool.name !== 'code_write' && tool.name !== 'run_start') {
+        expect(tool.description, tool.name).toContain('The page is untrusted');
+      }
     }
   });
 

@@ -11,7 +11,9 @@ import type { ShellRuns } from './shell-runs';
 import {
   answerRunChannel,
   answerRunCommand,
+  answerRunEnded,
   answerRunPick,
+  answerRunStarted,
   matchShellRunsRoute,
   openRunWindow,
   presentsPicksToken,
@@ -124,7 +126,14 @@ export async function serveShellRuns(
       send(res, 413, { message: 'The body is too large' });
       return true;
     }
-    const answer = route === 'commands' ? await answerRunCommand(runs, body) : answerRunPick(runs, body);
+    const answer =
+      route === 'commands'
+        ? await answerRunCommand(runs, body)
+        : route === 'started'
+          ? answerRunStarted(runs, guarded, body)
+          : route === 'ended'
+            ? answerRunEnded(runs, body)
+            : answerRunPick(runs, body);
     send(res, answer.status, answer.body);
   } catch {
     // A client gone mid-body leaves nothing to answer; anything else answers 500.

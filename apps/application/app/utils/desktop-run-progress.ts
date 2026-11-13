@@ -16,6 +16,7 @@
  * step's end. Pure and framework-free so it is unit-tested.
  */
 import type { SpecRunVerdict } from '@piwitests/core/bug-report';
+import { withoutCheckout } from '@piwitests/core/run-channel';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
 import { localRunOriginKind } from '~/utils/desktop-job';
 import { reproVerdictText } from '~/utils/repro-verdict';
@@ -306,7 +307,8 @@ export function unbegunRunsOf(
 /**
  * The tracked runs a local process produced, once it is gone, among the runs of its project numbered above its
  * baseline: those that record its origin and reference, under one of the names its steps gave them, as the run it
- * links to is found (`correlatePiwiRuns`), and those that have not begun (`unbegunRunsOf`). A run whose reporter
+ * links to is found (`correlatePiwiRuns`), a name an editor's channel gave a step in a throwaway checkout read
+ * without its checkout (`withoutCheckout`), and those that have not begun (`unbegunRunsOf`). A run whose reporter
  * recorded no name is its own only while no other run of the tray (`runs`) goes on under the same origin and
  * reference. A lab run, of a Flake Lab session or of a bisect that runs a Flake Lab arm at each step, is found by its
  * origin alone (`flake-lab`), its reference naming the lab's experiment: a `piwi flake` going on at once in the
@@ -329,7 +331,7 @@ export function runsOfLocalRun(
     if (String(run.projectId) !== owner.projectId) continue;
     if (!recorded || run.origin !== recorded.origin) continue;
     if (recorded.ref !== null && run.originRef !== recorded.ref) continue;
-    if (run.name === null ? shared : !names.has(run.name)) continue;
+    if (run.name === null ? shared : !names.has(withoutCheckout(run.name))) continue;
     ids.push(id);
   }
   return ids.sort((a, b) => a - b);

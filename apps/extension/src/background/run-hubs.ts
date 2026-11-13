@@ -304,6 +304,8 @@ export class RunHubs {
           holds: !!this.features.get(hub.url)?.includes('hold'),
           stops: !!this.features.get(hub.url)?.includes('stop'),
           traces: !!this.features.get(hub.url)?.includes('trace'),
+          sharesWindow: !!this.features.get(hub.url)?.includes('share-window'),
+          windowShared: !!connection?.windowShared && !!this.features.get(hub.url)?.includes('share-window'),
         };
       }),
       runs: [...live, ...ended],
@@ -358,6 +360,13 @@ export class RunHubs {
     ]);
   }
 
+  /** Stop sharing each run of a hub's editor window live, whichever runs are listed: the hub's answer. */
+  unshareWindow(hub: string): Promise<RunsAnswer> {
+    const connection = this.connections.get(hub);
+    if (!connection) return Promise.resolve(OFFLINE);
+    return connection.command({ type: 'share', ref: null, on: false, scope: 'window' });
+  }
+
   /** Passes a command of a window (`viewer`, for the live view's commands) to its hub. */
   command(request: Omit<CommandRequest, 'type' | 'id'>, viewer?: RunsViewer): Promise<RunsAnswer> {
     const connection = this.connections.get(request.hub);
@@ -400,7 +409,9 @@ export class RunHubs {
         // `parseRunsRequest` takes none without whether to share the run.
         return request.on === undefined
           ? Promise.resolve(OFFLINE)
-          : connection.command({ type: 'share', ref, on: request.on });
+          : request.scope === 'window'
+            ? connection.command({ type: 'share', ref, on: request.on, scope: 'window' })
+            : connection.command({ type: 'share', ref, on: request.on });
       case 'hold':
         return request.on === undefined
           ? Promise.resolve(OFFLINE)

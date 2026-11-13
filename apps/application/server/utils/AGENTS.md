@@ -257,7 +257,9 @@ runs (`@piwitests/editor/run-host`), plus these:
   say or of the token check. These streams hand h3 a `ReadableStream`, so they count nothing unread, unlike
   `runs/events.get.ts` (`desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
-  (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
+  (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel. So does the editor's
+  run channel it names for a job in a throwaway checkout (`editor`, `desktop-editor-hub.ts`): never in a window's
+  stream (`desktop-runs.test.ts`, "names an editor’s channel to the shell alone").
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
   its disk text, and refused once the file was written since the run's first connection opened.
@@ -273,6 +275,10 @@ runs (`@piwitests/editor/run-host`), plus these:
   it is read, before any is let go) and resource allow list, served by `snapshotFrameDocument`; nothing is kept past
   the test or the last window's Inspect (`tests/unit/desktop-inspect.test.ts`). Its event and command are the app's
   (`shared/desktop-runs.ts`); Piwi Runner's host has no Inspect.
+- **An agent's run starts only in the main window, as a person's run of a spec of a linked folder.** `ShellRuns`
+  checks the spec and builds what the run is (`ShellRunStart`), `desktop-agent-runs.ts` hands it to the windows on the
+  desktop event stream (`agent-run`) and waits for the ref the window answers, refusing at once with no window open;
+  the window's tray starts it through the shell (`plugins/desktop-agent-runs.client.ts`). `tests/unit/desktop-runs.test.ts`.
 - **The editors' runs are observed, never steered.** `EditorRuns` (`desktop-editor-runs.ts`) connects to each live
   editor's hub with no `Origin` and the token of its discovery file, subscribes with `observe`, so no stop waits for
   it, and only tells the window their tests that wait (`editor-runs`, for the shell's surfaces)

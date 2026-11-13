@@ -1455,7 +1455,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch live stays on`() {
+    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch stays on`() {
         val live = listOf("view", "input", "pick-at")
         fun at(ref: String, slot: Int, takes: List<String>, line: Int = 7) =
             Glue.ShownStop(ref, slot + 4, stopAt(specUri, line), runTest(), takes, slot = slot)
@@ -1463,7 +1463,7 @@ class GlueTest {
         // The slot's next stop, the worker Playwright starts in its place included.
         assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live, 8), watchLive = true))
         assertTrue(Glue.keepsInteract(true, shown, at("ed-1", 1, live).copy(worker = 11), watchLive = true))
-        // Interact or Watch live off, another slot or run, or a stop that takes no input on a live view: off.
+        // Interact or Watch off, another slot or run, or a stop that takes no input on a live view: off.
         assertFalse(Glue.keepsInteract(false, shown, at("ed-1", 1, live), watchLive = true))
         assertFalse(Glue.keepsInteract(true, shown, at("ed-1", 1, live), watchLive = false))
         assertFalse(Glue.keepsInteract(true, null, at("ed-1", 1, live), watchLive = true))
@@ -1527,6 +1527,25 @@ class GlueTest {
         assertTrue(stop.terminal)
         assertFalse(stop.runner)
         assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
+    }
+
+    @Test
+    fun `a job the desktop app runs in a throwaway checkout is none to stop, and says so where it stops`() {
+        val job = RunSession(
+            "desktop-3-at-abc1234def01",
+            null,
+            listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5))),
+            checkout = RunCheckout("abc1234def01"),
+        )
+        val sessions = mapOf("desktop-3-at-abc1234def01" to job)
+        assertFalse(Glue.runControls(sessions).stoppable)
+        val stop = Glue.stopsOf(sessions).single()
+        assertEquals("abc1234def01", stop.checkout)
+        assertEquals(
+            "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · the desktop app's reproduction at commit abc1234, in a throwaway checkout",
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout),
+        )
+        assertNull(Glue.ownRunInProgress(emptyList(), mapOf("desktop-3-at-abc1234def01" to job.copy(progress = RunProgress(done = 1, total = 3, status = "running")))))
     }
 
     @Test

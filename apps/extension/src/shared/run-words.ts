@@ -1,5 +1,5 @@
 import type { RunCountKey, RunSpeaker, RunWordArgs, RunWordKey } from '@piwitests/run-model/words';
-import { formatList, t, tn, type MessageKey, type PluralKey } from './i18n.js';
+import { formatList, formatNumber, t, tn, type MessageKey, type PluralKey } from './i18n.js';
 
 /**
  * The run model's words (`@piwitests/run-model/words`) as the Runs window says them: from the catalogs, in the
@@ -11,10 +11,11 @@ const catalogKey = (key: RunWordKey): MessageKey => key;
 const pluralKey = (key: RunCountKey): PluralKey => key;
 
 const message = t as (key: MessageKey, args?: RunWordArgs) => string;
-const counted = tn as (key: PluralKey, count: number) => string;
+const counted = tn as (key: PluralKey, count: number, args?: RunWordArgs) => string;
 
 export const runsSpeaker: RunSpeaker = {
   say: (key, args) => message(catalogKey(key), args),
-  count: (key, count) => counted(pluralKey(key), count),
+  count: (key, count, args) => counted(pluralKey(key), count, args),
+  number: formatNumber,
   list: formatList,
 };

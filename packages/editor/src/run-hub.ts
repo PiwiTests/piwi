@@ -23,7 +23,9 @@
  * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
  * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
- * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection
+ * window's warning), or each run of the editor window until they stop (`share` with `scope: 'window'`, where the
+ * host shares its window's runs, `sharesWindow`), and every subscribed connection hears how the run stands there
+ * (`session.live`) and whether the window shares its runs (`share-window`). A connection
  * opens a lane's running test's trace so far in Playwright's trace viewer on this machine (`openTrace`), its answer a
  * sentence: the trace's path, which the lane's worker names to the hub alone, goes to no connection; one that came
  * through a port the client forwards is on another machine, and opens none. A connection the hub closes is cut a
@@ -96,14 +98,20 @@ export interface HubRunInfo {
 
 /**
  * The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`), `trace` only where its
- * run sessions start Playwright's trace viewer (`opensTraces`) and the connection is on this machine, not `forwarded`.
+ * run sessions start Playwright's trace viewer (`opensTraces`) and the connection is on this machine, not `forwarded`,
+ * and `share-window` only where its host is an editor window that shares its runs until the person stops
+ * (`sharesWindow`).
  */
-export function hubFeatures(options: Pick<RunHubOptions, 'stopRun' | 'sessions'>, forwarded = false): HubFeature[] {
-  return HUB_FEATURES.filter(
+export function hubFeatures(
+  options: Pick<RunHubOptions, 'stopRun' | 'sessions' | 'sharesWindow'>,
+  forwarded = false,
+): HubFeature[] {
+  const features = HUB_FEATURES.filter(
     (feature) =>
       (feature !== 'stop' || !!options.stopRun) &&
       (feature !== 'trace' || (options.sessions.opensTraces && !forwarded)),
   );
+  return options.sharesWindow ? [...features, 'share-window'] : features;
 }
 
 /** Why `openTrace` is refused to a connection that came through a port the client forwards. */
@@ -138,6 +146,11 @@ export interface RunHubOptions {
    * or process, the desktop app's window its run. Absent, the hub leaves the `stop` feature out and refuses the command.
    */
   stopRun?(ref: string): Promise<RunControlResult>;
+  /**
+   * The host is an editor window whose runs a person may share until they stop (`share` with `scope: 'window'`): the
+   * hub lists `share-window`, and tells each subscribed connection the window's state (`share-window`).
+   */
+  sharesWindow?: boolean;
   /** The token `hello` must carry: a new random one by default, the desktop app's own token in its server. */
   token?: string;
   /** Why the connections close as the hub does. */
@@ -316,6 +329,14 @@ export class RunHub {
   answersStops(): boolean {
     for (const connection of this.connections) if (connection.subscribed && !connection.observes) return true;
     return false;
+  }
+
+  /** Whether the editor window shares its runs changed: every subscribed connection hears it (`share-window`). */
+  shareWindowChanged(on: boolean): void {
+    if (!this.options.sharesWindow) return;
+    for (const connection of this.connections) {
+      if (connection.subscribed) this.send(connection, { type: 'share-window', on });
+    }
   }
 
   /** A run changed: every subscribed connection hears it, with what each stop takes from it. */
@@ -621,6 +642,9 @@ export class RunHub {
             this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
           }
           if (connection.ws) this.tellPeers([connection]);
+          if (this.options.sharesWindow) {
+            this.send(connection, { type: 'share-window', on: sessions.sharingWindow });
+          }
           if (first && !connection.observes) this.options.surfacesChanged();
           return;
         }
@@ -696,7 +720,13 @@ export class RunHub {
           });
         }
         case 'share':
-          return reply(sessions.share({ ref: command.ref, on: command.on }));
+          if (command.scope !== 'window') return reply(sessions.share({ ref: command.ref, on: command.on }));
+          if (!this.options.sharesWindow) {
+            return reply({ ok: false, message: 'This hub shares one run at a time: share each run from its card.' });
+          }
+          return reply(
+            sessions.share({ on: command.on, scope: 'window', ...(command.ref !== null ? { ref: command.ref } : {}) }),
+          );
         case 'hold':
           return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
         case 'stop':

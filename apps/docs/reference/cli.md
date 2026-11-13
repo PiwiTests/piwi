@@ -501,11 +501,12 @@ Serve the run tools of this machine to a coding agent, as one MCP server over st
 Piwi (whose runs are served to agents) and of the [desktop app](/features/desktop), under one entry for every
 repository. It finds each editor's server in the editors' discovery files, and the desktop app's in its own, once the
 app's server proved it holds the token there. It holds no run logic: `run_list` asks every host and names each run's
-host, `run_start` goes to the editor whose workspace holds the spec, and every other tool goes to the host of its
-`run`; a host that does not answer is named in the answer. See [Run control for agents](/features/agent-run-control).
+host, `run_start` goes to the editor whose workspace holds the spec, else to the desktop app, which runs a spec of a
+folder it links to a project, and every other tool goes to the host of its `run`; a host that does not answer is named
+in the answer. See [Run control for agents](/features/agent-run-control).
 
 A relative `file` of `run_start` is read against the agent's working directory, else against each editor's workspace
-folders, and a spec reached through a link goes to the editor under its own folder. Each host is named with its first
+folders and the desktop app's linked folders, and a spec reached through a link goes to the editor under its own folder. Each host is named with its first
 folder (`Visual Studio Code (shop)`), and an agent's cancel of a call reaches its host. `@latest` runs the newest
 reporter, whichever version a repository installs.
 

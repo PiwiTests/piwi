@@ -1898,6 +1898,14 @@ export interface RunSession {
    */
   runner?: boolean;
   /**
+   * The run is a job the desktop app runs in a throwaway checkout of `commit` (its first 7 to 12 hex digits), outside
+   * the workspace: a reproduction, a bisect step or a Flake Lab, named so by its ref
+   * (`@piwitests/core/run-channel`'s `checkoutCommitOf`). Its stops are at the checkout's files, the code made at them
+   * is offered to copy (`StopCode.copy`), never written, and its process is the desktop app's, which stops it. Absent
+   * otherwise.
+   */
+  checkout?: { commit: string };
+  /**
    * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
    * `share`; absent for one whose reporter predates it.
    */
@@ -2462,6 +2470,12 @@ export interface StopCode {
   message: string;
   /** What the reader of the code should check (a brittle locator, values hidden as credentials). */
   warnings: string[];
+  /**
+   * The code is offered to copy, never written: the stop is in a file of a throwaway checkout the desktop app runs a
+   * job in (`RunSession.checkout`), and `message` says so. The client shows the code to copy and edits no file. Absent
+   * for code to write.
+   */
+  copy?: true;
 }
 
 export const STOP_CODE_NOTIFICATION = 'piwi/stopCode';

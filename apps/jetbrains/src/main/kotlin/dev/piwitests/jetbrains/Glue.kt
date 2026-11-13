@@ -606,12 +606,13 @@ object Glue {
      * what the run's own process tells the hub (`RunSession.progress`, from its `run-begin` and `run-progress`) when it
      * does, so it counts with no instance and with the desktop app as the instance, else from the instance (`LiveRun`).
      * The instance's run is matched to its session by its ref alone: with none matched, the instance's count shows. A
-     * run started in a terminal is not the editor's own. Null while none runs.
+     * run started in a terminal, or a desktop app's job in a throwaway checkout, is not the editor's own. Null while none
+     * runs.
      */
     fun ownRunInProgress(contexts: List<RunStatus>, sessions: Map<String, RunSession>): Pair<LiveRun, String?>? {
         val own = contexts.firstOrNull { it.live?.own == true }
         val ownLive = own?.live
-        val told = sessions.values.filter { !it.ended && !it.terminal && it.progress?.status == "running" }
+        val told = sessions.values.filter { !it.ended && !it.terminal && it.checkout == null && it.progress?.status == "running" }
         val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
         val progress = session?.progress ?: return ownLive?.let { it to own.root }
         val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
@@ -1782,6 +1783,8 @@ object Glue {
         val slot: Int = worker,
         /** Its reporter brings the test's window to the front (`RunWorker.showsWindow`). */
         val showsWindow: Boolean = false,
+        /** The commit of the throwaway checkout a desktop app's job runs in (`RunSession.checkout`). */
+        val checkout: String? = null,
     )
 
     /** Every stopped worker of the sessions, in their order. */
@@ -1798,6 +1801,7 @@ object Glue {
                     session.terminal && session.runner,
                     w.parallelIndex,
                     w.showsWindow,
+                    session.checkout?.commit,
                 )
             }
         }
@@ -1845,7 +1849,7 @@ object Glue {
 
     /**
      * Whether the Paused Page tab keeps Interact on as it shows `stop`: Interact is on (`interacting`) for the stop of
-     * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch live stays on, and the new stop of
+     * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch stays on, and the new stop of
      * that slot takes input on a live view.
      */
     fun keepsInteract(interacting: Boolean, shown: Pair<String, Int>?, stop: ShownStop, watchLive: Boolean): Boolean =
@@ -2059,10 +2063,12 @@ object Glue {
      * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
      * plain text: the gutter's icon marks the stop.
      */
-    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false, runner: Boolean = false): String {
+    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false, runner: Boolean = false, checkout: String? = null): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
-        // A run started in a terminal, or by the IDE's own test runner, says so: its process is theirs.
+        // A run started in a terminal, or by the IDE's own test runner, says so: its process is theirs. So does a job the
+        // desktop app runs in a throwaway checkout of a commit (`checkout`), whose code is offered to copy.
         val where = when {
+            checkout != null -> " · the desktop app's reproduction at commit ${checkout.take(7)}, in a throwaway checkout"
             !terminal -> ""
             runner -> " · run by the editor's test runner"
             else -> " · run in a terminal"
@@ -2355,7 +2361,7 @@ object Glue {
      */
     fun stopCaption(stop: ShownStop, sessions: Map<String, RunSession>): String =
         listOfNotNull(
-            "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}",
+            "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)} · ${stopPlace(stop.stop)}",
             stopPresence(stop, sessions),
         ).joinToString(" · ")
 
@@ -2381,7 +2387,7 @@ object Glue {
         }
         if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title$seen")
         val present = presentAt(stop.stop, stop.takes, worker)?.let { " · $it" }.orEmpty()
-        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}$present")
+        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)} · ${stopPlace(stop.stop)}$present")
     }
 
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
@@ -2541,7 +2547,7 @@ object Glue {
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · ${workerName(stop.slot)}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner, stop.checkout)} · $test${stopPlace(stop.stop)} · ${workerName(stop.slot)}"
     }
 
     /**
@@ -2586,7 +2592,7 @@ object Glue {
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
             shareable = stopsOf(sessions).any(::canShare),
             browserShowable = stopsOf(sessions).any(::canShowBrowser),
-            stoppable = sessions.values.any { !it.terminal },
+            stoppable = sessions.values.any { !it.terminal && it.checkout == null },
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
             watchable = workers.any { it.watchable },

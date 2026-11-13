@@ -23,7 +23,7 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
-import { CI_READ_ONLY, ciRunName, ciRunWhere, type CiRun } from '@piwitests/run-model/ci';
+import { CI_READ_ONLY, ciRunName, ciRunWhere } from '@piwitests/run-model/ci';
 import {
   asksLaneTextAgain,
   callWait,
@@ -58,12 +58,14 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piw
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
-import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
+import { formatNumber, formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
   attentionOf,
+  ciDashboardWatch,
+  ciLaneKey,
   pageHintOf,
   shareRefusalOf,
   readRunsBounds,
@@ -73,7 +75,12 @@ import {
   STOP_KEYS,
   slotKey,
   workerKey,
+  type CiWatchEnd,
   type RunsAnswer,
+  type RunsCiFrame,
+  type RunsCiLane,
+  type RunsCiRun,
+  type RunsCiTest,
   type RunsCode,
   type RunsEvent,
   type RunsFrame,
@@ -109,9 +116,9 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * watch, with its page's link to copy and **Stop sharing**; a run that cannot be shared says why, under its workers, in
  * place of Share live.
  *
- * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
- * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
- * stays on. Where the stop takes input from this window (`input`), Interact, while the view is on, sends the pointer
+ * A stop's own Watch shows its frames in place of its image, while the window shows that stop: the view ends as the
+ * stop does, the window hides or the stop's Watch is turned off, and comes again at the worker's next stop while
+ * the stop's Watch stays on. Where the stop takes input from this window (`input`), Interact, while the view is on, sends the pointer
  * and the keys on it to the page, and the first of them drives the stop: the left and right buttons with the click
  * count the system gave them where the stop takes it (`input-clicks`), Control, Alt and Meta held around a click. Tab
  * moves the focus on unless a click into the view took the keyboard; Escape turns Interact off and gives the stop
@@ -124,7 +131,7 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * worker Playwright starts in its place, until it is turned off or the run ends; a hidden window watches nothing, and
  * watches again as it shows. A frame taken before a Step, a Resume or the end of a test stays shown, dimmed and marked
  * as running, until the next one comes. At a stop the lane's frames show, they are its live view, taking Interact's
- * input as Watch live's do; a watched lane that stops is brought into view. Pause and watch pauses the worker and watches it. At a
+ * input as a stop's own Watch's do; a watched lane that stops is brought into view. Pause and watch pauses the worker and watches it. At a
  * stop no pause bar shows and that the window does not watch, the actions in the test's window show held, saying to
  * watch first. At a hub that sends a lane's layers, a watched lane shows them under its page once its worker's reporter
  * sent one (`@piwitests/run-model/layers`): why its call waits (the latest lines of Playwright's log of it, what its locator matches and how), its
@@ -208,6 +215,11 @@ const holdRefusals = new Map<string, string>();
 /** Each worker's state, stop and its driver as last shown, and the runs live then, for what the live region says. */
 let seen: Map<string, WorkerSeen> | null = null;
 let liveSeen = new Set<string>();
+/** The live runs shared, and the hubs whose editor window shares its runs, as the live region last heard of them. */
+let sharedSeen = new Set<string>();
+let windowsSeen: Set<string> | null = null;
+/** The hubs whose window's share this window changed, its answer said: the next state says nothing of it. */
+const windowsAsked = new Set<string>();
 
 // ── The port to the worker ──────────────────────────────────────────────────────────────────────────────────────────
 
@@ -251,6 +263,10 @@ function connect(): void {
       heardLaneEnded(event);
     } else if (event?.type === 'lane-layer') {
       heardLaneLayer(event);
+    } else if (event?.type === 'ci-frame') {
+      heardCiFrame(event);
+    } else if (event?.type === 'ci-ended') {
+      heardCiEnded(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -261,10 +277,11 @@ function connect(): void {
     if (port === opened) port = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
-    // The worker that relayed the views is gone: the next one watches each again that Watch live left on, and each lane
+    // The worker that relayed the views is gone: the next one watches each again that a stop's Watch left on, and each lane
     // Watch left on.
     for (const [key, view] of views) if (isLive(view)) endView(key, false);
     for (const lane of lanes.values()) if (isLive(lane)) idleLane(lane, false);
+    idleCi(false);
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -274,13 +291,41 @@ function connect(): void {
       if (window.id !== undefined) post({ type: 'window', windowId: window.id });
     })
     .catch(() => undefined);
+  post({ type: 'shown', shown: !document.hidden });
 }
 
 /** What a command names besides its stop: the response to mock, whether a view is on, a lane, the input, a point. */
 type CommandExtra = Pick<
   Extract<RunsRequest, { type: 'command' }>,
-  'request' | 'on' | 'lane' | 'layers' | 'events' | 'x' | 'y'
+  'request' | 'on' | 'scope' | 'lane' | 'layers' | 'events' | 'x' | 'y'
 >;
+
+/**
+ * Sends the worker a request it answers with `answer` of the request's id: `offline` without a port to it, `late` once
+ * `COMMAND_TIMEOUT_MS` passed.
+ */
+function answered(make: (id: number) => RunsRequest, offline: RunsAnswer, late: RunsAnswer): Promise<RunsAnswer> {
+  const id = nextId++;
+  return new Promise((resolve) => {
+    if (!port) {
+      resolve(offline);
+      return;
+    }
+    // A request the worker drops, or never answers, frees its buttons: a later answer finds nobody waiting.
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      resolve(late);
+    }, COMMAND_TIMEOUT_MS);
+    waiting.set(id, (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    });
+    post(make(id));
+  });
+}
+
+const OFFLINE: RunsAnswer = { ok: false, message: '', failure: 'offline' };
+const TIMEOUT: RunsAnswer = { ok: false, message: '', failure: 'timeout' };
 
 function command(
   hub: string,
@@ -290,28 +335,22 @@ function command(
   since: string | null,
   extra: CommandExtra = {},
 ): Promise<RunsAnswer> {
-  const id = nextId++;
-  return new Promise((resolve) => {
-    if (!port) {
-      resolve({ ok: false, message: '', failure: 'offline' });
-      return;
-    }
-    // A command the worker drops, or never answers, frees its buttons: a later answer finds nobody waiting.
-    const timer = setTimeout(() => {
-      waiting.delete(id);
-      resolve({ ok: false, message: '', failure: 'timeout' });
-    }, COMMAND_TIMEOUT_MS);
-    waiting.set(id, (answer) => {
-      clearTimeout(timer);
-      resolve(answer);
-    });
-    post({ type: 'command', id, hub, ref, worker, since, what, ...extra });
-  });
+  return answered((id) => ({ type: 'command', id, hub, ref, worker, since, what, ...extra }), OFFLINE, TIMEOUT);
 }
 
-function failureText(answer: RunsAnswer): string {
-  if (answer.failure === 'offline') return t('runs_failOffline');
-  if (answer.failure === 'timeout') return t('runs_failTimeout');
+/**
+ * The tool whose hub follows a run, as the window's sentences name it: the desktop app for its hub's runs, else the
+ * editor by its name (`Visual Studio Code`), or "your editor" when its hub names none.
+ */
+function toolName(hub: string): string {
+  const found = state?.hubs.find((h) => h.id === hub);
+  return found?.desktop ? t('runs_desktopName') : (found?.client ?? t('runs_editor'));
+}
+
+/** What an answer says, the worker's own failures naming the tool whose hub it did not reach (`toolName`). */
+function failureText(answer: RunsAnswer, hub: string): string {
+  if (answer.failure === 'offline') return t('runs_failOffline', { tool: toolName(hub) });
+  if (answer.failure === 'timeout') return t('runs_failTimeout', { tool: toolName(hub) });
   if (answer.failure === 'unwatched') return t('runs_failUnwatched');
   return answer.message;
 }
@@ -363,7 +402,7 @@ function say(
   options: { sent?: boolean; warnings?: string[]; rich?: boolean; copy?: string | null } = {},
 ): void {
   const { sent = false, warnings = [], rich = false, copy = null } = options;
-  const text = answer.ok ? answer.message : failureText(answer);
+  const text = answer.ok ? answer.message : failureText(answer, key.split('|')[0]!);
   answers.set(key, {
     ok: answer.ok,
     text,
@@ -393,37 +432,99 @@ function runKeyOf(run: RunsRun): string {
   return `${run.hub}|${run.session.ref}`;
 }
 
-/** Share a run live (`on`), or stop sharing it, unless a share of it is on its way: a refusal is shown and read out. */
-async function share(run: RunsRun, on: boolean): Promise<void> {
+/**
+ * Share a run live (`on`), or stop sharing it, or with `byWindow`, share each run of its editor window until the person
+ * stops, unless a share of it is on its way: a refusal is shown and read out.
+ */
+async function share(run: RunsRun, on: boolean, byWindow = false): Promise<void> {
   const key = runKeyOf(run);
   if (sharing.has(key)) return;
   sharing.add(key);
   shareRefusals.delete(key);
   render();
-  const answer = await command(run.hub, run.session.ref, null, 'share', null, { on });
+  const answer = await command(run.hub, run.session.ref, null, 'share', null, {
+    on,
+    ...(byWindow ? { scope: 'window' as const } : {}),
+  });
   sharing.delete(key);
-  const text = answer.ok ? answer.message : failureText(answer);
+  if (byWindow && answer.ok && state?.hubs.find((h) => h.id === run.hub)?.windowShared !== on) {
+    windowsAsked.add(run.hub);
+  }
+  const text = answer.ok ? answer.message : failureText(answer, run.hub);
   if (!answer.ok) shareRefusals.set(key, text);
   if (text) announce(text);
   render();
 }
 
-/** Share live: asked first, the first time in this window; then each share goes at once. */
-function askShare(run: RunsRun): void {
+/**
+ * Share live, or Share this editor window's runs (`byWindow`): asked first, the first time in this window, offering
+ * both where the hub shares its window's runs; then each share goes at once.
+ */
+function askShare(run: RunsRun, byWindow = false): void {
   const key = runKeyOf(run);
-  if (shareWarned) return void share(run, true);
+  if (shareWarned) return void share(run, true, byWindow);
   shareAsking.add(key);
-  focusKey = `${key}|share-yes`;
+  focusKey = `${key}|${byWindow ? 'share-window-yes' : 'share-yes'}`;
   render();
 }
 
-function answerShare(run: RunsRun, yes: boolean): void {
+function answerShare(run: RunsRun, yes: boolean, byWindow = false): void {
   const key = runKeyOf(run);
   shareAsking.delete(key);
   focusKey = `${key}|share`;
   if (!yes) return render();
   shareWarned = true;
-  void share(run, true);
+  void share(run, true, byWindow);
+}
+
+/** The runs whose Stop sharing waits for the person to confirm it. */
+const stopAsking = new Set<string>();
+
+/** Stop sharing a run, asked first, every time: the run alone, whether or not its editor window shares its runs. */
+function askStopSharing(run: RunsRun, yes: boolean | null): void {
+  const key = runKeyOf(run);
+  if (yes === null) {
+    stopAsking.add(key);
+    focusKey = `${key}|stop-sharing-yes`;
+    return render();
+  }
+  stopAsking.delete(key);
+  focusKey = `${key}|stop-sharing`;
+  if (!yes) return render();
+  void share(run, false);
+}
+
+/** The hubs whose Stop sharing this window's runs waits for the person to confirm it, or for the hub's answer. */
+const windowStopAsking = new Set<string>();
+const windowStopping = new Set<string>();
+/** Why a hub refused to stop sharing its window's runs, until it is asked again. */
+const windowStopRefusals = new Map<string, string>();
+
+/** Stop sharing this window's runs, on the hubs line: asked first, every time, then every run of the window stops. */
+function askStopWindow(hub: string, yes: boolean | null): void {
+  if (yes === null) {
+    windowStopAsking.add(hub);
+    focusKey = `hubs|${hub}|stop-window-yes`;
+    return render();
+  }
+  windowStopAsking.delete(hub);
+  focusKey = `hubs|${hub}|stop-window`;
+  if (!yes) return render();
+  void stopWindow(hub);
+}
+
+async function stopWindow(hub: string): Promise<void> {
+  if (windowStopping.has(hub)) return;
+  windowStopping.add(hub);
+  windowStopRefusals.delete(hub);
+  render();
+  const answer = await answered((id) => ({ type: 'unshare-window', id, hub }), OFFLINE, TIMEOUT);
+  windowStopping.delete(hub);
+  if (answer.ok && state?.hubs.find((h) => h.id === hub)?.windowShared) windowsAsked.add(hub);
+  const text = answer.ok ? answer.message : failureText(answer, hub);
+  if (!answer.ok) windowStopRefusals.set(hub, text);
+  if (text) announce(text);
+  render();
 }
 
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
@@ -528,7 +629,7 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       since: stop.since,
       loading: false,
       img,
-      note: img ? '' : failureText(answer),
+      note: img ? '' : failureText(answer, run.hub),
       viewport,
       ...(answer.failure === 'offline' ? { lost: run.hub } : {}),
     });
@@ -630,14 +731,14 @@ const views = new Map<string, LiveView>();
  */
 const lanes = new Map<string, LaneView>();
 /**
- * The slots whose Watch live the person left on (`slotKey`), each with its hub and run: each new stop of the worker in
+ * The slots whose stop's Watch the person left on (`slotKey`), each with its hub and run: each new stop of the worker in
  * the slot is watched too, a worker Playwright starts in its place after a failure included, until it is turned off or
  * the run ends.
  */
 const watchLive = new Map<string, { hub: string; run: string }>();
 /**
  * The slots whose Interact the person turned on (`slotKey`), each with its hub and run: the views of the slot's stops
- * send the person's clicks, wheel and keys to the page, through each next stop, until Interact, Watch live or Watch is
+ * send the person's clicks, wheel and keys to the page, through each next stop, until Interact, the stop's Watch or the lane's is
  * turned off, `Esc` is pressed on the view, or the run ends.
  */
 const interacting = new Map<string, { hub: string; run: string }>();
@@ -689,14 +790,14 @@ function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubSto
 }
 
 /**
- * Watch live, on or off for a worker's slot; on, every next stop in the slot is watched too, until it is turned off.
+ * The stop's Watch, on or off for a worker's slot; on, every next stop in the slot is watched too, until it is turned off.
  */
 function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   const key = workerKey(run.hub, run.session.ref, { worker });
   if (releasing.has(key)) return;
   const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex ?? worker;
   const slot = slotKey(run.hub, run.session.ref, lane);
-  // The run of a hub not connected now is shown as last heard: its Watch live waits for the hub.
+  // The run of a hub not connected now is shown as last heard: its stop's Watch waits for the hub.
   if (!hubAnswers(run.hub)) return;
   const view = views.get(key);
   if (view?.since === stop.since && isLive(view)) {
@@ -718,8 +819,8 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
 /**
  * Interact, on or off for a worker's slot. On, the slot's views send the person's input to the page, and the first of
  * it drives the stop, where its hub names who drives (`presence`). Off, the input waiting goes first, then a stop this
- * window drives, or reached with its input, is given back, whatever command is on its way. Watch live or Watch turned
- * off, a view or a lane refused, and Give back turn it off too.
+ * window drives, or reached with its input, is given back, whatever command is on its way. The stop's Watch or the
+ * lane's turned off, a view or a lane refused, and Give back turn it off too.
  */
 function setInteract(run: RunsRun, worker: HubWorker, stop: HubStop, on: boolean): Promise<void> {
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
@@ -772,7 +873,7 @@ function hubAnswers(hub: string): boolean {
 
 /**
  * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing while
- * the port to the worker is down: Watch live left on starts it once the worker is back.
+ * the port to the worker is down: a stop's Watch left on starts it once the worker is back.
  */
 function startView(run: RunsRun, worker: number, stop: HubStop): void {
   if (!port) return;
@@ -808,7 +909,7 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
       // A view asked as its hub's connection was lost ends as the loss does, to start again once it answers.
       const lost = answer.failure === 'offline';
       view.status = lost ? 'ended' : 'refused';
-      view.note = lost ? t('runs_liveLost') : failureText(answer);
+      view.note = lost ? t('runs_liveLost', { tool: toolName(run.hub) }) : failureText(answer, run.hub);
       view.next = null;
       announce(view.note);
     }
@@ -865,7 +966,7 @@ async function sendInput(at: RunsView, slot: string, showing: () => boolean, eve
   const answer = await command(at.hub, at.ref, at.worker, 'input', at.since, { events });
   if (answer.ok && events.some((e) => e.type !== 'mouse' || e.action !== 'move')) inputAt.set(slot, at.since);
   if (answer.ok || !showing()) return answer.ok;
-  if (answers.get(key)?.text !== failureText(answer)) {
+  if (answers.get(key)?.text !== failureText(answer, at.hub)) {
     say(key, answer, at.since);
     render();
   }
@@ -924,7 +1025,7 @@ function heardViewEnded(ended: RunsView): void {
   if (!isLive(view) || view.since !== ended.since) return;
   stopInput(view);
   view.status = 'ended';
-  view.note = t('runs_liveLost');
+  view.note = t('runs_liveLost', { tool: toolName(ended.hub) });
   view.next = null;
   view.img.removeAttribute('src');
   view.viewport = null;
@@ -1032,7 +1133,7 @@ function askLane(slot: string, lane: LaneView): void {
       // A lane asked as its hub's connection was lost ends as the loss does, to be asked again once it answers.
       const lost = answer.failure === 'offline';
       lane.status = lost ? 'ended' : 'refused';
-      lane.note = lost ? t('runs_liveLost') : failureText(answer);
+      lane.note = lost ? t('runs_liveLost', { tool: toolName(lane.hub) }) : failureText(answer, lane.hub);
       lane.waitAway = lost;
       lane.refusedAt = lost || !state ? null : lanePlace(state, lane);
       lane.next = null;
@@ -1151,10 +1252,189 @@ function heardLaneEnded(ended: RunsLane): void {
   if (!isLive(lane)) return;
   idleLane(lane, false);
   lane.status = 'ended';
-  lane.note = t('runs_liveLost');
+  lane.note = t('runs_liveLost', { tool: toolName(ended.hub) });
   lane.waitAway = true;
   announce(lane.note);
   render();
+}
+
+// ── A CI lane watched ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The CI lane this window watches, read-only, one at a time: asked of the worker (`asking`), watched (`on`), let go
+ * while the window hides or its port is down (`idle`, asked again as it shows), ended without its asking or refused,
+ * with why (`note`). Its images are decoded aside first, the latest waiting, and kept in memory alone.
+ */
+interface CiView extends RunsCiLane {
+  status: 'asking' | 'on' | 'idle' | 'ended' | 'refused';
+  note: string;
+  /** Each ask counted: an answer to an earlier one changes nothing. */
+  asks: number;
+  img: HTMLImageElement;
+  /** An image was drawn. */
+  shown: boolean;
+  next: Extract<RunsCiFrame, { data: string }> | null;
+  decoding: boolean;
+  /** Why the lane sends no image now, until one comes. */
+  refused: string;
+  test: string | null;
+  call: string | null;
+}
+
+let ciView: CiView | null = null;
+
+function isCiLive(view: CiView | null): view is CiView {
+  return !!view && (view.status === 'asking' || view.status === 'on');
+}
+
+/** Ask the worker to watch a CI lane, or stop, answered as a command is. */
+function ciCommand(lane: RunsCiLane, on: boolean): Promise<RunsAnswer> {
+  return answered(
+    (id) => ({ type: 'ci-watch', id, ...lane, on }),
+    { ok: false, message: '', ci: 'offline' },
+    { ok: false, message: '', ci: 'late' },
+  );
+}
+
+/** **Watch** on a CI run's running test: watch its lane, or stop watching it. */
+function toggleCi(lane: RunsCiLane): void {
+  if (ciView && ciLaneKey(ciView) === ciLaneKey(lane) && ciView.status !== 'ended' && ciView.status !== 'refused') {
+    const was = ciView;
+    ciView = null;
+    if (was.status !== 'idle') void ciCommand(lane, false);
+    render();
+    return;
+  }
+  const img = new Image();
+  img.className = 'live';
+  ciView = {
+    ...lane,
+    status: 'asking',
+    note: '',
+    asks: 0,
+    img,
+    shown: false,
+    next: null,
+    decoding: false,
+    refused: '',
+    test: null,
+    call: null,
+  };
+  askCi(ciView);
+  render();
+}
+
+async function askCi(view: CiView): Promise<void> {
+  view.status = 'asking';
+  const ask = ++view.asks;
+  const answer = await ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, true);
+  if (ciView !== view || view.asks !== ask || view.status !== 'asking') return;
+  if (answer.ok) {
+    view.status = 'on';
+    announce(t('runs_ciWatching', { worker: ciLaneName(view), id: String(view.runId) }));
+  } else {
+    view.status = 'refused';
+    view.note = ciRefusalText(answer);
+    announce(view.note);
+  }
+  render();
+}
+
+/** Why a CI lane was not watched, in the window's words, or the instance's own sentence. */
+function ciRefusalText(answer: RunsAnswer): string {
+  if (answer.message) return answer.message;
+  switch (answer.ci) {
+    case 'unlisted':
+      return t('runs_ciRefusedUnlisted');
+    case 'unfollowed':
+      return t('runs_ciRefusedUnfollowed');
+    case 'unwatchable':
+      return t('runs_ciRefusedUnwatchable');
+    case 'no-test':
+      return t('runs_ciRefusedNoTest');
+    case 'late':
+      return t('runs_ciRefusedLate');
+    case 'older':
+      return t('runs_ciRefusedOlder');
+    case 'refused':
+      return t('runs_ciRefusedStatus', { status: String(answer.status ?? 0) });
+    default:
+      return t('runs_ciRefusedOffline');
+  }
+}
+
+/** Why a CI lane watched ended, in the window's words. */
+const CI_ENDS: Record<CiWatchEnd, Parameters<typeof t>[0]> = {
+  'run-ended': 'runs_ciEndRun',
+  off: 'runs_ciEndOff',
+  replaced: 'runs_ciEndReplaced',
+  'test-ended': 'runs_ciEndTest',
+  'worker-left': 'runs_ciEndWorkerLeft',
+  unshared: 'runs_ciEndUnshared',
+  silent: 'runs_ciEndSilent',
+  closed: 'runs_ciEndClosed',
+  broken: 'runs_ciEndBroken',
+  moved: 'runs_ciEndMoved',
+};
+
+function heardCiFrame(frame: RunsCiFrame): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(frame)) return;
+  if ('refused' in frame) {
+    view.next = null;
+    if (view.refused === frame.refused) return;
+    view.refused = frame.refused;
+    announce(view.refused);
+    render();
+    return;
+  }
+  if (!isViewFrameData(frame.data)) return;
+  view.next = frame;
+  if (!view.decoding) void drawCi(view);
+}
+
+async function drawCi(view: CiView): Promise<void> {
+  view.decoding = true;
+  while (view.next && ciView === view) {
+    const frame = view.next;
+    view.next = null;
+    const src = `data:image/jpeg;base64,${frame.data}`;
+    // Decoded aside first: the view shows the image before until this one is whole.
+    const decoded = new Image();
+    decoded.src = src;
+    try {
+      await decoded.decode();
+    } catch {
+      continue;
+    }
+    if (ciView !== view || !isCiLive(view)) break;
+    const moved = !view.shown || !!view.refused || view.test !== frame.test || view.call !== frame.call;
+    view.img.src = src;
+    view.shown = true;
+    view.refused = '';
+    view.test = frame.test;
+    view.call = frame.call;
+    if (moved) render();
+  }
+  view.decoding = false;
+}
+
+function heardCiEnded(ended: RunsCiLane & { why: CiWatchEnd }): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(ended)) return;
+  view.status = 'ended';
+  view.note = t(CI_ENDS[ended.why] ?? 'runs_ciEndClosed');
+  announce(view.note);
+  render();
+}
+
+/** The CI lane is let go while the window hides or its port is down, and asked again as it shows. */
+function idleCi(tell: boolean): void {
+  if (!isCiLive(ciView)) return;
+  const view = ciView;
+  view.status = 'idle';
+  view.asks++;
+  if (tell) void ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, false);
 }
 
 // ── A watched lane's layers ─────────────────────────────────────────────────────────────────────────────────────────
@@ -1184,7 +1464,7 @@ function askText(slot: string, on: boolean): void {
     (answer) => {
       if (lanes.get(slot) !== lane || answer.ok || !lane.textAsking) return;
       lane.textAsking = false;
-      lane.textNote = failureText(answer);
+      lane.textNote = failureText(answer, lane.hub);
       render();
     },
   );
@@ -1617,15 +1897,17 @@ document.addEventListener('keydown', (event) => {
   render();
 });
 
-// A window the person cannot see watches nothing: its views and lanes stop, and come again as it shows, Watch live and
+// A window the person cannot see watches nothing: its views and lanes stop, and come again as it shows, the stop's Watch and
 // Watch left on.
 document.addEventListener('visibilitychange', () => {
+  post({ type: 'shown', shown: !document.hidden });
   if (!document.hidden) {
     render();
     return;
   }
   for (const [key, view] of views) if (isLive(view)) endView(key, true);
   for (const lane of lanes.values()) if (isLive(lane)) idleLane(lane, true);
+  idleCi(true);
   render();
 });
 
@@ -1739,6 +2021,21 @@ function announceChanges(next: RunsState): void {
   const now = new Map<string, WorkerSeen>();
   const live = new Set<string>();
   const said: string[] = [];
+  const shared = new Set<string>();
+  const windows = new Set<string>();
+  for (const hub of next.hubs) {
+    if (!hub.connected || !hub.sharesWindow) continue;
+    if (hub.windowShared) windows.add(hub.id);
+    const editor = hub.client ?? t('runs_editor');
+    // A window's share, turned on or off in the editor: one this window asked for says its answer.
+    const asked =
+      [...sharing].some((key) => key.startsWith(`${hub.id}|`)) ||
+      windowStopping.has(hub.id) ||
+      windowsAsked.delete(hub.id);
+    if (windowsSeen && !asked && hub.windowShared !== windowsSeen.has(hub.id)) {
+      said.push(t(hub.windowShared ? 'runs_announceWindowShared' : 'runs_announceWindowUnshared', { editor }));
+    }
+  }
   for (const run of next.runs) {
     const runKey = `${run.hub}|${run.session.ref}`;
     if (run.session.ended) {
@@ -1746,6 +2043,13 @@ function announceChanges(next: RunsState): void {
       continue;
     }
     live.add(runKey);
+    if (run.session.live?.shared) {
+      shared.add(runKey);
+      // Each run the editor window's share shares, as it is shared.
+      if (seen && !sharedSeen.has(runKey) && windows.has(run.hub) && !sharing.has(runKey)) {
+        said.push(t('runs_announceSharedWindow', { run: runName(run.session) }));
+      }
+    }
     for (const worker of run.session.workers) {
       const key = workerKey(run.hub, run.session.ref, worker);
       const since = worker.stop?.since ?? null;
@@ -1768,6 +2072,8 @@ function announceChanges(next: RunsState): void {
   }
   seen = now;
   liveSeen = live;
+  sharedSeen = shared;
+  windowsSeen = windows;
   if (said.length > 0) announce(said.join(' '));
 }
 
@@ -1831,7 +2137,7 @@ function bringIntoView(): void {
 
 /**
  * Drops what is kept for a stop a worker no longer stands at: its image, its live view, its list of requests, an
- * answer for it; and Watch live and Watch for a worker whose run ended. A view whose hub's connection was lost stays
+ * answer for it; and the stop's Watch and the lane's for a worker whose run ended. A view whose hub's connection was lost stays
  * shown as ended while the hub is away, so the run that comes back at the same stop says so.
  */
 function forgetGone(current: RunsState): void {
@@ -1854,7 +2160,7 @@ function forgetGone(current: RunsState): void {
     if (!at.has(key) && view.status === 'ended' && !connected(view.hub) && named(view.hub)) continue;
     endView(key, false);
   }
-  // A slot's Watch live lasts while its run does: a worker Playwright starts in its place keeps it.
+  // A slot's stop's Watch lasts while its run does: a worker Playwright starts in its place keeps it.
   const liveRuns = new Set(current.runs.filter((r) => !r.session.ended).map((r) => `${r.hub}|${r.session.ref}`));
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
@@ -1894,6 +2200,24 @@ function renderHubs(current: RunsState): void {
   if (editorPaired) {
     const line = editorLine(current);
     if (!(boxSays === 'editor' && line.boxed)) lines.push(line);
+    // Each editor window that shares its runs until the person stops says so, with its stop, whether or not a run is
+    // listed.
+    for (const hub of current.hubs) {
+      if (!hub.connected || !hub.windowShared) continue;
+      const editor = hub.client ?? t('runs_editor');
+      lines.push({
+        icon: 'eye',
+        text: t('runs_windowShared', { editor }),
+        boxed: false,
+        actions: [],
+        stopWindow: {
+          hub: hub.id,
+          asking: windowStopAsking.has(hub.id),
+          waiting: windowStopping.has(hub.id),
+          refusal: windowStopRefusals.get(hub.id) ?? null,
+        },
+      });
+    }
   }
   if (desktopPaired) {
     const line = desktopLine(current);
@@ -1904,13 +2228,46 @@ function renderHubs(current: RunsState): void {
   if (shown === hubsShown) return;
   hubsShown = shown;
   hubsLine.replaceChildren(
-    ...lines.map(({ icon, text, actions }, index) => {
+    ...lines.flatMap(({ icon, text, actions, stopWindow }, index) => {
       const line = iconText(element('p'), icon, text);
-      line.classList.toggle('waiting', icon !== 'check-circle');
+      line.classList.toggle('waiting', icon !== 'check-circle' && icon !== 'eye');
       for (const action of actions) line.append(emptyActionButton(action, `hubs|${index}|${action}`));
-      return line;
+      return stopWindow ? [line, renderStopWindow(stopWindow)] : [line];
     }),
   );
+}
+
+/** A window's share, on the hubs line: Stop sharing this window's runs, asked first, and why it was refused. */
+function renderStopWindow({ hub, asking, waiting, refusal }: NonNullable<HubLine['stopWindow']>): HTMLElement {
+  const box = element('div', 'hub-share');
+  const row = element('div', 'piwi-actions');
+  const button = (label: string, onClick: () => void, focus: string, options: Parameters<typeof makeButton>[2]) => {
+    const made = makeButton(label, onClick, options);
+    made.dataset.focus = `hubs|${hub}|${focus}`;
+    if (waiting) made.setAttribute('aria-disabled', 'true');
+    row.append(made);
+  };
+  if (asking) {
+    const question = element('p', 'share-warning', t('runs_stopSharingWindowAsk'));
+    question.id = `stop-window-${++headings}`;
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', t('runs_stopSharingWindow'));
+    box.setAttribute('aria-describedby', question.id);
+    box.append(question);
+    button(t('runs_stopSharing'), () => askStopWindow(hub, true), 'stop-window-yes', {
+      icon: 'eye-off',
+      tone: 'danger',
+    });
+    button(t('common_cancel'), () => askStopWindow(hub, false), 'stop-window-no', { icon: 'close' });
+  } else {
+    button(t('runs_stopSharingWindow'), () => askStopWindow(hub, null), 'stop-window', {
+      icon: 'eye-off',
+      title: t('runs_stopSharingWindowTitle'),
+    });
+  }
+  box.append(row);
+  if (refusal) box.append(iconText(element('p', 'note'), 'info', refusal));
+  return box;
 }
 
 /** A status line: its icon and sentence, whether the empty box says the same, and the buttons the sentence names. */
@@ -1919,6 +2276,8 @@ interface HubLine {
   text: string;
   boxed: boolean;
   actions: EmptyAction[];
+  /** For an editor window that shares its runs: its hub, and where its Stop sharing this window's runs stands. */
+  stopWindow?: { hub: string; asking: boolean; waiting: boolean; refusal: string | null };
 }
 
 /** The status lines as last drawn. */
@@ -2193,7 +2552,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       ),
     );
   } else if (session.live && !refused) {
-    children.push(renderShare(run, session.live));
+    children.push(renderShare(run, session.live, hub));
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
   // A live run of several workers shows one at a time, behind a tab for each.
@@ -2243,11 +2602,15 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
 
 /**
  * The CI runs in progress the connected instance lists, under the runs the hubs follow, read-only: each named as other
- * runs are, where it runs, its page (`Run #78`, **Open** and **Copy**) and its tally, then one line saying nothing
- * here steers them and where to watch one. None without connected mode.
+ * runs are, where it runs, its page (`Run #78`, **Open** and **Copy**), its tally and the tests it runs now, each with
+ * **Watch** where its lanes can be watched and **Watch on the dashboard**, then one line saying nothing here steers
+ * them. None without connected mode.
  */
 function renderCi(current: RunsState): void {
   const runs = current.ci ?? [];
+  // A watch of a run no longer listed ends: the worker said why, or the run ended.
+  if (ciView && !runs.some((run) => run.id === ciView!.runId)) ciView = null;
+  if (ciView?.status === 'idle' && !document.hidden && port) askCi(ciView);
   ciBox.hidden = runs.length === 0;
   if (!runs.length) {
     place(ciBox, []);
@@ -2256,34 +2619,158 @@ function renderCi(current: RunsState): void {
   const several = new Set(runs.map((run) => run.projectId)).size > 1;
   place(ciBox, [
     part('ci|heading', null, () => element('h2', 'ci-heading', runsSpeaker.say('runs_ciHeading'))),
-    ...runs.map((run) => part(`ci|${run.url}`, [run, several], () => renderCiRun(run, several))),
+    ...runs.map((run) => renderCiRun(run, several)),
     part('ci|note', null, () => iconText(element('p', 'note ci-note'), 'info', runsSpeaker.say(CI_READ_ONLY.key))),
   ]);
 }
 
-/** A CI run in progress: its name, where it runs, its page and its tally; no control, since it runs on CI. */
-function renderCiRun(run: CiRun, several: boolean): HTMLElement {
-  const section = element('section', 'run ci-run');
-  const name = element('h2', undefined, ciRunName(run, runsSpeaker));
-  name.id = domId('ci', run.url);
-  section.setAttribute('aria-labelledby', name.id);
-  const title = element('div', 'run-title', name);
+/**
+ * A CI run in progress: its name, where it runs, its page, its tally, and the tests it runs now with **Watch** and
+ * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI.
+ */
+function renderCiRun(run: RunsCiRun, several: boolean): HTMLElement {
+  const key = `ci|${run.url}`;
+  const section = part(key, null, () => {
+    const made = element('section', 'run ci-run');
+    made.setAttribute('aria-labelledby', domId('ci', run.url));
+    return made;
+  });
   const where = ciRunWhere(run, several);
-  if (where) title.append(element('span', 'client', runsSpeaker.say(where.key, where.args)));
-  section.append(
-    element('div', 'run-head', title),
-    renderRunPage({ id: run.id, url: run.url }),
-    renderProgress({
-      total: run.total,
-      done: run.done,
-      failed: run.failed,
-      flaky: run.flaky,
-      skipped: 0,
-      status: 'running',
-      failure: null,
+  const children = [
+    part(`${key}|head`, [run.id, where], () => {
+      const name = element('h2', undefined, ciRunName(run, runsSpeaker));
+      name.id = domId('ci', run.url);
+      const title = element('div', 'run-title', name);
+      if (where) title.append(element('span', 'client', runsSpeaker.say(where.key, where.args)));
+      return element('div', 'run-head', title);
     }),
-  );
+    part(`${key}|page`, [run.id, run.url], () => renderRunPage({ id: run.id, url: run.url })),
+    part(`${key}|progress`, [run.total, run.done, run.failed, run.flaky], () =>
+      renderProgress({
+        total: run.total,
+        done: run.done,
+        failed: run.failed,
+        flaky: run.flaky,
+        skipped: 0,
+        status: 'running',
+        failure: null,
+      }),
+    ),
+  ];
+  if (run.tests.length) {
+    const list = part(`${key}|tests`, null, () => {
+      const made = element('ul', 'ci-tests');
+      made.setAttribute('aria-label', t('runs_ciTests'));
+      return made;
+    });
+    place(
+      list,
+      run.tests.map((test) => {
+        const lane: RunsCiLane = { runId: run.id, shard: test.shard, lane: test.lane };
+        const watched = !!ciView && ciLaneKey(ciView) === ciLaneKey(lane) && ciView.status !== 'ended';
+        return part(`${key}|test|${ciLaneKey(lane)}`, [test, run.watchable, watched], () =>
+          renderCiTest(run, test, lane, watched),
+        );
+      }),
+    );
+    children.push(list);
+  }
+  if (!run.watchable && run.tests.length) {
+    children.push(
+      part(`${key}|unwatchable`, null, () =>
+        iconText(element('p', 'note run-note'), 'info', t('runs_ciRefusedUnwatchable')),
+      ),
+    );
+  }
+  if (ciView?.runId === run.id) children.push(renderCiView(run, ciView));
+  place(section, children);
   return section;
+}
+
+/** `Worker 2`, or `Shard 1, worker 2`: a CI lane as the window names it, its worker counted from 1. */
+function ciLaneName(lane: Pick<RunsCiLane, 'shard' | 'lane'>): string {
+  const worker = String(lane.lane + 1);
+  return lane.shard !== null
+    ? t('runs_ciShardWorker', { shard: String(lane.shard), worker })
+    : t('runs_ciWorker', { worker });
+}
+
+/** A test a CI run runs now: its lane, its title, **Watch** where the run's lanes can be watched, and the dashboard's. */
+function renderCiTest(run: RunsCiRun, test: RunsCiTest, lane: RunsCiLane, watched: boolean): HTMLElement {
+  const item = element(
+    'li',
+    'ci-test',
+    element('span', 'ci-lane', ciLaneName(test)),
+    element('span', 'ci-title', test.title),
+  );
+  const actions = element('div', 'piwi-actions');
+  const focus = `ci|${ciLaneKey(lane)}`;
+  if (run.watchable) {
+    const watch = makeButton(t('runs_watch'), () => toggleCi(lane), {
+      icon: 'eye',
+      small: true,
+      title: t('runs_ciWatchTitle'),
+    });
+    watch.setAttribute('aria-pressed', String(watched));
+    watch.dataset.focus = `${focus}|watch`;
+    actions.append(watch);
+  }
+  const dashboard = makeButton(
+    t('runs_ciWatchDashboard'),
+    () => void chrome.tabs.create({ url: ciDashboardWatch(run, lane) }),
+    { icon: 'external', small: true, tone: 'ghost', title: t('runs_ciWatchDashboardTitle') },
+  );
+  dashboard.dataset.focus = `${focus}|dashboard`;
+  actions.append(dashboard);
+  item.append(actions);
+  return item;
+}
+
+/** The CI lane watched: its images, read-only, under a **Live** badge; why it ended or sends none, with the dashboard's. */
+function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
+  const key = `ci|${ciLaneKey(view)}|view`;
+  const figure = part(key, null, () => element('figure', 'page ci-view'));
+  const caption = part(`${key}|caption`, [view.test, view.call, view.lane, view.shard], () => {
+    const made = element('figcaption', 'page-head', element('span', 'ci-lane', ciLaneName(view)));
+    if (view.test) made.append(element('span', 'ci-title', view.test));
+    if (view.call) made.append(element('span', 'ci-call', ...richText(view.call)));
+    return made;
+  });
+  const children: HTMLElement[] = [caption];
+  const live = view.status === 'on' && !view.refused && view.shown;
+  if (view.shown) {
+    view.img.classList.toggle('stale', !live);
+    view.img.alt = t('runs_ciLiveAlt');
+    const box = part(`${key}|frame`, null, () => element('div', 'page-frame'));
+    place(box, live ? [view.img, part(`${key}|badge`, null, liveBadge)] : [view.img]);
+    children.push(box);
+  }
+  const note =
+    view.status === 'ended' || view.status === 'refused'
+      ? { icon: 'alert' as const, text: view.note }
+      : view.refused
+        ? { icon: 'alert' as const, text: view.refused }
+        : !view.shown
+          ? { icon: 'clock' as const, text: t('runs_liveStarting') }
+          : null;
+  if (note) children.push(pageNotePart(key, note, !view.shown));
+  if (view.status === 'ended' || view.status === 'refused') {
+    children.push(
+      part(`${key}|again`, [view.status, view.note], () => {
+        const line = element('div', 'piwi-actions');
+        const dashboard = makeButton(
+          t('runs_ciWatchDashboard'),
+          () => void chrome.tabs.create({ url: ciDashboardWatch(run, view) }),
+          { icon: 'external', small: true, title: t('runs_ciWatchDashboardTitle') },
+        );
+        dashboard.dataset.focus = `ci|${ciLaneKey(view)}|ended-dashboard`;
+        line.append(dashboard);
+        return line;
+      }),
+    );
+  }
+  place(figure, children);
+  return figure;
 }
 
 /** The run's page on the instance, as its own process named it: `Run #77`, **Open** and **Copy**, ended or not. */
@@ -2451,7 +2938,7 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
     runBusy.delete(key);
     for (const worker of workers) busy.delete(worker);
     const refused = said.find((answer) => !answer.ok);
-    if (refused) announce(failureText(refused));
+    if (refused) announce(failureText(refused, run.hub));
     render();
   };
   const buttons: HTMLButtonElement[] = [];
@@ -2503,8 +2990,8 @@ function renderStopRun(run: RunsRun): HTMLElement {
       render();
       const answer = await command(run.hub, run.session.ref, null, 'stop', null);
       stopping.delete(key);
-      if (!answer.ok) stopRefusals.set(key, failureText(answer));
-      announce(answer.ok ? answer.message : failureText(answer));
+      if (!answer.ok) stopRefusals.set(key, failureText(answer, run.hub));
+      announce(answer.ok ? answer.message : failureText(answer, run.hub));
       render();
     },
     { icon: 'stop', small: true, tone: 'remove', title: t('runs_stopRunTitle') },
@@ -2527,7 +3014,7 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
   render();
   const answer = await command(run.hub, run.session.ref, null, 'hold', null, { on });
   holding.delete(key);
-  const text = answer.ok ? answer.message : failureText(answer);
+  const text = answer.ok ? answer.message : failureText(answer, run.hub);
   if (!answer.ok && text) holdRefusals.set(key, text);
   if (text) announce(text);
   render();
@@ -2538,7 +3025,7 @@ async function hold(run: RunsRun, on: boolean): Promise<void> {
  * were ended at a stop (skipped, marked so).
  */
 function renderProgress(progress: HubProgress): HTMLElement {
-  const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: progress.done }));
+  const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: formatNumber(progress.done) }));
   if (progress.failed > 0) line.append(' · ', element('span', 'failed', tn('runs_progressFailed', progress.failed)));
   if (progress.flaky > 0) line.append(' · ', element('span', 'flaky', tn('runs_progressFlaky', progress.flaky)));
   const endedAtStop = endedAtStopWords(endedAtStopOf(progress), runsSpeaker);
@@ -2600,12 +3087,18 @@ function instanceOf(live: Pick<HubLive, 'page'>): string {
  * asked, what it sends and to whom, with Share live and Cancel; else Share live. A refusal shows under it, else why
  * the sharing stopped though nobody asked.
  */
-function renderShare(run: RunsRun, live: HubLive): HTMLElement {
+function renderShare(run: RunsRun, live: HubLive, hub: RunsHub | undefined): HTMLElement {
   const key = runKeyOf(run);
   const asking = shareAsking.has(key);
   const waiting = sharing.has(key);
   const refusal = shareRefusals.get(key) ?? null;
-  return part(`${key}|share`, { live, asking, waiting, refusal }, () => {
+  // The hub shares its editor window's runs: offered beside the run's own, and while on, said under the run, whose Stop
+  // sharing stops it alone (the hubs line stops the window's).
+  const offersWindow = !!hub?.sharesWindow;
+  const byWindow = offersWindow && !!hub?.windowShared;
+  const stopping = live.shared && stopAsking.has(key);
+  if (!live.shared) stopAsking.delete(key);
+  return part(`${key}|share`, { live, asking, waiting, refusal, offersWindow, byWindow, stopping }, () => {
     const box = element('div', 'run-share');
     const row = element('div', 'piwi-actions');
     const button = (label: string, onClick: () => void, focus: string, options: Parameters<typeof makeButton>[2]) => {
@@ -2631,10 +3124,26 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
           icon: 'copy',
         });
       }
-      button(t('runs_stopSharing'), () => void share(run, false), 'stop-sharing', {
-        icon: 'eye-off',
-        title: t('runs_stopSharingTitle'),
-      });
+      if (byWindow) box.append(iconText(element('p', 'note shared-window'), 'info', t('runs_sharedByWindow')));
+      if (stopping) {
+        const question = element('p', 'share-warning', t('runs_stopSharingAsk'));
+        question.id = `stop-sharing-${++headings}`;
+        box.setAttribute('role', 'group');
+        box.setAttribute('aria-label', t('runs_stopSharing'));
+        box.setAttribute('aria-describedby', question.id);
+        box.append(question);
+        row.replaceChildren();
+        button(t('runs_stopSharing'), () => askStopSharing(run, true), 'stop-sharing-yes', {
+          icon: 'eye-off',
+          tone: 'danger',
+        });
+        button(t('common_cancel'), () => askStopSharing(run, false), 'stop-sharing-no', { icon: 'close' });
+      } else {
+        button(t('runs_stopSharing'), () => askStopSharing(run, null), 'stop-sharing', {
+          icon: 'eye-off',
+          title: t('runs_stopSharingTitle'),
+        });
+      }
     } else if (asking) {
       const warning = element('p', 'share-warning', t('runs_shareWarning', { instance: instanceOf(live) }));
       warning.id = `share-warning-${++headings}`;
@@ -2643,9 +3152,22 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
       box.setAttribute('aria-describedby', warning.id);
       box.append(warning);
       button(t('runs_shareLive'), () => answerShare(run, true), 'share-yes', { icon: 'share', tone: 'primary' });
+      if (offersWindow) {
+        button(t('runs_shareWindow'), () => answerShare(run, true, true), 'share-window-yes', {
+          icon: 'share',
+          title: t('runs_shareWindowTitle'),
+        });
+      }
       button(t('common_cancel'), () => answerShare(run, false), 'share-no', { icon: 'close' });
     } else {
       button(t('runs_shareLive'), () => askShare(run), 'share', { icon: 'share', title: t('runs_shareLiveTitle') });
+      if (offersWindow && !byWindow) {
+        button(t('runs_shareWindow'), () => askShare(run, true), 'share-window', {
+          icon: 'share',
+          tone: 'ghost',
+          title: t('runs_shareWindowTitle'),
+        });
+      }
     }
     box.append(row);
     const note = refusal ?? (live.shared ? null : live.stopped);
@@ -3198,7 +3720,7 @@ async function drive(
 }
 
 /**
- * The stopped page, in a card: its head with who watches it, and Watch live and Pick on the image where the stop takes
+ * The stopped page, in a card: its head with who watches it, and the stop's Watch and Pick on the image where the stop takes
  * them; then its live view once a frame came (the Live badge on it), else its image, else why there is none in its
  * place; under it, why the view ended, the first time the view takes input how, and who drives the stop. The image's
  * box stays the same element for the stop, so the live view keeps the focus.
@@ -3210,7 +3732,7 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
   const still = kept?.since === stop.since ? kept : undefined;
   if (views.get(key)?.since !== stop.since) endView(key, false);
   const canView = intents.includes('view');
-  // Watch live left on for the slot watches this stop, and starts again on its own once a lost hub answers.
+  // A stop's Watch left on for the slot watches this stop, and starts again on its own once a lost hub answers.
   const watched = watchLive.has(slotKey(run.hub, run.session.ref, worker.parallelIndex));
   const restart = !views.has(key) || views.get(key)!.status === 'ended';
   if (canView && watched && restart && !away && !document.hidden) startView(run, worker.worker, stop);
@@ -3233,7 +3755,7 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
 
   const figure = part(`${key}|page`, stop.since, () => element('figure', 'page'));
   figure.toggleAttribute('data-picking', picking.has(key));
-  // While its hub is away, Watch live shows as the person left it, for when the hub answers.
+  // While its hub is away, the stop's Watch shows as the person left it, for when the hub answers.
   const tools = {
     since: stop.since,
     watchers: around.watchers,
@@ -3299,7 +3821,7 @@ interface PageAround {
 
 /**
  * The page card's head, which names the card (`figure`): its caption, who watches the page under it, then the tools
- * the stop takes on its page, each a toggle saying whether it is on: Watch live (`live`, null where the stop takes no
+ * the stop takes on its page, each a toggle saying whether it is on: the stop's Watch (`live`, null where the stop takes no
  * view of its own), Watch for a watched lane's stop (`watch`), Interact once a view the hub accepted shows the stop
  * and it takes input (`interact`), and Pick on the image; then, on a watched lane's page, Open the trace so far, a
  * button (`trace`, held while its ask waits). Who watches and the tools are each drawn again only when they change, so
@@ -3346,10 +3868,11 @@ function pageHead(
     const row = part(`${key}|page-tools`, tools, () => {
       const made = element('div', 'piwi-actions page-tools');
       if (tools.live !== null && stop) {
-        const live = makeButton(t('runs_live'), () => toggleLive(run, worker.worker, stop), {
+        // The stop's own view, named as the lane's: one view, one name.
+        const live = makeButton(t('runs_watch'), () => toggleLive(run, worker.worker, stop), {
           icon: 'eye',
           small: true,
-          title: t('runs_liveTitle'),
+          title: t('runs_watchTitle'),
         });
         live.setAttribute('aria-pressed', String(tools.live));
         live.dataset.focus = `${key}|live`;
@@ -3441,7 +3964,7 @@ function markTools(row: HTMLElement, key: string, away: boolean): void {
  * on the image, and while the lane is watched at a hub that opens traces, Open the trace so far (`canOpenTrace`); then
  * the lane's
  * frame of where the worker stands, with the Live badge (at a stop, the stop's live view, which takes Interact's input
- * as Watch live's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
+ * as a stop's own Watch's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
  * Why the lane sends no frame shows in place of its image; under it, why the lane ended or was refused, that it starts,
  * or why the stop has no image, the first time the view takes input how, and who drives the stop. Null for a worker
  * that runs, its lane neither watched nor refused.

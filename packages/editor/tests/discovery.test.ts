@@ -192,6 +192,7 @@ describe('the bundled service', () => {
     expect(written?.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(written?.recorderBundle).toBe(path.join(path.dirname(bundle), 'record-ide.js'));
     expect(written?.unattended).toBe(true);
+    expect(written?.checkout).toBe(true);
     return { child, editors, file };
   }
 

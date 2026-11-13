@@ -46,6 +46,8 @@ import {
   type HubMessage,
   type LiveHub,
 } from '@piwitests/core/run-hub';
+import { testCalls } from './analysis.js';
+import { shellWord } from './commands.js';
 import type { RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import {
@@ -68,6 +70,7 @@ import {
   type TraceViewerLauncher,
   type Viewer,
 } from './run-host.js';
+import type { AgentRunStart, AgentRunStarted } from './run-agent.js';
 import { runTargetConnection } from './run-target.js';
 import {
   DESKTOP_PICKS_PATH,
@@ -82,6 +85,24 @@ const MAX_WINDOWS = 16;
 
 /** A run's name on the channel, as the hub's commands name it. */
 const REF = /^[\w-]{1,64}$/;
+
+/** The name the shell gives a run it starts (`PIWI_RUN_REF`): `desktop-<its id>`, marked when nobody attends it. */
+const SHELL_REF = /^desktop-\d{1,10}(?:-unattended)?$/;
+
+/** The command lines of the runs the shell started that the hub keeps, the latest. */
+const MAX_RUN_COMMANDS = 50;
+
+/** The most Playwright arguments, and characters of them, the shell names for a run. */
+const MAX_RUN_ARGS = 1000;
+const MAX_RUN_ARGS_CHARS = 24_000;
+
+/**
+ * An argument as a command line shows it, as the editor quotes one (`shellWord`); null for one a shell would expand
+ * or that holds a format character (a bidirectional control), which no command line shows.
+ */
+function shownArg(arg: string): string | null {
+  return /\p{Cf}/u.test(arg) ? null : shellWord(arg);
+}
 
 /**
  * A folder the host's runs run in: a project's linked folder, keyed by the project's id (the dashboard's, or the team
@@ -120,6 +141,24 @@ export interface ShellRunsWords {
   log: string;
 }
 
+/** A spec file, as the editor tells one: `*.spec.ts`, `*.test.js` and their kin. */
+const SPEC_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/;
+
+/**
+ * A run an agent asks the host to start (`run_start`), as its window starts a person's: the project whose linked folder
+ * holds the spec, the spec relative to that folder (`/` between its parts), the line of the test to run in it (from 1;
+ * the whole spec when null), whether the browser shows, whether a failure waits at its line (**Hold failures**), and
+ * what the run is called where the person sees it ("Started by Claude Code").
+ */
+export interface ShellRunStart {
+  projectId: number;
+  file: string;
+  line: number | null;
+  headed: boolean;
+  hold: boolean;
+  title: string;
+}
+
 /** The agents' tools for the host's runs, for a host that serves them from an MCP server of its own. */
 export interface ShellAgentWords {
   words: AgentWords;
@@ -149,6 +188,11 @@ export interface ShellRunsOptions {
   words: ShellRunsWords;
   /** The agents' tools, in the host's words; none without. */
   agent?: ShellAgentWords;
+  /**
+   * Has the host's window start a run an agent asked for, as it starts a person's (`run_start`): the run's ref once the
+   * shell started it, or why not, in a sentence (no window is open). Absent, agents start no run here.
+   */
+  startRun?(start: ShellRunStart): Promise<{ ref: string } | { refused: string }>;
   /** What the run channel's socket folder is named from, in the temporary directory: the host's alone. */
   folderPrefix: string;
   /** The token of the picks route (`DESKTOP_PICKS_PATH`) alone; a new one per host by default. */
@@ -280,6 +324,38 @@ export function insideFolder(folder: string, file: string): boolean {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+/** The folder, of `folders`, that holds `file`, the most specific when several do; null for none. */
+function folderHolding(folders: readonly ShellFolder[], file: string): ShellFolder | null {
+  const holding = folders.filter((link) => insideFolder(link.path, file));
+  holding.sort((a, b) => real(b.path).length - real(a.path).length);
+  return holding[0] ?? null;
+}
+
+/**
+ * The line, from 1, of the test of `file` whose lines hold `line`; `line` itself when the spec's text shows no test,
+ * for Playwright to read; null when the spec has no such line, or shows tests and none holds it.
+ */
+function testLineAt(file: string, line: number): number | null {
+  const text = diskFile(file)?.text;
+  if (text === undefined) return line;
+  const lines = text.split(/\r?\n/);
+  if (line > lines.length) return null;
+  const calls = testCalls(lines);
+  if (calls.length === 0) return line;
+  const call = calls.find((c) => c.line <= line - 1 && c.endLine >= line - 1);
+  return call ? call.line + 1 : null;
+}
+
+/** Whether `file` is a file; why not in a sentence when the file system refuses to say (a name too long, no access). */
+function isFile(file: string, named: string): boolean | { refused: string } {
+  try {
+    return fs.statSync(file, { throwIfNoEntry: false })?.isFile() ?? false;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { refused: `Piwi cannot read ${named}${typeof code === 'string' ? `: ${code}` : ''}.` };
+  }
+}
+
 /** A file as `RunLines` keys it: its absolute path, in lower case where the file system ignores case. */
 function lineKey(file: string): string {
   const resolved = path.resolve(file);
@@ -324,6 +400,8 @@ function newPicksToken(): string {
 export class ShellRuns<HostEvent extends { type: string } = never> {
   private readonly windows = new Map<string, RunWindow<HostEvent>>();
   private readonly kept: Kept[] = [];
+  /** The command line of each run the shell started, by ref, as it said it (`started`), the latest `MAX_RUN_COMMANDS`. */
+  private readonly commands = new Map<string, string>();
   /** The project of each folder a run ran in, by project id and folder: null while its name is being read. */
   private readonly projects = new Map<string, string | null>();
   private readonly lines = new RunLines();
@@ -419,7 +497,10 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
           // The code goes to the window to copy, and back to the agent, which has no file to read it in.
           writeCode: (stop, input) => this.actions.agentCode(stop, input),
           notice: (root, message) => this.notice(root, 'information', message),
-          command: () => null,
+          command: (ref) => this.commandOf(ref),
+          ...(options.startRun
+            ? { startRun: (start: AgentRunStart) => this.startAgentRun(start, options.startRun!, agent) }
+            : {}),
           preferLocators: () => new Set(),
           words: agent.words,
           refuses: (ref) => (isUnattendedRef(ref) ? agent.unattended : null),
@@ -460,9 +541,13 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
       RunHub.open({
         sessions: this.sessions,
         actions: this.actions,
-        runInfo: (_ref, root) => {
+        runInfo: (ref, root) => {
           const link = root ? linkHolding(options.folders(), root) : null;
-          return { command: null, label: link ? path.basename(link) : null, project: link ? this.project(link) : null };
+          return {
+            command: this.commandOf(ref),
+            label: link ? path.basename(link) : null,
+            project: link ? this.project(link) : null,
+          };
         },
         welcome: () => ({
           pid: process.pid,
@@ -509,6 +594,130 @@ export class ShellRuns<HostEvent extends { type: string } = never> {
   picksAddress(port: number | string): string | null {
     if (!this.channel) return null;
     return `http://127.0.0.1:${port}${DESKTOP_PICKS_PATH}#${this.picks()}`;
+  }
+
+  /**
+   * The shell started its run `ref` with Playwright's `args` (`POST DESKTOP_RUN_STARTED_PATH`): the hub names the run's
+   * command (`npx playwright test …`) to Piwi Picker and to agents, at once when the run is live. Null once kept, else
+   * why not: a ref the shell does not give, or arguments that are no list of words.
+   */
+  started(ref: unknown, args: unknown): string | null {
+    if (typeof ref !== 'string' || !SHELL_REF.test(ref)) return 'The ref names no run the shell starts.';
+    if (
+      !Array.isArray(args) ||
+      args.length > MAX_RUN_ARGS ||
+      args.some((arg) => typeof arg !== 'string' || /\p{Cc}/u.test(arg)) ||
+      (args as string[]).reduce((chars, arg) => chars + arg.length + 1, 0) > MAX_RUN_ARGS_CHARS
+    ) {
+      return "args must be Playwright's arguments, as a list of words on one line.";
+    }
+    this.commands.delete(ref);
+    const shown = (args as string[]).map(shownArg);
+    if (shown.every((arg) => arg !== null)) this.commands.set(ref, ['npx', 'playwright', 'test', ...shown].join(' '));
+    for (const oldest of this.commands.keys()) {
+      if (this.commands.size <= MAX_RUN_COMMANDS) break;
+      this.commands.delete(oldest);
+    }
+    const session = this.sessions.current().find((s) => s.ref === ref);
+    if (session) this.hub?.push(session);
+    return null;
+  }
+
+  /**
+   * The shell's run `ref` (`desktop-<id>`) ended with `exitCode`, as the window that started it says
+   * (`POST DESKTOP_RUN_ENDED_PATH`): an agent's run whose workers never connected ends here, its follower hearing it,
+   * and gives its place back, marked as nobody attends it or not. Null once heard, else why not.
+   */
+  ended(ref: unknown, exitCode: unknown): string | null {
+    if (typeof ref !== 'string' || !SHELL_REF.test(ref)) return 'The ref names no run the shell starts.';
+    if (exitCode !== null && !Number.isInteger(exitCode)) return 'exitCode is a whole number, or null.';
+    const run = ref.replace(/-unattended$/, '');
+    for (const named of [run, `${run}-unattended`]) this.agent?.commandEnded(named, exitCode as number | null);
+    return null;
+  }
+
+  /**
+   * An agent's run (`run_start`): a spec of a linked folder, relative to one of them or absolute, or the test at a line
+   * of it, which the host's window starts as a person's run, labeled with the agent's name; its Hold failures the
+   * agent's. Refused for a file outside every linked folder, one that is no spec or that Playwright would read as an
+   * option, a line of no test, as the host refuses it (no window open), and for a run nobody attends, which agents are
+   * not given: one the window started all the same counts among the agents' runs until it ends, and the window stops
+   * it.
+   */
+  private async startAgentRun(
+    start: AgentRunStart,
+    startRun: NonNullable<ShellRunsOptions['startRun']>,
+    agent: ShellAgentWords,
+  ): Promise<AgentRunStarted> {
+    const words = this.options.words;
+    const folders = this.options.folders();
+    const candidates = path.isAbsolute(start.file)
+      ? [path.resolve(start.file)]
+      : folders.map((link) => path.resolve(link.path, start.file));
+    let file: string | undefined;
+    for (const candidate of candidates) {
+      const found = isFile(candidate, start.file);
+      if (typeof found === 'object') return { ok: false, message: found.refused };
+      if (found) {
+        file = candidate;
+        break;
+      }
+    }
+    const link = file ? folderHolding(folders, file) : null;
+    if (!file || !link) {
+      return {
+        ok: false,
+        message: `${start.file} is in no folder linked to a project: ${words.host} runs the specs of its linked folders alone.`,
+      };
+    }
+    const relative = path.relative(real(link.path), real(file)).split(path.sep).join('/');
+    if (!SPEC_FILE.test(relative)) {
+      return { ok: false, message: `${relative} is no spec file (\`*.spec.ts\`, \`*.test.ts\`).` };
+    }
+    if (relative.startsWith('-')) {
+      return {
+        ok: false,
+        message: `${relative} starts with "-", which Playwright reads as an option: rename the spec to run it.`,
+      };
+    }
+    const line = start.line === null ? null : testLineAt(file, start.line);
+    if (start.line !== null && line === null) {
+      return {
+        ok: false,
+        message: `Line ${start.line} of ${relative} is in no test: name a line of a test, or leave out line to run the whole spec.`,
+      };
+    }
+    const shown = line === null ? relative : `${relative}:${line}`;
+    const title = `Started by ${start.agent}`;
+    const answer = await startRun({
+      projectId: link.id,
+      file: relative,
+      line,
+      headed: start.headed,
+      hold: start.hold,
+      title,
+    });
+    if ('refused' in answer) return { ok: false, message: answer.refused };
+    if (isUnattendedRef(answer.ref)) {
+      for (const window of this.windows.values()) window.sink.send({ type: 'stop-run', ref: answer.ref });
+      return {
+        ok: false,
+        message: `${shown} started in ${words.surfaces}, but it is not served to agents: ${agent.unattended}`,
+        unserved: answer.ref,
+      };
+    }
+    this.sessions.hold({ ref: answer.ref, on: start.hold }, 'agent');
+    return {
+      ok: true,
+      message: `${shown} started in ${words.surfaces}, as "${title}". Follow it with run_follow.`,
+      run: answer.ref,
+      root: link.path,
+    };
+  }
+
+  /** The command line the shell said it started the run `ref` with; null for another run. */
+  private commandOf(ref: string): string | null {
+    return this.commands.get(ref) ?? null;
   }
 
   /** A locator a test of a run picked (`POST DESKTOP_PICKS_PATH`): every window hears it, to copy, and it is kept. */

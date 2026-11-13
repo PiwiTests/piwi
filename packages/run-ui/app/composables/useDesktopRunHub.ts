@@ -8,11 +8,11 @@
  * a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, how many tests of each run that ended were ended at a stop
- * (`endedAtStop`, as its own process counted them), what each code made at a stop came to, the codes and the
- * locators picked, to copy, the workers whose **Watch live** is on, and the lanes the window watches (**Watch**: the
- * page of a worker's running test, and of its stops). The frames of a
- * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
- * lane (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
+ * (`endedAtStop`, as its own process counted them) and how far it came (`endedProgress`), what each code made at a
+ * stop came to, the codes and the locators picked, to copy, the workers whose stop's **Watch** is on, and the lanes the
+ * window watches (**Watch**: the page of a worker's running test, and of its stops). The frames of a stop's live view
+ * go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that lane
+ * (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
  * in memory, until the view ends or the lane is no longer watched. Commands go to `POST /api/desktop/runs/commands`,
  * naming the stream (`viewer`); `show` says which runs hold their failures (**Hold failures**), so a failure
  * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
@@ -52,6 +52,7 @@ import {
   type HubFrameRefusal,
   type HubLaneFrameMessage,
   type HubLaneFrameRefusal,
+  type HubProgress,
   type HubSession,
   type HubWorker,
 } from '@piwitests/core/run-hub';
@@ -104,13 +105,19 @@ interface HubState {
    * the tray marks its outcome with them. Only runs that ended any.
    */
   endedAtStop: Record<string, number>;
+  /**
+   * How far each run that ended came, by ref, as its own process last counted it (`HubProgress`, its first failure
+   * included): the tray counts a run of several steps and leads its end to its failure with it. The latest
+   * `MAX_ENDED_PROGRESS` runs that sent one.
+   */
+  endedProgress: Record<string, HubProgress>;
   /** What the latest code made at a worker's stop came to, by worker (`desktopWorkerKey`). */
   outcomes: Record<string, DesktopCodeOutcome>;
   kept: DesktopKept[];
   /** Goes up each time the stream opens again: every view of the stream before ended with it. */
   epoch: number;
   /**
-   * The workers whose Watch live is on, by run (ref): each next stop of theirs is watched, until it is turned off or
+   * The workers whose stop's Watch is on, by run (ref): each next stop of theirs is watched, until it is turned off or
    * their run ends. A stream that opens again keeps them.
    */
   watchLive: Record<string, number[]>;
@@ -152,6 +159,9 @@ interface HubState {
   inspectRefusals: Record<string, { message: string; serial: number }>;
 }
 
+/** How many ended runs' progress the window keeps (`endedProgress`). */
+const MAX_ENDED_PROGRESS = 50;
+
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
 const REOPEN_MS = 5000;
 
@@ -162,6 +172,7 @@ const state = reactive<HubState>({
   sessions: {},
   roots: {},
   endedAtStop: {},
+  endedProgress: {},
   outcomes: {},
   kept: [],
   epoch: 0,
@@ -467,6 +478,7 @@ function heardSession(session: HubSession): void {
   if (session.ended) {
     const endedAtStop = endedAtStopOf(session.progress);
     if (endedAtStop > 0) state.endedAtStop[session.ref] = endedAtStop;
+    if (session.progress) keepEndedProgress(session.ref, session.progress);
     delete state.sessions[session.ref];
     forgetRun(session.ref);
     return;
@@ -485,8 +497,8 @@ function heardSession(session: HubSession): void {
 
 /**
  * The tabs of a run as its workers stand now: none for a run of fewer than two workers. A worker is watched while the
- * window watches its lane, or while it pauses with Watch live on (Pause and watch, where the lane cannot be watched);
- * a stopped one keeps its tab anyway, and Watch live shows nothing of one that runs on.
+ * window watches its lane, or while it pauses with its stop's Watch on (Pause and watch, where the lane cannot be watched);
+ * a stopped one keeps its tab anyway, and a stop's Watch shows nothing of one that runs on.
  */
 function followTabs(session: HubSession): void {
   const { ref } = session;
@@ -496,6 +508,14 @@ function followTabs(session: HubSession): void {
   const tabs = tabsAfter(state.tabs[ref], session.workers, watched);
   if (tabs) state.tabs[ref] = tabs;
   else delete state.tabs[ref];
+}
+
+/** Keeps how far a run that ended came, the latest `MAX_ENDED_PROGRESS` alone. */
+function keepEndedProgress(ref: string, progress: HubProgress): void {
+  delete state.endedProgress[ref];
+  state.endedProgress[ref] = progress;
+  const refs = Object.keys(state.endedProgress);
+  for (const old of refs.slice(0, Math.max(0, refs.length - MAX_ENDED_PROGRESS))) delete state.endedProgress[old];
 }
 
 /** A run ended: what the window kept to watch it goes, its lanes' frames and refusals with them. */
@@ -755,6 +775,17 @@ export function useDesktopRunHub() {
     /** What the window heard: read it, never write it. */
     state: state as Readonly<HubState>,
     command,
+    /**
+     * Takes back how far the runs that ended before a reload of the page came (`endedProgress`, `endedAtStop`), by ref,
+     * as the page before kept them: a run the window heard of since keeps what it heard.
+     */
+    takeBackEnded(ended: Readonly<Record<string, { progress?: HubProgress; endedAtStop?: number }>>): void {
+      for (const [ref, kept] of Object.entries(ended)) {
+        if (kept.progress && !state.endedProgress[ref]) keepEndedProgress(ref, kept.progress);
+        if (kept.endedAtStop && kept.endedAtStop > 0 && !state.endedAtStop[ref])
+          state.endedAtStop[ref] = kept.endedAtStop;
+      }
+    },
     /** Whether the window wants the stream: open while it does, closed, and every stop let go, once it does not. */
     want(on: boolean): void {
       wanted = on;
@@ -791,11 +822,11 @@ export function useDesktopRunHub() {
     shareWarned(): void {
       shareWarned = true;
     },
-    /** Whether Watch live is on for a worker: each next stop of it is watched. */
+    /** Whether a stop's Watch is on for a worker: each next stop of it is watched. */
     watchesLive(ref: string, worker: number): boolean {
       return state.watchLive[ref]?.includes(worker) ?? false;
     },
-    /** Turns Watch live on or off for a worker, for the window, until its run ends. */
+    /** Turns a stop's Watch on or off for a worker, for the window, until its run ends. */
     setWatchLive(ref: string, worker: number, on: boolean): void {
       const others = (state.watchLive[ref] ?? []).filter((w) => w !== worker);
       if (on) state.watchLive[ref] = [...others, worker];

@@ -26,7 +26,7 @@ then each worker's test and whether it runs or where it stopped (the file and li
 the page). A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. A run
 without [**Watch**](#watch-live) and no test stopped says how one stops: a breakpoint, a `page.pause()` or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
-[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only.
+[CI runs](./watch-running-test#a-ci-run-of-your-branch) show read-only, with **Watch** on a running test.
 
 ## The controls
 
@@ -72,8 +72,8 @@ code went to the editor, with what to review in it, or why not.
 
 **Watch**, on a worker's row, shows its test's page as it paints, running or stopped, and **Pause and watch** pauses
 it too: [Watch a running test](./watch-running-test). The last frame stays, marked **Running…**, until the next one
-comes. An older reporter's row says to update it; with one newer than 0.61.0, its stops have **Watch live**, which
-watches each stop alone and, left on, the worker's next ones.
+comes. An older reporter's row says to update it; with one newer than 0.61.0, its stops have their own **Watch**,
+which watches each stop alone and, left on, the worker's next ones.
 
 The view fills the window's width, ten frames a second at most, under a red **Live** badge. Only the window that
 asked gets the frames, stored nowhere, from the test's worker through the editor service and the extension's
@@ -92,13 +92,18 @@ At a headless stop, which nobody sees, the picker, the recorder's panel and the 
 view, answered there as in a headed browser; their code reaches the editor the same way.
 
 <figure>
-  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live and Interact pressed in the page card's head, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
+  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch and Interact pressed in the page card's head, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
   <figcaption>A headless test's page watched live, with Pick started in it.</figcaption>
+</figure>
+
+<figure>
+  <img src="/screenshots/picker-runs-ci.png" width="488" alt="The Runs window listing CI run #78 on main with its two running tests, each with Watch and Watch on the dashboard, the second watched: its page live under a Live badge, with the call it is at">
+  <figcaption>A CI run's test, watched read-only.</figcaption>
 </figure>
 
 ## Click and type on the view
 
-While you watch, [**Interact**](./watch-running-test#interact), beside **Watch live** or **Watch**, sends your
+While you watch, [**Interact**](./watch-running-test#interact), beside **Watch**, sends your
 pointer, wheel and keys on the view to the page as a person's would, the picker and the recorder included. Which
 reach the page, a paste included, and which stay the window's: the
 [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
@@ -117,7 +122,8 @@ it off. It needs Playwright 1.60 or later, and says so on an older one.
 
 [Paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) with the [desktop app](./desktop), the window
 lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug reports
-included, with the same controls and live view. With no editor paired, it follows the app alone. The app holds no
+included, with the same controls and live view, and its failures to reach the app name the app (**Not connected to the
+desktop app**). With no editor paired, it follows the app alone. The app holds no
 editor, so **Pick**, **Record** and **Assert** in the test's window are not offered; the code of **Assert a region**
 and **Mock a request** goes to the app's window to copy, as the window here says: [Desktop app runs](./desktop-runs).
 

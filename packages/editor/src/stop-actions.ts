@@ -7,7 +7,9 @@
  * page through a hand-off in its `check` mode (`check`); Assert a region has the worker pick the region and read its
  * ARIA snapshot (`region`); Mock a request asks the worker for the one response chosen among those its test kept. The
  * code goes above the stopped statement where it stands now: the stopped line, the run's, mapped through the edits made
- * since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included. An action that
+ * since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included; at a stop of a
+ * job the desktop app runs in a throwaway checkout, outside the workspace, the code is made from the checkout's file
+ * as the editor holds it, else as it is on disk, and offered to copy (`StopCode.copy`, `checkoutCopyWhy`), never written. An action that
  * writes code is refused when the client writes none, and before it starts when nothing can be written at the stopped
  * line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): that the code was sent to
  * the editor to write, with its warnings (the editor, which can still refuse the write, says itself whether it wrote
@@ -95,6 +97,11 @@ export interface StopActionsOptions {
   outcome?(outcome: StopOutcome): void;
   /** What a file's code is written from; null for a file no Playwright config of the workspace holds. */
   target(file: string): StopTarget | null;
+  /**
+   * For a file `target` gives nothing for: what the stop's code is made from to copy, never to write, and why
+   * (`checkoutCopyWhy`), for a stop of a job the desktop app runs in a throwaway checkout; null for any other.
+   */
+  copy?(stop: StopRef, file: string): { target: StopTarget; why: string } | null;
   /** Where a stop's line, the run's, stands in the file's text now (`RunLines.lineNow`); why it cannot be told. */
   lineNow(stop: StopRef, target: StopTarget): LineNow;
   /** The editor's display language, for the check panel. */
@@ -103,6 +110,19 @@ export interface StopActionsOptions {
   editor?(): string | null;
   /** The host's sentences, when it is not the editor service: the desktop app keeps the code for its window to copy. */
   words?: StopCodeWords;
+}
+
+/**
+ * Why the code of a stop of a job the desktop app runs in a throwaway checkout of `commit` is offered to copy (the
+ * commit's first 7 hex digits).
+ */
+export function checkoutCopyWhy(commit: string): string {
+  return `This reproduction runs at commit ${commit.slice(0, 7)} in a throwaway checkout: copy the code into your own file.`;
+}
+
+/** Why a test stopped in a desktop app's throwaway checkout of `commit` records nothing there, as a refusal says it. */
+export function checkoutRecordWhy(commit: string): string {
+  return `this reproduction runs at commit ${commit.slice(0, 7)} in a throwaway checkout: record in your own file.`;
 }
 
 /** What each action writes, as a sentence names it. */
@@ -341,17 +361,25 @@ export class StopActions {
     });
   }
 
-  /** The file a stop's code is written in, what it is written from, and the stopped line as it stands now; why not. */
-  private place(stop: StopRef): { file: string; target: StopTarget; line: number } | { refusal: string } {
+  /**
+   * The file a stop's code is written in, what it is written from, and the stopped line as it stands now, with why it
+   * is offered to copy alone (`copy`) for a file of a desktop app's throwaway checkout; why not.
+   */
+  private place(
+    stop: StopRef,
+  ): { file: string; target: StopTarget; line: number; copy?: string } | { refusal: string } {
     const file = uriToPath(stop.uri);
     const target = file ? this.options.target(file) : null;
-    if (!file || !target) {
+    const copy = file && !target ? (this.options.copy?.(stop, file) ?? null) : null;
+    const from = target ?? copy?.target;
+    if (!file || !from) {
       return {
         refusal: this.options.words?.outside(stop.uri) ?? `No Playwright config of this workspace holds ${stop.uri}.`,
       };
     }
-    const now = this.options.lineNow(stop, target);
-    return 'refusal' in now ? now : { file, target, line: now.line };
+    const now = this.options.lineNow(stop, from);
+    if ('refusal' in now) return now;
+    return copy ? { file, target: from, line: now.line, copy: copy.why } : { file, target: from, line: now.line };
   }
 
   /** Render the code for a stop and send it to the client, saying an agent made it (`agent`); why not otherwise. */
@@ -381,8 +409,9 @@ export class StopActions {
     const what = (agent ? AGENT_WROTE : WRITTEN)[action];
     // A locator takes the place of the stopped line's; any other code goes above it.
     const at = action === 'locator' ? `in place of the one on ${where}` : `above ${where}`;
-    const wrote = `${words?.wrote(what, at) ?? `Piwi wrote ${what} ${at}.`}${goesOn}`;
-    const sent = `${words?.sent(what, at) ?? `Piwi sent ${what} to ${editor} to write ${at}.`}${goesOn}`;
+    // Code of a throwaway checkout's file is offered to copy: its one sentence says why, wherever it is heard.
+    const wrote = place.copy ?? `${words?.wrote(what, at) ?? `Piwi wrote ${what} ${at}.`}${goesOn}`;
+    const sent = place.copy ?? `${words?.sent(what, at) ?? `Piwi sent ${what} to ${editor} to write ${at}.`}${goesOn}`;
     const code: StopCode = {
       ref: stop.ref,
       worker: stop.worker,
@@ -395,6 +424,7 @@ export class StopActions {
       edits: rendered.edits,
       message: wrote,
       warnings: rendered.warnings,
+      ...(place.copy ? { copy: true as const } : {}),
     };
     this.options.notify(code);
     this.options.outcome?.({

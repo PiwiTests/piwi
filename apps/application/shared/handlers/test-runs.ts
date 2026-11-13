@@ -24,6 +24,7 @@ import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
 import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
+import { withoutCheckout } from '@piwitests/core/run-channel';
 import {
   isVisibleRun,
   notPrivateRun,
@@ -120,7 +121,8 @@ async function findProjectLatestRun(
       if (runOrigin(r.metadata) !== origin.kind || runOriginRef(r.metadata) !== ref) return false;
       if (!isVisibleRun(r, viewerId)) return false;
       const named = runLauncherRef(r.metadata);
-      return !runs || named === null || runs.has(named);
+      // A job the desktop app ran in a throwaway checkout on an editor's channel is named with its commit too.
+      return !runs || named === null || runs.has(named) || runs.has(withoutCheckout(named));
     });
     return found ? { id: found.id, status: found.status, name: runLauncherRef(found.metadata) } : null;
   }

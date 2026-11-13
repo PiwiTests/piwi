@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Get latest run info for a project',
     description:
-      'Returns the id and status of the most recent test run for the project. With `origin` and `ref`, the most recent run whose launcher stamped that origin and reference (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`), or null, with the name its launcher gave the run (`PIWI_RUN_REF`) as `name`, null when the reporter recorded none. With `run` too (repeatable), a run whose launcher also named it (`PIWI_RUN_REF`) matches only under one of those names. 404 for a project that does not exist.',
+      'Returns the id and status of the most recent test run for the project. With `origin` and `ref`, the most recent run whose launcher stamped that origin and reference (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`), or null, with the name its launcher gave the run (`PIWI_RUN_REF`) as `name`, null when the reporter recorded none. With `run` too (repeatable), a run whose launcher also named it (`PIWI_RUN_REF`) matches only under one of those names, or under one of them with the commit of the throwaway checkout the desktop app ran it in on an editor’s run channel (`desktop-7-at-abc1234` under `desktop-7`). 404 for a project that does not exist.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'origin', in: 'query', required: false, schema: { type: 'string' }, description: 'A run origin kind' },

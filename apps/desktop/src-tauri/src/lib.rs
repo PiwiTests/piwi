@@ -61,7 +61,7 @@ use updates::{
     desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
-    desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
+    desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link, desktop_local_runs,
     desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
     desktop_set_project_link, desktop_stop_local_tests,
 };
@@ -2438,6 +2438,18 @@ fn desktop_close_output_window(app: tauri::AppHandle, name: String) -> Result<()
     Ok(())
 }
 
+/// Close every run output window whose name `keep` does not hold: the
+/// dashboard window's page, once it took back its runs after a reload, keeps
+/// the windows its runs show their output in, and no other.
+#[tauri::command]
+fn desktop_close_other_output_windows(app: tauri::AppHandle, keep: Vec<String>) {
+    for (label, window) in app.webview_windows() {
+        if output_window_name(&label).is_some_and(|name| !keep.iter().any(|kept| kept == name)) {
+            let _ = window.close();
+        }
+    }
+}
+
 /// Event the shell emits to the dashboard window with the `id` of a
 /// notification the user clicked (see `desktop_notify`).
 const NOTIFICATION_CLICK_EVENT: &str = "piwi:notification-click";
@@ -3399,16 +3411,15 @@ pub fn run() {
                     webview.label() != "main"
                         || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
                 })
-                // A new page in the dashboard window leaves no one to feed the
-                // run output windows: they close.
                 .on_page_load(|webview, payload| {
                     if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
                         reapply_splash_status(webview);
                     }
+                    // A run's output window outlives a reload of the dashboard
+                    // window: the next page takes its runs back and feeds it again.
                     if webview.label() == "main"
                         && payload.event() == tauri::webview::PageLoadEvent::Started
                     {
-                        close_output_windows(webview.app_handle(), None);
                         // A link waits for the new page to listen.
                         if let Some(linked) = webview.try_state::<LinkedPage>() {
                             linked.page_unloads();
@@ -3449,6 +3460,7 @@ pub fn run() {
             desktop_open_output_window,
             desktop_open_worker_window,
             desktop_close_output_window,
+            desktop_close_other_output_windows,
             desktop_bring_to_front,
             desktop_notify,
             desktop_log,
@@ -3463,6 +3475,7 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_local_runs,
             desktop_keep_run_target_key,
             desktop_forget_run_target,
             desktop_request_folders,

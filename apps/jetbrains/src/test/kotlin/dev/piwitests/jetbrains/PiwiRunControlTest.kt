@@ -1267,7 +1267,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     /**
      * Interact on the Paused Page tab only routes the input, and going off gives back the stop it was last on for: with
      * Escape, at another slot's stop and at the run's end. It stays selected for the next stop of the same worker slot
-     * while Watch live stays on, and a rerun under the same ref starts with it off.
+     * while Watch stays on, and a rerun under the same ref starts with it off.
      */
     fun testInteractTakesNoStopAndGivesItBackAsItGoesOff() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
@@ -1282,7 +1282,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
             val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
             val interact = UIUtil.findComponentsOfType(panel, JCheckBox::class.java).single { it.text == "Interact" }
-            // A tool window out of sight watches no page: Watch live on and the watch accepted are played here.
+            // A tool window out of sight watches no page: Watch on and the watch accepted are played here.
             panel.liveWanted = true
             panel.watching(true)
             interact.doClick()
@@ -1313,7 +1313,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("ed-9", ended = true))
             assertFalse(panel.interacting)
             assertEquals(DriveStopParams("ed-9", 1, third, false), waitFor("the run's end giving the stop back") { drives.getOrNull(2) })
-            // A rerun under the same ref, at the same slot with Watch live on, starts with Interact off.
+            // A rerun under the same ref, at the same slot with Watch on, starts with Interact off.
             val fourth = "2026-10-28T10:00:04.000Z"
             hear(RunSession("ed-9", base.path, listOf(RunWorker(1, 1, "stopped", test(), at(fourth), takes = live))))
             waitFor("the rerun's page") { sessions.shown().takeIf { it.pageImage != null && it.pageCaption?.contains("drive.page.ts:4") == true } }
@@ -1349,7 +1349,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
             val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
             val interact = boxes.single { it.text == "Interact" }
-            boxes.single { it.text == "Watch live" }.doClick()
+            boxes.single { it.text == "Watch" }.doClick()
             waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
             interact.doClick()
             waitFor("Interact's release") { pageSends.takeIf { it == listOf("view on", "release") } }
@@ -1373,7 +1373,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Watch live turned off, or the tab hidden, with Interact on: the input queued goes first, a key on its way, the
+     * Watch turned off, or the tab hidden, with Interact on: the input queued goes first, a key on its way, the
      * click held back for a second one and the release, then the stop is given back, then the watch ends.
      */
     fun testTheWatchEndsAfterTheInputAndTheGiveBack() {
@@ -1390,7 +1390,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
             val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
             val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
-            val live = boxes.single { it.text == "Watch live" }
+            val live = boxes.single { it.text == "Watch" }
             val interact = boxes.single { it.text == "Interact" }
             val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
             fun interacting() {

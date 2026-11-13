@@ -223,7 +223,7 @@ function press(what: Control): void {
   else void codeAction(what);
 }
 
-/** Watch live, kept by the window: on, each next stop of this worker is watched, until it is turned off. */
+/** The stop's Watch, kept by the window: on, each next stop of this worker is watched, until it is turned off. */
 const watchLive = computed({
   get: () => hub.watchesLive(props.session.ref, props.worker.worker),
   set: (on: boolean) => hub.setWatchLive(props.session.ref, props.worker.worker, on),
@@ -238,9 +238,9 @@ const interact = computed({
   set: (on: boolean) => hub.setInteract(props.session.ref, props.worker.parallelIndex, on),
 });
 
-/** The worker's page is watched: its own stop's Watch live, or its lane. */
+/** The worker's page is watched: its own stop's Watch, or its lane. */
 const watched = computed(() => watchLive.value || watchedLane.value);
-// Interact goes off with watching, a worker Playwright starts in the lane without Watch live included.
+// Interact goes off with watching, a worker Playwright starts in the lane without a stop's Watch included.
 watch(
   watched,
   (on) => {

@@ -316,6 +316,18 @@ describe('runsOfLocalRun', () => {
     expect(unbegunRunsOf(active, ended, [ended, { ...going, finishedAt: 6000 }])).toEqual([6, 9]);
   });
 
+  test('takes the runs its steps ran on an editor’s channel, by their names without the checkout', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7-at-abc1234' })],
+      [8, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-at-abc1234def0-unattended', job: true })],
+      [9, live({ origin: 'reproduce', originRef: '42', name: 'desktop-9-at-abc1234' })],
+    ]);
+    const reproduction = owner({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] });
+    expect(runsOfLocalRun(active, reproduction, [reproduction])).toEqual([7]);
+    const bisect = owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] });
+    expect(runsOfLocalRun(active, bisect, [bisect])).toEqual([8]);
+  });
+
   test('tells two runs of one reference apart by the names their steps gave them', () => {
     const active = new Map<number, LiveRun>([
       [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7' })],

@@ -694,8 +694,9 @@ Only `piwi-client.ts` makes requests to the instance, the desktop app and Send t
   - the desktop app's messages: `piwi-desktop-repro`, `piwi-desktop-repro-status` (`desktop-repro.ts`);
   - `piwi-send-to-editor`, which posts to the paired editor (`postToEditor`) once it proved it holds the token (see
     "Finding the hubs");
-  - the CI runs the Runs window lists while one is open (`ci-runs.ts`: `fetchActiveRuns`, `fetchRunMetadata`; see
-    "The CI runs in progress").
+  - the CI runs the Runs window lists while one is open, and the CI lane it watches (`ci-runs.ts`: `fetchActiveRuns`,
+    `fetchRunMetadata`, `openRunStream`; `ci-watch.ts`: `openLiveWatch`, `changeLiveWatch`; see "The CI runs in
+    progress").
 
 The editor's runs are the one exception to `piwi-client.ts`, in the worker too: `run-hubs.ts` asks the editor's
 `…/live` (through `proveEditor`), and `hub-connection.ts` keeps a WebSocket to each hub (see "The editor's runs").
@@ -713,7 +714,8 @@ that imports `piwi-client.ts` directly. Keep it that way.
 `chrome.storage.local`, no secret).
 
 - `withConnectionHealth` records `ok`, `unauthorized`, `unreachable` or `error`, with the time and the instance
-  address, and passes the answer or the error on unchanged.
+  address, and passes the answer or the error on unchanged. A request the extension aborted itself (`AbortError`)
+  records nothing; a wait it gave up on aborts as a `TimeoutError`, which counts.
 - It wraps every request of `project-refresh.ts`, the requests of `bug-reports.ts` that send, list or read reports and
   share a verdict, and the settings page's read of the URL patterns. Two best-effort reads catch their own errors and
   are not wrapped: the project's bug-report intake (`fetchBugReportIntake`) and a replayed step's screenshot
@@ -842,7 +844,7 @@ The hubs are found again:
 An unreachable editor leaves the hubs found last to try. A hub whose connection was lost keeps its runs as last heard
 (`away`), which `state` lists with the hub not connected, until it tells its runs again, it refuses its token, or it is
 no longer named; ten minutes at most, and none for a hub whose service said it stopped (1001), which starts again at
-another address. The run shortcut and the popup's count read the runs of the hubs that answer alone (`answeringRuns`). The Runs window shows such a run grayed, its controls held, and its Watch live
+another address. The run shortcut and the popup's count read the runs of the hubs that answer alone (`answeringRuns`). The Runs window shows such a run grayed, its controls held, and its stop's Watch
 starts again once the hub answers.
 
 ### A connection per hub
@@ -852,7 +854,7 @@ starts again once the hub answers.
 - It uses the browser's WebSocket (`browserSocket`), which sends the extension's origin.
 - It sends `hello` with the hub's token, then `subscribe` once the hub welcomed it. Each `session` the hub pushes is
   kept by its ref. The hub reads as connected to the windows only once the runs live at `subscribe` were heard
-  (`heardRuns`): a window forgets Watch live for a worker a connected hub no longer has, so a reconnection, the
+  (`heardRuns`): a window forgets a stop's Watch for a worker a connected hub no longer has, so a reconnection, the
   worker's restart included, must not show a connected hub without its runs. `RunHubs` keeps an ended run ten minutes
   with its last workers (`keepEnded`, five at most), so the window still names its tests; one whose ref runs again is
   not listed while the new run lives, which the window keys by the same hub and ref.
@@ -940,7 +942,15 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   (`runs_shareWarning`, the instance's host in it) with **Share live** and **Cancel** in its place, the focus on the
   first; a refusal the hub answers shows under it. Shared, the run says where and how many views are open, with **Copy
   the run page's link** and **Stop sharing**; a sharing that stopped though nobody asked says why under **Share live**
-  (`live.stopped`). A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
+  (`live.stopped`). **Stop sharing** asks to confirm every time, the question in the share's place with **Stop
+  sharing** and **Cancel**. At a hub whose features list `share-window` (an editor window's, `RunsHub.sharesWindow`),
+  **Share this editor window's runs** beside **Share live**, and in the first share's question, shares the run and each
+  run that window starts until the person stops (`share` with `scope: 'window'`); while the window shares its runs
+  (`RunsHub.windowShared`, the hub's `share-window`), a line under the heading says so with **Stop sharing this
+  window's runs**, whatever runs are listed, asked to confirm as a run's is (`unshare-window`, the hub's `share` with
+  `scope: 'window'` naming no run), and its shared runs say they are one of the window's, each read out as it is
+  shared; a run's own **Stop sharing** stops that run alone.
+  A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
   why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
   sentence as the hub said it.
 - From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the
@@ -979,7 +989,8 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 - An answer and a list belong to the stop they were asked at: a stop the worker no longer stands at shows neither, and
   an answer that comes after it is dropped (`send`).
 - The image of a stopped page is asked once per stop. It is shown as a `data:` JPEG, after its base64 is checked again.
-- **Watch live**, a toggle above the image where the stop takes `view`, asks for the stop's live view; its frames take
+- **Watch** at a stop (the stop's own, named as the lane's: one view, one name), a toggle above the image where the
+  stop takes `view`, asks for the stop's live view; its frames take
   the image's place once one is decoded (aside first, the latest one waiting meanwhile, the others dropped), at the
   window's width, its aspect kept, with a still **Live** badge. Neither the frames nor the badge are read out: the
   view's name says it is live. The view ends with its stop, as the window hides (`visibilitychange`) or closes, and
@@ -990,7 +1001,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
 - **Watch**, at a hub whose features list `lanes`, for a worker whose `intents` list `watch` (`laneWatchOf`), watches
   the worker's lane (`watch`, with the lane, Playwright's `parallelIndex`) in place of a stop's own view: a toggle after
-  Pause on a running row (state `running`, `between` or `other`), above the page at a stop, where Watch live would be.
+  Pause on a running row (state `running`, `between` or `other`), above the page at a stop, where the stop's own Watch would be.
   **Pause and watch**, beside it while the lane is not watched, starts watching and sends `pause` for the worker.
   Watching is kept by run and slot (`slotKey`, the `lanes` map of `LaneView`), so the worker Playwright starts in its
   place keeps it; it ends when the person turns it off or the run ends. A hidden window watches nothing (`watch` with
@@ -1001,7 +1012,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   before the state that shows the hub away). A lane of a hub no longer named is let go, its image with it, but before
   the hubs are first found (`searching`). A refusal of `watch` shows its sentence under the row, read out, Watch
   unpressed, until the lane's worker or its test changes (`refusedAt`). For a worker whose reporter lacks `watch`, at
-  such a hub, Watch is held, its tooltip saying to update the reporter; its stops keep Watch live, and so does a stop
+  such a hub, Watch is held, its tooltip saying to update the reporter; its stops keep their own Watch, and so does a stop
   outside a test, which no lane shows.
 - A lane's frames are drawn in one image for the lane (decoded aside first, the latest waiting, the others dropped),
   live with the **Live** badge while the frame, of the latest ask, shows where the worker stands now (`laneFrameNow`:
@@ -1010,7 +1021,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   (`.stale`), taking no input and, while the worker is not stopped, marked **Running…**, until the next one comes; at a stop with no frame of it yet, the stop's image shows if it came. Why
   the lane sends no frame (`refused`) shows in place of its image, read out, until a frame comes. At a stop its frame
   shows, the image is the stop's live view: input, Pick on the image and the actions in the test's window work as
-  with Watch live, Interact and Escape included. A watched lane that stops is scrolled into view
+  with a stop's own Watch, Interact and Escape included. A watched lane that stops is scrolled into view
   (`bringIntoView`) when its row is not wholly in it.
 - A watched lane's layers show under its page, once its worker's reporter sent one (`LaneView.layered`: a reporter
   that sends none shows none), in sections with their headings (`renderLaneLayers`), each drawn again only as what it
@@ -1032,10 +1043,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   `lane` alone): the hub asks the worker for the file and starts Playwright's trace viewer on its own machine. The
   window never sees the file; the hub's sentence shows under the test, read out (`say`), and the button waits for it
   alone (`tracing`, by `slotKey`).
-- **Interact**, a toggle after Watch live or Watch where a live view shows a stop that takes `input` from the window
+- **Interact**, a toggle after Watch where a live view shows a stop that takes `input` from the window
   (only while it watches, once the hub accepted the view), sends the person's input to the page, whose first event that
   is not a move drives the stop. It is kept by run and slot (`interacting`, `slotKey`) across the slot's next stops,
-  and goes off with Watch live or Watch, a refused view or lane, Give back, Escape on the view, or as the run ends. Off,
+  and goes off with Watch, a refused view or lane, Give back, Escape on the view, or as the run ends. Off,
   the input waiting goes first (`ViewInputBatcher.finish`), then a stop the window drives, as the latest state says
   (`stoppedAt`), or reached with its input (`inputAt`), is given back (`drive` off), past any command on its way
   (`giveBack`, when `givesBack` says so). While it is on, the view takes `tabindex=0`, a focus ring and
@@ -1074,7 +1085,9 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
   app's hub, or why one follows none (the empty box's sentence, which the box leaves to the line while there are runs),
   a broken pairing included. A run of a hub not connected now shows grayed and as last heard (`.run.away`), its
   controls held (`aria-disabled`, and `send` sends nothing) until the hub answers. A command the worker does not answer
-  within `COMMAND_TIMEOUT_MS` answers `timeout` and frees its buttons. A run of the app's hub is marked **Desktop app**
+  within `COMMAND_TIMEOUT_MS` answers `timeout` and frees its buttons. The worker's own failures (`offline`,
+  `timeout`, a view or a lane lost) name the tool whose hub follows the run (`toolName`): the desktop app for its
+  hub's runs, else the editor by its name. A run of the app's hub is marked **Desktop app**
   beside its name. The app holds no editor: it
   declines Pick, Record and Assert, which its stops never offer, and the code a stop makes goes to the app's window to
   copy, the hub's sentence saying so (`…: copy it in the desktop app's window.`). With no editor paired, the empty box
@@ -1085,7 +1098,7 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 
 Under the runs the hubs follow, the window lists the CI runs in progress of the projects this browser maps
 (`projectMappings` and `serverMappings`), from the instance the extension is connected to, read-only: no control,
-share or hold, since they run on CI.
+share, hold, input or pick, since they run on CI; a running test's **Watch** shows its page.
 
 - **Read** by the worker (`src/background/ci-runs.ts`, `CiRunsWatch`) only while a Runs window is open and in
   connected mode (`isConnected`: an address and a URL pattern): as the first window opens, then every 15 s
@@ -1097,8 +1110,31 @@ share or hold, since they run on CI.
   request goes through `withConnectionHealth`. A read that fails keeps the runs last read.
 - **Shown** as `RunsState.ci`, the newest five (`ciRunsListed`): each run's name (`CI run #78`), its branch and, when
   the runs of several projects are listed, its project (`ciRunWhere`), its page (`Run #78`, **Open** and **Copy**) and
-  its tally, then one line saying nothing here steers them and that a running test is watched from the run's page.
-  The words are the run model's (`@piwitests/run-model/ci`), through `runsSpeaker`.
+  its tally, then one line saying nothing here steers them. The words are the run model's
+  (`@piwitests/run-model/ci`), through `runsSpeaker`.
+- **Its tests**: `MAX_CI_STREAMS` (3) runs listed, the run a window watches then the newest, are followed through
+  their own stream (`GET /api/test-runs/:id/stream`, `openRunStream`, read by `EventParser` in `sse.ts`, which drops an
+  over-long line to its end) while a window that can be seen is open (`shown`; hidden, the streams close and the lanes
+  stay as last heard): `live-view`
+  says whether their lanes can be watched (the project's live view on and the run holding a key), and each `lane`,
+  read by `@piwitests/core/live-lane`'s `readLane`, how it stands. The window lists the tests the lanes run
+  (`RunsCiRun.tests`, `ciTestsOf`, 32 a run at most), `Worker 2` or `Shard 1, worker 2`, each with **Watch** where the
+  run's lanes can be watched and **Watch on the dashboard** (the run's page with `?watch=`, `ciDashboardWatch`). A
+  stream that ends or brings nothing for 45 s is opened again at the next read; three streams, a watch and a read stay
+  within the six connections a browser opens to one host.
+- **Watch** sends `ci-watch` (the run, its shard and lane, `on`; not a hub's `command`), which the worker's one watch
+  (`CiLaneWatch`, `src/background/ci-watch.ts`) takes as the editors' `piwi/ciWatch` does: one watch of the run on the
+  instance (`GET …/live-view/watch`, the lane's worker and `slot`, 880 by 550), opened with the extension's key, its
+  live messages read with `@piwitests/core/live-view`'s reader, its images base64 to the windows that watch the lane
+  (`ci-frame`, `MAX_VIEW_FPS` a second, the latest waiting), nothing kept; another lane of the run is a POST on the
+  same watch, and another run a new watch. One lane at a time in the worker, within the instance's 16 watches a run and
+  4 a person: a window that asks another lane takes it there, the others hearing `moved`. A window that joins a watch
+  still opening, or moving, gets the instance's answer to it, and a window's stop wins over its own watch still on its
+  way. A run listed but not followed is refused as such (`unfollowed`), never as one that ended. The watch ends as its last
+  window stops or closes, as the window hides (asked again as it shows), as the run leaves the list, as the instance
+  ends it, after 45 s of silence or on an error, each window hearing why (`ci-ended`, `CiWatchEnd`), shown in the view
+  with **Watch on the dashboard**; a refusal (`RunsAnswer.ci`) is said there too, the instance's own sentence when it
+  gave one. The view is read-only: no Interact, input, pick or control.
 
 ### Run-level controls, keys and the window's place
 
@@ -1161,8 +1197,14 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   watched lane's layers kept and said (`layers.test.ts`), in English. `run-words.test.ts`
   holds the model's English words (`RUN_WORDS_EN`) to the catalogs.
 - `ci-runs.test.ts` checks the CI runs: those of the mapped projects, the CI runs alone, read only while a window
-  listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance
-  does not answer; `packages/run-model/tests/ci.test.ts` their tally, name, place and order.
+  listens, each run's details once, nothing without connected mode, and the runs last read kept while the instance does
+  not answer; their streams, three alone, the run watched kept, closed while no window shows, the tests their lanes run
+  and whether they can be watched, a stream opened again, and a run that left; `sse.test.ts` the events' parser;
+  `packages/run-model/tests/ci.test.ts` their tally, name, place and order. `ci-watch.test.ts` checks the CI watch: its
+  query, the lane's images alone to the windows that watch it, paced, another lane by a POST, another run by a new
+  watch, each end and each refusal, a window joining a watch still opening and a stop that wins over a watch on its way.
+  `runs-ci.spec.ts` plays an instance: the tests listed, Watch read-only with the key, another lane, Watch on the
+  dashboard, the run's end said, a hidden window, and a run whose live view is off.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
 - `piwi-client.test.ts` checks `fetchDesktopHubs`: the proof first, the token on `/api/desktop/live` alone, a hub
@@ -1184,7 +1226,7 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   review in it, and a mock the editor asks for itself; a refusal and a stop the test went on from; a failure held at
   its line with its error, and one an older reporter titles alone; the actions an older reporter or a headless stop
   leaves out; and a plain run's headless failure, let go with no window open and held while one is. The live view,
-  with the fake worker answering `view`, `input` and `pick-at` and sending frames: Watch live showing frames and
+  with the fake worker answering `view`, `input` and `pick-at` and sending frames: a stop's Watch showing frames and
   stopping them; a click, a double and a right click, the wheel and keys at the frame's CSS pixels, Escape and Tab
   staying the window's; Pick on the image on the image and the view, a locator with markup shown as text; a headless
   stop's actions once watched, held saying to watch first until then; a new stop, a hidden window and a closed one; and
@@ -1194,8 +1236,8 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   short window, its frames taking a click and Pick with no `view` asked, the frame before dimmed and taking no input
   once watched again, dimmed across a Step; a refusal, a hidden window and a closed one; the worker Playwright starts in
   the lane and the extension's worker restarting; a refusal of `watch` going with its test; a stop outside a test,
-  with Watch live; the desktop app's hub lost, said once; a reporter without `watch`, told to update, its stops
-  keeping Watch live; and a reporter that sends layers: nothing under the page until one comes, then why its call
+  with its own Watch; the desktop app's hub lost, said once in the app's name; a reporter without `watch`, told to update, its stops
+  keeping their own Watch; and a reporter that sends layers: nothing under the page until one comes, then why its call
   waits, its events, its text as asked (its password hidden), then hidden again, its filmstrip with an image chosen
   and closed, none of it stored, and the next test's layers starting afresh. Open the trace so far, against a hub the
   spec plays (`stubEditor`): shown on a watched lane at a hub that lists `trace` for a worker with `traces`, its

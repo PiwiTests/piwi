@@ -718,6 +718,14 @@ lines of its code: the files as they stand when its first connection opens. Its 
 a failure stops a worker of it and goes on at once, until a person or an agent turns it on.
 It ends 5 s after its last worker and its process left, having no command.
 
+A job the desktop app runs in a throwaway checkout of a commit of a folder this workspace holds (a reproduction, a
+bisect step, a Flake Lab) attaches too, the app's shell having given it this service's run channel, under a ref that
+names the commit (`desktop-<id>-at-<commit>`, `checkoutCommitOf` in `@piwitests/core/run-channel`). Its folder is no
+context's (`root` null), so its stops are at the checkout's files; its session says so (`RunSession.checkout`), and the
+clients name the reproduction and its commit where it stops and offer no Stop, the app's to give (`canStopRun`). A
+reproduction holds its failures from its start (`watched`); a bisect step or a Flake Lab, a run nobody attends, none.
+The code made at its stops is offered to copy ([Code from a stop](#code-from-a-stop)), and Record here is refused there.
+
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
 files it by Playwright's worker index, with:
@@ -914,9 +922,9 @@ the connection closes (4001, 4002). The token is random per start, compared in c
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
 `keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`, `layers`, `stop`
 where its host can stop a run, `RunHubOptions.stopRun`, and `trace` where its run sessions start the trace viewer on
-a machine that shows its window, `RunSessions.opensTraces`, for a connection not through a forwarded port;
-`hubFeatures`). A reader keeps the features it knows; a
-hub that predates the list reads as having none.
+a machine that shows its window, `RunSessions.opensTraces`, for a connection not through a forwarded port, and
+`share-window` where its host is an editor window, `RunHubOptions.sharesWindow`; `hubFeatures`). A reader keeps the
+features it knows; a hub that predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -942,7 +950,12 @@ not a boundary.
 - `watch` (`lane`, `on`, `layers`): a lane while its tests run, with no stop, and the layers it takes beside its frames
   ([The live view](#the-live-view));
 - `openTrace` (`ref`, `lane`): the lane's running test's trace so far in Playwright's trace viewer, on this machine,
-  the hub's feature `trace` ([The trace so far](#the-trace-so-far)).
+  the hub's feature `trace` ([The trace so far](#the-trace-so-far));
+- `share` (`ref`, `on`): the run shared live on the team instance, or no more; with `scope: 'window'`, at a hub whose
+  features list `share-window`, each run of the editor window until the person stops (`piwi/shareRun`'s window scope,
+  the `ref` optional), refused elsewhere with a sentence. Each subscribed connection hears the window's state after
+  the runs `subscribe` answers with, then as it changes from any surface (`{ type: 'share-window', on }`,
+  `RunHub.shareWindowChanged`).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
@@ -1184,6 +1197,14 @@ service holds it, which the client applies as one edit. It goes only to a client
 both surfaces, and not offered to Piwi Picker (`intentsOf`). `pick` and `record` are the pause bar's own intents, whose
 results take their own paths (Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
 
+At a stop of a job the desktop app runs in a throwaway checkout (`RunSession.checkout`), the file is no context's: its
+code is made from the checkout's file as the editor holds it, else as it is on disk (`StopActionsOptions.copy`, a
+regular file of 2 MB at most), its line followed through the editor's edits as a workspace file's (the service follows
+a document it opens of a file a checkout's worker stands stopped in, `inCheckoutStop`), and sent with `copy`, its sentence saying why (`checkoutCopyWhy`: "This reproduction runs at commit abc1234 in a throwaway
+checkout: copy the code into your own file."). The client offers it to copy and writes nothing. Record here is refused
+there (`checkoutRecordWhy`), and the job's picks go to the desktop app's window, to copy, never to this editor's Send
+to editor, whose `piwi/applyPick` would write in the workspace's file of the same path.
+
 **Where the stopped statement stands now** (`src/run-lines.ts`, `RunLines`). The stop names a line of the run's code.
 `RunLines` keeps the file as the service held it when the run started:
 
@@ -1388,15 +1409,33 @@ the editors' runs it observes and the agents' tools), and so does Piwi Runner's 
 Each gives it its words (`ShellRunsWords`), the folders its runs run in, and the prefix of its run channel's folder.
 Its routes (`src/shell-runs-routes.ts`) are the run channel the shell reads (`GET /api/desktop/run-channel`, refused
 to a browser), the window's stream and commands (`/api/desktop/runs/events`, `/api/desktop/runs/commands`) and the
-runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone); `tests/shell-runs-routes.test.ts` holds
+runs' picks (`POST /api/desktop/runs/picks`, on a token for that route alone), that a run's process ended
+(`POST /api/desktop/runs/ended`, `{ ref, exitCode }`, from the window), and what the shell started a run with
+(`POST /api/desktop/runs/started`, `{ ref, args }`, refused to a browser), which the hub names as the run's command
+(`npx playwright test …`) on its session and in the agents' `run_list`, as an editor names the runs it started;
+`tests/shell-runs-routes.test.ts` holds
 them on a bare `node:http` host (`src/shell-runs-http.ts`), and the app's Nitro routes call the same functions. A host
 that does more for its window extends `ShellRuns` through hooks that name no feature of its: `sessionChanged` (a run
 changed, as the hub tells its peers), `relaying` (a hub message on its way to a window's stream), `windowCommand` (a
 window command of a type the hub does not know, answered before `parseHubCommand` reads it), `windowLeft` (a window's
 stream closed) and `sendToWindow` (an event of the host's own, `HostEvent`, to one window), with `close` overridden
 for what it opened. The desktop app's server reads a lane's trace for its window's **Inspect** through them
-(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. The
-pieces it wires:
+(`DesktopRuns`); Piwi Runner's host extends nothing, and answers an `inspect` command as no command it knows. A
+host whose window starts runs for agents passes `startRun`: `run_start` then takes a spec of a linked folder, absolute
+or relative to one of them (the test at a line read as the editor reads it), refuses any other file in a sentence,
+and hands the host a `ShellRunStart` (the project, the spec relative to its folder, the line, headed, Hold failures and
+the title `Started by <agent>`); the host answers with the ref the shell gave the run, whose Hold failures the agent
+then holds, or why it did not start it (no window open). It refuses a spec the file system will not read (in a
+sentence, never the raw error), one whose path starts with `-`, and a line past the spec's end or, in a spec whose
+text shows tests, in none of them. A start waiting for the host counts among `MAX_AGENT_RUNS` until it is answered; a
+ref the window answers that nobody attends is not served, but counts until its process ends, and every window hears
+`stop-run` for it. The window that started a run says its process ended (`POST /api/desktop/runs/ended`,
+`ShellRuns.ended`, either spelling of the ref), which ends an agent's run whose workers never connected
+(`RunAgent.commandEnded`). The command a run is shown with quotes each argument as the editor does (`shellWord`), and
+is none when an argument holds a character a shell expands or a format character. The desktop app's server asks its
+window (`desktop-agent-runs.ts`), and sends a run still waiting again to a window that connects; the window takes
+each once, a reload included, and stops one whose answer came past the wait. Piwi Runner passes none, and its agents
+have no tools. `tests/shell-runs-start.test.ts`. The pieces it wires:
 
 - `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
   worker of this run is connected to the desktop app.`), and `declines`, the intents the host never starts, refused
@@ -1467,6 +1506,8 @@ could), `startServer` hands `publish` what the file says:
   follows the service one of whose `roots` holds the run, `editorForRun`);
 - the recorder bundle's path;
 - `unattended`: the service knows a run nobody attends, which a piped run then follows;
+- `checkout`: the service knows a job the desktop app runs in a throwaway checkout (`RunSession.checkout`), which the
+  app runs on it then, else on its own hub;
 - `send`: where a run's picks go, the client's Send to editor pairing as it names it
   (`InitializationOptions.runPairing`, `piwi/setRunPairing`), so a terminal's run posts **Pick a locator** to the
   editor. The file is written again, in place, as the client names another.

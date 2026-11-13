@@ -46,7 +46,13 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, isUnattendedRef } from '@piwitests/core/run-channel';
+import {
+  RUN_CHANNEL_ENV,
+  RUN_REF_ENV,
+  TERMINAL_REF_PREFIX,
+  checkoutCommitOf,
+  isUnattendedRef,
+} from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { parsePairing, type EditorPairing } from '@piwitests/core/editor-send';
@@ -181,7 +187,7 @@ import { RunSessions } from './run-sessions.js';
 import { startTraceViewer, type TraceViewerLauncher } from './trace-viewer.js';
 import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
-import { StopActions } from './stop-actions.js';
+import { StopActions, checkoutCopyWhy, checkoutRecordWhy } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
 import { RunAgent, type AgentRunStart } from './run-agent.js';
 import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
@@ -396,6 +402,8 @@ const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
+/** The largest file of a desktop app's throwaway checkout read to make the code of a stop in it, in bytes. */
+const MAX_CHECKOUT_FILE = 2 * 1024 * 1024;
 /**
  * How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths, and
  * `piwi/newTestFile` before reading the test folders from the config's text.
@@ -1903,6 +1911,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return null;
     }
   };
+  /** Whether a checkout's file is one to read for a stop's code: a regular file, at most `MAX_CHECKOUT_FILE` bytes. */
+  const isCheckoutFile = (file: string): boolean => {
+    try {
+      const stat = fs.statSync(file);
+      return stat.isFile() && stat.size <= MAX_CHECKOUT_FILE;
+    } catch {
+      return false;
+    }
+  };
+  /** Whether a worker of a job the desktop app runs in a throwaway checkout stands stopped in `file`. */
+  const inCheckoutStop = (file: string): boolean =>
+    runSessions.current().some(
+      (session) =>
+        !!session.checkout &&
+        session.workers.some((worker) => {
+          const stopped = worker.stop ? uriToPath(worker.stop.uri) : null;
+          return stopped !== null && lineKey(stopped) === lineKey(file);
+        }),
+    );
   /** The files the editor holds with changes it has not saved, which a run starting now does not have. */
   const unsavedFiles = (): string[] =>
     documents.all().flatMap((document) => {
@@ -1928,7 +1955,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     presenceChanged: (session) => runHub?.push(session),
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
-    watched: (ref) => watchedRuns.has(ref),
+    // A reproduction the desktop app runs in a throwaway checkout holds its failures from its start, as the app's own.
+    watched: (ref) => watchedRuns.has(ref) || (checkoutCommitOf(ref) !== null && !isUnattendedRef(ref)),
     // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
     holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
     // A run started in a terminal names itself so, by no command the service built.
@@ -1936,8 +1964,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
     sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
     askedToWatch: (ask) => void connection.sendNotification(ASK_TO_WATCH_NOTIFICATION, ask satisfies AskToWatchParams),
-    shareWindowChanged: (on) =>
-      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams),
+    shareWindowChanged: (on) => {
+      void connection.sendNotification(SHARE_WINDOW_NOTIFICATION, { on } satisfies ShareWindowParams);
+      runHub?.shareWindowChanged(on);
+    },
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -1992,7 +2022,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       contexts.map(spelled).find((f): f is string => f !== null && !!contextFor(f)) ??
       (contextFor(handoff.file) ? handoff.file : null);
     if (!file) {
-      recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
+      // A test stopped in a desktop app's throwaway checkout records nothing into the checkout's file.
+      const stopped = pathToFileURL(handoff.file).href;
+      const checkout = runSessions
+        .current()
+        .find((s) => s.checkout && s.workers.some((w) => w.stop?.uri === stopped))?.checkout;
+      recordChannel?.refuse(
+        handoff.id,
+        checkout
+          ? checkoutRecordWhy(checkout.commit)
+          : `no Playwright config of this editor's workspace holds ${handoff.file}.`,
+      );
       return;
     }
     // The steps go above the paused call where it stands now, which an earlier recording at this stop moved down.
@@ -2051,6 +2091,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         version: open?.version ?? null,
         preferLocators: suiteLocators(context),
         expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
+      };
+    },
+    // A stop of a job the desktop app runs in a throwaway checkout: its code is made from the checkout's file as the
+    // editor holds it, else as it is on disk, to copy.
+    copy: (stop, file) => {
+      const commit = checkoutCommitOf(stop.ref);
+      const open = commit && isCheckoutFile(file) ? openDocument(file) : undefined;
+      const text = commit && isCheckoutFile(file) ? (open?.getText() ?? diskFile(file)?.text ?? null) : null;
+      if (!commit || text === null) return null;
+      return {
+        why: checkoutCopyWhy(commit),
+        target: {
+          uri: open?.uri ?? pathToFileURL(file).href,
+          text,
+          version: null,
+          preferLocators: new Set<string>(),
+          expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
+        },
       };
     },
     language: () => clientLocale,
@@ -2441,6 +2499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const stopRunAsked = async (ref: string): Promise<RunControlResult> => {
     const session = runSessions.current().find((s) => s.ref === ref);
     if (session?.terminal) return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    if (session?.checkout) return { ok: false, message: 'The desktop app runs this reproduction: stop it there.' };
     if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
     try {
       const answer: unknown = await connection.sendRequest(STOP_RUN_REQUEST, { ref } satisfies StopRunParams);
@@ -2484,6 +2543,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       RunHub.open({
         sessions: runSessions,
         actions: stopActions,
+        // An editor window shares its runs until the person stops: Piwi Picker offers it too.
+        sharesWindow: true,
         lineNow: (ref, uri, line) => {
           const file = uriToPath(uri);
           if (!file) return null;
@@ -2529,6 +2590,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         runChannel: channel && { path: channel.path, token: channel.token },
         recorderBundle: fs.existsSync(bundle) ? bundle : null,
         unattended: true,
+        checkout: true,
       };
       publishDiscovery();
     });
@@ -2536,7 +2598,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   documents.onDidOpen((e) => {
     const file = uriToPath(e.document.uri);
-    if (file && contextFor(file)) runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    if (file && (contextFor(file) || inCheckoutStop(file))) {
+      runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    }
     schedule(e.document, 0);
   });
   documents.onDidChangeContent((e) => schedule(e.document));

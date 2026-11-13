@@ -1,11 +1,11 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
  * desktop app, the secret area and the browser's WebSocket; the CI runs in progress the connected instance lists,
- * read while a window is open (`ciRuns`); the window's port (`RUNS_PORT`, taken from `runs.html`
- * alone), which gets the state at each change, what each code written at a stop came to, the frames of the live
- * views and lanes it watches and the layers of those lanes it asked for, and passes the window's commands on, its
- * views and lanes stopped as it closes; the
- * popup's Runs tile; and the global shortcut.
+ * read while a window is open, their runs' streams while one shows (`ciRuns`), and the CI lane they watch
+ * (`ciWatch`); the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at each change, what
+ * each code written at a stop came to, the frames of the live views and lanes it watches and the layers of those lanes
+ * it asked for, and passes the window's commands on, its views and lanes stopped as it closes; the popup's Runs tile;
+ * and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -15,7 +15,14 @@ import {
   parseEditorPairing,
 } from '../shared/editor-pairing.js';
 import { DESKTOP_PAIRED_AT_KEY, getDesktopSettings } from '../shared/desktop-settings.js';
-import { fetchActiveRuns, fetchDesktopHubs, fetchRunMetadata } from '../shared/piwi-client.js';
+import {
+  changeLiveWatch,
+  fetchActiveRuns,
+  fetchDesktopHubs,
+  fetchRunMetadata,
+  openLiveWatch,
+  openRunStream,
+} from '../shared/piwi-client.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { withConnectionHealth } from '../shared/connection-health.js';
 import { normalizeBaseUrl } from '../shared/instance-links.js';
@@ -32,6 +39,7 @@ import {
   type RunsEvent,
 } from '../shared/runs.js';
 import { CiRunsWatch } from './ci-runs.js';
+import { CiLaneWatch, type CiViewer } from './ci-watch.js';
 import { browserSocket } from './hub-connection.js';
 import { RunHubs, type RunsViewer } from './run-hubs.js';
 
@@ -65,11 +73,25 @@ export const runHubs = new RunHubs({
 });
 
 /** The CI runs in progress of the mapped projects, read from the connected instance while a Runs window is open. */
-export const ciRuns = new CiRunsWatch({
+export const ciRuns: CiRunsWatch = new CiRunsWatch({
   settings: getConnectionSettings,
   activeRuns: (settings) => withConnectionHealth(settings.instanceUrl, () => fetchActiveRuns(settings)),
   metadata: (settings, runId) => withConnectionHealth(settings.instanceUrl, () => fetchRunMetadata(settings, runId)),
   runUrl: (settings, runId) => `${normalizeBaseUrl(settings.instanceUrl)}/test-runs/${runId}`,
+  stream: (settings, runId, signal) =>
+    withConnectionHealth(settings.instanceUrl, () => openRunStream(settings, runId, signal)),
+  left: (runId) => ciWatch.runLeft(runId),
+  watched: () => ciWatch.watching()?.runId ?? null,
+});
+
+/** The one CI lane the Runs windows watch, read-only, from the connected instance. */
+export const ciWatch: CiLaneWatch = new CiLaneWatch({
+  settings: getConnectionSettings,
+  target: (runId, shard, lane) => ciRuns.lane(runId, shard, lane),
+  open: (settings, runId, query, signal) =>
+    withConnectionHealth(settings.instanceUrl, () => openLiveWatch(settings, runId, query, signal)),
+  change: (settings, runId, body) =>
+    withConnectionHealth(settings.instanceUrl, () => changeLiveWatch(settings, runId, body)),
 });
 
 /** The browser windows of the Runs windows connected now, by their port. */
@@ -125,6 +147,11 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     laneEnded: (lane) => post({ type: 'lane-ended', ...lane }),
     laneLayer: (layer) => post({ type: 'lane-layer', ...layer }),
   };
+  // The window as a viewer of the CI lane it watches.
+  const ciViewer: CiViewer = {
+    frame: (frame) => post({ type: 'ci-frame', ...frame }),
+    ended: (lane, why) => post({ type: 'ci-ended', ...lane, why }),
+  };
   const postState = () => post({ type: 'state', state: { ...runHubs.state(viewer), ci: ciRuns.state() } });
   const unlisten = runHubs.listen(postState, (code) => post({ type: 'code', ...code }));
   const unlistenCi = ciRuns.listen(postState);
@@ -137,7 +164,13 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       runsWindows.set(port, request.windowId);
       if (lookedAt()) runHubs.seen();
     } else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
-    else if (request.type === 'command') {
+    else if (request.type === 'shown') ciRuns.shown(postState, request.shown);
+    else if (request.type === 'unshare-window') {
+      void runHubs.unshareWindow(request.hub).then((answer) => post({ type: 'answer', id: request.id, ...answer }));
+    } else if (request.type === 'ci-watch') {
+      const { id, on, ...lane } = request;
+      void ciWatch.watch(ciViewer, lane, on).then((answer) => post({ type: 'answer', id, ...answer }));
+    } else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
     }
@@ -146,6 +179,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     unlisten();
     unlistenCi();
     runHubs.unwatchAll(viewer);
+    ciWatch.leave(ciViewer);
     runsWindows.delete(port);
   });
 }

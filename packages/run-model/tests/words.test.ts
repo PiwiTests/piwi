@@ -15,6 +15,9 @@ describe('the run model’s words in English', () => {
     expect(en.count('runs_progressEndedAtStop', 1)).toBe('1 ended at a stop');
     expect(en.count('runs_progressEndedAtStop', 2)).toBe('2 ended at a stop');
     expect(en.count('runs_progressEndedAtStop', 1200)).toBe('1,200 ended at a stop');
+    // The other placeholders of a message that counts take their values too.
+    expect(en.count('runs_progress', 1, { done: '0' })).toBe('0 of 1 test');
+    expect(en.count('runs_progress', 1200, { done: '3' })).toBe('3 of 1,200 tests');
   });
 
   it('lists names as English does', () => {

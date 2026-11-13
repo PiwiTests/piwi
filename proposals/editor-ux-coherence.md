@@ -12,7 +12,7 @@ document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and 
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
 remaining rows no longer name; git keeps their record. The defects still open are listed in §11. The maintainer settled
 the casing of labels: sentence case in both editors ([Q25](#q25)). §14 adds the findings the code that built the plan
-raised. The live-run study, [live-runs.md](live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its
+raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its
 Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor
 hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing
 here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
@@ -55,7 +55,7 @@ controller); the **stop line** (VS Code's lens row and JetBrains' inlay above a 
 Code's webview, JetBrains' Paused Page tab); the **editor service**; the **editor fixture**
 (`apps/vscode/scripts/lib/editor-fixture.mjs`, the stub instance both screenshot scripts use); the **action catalog**,
 the **concept table** and the **outcome palette** (proposed in §2); the **live-run study**
-([live-runs.md](live-runs.md)).
+([live-runs.md](../adr/live-runs.md)).
 
 ---
 
@@ -863,7 +863,7 @@ that stops the service and starts it again through `piwi.restartService`. ([Q16]
 
 ## 8. Live runs in the editors: where they sit
 
-The split with the live-run study ([live-runs.md](live-runs.md)) is the Status paragraph's. A finding that overlaps the
+The split with the live-run study ([live-runs.md](../adr/live-runs.md)) is the Status paragraph's. A finding that overlaps the
 study says where the result lands in each editor, and names the study's finding and phase where that phase is not
 built; its fix adds only what the study does not. At `b0ff6772` the study has built P0 to P6 and P8 to P10, each but for
 leftovers its Status names, and part of P7 and P11, its P4 without E2, E3 and E13 in the editors.
@@ -1099,7 +1099,7 @@ code moves from FSL into MIT.
 `packages/editor/src/actions.ts` lists each action once: its ids, one wording in sentence case for both editors, a short
 label, its concept ([LI2](#li2)), menus ([LI4](#li4)), when it applies, keys ([LI15](#li15)), synonyms and a docs
 anchor; `src/words.ts` holds the words a client writes itself. The words of watching are the live-run study's
-([live-runs.md](live-runs.md) D6: words in the FSL surfaces, enums in `@piwitests/core/live-lane`), and the catalog
+([live-runs.md](../adr/live-runs.md) D6: words in the FSL surfaces, enums in `@piwitests/core/live-lane`), and the catalog
 keeps the editors' copy under the study's drift test. A vitest test holds both manifests to it first; later it generates
 `package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s commands table. **Lives in** `packages/editor` (FSL);
 the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and four hand-built popups.
