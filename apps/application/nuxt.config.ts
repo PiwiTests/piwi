@@ -504,6 +504,7 @@ export default defineNuxtConfig({
         // The languages @piwitests/run-ui's highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',
+        'highlight.js/lib/languages/csharp',
         'highlight.js/lib/languages/css',
         'highlight.js/lib/languages/diff',
         'highlight.js/lib/languages/javascript',

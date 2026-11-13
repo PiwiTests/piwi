@@ -218,7 +218,7 @@ test.describe('Timeline type filter', () => {
       ['Network', 'false'],
       ['Console', 'true'],
       ['Backend', 'false'],
-    ]) {
+    ] as const) {
       await expect(chip(page, label)).toHaveAttribute('aria-pressed', pressed);
     }
     await expect(table.getByText('quote request failed')).toBeVisible();

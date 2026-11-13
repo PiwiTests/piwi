@@ -273,7 +273,14 @@ describe('persistRunCases green-sample dedupe', () => {
       .values({ projectId: 1, status: 'passed', startTime: new Date('2026-09-05T09:00:00Z') })
       .returning({ id: schema.testRuns.id });
     await persistRunCases(db, 1, run1[0]!.id, [
-      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', ariaSnapshot: GREEN_ARIA },
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        line: null,
+        column: null,
+        status: 'passed',
+        ariaSnapshot: GREEN_ARIA,
+      },
     ]);
 
     const run2 = await db
@@ -281,7 +288,14 @@ describe('persistRunCases green-sample dedupe', () => {
       .values({ projectId: 1, status: 'passed', startTime: new Date('2026-09-05T10:00:00Z') })
       .returning({ id: schema.testRuns.id });
     await persistRunCases(db, 1, run2[0]!.id, [
-      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', ariaSnapshot: GREEN_ARIA },
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        line: null,
+        column: null,
+        status: 'passed',
+        ariaSnapshot: GREEN_ARIA,
+      },
     ]);
 
     const rows = await db.select().from(schema.testRunsCases);
@@ -299,10 +313,19 @@ describe('persistRunCases green-sample dedupe', () => {
       .values({ projectId: 1, status: 'failed', startTime: new Date('2026-09-05T10:00:00Z') })
       .returning({ id: schema.testRuns.id });
     await persistRunCases(db, 1, run[0]!.id, [
-      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', ariaSnapshot: GREEN_ARIA },
       {
         title: 'pays',
         filePath: 'tests/checkout.spec.ts',
+        line: null,
+        column: null,
+        status: 'passed',
+        ariaSnapshot: GREEN_ARIA,
+      },
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        line: null,
+        column: null,
         status: 'failed',
         repeatEachIndex: 1,
         ariaSnapshot: FAILING_ARIA,

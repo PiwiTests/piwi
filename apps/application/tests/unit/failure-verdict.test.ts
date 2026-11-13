@@ -45,7 +45,6 @@ describe('buildFailureVerdict', () => {
     const verdict = buildFailureVerdict({
       error: PAY_ERROR,
       status: 'failed',
-      retries: 0,
       isNewRegression: true,
       runId: 9,
       scm: { commit: 'a1b2c3d4e5f6', branch: 'main', author: 'Alice Chen', commitMessage: 'add payment provider' },

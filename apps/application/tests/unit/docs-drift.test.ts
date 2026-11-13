@@ -186,7 +186,7 @@ describe('docs pages the app deep-links into', () => {
       // The <Needs> chips link each prerequisite to its setup page.
       ...Object.values(FEATURE_NEED_DOCS),
       // The configuration reference links each variable to its details.
-      ...Object.values(PIWI_ENV_VARS).flatMap((meta) => (meta.docs ? [meta.docs] : [])),
+      ...(Object.values(PIWI_ENV_VARS) as Array<{ docs?: string }>).flatMap((meta) => (meta.docs ? [meta.docs] : [])),
       // The MCP describe_piwi overview quotes these sections of the docs.
       ...Object.values(QUOTED_DOCS_SECTIONS),
     ]),
@@ -730,7 +730,7 @@ describe('docs site structure', () => {
     .filter((p) => p.startsWith('apps/docs/recipes/'))
     .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''));
   const featurePageSources = docsPages.filter((p) => p.startsWith('apps/docs/features/')).map((p) => read(p));
-  const helpRecipes = new Set(
+  const helpRecipes = new Set<string>(
     Object.values(HELP_TOPICS).flatMap((topic) => ('recipe' in topic ? [topic.recipe.doc] : [])),
   );
 

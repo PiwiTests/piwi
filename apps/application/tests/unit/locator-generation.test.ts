@@ -15,6 +15,13 @@ import {
  * itself: score tiers, uniqueness gating, and the getByLabel gate.
  */
 
+type Anchor = NonNullable<ElementAttributes['ancestors']>[number];
+
+/** An ancestor carrying no test id, id, role or label but the ones given. */
+function anchor(over: Partial<Anchor> & Pick<Anchor, 'tag' | 'depth'>): Anchor {
+  return { testId: null, id: null, role: null, ariaLabel: null, ...over };
+}
+
 function el(overrides: Partial<ElementAttributes> = {}): ElementAttributes {
   return {
     tagName: 'button',
@@ -220,7 +227,7 @@ describe('generateAlternatives — ambiguity', () => {
       textContent: 'Add to cart',
       accessibleName: 'Add to cart',
       selectorCounts: { roleName, text },
-      ancestors: [{ tag: 'section', depth: 1, testId: 'product-43', testIdCount: 1, scopedRoleCount: 1 }],
+      ancestors: [anchor({ tag: 'section', depth: 1, testId: 'product-43', testIdCount: 1, scopedRoleCount: 1 })],
     });
 
   test('a unique scoped chain outranks a role+name that matches several elements', () => {
@@ -264,7 +271,7 @@ describe('generateAlternatives — data-* anchors', () => {
       textContent: 'Add to cart',
       accessibleName: 'Add to cart',
       selectorCounts: { roleName: 2, text: 2 },
-      ancestors: [{ tag: 'div', depth: 1, dataAttr, dataAttrCount, scopedRoleCount: 1 }],
+      ancestors: [anchor({ tag: 'div', depth: 1, dataAttr, dataAttrCount, scopedRoleCount: 1 })],
     });
 
   test('an app-specific data-* hook anchors the chain and outranks the ambiguous leaf', () => {
@@ -302,20 +309,20 @@ describe('generateAlternatives — data-* anchors', () => {
         accessibleName: 'Add to cart',
         selectorCounts: { roleName: 2 },
         ancestors: [
-          {
+          anchor({
             tag: 'div',
             depth: 1,
             dataAttr: { name: 'data-product', value: '43' },
             dataAttrCount: 1,
             scopedRoleCount: 1,
-          },
-          {
+          }),
+          anchor({
             tag: 'div',
             depth: 2,
             dataAttr: { name: 'data-section', value: 'deals' },
             dataAttrCount: 1,
             scopedRoleCount: 1,
-          },
+          }),
         ],
       }),
     );
@@ -330,12 +337,12 @@ describe('generateAlternatives — data-* anchors', () => {
  * getByText matching every one of them.
  */
 describe('generateAlternatives — text-scoped chains for role-less leaves', () => {
-  const price = (anc: Partial<ElementAttributes['ancestors']>[number], text = 2): ElementAttributes =>
+  const price = (anc: Partial<Anchor>, text = 2): ElementAttributes =>
     el({
       tagName: 'span',
       textContent: '£49.99',
       selectorCounts: { text },
-      ancestors: [{ tag: 'div', depth: 1, scopedTextCount: 1, ...anc }],
+      ancestors: [anchor({ tag: 'div', depth: 1, scopedTextCount: 1, ...anc })],
     });
 
   test('scopes the text to the nearest anchored ancestor', () => {
@@ -380,7 +387,9 @@ describe('generateAlternatives — text-scoped chains for role-less leaves', () 
         textContent: 'Add to cart',
         accessibleName: 'Add to cart',
         selectorCounts: { roleName: 2, text: 2 },
-        ancestors: [{ tag: 'div', depth: 1, testId: 'row', testIdCount: 1, scopedRoleCount: 1, scopedTextCount: 1 }],
+        ancestors: [
+          anchor({ tag: 'div', depth: 1, testId: 'row', testIdCount: 1, scopedRoleCount: 1, scopedTextCount: 1 }),
+        ],
       }),
     );
     expect(alts.some((a) => a.method === 'getByText' && a.args.anchorTestId)).toBe(false);
@@ -394,7 +403,7 @@ describe('generateAlternatives — text-scoped chains for role-less leaves', () 
         attributes: { 'data-testid': 'price' },
         textContent: '£49.99',
         selectorCounts: { testId: 1, text: 2 },
-        ancestors: [{ tag: 'div', depth: 1, testId: 'row', testIdCount: 1, scopedTextCount: 1 }],
+        ancestors: [anchor({ tag: 'div', depth: 1, testId: 'row', testIdCount: 1, scopedTextCount: 1 })],
       }),
     );
     expect(alts.some((a) => a.args.anchorTestId)).toBe(false);
@@ -407,13 +416,13 @@ describe('generateAlternatives — text-scoped chains for role-less leaves', () 
  * another is the text it holds.
  */
 describe('generateAlternatives — filter({ hasText }) chains', () => {
-  const row = (over: Partial<ElementAttributes['ancestors']>[number] = {}): ElementAttributes =>
+  const row = (over: Partial<Anchor> = {}): ElementAttributes =>
     el({
       accessibleName: 'Remove',
       textContent: 'Remove',
       selectorCounts: { roleName: 3, text: 3 },
       ancestors: [
-        {
+        anchor({
           tag: 'li',
           depth: 1,
           scopedRoleCount: 1,
@@ -421,7 +430,7 @@ describe('generateAlternatives — filter({ hasText }) chains', () => {
           filterText: 'Keyboard',
           filterRoleCount: 1,
           ...over,
-        },
+        }),
       ],
     });
 
@@ -447,7 +456,7 @@ describe('generateAlternatives — filter({ hasText }) chains', () => {
         textContent: '£49.99',
         selectorCounts: { text: 3 },
         ancestors: [
-          { tag: 'li', depth: 1, scopedTextCount: 1, roleCount: 3, filterText: 'Keyboard', filterRoleCount: 1 },
+          anchor({ tag: 'li', depth: 1, scopedTextCount: 1, roleCount: 3, filterText: 'Keyboard', filterRoleCount: 1 }),
         ],
       }),
     );

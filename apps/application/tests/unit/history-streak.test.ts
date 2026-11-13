@@ -11,6 +11,7 @@ function history(statuses: string[]): TestCaseHistoryPoint[] {
     duration: 1000,
     error: null,
     retries: 0,
+    passedAfterFailure: false,
     startTime: new Date(Date.UTC(2026, 9, 30 - i)),
     runStatus: status,
   }));
@@ -26,6 +27,7 @@ function attempts(runId: number, statuses: string[], browserName = 'chromium'): 
     duration: 1000,
     error: null,
     retries,
+    passedAfterFailure: false,
     browserName,
     repeatEachIndex: 0,
     startTime: new Date(Date.UTC(2026, 9, runId - 20)),

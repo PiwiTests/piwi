@@ -1,15 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium, test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { cookieOriginPatterns } from '../../src/shared/storage-state.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 /**
  * A site with a login: `/login` sets an httpOnly session cookie and a token in
@@ -47,19 +41,12 @@ function startSite(): Promise<{ origin: string; close: () => void }> {
  * the port aside.
  */
 async function launchGranted(origin: string): Promise<{ context: BrowserContext; extensionId: string }> {
-  const extension = mkdtempSync(path.join(tmpdir(), 'piwi-login-ext-'));
-  cpSync(DIST, extension, { recursive: true });
-  const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-  writeFileSync(
-    path.join(extension, 'manifest.json'),
-    JSON.stringify({
-      ...manifest,
-      permissions: [...manifest.permissions, 'cookies'],
-      optional_permissions: [],
-      host_permissions: cookieOriginPatterns(new URL(origin).hostname),
-    }),
-  );
-  const context = await launchWithExtension(extension);
+  const context = await launchWithEditedManifest((manifest) => ({
+    ...manifest,
+    permissions: [...manifest.permissions, 'cookies'],
+    optional_permissions: [],
+    host_permissions: cookieOriginPatterns(new URL(origin).hostname),
+  }));
   return { context, extensionId: (await extensionWorker(context)).url().split('/')[2]! };
 }
 

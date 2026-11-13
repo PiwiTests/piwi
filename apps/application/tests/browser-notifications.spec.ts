@@ -69,7 +69,7 @@ test.describe.serial('Browser Notifications (Cookie Mode)', () => {
       const match = document.cookie.match(/(?:^|;\s*)piwi-browser-notify=([^;]*)/);
       if (!match) return null;
       try {
-        const cfg = JSON.parse(decodeURIComponent(match[1]));
+        const cfg = JSON.parse(decodeURIComponent(match[1]!));
         return {
           hasProject: !!cfg.projects[pid],
           events: cfg.projects[pid]?.events ?? [],
@@ -170,7 +170,7 @@ test.describe.serial('Browser Notifications (Cookie Mode)', () => {
 
     const events = await readSseUntil(reader, (es) => {
       const hasFinished = es.some((e) => e.type === 'run.finished' && e.projectId === projectId);
-      const hasFailed = es.some((e) => e.type === 'run.failed' && e.projectId === projectId);
+      const hasFailed = es.some((e) => e.type === 'run.failed' && e.projectId === projectId)!;
       return hasFinished && hasFailed;
     });
 
@@ -181,19 +181,22 @@ test.describe.serial('Browser Notifications (Cookie Mode)', () => {
 
     const runFinished = events.find(
       (e: Record<string, unknown>) => e.type === 'run.finished' && e.projectId === projectId,
-    );
+    )!;
     expect(runFinished).toBeDefined();
     expect(runFinished.projectName).toBe(PROJECT.BROWSER_NOTIFY);
     expect(runFinished.status).toBe('failed');
     expect(runFinished.totalTests).toBe(3);
 
-    const runFailed = events.find((e: Record<string, unknown>) => e.type === 'run.failed' && e.projectId === projectId);
+    const runFailed = events.find(
+      (e: Record<string, unknown>) => e.type === 'run.failed' && e.projectId === projectId,
+    )!;
     expect(runFailed).toBeDefined();
     expect(runFailed.failedTests).toBe(2);
 
-    expect(runFailed.topFailures).toBeDefined();
-    expect(runFailed.topFailures.length).toBeGreaterThanOrEqual(1);
-    expect(runFailed.topFailures[0].title).toBe('fails');
+    const topFailures = runFailed.topFailures as Array<{ title: string }>;
+    expect(topFailures).toBeDefined();
+    expect(topFailures.length).toBeGreaterThanOrEqual(1);
+    expect(topFailures[0]!.title).toBe('fails');
   });
 
   test('SSE stream receives cluster.new for new clusters', async ({ baseURL, request }) => {
@@ -234,7 +237,7 @@ test.describe.serial('Browser Notifications (Cookie Mode)', () => {
 
     const clusterEvent = events.find(
       (e: Record<string, unknown>) => e.type === 'cluster.new' && e.projectId === projectId,
-    );
+    )!;
     expect(clusterEvent).toBeDefined();
     expect(clusterEvent.signature).toBeDefined();
     expect(clusterEvent.affectedCases).toBe(2);
@@ -304,7 +307,7 @@ test.describe.serial('Browser Notifications (Cookie Mode)', () => {
     const result = await page.evaluate((pid) => {
       const match = document.cookie.match(/(?:^|;\s*)piwi-browser-notify=([^;]*)/);
       if (!match) return null;
-      const cfg = JSON.parse(decodeURIComponent(match[1]));
+      const cfg = JSON.parse(decodeURIComponent(match[1]!));
 
       function isEventSubscribed(projId: number, eventType: string): boolean {
         return (cfg.projects[projId]?.events ?? []).includes(eventType);

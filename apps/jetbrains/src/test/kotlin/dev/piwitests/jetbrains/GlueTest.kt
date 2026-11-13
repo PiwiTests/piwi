@@ -36,6 +36,23 @@ class GlueTest {
     }
 
     @Test
+    fun `once the service that ran stopped, says Piwi is not running and offers to restart it`() {
+        assertEquals(
+            Glue.StatusView("Piwi: not running", Glue.SERVICE_STOPPED_TOOLTIP, null, Glue.StatusAction.RESTART, Glue.StatusIcon.WARNING),
+            Glue.statusView(null, null, stopped = true),
+        )
+        assertEquals(Glue.NOT_RUNNING, Glue.connectionSummary(null, stopped = true))
+        // The tool window's header says it too, as its connection link.
+        assertEquals(Glue.NOT_RUNNING, Glue.toolWindowHeader(null, null, stopped = true).connection)
+        // Trust and a start that failed say more than that it stopped.
+        assertEquals("Piwi: waiting for trust", Glue.statusView(null, null, trusted = false, stopped = true).text)
+        assertEquals(Glue.StatusAction.NODE_SETTINGS, Glue.statusView(null, null, startProblem = "no node", stopped = true).action)
+        assertEquals("no node", Glue.connectionSummary(null, startProblem = "no node", stopped = true))
+        // A service that answers again is drawn from its status.
+        assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null, stopped = true).text)
+    }
+
+    @Test
     fun `a project in safe mode says Piwi waits for its trust, wherever the connection shows`() {
         val view = Glue.statusView(null, null, startProblem = "Node.js 18 is too old", trusted = false)
         assertEquals("Piwi: waiting for trust", view.text)
@@ -111,6 +128,9 @@ class GlueTest {
         assertEquals("Piwi: a.spec.ts and 1 more", Glue.runTabName(chain))
         assertEquals("Piwi: piwi flake 12", Glue.runTabName("npx @piwitests/reporter flake 12 --server-url http://127.0.0.1:3000"))
         assertEquals("Piwi: piwi flake verify 12", Glue.runTabName("npx @piwitests/reporter flake verify 12"))
+        // An agent's run says who started it.
+        assertEquals("Piwi: a.spec.ts:3 · Started by Claude Code", Glue.labeledRunName("Piwi: a.spec.ts:3", "Started by Claude Code"))
+        assertEquals("Piwi: a.spec.ts:3", Glue.labeledRunName("Piwi: a.spec.ts:3", null))
         // A chain is the shell's: the IDE's runner takes none.
         assertTrue(Glue.chained(chain))
         assertNull(Glue.playwrightTestArgs(chain))
@@ -581,6 +601,27 @@ class GlueTest {
     }
 
     @Test
+    fun `a picked locator goes to the project whose run made it, not the one focused last`() {
+        val at = Glue.SendPlace("tests/cart.spec.ts", 12)
+        val shop = Glue.PickCandidate("shop", listOf("/work/shop/e2e"), listOf("/work/shop/e2e/tests/cart.spec.ts"))
+        val blog = Glue.PickCandidate("blog", listOf("/work/blog"), emptyList())
+        val files = setOf("/work/shop/e2e/tests/cart.spec.ts", "/work/blog/tests/cart.spec.ts")
+        val exists = { path: String -> path in files }
+        assertEquals("the project stopped in the file", "shop", Glue.pickProject(at, listOf(blog, shop), "blog", exists))
+        // With no run stopped there, the project holding the file.
+        val idle = shop.copy(stoppedFiles = emptyList())
+        assertEquals("shop", Glue.pickProject(at, listOf(idle, blog.copy(roots = listOf("/work/elsewhere"))), "blog", exists))
+        // Two projects hold such a file: the focused one.
+        assertEquals("blog", Glue.pickProject(at, listOf(idle, blog), "blog", exists))
+        // No project holds it, or the pick names no place: the focused one.
+        assertEquals("blog", Glue.pickProject(Glue.SendPlace("tests/none.spec.ts", 1), listOf(idle, blog), "blog", exists))
+        assertEquals("blog", Glue.pickProject(null, listOf(shop, blog), "blog", exists))
+        // A stop in the same file of a project the run's path is not under does not count.
+        val other = Glue.PickCandidate("other", listOf("/work/other"), listOf("/work/shop/e2e/tests/cart.spec.ts"))
+        assertEquals("blog", Glue.pickProject(at, listOf(other, blog), "blog", exists))
+    }
+
+    @Test
     fun `a recording writes only into a script under a Playwright config folder`() {
         val root = Files.createTempDirectory("piwi-config").toRealPath()
         val dirs = listOf(root.resolve("e2e"))
@@ -811,6 +852,9 @@ class GlueTest {
         assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
         val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
         assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
+        // An agent's run says so, never reading as the person's own.
+        val agents = counted.copy(label = "Started by Claude Code")
+        assertEquals("Piwi: 3 of 9 · Started by Claude Code", Glue.runProgressText(mapOf("ed-1" to agents)))
         // A failure so far takes the error color, as the hub counts it.
         assertFalse(Glue.runsFailing(mapOf("ed-1" to counted, "ed-0" to ready)))
         assertTrue(Glue.runsFailing(mapOf("ed-1" to counted, "ed-2" to failing)))

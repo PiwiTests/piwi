@@ -213,7 +213,7 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
       await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
       expect(await shortcut()).toEqual({
         action: 'pause',
-        answers: [{ ok: true, message: 'Pausing at the next call.' }],
+        answers: [{ ok: true, message: 'Pausing at the next call.', code: 'pausing' }],
       });
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
       // Its sign on the toolbar badge, for a moment.
@@ -222,7 +222,10 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
       await waitFor(() => editor.svc.latest(run.ref)?.workers[0]?.stop ?? undefined);
       // The extension hears the stop from the hub as the editor does, a burst at most every 50 ms.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      expect(await shortcut()).toEqual({ action: 'resume', answers: [{ ok: true, message: 'Resuming.' }] });
+      expect(await shortcut()).toEqual({
+        action: 'resume',
+        answers: [{ ok: true, message: 'Resuming.', code: 'resuming' }],
+      });
       expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
     } finally {
       run.worker.socket.destroy();

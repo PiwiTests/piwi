@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test, expect, type BrowserContext, type Frame, type Page } from '@playwright/test';
@@ -23,13 +23,17 @@ import { openShadowRoots } from './shadow.js';
  */
 
 const ORIGIN = 'https://shop.record-ide.test';
-const BUNDLE_DIR = mkdtempSync(path.join(tmpdir(), 'piwi-record-ide-'));
+let BUNDLE_DIR = '';
 
 /** An already-installed Chromium to use instead of the revision Playwright pins, as `fixtures.ts` does. */
 const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() || '';
 test.use({ launchOptions: chromiumExecutable ? { executablePath: chromiumExecutable } : {} });
 
-test.beforeAll(() => buildIdeBundle({ outDir: BUNDLE_DIR }));
+test.beforeAll(() => {
+  BUNDLE_DIR = mkdtempSync(path.join(tmpdir(), 'piwi-record-ide-'));
+  return buildIdeBundle({ outDir: BUNDLE_DIR });
+});
+test.afterAll(() => rmSync(BUNDLE_DIR, { recursive: true, force: true }));
 
 const PAGES: Record<string, string> = {
   '/': `<!doctype html><html><body>

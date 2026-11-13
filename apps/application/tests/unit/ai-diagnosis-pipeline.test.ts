@@ -12,11 +12,6 @@ import type { DbClient } from '../../server/database';
 import type { DiagnosisStage } from '#shared/ai-diagnosis';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 delete process.env.PIWI_DATABASE_URL;
 
 const clues = vi.hoisted(() => ({
@@ -155,7 +150,7 @@ function aiConfig(research: ResolvedAiRole | null): AiConfig {
     ...diagnosisRole,
     autoDiagnose: false,
     source: 'settings',
-    roles: { diagnosis: diagnosisRole, research, embedding: null },
+    roles: { diagnosis: diagnosisRole, research, embedding: null, assistant: null },
   };
 }
 
@@ -386,7 +381,7 @@ describe('a text-only provider', () => {
       ...cli,
       autoDiagnose: false,
       source: 'settings',
-      roles: { diagnosis: cli, research: null, embedding: null },
+      roles: { diagnosis: cli, research: null, embedding: null, assistant: null },
     };
     await streamClusterDiagnosis(dbc, cluster, config, {
       images: [{ name: 'user', mediaType: 'image/png', data: 'aGVsbG8=' }],

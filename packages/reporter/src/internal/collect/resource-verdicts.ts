@@ -92,6 +92,8 @@ export interface ResourceReportInput {
   censuses: ResourceCensus[];
   /** Per test id: the user fixtures its `Before Hooks` set up, `name (file:line)`. */
   fixturesByTest?: Map<string, string[]>;
+  /** Per test id: the user fixtures its `After Hooks` tore down, `title|file:line` (`fixturesTornDownOf`). */
+  testFixtures?: Map<string, string[]>;
   tallies?: LifecycleTally[];
 }
 
@@ -166,6 +168,18 @@ export function userFixturesOf(steps: TestStep[]): string[] {
   };
   walk(steps);
   return [...new Set(out)];
+}
+
+/**
+ * The user fixtures a test's `After Hooks` tore down, `title|file:line`: the
+ * fixtures of the test's own scope. A worker fixture is torn down in a
+ * `Worker Cleanup` step or after the worker's last test, never there.
+ */
+export function fixturesTornDownOf(steps: TestStep[]): string[] {
+  const after = steps.find((step) => step.category === 'hook' && step.title === 'After Hooks' && !step.location);
+  return (after?.steps ?? [])
+    .filter((step) => step.category === 'fixture' && step.location)
+    .map((step) => `${fixtureName(step)}|${relativeFile(step.location!.file)}:${step.location!.line}`);
 }
 
 /** A fixture step's fixture: `page` for `Fixture "page"`. */
@@ -323,11 +337,12 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
     const testCensuses = censuses.filter((census) => census.test !== null);
     const workerEnded = censuses.some((census) => census.test === null);
     const timedTests = timedFixtureTests(tracked.values());
+    const testFixtures = input.testFixtures ?? new Map<string, string[]>();
 
     for (const entry of tracked.values()) {
       all.push(entry);
       if (entry.birth.kind === 'page' && entry.used === false && !entry.bornCensus.test?.failed) idle.push(entry);
-      const verdict = leakVerdict(entry, testCensuses, workerEnded, timedTests);
+      const verdict = leakVerdict(entry, testCensuses, workerEnded, timedTests, testFixtures);
       if (verdict) leaked.push({ tracked: entry, ...verdict });
       const tailMs = verdict ? null : lingerTail(entry);
       if (tailMs !== null) lingering.push({ tracked: entry, tailMs });
@@ -400,14 +415,24 @@ function timedFixtureTests(tracked: Iterable<Tracked>): Map<string, Set<string>>
 }
 
 /**
- * Whether an object a fixture with a timeout of its own opened is judged as a
- * test fixture's, which its timeout slot does not tell from a worker
- * fixture's: only when that fixture opened objects in two tests of the
- * worker, its own teardown did not close it, and no later test used it.
+ * Whether an object a suite's fixture with a timeout slot opened is judged as a
+ * test fixture's, which the slot does not tell from a worker fixture's (a
+ * fixture with a timeout of its own has one, the project's timeout perhaps):
+ * only when its test's `After Hooks` tore that fixture down (`testFixtures`),
+ * or, for one whose timeout is not the project's (`timed`), it opened objects
+ * in two tests of the worker; and its own teardown did not close it, and no
+ * later test used it.
  */
-function judgedAsTestScoped(entry: Tracked, timedTests: Map<string, Set<string>>): boolean {
+function judgedAsTestScoped(
+  entry: Tracked,
+  timedTests: Map<string, Set<string>>,
+  testFixtures: Map<string, string[]>,
+): boolean {
   const fixture = entry.birth.fixture;
-  if (!fixture?.timed || (timedTests.get(fixtureKey(fixture))?.size ?? 0) < 2) return false;
+  if (!fixture?.worker || !fixture.location) return false;
+  const key = fixtureKey(fixture);
+  const tornDownWithTest = !!entry.birth.test && !!testFixtures.get(entry.birth.test.id)?.includes(key);
+  if (!tornDownWithTest && (!fixture.timed || (timedTests.get(key)?.size ?? 0) < 2)) return false;
   const close = entry.close?.fixture;
   if (close && fixtureKey(close) === fixtureKey(fixture)) return false;
   return !(entry.lastUse?.test && entry.lastUse.test !== entry.birth.test?.id);
@@ -429,10 +454,11 @@ function leakVerdict(
   testCensuses: ResourceCensus[],
   workerEnded: boolean,
   timedTests: Map<string, Set<string>>,
+  testFixtures: Map<string, string[]>,
 ): LeakSpan | null {
   const { birth, close, bornCensus } = entry;
   if (birth.reused || birth.phase === 'worker' || !birth.test || isImplicit(birth)) return null;
-  if (birth.fixture?.worker && !judgedAsTestScoped(entry, timedTests)) return null;
+  if (birth.fixture?.worker && !judgedAsTestScoped(entry, timedTests, testFixtures)) return null;
   // `PIWI_LEAK_CHECK=close` closed it at the end of its test: gone from that census, still a leak.
   if (close?.byPiwi) return { scope: 'test', from: bornCensus.at, to: bornCensus.at, heldMs: 0, untilWorkerEnd: false };
   const closedByShutdown = !!close && (close.phase === 'worker' || close.test === null);

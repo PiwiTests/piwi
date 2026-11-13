@@ -537,6 +537,28 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /** A message that the service did not answer is a warning, a problem, with Restart and the log, whatever its caller said. */
+    fun testAServiceThatDidNotAnswerIsSaidAsAProblemWithItsFixes() {
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    shown += notification
+                }
+            },
+        )
+        PiwiCommands.notify(project, "The recording did not start. ${Glue.SERVICE_NO_ANSWER}")
+        PiwiCommands.notify(project, "The run took it.")
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val (unanswered, answered) = shown
+        assertEquals(com.intellij.notification.NotificationType.WARNING, unanswered.type)
+        assertEquals(PiwiNotice.PROBLEM.group, unanswered.groupId)
+        assertEquals(Glue.SERVICE_FIXES.map { it.label }, unanswered.actions.map { it.templateText })
+        assertEquals(com.intellij.notification.NotificationType.INFORMATION, answered.type)
+        assertEquals(emptyList<String>(), answered.actions.map { it.templateText })
+    }
+
     /**
      * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
      * failures and the documentation, once per installation.
@@ -645,8 +667,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertFalse(id, enabled(id))
         assertTrue("a selected failure's page", enabled("Piwi.OpenInDashboard", "https://piwi.example.com/test-run-cases/9"))
         // Failures listed from a run read before the instance stopped answering re-run all the same.
-        service.failuresChanged(FailuresResult(items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9))))
+        val pays = WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9)
+        service.failuresChanged(FailuresResult(items = listOf(pays), failing = 1))
         assertTrue(enabled("Piwi.RerunFailing"))
+        // A list of failures fixed locally alone has nothing to re-run.
+        service.failuresChanged(FailuresResult(items = listOf(pays.copy(state = "fixed-locally")), failing = 0))
+        assertFalse(enabled("Piwi.RerunFailing"))
         service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
     }

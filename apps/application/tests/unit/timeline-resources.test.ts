@@ -17,7 +17,7 @@ function report(extra: Partial<WireResourceReport> = {}): WireResourceReport {
   return {
     v: 1,
     findings: [],
-    counts: { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
+    counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
     profile: null,
     workers: [],
     artifactBytes: {},

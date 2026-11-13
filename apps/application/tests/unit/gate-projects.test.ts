@@ -6,7 +6,7 @@ import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
-import { migrateToLatest } from './temp-db';
+import { migrateToLatest, type TempDb } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -41,8 +41,10 @@ type Attempt = { browserName: string; retries: number; status: string };
 
 /** One run of one test tagged `@critical` (stored as the reporter sends it, without the `@`), each Playwright project's attempts as Playwright reports them. */
 async function runOf(attempts: Attempt[]) {
-  await state.db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
-  await state.db.insert(schema.testRunsCases).values(
+  await (state.db as TempDb)
+    .insert(schema.testCases)
+    .values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
+  await (state.db as TempDb).insert(schema.testRunsCases).values(
     attempts.map((attempt) => ({
       testRunId: 1,
       testCaseId: 1,
