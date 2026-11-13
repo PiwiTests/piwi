@@ -12,6 +12,54 @@ export class InstanceError extends Error {
   }
 }
 
+/** The error codes of a certificate Node.js does not trust. */
+const CERTIFICATE_CODES = new Set([
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_HAS_EXPIRED',
+  'CERT_UNTRUSTED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+/**
+ * Why Connect could not reach `url`, in the JetBrains plugin's words (`Glue.connectFailure`): a refused key, a 404 that
+ * is not a Piwi instance, another status, a certificate the editor does not trust (naming its host and where to trust
+ * it), no answer in time, nothing listening, an unknown host; else the error's own message.
+ */
+export function connectFailure(e: unknown, url: string | null): string {
+  let host = 'the instance';
+  try {
+    if (url) host = new URL(url).hostname || host;
+  } catch {
+    // An address that is not a URL keeps the generic name.
+  }
+  if (e instanceof InstanceError) {
+    if (e.status === 401 || e.status === 403) return `the instance refused the key (${e.status})`;
+    if (e.status === 404) return "not a Piwi instance: nothing answers Piwi's requests at this address (404)";
+    return `the instance answered ${e.status}`;
+  }
+  const chain: Array<{ name?: string; code?: string; message?: string }> = [];
+  for (let c: unknown = e; c && typeof c === 'object' && chain.length < 10; c = (c as { cause?: unknown }).cause) {
+    chain.push(c as { name?: string; code?: string; message?: string });
+  }
+  const has = (test: (c: { name?: string; code?: string; message?: string }) => boolean) => chain.some(test);
+  if (has((c) => !!c.code && CERTIFICATE_CODES.has(c.code))) {
+    return (
+      `VS Code does not trust the certificate of ${host}. Add the authority that signed it, or your company's root ` +
+      'certificate, to NODE_EXTRA_CA_CERTS in the environment VS Code starts with'
+    );
+  }
+  if (has((c) => c.name === 'TimeoutError' || c.code === 'UND_ERR_CONNECT_TIMEOUT' || c.code === 'ETIMEDOUT')) {
+    return 'no answer within 15 seconds';
+  }
+  if (has((c) => c.code === 'ECONNREFUSED')) return 'nothing answers there. Is the instance running, on that port?';
+  if (has((c) => c.code === 'ENOTFOUND' || c.code === 'EAI_AGAIN')) return `unknown host ${host}`;
+  return (e as Error)?.message ?? String(e);
+}
+
 export interface ProjectItem {
   id: number;
   name: string;

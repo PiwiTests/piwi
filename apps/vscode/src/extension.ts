@@ -127,6 +127,7 @@ import { formatPairing } from '@piwitests/core/editor-send';
 import {
   API_KEY_SECRET_PREFIX,
   InstanceError,
+  connectFailure,
   apiKeySecret,
   listProjects,
   needsKey,
@@ -2050,11 +2051,7 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
     }
     projects = await progress(`Piwi: listing the projects of ${base}…`, () => listProjects(base, apiKey));
   } catch (e) {
-    const reason =
-      e instanceof InstanceError && (e.status === 401 || e.status === 403)
-        ? `the instance refused the key (${e.status})`
-        : (e as Error).message;
-    void vscode.window.showErrorMessage(`Piwi: could not connect to ${base}: ${reason}`);
+    void vscode.window.showErrorMessage(`Piwi: could not connect to ${base}: ${connectFailure(e, base)}`);
     return false;
   }
   let project = '';

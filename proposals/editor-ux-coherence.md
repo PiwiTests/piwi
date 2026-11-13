@@ -14,11 +14,11 @@ remaining rows no longer name; git keeps their record. The defects still open ar
 findings: Q25 (the JetBrains plugin's labels in sentence case, as VS Code's, so its labels quoted below in Title Case
 now read in sentence case), Q12, Q5's Test connection (ST9), and Q8's Documentation in the gear, the headline in the
 hover alone and Reload Piwi with a glyph of its own (HM9, ST18), and Q13's run notices on failures only by default and a
-run's balloon titled by its run. §14 adds the findings the code that built the plan raised. The live-run study,
-[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
-of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
-debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+run's balloon titled by its run, and VS Code's Connect failures in JetBrains' words (ST20). §14 adds the findings the
+code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to
+P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this
+document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model,
+its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -678,13 +678,6 @@ notification shows the code and no link (`apps/vscode/src/extension.ts:2207-2212
 connected, and a browser opened in another profile leaves Cancel as the only way out, in both editors. **(read)** Fix:
 [LI13](#li13)'s Connect panel, in the settings page and as one dialog, and a non-modal sign-in with Copy code, Copy link
 and Open browser again, as VS Code's notification also gets. ([M12](#m12), [LI13](#li13))
-
-<a id="st20"></a>**ST20. VS Code's Connect words a certificate error or a 404 raw.** Any failure but a refused key shows
-the error's own message (`apps/vscode/src/extension.ts:2041-2046`), so an untrusted certificate reads 'fetch failed',
-with no host or place to trust it, and a 404 'the instance answered 404' (`apps/vscode/src/connect.ts:8-13`), where
-JetBrains names both (`Glue.kt:1141-1156`). **(read)** Fix: a certificate error naming the host and where to trust it,
-as [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §4.2 asked of the status tooltip, and 'not a Piwi
-instance' for a 404, from [NF7](#nf7)'s one table. ([Q29](#q29), [LI13](#li13))
 
 ### 6.4 Agents
 
@@ -1386,7 +1379,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: the CI rows from the gutter's outcome marks and Appendix A's rows, unreachable and Run the tests that reach this file off shared glyphs; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
-| <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7), [ST20](#st20) |
+| <a id="q29"></a>Q29 | **One Connect failure table in the service, for both clients** | `ide` | [NF7](#nf7) |
 | <a id="q30"></a>Q30 | **Small drifts**: Re-run Failing only with failures; Copy the MCP configuration only while connected; Run This Spec's description and docs row; Interact and an accessible name per lane in JetBrains' Worker tab; group and view ids in D25, `editor-ids-register.test.ts` reading them | `ide` | [NF9](#nf9), [NF6](#nf6), [NF10](#nf10) |
 
 ### Medium
@@ -1564,11 +1557,10 @@ panel does (`apps/vscode/src/run-control.ts:1987`), and its accessible name is '
 lane (`PiwiRunControl.kt:2482`). **(read)** Fix: Interact at a stop, as the Paused Page offers it, and a name per kind
 of lane, until [M15](#m15) makes one page per worker. ([Q30](#q30))
 
-<a id="nf7"></a>**NF7. VS Code words a failed Connect raw, where JetBrains names the cause and the fix.**
-`apps/vscode/src/extension.ts:2041-2046` shows the error's message, so a certificate problem, a refused connection or an
-unknown host reads 'fetch failed' and a 404 'the instance answered 404' (`apps/vscode/src/connect.ts:8-13`), while
-`Glue.connectFailure` (`Glue.kt:1141-1156`) names each. **(read)** Fix: one failure table, in the service, read by both
-clients. ([Q29](#q29))
+<a id="nf7"></a>**NF7. Connect's failure words are written twice.** VS Code's `connectFailure`
+(`apps/vscode/src/connect.ts`) and JetBrains' `Glue.connectFailure` name the same causes in the same words, each held by
+its own test (`apps/vscode/tests/connect.test.ts`, `GlueTest`), with nothing tying one to the other. **(read)** Fix: one
+failure table, in the service, read by both clients. ([Q29](#q29))
 
 <a id="nf8"></a>**NF8. New marks and options have no switch or no way out.** The CI positions both editors draw beside
 the lines while a CI run of the branch runs cannot be turned off (`apps/vscode/src/ci-view.ts:49-56, 91-113`,

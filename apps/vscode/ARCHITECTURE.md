@@ -877,11 +877,12 @@ API `activate` returns gives what the view shows (`testExplorer`).
 4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
    `SecretStorage`.
 
-The requests to the instance (`needsKey`, `startSignIn`, `waitForSignIn`, `listProjects`) are in `src/connect.ts`, which
-uses no VS Code API and is tested against a stub (`tests/connect.test.ts`). The order in which the service picks a
-connection:
-[Connection order and watching `HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the
-editor service's reference.
+A failure is said in the JetBrains plugin's words (`connectFailure`, as its `Glue.connectFailure`): a refused key, a 404
+that is not a Piwi instance, a certificate VS Code does not trust with its host and `NODE_EXTRA_CA_CERTS`, no answer,
+nothing listening, an unknown host. The requests to the instance (`needsKey`, `startSignIn`, `waitForSignIn`,
+`listProjects`) are in `src/connect.ts`, which uses no VS Code API and is tested against a stub
+(`tests/connect.test.ts`). The order in which the service picks a connection: [Connection order and watching
+`HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the editor service's reference.
 
 ## The pure half
 
