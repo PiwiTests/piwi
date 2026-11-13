@@ -13,6 +13,13 @@ const SHOP = `<!doctype html><html><body><output id="total">…</output><script>
 </script></body></html>`;
 
 /** The server's own answer; the recorded one below differs, so a mock that works shows. */
+/** Opens the panel's Network tab once the panel has its listeners, and waits for its list to be drawn. */
+async function openNetworkTab(panel: Page): Promise<void> {
+  await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+  await panel.getByRole('tab', { name: 'Network' }).click();
+  await expect(panel.getByRole('list', { name: 'Network' })).toBeVisible();
+}
+
 async function serveShop(page: Page): Promise<void> {
   await page.context().route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
@@ -50,7 +57,7 @@ test.describe('the Network tab', () => {
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, {
       har: [har(`${ORIGIN}/cart`, 'document', 200, 'text/html', SHOP)],
     });
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await expect(panel.getByText('No request yet.')).toBeVisible();
 
     await fireDevtoolsEvent(
@@ -114,7 +121,7 @@ test.describe('the Network tab', () => {
     await serveShop(shop);
     await shop.goto(`${ORIGIN}/cart`);
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     const rows = JSON.stringify({ rows: Array.from({ length: 6000 }, (_, i) => ({ id: i, name: `Row ${i}` })) });
     await fireDevtoolsEvent(
       panel,
@@ -140,7 +147,7 @@ test.describe('the Network tab', () => {
     await serveShop(shop);
     await shop.goto(`${ORIGIN}/cart`);
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await fireDevtoolsEvent(panel, 'requestFinished', {
       ...har(`${ORIGIN}/api/cart`, 'xhr', 200, 'application/json', '{"total":40}'),
       __promise: true,
@@ -154,7 +161,7 @@ test.describe('the Network tab', () => {
     await serveShop(shop);
     await shop.goto(`${ORIGIN}/cart`);
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await fireDevtoolsEvent(panel, 'requestFinished', {
       ...har(`${ORIGIN}/api/slow`, 'fetch', 200, 'application/json', '{"slow":true}'),
       __delayMs: 1_000,
@@ -183,7 +190,7 @@ test.describe('the Network tab', () => {
     );
     await shop.goto(`${ORIGIN}/cart`);
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await fireDevtoolsEvent(
       panel,
       'requestFinished',
@@ -223,7 +230,7 @@ test.describe('the Network tab', () => {
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, {
       beforeEval: (expression) => (expression === 'location.origin' && held ? held : undefined),
     });
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await expect(panel.getByText('No request yet.')).toBeVisible();
 
     // Opened again while the page's origin is slow to come, and drawn once more as the page moves meanwhile.
