@@ -36,6 +36,21 @@ class GlueTest {
     }
 
     @Test
+    fun `once the service that ran stopped, says Piwi is not running and offers to restart it`() {
+        assertEquals(
+            Glue.StatusView("Piwi: not running", Glue.SERVICE_STOPPED_TOOLTIP, null, Glue.StatusAction.RESTART, Glue.StatusIcon.WARNING),
+            Glue.statusView(null, null, stopped = true),
+        )
+        assertEquals(Glue.NOT_RUNNING, Glue.connectionSummary(null, stopped = true))
+        // Trust and a start that failed say more than that it stopped.
+        assertEquals("Piwi: waiting for trust", Glue.statusView(null, null, trusted = false, stopped = true).text)
+        assertEquals(Glue.StatusAction.NODE_SETTINGS, Glue.statusView(null, null, startProblem = "no node", stopped = true).action)
+        assertEquals("no node", Glue.connectionSummary(null, startProblem = "no node", stopped = true))
+        // A service that answers again is drawn from its status.
+        assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null, stopped = true).text)
+    }
+
+    @Test
     fun `a project in safe mode says Piwi waits for its trust, wherever the connection shows`() {
         val view = Glue.statusView(null, null, startProblem = "Node.js 18 is too old", trusted = false)
         assertEquals("Piwi: waiting for trust", view.text)

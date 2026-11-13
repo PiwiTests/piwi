@@ -340,6 +340,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
   service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
+- the service that ran stopped (`Piwi: not running`, `PiwiProjectService.serviceStopped`): **Restart the Editor
+  Service**, then **Open Log**; the tool window's header and the settings page say `Glue.NOT_RUNNING`;
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's
@@ -1104,7 +1106,7 @@ channel does, its last `Glue.LOG_LINES` lines (`Glue.LogBuffer`):
   frames continue the line before them (`Glue.logLines`);
 - each end and its exit code (`watchServer`). The end of the latest process drops the pushed answers, without asking a
   service that is gone, and the tool window says the service stopped, with **Restart the Editor Service** and **Open
-  Log** (`Glue.serviceDownText`), until a process starts again;
+  Log** (`Glue.serviceDownText`), as the status bar item does (`Piwi: not running`), until a process starts again;
 - each failed request under its method, once a minute per method: `piwiServer()` hands out a proxy of the service
   (`PiwiLog.logged`) that watches every request's future, whoever waits for it.
 

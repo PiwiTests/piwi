@@ -243,9 +243,10 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     * reads the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again,
+     * `RESTART` starts a service that stopped again, with Open Log after it.
      */
-    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
+    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, RESTART, NONE }
 
     /**
      * The icon before the status bar text: Piwi's own, the connection's state (`CONNECT`, `UNREACHABLE`), a run in
@@ -370,7 +371,8 @@ object Glue {
      * first entry of its popup reads it again.
      * It speaks for the context of `file`, the selected editor's ([statusContext]); with several, the tooltip names its
      * Playwright config. The text takes the error color while tests of the run it counts fail, that run in progress too.
-     * A null status means the service has not started: it starts with the first file of the project opened.
+     * A null status means the service has not started, and it starts with the first file of the project opened; or,
+     * with `stopped`, that the one that ran stopped: the item says Piwi is not running and offers to restart it.
      */
     fun statusView(
         status: StatusResult?,
@@ -380,12 +382,16 @@ object Glue {
         startProblem: String? = null,
         file: String? = null,
         trusted: Boolean = true,
+        stopped: Boolean = false,
     ): StatusView {
         if (status == null && !trusted) {
             return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
         }
         if (status == null && startProblem != null) {
             return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
+        }
+        if (status == null && stopped) {
+            return StatusView("Piwi: not running", SERVICE_STOPPED_TOOLTIP, null, StatusAction.RESTART, StatusIcon.WARNING)
         }
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
@@ -460,6 +466,13 @@ object Glue {
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** The status bar item's tooltip once the editor service that ran stopped. */
+    const val SERVICE_STOPPED_TOOLTIP =
+        "The Piwi editor service stopped, so nothing of the instance is read.\nClick to restart it, or to open its log, which says why it stopped."
+
+    /** What the tool window's header and the settings page say of the connection once the editor service stopped. */
+    const val NOT_RUNNING = "Piwi is not running: its editor service stopped."
 
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
     const val NODE_SETTINGS_LINK = "Node.js Settings…"
@@ -999,10 +1012,19 @@ object Glue {
         }
     }
 
-    /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
+    /**
+     * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
+     * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
+     */
+    fun connectionSummary(
+        status: StatusResult?,
+        desktopChosen: Boolean = false,
+        startProblem: String? = null,
+        trusted: Boolean = true,
+        stopped: Boolean = false,
+    ): String {
         if (status == null && !trusted) return WAITING_FOR_TRUST
-        if (status == null) return startProblem ?: NOT_STARTED
+        if (status == null) return startProblem ?: if (stopped) NOT_RUNNING else NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }

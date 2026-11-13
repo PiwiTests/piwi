@@ -259,7 +259,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val url = service.settings().serverUrl
         disconnectButton.isEnabled = Glue.disconnectQuestion(url, service.settings().project, service.local().desktop) != null
         if (url.isBlank()) key.text = "None: no instance saved"
-        inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted()))
+        inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted(), service.serviceStopped))
         nodeButton.isVisible = service.startProblem != null
         // The instance the environment or a .env names comes first: the page shows it, its own fields left as saved.
         val over = Glue.overriding(service.status, url)
