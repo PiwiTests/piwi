@@ -1803,7 +1803,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (picked === VERDICT_ACTIONS.failures) await vscode.commands.executeCommand('piwi.failures.focus');
       else if (picked === VERDICT_ACTIONS.dashboard) await vscode.env.openExternal(vscode.Uri.parse(ended.url));
       else if (picked === VERDICT_ACTIONS.rerun) await vscode.commands.executeCommand('piwi.rerunFailing');
-      else if (picked === VERDICT_ACTIONS.onlyOnFailure) {
+      else if (picked === VERDICT_ACTIONS.settings) {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'piwi.runNotifications');
+      } else if (picked === VERDICT_ACTIONS.onlyOnFailure) {
         // Where the setting is set: the workspace's value when it has one, else the user's.
         const config = vscode.workspace.getConfiguration('piwi');
         const target =

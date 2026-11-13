@@ -51,16 +51,17 @@ Code's Testing view shows each test's average duration, quarantine, Playwright t
 `SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). Q2: a fixture check
 in each editor fails when a flaky test loses its flaky mark, VS Code's nightly suite reading its Testing item and its
 line's mark, `PiwiPluginTest` the bundled service's answer for its line and the result icon that answer draws (TL13).
-§14 adds the findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has
-built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the
-editors still lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the
-study the live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does
-not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
-builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
-step moves the document to `adr/`.
+Q13 in part: VS Code's run verdict ends with **Notification settings**, which opens `piwi.runNotifications` (HM15 in
+part). §14 adds the findings the code that built the plan raised. The live-run study,
+[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
+of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
+debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
+fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
 
 **Summary.**
 
@@ -698,12 +699,12 @@ checked on the editor fixture in both. ([Q27](#q27), [LI5](#li5))
 
 ### 7.4 Notifications
 
-<a id="hm15"></a>**HM15. None of VS Code's other messages can be turned off, and neither client's run notice leads to
-its setting.** None of the extension's 85 `show*Message` calls offers Don't Show Again, the run notices of both clients
-carry no gear (`apps/vscode/src/extension.ts:1755-1779`, `PiwiCommands.kt:148-173`), and no test checks the group each
-JetBrains balloon goes to, where some go astray ([NF5](#nf5)). **(read)** Fix: Don't Show Again on VS Code's repeated
-messages, a gear on the run toast and balloon, and a platform test of every balloon's group. ([Q13](#q13),
-[LI14](#li14))
+<a id="hm15"></a>**HM15. The service's notices cannot be turned off in VS Code, and JetBrains' run balloon leads to no
+setting.** A `piwi/notice` carries no key a client could keep a Don't Show Again by
+(`packages/editor/src/protocol.ts:1058-1062`, shown in `apps/vscode/src/extension.ts:1845-1851`), JetBrains' run balloon
+carries no gear (`PiwiCommands.kt:148-173`), and no test checks the group each JetBrains balloon goes to, where some go
+astray ([NF5](#nf5)). **(read)** Fix: a key on each notice and Don't Show Again on the repeated ones, a gear on the run
+balloon, and a platform test of every balloon's group. ([Q13](#q13), [LI14](#li14))
 
 <a id="hm16"></a>**HM16. The end-of-run verdict comes only for runs Piwi started, and each client words it on its own.**
 `piwi/runEnded` goes to `context.ownRuns` alone (`packages/editor/src/run-watch.ts:740`), and a terminal run records the
@@ -1266,7 +1267,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 |---|---|---|---|
 | <a id="q5"></a>Q5 | **No clipped text on the JetBrains settings page**: a clipped-text check in `apps/jetbrains/scripts/take-screenshots.mjs` | `ide` | [ST14](#st14) |
 | <a id="q9"></a>Q9 | **The last glyphs in VS Code**: the five commands without one take M4's drawn glyph, and `menus.test.ts`' waiting list shrinks to none | `ide` | [IC1](#ic1) |
-| <a id="q13"></a>Q13 | **The rest of the notification policy**: Don't Show Again on VS Code's other messages, a gear on the run notices, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
+| <a id="q13"></a>Q13 | **The rest of the notification policy**: a key on each service notice and Don't Show Again on VS Code's repeated ones, a gear on JetBrains' run balloon, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
 | <a id="q30"></a>Q30 | **Small drifts**: Re-run Failing only with failures; Copy the MCP configuration only while connected; Run This Spec's description and docs row; Interact and an accessible name per lane in JetBrains' Worker tab; group and view ids in D25, `editor-ids-register.test.ts` reading them | `ide` | [NF9](#nf9), [NF6](#nf6), [NF10](#nf10) |

@@ -285,7 +285,8 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 - a warning with **Re-run failing** when something fails, an information message otherwise;
 - both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;
 - the information, while the setting is `always`, with **Only on failure**, which sets it to `failures` where it is set
-  (the workspace's value when it has one, else the user's) and says so in the status bar.
+  (the workspace's value when it has one, else the user's) and says so in the status bar;
+- each last with **Notification settings**, which opens the Settings editor at `piwi.runNotifications`.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
 when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
