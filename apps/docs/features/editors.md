@@ -26,7 +26,7 @@ Install **Piwi** from the
 in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**
 (**Settings → Plugins**). It starts on a trusted workspace holding a Playwright config, and reads the connection
 the reporter already uses: the `PIWI_*` variables in the environment or the workspace `.env`, or the
-[desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
+[desktop app](/features/desktop). Otherwise, run **Piwi: Connect…** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
 In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in editor](./ide-integration#vs-code-the-piwi-extension).
@@ -103,13 +103,13 @@ your API keys. The desktop app keeps its own token. For the runs the editor star
 
 ## Commands
 
-The same in a JetBrains IDE, which says caret, under **Tools → Piwi**, without **Get started**.
+A JetBrains IDE says caret, under **Tools → Piwi**, and has no **Get started** or **Write code at the stop…**.
 
 | Command | What it does |
 |---|---|
 | Piwi: Connect…, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Reload Piwi | Fetch the indexes and the latest run again |
-| Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
+| Piwi: Refresh the latest run | Read the latest run again |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
 | Piwi: Run this spec | Run every test of the spec as it stands |

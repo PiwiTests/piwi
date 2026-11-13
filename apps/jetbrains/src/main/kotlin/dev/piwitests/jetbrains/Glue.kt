@@ -2607,8 +2607,8 @@ object Glue {
 
     /**
      * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the run page**, **Copy the
-     * run page's link** (while its page is known) and **Stop sharing the run…**, each naming its run when several are
-     * shared (`runLabel`); then **Stop sharing this project's runs…** while the project's runs are shared. Both stops ask
+     * run page's link** (while its page is known) and **Stop sharing the run**, each naming its run when several are
+     * shared (`runLabel`); then **Stop sharing this project's runs** while the project's runs are shared. Both stops ask
      * first ([stopSharingQuestion]).
      */
     fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
@@ -2618,10 +2618,10 @@ object Glue {
             listOfNotNull(
                 run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the page of $n" } ?: "Open the run page", run.ref, it) },
                 run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the link of $n" } ?: "Copy the run page's link", run.ref, it) },
-                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop sharing $it…" } ?: "Stop sharing the run…", run.ref),
+                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop sharing $it" } ?: "Stop sharing the run", run.ref),
             )
         }
-        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs…") else entries
+        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs") else entries
     }
 
     /** What Stop sharing says, asking nothing, for a run that ended or is shared no more. */

@@ -330,7 +330,7 @@ export const STORY = [
     seconds: 18,
     focus: ['vscode', 'test-browser', 'vscode'],
     lines: {
-      en: ['The redesign also added a box to tick.', 'Record here: the click becomes a step above the line.'],
+      en: ['The redesign also added a box to tick.', 'Record at the stop: the click becomes a step above the line.'],
     },
     async run({ vscode, testPage, gesture, palette }) {
       await palette('Piwi: Record at the stop');

@@ -17,7 +17,7 @@ import com.intellij.psi.PsiFile
 class RecordHereIntention : IntentionAction, LowPriorityAction, DumbAware {
     override fun getText(): String = "Piwi: Record here…"
 
-    override fun getFamilyName(): String = "Piwi: Record here…"
+    override fun getFamilyName(): String = "Piwi: Record here"
 
     override fun isAvailable(project: Project, editor: Editor?, file: PsiFile?): Boolean {
         val virtualFile = file?.virtualFile ?: return false

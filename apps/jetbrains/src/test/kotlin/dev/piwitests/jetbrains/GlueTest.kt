@@ -878,27 +878,27 @@ class GlueTest {
             listOf(
                 Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the run page", "ed-1", page),
                 Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the run page's link", "ed-1", page),
-                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run…", "ed-1"),
+                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run", "ed-1"),
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-2" to ready), windowShared = false),
         )
         // A run shared before its page is known offers Stop sharing alone.
         assertEquals(
-            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run…", "ed-1")),
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run", "ed-1")),
             Glue.liveMenu(mapOf("ed-1" to shared.copy(live = RunLive(true, null, null, 0))), windowShared = false),
         )
         // Several shared runs are each named; the project's runs shared add their own stop.
         val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
         assertEquals(
             listOf(
-                "Open the page of run #78", "Copy the link of run #78", "Stop sharing run #78…",
-                "Open the page of run in admin (ed-3)", "Copy the link of run in admin (ed-3)", "Stop sharing run in admin (ed-3)…",
-                "Stop sharing this project's runs…",
+                "Open the page of run #78", "Copy the link of run #78", "Stop sharing run #78",
+                "Open the page of run in admin (ed-3)", "Copy the link of run in admin (ed-3)", "Stop sharing run in admin (ed-3)",
+                "Stop sharing this project's runs",
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
         )
         assertEquals(
-            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs…")),
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs")),
             Glue.liveMenu(emptyMap(), windowShared = true),
         )
         // What Stop sharing asks first.

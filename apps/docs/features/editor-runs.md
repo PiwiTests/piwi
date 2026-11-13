@@ -112,7 +112,7 @@ while the event stream is connected, `· read every minute` without it).
 
 In VS Code, a click reads the latest run and its failures again (**Piwi: Refresh the latest run**), without the indexes
 **Reload Piwi** fetches, and the tooltip ends with **Open run #120**, **Open in dashboard**, **Compare with…** and
-**Connect**. When the extension is not connected, the item says why, and a click runs **Piwi: Connect**, or retries an
+**Connect**. When the extension is not connected, the item says why, and a click runs **Piwi: Connect…**, or retries an
 [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or of

@@ -1300,8 +1300,8 @@ export interface LiveMenuItem {
 
 /**
  * The Live item's menu: for each run shared live, **Open the run page** and **Copy the run page's link** while it has
- * a page on the team instance, and **Stop sharing…**, which asks to confirm; each run named by its number when several
- * are shared. While this window's runs are shared, **Stop sharing this window's runs…** in place of each run's.
+ * a page on the team instance, and **Stop sharing**, which asks to confirm; each run named by its number when several
+ * are shared. While this window's runs are shared, **Stop sharing this window's runs** in place of each run's.
  */
 export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem[] {
   const shared = liveRunsOf(sessions).filter((r) => r.live.shared);
@@ -1333,7 +1333,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
       ? []
       : [
           {
-            label: several ? `Stop sharing ${run}…` : 'Stop sharing…',
+            label: several ? `Stop sharing ${run}` : 'Stop sharing',
             detail: liveText(live),
             action: 'stop',
             ref,
@@ -1345,7 +1345,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
   });
   if (windowShared) {
     items.push({
-      label: "Stop sharing this window's runs…",
+      label: "Stop sharing this window's runs",
       detail: null,
       action: 'stop-window',
       ref: null,

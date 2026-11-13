@@ -73,7 +73,7 @@ line** on the debugger's Show Execution Point key:
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
   way. A click opens a menu of the actions, led by what the item calls for:
   [the status bar](./editor-runs#the-status-bar). While a run is [shared live](./share-live), the menu opens its page,
-  copies its link, and has **Stop sharing the run…**, which asks first.
+  copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
   run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
   menu leaves out what does not apply.
@@ -90,7 +90,7 @@ line** on the debugger's Show Execution Point key:
   the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first
   (closed, it stays closed until the next run).
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
-  Piwi** also offer **Pick a locator**, **Record here**, **Assert**, **Assert a region** and **Mock a request** (the
+  Piwi** also offer **Pick a locator**, **Record**, **Assert**, **Assert a region** and **Mock a request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
   says how many elements its locator matches on the stopped page, and a failure held there reads `Held at its failure · …`.
 - **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
@@ -107,7 +107,7 @@ line** on the debugger's Show Execution Point key:
   agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the runs' MCP server token** gives it a new token;
   **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
-  stopped browser with Playwright tools**, after a warning.
+  stopped test's browser with Playwright tools**, after a warning.
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 

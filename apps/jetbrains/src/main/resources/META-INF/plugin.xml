@@ -31,7 +31,7 @@
           alike, the tests behind each function, and the lines changed since the coverage run.</li>
       <li><b>Brittle locators and breaking changes.</b> A warning on a locator that will not survive a restyle, and
           on an unsaved change that renames a string your tests find elements by, each with a quick fix.</li>
-      <li><b>Tests recorded at the caret.</b> <b>Record here</b> opens a browser through your project's own
+      <li><b>Tests recorded at the caret.</b> <b>Record here…</b> opens a browser through your project's own
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
       <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
@@ -279,7 +279,7 @@
                         icon="AllIcons.Actions.Diff"
                         description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
                 <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
-                        text="Show or hide the coverage marks"
+                        text="Show coverage marks"
                         description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
             </group>
             <separator/>
@@ -316,7 +316,7 @@
                 <action id="Piwi.OpenLog" class="dev.piwitests.jetbrains.OpenLogAction" text="Open the log"
                         icon="AllIcons.Toolwindows.ToolWindowMessages"
                         description="The Piwi editor service's log: its starts and ends, its errors and the requests that failed"/>
-                <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
+                <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Open settings"
                         icon="AllIcons.General.Settings"
                         description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
                 <action id="Piwi.OpenDocumentation" class="dev.piwitests.jetbrains.OpenDocumentationAction" text="Documentation"

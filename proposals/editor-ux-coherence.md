@@ -69,7 +69,8 @@ command draws one (IC1). M1: one action catalog, `packages/editor/src/actions.ts
 editors and one title in sentence case, with an ellipsis wherever it asks for something first and each platform's word
 for the cursor and the window; `tests/actions.test.ts` holds `package.json` and `plugin.xml` to it, and the titles that
 differed now read alike (Connect…, Open the log, Run a saved selection…, Turn hold failures on or off for the run, Show
-or hide the coverage marks, Finish the test, End the test, Record at the stop, Record here… for the caret alone) (X1, AC7,
+or hide the coverage marks, Finish the test, End the test, Record at the stop, Record here… for the caret alone), and a
+confirmation takes no ellipsis (Stop sharing the run live, in the share menus too) (X1, AC7,
 AC10, AC9 and NF3 in part). M3 in part: JetBrains' Tools → Piwi in six compact sections (run, record, run control,
 dashboard, agents, connection), its editor submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu
 in both editors' file trees that runs a spec or the tests that reach a file and records a new test file (AC1, AC3 in
@@ -86,8 +87,8 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 
 **Summary.**
 
-- **What is left.** Most of the plan's quick wins are built; the steps left center on one action catalog in sentence
-  case and one concept table (M1, M4), one Piwi menu and status menu (M3, M13), the run controls in the debugger's
+- **What is left.** Most of the plan's quick wins are built; the steps left center on one concept table and the words
+  both clients show (M4, M22), the status menu (M3, M13), the run controls in the debugger's
   places and one page per worker (M14, M15), one action list per test line and Debug with Piwi (M7, M8), the settings
   registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
@@ -895,7 +896,9 @@ generates `package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s comma
 `packages/editor` (FSL); the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and
 four hand-built popups. **Depends on** nothing. **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
-makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Step [M22](#m22).
+makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Built: the catalog's ids and one title per
+action, held against both manifests (`packages/editor/src/actions.ts`). Its short labels and the words table are step
+[M22](#m22); its concept, menus and keys come with [M4](#m4), [M3](#m3) and [M16](#m16).
 
 <a id="li15"></a>
 
@@ -1217,7 +1220,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
 | <a id="m8"></a>M8 | **Debug with Piwi in both editors** | `ide` | [TL17](#tl17) |
 | <a id="m9"></a>M9 | **Piwi on the IDE run icon in JetBrains, and its result icon switchable**; the editor fixture gets a real `@playwright/test` | `ide` | [TL3](#tl3), [TL4](#tl4) |
-| <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8) |
+| <a id="m10"></a>M10 | **One settings registry and grouped settings pages** ([LI11](#li11)), a switch for the CI positions and the run options scoped per person; the new keys in D25 before 1.0 | `ide` | [ST7](#st7), [ST8](#st8), [ST12](#st12), [ST15](#st15), [ST13](#st13), [ST21](#st21), [NF8](#nf8), [NF3](#nf3) |
 | <a id="m11"></a>M11 | **One onboarding script** ([LI12](#li12)): JetBrains' Get Started tab, a walkthrough with images, one first-run queue | `ide` | [ST1](#st1), [ST2](#st2), [ST3](#st3), [ST21](#st21), [ST4](#st4) |
 | <a id="m12"></a>M12 | **One Connect panel and a non-modal sign-in in JetBrains** ([LI13](#li13)) | `ide` | [ST16](#st16) |
 | <a id="m13"></a>M13 | **The status item as one view model** from the service: one item and its status menu in VS Code, its run items and count item folded in, one count worded once (`3 of 9`), the alarm for new failures only, the status in the dashboard's words with one glyph per state | `ide` | [HM2](#hm2), [HM4](#hm4), [LR2](#lr2), [LR1](#lr1), [LR18](#lr18) |
@@ -1226,7 +1229,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="m16"></a>M16 | **Per-keymap chords checked against every bundled keymap**, Mac OS X 10.5+'s `ForceRefresh` on Cmd+Alt+Shift+R included, and a Failures chord in both editors (#1117) | `ide` | [AC12](#ac12) |
 | <a id="m17"></a>M17 | **A Rider descriptor and a Rider scene** ([LI16](#li16)): Rider's highlighting of a folder beside the solution and the Attach Folder balloon (#1118), C# files' marks and lenses checked before the listings and `editor-coverage.md` claim them, `jetbrains.md`'s Rider table from the scene | `ide` | [RD3](#rd3), [RD4](#rd4), [AC3](#ac3) |
 | <a id="m21"></a>M21 | **Verdicts worded by the service** for every run the editor followed, those of terminal runs after the study's P7, and the editors' native call for the study's attention | `ide` | [HM16](#hm16), [HM17](#hm17) |
-| <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18) |
+| <a id="m22"></a>M22 | **The words both clients show, sent by the service**, held by a golden test across `glue.ts` and `Glue.kt`; the pausing line names its call and its time in both | `ide` | [AC11](#ac11), [LR18](#lr18), [AC9](#ac9), [NF3](#nf3) |
 | <a id="m23"></a>M23 | **Agents through the JetBrains IDE's MCP server** ([LI18](#li18)); first check that the toolset reaches the AI Assistant and Junie | `ide` | [ST22](#st22) |
 | <a id="m24"></a>M24 | **Editors open the desktop app's pages through `piwi://open`**; each hand-off one glyph at both ends | `ide` | none ([LI20](#li20)) |
 

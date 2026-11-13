@@ -2,9 +2,10 @@
  * The editors' actions: each one's id in VS Code (a command of `apps/vscode/package.json`) and in JetBrains (actions
  * of `apps/jetbrains/.../plugin.xml`), and the one title both show. `tests/actions.test.ts` holds both manifests to it.
  *
- * A title is in sentence case and ends with an ellipsis when the action asks for something before it acts (a pick, a
- * name, a start page). Two words are each editor's own: `{cursor}` (VS Code's cursor, JetBrains' caret) and `{window}`
- * (what a VS Code window or a JetBrains project holds).
+ * A title is in sentence case. It ends with an ellipsis when the action asks for a choice from a list or for typed input
+ * before it acts (a name, a start page, a request to mock); a pick in the test's page and a confirmation take none. Two
+ * words are each editor's own: `{cursor}` (VS Code's cursor, JetBrains' caret) and `{window}` (what a VS Code window or
+ * a JetBrains project holds).
  */
 export interface EditorAction {
   title: string;
@@ -12,6 +13,10 @@ export interface EditorAction {
   vscode?: string;
   /** JetBrains' action ids, for an action JetBrains has: one per place that registers it on its own. */
   jetbrains?: string[];
+  /** The one editor where the action asks for a choice first, its title then ending with an ellipsis there alone. */
+  asksIn?: Editor;
+  /** A JetBrains toggle's title, which names the state its check mark shows. */
+  checked?: string;
 }
 
 export type Editor = 'vscode' | 'jetbrains';
@@ -24,13 +29,15 @@ export const EDITOR_WORDS: Record<Editor, Record<'cursor' | 'window', string>> =
 
 /** An action's title as one editor shows it. */
 export function actionTitle(action: EditorAction, editor: Editor): string {
-  return action.title.replace(/\{(cursor|window)\}/g, (_, word: 'cursor' | 'window') => EDITOR_WORDS[editor][word]);
+  const title = (editor === 'jetbrains' && action.checked) || action.title;
+  const words = title.replace(/\{(cursor|window)\}/g, (_, word: 'cursor' | 'window') => EDITOR_WORDS[editor][word]);
+  return action.asksIn === editor ? `${words}…` : words;
 }
 
 export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Connect…', vscode: 'piwi.connect', jetbrains: ['Piwi.Connect'] },
   { title: 'Disconnect', vscode: 'piwi.disconnect', jetbrains: ['Piwi.Disconnect'] },
-  { title: 'Settings…', vscode: 'piwi.openSettings', jetbrains: ['Piwi.OpenSettings'] },
+  { title: 'Open settings', vscode: 'piwi.openSettings', jetbrains: ['Piwi.OpenSettings'] },
   { title: 'Open the log', vscode: 'piwi.openLog', jetbrains: ['Piwi.OpenLog'] },
   { title: 'Reload Piwi', vscode: 'piwi.refresh', jetbrains: ['Piwi.Refresh'] },
   { title: 'Restart the editor service', vscode: 'piwi.restartService', jetbrains: ['Piwi.RestartService'] },
@@ -51,11 +58,13 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   {
     title: 'Copy the MCP server configuration',
     vscode: 'piwi.copyMcpConfiguration',
+    asksIn: 'vscode',
     jetbrains: ['Piwi.CopyMcpConfiguration'],
   },
   {
     title: "Copy the runs' MCP server configuration for agents",
     vscode: 'piwi.copyRunsMcpConfiguration',
+    asksIn: 'vscode',
     jetbrains: ['Piwi.CopyRunsMcpConfiguration'],
   },
   {
@@ -68,7 +77,12 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Re-run the failing tests', vscode: 'piwi.rerunFailing', jetbrains: ['Piwi.RerunFailing'] },
   { title: 'Compare with…', vscode: 'piwi.compareWith', jetbrains: ['Piwi.CompareWith'] },
   { title: 'Copy context for agent', vscode: 'piwi.copyAgentContext', jetbrains: ['Piwi.Failure.CopyContext'] },
-  { title: 'Show or hide the coverage marks', vscode: 'piwi.toggleCoverage', jetbrains: ['Piwi.ToggleCoverageMarks'] },
+  {
+    title: 'Show or hide the coverage marks',
+    vscode: 'piwi.toggleCoverage',
+    jetbrains: ['Piwi.ToggleCoverageMarks'],
+    checked: 'Show coverage marks',
+  },
   { title: 'Reproduce in the desktop app', vscode: 'piwi.reproduceInDesktop', jetbrains: ['Piwi.Failure.Reproduce'] },
   {
     title: 'Find the breaking commit in the desktop app',

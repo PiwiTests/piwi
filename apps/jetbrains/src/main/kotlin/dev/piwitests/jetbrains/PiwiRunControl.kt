@@ -152,7 +152,7 @@ import javax.swing.text.DefaultHighlighter
  * marked as the execution point (a range highlighter in [EXECUTION_POINT], the debugger's colors by default, with an
  * arrow in the gutter, a failure's icon at a failure, whose click offers the controls), with a block inlay above it
  * saying what is about to run, or how the test failed, and offering **Resume**, **Step**, **Run to caret** and
- * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a locator**, **Record here**,
+ * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a locator**, **Record**,
  * **Assert**, **Assert a region**, **Mock a request**); a stop no pause bar shows (a headless run's) shows an image of
  * its page in the Piwi tool window's **Paused page** tab, where a click picks the element under it (`piwi/pickAt`)
  * when its worker takes it. The code a stop makes (`piwi/stopCode`) is written in one
@@ -162,7 +162,7 @@ import javax.swing.text.DefaultHighlighter
  * run's start filters them. A run's lines are those of the documents as they stood when it started: the edits since
  * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
  * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
- * and debug runs it follows too. **Share the run live** shares a run on the team instance its reporter reports to
+ * and debug runs it follows too. **Share the run live on the team instance** shares a run on the team instance its reporter reports to
  * (`piwi/shareRun`), after a warning the first time in the project, and **Stop sharing the run live** ends it;
  * the status bar says how a shared run stands. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
@@ -1757,7 +1757,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     .addAction(NotificationAction.createSimpleExpiring("Copy the run page's link") {
                         CopyPasteManager.getInstance().setContents(StringSelection(page))
                     })
-                    .addAction(NotificationAction.createSimpleExpiring("Stop sharing…") { shareLive(false, ref) })
+                    .addAction(NotificationAction.createSimpleExpiring("Stop sharing") { shareLive(false, ref) })
                     .notify(project)
             }
         }
@@ -3459,7 +3459,7 @@ class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
 class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
 
 /**
- * **Share the run live**: the run on the team instance its reporter reports to, for anyone who can open it there, once
+ * **Share the run live on the team instance**: the run on the team instance its reporter reports to, for anyone who can open it there, once
  * the person said yes to what it sends (the first time in the project since it opened); a run that cannot be shared
  * says why.
  */

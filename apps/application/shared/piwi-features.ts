@@ -578,7 +578,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
         needs: [],
-        where: 'Piwi: Record here; Tools → Piwi → Record here in a JetBrains IDE',
+        where: 'Piwi: Record here…; Tools → Piwi → Record here… in a JetBrains IDE',
         doc: 'features/editor-recording',
       },
       {
@@ -663,7 +663,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
           'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
         needs: ['fixtures'],
         where:
-          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the test in a JetBrains IDE",
+          "End test on the stopped line's CodeLens, Piwi: End the test; Tools → Piwi → End the test in a JetBrains IDE",
         doc: 'features/end-the-test',
       },
       {
@@ -881,7 +881,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',
         needs: [],
-        where: 'Piwi: Connect; Settings → Tools → Piwi in a JetBrains IDE',
+        where: 'Piwi: Connect…; Settings → Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-connection',
       },
     ],

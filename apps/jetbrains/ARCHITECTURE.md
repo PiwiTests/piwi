@@ -1070,7 +1070,7 @@ item's tooltip of a run names the other tools that have each run open (`Glue.run
 `RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
 off, Escape included, gives it back.
 
-**Share the run live** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
+**Share the run live on the team instance** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
 instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, `RunSession.live`): the only run it
 fits, else the one chosen (`Glue.liveTarget`). The first share in the project since it opened asks what goes out and
 to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`), a run its workers have not said anything of yet

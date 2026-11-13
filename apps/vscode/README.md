@@ -32,8 +32,8 @@ Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScr
 - **Brittle locators and breaking changes.** A warning on a locator that will not survive a restyle, with the stable
   alternative stored for that call site, and on an unsaved change that renames a string your tests find elements by,
   with a quick fix that updates every call site.
-- **Tests recorded at the cursor.** **Piwi: Record here** opens a browser through your project's own Playwright and
-  writes what you do there into the test as you do it; **Piwi: Record a new test file** records a whole spec. No
+- **Tests recorded at the cursor.** **Piwi: Record here…** opens a browser through your project's own Playwright and
+  writes what you do there into the test as you do it; **Piwi: Record a new test file…** records a whole spec. No
   instance needed.
 - **The status bar.** The latest run on the branch, what your local runs fixed since (`2 failing · 1 fixed locally`),
   and the run you started from the editor, live while it runs. **Piwi: Compare with…** reads the failures against
@@ -48,8 +48,8 @@ Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScr
 
 The extension starts on a trusted workspace that holds a Playwright config and reads the connection the reporter
 uses: `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in the environment or the workspace `.env`, then
-the Piwi desktop app. Otherwise run **Piwi: Connect** and sign in with the browser; the API key goes to VS Code's
-secret storage. When the desktop app runs beside a shared instance, **Piwi: Connect** switches between them, and
+the Piwi desktop app. Otherwise run **Piwi: Connect…** and sign in with the browser; the API key goes to VS Code's
+secret storage. When the desktop app runs beside a shared instance, **Piwi: Connect…** switches between them, and
 keeps both.
 
 Self-hosted, zero telemetry. No file of your workspace is sent to the instance: the project's locator index, code

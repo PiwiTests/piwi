@@ -266,7 +266,7 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
   reveals the active file's first failure. It is in the title's `…` menu, worded by its state, with **Connect**,
-  **Settings…** and **Open the log**; the run's actions are the title's icons.
+  **Open settings** and **Open the log**; the run's actions are the title's icons.
 - The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
   Group by…, Run a saved selection…, Run the tests that reach this file) show in the palette and the view's title only while a
   context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance
@@ -651,11 +651,11 @@ counts the window's runs from the same events, with or without an instance.
   a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
   spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Reload Piwi**, its tooltip
-  linking it, **Piwi: Restart the editor service** and **Piwi: Connect**;
+  linking it, **Piwi: Restart the editor service** and **Piwi: Connect…**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Reload Piwi**; the service also reads it again as the restarted app rewrites its discovery
   file;
-- not connected: **Piwi: Connect**;
+- not connected: **Piwi: Connect…**;
 - the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
   (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
   tooltip offering **Open the log**;
@@ -775,9 +775,9 @@ service's reference.
 
 `src/recording.ts` records a test from the editor.
 
-- **Piwi: Record here** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
+- **Piwi: Record here…** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
   test, function and class it records a new `test`; anywhere else, `steps` there.
-- **Piwi: Record a new test file** creates a spec first (`file`), next to the active test file or in the config's
+- **Piwi: Record a new test file…** creates a spec first (`file`), next to the active test file or in the config's
   `testDir`.
 
 The start page and the page expression (asked when there are several candidates) are kept in workspace state, with the
@@ -884,7 +884,7 @@ ring. The API `activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect
 
-**Piwi: Connect** (`connect` in `src/extension.ts`):
+**Piwi: Connect…** (`connect` in `src/extension.ts`):
 
 1. When the desktop app runs, it first lists the app beside the instance the workspace names (`connectChoices` in
    `src/glue.ts`).

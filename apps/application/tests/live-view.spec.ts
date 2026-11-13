@@ -644,7 +644,7 @@ test.describe('Live view of a run', () => {
       await page.setViewportSize(wide);
       await unshared.getByRole('button', { name: 'Help: Not shared live' }).click();
       const hint = page.getByRole('dialog');
-      await expect(hint).toContainText('Tools → Piwi → Share the run live');
+      await expect(hint).toContainText('Tools → Piwi → Share the run live on the team instance');
       await expect(hint).toContainText('Piwi: Share the run live on the team instance');
       await page.screenshot({ path: testInfo.outputPath('live-view-unshared-hint.png') });
       await page.keyboard.press('Escape');

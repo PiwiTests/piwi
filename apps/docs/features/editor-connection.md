@@ -9,11 +9,11 @@ lang: en-US
 The [editor extensions](./editors) read everything from your Piwi instance. They find it in this order, and the first
 that names an instance wins:
 
-1. the [desktop app](/features/desktop), while it runs, when you chose it with **Piwi: Connect** on this machine;
+1. the [desktop app](/features/desktop), while it runs, when you chose it with **Piwi: Connect…** on this machine;
 2. `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in the environment the editor was started with;
 3. the same variables in the `.env` next to the Playwright config, then at the repository root (a URL there takes only
    its own key);
-4. the instance saved with **Piwi: Connect**;
+4. the instance saved with **Piwi: Connect…**;
 5. the desktop app, while it runs.
 
 A project set up for the reporter needs nothing more. An editor started from the Dock or the Start menu may not see
@@ -43,7 +43,7 @@ Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` nam
 ### Beside a shared instance
 
 When the environment, a `.env` or Connect names your team's instance, the desktop app sits beside it rather than
-replacing it. Run **Piwi: Connect**: it lists the desktop app, the instance the workspace names, and **Another
+replacing it. Run **Piwi: Connect…**: it lists the desktop app, the instance the workspace names, and **Another
 instance**, and marks the one in use. Choose **The Piwi desktop app**, and the editor reads the app first while it
 runs, then the shared instance again when the app quits. Choosing the shared instance in the same list switches back;
 its address, project and key stay saved throughout.
@@ -63,7 +63,7 @@ what the editor reads from it: the instance answers each read once.
 
 ## Connect
 
-Run **Piwi: Connect** from the command palette, or click **Piwi: connect** in the status bar. In a JetBrains IDE it is
+Run **Piwi: Connect…** from the command palette, or click **Piwi: connect** in the status bar. In a JetBrains IDE it is
 the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's gear menu, and under
 **Tools → Piwi**.
 
@@ -132,7 +132,7 @@ The **Piwi** failures view says the same in both editors, naming the instance an
 **Retry**. When the editor service itself stops, VS Code's status bar reads **Piwi: not running** and its view offers
 **Piwi: Restart the editor service**, as does a **Reload Piwi** it did not answer.
 
-**Piwi: Settings…** in VS Code opens the extension's settings.
+**Piwi: Open settings** in VS Code opens the extension's settings.
 
 ## Related
 

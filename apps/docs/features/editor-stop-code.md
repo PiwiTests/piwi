@@ -29,9 +29,9 @@ The first four need the pause bar, so a headed browser: choose **Run headed**
 
 - **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
   in the palette while a stop offers them (**Piwi: Assert at the stop**, **Piwi: Mock a request at the
-  stop…**…), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**. - **In a JetBrains IDE**,
+  stop…**), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**. - **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
-  bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**…).
+  bar item's menu, and under **Tools → Piwi** (**Assert at the stop**, **Mock a request at the stop…**).
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search
 `piwi`). A stop offers only the actions its reporter takes: with one that predates them, none.
@@ -109,7 +109,7 @@ instead of closing it, when someone can see it: in a headed browser, where the p
 started with **Run headed**, or for a spec with `page.pause()`, is headed; with breakpoints or a `page.pause()`, its
 [**Hold failures**](/guide/concepts#hold-failures) is on from its start, unless
 [your run options](./editor-runs#how-a-run-starts) choose otherwise), or while you turn the run's Hold failures on,
-from the editor (**Piwi: Turn hold failures on or off for the run**, **Tools → Piwi → Turn hold failures on or off for the run**)
+from the editor (**Piwi: Turn hold failures on or off for the run**, **Tools → Piwi → Turn hold failures on** or **off**)
 or Piwi Picker's [Runs window](./runs-window). The editor shows it as a stop of its own, at the
 line where the error entered the test's code, or at the call a test timeout cut short:
 

@@ -180,7 +180,7 @@ npm run vscode:package            # dist/piwi.vsix
   runs Connect.
 - `src/glue.ts`: the pure half (status bar, failures view nodes, MCP configuration, open links, recorded blocks,
   Testing view tree), tested without an editor.
-- `src/connect.ts`: the instance's side of **Piwi: Connect**, and the API key's secret name.
+- `src/connect.ts`: the instance's side of **Piwi: Connect…**, and the API key's secret name.
 - `src/failures-view.ts`: the **Failures** view of the **Piwi** panel.
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
