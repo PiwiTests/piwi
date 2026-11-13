@@ -54,7 +54,9 @@ describe('the project page reads its runs within its run scope', () => {
     const project = await getProject(db as never, 1, { scope: DEFAULT_SCOPE });
     expect(project.unscopedRuns).toHaveLength(200);
     expect(project.unscopedRuns![0]).toMatchObject({ branch: 'feature/249', environment: 'ci', isFullRun: true });
-    expect(new Set(project.unscopedRuns!.map((run) => run.environment))).toEqual(new Set(['ci', 'preview']));
+    expect(new Set(project.unscopedRuns!.map((run: { environment: string | null }) => run.environment))).toEqual(
+      new Set(['ci', 'preview']),
+    );
   });
 
   test('another scope reads its own newest runs', async () => {

@@ -628,6 +628,43 @@ describe('who is present on a run, and who drives its stop', () => {
     h.sessions.unfollowRun('ed-1');
     expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([{ kind: 'picker', name: 'Piwi Picker' }]);
+    // The desktop app's windows are one tool: a worker's window open hears the main window as itself, and the
+    // other tools hear the app once.
+    const workerWindow = viewer({ kind: 'desktop', name: 'the desktop app' });
+    h.sessions.presentOn(desktop, true);
+    h.sessions.presentOn(workerWindow, true);
+    expect(h.sessions.presenceFor('ed-1', workerWindow)!.presence).toEqual([
+      { kind: 'picker', name: 'Piwi Picker' },
+      { kind: 'desktop', name: 'the desktop app', self: true },
+    ]);
+    expect(h.sessions.presenceFor('ed-1', picker)!.presence).toEqual([
+      { kind: 'picker', name: 'Piwi Picker', self: true },
+      { kind: 'desktop', name: 'the desktop app' },
+    ]);
+    // The main window and a worker's window watch the stop, and the worker's window drives it: the main window hears
+    // the app watching and driving as itself, and the other tools hear the app once.
+    const views = h.requests('view').length;
+    const watchingPaused = Promise.all([
+      h.sessions.watch({ ref: 'ed-1', since: paused, on: true }, desktop),
+      h.sessions.watch({ ref: 'ed-1', since: paused, on: true }, workerWindow),
+    ]);
+    const view = await waitFor(() => h.requests('view')[views]);
+    h.answer(view.request, 'view', { ok: true, message: 'The live view is on.' });
+    await watchingPaused;
+    expect(h.sessions.driveStop({ ref: 'ed-1', since: paused }, workerWindow, true)).toMatchObject({ ok: true });
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)).toEqual({
+      watchers: [{ kind: 'desktop', name: 'the desktop app', self: true }],
+      driver: { kind: 'desktop', name: 'the desktop app', self: true },
+    });
+    expect(h.sessions.presenceFor('ed-1', picker)!.workers.get(0)).toEqual({
+      watchers: [{ kind: 'desktop', name: 'the desktop app' }],
+      driver: { kind: 'desktop', name: 'the desktop app' },
+    });
+    expect(h.sessions.driveStop({ ref: 'ed-1', since: paused }, workerWindow, false)).toMatchObject({ ok: true });
+    await h.sessions.watch({ ref: 'ed-1', since: paused, on: false }, workerWindow);
+    await h.sessions.watch({ ref: 'ed-1', since: paused, on: false }, desktop);
+    h.sessions.presentOn(workerWindow, false);
+    h.sessions.presentOn(desktop, false);
     expect(paused).not.toBe(since);
     // A second Runs window, of the same name as one present, changes no view of the editor's, and is told all the same;
     // closing it gives back the stop it took, which the agent hears.

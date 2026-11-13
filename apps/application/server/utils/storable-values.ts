@@ -11,7 +11,8 @@ import { sanitizeRunErrors } from '@piwitests/core/run-errors';
 import type { WireRunError } from '@piwitests/core/wire';
 import { resolveBrowserName } from '#shared/browser-name';
 import { sha256Hex } from '#shared/utils/hash';
-import { joinSuitePath } from '#shared/utils/suites';
+import type { UsualDurationTest } from '#shared/stuck-tests';
+import { joinSuitePath, splitSuitePath } from '#shared/utils/suites';
 
 /** The largest value a 32-bit integer column (PostgreSQL's `integer`) holds. */
 export const MAX_INT32 = 2_147_483_647;
@@ -138,6 +139,27 @@ export async function storedIdentityForms(value: string): Promise<string[]> {
   const whole = withoutNul(value);
   const shortened = await storedIdentity(whole);
   return shortened === whole ? [whole] : [whole, shortened];
+}
+
+/**
+ * A running test's names as its rows store them (`storedTestIdentity`, `storedIdentity` for its Playwright project),
+ * its describe path as a stored row reads back: the names `runUsualDurations` keys its usual duration by.
+ */
+export async function storedUsualDurationTest(test: UsualDurationTest): Promise<UsualDurationTest> {
+  const [stored, browser] = await Promise.all([
+    storedTestIdentity({
+      filePath: test.filePath ?? '',
+      suitePath: test.suitePath ? [...test.suitePath] : null,
+      title: test.title,
+    }),
+    test.browser ? storedIdentity(test.browser) : null,
+  ]);
+  return {
+    filePath: stored.filePath,
+    suitePath: splitSuitePath(joinSuitePath(stored.suitePath)),
+    title: stored.title,
+    browser,
+  };
 }
 
 /** The fields of a run case that identify its test and its Playwright project. */

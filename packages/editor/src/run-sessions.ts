@@ -94,7 +94,7 @@ import type {
   LaneViewLayer,
   OpenTraceParams,
 } from './protocol.js';
-import { MAX_HUB_PRESENCE, type HubAction } from '@piwitests/core/run-hub';
+import { MAX_HUB_PRESENCE, type HubAction, type HubAnswerCode } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
 import { breakpointLines, runToLine } from './recorder/page-candidates.js';
 import { checkTraceFile, hasDisplay, type TraceViewerLauncher } from './trace-viewer.js';
@@ -196,6 +196,42 @@ export interface Viewer {
 /** The agent, as presence names it: on a run it follows, and as the driver of a stop it asked for or acted on. */
 export const AGENT_VIEWER: Viewer = { frame: () => undefined, who: { kind: 'agent', name: 'an agent' } };
 
+/**
+ * The sentences the service answers a control, a stop driven or given back, and Hold failures with, by the code a hub's
+ * answer carries beside them (`HubAnswer.code`), which Piwi Picker says in its own language.
+ */
+export const ANSWER_SENTENCES = {
+  pausing: 'Pausing at the next call.',
+  stepping: 'Stepping to the next call.',
+  resuming: 'Resuming.',
+  finishing: 'Finishing the test without stopping at a breakpoint.',
+  'ending-skipped': 'Ending the test: it is reported as skipped.',
+  'ending-failed': 'The test failed already: it ends as it failed.',
+  'went-on': 'The test went on.',
+  running: 'The test is running.',
+  'stopped-already': 'The test is stopped already.',
+  'drive-on': 'You drive this stop: an agent would wait until you give it back.',
+  'drive-taken': 'You drive this stop: the agent waits until you give it back.',
+  'drive-back': 'You gave this stop back: an agent may act on it.',
+  'drive-none': 'You did not drive this stop.',
+  'hold-on': 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+  'hold-off': 'A failure of this run no pause bar shows goes on at once.',
+  'hold-unattended': 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+} as const satisfies Partial<Record<HubAnswerCode, string>>;
+
+/** The code of an answer's sentence, when it is one of `ANSWER_SENTENCES`. */
+export function answerCodeOf(message: string): HubAnswerCode | null {
+  for (const [code, sentence] of Object.entries(ANSWER_SENTENCES)) {
+    if (sentence === message) return code as keyof typeof ANSWER_SENTENCES;
+  }
+  return null;
+}
+
+/** A window of the desktop app, which presence names as one tool however many of its windows are open. */
+function isDesktopWindow(viewer: Viewer): boolean {
+  return viewer.who?.kind === 'desktop';
+}
+
 /** A worker's `watchers`, absent while none watches. */
 function watchersField(watchers: RunPresence[]): { watchers?: RunPresence[] } {
   return watchers.length ? { watchers } : {};
@@ -213,9 +249,14 @@ function presenceList(viewers: Iterable<Viewer>, self: Viewer | null): RunPresen
   return [...list.values()];
 }
 
-/** A viewer as `self` hears it: marked `self` when it is that viewer, or, for the editor's client, when it is an editor. */
+/**
+ * A viewer as `self` hears it: marked `self` when it is that viewer, or another window of the desktop app when `self`
+ * is one (the app's windows are one tool), or, for the editor's client, when it is an editor.
+ */
 function presenceOf(viewer: Viewer, self: Viewer | null): RunPresence {
-  const own = self ? viewer === self : viewer.who!.kind === 'editor';
+  const own = self
+    ? viewer === self || (isDesktopWindow(viewer) && isDesktopWindow(self))
+    : viewer.who!.kind === 'editor';
   return { kind: viewer.who!.kind, name: viewer.who!.name, ...(own ? { self: true as const } : {}) };
 }
 
@@ -431,6 +472,8 @@ export interface RunSessionsOptions {
    * stop no one asked for (a `page.pause()`) goes on at once; a Pause, a Step or a Run to someone asked for waits.
    */
   holdsFailures?(ref: string): boolean;
+  /** Who started the run of `ref` when a person did not (`Started by Claude Code`, an agent's); null for a person. */
+  labelOf?(ref: string): string | null;
   /**
    * A session starts: a run's first connection opened, its own process's or a worker's, the run's command being one
    * the service built or one it did not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
@@ -1032,8 +1075,9 @@ export class RunSessions {
   }
 
   /**
-   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer: who has the run open, who
-   * watches each worker's page, and who drives each worker's stop. Null for a run that is not live.
+   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer (for a window of the desktop
+   * app, any of the app's windows): who has the run open, who watches each worker's page, and who drives each worker's
+   * stop. Null for a run that is not live.
    */
   presenceFor(
     ref: string,
@@ -1147,16 +1191,14 @@ export class RunSessions {
       this.drive(session, worker, viewer);
       return {
         ok: true,
-        message: fromAgent
-          ? 'You drive this stop: the agent waits until you give it back.'
-          : 'You drive this stop: an agent would wait until you give it back.',
+        message: fromAgent ? ANSWER_SENTENCES['drive-taken'] : ANSWER_SENTENCES['drive-on'],
       };
     }
     if (worker.driver !== viewer && !others.includes(worker.driver!)) {
-      return { ok: true, message: 'You did not drive this stop.' };
+      return { ok: true, message: ANSWER_SENTENCES['drive-none'] };
     }
     this.giveBack(session, worker);
-    return { ok: true, message: 'You gave this stop back: an agent may act on it.' };
+    return { ok: true, message: ANSWER_SENTENCES['drive-back'] };
   }
 
   /**
@@ -1171,7 +1213,7 @@ export class RunSessions {
     if (!this.holds(params.ref)) {
       return {
         ok: false,
-        message: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+        message: ANSWER_SENTENCES['hold-unattended'],
       };
     }
     this.holdsSet.delete(params.ref);
@@ -1201,9 +1243,7 @@ export class RunSessions {
     }
     return {
       ok: true,
-      message: params.on
-        ? 'A failure no pause bar shows waits at its line in this run until someone answers it.'
-        : 'A failure of this run no pause bar shows goes on at once.',
+      message: params.on ? ANSWER_SENTENCES['hold-on'] : ANSWER_SENTENCES['hold-off'],
     };
   }
 
@@ -1386,7 +1426,7 @@ export class RunSessions {
       case 'pause': {
         const asked = workers.filter((w) => !w.stop && !w.test?.cannotPause);
         if (!asked.length) {
-          if (workers.some((w) => w.stop)) return refuse('The test is stopped already.');
+          if (workers.some((w) => w.stop)) return refuse(ANSWER_SENTENCES['stopped-already']);
           const why = workers.find((w) => w.test?.cannotPause)?.test?.cannotPause;
           return refuse(`The test does not stop${why ? `: ${why}` : ''}.`);
         }
@@ -1398,8 +1438,7 @@ export class RunSessions {
         this.changed(session, true);
         return {
           ok: true,
-          message:
-            asked.length > 1 ? `Pausing ${asked.length} workers at their next call.` : 'Pausing at the next call.',
+          message: asked.length > 1 ? `Pausing ${asked.length} workers at their next call.` : ANSWER_SENTENCES.pausing,
         };
       }
       case 'give-up': {
@@ -1454,8 +1493,8 @@ export class RunSessions {
             ok: true,
             message:
               worker.stop!.view.reason === 'failure'
-                ? 'The test failed already: it ends as it failed.'
-                : 'Ending the test: it is reported as skipped.',
+                ? ANSWER_SENTENCES['ending-failed']
+                : ANSWER_SENTENCES['ending-skipped'],
           };
         }
         if (params.action === 'run-to') {
@@ -1480,10 +1519,10 @@ export class RunSessions {
           ok: true,
           message:
             params.action === 'step'
-              ? 'Stepping to the next call.'
+              ? ANSWER_SENTENCES.stepping
               : params.action === 'resume'
-                ? 'Resuming.'
-                : 'Finishing the test without stopping at a breakpoint.',
+                ? ANSWER_SENTENCES.resuming
+                : ANSWER_SENTENCES.finishing,
         };
       }
       default:
@@ -1499,10 +1538,10 @@ export class RunSessions {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const at = typeof since === 'string' ? since : null;
     const stopped = workers.filter((w) => w.stop && (at === null || w.stop.view.since === at));
-    if (at !== null && !stopped.length) return refuse('The test went on.');
+    if (at !== null && !stopped.length) return refuse(ANSWER_SENTENCES['went-on']);
     if (!stopped.length) {
-      if (named) return refuse(named.test ? 'The test is running.' : 'The worker runs no test now.');
-      return refuse(workers.some((w) => w.test) ? 'The test is running.' : 'No test runs now.');
+      if (named) return refuse(named.test ? ANSWER_SENTENCES.running : 'The worker runs no test now.');
+      return refuse(workers.some((w) => w.test) ? ANSWER_SENTENCES.running : 'No test runs now.');
     }
     if (stopped.length > 1) return refuse(`${stopped.length} workers are stopped: choose one.`);
     return stopped[0]!;
@@ -1928,7 +1967,10 @@ export class RunSessions {
     }
     if (worker.view === view) return { ok: true, message: answer.message };
     // The stop ended meanwhile, or the viewer left it, the last one.
-    return { ok: false, message: worker.stop?.id === stop ? 'You no longer watch the page.' : 'The test went on.' };
+    return {
+      ok: false,
+      message: worker.stop?.id === stop ? 'You no longer watch the page.' : ANSWER_SENTENCES['went-on'],
+    };
   }
 
   /**
@@ -2699,6 +2741,8 @@ export class RunSessions {
       ...(session.terminal ? { terminal: true } : {}),
       ...(session.runner ? { runner: true } : {}),
     };
+    const label = this.options.labelOf?.(session.ref);
+    if (label) view.label = label;
     const commit = checkoutCommitOf(session.ref);
     if (commit) view.checkout = { commit };
     const live = this.liveOf(session);

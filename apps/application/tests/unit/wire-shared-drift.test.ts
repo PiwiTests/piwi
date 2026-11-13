@@ -21,7 +21,7 @@ import type {
  * would leak the monorepo path into the published `.d.ts`), so the two sides
  * are hand-mirrored. This test fails the moment a field is added, renamed, or
  * removed on one side without the other: the `satisfies` fixtures below fail
- * `npm run app:typecheck` on a shape mismatch, and the key-set comparison
+ * `npm run app:typecheck:tests` on a shape mismatch, and the key-set comparison
  * fails `vitest run` when a key exists on one side but not the reporter's
  * union (or vice versa).
  */

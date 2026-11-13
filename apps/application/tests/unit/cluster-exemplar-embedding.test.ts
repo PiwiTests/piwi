@@ -10,11 +10,6 @@ import type { ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 
-declare global {
-  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
-  var gc: (() => void) | undefined;
-}
-
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_CLUSTER_SIMILARITY_THRESHOLD;
 delete process.env.PIWI_CLUSTER_SUGGEST_THRESHOLD;
@@ -33,7 +28,13 @@ const { computeErrorFingerprint } = await import('../../shared/error-fingerprint
 const { reconcileNewClusters } = await import('../../server/utils/cluster-reconcile');
 const { embeddingModelTag } = await import('../../server/utils/cluster-similarity');
 
-const embeddingRole: ResolvedAiRole = { provider: 'openai', apiKey: 'k', model: 'test-embed', baseUrl: null };
+const embeddingRole: ResolvedAiRole = {
+  provider: 'openai',
+  apiKey: 'k',
+  model: 'test-embed',
+  baseUrl: null,
+  temperature: null,
+};
 const TAG = embeddingModelTag('test-embed');
 
 const HEAD = ['Error: expect(locator).toBeEnabled() failed', 'Expected: enabled', 'Received: disabled'].join('\n');

@@ -201,7 +201,7 @@ describe('cluster ↔ case ↔ file coherence', () => {
       const last = lastStepOf(r);
       expect(last.failed, `trc ${r.id}: last step failed`).toBe(true);
       if (parsed.locator) {
-        const use = extractStepLocatorUse(last);
+        const use = extractStepLocatorUse(last as Parameters<typeof extractStepLocatorUse>[0]);
         expect(use?.locator, `trc ${r.id}: locator`).toBe(canonical(parsed.locator));
         const action = parsed.assertion ? `expect.${parsed.assertion}` : STEP_ACTION[parsed.action ?? ''];
         expect(use?.action, `trc ${r.id}: action`).toBe(action);
@@ -487,7 +487,7 @@ describe('suggested-fix patches and SCM references', () => {
 
   test('every story suspect commit exists in its project SCM history', () => {
     for (const story of FAILURE_STORIES) {
-      const repo = SCM_REPOS[story.projectId as keyof typeof SCM_REPOS];
+      const repo = SCM_REPOS[story.projectId as keyof typeof SCM_REPOS]!;
       expect(
         repo.commits.some((c) => c.sha === story.suspectSha),
         `${story.key} suspect commit`,
@@ -500,7 +500,7 @@ describe('suggested-fix patches and SCM references', () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) {
       const meta = JSON.parse(r.metadata as string) as { scm?: { commit?: string } };
-      const repo = SCM_REPOS[r.project_id as keyof typeof SCM_REPOS];
+      const repo = SCM_REPOS[r.project_id as keyof typeof SCM_REPOS]!;
       expect(
         repo.commits.some((c) => c.sha === meta.scm?.commit),
         `run ${r.id} scm commit`,
@@ -514,7 +514,7 @@ describe('suggested-fix patches and SCM references', () => {
     for (const d of diagnoses) {
       const cluster = clusters.find((r) => r.id === d.cluster_id)!;
       const details = JSON.parse(d.details as string) as { autoSelectedCommits: string[] };
-      const repo = SCM_REPOS[cluster.project_id as keyof typeof SCM_REPOS];
+      const repo = SCM_REPOS[cluster.project_id as keyof typeof SCM_REPOS]!;
       for (const sha of details.autoSelectedCommits) {
         expect(
           repo.commits.some((c) => c.sha === sha),
@@ -737,9 +737,9 @@ describe('authored DOM snapshots (served as trace-extracted)', () => {
   test('the locator-centric stories carry an authored failure-time page', () => {
     expect(authored.map((s) => s.clusterId).sort((a, b) => a - b)).toEqual([1, 2, 6, 9]);
     for (const story of authored) {
-      expect(story.domSnapshot.viewport.width).toBeGreaterThan(0);
-      expect(story.domSnapshot.viewport.height).toBeGreaterThan(0);
-      expect(story.domSnapshot.html).toContain('<!DOCTYPE html>');
+      expect(story.domSnapshot!.viewport.width).toBeGreaterThan(0);
+      expect(story.domSnapshot!.viewport.height).toBeGreaterThan(0);
+      expect(story.domSnapshot!.html).toContain('<!DOCTYPE html>');
     }
   });
 
@@ -751,15 +751,15 @@ describe('authored DOM snapshots (served as trace-extracted)', () => {
         // Row names are concatenated cell texts — the cells appear, the
         // concatenation does not.
         if (!c.name || c.role === 'row') continue;
-        expect(story.domSnapshot.html, `cluster ${story.clusterId}: ${c.role} "${c.name}"`).toContain(c.name);
+        expect(story.domSnapshot!.html, `cluster ${story.clusterId}: ${c.role} "${c.name}"`).toContain(c.name);
       }
     }
   });
 
   test('cluster 9 keeps the hidden Export CSV button in the DOM but out of the ARIA tree', () => {
     const story = FAILURE_STORIES.find((s) => s.clusterId === 9)!;
-    expect(story.domSnapshot.html).toContain('class="export-btn" hidden');
-    expect(story.domSnapshot.html).toContain('Export CSV');
+    expect(story.domSnapshot!.html).toContain('class="export-btn" hidden');
+    expect(story.domSnapshot!.html).toContain('Export CSV');
     expect(story.aria).not.toContain('Export CSV');
   });
 
@@ -1175,7 +1175,7 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       select count(*) as stored,
         sum(case when status = 'completed' and json_extract(details, '$.suggestedFix.patch') is not null then 1 else 0 end) as withPatch
       from failure_diagnoses where cluster_id = ${want.cluster!.id}
-    `) as Array<{ stored: number; withPatch: number | null }>;
+    `) as [{ stored: number; withPatch: number | null }];
     if (want.diagnosis === 'with-patch')
       expect(Number(withPatch), `${label}: a stored diagnosis with a patch`).toBeGreaterThan(0);
     else expect(Number(stored), `${label}: no stored diagnosis`).toBe(0);

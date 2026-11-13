@@ -62,9 +62,9 @@ function readFrontMatter(markdown: string): { name?: string; description?: strin
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
   if (!match) return {};
   const out: { name?: string; description?: string } = {};
-  for (const line of match[1].split(/\r?\n/)) {
+  for (const line of match[1]!.split(/\r?\n/)) {
     const kv = /^(name|description):\s*(.*)$/.exec(line);
-    if (kv) out[kv[1] as 'name' | 'description'] = kv[2].trim().replace(/^['"]|['"]$/g, '');
+    if (kv) out[kv[1] as 'name' | 'description'] = kv[2]!.trim().replace(/^['"]|['"]$/g, '');
   }
   return out;
 }

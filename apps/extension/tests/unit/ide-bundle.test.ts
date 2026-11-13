@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -17,6 +17,7 @@ const root = path.resolve(import.meta.dirname, '..', '..');
 const outDir = mkdtempSync(path.join(tmpdir(), 'piwi-ide-bundle-'));
 
 beforeAll(() => buildIdeBundle({ outDir }), 120_000);
+afterAll(() => rmSync(outDir, { recursive: true, force: true }));
 
 const GLOBAL_OBJECTS = new Set(['globalThis', 'window', 'self']);
 

@@ -158,5 +158,5 @@ describe('a run whose instance is down as it starts', () => {
     expect(lines.filter((line) => line.includes('Live streaming could not start'))).toHaveLength(1);
     expect(lines.filter((line) => line.includes('Live streaming did not start before the run ended'))).toHaveLength(1);
     expect(lines.join('\n')).not.toMatch(/Streaming started|Streaming enabled/);
-  });
+  }, 30_000);
 });

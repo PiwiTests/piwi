@@ -22,6 +22,7 @@
     "app:format": "oxfmt --config oxfmt.config.ts --write \".\"",
     "app:format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
     "app:typecheck": "cross-env NODE_OPTIONS=--max-old-space-size=4096 nuxt typecheck",
+    "app:typecheck:tests": "cross-env NODE_OPTIONS=--max-old-space-size=6144 vue-tsc -p tests/tsconfig.json --noEmit",
     "test": "cross-env NODE_OPTIONS=--expose-gc vitest run && playwright test",
     "app:test": "playwright test",
     "app:test:ai:live": "playwright test --config=tests/live/playwright.config.ts",

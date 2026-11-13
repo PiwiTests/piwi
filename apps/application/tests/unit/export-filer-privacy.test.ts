@@ -66,7 +66,9 @@ describe('the files and share links an export is served as', () => {
     const clusterBundle = (await collectClusterBundle(db as never, 1, { maxCases: 5 }))!;
     expect(clusterBundle.cluster?.knownIssue).toMatchObject({ key: 'PROJ-1', filedBy: null });
     const executionBundle = (await collectExecutionBundle(db as never, 10, { maxCases: 5 }))!;
-    expect(executionBundle.cases[0]?.detail.failureCluster?.knownIssue).toMatchObject({
+    expect(
+      (executionBundle.cases[0]?.detail as Record<string, any> | undefined)?.failureCluster?.knownIssue,
+    ).toMatchObject({
       key: 'PROJ-1',
       filedBy: null,
     });
@@ -93,7 +95,7 @@ describe('the files and share links an export is served as', () => {
     expect(link).not.toHaveProperty('createdBy');
 
     const executionBundle = (await collectExecutionBundle(db as never, 10, { maxCases: 5 }))!;
-    const detail = executionBundle.cases[0]!.detail;
+    const detail = executionBundle.cases[0]!.detail as Record<string, any>;
     expect(detail.links.map((l: any) => l.url)).toEqual(['https://example.com/case']);
     expect(detail.stableLinks.map((l: any) => l.url)).toEqual(['https://example.com/test']);
     expect(detail.testRun.links.map((l: any) => l.url)).toEqual(['https://example.com/run']);

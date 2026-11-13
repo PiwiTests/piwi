@@ -262,7 +262,8 @@ async function start(): Promise<void> {
     void refreshTestedButton(url);
     if (current === 'network' && networkOriginChanged(url)) void render(url);
   });
-  // `data-ready` once the toolbar's tools know the page: what an e2e spec waits for before it clicks one.
+  // `data-ready` once the panel's listeners above are attached and the toolbar's tools know the page: what an e2e spec
+  // waits for before it clicks one or fires a DevTools event.
   void Promise.all([
     inspectedOrigin().then((origin) => {
       pagePattern = sitePattern(origin);

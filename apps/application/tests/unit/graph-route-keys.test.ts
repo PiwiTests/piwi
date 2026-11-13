@@ -196,7 +196,8 @@ describe('rewriteQueryRouteKeys', () => {
   });
 
   test('the gap ledger keeps every verdict: one row takes the new key, the others close or stay dismissed', async () => {
-    const gap = (over: Partial<typeof schema.scenarioGaps.$inferInsert>) => ({
+    type GapRow = typeof schema.scenarioGaps.$inferInsert;
+    const gap = (over: Partial<GapRow> & Pick<GapRow, 'detector' | 'key'>): GapRow => ({
       projectId: 1,
       kind: 'gap',
       class: 'blind-spot',

@@ -49,7 +49,7 @@ const config: AiConfig = {
   ...role,
   autoDiagnose: false,
   source: 'settings',
-  roles: { diagnosis: role, research: null, embedding: null },
+  roles: { diagnosis: role, research: null, embedding: null, assistant: null },
 };
 
 beforeAll(async () => {

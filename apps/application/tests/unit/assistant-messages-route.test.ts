@@ -86,6 +86,7 @@ const QUESTION: AssistantBlock = {
   prompt: 'Which test?',
   multiple: false,
   choices: [{ id: 'cart', label: 'adds to cart' }],
+  other: false,
 };
 
 let db: TempDb;

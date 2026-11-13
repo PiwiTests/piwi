@@ -1,8 +1,11 @@
 ﻿{
-  "extends": "../.nuxt/tsconfig.node.json",
+  // The app's program, so a test resolves what the code it imports resolves: the `~`, `~~` and `#` aliases, Nuxt's
+  // and Nitro's auto-imports (`.nuxt/nuxt.d.ts`, `defineNuxtConfig` in `.nuxt/nuxt.node.d.ts`) and the app's own
+  // declarations. `npm run app:typecheck:tests` checks it.
+  "extends": "../.nuxt/tsconfig.app.json",
   "compilerOptions": {
     "types": ["node"],
     "verbatimModuleSyntax": false
   },
-  "include": ["**/*.ts"]
+  "include": ["../.nuxt/nuxt.d.ts", "../.nuxt/nuxt.node.d.ts", "../app/**/*.d.ts", "../shared/**/*.d.ts", "**/*.ts"]
 }
