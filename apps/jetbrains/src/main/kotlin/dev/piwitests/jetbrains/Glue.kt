@@ -1190,6 +1190,7 @@ object Glue {
         "other-name" to "the certificate of {host} names another address: use the address it was issued for",
         "not-https" to "{host} does not answer HTTPS there: try http://",
         "timeout" to "no answer within {seconds} seconds",
+        "no-answer" to "no answer in time",
         "nothing-listening" to "nothing answers there. Is the instance running, on that port?",
         "unknown-host" to "unknown host {host}",
         "lookup-failed" to "the name {host} could not be looked up now: is this machine online?",

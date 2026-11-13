@@ -28,8 +28,10 @@ const UNTRUSTED_CODES = new Set([
 /** A link of an error's chain, as Node.js and undici give them. */
 type ErrorLink = { name?: string; code?: string; message?: string };
 
-/** How long Connect waits for an instance, in seconds. */
+/** How long Connect waits for an instance's answer, in seconds. */
 const CONNECT_TIMEOUT_S = 15;
+/** How long `fetch` waits to connect (undici's `connectTimeout`), in seconds. */
+const FETCH_CONNECT_TIMEOUT_S = 10;
 
 /**
  * Why Connect could not reach `url`, in the words of the editor service's table (`connectFailureWords`), which the
@@ -69,12 +71,13 @@ export function connectFailure(e: unknown, url: string | null, editor = 'VS Code
   if (code((c) => c === 'CERT_NOT_YET_VALID')) return connectFailureWords('not-yet-valid', { host });
   if (code((c) => c === 'ERR_TLS_CERT_ALTNAME_INVALID')) return connectFailureWords('other-name', { host });
   if (code((c) => c === 'ERR_SSL_WRONG_VERSION_NUMBER')) return connectFailureWords('not-https', { host });
-  if (
-    chain.some((c) => c.name === 'TimeoutError') ||
-    code((c) => c === 'UND_ERR_CONNECT_TIMEOUT' || c === 'ETIMEDOUT')
-  ) {
+  if (chain.some((c) => c.name === 'TimeoutError'))
     return connectFailureWords('timeout', { seconds: CONNECT_TIMEOUT_S });
+  if (code((c) => c === 'UND_ERR_CONNECT_TIMEOUT')) {
+    return connectFailureWords('timeout', { seconds: FETCH_CONNECT_TIMEOUT_S });
   }
+  // The system's own timeout, whose length the system sets.
+  if (code((c) => c === 'ETIMEDOUT')) return connectFailureWords('no-answer');
   if (code((c) => c === 'ECONNREFUSED')) return connectFailureWords('nothing-listening');
   if (code((c) => c === 'ENOTFOUND')) return connectFailureWords('unknown-host', { host });
   if (code((c) => c === 'EAI_AGAIN')) return connectFailureWords('lookup-failed', { host });

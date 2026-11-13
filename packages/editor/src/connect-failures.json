@@ -9,6 +9,7 @@
   "other-name": "the certificate of {host} names another address: use the address it was issued for",
   "not-https": "{host} does not answer HTTPS there: try http://",
   "timeout": "no answer within {seconds} seconds",
+  "no-answer": "no answer in time",
   "nothing-listening": "nothing answers there. Is the instance running, on that port?",
   "unknown-host": "unknown host {host}",
   "lookup-failed": "the name {host} could not be looked up now: is this machine online?"

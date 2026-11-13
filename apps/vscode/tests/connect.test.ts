@@ -132,6 +132,8 @@ describe('connectFailure', () => {
     expect(connectFailure(Object.assign(new Error('aborted'), { name: 'TimeoutError' }), url)).toBe(
       'no answer within 15 seconds',
     );
+    expect(connectFailure(fetchFailed({ code: 'UND_ERR_CONNECT_TIMEOUT' }), url)).toBe('no answer within 10 seconds');
+    expect(connectFailure(fetchFailed({ code: 'ETIMEDOUT' }), url)).toBe('no answer in time');
     expect(connectFailure(fetchFailed({ code: 'EAI_AGAIN' }), url)).toBe(
       'the name piwi.corp could not be looked up now: is this machine online?',
     );
