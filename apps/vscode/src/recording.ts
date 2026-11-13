@@ -153,13 +153,14 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   /** The block's first line, in the gutter: a red dot in a ring while recording, the gray ring while paused. */
-  const gutterMark = (file: string) =>
+  const gutterMark = (name: string) =>
     vscode.window.createTextEditorDecorationType({
-      gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', file),
+      light: { gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `${name}.svg`) },
+      dark: { gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `${name}-dark.svg`) },
       gutterIconSize: 'contain',
     });
-  const recordingMark = gutterMark('recording.svg');
-  const pausedMark = gutterMark('recording-paused.svg');
+  const recordingMark = gutterMark('recording');
+  const pausedMark = gutterMark('recording-paused');
 
   const running = () => [...sessions.values()].filter((s) => !s.finished);
   const runningIn = (uri: string) => running().find((s) => s.uri === uri);

@@ -37,7 +37,7 @@ recording.
 
 ## While it records
 
-- **The block** the recording writes is tinted, and written again as each step arrives: a run of steps becomes one call
+- **The block** the recording writes is tinted and marked in the gutter, and written again as each step arrives: a run of steps becomes one call
   to your own page object or helper once its last step is recorded. Started on a line inside a call that spans several
   lines, the block goes after that statement.
 - **The controls**: the step count, **Stop** and **Pause** (**Resume** while paused), above the block in VS Code and in

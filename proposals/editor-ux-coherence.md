@@ -79,7 +79,8 @@ part). M3's status menu: a click on VS Code's status item opens **Open the Piwi 
 still refreshes (HM1 in part). M4's record family: JetBrains draws Record's actions with a gray disc (`icons/record.svg`),
 Stop recording with a ring around a square, and a recording's gutter mark and banner with a red dot in a ring, a gray
 ring while paused, and VS Code a paused recording with `$(circle-large-outline)`; JetBrains' Pause recording draws the ring and Resume
-recording Record's disc, and VS Code marks the recorded block in the gutter as JetBrains does (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
+recording Record's disc, and VS Code marks the recorded block's first line in the gutter with the same glyphs, which
+`status-mark-colors.test.ts` holds byte for byte; JetBrains' mark is also a menu (IC2). M5 in part: Piwi Picker counts a test that waits for you in the pause bar's violet, in the popup's Runs
 tile, the toolbar's badge and the Runs window, held by `status-mark-colors.test.ts` (IC4). Q5: `PiwiPluginTest` holds Settings → Tools → Piwi within 100 columns of its font, every text
 the page fills itself holding a long sentence and an address (ST14). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
@@ -149,7 +150,8 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
 5. **A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the status bars**
    ([NF4](#nf4), [LR10](#lr10)).
 
-6. **No table or test ties one concept's glyphs together across Piwi's tools** ([X2](#x2)).
+6. **Most of Piwi's glyphs are tied to no table or test across its tools**: only the outcome, coverage and
+   recording marks are ([X2](#x2)).
 
 7. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
    Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
@@ -235,13 +237,8 @@ after. Every id a step adds is registered in D25 in the same pull request.
 ## 3. Icons and the visual language
 
 What works: the coverage marks are one palette across the dashboard and both editors, held by
-`apps/application/tests/unit/coverage-mark-colors.test.ts`. **(read)** The rest is one concept drawn several ways, one
-glyph with several meanings, and actions with none. [Appendix A](#appendix-a-the-concept-table-first-draft) drafts the
-concept table.
-
-### 3.1 Actions without a glyph
-
-### 3.2 Recording
+`apps/application/tests/unit/coverage-mark-colors.test.ts`. **(read)** The glyphs still to draw are those
+[Appendix A](#appendix-a-the-concept-table-first-draft), the concept table, marks as new.
 
 ## 4. Menus, actions, keys and names
 
@@ -1218,8 +1215,8 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 ### Sequence
 
 The quick wins that stand alone (Q13, Q27, Q28, Q30), each on its own. Then, on the action catalog, one Piwi menu
-(M3) and the run-control places (M14); M4 and M5 draw the
-glyphs and the outcome palette still to draw. M13 and M15 finish the glance and the
+(M3) and the run-control places (M14); M4 draws the glyphs
+Appendix A still marks, and M5 animates the running ring. M13 and M15 finish the glance and the
 page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0
 whether M14's places are interim.
 
