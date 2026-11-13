@@ -207,6 +207,50 @@ describe('the failures tree', () => {
     expect(byOwner!.children.slice(1).map((g) => g.label)).toEqual(['@team-auth', 'Unowned']);
   });
 
+  test('lists the run’s flaky tests under one closed group, after the failures, and with none failing too', () => {
+    const flaky = [
+      {
+        testCaseId: 2,
+        uri: 'file:///w/tests/cart.spec.ts',
+        line: 2,
+        title: 'adds',
+        file: 'tests/cart.spec.ts',
+        browserName: 'chromium',
+        retries: 1,
+        url: 'http://piwi/test-run-cases/25',
+      },
+    ];
+    const [run] = failureTree({ ...result, flaky }, 'file');
+    const group = run!.children[run!.children.length - 1]!;
+    expect([group.key, group.kind, group.label, group.description, group.icon, group.expanded]).toEqual([
+      'flaky',
+      'group',
+      'Flaky in this run',
+      '1 test',
+      'flaky',
+      false,
+    ]);
+    expect(group.children).toEqual([
+      {
+        key: 'flaky:2\nchromium',
+        kind: 'flaky',
+        label: 'adds',
+        description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1',
+        tooltip: ['adds', 'Flaky: passed on retry 1 on chromium'],
+        icon: 'flaky',
+        expanded: false,
+        url: 'http://piwi/test-run-cases/25',
+        uri: 'file:///w/tests/cart.spec.ts',
+        line: 2,
+        children: [],
+      },
+    ]);
+    // A run with no failure still shows its flaky tests.
+    const [alone] = failureTree({ ...result, items: [], flaky }, 'file');
+    expect(alone!.children.map((c) => c.key)).toEqual(['runs', 'flaky']);
+    expect(failureTree({ ...result, items: [], flaky: [] }, 'file')).toEqual([]);
+  });
+
   test('without a failure, nothing; without a run, the groups alone', () => {
     expect(failureTree({ items: [], run: result.run }, 'file')).toEqual([]);
     const older = failureTree({ items: [{ ...result.items[0]!, file: undefined, testCaseId: undefined }] }, 'file');

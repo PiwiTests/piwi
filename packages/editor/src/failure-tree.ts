@@ -5,6 +5,7 @@
  * clients add a run's age and the editor's own run in progress.
  */
 import type {
+  FailuresFlaky,
   FailuresGrouping,
   FailuresOverlay,
   FailuresResult,
@@ -167,7 +168,43 @@ function grouped(items: WorkspaceFailure[], grouping: FailuresGrouping, runId: n
  * The failures a tree is built from: `piwi/failures`'s items, run, runs laid over it and baseline, and the folder of
  * the Playwright config they belong to, which the run's node names (`root`).
  */
-export type FailuresInput = Pick<FailuresResult, 'items' | 'run' | 'overlays' | 'baseline'> & { root?: string };
+export type FailuresInput = Pick<FailuresResult, 'items' | 'run' | 'overlays' | 'baseline'> & {
+  root?: string;
+  /** The run's flaky tests, placed on their specs. */
+  flaky?: FailuresFlaky[];
+};
+
+/** The run's flaky tests under one group, closed, each at its `test(…)` line; none without a flaky test. */
+function flakyGroup(flaky: FailuresFlaky[] | undefined): FailureTreeNode[] {
+  if (!flaky?.length) return [];
+  return [
+    {
+      key: 'flaky',
+      kind: 'group',
+      label: 'Flaky in this run',
+      description: plural(flaky.length, 'test'),
+      tooltip: ['The tests that passed in this run after an attempt failed'],
+      icon: 'flaky',
+      expanded: false,
+      url: null,
+      children: flaky.map((f) => ({
+        key: `flaky:${f.testCaseId}\n${f.browserName ?? ''}`,
+        kind: 'flaky' as const,
+        label: f.title,
+        description: [`${f.file}:${f.line + 1}`, f.browserName, `passed on retry ${f.retries}`]
+          .filter(Boolean)
+          .join(' · '),
+        tooltip: [f.title, `Flaky: passed on retry ${f.retries}${f.browserName ? ` on ${f.browserName}` : ''}`],
+        icon: 'flaky' as const,
+        expanded: false,
+        url: f.url,
+        uri: f.uri,
+        line: f.line,
+        children: [],
+      })),
+    },
+  ];
+}
 
 /** One context's failures, as `failuresAnswer` reads them: with what names its node, and when its run was read. */
 export interface ContextFailures extends FailuresInput {
@@ -273,9 +310,10 @@ function runNode(view: FailuresInput, children: FailureTreeNode[]): FailureTreeN
  */
 export function failureTree(view: FailuresInput, grouping: FailuresGrouping): FailureTreeNode[] {
   const items = view.items;
-  if (!items.length) return [];
+  const flaky = flakyGroup(view.flaky);
+  if (!items.length && !flaky.length) return [];
   const groups = grouped(items, grouping, view.run?.id ?? null);
-  const run = runNode(view, groups);
+  const run = runNode(view, [...groups, ...flaky]);
   return run ? [run] : groups;
 }
 
@@ -290,7 +328,7 @@ function showsSomething(view: FailuresInput): boolean {
  */
 function contextNode(view: ContextFailures, grouping: FailuresGrouping): FailureTreeNode {
   const key = `context:${view.root}`;
-  const run = view.items.length ? null : runNode(view, []);
+  const run = view.items.length ? null : runNode(view, flakyGroup(view.flaky));
   const children = run ? [run] : failureTree(view, grouping);
   const within = (node: FailureTreeNode): FailureTreeNode => ({
     ...node,
@@ -376,7 +414,7 @@ export function failuresAnswer(contexts: ContextFailures[], grouping: FailuresGr
     ...(one.baseline ? { baseline: one.baseline } : {}),
     ...(one.updatedAt ? { updatedAt: one.updatedAt } : {}),
   };
-  return { ...view, ...failuresDrawn({ ...view, root: one.root }, grouping) };
+  return { ...view, ...failuresDrawn({ ...view, root: one.root, flaky: one.flaky }, grouping) };
 }
 
 /** What `failuresView` reads of a context: whether it reads an instance, a run, and why not. */

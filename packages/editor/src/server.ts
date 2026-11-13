@@ -142,6 +142,7 @@ import {
   type ResponseCache,
   type BranchFailure,
   type BranchFailures,
+  type BranchFlaky,
   type BranchResolved,
   type CatalogCase,
   type FileCoverage,
@@ -296,6 +297,7 @@ import {
   type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
+  type FailuresFlaky,
   type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
@@ -1240,6 +1242,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return (spec ? relativeTo(context.root, spec) : null) ?? f.file.replace(/\\/g, '/');
   };
 
+  /** One placeable per flaky test of an answer, so the placer's caches, keyed by it, hold across passes. */
+  const flakyPlaceables = new WeakMap<BranchFlaky, Placeable>();
+  const flakyPlaceable = (f: BranchFlaky, runId: number): Placeable => {
+    let placeable = flakyPlaceables.get(f);
+    if (!placeable) flakyPlaceables.set(f, (placeable = { ...f, runId }));
+    return placeable;
+  };
+
   /**
    * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line, with its
    * latest complete run, the runs laid over it and its baseline: one context's as the answer's, several under a node
@@ -1308,12 +1318,35 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         ];
       });
       const run = context.failures?.run;
+      // The run's flaky tests at their `test(…)` line as the spec stands, once each, but those a later run failed.
+      const failingNow = new Set(failing.map((f) => `${f.testCaseId}\n${f.browserName ?? ''}`));
+      const flaky = run
+        ? (context.failures?.flaky ?? []).flatMap((f): FailuresFlaky[] => {
+            if (failingNow.has(`${f.testCaseId}\n${f.browserName ?? ''}`)) return [];
+            const placeable = flakyPlaceable(f, run.id);
+            const at = pass.place(context, placeable);
+            if (!at || at.state === 'gone') return [];
+            return [
+              {
+                testCaseId: f.testCaseId,
+                uri: pathToFileURL(at.file).href,
+                line: at.line - 1,
+                title: f.title,
+                file: specOf(context, placeable),
+                browserName: f.browserName,
+                retries: f.retries,
+                url: client.executionUrl(f.executionId),
+              },
+            ];
+          })
+        : [];
       return [
         {
           root: context.root,
           label: contextLabel(context.root, folders),
           projectName: context.project?.name ?? null,
           items: [...failing, ...fixed],
+          flaky,
           run: run
             ? {
                 id: run.id,

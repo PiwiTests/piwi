@@ -580,6 +580,9 @@ object Glue {
         val children: List<FailureNode> = emptyList(),
         /** The lines of its hover, as the service writes them (`FailureTreeNode.tooltip`). */
         val tooltip: List<String> = emptyList(),
+        /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
+        val uri: String? = null,
+        val line: Int? = null,
     )
 
     /**
@@ -613,6 +616,8 @@ object Glue {
             root = node.root,
             children = node.children.orEmpty().map { draw(it) },
             tooltip = node.tooltip.orEmpty(),
+            uri = node.uri,
+            line = node.line,
         )
         return result?.tree.orEmpty().map { draw(it) }
     }

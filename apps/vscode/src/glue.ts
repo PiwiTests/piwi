@@ -559,6 +559,8 @@ export interface FailureNode {
   root?: string;
   /** The failure a leaf stands for. */
   failure?: WorkspaceFailure;
+  /** On a flaky test: its spec and the 0-based line of its `test(…)` call. */
+  place?: { uri: string; line: number };
   children: FailureNode[];
 }
 
@@ -575,6 +577,8 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   failing: 'error',
   edited: 'edit',
   fixed: 'check',
+  // The editors' flaky mark (`media/test-flaky.svg`), as the CI view draws it.
+  flaky: 'mark:flaky',
 };
 
 /**
@@ -610,6 +614,7 @@ export function failureNodes(
       ...(node.executionId !== undefined && failures.has(node.executionId)
         ? { failure: failures.get(node.executionId)! }
         : {}),
+      ...(node.uri !== undefined && node.line !== undefined ? { place: { uri: node.uri, line: node.line } } : {}),
       children: node.children.map(draw),
     };
   };

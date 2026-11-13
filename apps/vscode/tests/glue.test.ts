@@ -1539,6 +1539,52 @@ describe('the failures view', () => {
     expect(edited).toMatchObject({ icon: 'edit', failure: { executionId: 3, state: 'edited' } });
   });
 
+  test('a flaky test is drawn with the flaky mark and opens at its test(…) line', () => {
+    const flaky = {
+      ...result,
+      tree: [
+        {
+          ...result.tree[0]!,
+          children: [
+            {
+              key: 'flaky',
+              kind: 'group' as const,
+              label: 'Flaky in this run',
+              description: '1 test',
+              tooltip: ['The tests that passed in this run after an attempt failed'],
+              icon: 'flaky' as const,
+              expanded: false,
+              url: null,
+              children: [
+                {
+                  key: 'flaky:tests/cart.spec.ts\nadds\nchromium',
+                  kind: 'flaky' as const,
+                  label: 'adds',
+                  description: 'tests/cart.spec.ts:3 · chromium · passed on retry 1',
+                  tooltip: ['adds'],
+                  icon: 'flaky' as const,
+                  expanded: false,
+                  url: 'http://piwi/test-run-cases/25',
+                  uri: 'file:///w/tests/cart.spec.ts',
+                  line: 2,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const group = failureNodes(flaky, { now })[0]!.children[0]!;
+    expect(group).toMatchObject({ icon: 'mark:flaky', state: 'collapsed' });
+    expect(group.children[0]).toMatchObject({
+      kind: 'flaky',
+      icon: 'mark:flaky',
+      url: 'http://piwi/test-run-cases/25',
+      place: { uri: 'file:///w/tests/cart.spec.ts', line: 2 },
+    });
+  });
+
   test('a hover is the service’s lines as Markdown, a failure’s title in bold', () => {
     const [root] = failureNodes(result, { now });
     expect(root!.tooltip).toBe(
