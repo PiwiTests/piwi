@@ -44,6 +44,39 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(PiwiSearchableOptions.CONFIGURABLE_ID, page.id)
     }
 
+    /**
+     * Settings → Tools → Piwi is no wider than its texts wrapped at 90 columns, and laid out at that width nothing on it
+     * is cut short: no label, button, check box or list narrower than its text.
+     */
+    fun testTheSettingsPageFitsItsWrappedTextsWithNothingCut() {
+        val page = PiwiConfigurable(project)
+        try {
+            val content = page.createComponent()!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            // The intro, wrapped at 90 columns, is the page's widest text.
+            val intro = all(content).filterIsInstance<javax.swing.JEditorPane>().first()
+            assertTrue(intro.text.contains("Where this project reads its test history from"))
+            val width = intro.preferredSize.width
+            assertTrue("the page is ${content.preferredSize.width} px wide, its texts $width px", content.preferredSize.width <= width)
+            content.size = java.awt.Dimension(width, content.preferredSize.height)
+            fun lay(c: java.awt.Container) {
+                c.doLayout()
+                c.components.forEach { if (it is java.awt.Container) lay(it) }
+            }
+            lay(content)
+            val shown = all(content).filter {
+                it is javax.swing.JLabel || it is javax.swing.AbstractButton || it is javax.swing.JComboBox<*> || it is javax.swing.JEditorPane
+            }
+            assertTrue(shown.size > 20)
+            for (c in shown) {
+                val text = (c as? javax.swing.JLabel)?.text ?: (c as? javax.swing.AbstractButton)?.text ?: c.javaClass.simpleName
+                assertTrue("'$text' is ${c.width} px of its ${c.preferredSize.width}", c.width >= c.preferredSize.width)
+            }
+        } finally {
+            page.disposeUIResources()
+        }
+    }
+
     fun testRegistersItsExtensionsAndActions() {
         assertTrue(LspServerSupportProvider.EP_NAME.extensionList.any { it is PiwiLspServerSupportProvider })
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList

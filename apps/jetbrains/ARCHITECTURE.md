@@ -1240,6 +1240,10 @@ the descriptor's command line against a stub instance, and reads its answers wit
 session and controls with a fake worker on the run channel among them, and the code from a stop (`piwi/stopRequests`,
 `piwi/stopAction`, the `piwi/stopCode` it sends, `piwi/locatorAtCaret`).
 
+`testTheSettingsPageFitsItsWrappedTextsWithNothingCut` (`PiwiPluginTest`) lays Settings → Tools → Piwi out at the width
+of its intro, wrapped at 90 columns, and fails on a part of the page wider than that or on a label, button, check box or
+list narrower than its text: a label or comment grown too long shows there before it ends in '…' in a Settings dialog.
+
 `PiwiRunControlTest` drives the run controls with the sessions the service would send: the execution point, the inlay,
 the actions, the edits above a stop and Run to caret from them, the paused page of a file the VFS has not loaded, the
 breakpoint listener (a breakpoint moved as the platform moves one outside tests, which a unit test does not), the
