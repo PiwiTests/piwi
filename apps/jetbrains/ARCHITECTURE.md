@@ -254,6 +254,9 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
   above its tree, and the header line counts them.
+- **Piwi's mark** (`PiwiIcons.PIWI`, the tool window's, the status item's and the run node's) is the filled 13 px one
+  in the classic UI and the outline one at 16 and 20 px in the New UI, which `PiwiIconMappings.json` (`iconMapper`)
+  maps it to in `icons/expui/`; the brand asset generator writes both.
 - **Each node's glyph** is the one `PiwiIcons.FAILURE_NODES` gives its icon key, the table VS Code's `FAILURE_ICONS`
   draws too (a cluster Lucide's `layers`, `icons/layers.svg`; an owner `General.User`; a spec a file), which
   `PiwiPluginTest` holds to the protocol's `FailureTreeIcon` keys.

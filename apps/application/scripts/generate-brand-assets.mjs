@@ -6,9 +6,11 @@
 //
 //   npm run app:generate:brand
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FontAssetType, generateFonts } from 'fantasticon';
 import { chromium } from 'playwright';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -100,6 +102,145 @@ function wordmark({ word, tests }) {
 
 function svg({ x, y, w, h }, body, { width = w, height = h, title = 'Piwi' } = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${w} ${h}"><title>${title}</title>${body}</svg>\n`;
+}
+
+// The outline mark of the editors' icon sets, in New UI and codicon style: the body, the lens ring and the eye, with the
+// check in the lens from 20 px, where it reads. Drawn in a square view that leaves the platforms' padding around it (a
+// 14 px drawing in a 16 px icon), with strokes of 1.5 screen pixels at the size it is drawn at.
+const IDE_VIEW = { x: -12, y: -42, w: 308, h: 308 };
+const IDE_CHECK = 'M104 121 L126 143 L168 96';
+/** A stroke of `px` screen pixels, in the view's units, for an icon drawn at `size` px. */
+const ideStroke = (size, px) => +((IDE_VIEW.w / size) * px).toFixed(2);
+
+function outlineBody(color, size) {
+  const w = ideStroke(size, 1.5);
+  return [
+    `<path d="${OUTLINE}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linejoin="round"/>`,
+    `<path d="${LENS}" fill="none" stroke="${color}" stroke-width="${size >= 20 ? ideStroke(size, 1.25) : w}"/>`,
+    `<path d="${EYE_SMALL}" fill="${color}"/>`,
+    size >= 20
+      ? `<path d="${IDE_CHECK}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`
+      : '',
+  ].join('');
+}
+
+/** The outline mark in one color, at `size` px. */
+function outlineMark(color, size) {
+  return svg(IDE_VIEW, outlineBody(color, size), { width: size, height: size });
+}
+
+/** The outline mark with a dot of `dot` at its lower right, where the drawing leaves room: tests fail. */
+function failingOutlineMark(color, dot, size) {
+  const r = ideStroke(size, 2.5);
+  const at = IDE_VIEW.x + IDE_VIEW.w - r - ideStroke(size, 0.5);
+  return svg(
+    IDE_VIEW,
+    outlineBody(color, size) +
+      `<circle cx="${at}" cy="${IDE_VIEW.y + IDE_VIEW.h - r - ideStroke(size, 0.5)}" r="${r}" fill="${dot}"/>`,
+    { width: size, height: size, title: 'Piwi: tests failing' },
+  );
+}
+
+/**
+ * The points of an absolute path of `M`, `L`, `C` and `Z` commands, its curves sampled finely enough for a stroke to
+ * follow them; one list per subpath.
+ */
+function samplePath(d) {
+  const tokens = d.match(/[MLCZ]|-?\d*\.?\d+/g);
+  const runs = [];
+  let run = null;
+  let at = null;
+  for (let i = 0; i < tokens.length;) {
+    const command = tokens[i++];
+    const take = (n) => tokens.slice(i, (i += n)).map(Number);
+    if (command === 'M') {
+      const [x, y] = take(2);
+      run = [[x, y]];
+      runs.push(run);
+      at = [x, y];
+    } else if (command === 'L') {
+      const [x, y] = take(2);
+      run.push([x, y]);
+      at = [x, y];
+    } else if (command === 'C') {
+      const [x1, y1, x2, y2, x, y] = take(6);
+      for (let k = 1; k <= 24; k++) {
+        const t = k / 24;
+        const u = 1 - t;
+        run.push([
+          u * u * u * at[0] + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x,
+          u * u * u * at[1] + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y,
+        ]);
+      }
+      at = [x, y];
+    } else if (command === 'Z') {
+      run.push(run[0]);
+    }
+  }
+  return runs;
+}
+
+/** A closed polygon as path data, wound one way whatever order its points come in, so that overlapping ones unite. */
+function polygon(points) {
+  const area = points.reduce((sum, [x, y], i) => {
+    const [nx, ny] = points[(i + 1) % points.length];
+    return sum + (x * ny - nx * y);
+  }, 0);
+  const wound = area < 0 ? [...points].reverse() : points;
+  return `M${wound.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}Z`;
+}
+
+function disc(cx, cy, r, steps = 16) {
+  return polygon(
+    Array.from({ length: steps }, (_, k) => [
+      cx + r * Math.cos((2 * Math.PI * k) / steps),
+      cy + r * Math.sin((2 * Math.PI * k) / steps),
+    ]),
+  );
+}
+
+/**
+ * A stroke of `width` along path `d`, as filled shapes: a quad along each sampled segment and a disc at each point (the
+ * round joins and caps), all wound alike so that a font's nonzero fill draws their union. An icon font takes fills
+ * alone.
+ */
+function strokeAsFill(d, width) {
+  const r = width / 2;
+  const shapes = [];
+  for (const run of samplePath(d)) {
+    for (let i = 0; i < run.length; i++) {
+      const [x, y] = run[i];
+      shapes.push(disc(x, y, r));
+      if (i === 0) continue;
+      const [px, py] = run[i - 1];
+      const length = Math.hypot(x - px, y - py);
+      if (!length) continue;
+      const [nx, ny] = [(-(y - py) / length) * r, ((x - px) / length) * r];
+      shapes.push(
+        polygon([
+          [px + nx, py + ny],
+          [x + nx, y + ny],
+          [x - nx, y - ny],
+          [px - nx, py - ny],
+        ]),
+      );
+    }
+  }
+  return shapes.join('');
+}
+
+/**
+ * The outline mark as the VS Code icon font's glyph: drawn for 16 px, its strokes as fills, moved to a view that starts
+ * at 0, as the font generator reads a glyph from its view's origin.
+ */
+function outlineGlyph() {
+  const w = ideStroke(16, 1.5);
+  const eye = disc(205.62, 52.7, 16, 24);
+  const d = `${strokeAsFill(OUTLINE, w)}${strokeAsFill(LENS, w)}${eye}`.replace(
+    /(-?[\d.]+) (-?[\d.]+)/g,
+    (_, x, y) => `${(+x - IDE_VIEW.x).toFixed(1)} ${(+y - IDE_VIEW.y).toFixed(1)}`,
+  );
+  return svg({ x: 0, y: 0, w: IDE_VIEW.w, h: IDE_VIEW.h }, `<path d="${d}" fill="#000"/>`, { width: 16, height: 16 });
 }
 
 /**
@@ -225,8 +366,27 @@ const SVG_FILES = {
   // The tool window's icon while tests fail: the IntelliJ New UI error reds.
   'apps/jetbrains/src/main/resources/icons/piwi_failing.svg': failingMark('#6C707E', '#DB3B4B', 13),
   'apps/jetbrains/src/main/resources/icons/piwi_failing_dark.svg': failingMark('#CED0D6', '#DB5C5C', 13),
-  // VS Code tints a view container icon with the theme's foreground.
-  'apps/vscode/media/piwi.svg': monoMark('currentColor', 24),
+  // The New UI's: the outline mark at 16 px (the status bar, the tool window in compact mode, the failures tree's run
+  // node) and 20 px (the tool window stripe), which `PiwiIconMappings.json` maps the classic icons to.
+  'apps/jetbrains/src/main/resources/icons/expui/piwi.svg': outlineMark('#6C707E', 16),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi_dark.svg': outlineMark('#CED0D6', 16),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi@20x20.svg': outlineMark('#6C707E', 20),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi@20x20_dark.svg': outlineMark('#CED0D6', 20),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi_failing.svg': failingOutlineMark('#6C707E', '#DB3B4B', 16),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi_failing_dark.svg': failingOutlineMark('#CED0D6', '#DB5C5C', 16),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi_failing@20x20.svg': failingOutlineMark('#6C707E', '#DB3B4B', 20),
+  'apps/jetbrains/src/main/resources/icons/expui/piwi_failing@20x20_dark.svg': failingOutlineMark(
+    '#CED0D6',
+    '#DB5C5C',
+    20,
+  ),
+  'apps/jetbrains/src/main/resources/PiwiIconMappings.json': `${JSON.stringify(
+    { icons: { expui: { 'piwi.svg': 'icons/piwi.svg', 'piwi_failing.svg': 'icons/piwi_failing.svg' } } },
+    null,
+    2,
+  )}\n`,
+  // VS Code tints a view container icon with the theme's foreground; the activity bar draws it at 24 px.
+  'apps/vscode/media/piwi.svg': outlineMark('currentColor', 24),
 };
 
 // PNG files: [path, size in px, the SVG drawn at that size].
@@ -265,6 +425,30 @@ function markData(png) {
     color: VIOLET,
     png: png.toString('base64'),
   };
+}
+
+// VS Code's product icon font: `$(piwi)` in the status item and the failures view, from the outline mark. Its code
+// points are fixed, so a glyph keeps its character across runs; the font carries no build time.
+const glyphs = mkdtempSync(join(tmpdir(), 'piwi-icons-'));
+try {
+  writeFileSync(join(glyphs, 'piwi.svg'), outlineGlyph());
+  await generateFonts({
+    inputDir: glyphs,
+    outputDir: glyphs,
+    name: 'piwi-icons',
+    fontTypes: [FontAssetType.WOFF],
+    assetTypes: [],
+    codepoints: { piwi: 0xe000 },
+    normalize: false,
+    fontHeight: IDE_VIEW.h,
+    descent: 0,
+    formatOptions: { ttf: { ts: 0, version: '1.0' } },
+  });
+  mkdirSync(resolve(ROOT, 'apps/vscode/media'), { recursive: true });
+  copyFileSync(join(glyphs, 'piwi-icons.woff'), resolve(ROOT, 'apps/vscode/media/piwi-icons.woff'));
+  console.log('-> apps/vscode/media/piwi-icons.woff');
+} finally {
+  rmSync(glyphs, { recursive: true, force: true });
 }
 
 const browser = await chromium.launch();

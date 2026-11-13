@@ -1,0 +1,8 @@
+{
+  "icons": {
+    "expui": {
+      "piwi.svg": "icons/piwi.svg",
+      "piwi_failing.svg": "icons/piwi_failing.svg"
+    }
+  }
+}

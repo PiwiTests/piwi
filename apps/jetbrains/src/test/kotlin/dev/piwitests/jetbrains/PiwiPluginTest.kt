@@ -173,6 +173,22 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.OpenRunPage")).isEnabled)
     }
 
+    fun testEveryIconTheNewUiMapsHasItsSizesAndThemes() {
+        // Each classic icon the mapping names exists, and its New UI icon has its 16 px and 20 px files in both themes.
+        val mapping = com.google.gson.JsonParser.parseString(
+            PiwiIcons::class.java.getResource("/PiwiIconMappings.json")!!.readText(),
+        ).asJsonObject["icons"].asJsonObject["expui"].asJsonObject
+        assertEquals(setOf("piwi.svg", "piwi_failing.svg"), mapping.keySet())
+        for ((name, classic) in mapping.entrySet()) {
+            assertNotNull(classic.asString, PiwiIcons::class.java.getResource("/${classic.asString}"))
+            val base = name.removeSuffix(".svg")
+            for (file in listOf("$base.svg", "${base}_dark.svg", "$base@20x20.svg", "$base@20x20_dark.svg")) {
+                assertNotNull(file, PiwiIcons::class.java.getResource("/icons/expui/$file"))
+            }
+        }
+        assertSame(PiwiIcons.PIWI, PiwiIcons.FAILURE_NODES["run"])
+    }
+
     fun testEveryIconKeyOfTheFailuresTreeHasItsGlyph() {
         // The keys the editor service sends (`FailureTreeIcon`), each drawn, and none drawn that it never sends.
         val protocol = java.io.File("../../packages/editor/src/protocol.ts").readText()

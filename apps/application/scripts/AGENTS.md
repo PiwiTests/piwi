@@ -103,6 +103,8 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 - **Every logo, favicon and app icon in the repository is written by `scripts/generate-brand-assets.mjs`**
   (`npm run app:generate:brand`) from the drawing and the brand colors in that file: navy ink, violet `#7c3aed` and the
   mint of the check. That covers the dashboard's and the docs site's SVG logos, favicons, touch icon and social card,
-  the browser extension's, the VS Code extension's and the JetBrains plugin's icons, and `shared/brand-mark.json`.
+  the browser extension's, the VS Code extension's and the JetBrains plugin's icons (the editors' outline mark among
+  them: the plugin's `icons/expui/` and `PiwiIconMappings.json`, VS Code's `media/piwi-icons.woff`, built by fantasticon
+  from fills, as an icon font takes no strokes), and `shared/brand-mark.json`.
   Never edit one by hand: change the script and regenerate them all.
 - **The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.**

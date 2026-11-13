@@ -48,6 +48,15 @@
     "onUri"
   ],
   "contributes": {
+    "icons": {
+      "piwi": {
+        "description": "Piwi's mark: the status item and the failures view's run",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E000"
+        }
+      }
+    },
     "viewsContainers": {
       "panel": [
         {
@@ -61,11 +70,13 @@
       "piwi": [
         {
           "id": "piwi.failures",
-          "name": "Failures"
+          "name": "Failures",
+          "icon": "media/piwi.svg"
         },
         {
           "id": "piwi.ciRuns",
           "name": "CI Runs",
+          "icon": "media/piwi.svg",
           "when": "piwi.ciRuns"
         }
       ]

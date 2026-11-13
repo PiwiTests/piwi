@@ -27,6 +27,9 @@ object PiwiIcons {
      */
     val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
 
+    /** Piwi's mark: the filled one in the classic UI, the outline one in the New UI (`PiwiIconMappings.json`). */
+    val PIWI: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiIcons::class.java)
+
     /** A failure cluster, as the dashboard and VS Code draw one: Lucide's `layers`. */
     val CLUSTER: Icon = IconLoader.getIcon("/icons/layers.svg", PiwiIcons::class.java)
 
@@ -36,7 +39,7 @@ object PiwiIcons {
      */
     val FAILURE_NODES: Map<String, Icon> = mapOf(
         "context" to AllIcons.Nodes.Module,
-        "run" to AllIcons.RunConfigurations.TestState.Run,
+        "run" to PIWI,
         "history" to AllIcons.Vcs.History,
         "failed" to FAILED,
         "failing" to FAILED,

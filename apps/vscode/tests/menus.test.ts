@@ -119,6 +119,18 @@ describe("the commands' glyphs", () => {
     for (const c of commands.filter((c) => c.icon)) expect(c.icon, c.command).toMatch(/^\$\([a-z-]+\)$/);
   });
 
+  test('draws Piwi’s own glyphs from the icon font the brand asset generator writes', () => {
+    const icons = manifest.contributes.icons as Record<
+      string,
+      { default: { fontPath: string; fontCharacter: string } }
+    >;
+    expect(Object.keys(icons)).toEqual(['piwi']);
+    for (const icon of Object.values(icons)) {
+      expect(fs.existsSync(path.resolve(__dirname, '..', icon.default.fontPath)), icon.default.fontPath).toBe(true);
+    }
+    expect(icons.piwi!.default.fontCharacter).toBe('\\E000');
+  });
+
   test('draws Open in dashboard as leaving the editor, apart from the run pages’ globe', () => {
     const iconOf = (command: string) => commands.find((c) => c.command === command)?.icon;
     expect(iconOf('piwi.openInDashboard')).toBe('$(link-external)');
