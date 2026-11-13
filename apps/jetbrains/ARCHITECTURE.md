@@ -354,9 +354,11 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
-Then come the registered actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest
-run in the dashboard, Open in dashboard, Compare with…, Run the test at the caret, Record here, Reload Piwi, Connect (in
-this popup only while a config is not connected) and Settings. The popup is titled Piwi.
+Every row is a registered action, the stops as `Piwi.ShowStop` and the run pages as `Piwi.OpenRunPage`, each wrapped to
+act on its stop or page (`registeredWith`). Then come the registered actions, by id: Re-run the failing tests, Open the
+failures (the tool window), Open the latest run in the dashboard, Open in dashboard, Compare with…, Run the test at the
+caret, Record here, Reload Piwi, Connect (in this popup only while a config is not connected) and Settings. The popup is
+titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
 run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project installs.

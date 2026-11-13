@@ -300,6 +300,21 @@
                     icon="AllIcons.Actions.Help"
                     description="Open Piwi's documentation for the JetBrains IDEs in the browser"/>
         </group>
+        <!-- The status popup's own rows, registered so their keys show and Find Action reaches them. -->
+        <group id="Piwi.StatusActions">
+            <action id="Piwi.ShowStop" class="dev.piwitests.jetbrains.ShowStopAction" text="Go to the stopped line"
+                    icon="AllIcons.Debugger.NextStatement" use-shortcut-of="ShowExecutionPoint"
+                    description="Open the line a test of the run is stopped at"/>
+            <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the run page"
+                    icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
+            <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
+                    icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>
+            <action id="Piwi.NodeSettings" class="dev.piwitests.jetbrains.NodeSettingsAction" text="Node.js settings…"
+                    icon="AllIcons.General.Settings" description="Choose the Node.js the editor service starts with"/>
+            <action id="Piwi.GoToRecordedLines" class="dev.piwitests.jetbrains.GoToRecordedLinesAction"
+                    text="Go to the recorded lines" icon="AllIcons.Actions.EditSource"
+                    description="Open the lines the recording in progress writes"/>
+        </group>
         <!-- The Piwi tool window's actions on its selected failure (`FAILURE_NODE`): its right-click menu, and Find Action. -->
         <group id="Piwi.FailureActions">
             <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run this test"

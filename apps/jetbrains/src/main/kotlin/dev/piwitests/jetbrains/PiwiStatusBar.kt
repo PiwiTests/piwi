@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -180,13 +181,13 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     fun actions(): ActionGroup {
         val manager = ActionManager.getInstance()
         val first: AnAction? = if (recording() != null) {
-            GoToRecordingAction()
+            manager.getAction("Piwi.GoToRecordedLines")
         } else {
             when (view().action) {
                 Glue.StatusAction.REFRESH -> manager.getAction("Piwi.RefreshRun")
                 Glue.StatusAction.RETRY -> manager.getAction("Piwi.Refresh")
                 Glue.StatusAction.CONNECT -> manager.getAction("Piwi.Connect")
-                Glue.StatusAction.NODE_SETTINGS -> NodeSettingsAction()
+                Glue.StatusAction.NODE_SETTINGS -> manager.getAction("Piwi.NodeSettings")
                 Glue.StatusAction.SETTINGS -> manager.getAction("Piwi.OpenSettings")
                 Glue.StatusAction.NONE -> null
             }
@@ -205,7 +206,11 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             if (shareShown) addLive()
             if (runs?.controls()?.active == true) {
                 val stops = runs.stops()
-                stops.forEach { add(GoToStopAction(it)) }
+                // Each stop as the registered Go to the stopped line, acting on it (`STOP`), named as the choice names it.
+                stops.forEach { stop ->
+                    val icon = if (Glue.isFailure(stop.stop)) PiwiIcons.FAILED else AllIcons.Debugger.NextStatement
+                    registeredWith("Piwi.ShowStop", Glue.stopLabel(stop), icon) { it.add(PiwiRunSessions.STOP, stop) }?.let(::add)
+                }
                 if (stops.isNotEmpty()) addSeparator()
                 addAll(registered(*RUN_ACTIONS))
                 addSeparator()
@@ -220,9 +225,11 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             val opened = live.filter { it.kind == Glue.LiveEntryKind.OPEN_PAGE }.mapNotNull { it.ref }.toSet()
             runs?.sessions?.let { Glue.runPages(it) }.orEmpty()
                 .filter { (ref, _) -> ref !in opened }
-                .forEach { (_, page) -> add(OpenRunPageAction(page)) }
+                .forEach { (_, page) ->
+                    registeredWith("Piwi.OpenRunPage", "Open run #${page.id}") { it.add(RUN_PAGE, page) }?.let(::add)
+                }
             addAll(registered("Piwi.RerunFailing"))
-            add(OpenFailuresAction())
+            addAll(registered("Piwi.OpenFailures"))
             addAll(registered("Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith"))
             addSeparator()
             addAll(registered("Piwi.RunTestAtCursor", "Piwi.RecordHere"))
@@ -246,25 +253,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         popup.show(RelativePoint(label, Point(0, -popup.content.preferredSize.height)))
     }
 
-    /**
-     * A stop, as the choice among several names it (`Glue.stopLabel`): its file opened at its line with the focus, a
-     * stop whose file was left closed included.
-     */
-    private inner class GoToStopAction(private val stop: Glue.ShownStop) : DumbAwareAction(
-        Glue.stopLabel(stop),
-        listOfNotNull("Go to the line the test is stopped at", runs()?.let { Glue.stopPresence(stop, it.sessions) }).joinToString(". "),
-        if (Glue.isFailure(stop.stop)) PiwiIcons.FAILED else AllIcons.Debugger.NextStatement,
-    ) {
-        init {
-            templatePresentation.setText(Glue.stopLabel(stop), false)
-        }
-
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            runs()?.goTo(stop)
-        }
-    }
 
     /**
      * An entry of the menu on a share (`Glue.liveMenu`): the run page opened in the browser, its link copied, or the
@@ -295,22 +283,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
     }
 
-    /** **Node.js settings…**: the interpreter the editor service starts with, the service started again once closed. */
-    private inner class NodeSettingsAction : DumbAwareAction("Node.js settings…", null, AllIcons.General.Settings) {
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-        override fun actionPerformed(e: AnActionEvent) = service().openNodeSettings()
-    }
-
-    /** **Go to the recorded lines**: the block the recording in progress writes. */
-    private inner class GoToRecordingAction : DumbAwareAction("Go to the recorded lines", null, AllIcons.Actions.EditSource) {
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            val recording = recording() ?: return
-            OpenFileDescriptor(project, recording.file, recording.blockStart() ?: 0).navigate(true)
-        }
-    }
 
     companion object {
         /** The controls and code actions of a run started here, as the popup lists them while one is live. */
@@ -329,15 +302,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 /** Piwi's icon, the tool window's. */
 private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiStatusBarWidget::class.java)
 
-/** **Open the failures**: the Piwi tool window, as a run's notification opens it. */
-private class OpenFailuresAction : DumbAwareAction("Open the failures", null, PIWI_ICON) {
-    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-    override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
-    }
-}
 
 /**
  * The item's label: an icon and a text in the status bar's font and insets, the text in the status bar's foreground,
@@ -358,5 +322,55 @@ internal class StatusLabel : JBLabel() {
         super.updateUI()
         font = JBUI.CurrentTheme.StatusBar.font()
         border = JBUI.CurrentTheme.StatusBar.Widget.border()
+    }
+}
+
+/** **Open the failures**: the Piwi tool window, as a run's notification opens it. */
+class OpenFailuresAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+    }
+}
+
+/** **Node.js settings…**: the interpreter the editor service starts with, the service started again once closed. */
+class NodeSettingsAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.openNodeSettings()
+    }
+}
+
+/** **Go to the recorded lines**: the block the recording in progress writes; enabled only while one runs. */
+class GoToRecordedLinesAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    private fun recording(e: AnActionEvent) = e.project?.getServiceIfCreated(PiwiRecordings::class.java)?.current()
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = recording(e) != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val recording = recording(e) ?: return
+        OpenFileDescriptor(project, recording.file, recording.blockStart() ?: 0).navigate(true)
+    }
+}
+
+/**
+ * **Go to the stopped line**: the line a test is stopped at, its file opened with the focus, a stop whose file was left
+ * closed included: the stop a popup names (`STOP`), else the one at the caret's line, else the only one, else the one
+ * chosen; on the debugger's Show Execution Point key.
+ */
+class ShowStopAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.stopped
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.goTo(it) }
     }
 }

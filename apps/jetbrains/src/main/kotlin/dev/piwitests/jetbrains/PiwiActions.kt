@@ -213,13 +213,13 @@ fun registeredWith(
     val registered = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return null
     return object : com.intellij.openapi.actionSystem.AnActionWrapper(registered) {
         init {
-            if (label != null) templatePresentation.text = label
+            if (label != null) templatePresentation.setText(label, false)
             if (icon != null) templatePresentation.icon = icon
         }
 
         override fun update(e: AnActionEvent) {
             super.update(e.withDataContext(withData(e.dataContext)))
-            if (label != null) e.presentation.text = label
+            if (label != null) e.presentation.setText(label, false)
         }
 
         override fun actionPerformed(e: AnActionEvent) {
@@ -309,12 +309,25 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     }
 }
 
-/** Opens the page of a run started or followed here, on the instance it reports to: `Open run #78`. */
-class OpenRunPageAction(private val page: RunPage) : AnAction("Open run #${page.id}", null, AllIcons.General.Web), DumbAware {
+/** The run page a popup's entry opens (`Piwi.OpenRunPage`). */
+val RUN_PAGE: DataKey<RunPage> = DataKey.create("piwi.runPage")
+
+/**
+ * **Open the run page**: the page of a run started or followed here, on the instance it reports to: the one a popup
+ * names (`RUN_PAGE`, `Open run #78`), else the only run's with a page.
+ */
+class OpenRunPageAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    private fun page(e: AnActionEvent): RunPage? = e.getData(RUN_PAGE)
+        ?: e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.sessions?.let { Glue.runPages(it) }?.singleOrNull()?.second
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = page(e) != null
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
-        BrowserUtil.browse(page.url)
+        page(e)?.let { BrowserUtil.browse(it.url) }
     }
 }
 

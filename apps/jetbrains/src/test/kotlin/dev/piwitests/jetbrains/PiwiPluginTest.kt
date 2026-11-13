@@ -743,7 +743,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(
                 listOf(
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
-                    "Piwi.RerunFailing", "Open the failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
+                    "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
                 ),
