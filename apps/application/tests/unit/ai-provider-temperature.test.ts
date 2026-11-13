@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { buildOpenAiBody, type OpenAiAttempt } from '../../server/utils/ai-provider';
+import { buildOpenAiBody, type AiCallOptions, type OpenAiAttempt } from '../../server/utils/ai-provider';
 import { parseEnvTemperature, rolesFromLegacy } from '../../server/utils/ai-settings';
-import type { ResolvedAiRole, AiCallOptions } from '~~/types/api';
+import type { ResolvedAiRole } from '~~/types/api';
 
 function role(temperature: number | null): ResolvedAiRole {
   return { provider: 'openai', apiKey: '', model: 'gpt-test', baseUrl: 'http://localhost:1234/v1', temperature };
 }
 
 const opts: AiCallOptions = { system: 'system prompt', user: 'user prompt' };
-const attempt: OpenAiAttempt = { strictFormat: true, withImages: false };
+const attempt: OpenAiAttempt = { strictFormat: true, withImages: false, completionTokenParameter: 'max_tokens' };
 
 describe('buildOpenAiBody temperature', () => {
   it('omits temperature entirely when unset — required so reasoning models (o1/o3/GPT-5-class) do not reject the request', () => {

@@ -115,7 +115,11 @@ describe('the Local runs a reload of the window keeps', () => {
   test('takes back a run the shell still runs, its Hold failures, its separate output and its output so far', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
-    const run = before.store.startRun({ projectId: 3, projectLabel: 'Shop', cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = before.store.startRun({
+      projectId: 3,
+      projectLabel: 'Shop',
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
+    })!;
     await until(() => run.shellId === 41);
     before.shell(line(41, 'Running 2 tests using 1 worker'));
     before.store.holds.value = { [run.key]: true };
@@ -144,7 +148,7 @@ describe('the Local runs a reload of the window keeps', () => {
     expect(back.exitCode).toBe(1);
 
     // A run started after the reload takes a key of its own.
-    const next = after.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const next = after.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     expect(next.key).toBeGreaterThan(run.key);
   });
 
@@ -154,8 +158,8 @@ describe('the Local runs a reload of the window keeps', () => {
     const run = before.store.startRun({
       projectId: 3,
       cases: [
-        { filePath: 'cart.spec.ts', projectName: 'chromium' },
-        { filePath: 'cart.spec.ts', projectName: 'firefox' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'chromium' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'firefox' },
       ],
     })!;
     await until(() => run.shellId === 41);
@@ -177,11 +181,11 @@ describe('the Local runs a reload of the window keeps', () => {
   test('says so of a run the shell no longer knows, and keeps the runs that had ended as they were', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
-    const done = before.store.startRun({ projectId: 3, cases: [{ filePath: 'a.spec.ts' }] })!;
+    const done = before.store.startRun({ projectId: 3, cases: [{ filePath: 'a.spec.ts', title: 'checks out' }] })!;
     await until(() => done.shellId === 41);
     before.shell(exit(41, 0));
     await until(() => done.status === 'passed');
-    const lost = before.store.startRun({ projectId: 3, cases: [{ filePath: 'b.spec.ts' }] })!;
+    const lost = before.store.startRun({ projectId: 3, cases: [{ filePath: 'b.spec.ts', title: 'checks out' }] })!;
     await until(() => lost.shellId === 42);
     before.store.keepForReload();
 
@@ -197,7 +201,7 @@ describe('the Local runs a reload of the window keeps', () => {
   test('replays the output of a step that ended while the shell was asked', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
-    const run = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await until(() => run.shellId === 41);
     before.store.keepForReload();
 
@@ -226,7 +230,7 @@ describe('the Local runs a reload of the window keeps', () => {
     const startBisect = (store: typeof before.store) =>
       store.startBisect({
         projectId: 3,
-        cases: [{ filePath: 'cart.spec.ts' }],
+        cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
         good: 'a'.repeat(40),
         bad: 'b'.repeat(40),
         jobRequestId: 'job-1',
@@ -269,8 +273,8 @@ describe('the Local runs a reload of the window keeps', () => {
     const run = before.store.startRun({
       projectId: 3,
       cases: [
-        { filePath: 'cart.spec.ts', projectName: 'chromium' },
-        { filePath: 'cart.spec.ts', projectName: 'firefox' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'chromium' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'firefox' },
       ],
     })!;
     await until(() => run.shellId === 41);
@@ -293,7 +297,7 @@ describe('the Local runs a reload of the window keeps', () => {
   test('keeps how far each step of a run came and the failure it named', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
-    const run = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await until(() => run.shellId === 41);
     const progress = { total: 2, done: 2, failed: 1, flaky: 0, skipped: 1, status: 'failed', failure: null };
     endedProgress = { 'desktop-41': progress, 'desktop-9': progress };
@@ -311,14 +315,14 @@ describe('the Local runs a reload of the window keeps', () => {
   test('reads what the page before kept once, at once, and gives a run started before the take-back a key of its own', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
-    const kept = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const kept = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await until(() => kept.shellId === 41);
     before.store.keepForReload();
 
     const after = await pageWith(storage, { running: [41], ended: [] }, 41);
     after.store.readKeptForReload();
     expect(storage.size).toBe(0);
-    const early = after.store.startRun({ projectId: 3, cases: [{ filePath: 'b.spec.ts' }] })!;
+    const early = after.store.startRun({ projectId: 3, cases: [{ filePath: 'b.spec.ts', title: 'checks out' }] })!;
     expect(early.key).toBeGreaterThan(kept.key);
     await after.store.takeBackAfterReload();
     expect(after.store.runs.value.map((r) => r.key).sort()).toEqual([kept.key, early.key].sort());
@@ -344,7 +348,7 @@ describe('the Local runs a reload of the window keeps', () => {
 describe('where a failed local run’s end leads', () => {
   test('to the failure its process named first, else the run’s first failed test, else the run’s page', async () => {
     const { store, shell } = await pageWith(new Map());
-    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!;
+    const run = store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
     await until(() => run.shellId === 41);
     shell(exit(41, 1));
     await until(() => run.status === 'failed');
@@ -372,8 +376,8 @@ describe('the Piwi runs of a local run of several steps', () => {
     const run = store.startRun({
       projectId: 3,
       cases: [
-        { filePath: 'cart.spec.ts', projectName: 'chromium' },
-        { filePath: 'cart.spec.ts', projectName: 'firefox' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'chromium' },
+        { filePath: 'cart.spec.ts', title: 'checks out', projectName: 'firefox' },
       ],
     })!;
     await until(() => run.shellId === 41);

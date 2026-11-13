@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import { expect, type BrowserContext, type Page } from '@playwright/test';
 
 /**
  * Opens one of the extension's DevTools pages (the Elements sidebar, the Piwi
@@ -119,6 +119,16 @@ export async function openDevtoolsPage(
   await page.addInitScript(installDevtoolsStub, { tabId: options.tabId ?? 987_654_321, har: options.har ?? [] });
   await page.goto(`chrome-extension://${extensionId}/${file}`);
   return page;
+}
+
+/**
+ * Opens the Piwi panel's Network tab once the panel has its listeners (`html[data-ready]`), and waits for its list to
+ * be drawn: a `requestFinished` fired before either is lost.
+ */
+export async function openNetworkTab(panel: Page): Promise<void> {
+  await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+  await panel.getByRole('tab', { name: 'Network' }).click();
+  await expect(panel.getByRole('list', { name: 'Network' })).toBeVisible();
 }
 
 /** Selects `selector` in the inspected page as DevTools would (`$0`) and tells the DevTools page. */

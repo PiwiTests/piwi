@@ -1,14 +1,17 @@
 import { describe, test, expect } from 'vitest';
 import { describeRunBaseline, describeRunBaselineParts, type RunBaselineMatch } from '#shared/run-baseline';
 
-const run = { branch: 'feature/x', environment: 'staging' };
-const fallback = { branch: 'main', source: 'default' as const };
-const pr = { branch: 'develop', source: 'pull-request' as const };
+type Side = { branch: string | null; environment: string | null };
+type Fallback = { branch: string; source: 'default' | 'pull-request' };
+
+const run: Side = { branch: 'feature/x', environment: 'staging' };
+const fallback: Fallback = { branch: 'main', source: 'default' };
+const pr: Fallback = { branch: 'develop', source: 'pull-request' };
 
 function describe_(
   match: RunBaselineMatch,
-  baseline = { branch: 'main', environment: 'staging' } as { branch: string | null; environment: string | null },
-  overrides: Partial<{ run: typeof run; fallback: typeof fallback | null }> = {},
+  baseline: Side = { branch: 'main', environment: 'staging' },
+  overrides: Partial<{ run: Side; fallback: Fallback | null }> = {},
 ) {
   return describeRunBaseline({ run: overrides.run ?? run, baseline, match, fallback: overrides.fallback ?? fallback });
 }

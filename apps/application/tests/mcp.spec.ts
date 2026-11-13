@@ -148,7 +148,7 @@ test.describe.serial('MCP server', () => {
     const names = (list.result.prompts as { name: string }[]).map((p) => p.name);
     expect(names).toContain('investigate_failure');
     const body = await mcp(request, 'prompts/get', { name: 'investigate_failure', arguments: { focus: 'cluster 1' } });
-    const text: string = body.result.messages[0].content.text;
+    const text: string = body.result.messages[0]!.content.text;
     expect(text).toContain('Work on: cluster 1');
     expect(text).toContain('report_fix_attempt');
   });
@@ -160,8 +160,8 @@ test.describe.serial('MCP server', () => {
     });
     const messages: { role: string; content: { type: string; text: string } }[] = body.result.messages;
     expect(messages.length).toBeGreaterThan(0);
-    expect(messages[0].role).toBe('user');
-    const text = messages[0].content.text;
+    expect(messages[0]!.role).toBe('user');
+    const text = messages[0]!.content.text;
     // Server-aware: the message names this project and includes a runnable init command.
     expect(text).toContain(`--project ${PROJECT.MCP_TEST}`);
     expect(text).toContain('npx @piwitests/reporter init --server-url');
@@ -475,7 +475,7 @@ test.describe.serial('MCP server', () => {
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     const names: string[] = body.result.tools.map((t: { name: string }) => t.name);
-    const coreNames = new Set(MCP_TOOL_DEFS.filter((t) => t.module === 'core').map((t) => t.name));
+    const coreNames = new Set<string>(MCP_TOOL_DEFS.filter((t) => t.module === 'core').map((t) => t.name));
     // Every listed tool belongs to the core module …
     for (const name of names) expect(coreNames.has(name), `${name} should be a core-module tool`).toBe(true);
     // … and a known tool from each other module is gone.

@@ -685,7 +685,7 @@ export const HELP_TOPICS = {
   },
   'run.errors': {
     title: 'Errors outside the tests',
-    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden. Collapse folds them to one line so the tab below, the Video tab’s video among them, keeps its height; this browser remembers the choice.',
     doc: 'reference/test-metadata#errors-outside-the-tests',
   },
   'run.externalIdDuplicates': {

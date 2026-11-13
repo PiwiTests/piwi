@@ -352,13 +352,16 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
   service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
+- the service that ran stopped (`Piwi: not running`, `PiwiProjectService.serviceStopped`): **Restart the editor
+  service**, then **Open log**; the tool window's header and the settings page say `Glue.NOT_RUNNING`;
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
 - while a run is live: each stop, as the choice among several names it, which goes to its line, then the run's controls
   ([Run control](#run-control)). The item reads `Piwi: stopped at a breakpoint · checkout.page.ts:12` (`Glue.stopWhy`)
   while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
   progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`), with no instance and with
-  the desktop app as the instance too. Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 ·
+  the desktop app as the instance too, an agent's run ending with its label (`RunSession.label`), as its Run tab
+  does (`Glue.labeledRunName`). Its tooltip says what each worker runs now (`Glue.workersNowText`: `Worker 2 ·
   cart › adds a mug · stopped`);
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
@@ -426,8 +429,9 @@ to run (`cmd.exe /c`, `/bin/sh -c`), never the IDE's Playwright runner's. The ta
 verdict, a job, a recording), `Piwi requests` for what waits for an answer (Debug in my editor, a run shared live, a
 shared browser), sticky, `Piwi suggestions` for an offer made once (the MCP server, the desktop app, the first run), as
 a suggestion, `Piwi problems` for what went wrong, and `Piwi confirmations` for what the person just did (Copied.,
-Connected to …, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an error as a problem, anything else,
-a refusal of the service included, as a result. An information carries Piwi's icon; a warning or an error keeps the
+Connected to …, the MCP configurations copied, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an
+error as a problem, anything else, a refusal of the service included, as a result; a message that the service does not
+run or did not answer is always a warning. An information carries Piwi's icon; a warning or an error keeps the
 platform's, which says how serious it is. D25 lists the five group ids, which users' notification settings name. A
 `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded` (`PiwiCommands.runEnded`,
 `Glue.runVerdict`), with **Open the failures**, **Open in dashboard**, and **Re-run failing** when something fails, or
@@ -783,7 +787,7 @@ The balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…** (`PiwiCo
 A trusted project with no Playwright config whose MSBuild project (a `.csproj`, `.fsproj`, `.vbproj` or
 `Directory.Build.props`, in the folders and repository the configs are searched in, `Glue.searchedFolders`) references
 Playwright for .NET (`Glue.holdsDotnetPlaywright`) hears once, per project (`piwi.dotnetPlaywrightNoted`), that Piwi
-reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a result balloon,
+reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, a suggestion,
 `PiwiProjectService.noteDotnetPlaywright`). A reference added later is heard once the project opens again.
 
 ## Recording
@@ -902,6 +906,11 @@ project's, read at each request from their discovery files (`Glue.liveHubs`, in 
 A request without the token is a 401; one whose token cannot be read, or whose folder cannot be read, a 500. How the
 service writes the files: [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor
 service's reference.
+
+**Which project.** The endpoint is the IDE's, so every project's runs name it. A locator with `at` goes to the project
+whose run made it (`Glue.pickProject`): the open project with a run stopped in the file `at` names under one of its
+config folders, else the one holding that file, the focused one first among several; else, and for anything else sent,
+the project focused last.
 
 **What it inserts.**
 
@@ -1114,8 +1123,10 @@ A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` w
 once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
 logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
 `Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Restart the editor service), and
-`Glue.SERVICE_NO_ANSWER` when the running service did not answer; `PiwiCommands.notify` adds **Restart the editor
-service** and **Open log** to a balloon that says either (`Glue.offersServiceFixes`).
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer, in a balloon and in the Paused page and Worker tabs
+alike; `PiwiCommands.notify` shows a balloon that says either as a warning, with **Restart the editor service** and
+**Open log** (`Glue.offersServiceFixes`). An action that needs an instance says `Glue.CONNECT_FIRST` with **Connect…**
+while none is connected.
 
 ## The log
 
@@ -1129,7 +1140,7 @@ channel does, its last `Glue.LOG_LINES` lines (`Glue.LogBuffer`):
   frames continue the line before them (`Glue.logLines`);
 - each end and its exit code (`watchServer`). The end of the latest process drops the pushed answers, without asking a
   service that is gone, and the tool window says the service stopped, with **Restart the editor service** and **Open
-  log** (`Glue.serviceDownText`), until a process starts again;
+  log** (`Glue.serviceDownText`), as the status bar item does (`Piwi: not running`), until a process starts again;
 - each failed request under its method, once a minute per method: `piwiServer()` hands out a proxy of the service
   (`PiwiLog.logged`) that watches every request's future, whoever waits for it.
 

@@ -37,7 +37,7 @@ const pgLikeDb = drizzleProxy(
         return TEXT_AGGREGATE.test(column) ? String(value) : value;
       }),
     );
-    return { rows: method === 'get' ? rows[0] : rows };
+    return { rows: method === 'get' ? (rows[0] as unknown[]) : rows };
   },
   { schema },
 );

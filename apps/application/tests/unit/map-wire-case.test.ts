@@ -19,7 +19,7 @@ const wireCase = {
   repeatEachIndex: 2,
   attempts: [{ retry: 0, status: 'failed', duration: 1100, startedAt: 1_700_000_000_000 }],
   steps: [{ title: 'click Pay', duration: 40 }],
-  stepEvents: [{ title: 'click', category: 'expect', startedAt: 1, duration: 2 }],
+  stepEvents: [{ title: 'click', category: 'expect' as const, startedAt: 1, duration: 2, status: 'passed' }],
   slowestStep: 'click Pay',
   slowestStepDuration: 40,
   wastedTimeMs: 900,

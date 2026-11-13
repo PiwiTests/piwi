@@ -1,15 +1,13 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page, Worker } from '@playwright/test';
 import { buildSession, normalizeSteps, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import { renderSpec, stepLocator } from '@piwitests/core/codegen';
 import { toStepsDocument } from '@piwitests/core/steps';
-import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
+import { test, expect, extensionWorker, openOptions, launchWithEditedManifest } from './fixtures.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 const ORIGIN = 'https://hover-test.local';
 
 /**
@@ -129,12 +127,7 @@ test.describe('hover reveals', () => {
 
   test.beforeAll(async () => {
     // A copy of the build granted the test origin: what the popup's per-origin request grants.
-    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-hover-'));
-    cpSync(DIST, dir, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-    manifest.host_permissions = [`${ORIGIN}/*`];
-    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-    context = await launchWithExtension(dir);
+    context = await launchWithEditedManifest((manifest) => ({ ...manifest, host_permissions: [`${ORIGIN}/*`] }));
     await routePages(context);
     worker = await extensionWorker(context);
   });

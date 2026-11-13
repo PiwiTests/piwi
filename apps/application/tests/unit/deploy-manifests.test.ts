@@ -2,7 +2,6 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-// @ts-expect-error — plain .mjs script, no types to import
 import { buildDeployManifests } from '../../scripts/generate-deploy-manifests.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');

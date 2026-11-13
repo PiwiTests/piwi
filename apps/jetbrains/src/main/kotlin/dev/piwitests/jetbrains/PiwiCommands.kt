@@ -285,12 +285,13 @@ object PiwiCommands {
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
-                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref) }.getOrDefault(false)
-                if (!started) run(project, cwd, line, env, ref)
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
+                    .getOrDefault(false)
+                if (!started) run(project, cwd, line, env, ref, command.label)
             }, project.disposed)
             return true
         }
-        run(project, cwd, line, env, command.ref)
+        run(project, cwd, line, env, command.ref, command.label)
         return true
     }
 
@@ -341,9 +342,10 @@ object PiwiCommands {
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
      * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
      * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included,
-     * once the process ended and the service heard so: the rerun's workers start a session of their own.
+     * once the process ended and the service heard so: the rerun's workers start a session of their own. Its tab says
+     * who started it when a person did not (`label`).
      */
-    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
+    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null, label: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
@@ -379,11 +381,11 @@ object PiwiCommands {
                     handler.destroyProcess()
                 } else {
                     RunContentExecutor(project, handler)
-                        .withTitle(Glue.runTabName(command))
+                        .withTitle(Glue.labeledRunName(Glue.runTabName(command), label))
                         .withFilter(RunOutputLinks(project, cwd))
                         .withActivateToolWindow(true)
                         .withRerun {
-                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref) }
+                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label) }
                             handler.destroyProcess()
                         }
                         .run()
@@ -395,11 +397,14 @@ object PiwiCommands {
     /**
      * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
      * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone. One
-     * saying the service does not run or did not answer offers Restart the editor service and Open log.
+     * saying the service does not run or did not answer is a warning, a problem, and offers Restart the editor service
+     * and Open log.
      */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
-        val notification = PiwiNotifier.create(PiwiNotifier.kindOf(type), StringUtil.escapeXmlEntities(message), type)
-        if (Glue.offersServiceFixes(message)) {
+        val fixes = Glue.offersServiceFixes(message)
+        val shown = if (fixes && type == NotificationType.INFORMATION) NotificationType.WARNING else type
+        val notification = PiwiNotifier.create(PiwiNotifier.kindOf(shown), StringUtil.escapeXmlEntities(message), shown)
+        if (fixes) {
             notification.addAction(
                 NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
                     project.service<PiwiProjectService>().restartService()
