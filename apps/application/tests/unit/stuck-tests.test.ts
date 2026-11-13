@@ -97,7 +97,7 @@ beforeEach(async () => {
       id: i + 1,
       projectId: 1,
       status: 'passed',
-      isFullRun: true,
+      isFullRun: 1,
       startTime: new Date(now - (i + 2) * 86_400_000),
     });
     await db.insert(schema.testRunsCases).values({
@@ -220,7 +220,7 @@ describe('the stuck check of a live run', () => {
   });
 
   test("leaves the running attempt as it is for a stop of the test's earlier attempt", async () => {
-    const data = begin({ retries: 1 });
+    const data: Record<string, unknown> = begin({ retries: 1 });
     runEventBus.recordRunningCase(LIVE_RUN, 'k', data);
     const of = { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:12:3', retries: 0 };
     const stop = { reason: 'pause', title: 'Click', file: null, line: null, bar: false, since: now, pausedMs: 0 };

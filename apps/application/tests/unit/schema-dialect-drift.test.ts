@@ -103,7 +103,7 @@ function normalizeTable(config: AnyTableConfig): TableShape {
   const indexes: Record<string, IndexShape> = {};
   for (const ix of config.indexes) {
     const cfg = ix.config;
-    indexes[cfg.name] = {
+    indexes[cfg.name!] = {
       unique: Boolean(cfg.unique),
       partial: Boolean(cfg.where),
       columns: cfg.columns.map((c: { name?: string }) => c.name ?? '<expression>'),

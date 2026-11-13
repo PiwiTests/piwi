@@ -712,3 +712,5 @@ export const test = base.extend<{ page: Page; piwiResourceCensus: void }, { piwi
 });
 
 export { expect };
+
+export type { APIRequestContext, Page } from '@playwright/test';

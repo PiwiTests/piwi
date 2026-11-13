@@ -120,7 +120,7 @@ describe('GET /api/projects/:id/branch-failures', () => {
   });
 
   test('another branch or baseline is another ETag', async () => {
-    const queries = [
+    const queries: Record<string, string>[] = [
       {},
       { branch: 'main' },
       { branch: 'feature/pay' },

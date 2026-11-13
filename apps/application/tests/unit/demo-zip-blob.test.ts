@@ -14,7 +14,7 @@ function toBlob(bytes: Buffer): Blob {
 describe('openZipBlob', () => {
   test('lists the same entries as the buffer reader, and reads them identically', async () => {
     const zip = buildBlobReport({
-      tests: [{ title: 'checkout works', attempts: [{ status: 'passed', duration: 12 }] }],
+      tests: [{ testId: 't', title: 'checkout works', attempts: [{ status: 'passed', duration: 12 }] }],
     });
 
     const archive = await openZipBlob(toBlob(zip));

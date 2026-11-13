@@ -118,7 +118,7 @@ describe('testCompletedData', () => {
       testAnnotations: [{ type: 'skip', description: ENDED_AT_STOP_REASON }],
     };
     const data = testCompletedData(ended, mapWireCaseToRunCase(ended), undefined);
-    expect(isEndedAtStop(data as Parameters<typeof isEndedAtStop>[0])).toBe(true);
+    expect(isEndedAtStop(data as unknown as Parameters<typeof isEndedAtStop>[0])).toBe(true);
     const plain: StreamEventPayload = { ...ended, testAnnotations: undefined };
     expect(testCompletedData(plain, mapWireCaseToRunCase(plain), undefined).testAnnotations).toBeNull();
   });

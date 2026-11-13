@@ -260,7 +260,7 @@ test.describe.serial('Failure clustering', () => {
     expect(loginGroup).toBeDefined();
     expect(loginGroup.clusterId).toBe(firstRunClusterId);
     expect(loginGroup.isNew).toBe(false);
-    expect(loginGroup.firstSeenRunId).toBeLessThanOrEqual(firstRunId);
+    expect(loginGroup.firstSeenRunId).toBeLessThanOrEqual(firstRunId!);
     expect(loginGroup.caseCount).toBe(1);
     expect(loginGroup.selector).toBe("getByTestId('login-button')");
 

@@ -877,7 +877,7 @@ test.describe('Desktop run live view', () => {
     // Turned off in the tray, the run ends; Run again starts it as it was left, with Hold failures off.
     await holdSwitch(page).click();
     await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
-    await page.evaluate(() => window.__endRun());
+    await page.evaluate(() => (window as unknown as { __endRun(): void }).__endRun());
     await expect(holdSwitch(page)).toHaveCount(0);
     await tray(page).getByRole('button', { name: 'Run again' }).first().click();
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
@@ -1990,7 +1990,7 @@ test.describe('Desktop run live view', () => {
     await page.evaluate(() => window.__printLine('  ✓  1 tests/checkout.spec.ts:3:1 › pays (1.0s)'));
     await expect(output.getByText('pays (1.0s)')).toBeVisible();
     await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
-    await page.evaluate(() => window.__endRun());
+    await page.evaluate(() => (window as unknown as { __endRun(): void }).__endRun());
     await expect(output.getByText('Passed', { exact: true })).toBeVisible();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
   });

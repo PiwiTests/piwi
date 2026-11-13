@@ -294,11 +294,12 @@ function runPlaywright(
   if (!extra.PIWI_EDITOR_SEND) delete env.PIWI_EDITOR_SEND;
   let output = '';
   let ended = false;
+  // Its own process group, so `stop` ends its workers and browsers with it: `execFile` hands `detached` to `spawn`.
+  const options = { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' };
   const child = execFile(
     process.execPath,
     [requireHere.resolve('@playwright/test/cli'), 'test', ...[spec].flat()],
-    // Its own process group, so `stop` ends its workers and browsers with it.
-    { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' },
+    options,
     () => {},
   );
   child.stdout?.on('data', (chunk) => (output += chunk));

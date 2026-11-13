@@ -171,7 +171,7 @@ async function failRun(
   const runId = nextRun++;
   await db
     .insert(schema.testRuns)
-    .values({ id: runId, projectId: 1, status: 'failed', isFullRun: true, startTime: new Date() });
+    .values({ id: runId, projectId: 1, status: 'failed', isFullRun: 1, startTime: new Date() });
   const testCaseIds: number[] = [];
   for (const execution of executions) {
     let testCaseId = execution.testCaseId;

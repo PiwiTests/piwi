@@ -386,7 +386,7 @@ describe('the Check and Test budget', () => {
         beforeRequest: async () => budget.abort(new DOMException('', 'TimeoutError')),
       },
     );
-    await expect(client.whoAmI()).rejects.toMatchObject({
+    await expect(client!.whoAmI()).rejects.toMatchObject({
       status: 504,
       message: expect.stringContaining('did not answer within 1 seconds'),
     });

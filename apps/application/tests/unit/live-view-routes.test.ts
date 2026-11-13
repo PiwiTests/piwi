@@ -227,7 +227,7 @@ describe('watching a worker', () => {
       success: true,
       watch: { focus: null, tiles: true, width: 900, height: 600, layers: [], inspect: false },
     });
-    let refused: { statusCode?: number; data?: Record<string, unknown> } | null = null;
+    let refused = null as { statusCode?: number; data?: Record<string, unknown> } | null;
     try {
       await change(at({ watch: id, focus: { worker: 4 }, tiles: false }));
     } catch (error) {
