@@ -12,6 +12,7 @@ import {
   RUN_SEARCH_FIELDS,
   testSearchHighlights,
   tokenizeTestSearch,
+  VIDEO_REEL_SEARCH_FIELDS,
   type TestSearchSubject,
 } from '#shared/test-search';
 
@@ -112,6 +113,21 @@ describe('compileTestSearch', () => {
 
   test('the catalog has no error text to look in', () => {
     expect(titles('timeout', CATALOG_SEARCH_FIELDS)).toEqual([]);
+  });
+
+  test('the checklist beside a run’s videos looks for a word in the title alone, case and accents ignored', () => {
+    expect(titles('CART', VIDEO_REEL_SEARCH_FIELDS)).toEqual(['cart shows items']);
+    expect(titles('hömé', VIDEO_REEL_SEARCH_FIELDS)).toEqual(['homepage loads']);
+    expect(titles('auth.spec', VIDEO_REEL_SEARCH_FIELDS)).toEqual([]);
+    expect(titles('authentication', VIDEO_REEL_SEARCH_FIELDS)).toEqual([]);
+    expect(titles('worker:2', VIDEO_REEL_SEARCH_FIELDS)).toEqual(['login via header']);
+    expect(titles('browser:chromium -login', VIDEO_REEL_SEARCH_FIELDS)).toEqual(['homepage loads']);
+    expect(testSearchHighlights(parseTestSearch('cart', VIDEO_REEL_SEARCH_FIELDS))).toEqual({
+      title: ['cart'],
+      describe: [],
+      file: [],
+      error: [],
+    });
   });
 
   test('every word must match, in any field', () => {

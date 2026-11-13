@@ -12,6 +12,9 @@ text of a test, and qualifiers in the style of GitHub search that look in one fi
 and the list marks what matched. `Ctrl` + `F` (`⌘` + `F` on macOS) jumps to the box; pressed again there, it opens the
 browser's own find.
 
+The checklist beside a run's [videos](/features/run-video#search-the-checklist) has the same box, without the shortcut:
+there a word looks in the test title alone, and the qualifiers are `title:`, `browser:`, `worker:` and `shard:`.
+
 ## Words and phrases
 
 A word matches the test title, its describe blocks or its file path, and, on a run's Tests tab, the error text too.
