@@ -645,6 +645,16 @@ object Glue {
     fun sameShape(a: List<FailureNode>, b: List<FailureNode>): Boolean =
         a.size == b.size && a.indices.all { a[it].key == b[it].key && sameShape(a[it].children, b[it].children) }
 
+    /** Whether a node of the failures tree is a run's `Flaky in this run` group, a context's or the only run's. */
+    fun isFlakyGroup(key: String): Boolean = key == "flaky" || key.endsWith("\nflaky")
+
+    /** How many flaky tests the failures tree lists, under each run's `Flaky in this run` group. */
+    fun flakyTestsListed(result: FailuresResult?): Int {
+        fun count(nodes: List<FailureTreeNode>): Int =
+            nodes.sumOf { node -> if (isFlakyGroup(node.key)) node.children.orEmpty().size else count(node.children.orEmpty()) }
+        return count(result?.tree.orEmpty())
+    }
+
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
 

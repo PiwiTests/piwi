@@ -142,6 +142,11 @@ describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
     '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
+  /** The links of a run with flaky tests: one more, to them. */
+  const FLAKY_LINKS = LINKS.replace(
+    ' · [Open in dashboard]',
+    ' · [Show the flaky tests](command:piwi.showFlakyTests) · [Open in dashboard]',
+  );
 
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
@@ -200,7 +205,7 @@ describe('statusBarView', () => {
   test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
-      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
+      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${FLAKY_LINKS}`,
       action: 'refresh',
       url: 'http://piwi/test-runs/41',
       liveUrl: null,
@@ -211,7 +216,7 @@ describe('statusBarView', () => {
   test('the tooltip names the reporter the project installs', () => {
     const withReporter: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: '0.47.0' }] };
     expect(statusBarView(connected, withReporter).tooltip).toBe(
-      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${LINKS}`,
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${FLAKY_LINKS}`,
     );
     const unknown: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: null }] };
     expect(statusBarView(connected, unknown).tooltip).not.toContain('reporter');
@@ -226,7 +231,7 @@ describe('statusBarView', () => {
       'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped',
       'Updated 12 s ago · live',
       FROM,
-      LINKS,
+      FLAKY_LINKS,
     ]);
     expect(statusBarView(connected, read('polling'), false, now).tooltip).toContain(
       '\n\nUpdated 12 s ago · read every minute\n\n',

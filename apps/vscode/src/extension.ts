@@ -1267,6 +1267,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await updateStatus();
     }),
     // A service the client gave up restarting, or one that does not answer, is stopped and started again.
+    // The run's flaky tests, from the status item's tooltip: the failures view with their group open.
+    vscode.commands.registerCommand('piwi.showFlakyTests', async () => {
+      if (!(await failuresView.revealFlaky()))
+        vscode.window.setStatusBarMessage('Piwi: no flaky test in the run', 4000);
+    }),
     vscode.commands.registerCommand('piwi.restartService', async () => {
       restarting = restarting
         .then(async () => {

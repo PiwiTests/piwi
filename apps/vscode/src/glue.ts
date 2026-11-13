@@ -118,6 +118,7 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.runOptions',
   'piwi.restartService',
   'piwi.openLog',
+  'piwi.showFlakyTests',
 ];
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -466,6 +467,7 @@ export function statusBarView(
     linksLine(
       liveLink(live),
       live?.runId === r.id ? null : `[Open run #${r.id}](command:piwi.openRun)`,
+      r.flakyTests ? `[Show the flaky tests](command:piwi.showFlakyTests)` : null,
       dashboard,
       compare,
       connect,

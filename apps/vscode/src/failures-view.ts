@@ -199,6 +199,22 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     return item;
   }
 
+  /** Shows the view with the run's `Flaky in this run` group selected and open; false when no run lists one. */
+  async revealFlaky(): Promise<boolean> {
+    const find = (nodes: FailureNode[]): FailureNode | undefined => {
+      for (const node of nodes) {
+        if (node.key === 'flaky' || node.key.endsWith('\nflaky')) return node;
+        const found = find(node.children);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const group = find(this.roots);
+    if (!group) return false;
+    await this.view.reveal(group, { select: true, focus: true, expand: true });
+    return true;
+  }
+
   getChildren(node?: FailureNode): FailureNode[] {
     return node ? node.children : this.roots;
   }

@@ -547,6 +547,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.showFlakyTests",
+        "title": "Show the run's flaky tests",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.showBrowser",
         "title": "Show the stopped test's browser",
         "icon": "$(browser)",

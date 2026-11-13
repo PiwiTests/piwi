@@ -235,7 +235,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             }
             val running = Glue.liveRun(service().status, service().runs, shownFile(project))?.takeIf { it.url != null }
             addAll(registered("Piwi.RerunFailing"))
-            addAll(registered("Piwi.OpenFailures"))
+            addAll(registered("Piwi.OpenFailures", "Piwi.ShowFlakyTests"))
             if (Glue.latestRunOffered(running, pages.map { (_, page) -> page.id })) addAll(registered("Piwi.OpenLatestRun"))
             addAll(registered("Piwi.CompareWith"))
             addSeparator()
@@ -342,6 +342,40 @@ class OpenFailuresAction : DumbAwareAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+    }
+}
+
+/**
+ * **Show the run's flaky tests**: the Piwi tool window with the run's `Flaky in this run` group selected and open;
+ * enabled while the tree lists a flaky test.
+ */
+class ShowFlakyTestsAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val listed = e.project?.service<PiwiProjectService>()?.failuresResult?.let { Glue.flakyTestsListed(it) } ?: 0
+        e.presentation.isEnabled = listed > 0
+        if (listed > 0) e.presentation.text = if (listed == 1) "Show the run's flaky test" else "Show the run's $listed flaky tests"
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val window = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID) ?: return
+        window.activate {
+            val tree = window.contentManager.contents.firstNotNullOfOrNull {
+                com.intellij.util.ui.UIUtil.findComponentOfType(it.component, com.intellij.ui.treeStructure.Tree::class.java)
+            } ?: return@activate
+            for (row in 0 until tree.rowCount) {
+                val path = tree.getPathForRow(row) ?: continue
+                val node = (path.lastPathComponent as? javax.swing.tree.DefaultMutableTreeNode)?.userObject as? Glue.FailureNode
+                if (node != null && Glue.isFlakyGroup(node.key)) {
+                    tree.expandPath(path)
+                    tree.selectionPath = path
+                    tree.scrollPathToVisible(path)
+                    return@activate
+                }
+            }
+        }
     }
 }
 
