@@ -52,7 +52,7 @@ async function seedCase(seed: CaseSeed): Promise<void> {
     testCaseId: inserted[0]!.id,
     repeatEachIndex: 1,
     status: 'passed',
-    duration: 300,
+    duration: 100,
     line: at.line + 500,
     column: 1,
     createdAt: new Date(now - ((at.daysAgo ?? 0) + 3) * DAY_MS),
@@ -234,13 +234,6 @@ describe('file order', () => {
     ]);
   });
 
-  test('gives each case its latest execution’s own duration beside the average', async () => {
-    const page = await getProjectTestCases(db, 1, { sort: 'file', dir: 'asc' });
-    const signsIn = page.items.find((item: any) => item.title === 'signs in');
-    expect([signsIn.lastDuration, signsIn.avgDuration]).toEqual([100, 200]);
-    expect(page.items.find((item: any) => item.title === 'legacy cart').lastDuration).toBeNull();
-  });
-
   test('descending reverses it and keeps a case with no position last', async () => {
     const page = await getProjectTestCases(db, 1, { sort: 'file', dir: 'desc' });
     expect(page.items.map((item: any) => item.title)).toEqual([
@@ -250,6 +243,42 @@ describe('file order', () => {
       'signs in',
       'shows the form',
     ]);
+  });
+});
+
+describe('the latest run’s duration', () => {
+  test('is its longest final attempt there, over retries and Playwright projects, not an older run’s', async () => {
+    await db.insert(schema.projects).values({ id: 3, name: 'duration-project' });
+    await db.insert(schema.testRuns).values([
+      { id: 12, projectId: 3, status: 'passed', startTime: new Date(now - DAY_MS) },
+      { id: 13, projectId: 3, status: 'passed', startTime: new Date(now) },
+    ]);
+    const [{ id }] = await db
+      .insert(schema.testCases)
+      .values({ projectId: 3, filePath: 'tests/pay.spec.ts', title: 'pays' })
+      .returning({ id: schema.testCases.id });
+    const at = new Date(now);
+    const row = { testCaseId: id!, line: 3, column: 1 };
+    await db.insert(schema.testRunsCases).values([
+      { ...row, testRunId: 12, status: 'passed', duration: 5000, createdAt: new Date(now - DAY_MS) },
+      // Stored in one batch: the same time on every row, the timed-out first attempt superseded by its retry.
+      {
+        ...row,
+        testRunId: 13,
+        browserName: 'chromium',
+        status: 'timedOut',
+        duration: 30_000,
+        retries: 0,
+        finalAttempt: false,
+        createdAt: at,
+      },
+      { ...row, testRunId: 13, browserName: 'chromium', status: 'passed', duration: 1200, retries: 1, createdAt: at },
+      { ...row, testRunId: 13, browserName: 'firefox', status: 'passed', duration: 1500, retries: 0, createdAt: at },
+    ]);
+    const page = await getProjectTestCases(db, 3, {});
+    expect(page.items.map((item: any) => [item.title, item.lastDuration])).toEqual([['pays', 1500]]);
+    const none = await getProjectTestCases(db, 1, { sort: 'file', dir: 'asc' });
+    expect(none.items.find((item: any) => item.title === 'legacy cart').lastDuration).toBeNull();
   });
 });
 

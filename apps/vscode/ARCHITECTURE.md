@@ -870,9 +870,9 @@ has no flaky result (`testOutcome` shows one as passed), so a flaky test's item 
 carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
 (`flakyMark`). Every known test's item also says its average duration and its quarantine beside its title, and carries
 its Playwright tags, `owner:<name>` and `quarantined` as tags, from `SpecTest`. A result is published with its own
-duration, the latest execution's (`SpecTest.resultDurationMs`). With the view off, a test with no recent result
-(`unknown`) has its own gutter icon, a dashed ring. The API `activate` returns gives what the view shows
-(`testExplorer`).
+duration (`SpecTest.resultDurationMs`): a failure's, else the longest final attempt of the catalog's latest run, none
+for a run in progress. With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed
+ring. The API `activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect
 

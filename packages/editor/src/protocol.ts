@@ -207,8 +207,9 @@ export interface SpecTest {
    */
   durationMs: number | null;
   /**
-   * Its latest result's own duration, in ms, from the execution the instance stored last; null for a test Piwi does not
-   * know, and from an instance that does not say it.
+   * The duration of the result `status` stands for, in ms: a failure's own, else the longest final attempt of the
+   * catalog's latest run; null for a test the run in progress runs, one a later run fixed, one Piwi does not know, and
+   * from an instance that does not say it.
    */
   resultDurationMs: number | null;
 }

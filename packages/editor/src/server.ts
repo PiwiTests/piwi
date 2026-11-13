@@ -3160,11 +3160,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     fixed?: BranchResolved;
     failure?: TestFailure;
     status: TestLineStatus | null;
+    /** The duration of the result `status` stands for, in ms; null for a run in progress or one Piwi does not say. */
+    duration: number | null;
   }> => {
     const { failingNow, fixedNow } = byCase(context.failures);
     return testCalls(lines).map((call) => {
       const found = caseOfCall(cases, call);
-      if (!found) return { call, status: null };
+      if (!found) return { call, status: null, duration: null };
       const failed = failingNow.get(found.id);
       const fixed = failed ? undefined : fixedNow.get(found.id);
       const at = failed ? pass.place(context, failed) : null;
@@ -3185,9 +3187,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             return !!site && site.state !== 'gone' && samePath(site.file, file) && site.line - 1 === line;
           }),
       };
-      const status =
-        context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
-      return { call, found, failed, fixed, failure, status };
+      const live = context.liveTests.get(found.id);
+      const status = live ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
+      // The failure's own, the catalog's latest run's for a result the catalog gives, none for a run in progress.
+      const duration = live ? null : failed ? (failed.duration ?? null) : fixed ? null : (found.lastDuration ?? null);
+      return { call, found, failed, fixed, failure, status, duration: duration === null ? null : Math.round(duration) };
     });
   };
 
@@ -3481,7 +3485,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (text === null) return;
       const uri = pathToFileURL(file).href;
       const tests = specTests(context, file, text.split(/\r?\n/), cases, pass).map(
-        ({ call, found, failure, status }) => ({
+        ({ call, found, failure, status, duration }) => ({
           title: call.title,
           suite: call.suite,
           line: call.line,
@@ -3495,7 +3499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           owner: found?.owner?.trim() || null,
           quarantined: found ? context.quarantined.has(found.id) : false,
           durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
-          resultDurationMs: typeof found?.lastDuration === 'number' ? Math.round(found.lastDuration) : null,
+          resultDurationMs: duration,
         }),
       );
       specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);

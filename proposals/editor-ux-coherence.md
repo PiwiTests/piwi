@@ -48,16 +48,17 @@ one table in the editor service (`connect-failures.json`), which VS Code reads a
 plugin's copy to, JetBrains gaining the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said
 (NF7). M6: the pause bar every headed stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20: VS
 Code's Testing view shows each test's average duration, quarantine, Playwright tags and owner, from the catalog through
-`SpecTest`, and publishes each result with its own duration, the latest execution's (TL20). §14 adds the findings the
-code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to
-P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this
-document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model,
-its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). A pull request that builds a step removes its row and the findings it
-fixes, and names it in this paragraph; the one that ships the last step moves the document to `adr/`.
+`SpecTest`, and publishes each result with its own duration, a failure's or its latest run's (TL20). §14 adds the
+findings the code that built the plan raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to
+P6 and P8 to P10, each but for leftovers its Status names, and part of P7 and P11, and §8 names what the editors still
+lack; this document owns where each editor hosts a run and the debug-session question ([LI10](#li10)), the study the
+live model, its words and its phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not
+restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). A pull request that
+builds a step removes its row and the findings it fixes, and names it in this paragraph; the one that ships the last
+step moves the document to `adr/`.
 
 **Summary.**
 

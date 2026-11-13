@@ -68,7 +68,7 @@ import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
-import { latestRunStatusSql } from './latest-run-status';
+import { latestRunDurationSql, latestRunStatusSql } from './latest-run-status';
 import { clusterIssueChips } from './known-issues';
 import { projectHealth } from '../project-health';
 import { deleteProjectStarsOn } from './project-stars';
@@ -1113,10 +1113,7 @@ function executionInProject(projectId: number, scopeConditions: SQL[] | null): S
 }
 
 /** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
-function latestExecutionColumn(
-  projectId: number,
-  column: typeof testRunsCases.line | typeof testRunsCases.column | typeof testRunsCases.duration,
-) {
+function latestExecutionColumn(projectId: number, column: typeof testRunsCases.line | typeof testRunsCases.column) {
   return sql<number | null>`(
       SELECT ${column}
       FROM ${testRunsCases}
@@ -1184,6 +1181,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const recentFlaky = recentFlakySql(testCases.id, inPeriod ? and(realExecution, inPeriod)! : realExecution);
   // The latest run's status: failed when one of the test's repetitions failed there.
   const lastStatus = latestRunStatusSql(realExecution);
+  // How long it took in that run, which an editor shows with that result.
+  const lastDuration = latestRunDurationSql(realExecution);
   const category = sql<string>`CASE
       WHEN ${recentFlaky} > 0 THEN 'flaky'
       WHEN ${lastStatus} IN ('timedOut', 'timedout') THEN 'failed'
@@ -1238,8 +1237,6 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   // Where the test sits in its file, as its latest execution reported it.
   const line = latestExecutionColumn(projectId, testRunsCases.line);
   const column = latestExecutionColumn(projectId, testRunsCases.column);
-  // Its latest result's own duration, which an editor shows with that result.
-  const lastDuration = latestExecutionColumn(projectId, testRunsCases.duration);
 
   // Each sort is a list of keys; `file` is the order the tests are declared in,
   // file by file, which is the order Playwright lists and runs them.

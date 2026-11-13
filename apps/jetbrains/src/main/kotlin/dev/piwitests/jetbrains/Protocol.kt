@@ -98,7 +98,7 @@ data class SpecTest(
     val owner: String? = null,
     val quarantined: Boolean = false,
     val durationMs: Long? = null,
-    /** Its latest result's own duration, in ms; null for a test Piwi does not know. */
+    /** The duration of the result `status` stands for, in ms (`SpecTest.resultDurationMs`). */
     val resultDurationMs: Long? = null,
 )
 

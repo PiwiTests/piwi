@@ -175,6 +175,7 @@ const ROW_FAILURE = {
   frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
   traces: ['traces/900.zip'],
   screenshot: 'shots/900.png',
+  duration: 5012,
 };
 
 /** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
@@ -405,6 +406,7 @@ beforeAll(async () => {
               status: 'failed',
               totalRuns: 9,
               passedRuns: 6,
+              lastDuration: 777,
             },
           ],
         }),
@@ -1110,7 +1112,7 @@ describe('the Piwi language server', () => {
           clusterTitle: null,
           owner: null,
           isNew: false,
-          duration: null,
+          duration: 5012,
           hasScreenshot: true,
         },
       ],
@@ -1733,6 +1735,8 @@ describe('the test tree', () => {
                   testCaseId: 3,
                   status: 'failed',
                   failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+                  // The failure's own duration, not the catalog's run's.
+                  resultDurationMs: 5012,
                 }),
               ],
             },
