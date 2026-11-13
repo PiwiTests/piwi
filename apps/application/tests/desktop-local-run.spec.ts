@@ -346,10 +346,13 @@ test.describe('Desktop local run', () => {
     await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
     await tray(page).getByRole('button', { name: 'Force stop' }).click();
 
-    const stops = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
-    );
-    expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
+        ),
+      )
+      .toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
   test("the tray's Stop stops the run as its own Stop does", async ({ page }) => {
