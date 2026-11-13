@@ -173,21 +173,21 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.OpenRunPage")).isEnabled)
     }
 
-    /**
-     * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
-     * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.
-     */
     fun testEveryIconKeyOfTheFailuresTreeHasItsGlyph() {
         // The keys the editor service sends (`FailureTreeIcon`), each drawn, and none drawn that it never sends.
         val protocol = java.io.File("../../packages/editor/src/protocol.ts").readText()
         val union = Regex("export type FailureTreeIcon =([^;]+);").find(protocol)!!.groupValues[1]
         val keys = Regex("'([a-z-]+)'").findAll(union).map { it.groupValues[1] }.toSet()
         assertEquals(keys, PiwiIcons.FAILURE_NODES.keys)
-        // The groupings draw what they group, not folders.
+        // Each grouping draws what it groups: a cluster, a person, a file, never a folder.
         assertSame(PiwiIcons.CLUSTER, PiwiIcons.FAILURE_NODES["cluster"])
         assertFalse(listOf("file", "cluster", "owner").any { PiwiIcons.FAILURE_NODES[it] == AllIcons.Nodes.Folder })
     }
 
+    /**
+     * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
+     * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.
+     */
     fun testEveryActionsTextIsInSentenceCase() {
         val actions = ActionManager.getInstance()
         val proper = listOf("Piwi Picker", "Claude Code", "Flake Lab", "Piwi", "Playwright", "MCP", "Cursor", "Node.js", "CI", "Rider", "I")

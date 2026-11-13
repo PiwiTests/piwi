@@ -1752,7 +1752,7 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(ended)).toEqual({
       severity: 'warning',
       text: 'Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
-      actions: ['Open the failures', 'Open in dashboard', 'Re-run failing', 'Notification settings'],
+      actions: ['Open the failures', 'Open in dashboard', 'Re-run failing', 'Settings'],
     });
   });
 
@@ -1774,7 +1774,7 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(passing)).toEqual({
       severity: 'information',
       text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
-      actions: ['Open the failures', 'Open in dashboard', 'Only on failure', 'Notification settings'],
+      actions: ['Open the failures', 'Open in dashboard', 'Only on failure', 'Settings'],
     });
     // A failing run is shown whatever the choice, so it offers none.
     expect(runVerdict(ended)?.actions).not.toContain('Only on failure');
@@ -1800,7 +1800,7 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } }, 'never')).toEqual({
       severity: 'warning',
       text: 'Piwi: run #124 · Failed 1 of 3',
-      actions: ['Open the failures', 'Open in dashboard', 'Notification settings'],
+      actions: ['Open the failures', 'Open in dashboard'],
     });
     const passed = { ...ended, failed: 0, repeat: { verdict: 'Passed 3 of 3', failed: false } };
     expect(runVerdict(passed, 'failures')).toMatchObject({

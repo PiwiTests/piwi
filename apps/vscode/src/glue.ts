@@ -849,7 +849,7 @@ export const VERDICT_ACTIONS = {
   dashboard: 'Open in dashboard',
   rerun: 'Re-run failing',
   onlyOnFailure: 'Only on failure',
-  settings: 'Notification settings',
+  settings: 'Settings',
 } as const;
 
 /** Titles as a verdict lists them: the first ones, then how many more. */
@@ -862,7 +862,7 @@ function titleList(titles: string[], count: number): string {
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
  * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`; each
- * last with **Notification settings**, which opens `piwi.runNotifications`.
+ * last with **Settings**, which opens `piwi.runNotifications`.
  * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
  * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
@@ -875,7 +875,7 @@ export function runVerdict(
     return {
       severity: failed ? 'warning' : 'information',
       text: `Piwi: run #${ended.runId} · ${verdict}`,
-      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard, VERDICT_ACTIONS.settings],
+      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard],
     };
   }
   const still = ended.stillFailingCount ?? ended.stillFailing.length;
