@@ -1,12 +1,10 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { BUG_REPORT_VERSION, emptyBugEvidence, parseBugReport, type BugReport } from '@piwitests/core/bug-report';
-import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
+import { test, expect, extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { stubChromeStorage } from './recording-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 import { openShadowRoots } from './shadow.js';
@@ -311,13 +309,10 @@ test.describe('Send to Piwi, in the real extension', () => {
   test('the worker sends the confirmed report to the project the tab maps to, and lists its reports for Replay', async () => {
     // A copy of the build whose manifest grants the shop and the instance: the
     // grants the popup and the settings page request in a click, which a test cannot make.
-    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-send-'));
-    cpSync(DIST, dir, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-    manifest.host_permissions = [`${SHOP_ORIGIN}/*`, `${instance}/*`];
-    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-
-    const context = await launchWithExtension(dir);
+    const context = await launchWithEditedManifest((manifest) => ({
+      ...manifest,
+      host_permissions: [`${SHOP_ORIGIN}/*`, `${instance}/*`],
+    }));
     try {
       await routeShop(context, { fixed: false });
       const worker = await extensionWorker(context);

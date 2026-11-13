@@ -1,7 +1,7 @@
 import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +64,29 @@ export async function launchWithExtension(
     return removedOnClose(await launchContext(extensionPath, userDataDir, opts), userDataDir);
   } catch (error) {
     rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** The built extension's `manifest.json`, as a spec reads and rewrites it. */
+export type ExtensionManifest = Record<string, unknown> & { permissions: string[]; host_permissions?: string[] };
+
+/**
+ * Launches a copy of the built extension whose manifest `edit` rewrote (the grants or permissions a spec needs). The
+ * copy is removed once the context closes.
+ */
+export async function launchWithEditedManifest(
+  edit: (manifest: ExtensionManifest) => ExtensionManifest,
+  opts: Parameters<typeof launchWithExtension>[1] = {},
+): Promise<BrowserContext> {
+  const extension = mkdtempSync(path.join(tmpdir(), 'piwi-picker-ext-'));
+  try {
+    cpSync(EXTENSION_PATH, extension, { recursive: true });
+    const manifestPath = path.join(extension, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(edit(JSON.parse(readFileSync(manifestPath, 'utf8')))));
+    return removedOnClose(await launchWithExtension(extension, opts), extension);
+  } catch (error) {
+    rmSync(extension, { recursive: true, force: true });
     throw error;
   }
 }

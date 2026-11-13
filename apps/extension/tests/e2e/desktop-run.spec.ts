@@ -1,15 +1,8 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
-import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
+import { test, expect, extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
 
 const STEPS = {
   v: 1,
@@ -84,13 +77,10 @@ test.describe('Run with Playwright, in the real extension', () => {
 
   test('sends the steps as JSON with the token, and reads the verdict back', async () => {
     // The grants the options page requests in a click, which a test cannot make.
-    const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-desktop-'));
-    cpSync(DIST, dir, { recursive: true });
-    const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-    manifest.host_permissions = [`${SHOP_ORIGIN}/*`, `${desktop}/*`];
-    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
-
-    const context = await launchWithExtension(dir);
+    const context = await launchWithEditedManifest((manifest) => ({
+      ...manifest,
+      host_permissions: [`${SHOP_ORIGIN}/*`, `${desktop}/*`],
+    }));
     try {
       await routeShop(context, { fixed: false });
       const worker = await extensionWorker(context);
