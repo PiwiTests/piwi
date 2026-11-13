@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { WireRunError } from '#shared/types';
-import { RUN_ERRORS_COLLAPSED_KEY, runErrorHeadline } from '~/utils/run-errors';
+import { RUN_ERRORS_COLLAPSED_COOKIE, runErrorHeadline } from '~/utils/run-errors';
 
 /**
  * The run header's errors outside any test, as Playwright reported them beside the tests: a global setup that threw,
@@ -10,7 +10,8 @@ import { RUN_ERRORS_COLLAPSED_KEY, runErrorHeadline } from '~/utils/run-errors';
  *
  * The block can be folded to one line, the title and the first error's first line, so a long stack does not take the
  * height the tab below needs (the Video tab fits its video to what is left). The fold is kept per browser and starts
- * unfolded, so an error is never hidden from someone who has not chosen to hide it.
+ * unfolded, so an error is never hidden from someone who has not chosen to hide it. The choice lives in a cookie, read
+ * on the server too, so a page loads already folded and the header does not move under the tab once it is mounted.
  */
 const props = defineProps<{
   errors: WireRunError[];
@@ -24,7 +25,19 @@ const SHOWN = 2;
 const showAll = ref(false);
 const shown = computed(() => (showAll.value ? props.errors : props.errors.slice(0, SHOWN)));
 
-const collapsed = useLocalStorage(RUN_ERRORS_COLLAPSED_KEY, false, { initOnMounted: true });
+const ONE_YEAR_S = 60 * 60 * 24 * 365;
+/** `true` once the block is folded; unfolding deletes the cookie again. */
+const collapsedCookie = useCookie<true | null>(RUN_ERRORS_COLLAPSED_COOKIE, {
+  default: () => null,
+  maxAge: ONE_YEAR_S,
+  sameSite: 'lax',
+});
+const collapsed = computed({
+  get: () => collapsedCookie.value === true,
+  set: (value: boolean) => {
+    collapsedCookie.value = value ? true : null;
+  },
+});
 const headline = computed(() => runErrorHeadline(props.errors));
 const listId = useId();
 const title = computed(() =>

@@ -7,7 +7,7 @@ import { retryPost, waitForHydration } from './utils';
 /**
  * The run header's errors outside the tests fold to one line, so the Video tab's video takes back the height a long
  * stack took: the page still does not scroll, the full message comes back with Expand, and the browser keeps the
- * choice across a reload.
+ * choice across a reload, a page that loads already folded and does not move once it is mounted.
  */
 
 const SIZES = [
@@ -19,6 +19,7 @@ const SIZES = [
 /** A video of 3.5 s, longer than the 3 s each test lasts. */
 const VIDEO = readFileSync(join(process.cwd(), 'public/demo/videos/checkout-pay-timeout.webm'));
 const TITLES = ['opens the cart', 'fills the card', 'places the order'];
+const COOKIE = 'piwi-run-errors-collapsed';
 const MESSAGE = 'Error: ENOSPC: no space left on device, write';
 /** A stack long enough to fill the error's framed box, with placeholder paths only. */
 const STACK = Array.from(
@@ -121,12 +122,7 @@ test.describe('Run errors collapse', () => {
     test.describe(`${size.width}x${size.height}`, () => {
       test.beforeEach(async ({ page }) => {
         // Every test starts from a browser that has not chosen yet.
-        await page.addInitScript(() => {
-          if (!sessionStorage.getItem('run-errors-collapse-seeded')) {
-            localStorage.removeItem('piwi-run-errors-collapsed');
-            sessionStorage.setItem('run-errors-collapse-seeded', '1');
-          }
-        });
+        await page.context().clearCookies({ name: COOKIE });
       });
 
       test('Collapse folds the block to one line and gives its height to the video', async ({ page }) => {
@@ -207,4 +203,44 @@ test.describe('Run errors collapse', () => {
       });
     });
   }
+
+  test('a page loads already folded once Collapse was chosen, and keeps its height through hydration', async ({
+    page,
+  }) => {
+    // Two page loads, each waiting for the reel.
+    test.slow();
+    await page.context().clearCookies({ name: COOKIE });
+    const url = `/test-runs/${runId}?tab=video`;
+
+    // A browser that has not chosen gets no cookie, and the server renders the block open.
+    const unchosen = await page.request.get(url);
+    expect(unchosen.ok()).toBeTruthy();
+    expect(unchosen.headers()['set-cookie'] ?? '').not.toContain(COOKIE);
+    expect(await unchosen.text()).not.toContain('data-testid="run-errors-headline"');
+
+    await openVideoTab(page, SIZES[0]);
+    await toggle(page, 'Collapse').click();
+    await expect(page.getByTestId('run-errors-headline')).toBeVisible();
+    expect((await page.context().cookies()).find((cookie) => cookie.name === COOKIE)?.value).toBe('true');
+
+    // The server reads the choice, so the page it sends is folded already.
+    expect(await (await page.request.get(url)).text()).toContain('data-testid="run-errors-headline"');
+
+    // Every frame from the block's first paint: its height never changes as the page mounts.
+    await page.addInitScript(() => {
+      const heights: number[] = [];
+      (window as unknown as { runErrorsHeights: number[] }).runErrorsHeights = heights;
+      const frame = () => {
+        const el = document.querySelector('[data-shot="run-errors"]');
+        if (el) heights.push(el.getBoundingClientRect().height);
+        if (heights.length < 600) requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+    await openVideoTab(page, SIZES[0]);
+    await expect(toggle(page, 'Expand')).toBeVisible();
+    const heights = await page.evaluate(() => (window as unknown as { runErrorsHeights: number[] }).runErrorsHeights);
+    expect(heights.length).toBeGreaterThan(0);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1);
+  });
 });

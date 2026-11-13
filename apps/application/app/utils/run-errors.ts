@@ -1,7 +1,7 @@
 import { stripAnsi } from '#shared/error-fingerprint';
 
-/** Where the run page keeps, per browser, whether the errors outside the tests are folded to one line. */
-export const RUN_ERRORS_COLLAPSED_KEY = 'piwi-run-errors-collapsed';
+/** The cookie that keeps, per browser, whether the run page's errors outside the tests are folded to one line. */
+export const RUN_ERRORS_COLLAPSED_COOKIE = 'piwi-run-errors-collapsed';
 
 /**
  * The one line the run page shows for its errors outside the tests while they are folded: the first line of the first
