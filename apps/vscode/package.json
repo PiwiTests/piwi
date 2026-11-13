@@ -76,6 +76,20 @@
           "fontPath": "media/piwi-icons.woff",
           "fontCharacter": "\\E003"
         }
+      },
+      "piwi-reload": {
+        "description": "Reload Piwi: read the instance and the configs again",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E004"
+        }
+      },
+      "piwi-run-to-cursor": {
+        "description": "Run to the cursor",
+        "default": {
+          "fontPath": "media/piwi-icons.woff",
+          "fontCharacter": "\\E005"
+        }
       }
     },
     "viewsContainers": {
@@ -248,6 +262,7 @@
       {
         "command": "piwi.refresh",
         "title": "Reload Piwi",
+        "icon": "$(piwi-reload)",
         "category": "Piwi"
       },
       {
@@ -505,6 +520,7 @@
       {
         "command": "piwi.runToCursor",
         "title": "Run to the cursor",
+        "icon": "$(piwi-run-to-cursor)",
         "category": "Piwi"
       },
       {
