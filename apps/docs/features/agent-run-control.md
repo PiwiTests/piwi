@@ -44,7 +44,7 @@ or Cursor** (an `http` entry, the token as a bearer header) or **…for Agents**
 
 **The configuration holds the token.** Keep it in your user settings, never in a file of the repository such as a
 project's `.mcp.json`: whoever reads it can drive your runs while the editor is open. **Reset the token** (**Piwi:
-Reset the runs' MCP server token**; **Tools → Piwi → Reset the Runs' MCP Server Token**) gives the server a new one:
+Reset the runs' MCP server token**; **Tools → Piwi → Reset the runs' MCP server token**) gives the server a new one:
 an agent with the old one is refused until you copy the configuration again. `piwi.serveRunsToAgents` in VS Code, and
 **Settings → Tools → Piwi** in a JetBrains IDE, turn the server off.
 

@@ -171,10 +171,10 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     /**
      * The popup's actions: while a run started here is live, each stop, named as the choice among several names it,
      * which goes to its line, and the run's controls; while a run is shared live, the share's own entries
-     * (`Glue.liveMenu`: the run page, its link, Stop Sharing…), first while the item shows the share; then what the
+     * (`Glue.liveMenu`: the run page, its link, Stop sharing…), first while the item shows the share; then what the
      * item's state calls for
      * (going to the recorded lines while a recording runs, with its controls), then the failing tests, the failures, the
-     * dashboard and the baseline, the test at the caret and Record Here, then Refresh, Connect and the settings. The
+     * dashboard and the baseline, the test at the caret and Record here, then Refresh, Connect and the settings. The
      * registered actions keep their own logic, and the popup leaves out those that do not apply.
      */
     fun actions(): ActionGroup {
@@ -302,8 +302,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         override fun actionPerformed(e: AnActionEvent) = service().openNodeSettings()
     }
 
-    /** **Go to the Recorded Lines**: the block the recording in progress writes. */
-    private inner class GoToRecordingAction : DumbAwareAction("Go to the Recorded Lines", null, AllIcons.Actions.EditSource) {
+    /** **Go to the recorded lines**: the block the recording in progress writes. */
+    private inner class GoToRecordingAction : DumbAwareAction("Go to the recorded lines", null, AllIcons.Actions.EditSource) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun actionPerformed(e: AnActionEvent) {
@@ -329,8 +329,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 /** Piwi's icon, the tool window's. */
 private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiStatusBarWidget::class.java)
 
-/** **Open the Failures**: the Piwi tool window, as a run's notification opens it. */
-private class OpenFailuresAction : DumbAwareAction("Open the Failures", null, PIWI_ICON) {
+/** **Open the failures**: the Piwi tool window, as a run's notification opens it. */
+private class OpenFailuresAction : DumbAwareAction("Open the failures", null, PIWI_ICON) {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {

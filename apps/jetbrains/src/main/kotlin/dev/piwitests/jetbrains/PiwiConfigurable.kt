@@ -97,7 +97,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     disconnectButton = button("Disconnect") { disconnect() }.component
                 }
             }
-            group("Piwi Desktop App") {
+            group("Piwi desktop app") {
                 row {
                     desktopState = text("").component
                 }
@@ -140,7 +140,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
                         .comment(
                             "A run with a breakpoint in a test or page object pauses before the action on that line, " +
-                                "headless unless Run Headed is on: its page shows in the Paused Page tab. Needs " +
+                                "headless unless Run headed is on: its page shows in the Paused page tab. Needs " +
                                 "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
                                 "older reporter, or one whose version Piwi cannot read, the run starts headed. " +
                                 "Kept for you only, in .idea/workspace.xml",
@@ -152,7 +152,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment(
                             "A verification too. Otherwise a run is headless but for a spec with a page.pause(), and " +
                                 "for a run with breakpoints when @piwitests/reporter is older than 0.62.0. " +
-                                "Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
+                                "Tools → Piwi → Run headed. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {
@@ -163,7 +163,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                             { local.runHoldFailures = it ?: "auto" },
                         )
                         .comment(
-                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold Failures " +
+                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold failures " +
                                 "still turns it on or off while it runs. Kept for you only, in .idea/workspace.xml",
                         )
                 }
@@ -187,7 +187,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .label("Piwi's MCP server signs the agent in with:", LabelPosition.TOP)
                         .bindItem({ local.mcpAuthorization }, { local.mcpAuthorization = it ?: "key" })
                         .comment(
-                            "As Copy the MCP Server Configuration writes it. The browser gives the agent a token of its own, " +
+                            "As Copy the MCP server configuration writes it. The browser gives the agent a token of its own, " +
                                 "which Settings → Account → API keys on the instance lists and revokes; the desktop app takes " +
                                 "its own token either way. Kept for you only, in .idea/workspace.xml",
                         )

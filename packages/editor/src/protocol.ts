@@ -147,7 +147,7 @@ export interface TestAtResult {
   /**
    * The spec's tests: those Piwi knows (`testIds`), and the spec as a location without a line (`location`, relative to
    * the Playwright config's folder, as `RunTestsArgs.locations` takes it), which runs every test of the file as saved,
-   * known to Piwi or not, generated ones included: Run This Spec and the spec's lens run it. Null for a file that is not
+   * known to Piwi or not, generated ones included: Run this spec and the spec's lens run it. Null for a file that is not
    * a spec under a Playwright config's folder.
    */
   spec: { uri: string; testIds: number[]; location: string } | null;

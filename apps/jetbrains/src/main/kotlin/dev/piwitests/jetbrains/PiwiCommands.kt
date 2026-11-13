@@ -143,7 +143,7 @@ object PiwiCommands {
 
     /**
      * Say what a run started from the IDE changed, as **Settings → Tools → Piwi** allows, with the failures, the run's
-     * page and **Re-run Failing** one click away.
+     * page and **Re-run failing** one click away.
      */
     fun runEnded(project: Project, ended: RunEnded) {
         val setting = project.service<PiwiProjectService>().local().runNotifications
@@ -174,8 +174,8 @@ object PiwiCommands {
 
     /**
      * Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows, and
-     * started as the person chose for every run of the project (`Glue.withRunStart`: Run Headed, Hold Failures from
-     * Each Run's Start). With `quiet`, a command the service does not build is not said: the service says why it builds
+     * started as the person chose for every run of the project (`Glue.withRunStart`: Run headed, Hold failures from
+     * each run's start). With `quiet`, a command the service does not build is not said: the service says why it builds
      * no debug run.
      */
     fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
@@ -394,7 +394,7 @@ object PiwiCommands {
     /**
      * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
      * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone. One
-     * saying the service does not run or did not answer offers Restart the Editor Service and Open Log.
+     * saying the service does not run or did not answer offers Restart the editor service and Open log.
      */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
         val notification = PiwiNotifier.create(PiwiNotifier.kindOf(type), StringUtil.escapeXmlEntities(message), type)

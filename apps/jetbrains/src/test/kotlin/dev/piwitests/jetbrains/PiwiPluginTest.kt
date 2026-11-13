@@ -130,6 +130,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
     }
 
+    /** Every action's text is in sentence case, as the VS Code extension's: a capital only first or in a proper noun. */
+    fun testEveryActionsTextIsInSentenceCase() {
+        val actions = ActionManager.getInstance()
+        val proper = setOf("Piwi", "Picker", "Playwright", "MCP", "Claude", "Code", "Cursor", "Node.js", "CI", "I")
+        for (id in actions.getActionIdList("Piwi.")) {
+            val text = actions.getAction(id).templatePresentation.text ?: continue
+            val words = text.removePrefix("Piwi: ").split(' ').drop(1)
+            val capitals = words.filter { it.firstOrNull()?.isUpperCase() == true && it.trimEnd('…', '?') !in proper }
+            assertTrue("$id: $text", capitals.isEmpty())
+        }
+    }
+
     /**
      * The Log tab shows the lines written before it opened, then each line as it is written, a failed request under its
      * method once a minute; closed, it opens again with them all.
@@ -507,7 +519,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            assertEquals(listOf("Connect…", "Open the failures", "Learn more"), shown.single().actions.map { it.templateText })
             // Each kind has its group, the requests' sticky, a confirmation fading on its own.
             val groups = com.intellij.notification.NotificationGroupManager.getInstance()
             assertEquals(
@@ -567,8 +579,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * The actions that read the instance are enabled only while a context is connected; Open in Dashboard also on the
-     * page of what the tool window has selected, and Re-run the Failing Tests while failures are listed.
+     * The actions that read the instance are enabled only while a context is connected; Open in dashboard also on the
+     * page of what the tool window has selected, and Re-run the failing tests while failures are listed.
      */
     fun testTheActionsThatReadTheInstanceWaitForAConnection() {
         val actions = ActionManager.getInstance()
@@ -593,7 +605,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
     }
 
-    /** Run Headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
+    /** Run headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
     fun testRunHeadedIsKeptForEveryRunOfTheProject() {
         val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
             .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
@@ -726,7 +738,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(
                 listOf(
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
-                    "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
+                    "Piwi.RerunFailing", "Open the failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
                 ),

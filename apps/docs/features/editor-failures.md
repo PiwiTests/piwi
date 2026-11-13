@@ -85,7 +85,7 @@ the progress of the run you started (`running 4/9`). Under it:
 - **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
   opens one in the dashboard.
 - The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
-  **Group by…** in the view's title bar, **Group By** in the tool window's toolbar. The choice is kept for the
+  **Group by…** in the view's title bar, **Group by** in the tool window's toolbar. The choice is kept for the
   workspace, and each group counts its failures.
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
@@ -118,7 +118,7 @@ again on its own too); a desktop app to restart or update; an instance still bei
 ## Compare with another run
 
 By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:
-Compare with…** (**Tools → Piwi → Compare With…** in a JetBrains IDE, and the failures view's title bar) chooses another
+Compare with…** (**Tools → Piwi → Compare with…** in a JetBrains IDE, and the failures view's title bar) chooses another
 run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
 machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
 failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need

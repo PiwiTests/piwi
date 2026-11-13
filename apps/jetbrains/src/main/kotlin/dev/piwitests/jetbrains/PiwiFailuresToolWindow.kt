@@ -56,9 +56,9 @@ import javax.swing.tree.TreePath
  * run. Each failure is at its line as the edits since the run left it, and the tree follows the edits
  * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line, where
  * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
- * config's (Re-run the Failing Tests, Compare With…, Open in Dashboard, for that config); Next and Previous Occurrence
+ * config's (Re-run the failing tests, Compare with…, Open in dashboard, for that config); Next and Previous Occurrence
  * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
- * run, and in the toolbar Refresh the Latest Run, Re-run the Failing Tests, Open in Dashboard, Compare With…, the Group
+ * run, and in the toolbar Refresh the latest run, Re-run the failing tests, Open in dashboard, Compare with…, the Group
  * By menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
  * configurations, Refresh and the settings are in the gear menu. The tab is Failures, and the tool window's icon has a
  * red dot while tests fail.
@@ -250,7 +250,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
      */
     private class FailuresPanel(private val project: Project, private val tree: JTree) :
         SimpleToolWindowPanel(true, true), OccurenceNavigator {
-        /** The selected node's dashboard page, for Open in Dashboard. */
+        /** The selected node's dashboard page, for Open in dashboard. */
         override fun getData(dataId: String): Any? =
             if (DASHBOARD_URL.`is`(dataId)) nodeOf(tree.lastSelectedPathComponent)?.url else super.getData(dataId)
 
@@ -286,16 +286,16 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
 
         override fun goPreviousOccurence(): OccurenceNavigator.OccurenceInfo? = go(-1)
 
-        override fun getNextOccurenceActionName(): String = "Next Failure"
+        override fun getNextOccurenceActionName(): String = "Next failure"
 
-        override fun getPreviousOccurenceActionName(): String = "Previous Failure"
+        override fun getPreviousOccurenceActionName(): String = "Previous failure"
 
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
     }
 
-    /** **Group By**: the toolbar's one drop-down of the groupings, one of them checked. */
+    /** **Group by**: the toolbar's one drop-down of the groupings, one of them checked. */
     private fun groupByMenu(service: PiwiProjectService): DefaultActionGroup =
-        DefaultActionGroup("Group By", true).apply {
+        DefaultActionGroup("Group by", true).apply {
             templatePresentation.icon = AllIcons.Actions.ShowAsTree
             templatePresentation.description = "Group the failures by file, cluster or owner, or list them flat"
             add(GroupFailuresAction(service, "file", "File"))
@@ -320,7 +320,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
     }
 
-    /** One way to group the failures, in the Group By menu: selecting it keeps it for this project and reads them so grouped. */
+    /** One way to group the failures, in the Group by menu: selecting it keeps it for this project and reads them so grouped. */
     private class GroupFailuresAction(
         private val service: PiwiProjectService,
         private val grouping: String,
@@ -388,30 +388,30 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
         val failingIn = { n: Glue.FailureNode -> n.kind == "context" && n.root != null && Glue.failingRuns(service.failuresResult, n.root).isNotEmpty() }
         return DefaultActionGroup(
-            ConfigAction("Re-run the Failing Tests", AllIcons.RunConfigurations.RerunFailedTests, selected, failingIn) {
+            ConfigAction("Re-run the failing tests", AllIcons.RunConfigurations.RerunFailedTests, selected, failingIn) {
                 PiwiCommands.rerunFailing(project, it.root)
             },
-            ConfigAction("Compare With…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
-            ConfigAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
+            ConfigAction("Compare with…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
+            ConfigAction("Open in dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
             Separator.getInstance(),
-            FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
+            FailureAction("Run this test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
                 Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
             Separator.getInstance(),
-            FailureAction("Open the Trace", PiwiIcons.TRACE, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
-            FailureAction("Open the Screenshot", PiwiIcons.SCREENSHOT, selected, { it.hasScreenshot == true }) {
+            FailureAction("Open the trace", PiwiIcons.TRACE, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
+            FailureAction("Open the screenshot", PiwiIcons.SCREENSHOT, selected, { it.hasScreenshot == true }) {
                 PiwiCommands.openScreenshot(project, evidence(it))
             },
-            FailureAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { f ->
+            FailureAction("Open in dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { f ->
                 f.url?.let { BrowserUtil.browse(it) }
             },
             Separator.getInstance(),
-            FailureAction("Copy Context for Agent", AllIcons.Actions.Copy, selected, failing) {
+            FailureAction("Copy context for agent", AllIcons.Actions.Copy, selected, failing) {
                 PiwiCommands.copyAgentContext(project, evidence(it))
             },
             Separator.getInstance(),
-            FailureAction("Reproduce in the Desktop App", PiwiIcons.REPRODUCE, selected, desktop) { job(it, "reproduce") },
-            FailureAction("Find the Breaking Commit in the Desktop App", PiwiIcons.BISECT, selected, desktop) { job(it, "bisect") },
+            FailureAction("Reproduce in the desktop app", PiwiIcons.REPRODUCE, selected, desktop) { job(it, "reproduce") },
+            FailureAction("Find the breaking commit in the desktop app", PiwiIcons.BISECT, selected, desktop) { job(it, "bisect") },
         )
     }
 
@@ -467,7 +467,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     companion object {
         const val ID = "Piwi"
 
-        /** The tool window's tab, named as the status bar's Open the Failures and a run's notification name it. */
+        /** The tool window's tab, named as the status bar's Open the failures and a run's notification name it. */
         const val TAB_NAME = "Failures"
 
         private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiFailuresToolWindowFactory::class.java)

@@ -152,7 +152,7 @@ shows its share of functions. A file opens on its source when the dashboard has 
 ## Record a test from your editor
 
 The shop is there to try [recording from the editor](https://piwitests.dev/features/editor-recording): **Piwi: Record
-here** in VS Code, or **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert in a JetBrains IDE. The steps you take in
+here** in VS Code, or **Tools → Piwi → Record here**, Alt+Enter or Alt+Insert in a JetBrains IDE. The steps you take in
 the browser it opens are written at the cursor, and the ones the page objects already perform become calls to them,
 taken from the fixtures.
 

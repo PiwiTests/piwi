@@ -25,7 +25,7 @@ page elsewhere, which the test's own code could name, is not shown, and the run 
 |---|---|
 | The terminal | `[Piwi Dashboard] View live progress: https://piwi.example.com/test-runs/78`, once, as the run starts |
 | VS Code | The run-control item: `#78 · 3 of 9`, its tooltip **Open run #78**; the status bar item, while your run goes: **Open run #78 (running)** first in its tooltip; **Piwi: Open the run page** and **Piwi: Open the run in progress** in the Command Palette |
-| JetBrains IDEs | The status bar item: `Piwi: run #78 · 3 of 9`, kept beside a stop or a share; **Open Run #78** in its menu; **Open Run #78 (Running)** in place of **Open the Latest Run in the Dashboard** while it goes |
+| JetBrains IDEs | The status bar item: `Piwi: run #78 · 3 of 9`, kept beside a stop or a share; **Open Run #78** in its menu; **Open Run #78 (Running)** in place of **Open the latest run in the dashboard** while it goes |
 | Piwi Picker's [Runs window](./runs-window) | **Run #78**, **Open** and **Copy link** on the run's card, while it runs and after it ended, with its progress and how it ended |
 | The desktop app's [Local runs tray](./desktop-runs) | **Run #78 · Open** under each run of its hub, a run a team instance asked for included, whose page opens in the browser; **Open run #78** on a run the app's own server holds |
 | **Debug in my editor** | Once the editor runs the test: "Following run #81 in VS Code · Open" beside the button |
@@ -78,7 +78,7 @@ names the stopped line where it stands now, as the editor does.
 
 At a stop of a headed run, every tool offers **Show the browser**, which brings the test's window to the front, as far
 as your system lets a window come forward: **Piwi: Show the stopped test's browser** in VS Code and the stop's hover,
-**Tools → Piwi → Show the Stopped Test's Browser** in a JetBrains IDE, and a button in the Runs window and the desktop
+**Tools → Piwi → Show the stopped test's browser** in a JetBrains IDE, and a button in the Runs window and the desktop
 app's tray. A headless run has no window to show, and an older reporter offers none: update it.
 
 ## Share with Playwright tools

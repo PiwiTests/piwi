@@ -86,7 +86,7 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
  * at the IDE's breakpoints, whether they run in the IDE's Playwright runner, whether they run headed, and their
  * Hold failures from each run's start (`Glue.HOLD_FAILURES_CHOICES`); when a run started from the IDE says what it changed (`always`,
- * `failures`, `never`); the baseline chosen with **Compare With…** for each Playwright
+ * `failures`, `never`); the baseline chosen with **Compare with…** for each Playwright
  * config folder (`Glue.encodeBaseline`; the ladder is no entry); whether the coverage marks are shown; and the severity
  * of a failure's diagnostic (`Glue.FAILURE_SEVERITIES`).
  */
@@ -328,7 +328,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
         }
         PiwiNotifier.create(PiwiNotice.RESULT, Glue.DOTNET_PLAYWRIGHT_NOTE)
-            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
+            .addAction(NotificationAction.createSimple("Learn more") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
             .notify(project)
     }
 
@@ -350,12 +350,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
                     ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
                 },
             )
-            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOCS_URL) })
+            .addAction(NotificationAction.createSimple("Learn more") { BrowserUtil.browse(Glue.DOCS_URL) })
             .notify(project)
     }
 
     /**
-     * Restart the Editor Service, from its action, a balloon or the tool window, said in the log, then [restartServer].
+     * Restart the editor service, from its action, a balloon or the tool window, said in the log, then [restartServer].
      * With none running and no test file open, the IDE has nothing to start it for: a balloon says to open one.
      */
     fun restartService() {
@@ -587,7 +587,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Turn the service's MCP server for agents on or off as `serveRunsToAgents` says (`piwi/agents`), with a new token
-     * when `newToken` (Reset the Runs' MCP Server Token), keeping the port it listens at and its token for the next
+     * when `newToken` (Reset the runs' MCP server token), keeping the port it listens at and its token for the next
      * start; null when no service runs. Waits on the service: never on the event thread.
      */
     fun agentsChanged(newToken: Boolean = false): AgentsResult? {
@@ -613,7 +613,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
-     * Compare the context at `root` with `choice` (**Compare With…**): kept in `PiwiLocalSettings` and sent to the
+     * Compare the context at `root` with `choice` (**Compare with…**): kept in `PiwiLocalSettings` and sent to the
      * service (`piwi/setBaseline`), which reads it at once and says so in `piwi/runStatusChanged`. Sends over the
      * network: never on the event thread.
      */
@@ -756,7 +756,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
-     * status, on a pooled thread: the status bar item's click and **Refresh the Latest Run**. `refreshing` is set
+     * status, on a pooled thread: the status bar item's click and **Refresh the latest run**. `refreshing` is set
      * meanwhile, and the listeners are told as it is.
      */
     fun refreshRun() {
@@ -965,7 +965,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
                 "Connect switches back.",
         )
-            .addAction(NotificationAction.createSimpleExpiring("Use the Desktop App") { PiwiConnectFlow.useDesktop(project) })
+            .addAction(NotificationAction.createSimpleExpiring("Use the desktop app") { PiwiConnectFlow.useDesktop(project) })
             .notify(project)
     }
 

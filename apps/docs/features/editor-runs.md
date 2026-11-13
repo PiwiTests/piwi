@@ -17,12 +17,12 @@ second of its end.
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
-  on a spec, and under VS Code's editor title Run button (**Run the Test at the Caret** and **Run This Spec** in a
+  on a spec, and under VS Code's editor title Run button (**Run the test at the caret** and **Run this spec** in a
   JetBrains IDE). Both save the spec first. **Run** in VS Code's test hover runs it, as
   [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know yet, such as one you just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
   (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance.
-- **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times as a
+- **Piwi: Verify the test at the cursor ×3** (**Verify the test at the caret ×3**) runs that test three times as a
   [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's **Piwi** submenu.
@@ -43,7 +43,7 @@ Two choices apply to every test run you start: **Run headed** (`--headed`, a ver
 [**Hold failures**](/guide/concepts#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
 decide: on with your breakpoints or a `page.pause()`, headed for the latter. In VS Code,
 **Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
-in a JetBrains IDE, **Tools → Piwi → Run Headed** and **Hold Failures from Each Run's Start…**. A
+in a JetBrains IDE, **Tools → Piwi → Run headed** and **Hold failures from each run's start…**. A
 [debug run](./debug-in-editor), a Flake Lab line and a fix plan's check leave them out.
 
 ## The Testing view (VS Code)
@@ -121,8 +121,8 @@ In a JetBrains IDE, an icon before the text shows the state of the run the item 
 of the connection, and the text takes the theme's error color while tests of that run fail, a run in progress
 included. A click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Refresh the
 Latest Run**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
-connected, **Node.js Settings…** when Node.js is missing or too old, or **Go to the Recorded Lines** while a recording
-runs, with **Pause Recording**, **Resume Recording** and **Stop Recording**.
+connected, **Node.js Settings…** when Node.js is missing or too old, or **Go to the recorded lines** while a recording
+runs, with **Pause recording**, **Resume recording** and **Stop recording**.
 
 ## Related
 

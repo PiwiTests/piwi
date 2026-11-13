@@ -29,7 +29,7 @@ Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScr
   tests behind each function, and the lines changed since the coverage run.
 - **Brittle locators and breaking changes.** A warning on a locator that will not survive a restyle, and on an unsaved
   change that renames a string your tests find elements by, each with a quick fix.
-- **Tests recorded at the caret.** **Tools → Piwi → Record Here** opens a browser through your project's own
+- **Tests recorded at the caret.** **Tools → Piwi → Record here** opens a browser through your project's own
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
 - **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. That run
   pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the

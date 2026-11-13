@@ -10,12 +10,13 @@ tools meets one Piwi.
 and trimmed on 2026-11-12 to the work left at `b0ff6772`, where every line reference points. Built and left out of this
 document: the quick wins Q1, Q3, Q4, Q6, Q7, Q10, Q11, Q14, Q15, Q17 to Q22 and Q24, the medium step M19, the 34
 findings they fixed, and the parts of Q2, Q5, Q8, Q9, Q12, Q13, Q16, Q23, M6, M13 to M15, M20, M22 and L1 that the
-remaining rows no longer name; git keeps their record. The defects still open are listed in §11. The maintainer settled
-the casing of labels: sentence case in both editors ([Q25](#q25)). §14 adds the findings the code that built the plan
-raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its
-Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor
-hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing
-here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+remaining rows no longer name; git keeps their record. The defects still open are listed in §11. Q25 is built too
+(2026-11-13): the JetBrains plugin's labels are in sentence case, as VS Code's, so the plugin's labels quoted below in
+Title Case now read in sentence case. §14 adds the findings the code that built the plan raised. The live-run study,
+[live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
+of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a run and the
+debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -25,10 +26,10 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 **Summary.**
 
 - **What is left.** Most of the plan's quick wins are built; the steps left center on one action catalog in sentence
-  case and one concept table (M1, M4, Q25), registered JetBrains popups (M2), one Piwi menu and status menu (M3, M13),
-  the run controls in the debugger's places and one page per worker (M14, M15), one action list per test line and Debug
-  with Piwi (M7, M8), the settings registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session
-  decision (L3).
+  case and one concept table (M1, M4), registered JetBrains popups (M2), one Piwi menu and status menu (M3, M13), the
+  run controls in the debugger's places and one page per worker (M14, M15), one action list per test line and Debug with
+  Piwi (M7, M8), the settings registry and onboarding (M10, M11), the Rider layer (M17) and the debug-session decision
+  (L3).
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
@@ -37,7 +38,7 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
-- **Twenty larger items (§10) and a ranked plan (§12):** 14 quick wins, most of them first, then 23 medium and 7 large
+- **Twenty larger items (§10) and a ranked plan (§12):** 13 quick wins, most of them first, then 23 medium and 7 large
   steps, each the size of a pull request.
 
 Every finding carries a file reference; the plugin's Kotlin files, all in
@@ -338,8 +339,8 @@ Pick at stop, Run to cursor as the IDE's debugger words it, Finish test). Some a
 Code's Write code at the stop…, Get started, Follow the active editor, Run options…, Open the trace so far and Group the
 failures by…, and JetBrains' Open the Failures, Node.js Settings…, Run Headed, Hold Failures from Each Run's Start… and
 the Runs' MCP configuration copy. `apps/docs/features/editors.md:106-128` lists VS Code's names alone. **(seen)** Fix:
-one wording per action, from the action catalog both manifests are tested against, in sentence case in both editors as
-[Q25](#q25) settles. ([M1](#m1), [LI1](#li1))
+one wording per action, from the action catalog both manifests are tested against, in sentence case in both editors.
+([M1](#m1), [LI1](#li1))
 
 | Action | VS Code title | JetBrains text | Proposed wording |
 |---|---|---|---|
@@ -1099,13 +1100,13 @@ code moves from FSL into MIT.
 `packages/editor/src/actions.ts` lists each action once: its ids, one wording in sentence case for both editors, a short
 label, its concept ([LI2](#li2)), menus ([LI4](#li4)), when it applies, keys ([LI15](#li15)), synonyms and a docs
 anchor; `src/words.ts` holds the words a client writes itself. The words of watching are the live-run study's
-([live-runs.md](../adr/live-runs.md) D6: words in the FSL surfaces, enums in `@piwitests/core/live-lane`), and the catalog
-keeps the editors' copy under the study's drift test. A vitest test holds both manifests to it first; later it generates
-`package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s commands table. **Lives in** `packages/editor` (FSL);
-the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and four hand-built popups.
-**Depends on** nothing. **Revisits** [editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose
-sentence case both editors now take ([Q25](#q25)), and makes [developer-loop-audit.md](developer-loop-audit.md) §9 a
-tested artifact. Steps [M1](#m1), [M2](#m2), [M22](#m22).
+([live-runs.md](../adr/live-runs.md) D6: words in the FSL surfaces, enums in `@piwitests/core/live-lane`), and the
+catalog keeps the editors' copy under the study's drift test. A vitest test holds both manifests to it first; later it
+generates `package.nls.json`, a `PiwiBundle.properties` and `editors.md`'s commands table. **Lives in**
+`packages/editor` (FSL); the pause bar (MIT) is read by the test, never fed. **Replaces** titles kept twice by hand and
+four hand-built popups. **Depends on** nothing. **Revisits**
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md) §3.6, whose sentence case both editors now take, and
+makes [developer-loop-audit.md](developer-loop-audit.md) §9 a tested artifact. Steps [M1](#m1), [M2](#m2), [M22](#m22).
 
 <a id="li15"></a>
 
@@ -1419,7 +1420,6 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | <a id="q13"></a>Q13 | **The rest of the notification policy**: a balloon titled by its run, Don't Show Again on VS Code's other messages, a gear on the run notices, `piwi.runNotifications` off `always` by default, and a platform test of every balloon's group | `ide` | [HM15](#hm15) |
 | <a id="q16"></a>Q16 | **An integration-suite case of VS Code's Restart the editor service** | `ide` | [HM19](#hm19) |
 | <a id="q23"></a>Q23 | **The desktop app's `productName`**, once §13 item 19 settles the upgrade path | `desktop` | [AC13](#ac13) |
-| <a id="q25"></a>Q25 | **Labels in sentence case in the JetBrains plugin, as VS Code's are**, as the maintainer settled: the 47 Title Case labels of `plugin.xml` and about 75 in its Kotlin code (balloon buttons, dialog and popup titles such as 'Watch Which Worker?', the tool window's and the stop popup's actions, the Paused Page and CI Runs tabs, settings groups), proper nouns kept (Piwi, Piwi Picker, Playwright, MCP, Rider, Claude Code, Cursor, Node.js, CI, Flake Lab); the tests and docs pages that quote them; a rule in `apps/jetbrains/AGENTS.md`, and a `PiwiPluginTest` case beside the icon check that fails on a capital its allowlist does not name | `ide` | [NF3](#nf3) |
 | <a id="q26"></a>Q26 | **One glyph per meaning in the CI views and the status states**: the CI rows from the gutter's outcome marks and Appendix A's rows, unreachable and Run the tests that reach this file off shared glyphs; the manifest tests fail on a glyph given two meanings | `ide` | [NF1](#nf1) |
 | <a id="q27"></a>Q27 | **Every JetBrains message with its way out and its group**: a stopped service said as VS Code says it, with Restart first (#1255); the tool window's header saying an unreachable instance as its empty text does; one did-not-answer sentence, as a warning; copies confirmed, notes offered, Connect… on the connect-first answer; the trust state naming how to trust | `ide` | [NF5](#nf5), [NF8](#nf8), [HM8](#hm8), [HM19](#hm19) |
 | <a id="q28"></a>Q28 | **A CI, teammate or agent run never reads as the developer's own**: a test line's live state from the developer's own runs alone, 'CI run #130' in the tooltip otherwise; a label and launcher on `RunSession`, shown in the Run tab, the progress text and the choosers | `ide` | [NF4](#nf4), [LR10](#lr10) |
@@ -1468,12 +1468,12 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Sequence
 
-Q25, the labels in sentence case, then the quick wins that stand alone (Q5, Q8, Q12, Q13, Q16, Q27 to Q30), each on its
-own. Then M1 and M2, on which most of the rest builds: the names that still differ (AC7, NF3), the popups built from
-unregistered actions (AC6, NF2), one Piwi menu (M3) and the run-control places (M14); M4 and M5 draw the glyphs and the
-outcome palette that Q2, Q9, Q26 and IC2's recording wait for; Q23 waits for §13's productName question. M13 and M15
-finish the glance and the page; M16 and M17 close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10);
-L3 decides before 1.0 whether M14's places are interim.
+The quick wins that stand alone (Q5, Q8, Q12, Q13, Q16, Q27 to Q30), each on its own. Then M1 and M2, on which most of
+the rest builds: the names that still differ (AC7, NF3), the popups built from unregistered actions (AC6, NF2), one Piwi
+menu (M3) and the run-control places (M14); M4 and M5 draw the glyphs and the outcome palette that Q2, Q9, Q26 and IC2's
+recording wait for; Q23 waits for §13's productName question. M13 and M15 finish the glance and the page; M16 and M17
+close #1117 and #1118; L1's Runs home settles where the CI list goes (NF10); L3 decides before 1.0 whether M14's places
+are interim.
 
 ## 13. Open questions
 
@@ -1572,7 +1572,7 @@ next (`package.json:91, 96`). VS Code offers one Run options… quick pick (`app
 where JetBrains has a Run Headed toggle and Hold Failures from Each Run's Start… (`plugin.xml:149-154`), the hold
 choices worded three ways (`apps/vscode/src/glue.ts:1772-1776`, `package.json:1165-1169`, `Glue.kt:67-71`). **(read)**
 Fix: one wording per action in the action catalog, in sentence case in both editors, one shape for the start options,
-and each welcome's links from `failuresView`. ([Q25](#q25), [M1](#m1))
+and each welcome's links from `failuresView`. ([M1](#m1))
 
 <a id="nf4"></a>**NF4. A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the
 status bars.** A test line takes its state from any live run (`packages/editor/src/server.ts:3060-3061`) and says

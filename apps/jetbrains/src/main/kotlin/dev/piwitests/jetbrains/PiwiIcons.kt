@@ -5,15 +5,15 @@ import javax.swing.Icon
 
 /**
  * The glyphs of a concept the plugin draws outside `plugin.xml`, one per concept as the VS Code extension's are: the
- * failed mark on every surface, Open in Dashboard, the stop's code actions in its popups (the same as their registered
+ * failed mark on every surface, Open in dashboard, the stop's code actions in its popups (the same as their registered
  * actions') and the hand-offs from a failure. Each is a platform icon with a New UI glyph on 2024.1 and on the latest
- * release, but Record's, the recording icon Record Here draws; a concept with none has no icon until Piwi draws its own.
+ * release, but Record's, the recording icon Record here draws; a concept with none has no icon until Piwi draws its own.
  */
 object PiwiIcons {
     /** A failed test or run: the result icon, the status item, the tool window's nodes and a held failure. */
     val FAILED: Icon = AllIcons.RunConfigurations.TestError
 
-    /** Open in Dashboard, on a file, a node or a failure. */
+    /** Open in dashboard, on a file, a node or a failure. */
     val OPEN_IN_DASHBOARD: Icon = AllIcons.Ide.External_link_arrow
 
     val TRACE: Icon = AllIcons.FileTypes.Archive

@@ -3269,7 +3269,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            // Every test of the spec as saved, by its path, as Run This Spec runs it.
+            // Every test of the spec as saved, by its path, as Run this spec runs it.
             command: {
               title: 'Run every test of this spec with Piwi',
               command: 'piwi.runTests',

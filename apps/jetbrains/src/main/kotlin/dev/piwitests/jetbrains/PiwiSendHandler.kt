@@ -280,7 +280,7 @@ class PiwiSendHandler : HttpRequestHandler() {
         val document = ApplicationManager.getApplication().runReadAction(Computable { FileDocumentManager.getInstance().getDocument(file) })
             ?: refuse("$name cannot be edited as text")
         onEventThread {
-            WriteCommandAction.runWriteCommandAction(project, "Replace with the Locator Picked in Piwi", null, {
+            WriteCommandAction.runWriteCommandAction(project, "Replace with the locator picked in Piwi", null, {
                 if (start.line >= document.lineCount) refuse("line ${at.line} is not there anymore")
                 val lineStart = document.getLineStartOffset(start.line)
                 if (start.character > end.character || lineStart + end.character > document.getLineEndOffset(start.line)) {

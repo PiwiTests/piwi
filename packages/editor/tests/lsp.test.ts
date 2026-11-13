@@ -4791,7 +4791,7 @@ describe('a test the instance does not know yet', () => {
     await local.sendNotification('textDocument/didOpen', {
       textDocument: { uri: specUri(), languageId: 'typescript', version: 1, text: RECORDED },
     });
-    // A spec the instance does not know: Run This Spec runs every test of it by its path.
+    // A spec the instance does not know: Run this spec runs every test of it by its path.
     const spec = { uri: specUri(), testIds: [], location: 'tests/checkout.spec.ts' };
     expect(await at(2)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:3' });
     for (const line of [4, 6, 7]) {

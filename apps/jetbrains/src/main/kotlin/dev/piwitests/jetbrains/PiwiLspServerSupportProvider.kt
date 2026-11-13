@@ -343,7 +343,7 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
 
     /**
      * Another tool asks through the hub to stop a run this IDE started (Piwi Picker, the desktop app): its process ends,
-     * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
+     * as with Stop the run; a run this IDE did not start is refused, saying where to stop it.
      */
     @JsonRequest("piwi/stopRun")
     fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> {
