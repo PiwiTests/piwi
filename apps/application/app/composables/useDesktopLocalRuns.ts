@@ -489,6 +489,8 @@ let pendingEvents: LocalRunEventPayload[] = [];
 /** What the page before a reload kept, once read (`readKeptForReload`): null when it kept nothing. */
 let keptRead = false;
 let keptForNextPage: KeptForReload | null = null;
+/** Whether the page before this one left what it kept for the next page, readable or not: this page is its reload. */
+let reloaded = false;
 /** The page is going (`keepForReload` ran): each run that starts a step or ends from then on is kept again. */
 let pageGone = false;
 const runByShellId = new Map<number, LocalRun>();
@@ -1621,6 +1623,7 @@ export function useDesktopLocalRuns() {
     try {
       const raw = sessionStorage.getItem(RELOAD_STORAGE_KEY);
       sessionStorage.removeItem(RELOAD_STORAGE_KEY);
+      reloaded = raw !== null;
       const parsed = raw ? (JSON.parse(raw) as KeptForReload) : null;
       if (parsed && Array.isArray(parsed.runs)) keptForNextPage = parsed;
     } catch {
@@ -1644,14 +1647,15 @@ export function useDesktopLocalRuns() {
    * running one where the shell has it: a step whose process still runs is followed again, one that ended meanwhile
    * ends with its exit code, its output and its verdict, and the run goes on from there; a step the shell was starting
    * as the page reloaded is found by the run's origin reference. A run whose process the shell does not know ends,
-   * saying so. Then every run output window no run of this page shows in closes.
+   * saying so. Then, on the reload of a page that kept its runs, every run output window no run of this page shows in
+   * closes; a page the app opened anew finds none of its own, and closes none another part of the window opened.
    */
   async function takeBackAfterReload() {
     readKeptForReload();
     const kept = keptForNextPage;
     keptForNextPage = null;
     if (kept && kept.runs.length > 0) await takeBack(kept);
-    await closeUnownedOutputWindows();
+    if (reloaded) await closeUnownedOutputWindows();
   }
 
   async function takeBack(kept: KeptForReload) {

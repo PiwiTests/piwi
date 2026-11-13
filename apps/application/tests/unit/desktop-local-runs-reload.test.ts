@@ -332,6 +332,13 @@ describe('the Local runs a reload of the window keeps', () => {
     // A run output window the page before had open, and no run of this page owns, closes.
     expect(page.invoked).toEqual([{ cmd: 'desktop_close_other_output_windows', args: { keep: [] } }]);
   });
+
+  test('closes no run output window on a page the app opened anew', async () => {
+    const page = await pageWith(new Map());
+    await page.store.takeBackAfterReload();
+    expect(page.store.runs.value).toEqual([]);
+    expect(page.invoked).toEqual([]);
+  });
 });
 
 describe('where a failed local run’s end leads', () => {
