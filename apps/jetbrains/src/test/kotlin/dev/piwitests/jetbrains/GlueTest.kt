@@ -847,8 +847,8 @@ class GlueTest {
         val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
         assertEquals(
             listOf(
-                "Open the Page of Run #78", "Copy the Link of Run #78", "Stop sharing Run #78…",
-                "Open the Page of Run in admin (ed-3)", "Copy the Link of Run in admin (ed-3)", "Stop sharing Run in admin (ed-3)…",
+                "Open the page of Run #78", "Copy the link of Run #78", "Stop sharing Run #78…",
+                "Open the page of Run in admin (ed-3)", "Copy the link of Run in admin (ed-3)", "Stop sharing Run in admin (ed-3)…",
                 "Stop sharing this project's runs…",
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
