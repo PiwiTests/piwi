@@ -59,7 +59,29 @@ beforeAll(async () => {
       error: ERROR,
       line: 3,
     },
-    { id: 25, testRunId: 4, testCaseId: 2, retries: 1, browserName: 'chromium', status: 'passed', line: 3 },
+    // Stored as ingestion settles them: the failed attempt superseded, the pass on the retry flaky.
+    {
+      id: 25,
+      testRunId: 4,
+      testCaseId: 2,
+      retries: 1,
+      browserName: 'chromium',
+      status: 'passed',
+      line: 3,
+      passedAfterFailure: true,
+    },
+    // A second repetition of test 1 on chromium passes on its retry, but another repetition failed: not flaky.
+    {
+      id: 26,
+      testRunId: 4,
+      testCaseId: 1,
+      retries: 1,
+      repeatEachIndex: 1,
+      browserName: 'chromium',
+      status: 'passed',
+      line: 7,
+      passedAfterFailure: true,
+    },
   ]);
   await db.insert(schema.files).values([
     { testRunsCaseId: 10, type: 'trace', path: 'traces/10-a.zip' },
@@ -116,12 +138,28 @@ describe('getBranchFailures', () => {
     expect(result.failures.map((f) => [f.executionId, f.testCaseId])).toEqual([[22, 1]]);
   });
 
+  test('lists the run’s flaky tests apart, but a test that failed in another repetition', async () => {
+    const result = await getBranchFailures(db as never, 1, 'feature/retry');
+    expect(result.flaky).toEqual([
+      {
+        executionId: 25,
+        testCaseId: 2,
+        title: 'adds',
+        file: 'tests/cart.spec.ts',
+        line: 3,
+        browserName: 'chromium',
+        retries: 1,
+      },
+    ]);
+  });
+
   test('a branch without a run has no run', async () => {
     expect(await getBranchFailures(db as never, 1, 'nope')).toEqual({
       run: null,
       overlays: [],
       failures: [],
       resolved: [],
+      flaky: [],
     });
   });
 });
@@ -381,6 +419,7 @@ describe('getBranchFailures with a chosen baseline', () => {
       overlays: [],
       failures: [],
       resolved: [],
+      flaky: [],
     });
   });
 });

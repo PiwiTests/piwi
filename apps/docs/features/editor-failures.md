@@ -90,10 +90,11 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with its run (`your run #124`, `edited since run #120`), its headline in the
   hover.
+- **Flaky in this run**: the tests that passed on a retry.
 
 In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
-named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`). Its run and failures
-are under it, as above, or its run alone when it fails nothing. Its row in VS Code, and its context menu in both
+named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`), over its tree as
+above. Its row in VS Code, and its context menu in both
 editors, re-run that config's failing tests (**Re-run the failing tests**) and open its run in the dashboard; the
 context menu adds **Compare with…** for that config. With one config, the run is the first node.
 

@@ -184,10 +184,22 @@ export interface BranchFailures {
     /** The execution that failed in `run`. */
     baselineExecutionId: number;
   }>;
+  /** The tests of `run` that passed on their project after an attempt failed; absent from an older instance. */
+  flaky?: Array<{
+    executionId: number;
+    testCaseId: number;
+    title: string;
+    file: string;
+    line: number | null;
+    browserName: string | null;
+    /** The retries it took to pass. */
+    retries: number;
+  }>;
 }
 
 export type BranchFailure = BranchFailures['failures'][number];
 export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
+export type BranchFlaky = NonNullable<BranchFailures['flaky']>[number];
 
 /** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
 export interface RunDetails {

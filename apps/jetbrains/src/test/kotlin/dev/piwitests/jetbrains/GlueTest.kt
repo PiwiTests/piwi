@@ -2880,6 +2880,18 @@ class GlueTest {
         nodes.map { if (it.children.isEmpty()) it.label else listOf("${it.label} (${it.description})", labels(it.children)) }
 
     @Test
+    fun `a flaky test of the tree keeps its spec and line, which the tool window opens`() {
+        val leaf = FailureTreeNode(
+            key = "flaky:tests/cart.spec.ts\nadds\nchromium", kind = "flaky", label = "adds", icon = "flaky",
+            url = "http://piwi/test-run-cases/25", uri = "file:///w/tests/cart.spec.ts", line = 2,
+        )
+        val group = FailureTreeNode(key = "flaky", kind = "group", label = "Flaky in this run", icon = "flaky", children = listOf(leaf))
+        val drawn = Glue.failureNodes(FailuresResult(emptyList(), tree = listOf(group))).single().children.single()
+        assertEquals(listOf("flaky", "file:///w/tests/cart.spec.ts", "2"), listOf(drawn.icon, drawn.uri, drawn.line.toString()))
+        assertEquals("http://piwi/test-run-cases/25", drawn.url)
+    }
+
+    @Test
     fun `the failures tree is the service's, with the age of each run after its description`() {
         val root = Glue.failureNodes(treeFailures, treeNow).single()
         assertEquals("Run #120 · CI · feature/x · 2 failing" to "4 min ago", root.label to root.description)

@@ -295,6 +295,7 @@ import {
   type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
+  type FailuresFlaky,
   type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
@@ -1281,12 +1282,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         ];
       });
       const run = context.failures?.run;
+      // The run's flaky tests at their `test(…)` line as the spec stands, once each.
+      const flaky = run
+        ? (context.failures?.flaky ?? []).flatMap((f): FailuresFlaky[] => {
+            const placeable = { ...f, runId: run.id };
+            const at = pass.place(context, placeable);
+            if (!at || at.state === 'gone') return [];
+            return [
+              {
+                uri: pathToFileURL(at.file).href,
+                line: at.line - 1,
+                title: f.title,
+                file: specOf(context, placeable),
+                browserName: f.browserName,
+                retries: f.retries,
+                url: client.executionUrl(f.executionId),
+              },
+            ];
+          })
+        : [];
       return [
         {
           root: context.root,
           label: contextLabel(context.root, folders),
           projectName: context.project?.name ?? null,
           items: [...failing, ...fixed],
+          flaky,
           run: run
             ? {
                 id: run.id,

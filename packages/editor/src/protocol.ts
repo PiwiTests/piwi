@@ -1219,12 +1219,14 @@ export type FailureTreeIcon =
   | 'owner'
   | 'failing'
   | 'edited'
-  | 'fixed';
+  | 'fixed'
+  | 'flaky';
 
 /**
  * A node of the failures tree both clients draw: the run (`Run #120 · CI · feature/x · 3 failing · 1 fixed locally`,
  * or `Your local runs · 1 failing` with a developer's own runs alone), the runs laid over it under `Your runs since`,
- * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally. When
+ * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally, then
+ * the run's flaky tests under `Flaky in this run` (a `group` keyed `flaky`, its leaves of kind `flaky`). When
  * several Playwright configs have a run, runs laid over none or failures, each has a `context` node at the root
  * (`apps/admin`, its project and its counts beside it) holding that tree for its config alone, or its run alone without
  * a failure.
@@ -1232,7 +1234,7 @@ export type FailureTreeIcon =
 export interface FailureTreeNode {
   /** Stable across answers: a client keeps a node's expansion and selection by it. */
   key: string;
-  kind: 'context' | 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  kind: 'context' | 'run' | 'runs' | 'overlay' | 'group' | 'failure' | 'flaky';
   label: string;
   /**
    * Beside the label: a context's project and counts, a group's counts, a failure's place (`tests/login.spec.ts:42 ·
@@ -1262,7 +1264,25 @@ export interface FailureTreeNode {
   root?: string;
   /** On a failure: the `executionId` of its item in `FailuresResult.items`. */
   executionId?: number;
+  /** On a flaky test: its spec and the 0-based line of its `test(…)` call, as the file stands. */
+  uri?: string;
+  line?: number;
   children: FailureTreeNode[];
+}
+
+/** A flaky test of a context's run, placed on its spec as it stands: the tree's `Flaky in this run` group lists it. */
+export interface FailuresFlaky {
+  uri: string;
+  /** 0-based. */
+  line: number;
+  title: string;
+  /** The spec relative to its Playwright config's folder. */
+  file: string;
+  browserName: string | null;
+  /** The retries it took to pass. */
+  retries: number;
+  /** Its passing execution's page. */
+  url: string;
 }
 
 /**

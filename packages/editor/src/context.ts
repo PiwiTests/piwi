@@ -66,7 +66,7 @@ export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
 
 /** The answer of a baseline that found no run. */
-const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
+const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [], flaky: [] });
 
 /**
  * A file's coverage as last read: the answer (null for none: the instance has no coverage route, or refused the

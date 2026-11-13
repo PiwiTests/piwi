@@ -175,7 +175,9 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     const tooltip = new vscode.MarkdownString(node.tooltip);
     item.tooltip = tooltip;
     const color = ICON_COLORS[node.icon];
-    item.iconPath = new vscode.ThemeIcon(node.icon, color ? new vscode.ThemeColor(color) : undefined);
+    item.iconPath = node.icon.startsWith('mark:')
+      ? vscode.Uri.joinPath(this.context.extensionUri, 'media', `test-${node.icon.slice('mark:'.length)}.svg`)
+      : new vscode.ThemeIcon(node.icon, color ? new vscode.ThemeColor(color) : undefined);
     item.contextValue = contextValue(node, !!this.status()?.desktopUrl, this.result);
     const f = node.failure;
     if (f) {
@@ -183,6 +185,13 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
         title: 'Open the failing line',
         command: 'vscode.open',
         arguments: [vscode.Uri.parse(f.uri), { selection: new vscode.Range(f.line, 0, f.line, 0), preview: true }],
+      };
+    } else if (node.place) {
+      const { uri, line } = node.place;
+      item.command = {
+        title: 'Open the flaky test',
+        command: 'vscode.open',
+        arguments: [vscode.Uri.parse(uri), { selection: new vscode.Range(line, 0, line, 0), preview: true }],
       };
     } else if (node.kind === 'overlay' && node.url) {
       item.command = { title: 'Open the run in the dashboard', command: 'piwi.openInDashboard', arguments: [node.url] };

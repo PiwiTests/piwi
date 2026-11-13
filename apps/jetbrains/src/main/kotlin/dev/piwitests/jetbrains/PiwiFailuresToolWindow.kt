@@ -416,12 +416,17 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         )
     }
 
-    /** A failure's line, or a run's page; false for a node that opens nothing. */
+    /** A failure's line, a flaky test's `test(…)` line, or a run's page; false for a node that opens nothing. */
     private fun open(project: Project, node: Glue.FailureNode?): Boolean {
         val failure = node?.failure
         if (failure != null) {
             val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return false
             OpenFileDescriptor(project, file, failure.line, 0).navigate(true)
+            return true
+        }
+        if (node?.uri != null && node.line != null) {
+            val file = VirtualFileManager.getInstance().findFileByUrl(node.uri) ?: return false
+            OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }
         val url = node?.url?.takeIf { node.kind == "overlay" || node.kind == "run" } ?: return false
@@ -452,6 +457,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 "failing", "failed" -> PiwiIcons.FAILED
                 "file", "cluster", "owner" -> AllIcons.Nodes.Folder
                 "history" -> AllIcons.Vcs.History
+                "flaky" -> PiwiIcons.FLAKY
                 else -> AllIcons.RunConfigurations.TestState.Run
             }
             append(node.label)
