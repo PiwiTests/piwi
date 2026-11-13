@@ -236,7 +236,7 @@ describe.each(Object.entries(REPLAYS))('twelve %s after a CI run', (_kind, repla
   test('the environment diff compares against the CI pass', async () => {
     const result = await getEnvironmentDiff(db as never, failingPayId);
     expect(result.status).toBe('ok');
-    expect(result.status === 'ok' && result.baseline.runId).toBe(1);
+    expect(result.status === 'ok' && result.baseline?.runId).toBe(1);
   });
 
   test('the page diff compares against the CI pass', async () => {

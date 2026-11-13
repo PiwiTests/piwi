@@ -6,6 +6,8 @@
  * simulated ones, both from the attempt's start, the time it stood stopped left out (`runningMs`), whoever watches.
  */
 
+import { resolveBrowserName } from './browser-name';
+
 /** The least time an attempt runs before it may be said to be stuck, whatever its test usually takes. */
 export const STUCK_FLOOR_MS = 2 * 60_000;
 /** How many times its test's longest passing duration an attempt runs before it is said to be stuck. */
@@ -89,7 +91,28 @@ export interface UsualDurationTest {
   browser?: string | null;
 }
 
-/** The key a test's usual duration is kept and found by, the same for a stored test and a running one. */
+/**
+ * The key a test's usual duration is kept and found by. `runUsualDurations` keys each test by its names as its rows
+ * store them, and a running test is found by the same names (`storedUsualDurationTest`).
+ */
 export function usualDurationKey(test: UsualDurationTest): string {
   return [test.filePath ?? '', (test.suitePath ?? []).join('\x1f'), test.title, test.browser ?? ''].join('\x00');
+}
+
+/**
+ * A running attempt's test as its begin event names it: its file, describe path and title, and its Playwright project
+ * (`resolveBrowserName`, the name a result is stored under), never the browser's own name.
+ */
+export function runningUsualDurationTest(begin: {
+  filePath?: string | null;
+  suitePath?: readonly string[] | null;
+  title: string;
+  browser?: unknown;
+}): UsualDurationTest {
+  return {
+    filePath: begin.filePath ?? null,
+    suitePath: begin.suitePath ?? null,
+    title: begin.title,
+    browser: resolveBrowserName(begin.browser),
+  };
 }

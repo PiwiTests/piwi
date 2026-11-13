@@ -42,7 +42,8 @@ describe('the words of a stop', () => {
       string,
       { message: string }
     >;
-    const keys: Record<(typeof REASONS)[number] | 'other', string> = {
+    // Piwi Picker shows a held failure by its error, with no stop word.
+    const keys: Record<Exclude<(typeof REASONS)[number], 'failure'> | 'other', string> = {
       breakpoint: 'runs_stoppedBreakpoint',
       step: 'runs_stoppedStep',
       pause: 'runs_stoppedPause',

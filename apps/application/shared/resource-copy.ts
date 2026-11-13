@@ -22,7 +22,7 @@ export function formatSize(bytes: number): string {
   return `${Math.max(0, Math.round(bytes / 1024))} kB`;
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : word.endsWith('s') ? 'es' : 's'}`;
 
 export const VERDICT_LABEL: Record<ResourceVerdict, string> = {
   leaked: 'Leaked',
@@ -67,7 +67,7 @@ const GROWTH_UNIT: Partial<Record<keyof typeof GROWTH_NOUN, string>> = {
 export interface FindingView {
   /** `Leaked context`, `Never used page`, `Piling up listeners`. */
   label: string;
-  /** Where it was opened, as the reporter named it; null for a Node handle. */
+  /** Where it was opened, as the reporter named it; a Node handle's line, null when its line is unknown. */
   where: string | null;
   /** The `file:line` that opened it, for the open-in-IDE link. */
   site: string | null;
@@ -120,6 +120,7 @@ export function findingView(finding: WireResourceFinding): FindingView {
       break;
     }
     case 'handle':
+      if (finding.count > 1) facts.push(plural(finding.count, what));
       facts.push(`left running in the worker by ${finding.detail ?? 'a test'}`);
       break;
     case 'probable':
@@ -128,7 +129,7 @@ export function findingView(finding: WireResourceFinding): FindingView {
   }
   return {
     label: `${VERDICT_LABEL[finding.verdict]} ${what}`,
-    where: finding.verdict === 'handle' ? null : finding.where,
+    where: finding.verdict === 'handle' ? (finding.site ?? null) : finding.where,
     site: finding.site ?? null,
     facts,
     lastUse: finding.lastUse ?? null,

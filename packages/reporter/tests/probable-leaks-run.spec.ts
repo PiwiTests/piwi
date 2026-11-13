@@ -4,13 +4,18 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import type { TestStep } from '@playwright/test/reporter';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildResourceReport, tallyLifecycleSteps } from '../src/internal/collect/resource-verdicts.js';
+import {
+  buildResourceReport,
+  fixturesTornDownOf,
+  tallyLifecycleSteps,
+} from '../src/internal/collect/resource-verdicts.js';
 import { sourceLineReader } from '../src/internal/support/source-snippet.js';
 
 /**
  * A real Playwright run of a suite without the capture fixtures, whose steps are tallied as the reporter tallies
- * them: the step titles, the hooks' titles and columns and each call's column are Playwright's own, so a release
- * that changes one shows here, on the floor version too.
+ * them, and whose teardown steps name the fixtures of each test's own scope: the step titles, the hooks' titles and
+ * columns and each call's column are Playwright's own, so a release that changes one shows here, on the floor version
+ * too.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -70,6 +75,17 @@ test('hands a page on', async ({ browser }) => {
 });
 test('uses it', async () => {
   await page.goto('about:blank');
+});
+`;
+
+const FIXTURES_SPEC = `import { test as base } from '@playwright/test';
+
+const test = base.extend<{ timedTest: number }, { timedWorker: number }>({ // fixtures
+  timedTest: [async ({}, use) => { await use(1); }, { timeout: 20_000 }],
+  timedWorker: [async ({}, use) => { await use(2); }, { scope: 'worker', timeout: 20_000 }],
+});
+test('uses a timed fixture of each scope', async ({ timedTest, timedWorker }) => {
+  test.expect(timedTest + timedWorker).toBe(3);
 });
 `;
 
@@ -143,6 +159,7 @@ export default defineConfig({
   );
   write('steps-reporter.cjs', STEPS_REPORTER);
   write('tests/block.spec.ts', BLOCK_SPEC);
+  write('tests/fixtures.spec.ts', FIXTURES_SPEC);
   write('tests/hooks.spec.ts', HOOKS_SPEC);
   write('tests/leaks.spec.ts', LEAKS_SPEC);
 
@@ -169,7 +186,7 @@ afterAll(() => {
 describe('probable leaks from a real run without the fixtures', () => {
   it('finds each object left open at its line, and nothing that was closed', () => {
     expect(exitCode, output).toBe(0);
-    expect(attempts, output).toHaveLength(11);
+    expect(attempts, output).toHaveLength(12);
     const source = sourceLineReader();
     const tallies = attempts.map((attempt) =>
       tallyLifecycleSteps(
@@ -184,6 +201,16 @@ describe('probable leaks from a real run without the fixtures', () => {
       ['context', marked('tests/block.spec.ts', BLOCK_SPEC, 'block'), 'left open by a beforeAll or afterAll hook'],
       ['context', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'context'), 'left open by its test'],
       ['page', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'page'), 'left open by its test'],
+    ]);
+  });
+});
+
+describe('the fixtures a real run tears down with each test', () => {
+  it('names a timed test fixture, never a timed worker fixture', () => {
+    const attempt = attempts.find((a) => a.file.endsWith('fixtures.spec.ts'));
+    expect(attempt, output).toBeDefined();
+    expect(fixturesTornDownOf(attempt!.steps as TestStep[])).toEqual([
+      `timedTest|${marked('tests/fixtures.spec.ts', FIXTURES_SPEC, 'fixtures')}`,
     ]);
   });
 });

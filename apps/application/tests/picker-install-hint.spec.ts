@@ -58,7 +58,7 @@ test.describe.serial('Piwi Picker install hint', () => {
         document.documentElement.setAttribute(attribute, '0.50.0');
         document.dispatchEvent(new Event(event));
       },
-      [PICKER_MARKER_ATTRIBUTE, PICKER_MARKER_EVENT],
+      [PICKER_MARKER_ATTRIBUTE, PICKER_MARKER_EVENT] as const,
     );
     await expect(hint(page)).toHaveCount(0);
   });
@@ -71,7 +71,7 @@ test.describe.serial('Piwi Picker install hint', () => {
           document.dispatchEvent(new Event(event));
         });
       },
-      [PICKER_MARKER_ATTRIBUTE, PICKER_MARKER_EVENT],
+      [PICKER_MARKER_ATTRIBUTE, PICKER_MARKER_EVENT] as const,
     );
     await openBugReports(page);
     await expect(hint(page)).toHaveCount(0);

@@ -63,7 +63,7 @@ describe('fillGuideText', () => {
 
 /** An anchor with only what the stop helpers read. */
 function anchor(pages: string[], reveal?: GuideAnchor['reveal']): GuideAnchor {
-  return { id: 'some-block', pages, reveal, describes: 'A block.', sample: { route: '/' } };
+  return { id: 'some-block', kind: 'block', pages, reveal, describes: 'A block.', sample: { route: '/' } };
 }
 
 describe('anchorSelector', () => {

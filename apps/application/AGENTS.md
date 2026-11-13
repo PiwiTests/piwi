@@ -141,6 +141,7 @@ From `apps/application/`:
 | Command                                                        | Purpose                                                                          |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `npm run app:typecheck`                                        | TypeScript check (4 GB heap)                                                     |
+| `npm run app:typecheck:tests`                                  | TypeScript check of `tests/` (`tests/tsconfig.json`, 6 GB heap)                  |
 | `npm run app:lint` / `app:lint:fix`                            | oxlint                                                                           |
 | `npm run app:format` / `app:format:check`                      | oxfmt, Markdown included                                                         |
 | `npm run app:test:unit`                                        | Unit tests (Vitest); one file: `npx vitest run tests/unit/<name>.test.ts`        |

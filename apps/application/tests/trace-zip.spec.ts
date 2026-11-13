@@ -12,7 +12,7 @@ function crc32(buf: Buffer): number {
     t[n] = c;
   }
   let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = t[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  for (let i = 0; i < buf.length; i++) c = t[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -90,7 +90,7 @@ test.describe('trace-zip: parseZip / buildZip', () => {
 
   test('preserves binary data unchanged', () => {
     const binary = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
-    const [entry] = parseZip(buildZip([{ name: 'binary.bin', data: binary }]));
+    const entry = parseZip(buildZip([{ name: 'binary.bin', data: binary }]))[0]!;
     expect(entry.data.equals(binary)).toBe(true);
   });
 
@@ -111,7 +111,7 @@ test.describe('trace-zip: parseZip / buildZip', () => {
   });
 
   test('handles empty (zero-byte) file entries', () => {
-    const [entry] = parseZip(buildZip([{ name: 'empty.dat', data: Buffer.alloc(0) }]));
+    const entry = parseZip(buildZip([{ name: 'empty.dat', data: Buffer.alloc(0) }]))[0]!;
     expect(entry.name).toBe('empty.dat');
     expect(entry.data.length).toBe(0);
   });
@@ -119,7 +119,7 @@ test.describe('trace-zip: parseZip / buildZip', () => {
   test('parses deflated (method=8) entries', () => {
     const data = Buffer.from('hello world '.repeat(100)); // repetition compresses well
     const zip = buildDeflatedZip('deflated.txt', data);
-    const [entry] = parseZip(zip);
+    const entry = parseZip(zip)[0]!;
     expect(entry.name).toBe('deflated.txt');
     expect(entry.data.equals(data)).toBe(true);
   });
@@ -132,7 +132,7 @@ test.describe('trace-zip: parseZip / buildZip', () => {
   test('round-trips entries with non-ASCII filenames', () => {
     const name = 'resources/тест-файл.net';
     const data = Buffer.from('content');
-    const [entry] = parseZip(buildZip([{ name, data }]));
+    const entry = parseZip(buildZip([{ name, data }]))[0]!;
     expect(entry.name).toBe(name);
     expect(entry.data.equals(data)).toBe(true);
   });

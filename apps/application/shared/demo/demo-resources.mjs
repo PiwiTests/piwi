@@ -312,12 +312,16 @@ function leakyFindings({ fixtureFile, tests, wallMs, sites }) {
   ];
 }
 
-/** The server `handleTest` leaves running in its worker, in a leaky run and in the runs before it. */
+/**
+ * The server `handleTest` leaves running in its worker, at the line that
+ * started it, in a leaky run and in the runs before it.
+ */
 function handleFinding(handleTest) {
   return {
     verdict: 'handle',
     kind: 'handle',
     where: 'TCPServerWrap',
+    site: `${handleTest.file}:27`,
     tests: 1,
     count: 1,
     detail: `"${handleTest.title}" (${handleTest.file})`,

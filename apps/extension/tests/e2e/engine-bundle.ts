@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { Frame, Page } from '@playwright/test';
@@ -18,6 +18,7 @@ let bundle: Promise<string> | null = null;
 export function engineBundle(): Promise<string> {
   bundle ??= (async () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'piwi-engine-'));
+    process.once('exit', () => rmSync(outDir, { recursive: true, force: true }));
     await build({
       root: extensionRoot,
       configFile: false,

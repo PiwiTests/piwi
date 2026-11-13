@@ -1,15 +1,11 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
 import { REVEAL_EXPRESSION } from '../../src/shared/devtools-selection.js';
-import { launchWithExtension } from './fixtures.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(here, '..', '..', 'dist');
+import { launchWithEditedManifest, removedOnClose } from './fixtures.js';
 
 interface CdpTarget {
   type: string;
@@ -62,18 +58,18 @@ test('the real DevTools loads the devtools page, and $0 reaches the ranking scri
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/cart`;
 
   // The site's grant, as a person gives it from the sidebar's Allow button.
-  const extension = mkdtempSync(path.join(tmpdir(), 'piwi-devtools-ext-'));
-  cpSync(DIST, extension, { recursive: true });
-  const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-  writeFileSync(
-    path.join(extension, 'manifest.json'),
-    JSON.stringify({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
-  );
   const userDataDir = mkdtempSync(path.join(tmpdir(), 'piwi-devtools-profile-'));
-  const context = await launchWithExtension(extension, {
-    userDataDir,
-    args: ['--auto-open-devtools-for-tabs', '--remote-debugging-port=0'],
-  });
+  let launched: BrowserContext;
+  try {
+    launched = await launchWithEditedManifest(
+      (manifest) => ({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+      { userDataDir, args: ['--auto-open-devtools-for-tabs', '--remote-debugging-port=0'] },
+    );
+  } catch (error) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
+  const context = removedOnClose(launched, userDataDir);
   try {
     const page = await context.newPage();
     await page.goto(url);

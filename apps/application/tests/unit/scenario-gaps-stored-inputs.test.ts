@@ -11,6 +11,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { eq } from 'drizzle-orm';
 import { migrateToLatest } from './temp-db';
+import type { CatalogEntryReachInput } from '../../shared/handlers/scenario-gaps';
 import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -60,7 +61,7 @@ describe('assertionLightPages', () => {
 });
 
 describe('resolveCatalogMethodReach', () => {
-  const entry = (over: Partial<gaps.CatalogEntryReachInput>): gaps.CatalogEntryReachInput => ({
+  const entry = (over: Partial<CatalogEntryReachInput>): CatalogEntryReachInput => ({
     module: './pages/UsersPage',
     name: 'm',
     kind: 'page-object-method',

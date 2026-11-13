@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filterServeableTools, narrowToolsByModule } from '../../server/utils/mcp/filter';
-import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { MCP_TOOL_DEFS as CATALOG, type McpToolDef } from '#shared/mcp-tools';
 import { CAPABILITIES, type CapabilityId, type CapabilityModule, type CapabilityState } from '#shared/capabilities';
 
 /** A full states map at `undecided`, with the given overrides applied. */
@@ -9,6 +9,9 @@ function statesWith(overrides: Partial<Record<CapabilityId, CapabilityState>>): 
   for (const c of CAPABILITIES) states[c.id] = 'undecided';
   return { ...states, ...overrides };
 }
+
+/** The hosted catalog, as the route serves it. */
+const MCP_TOOL_DEFS: readonly McpToolDef[] = CATALOG;
 
 const DIAGNOSIS = ['run_cluster_diagnosis', 'run_execution_diagnosis', 'submit_diagnosis_feedback'];
 

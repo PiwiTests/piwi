@@ -1,7 +1,7 @@
 import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,8 @@ function languageLaunchOptions(language: string): {
  * reloaded copy again.
  *
  * `args` adds command-line switches, and `userDataDir` names the profile
- * directory, for a spec that reads files the browser writes there.
+ * directory, for a spec that reads files the browser writes there. A profile
+ * made here is removed once the context closes; a named one is kept.
  *
  * `language` runs the browser in another language (`fr`). On Linux the
  * `--lang` flag alone makes `chrome.i18n.getMessage` answer in that language
@@ -58,6 +59,56 @@ export async function launchWithExtension(
   } = {},
 ): Promise<BrowserContext> {
   const userDataDir = opts.userDataDir ?? mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
+  if (opts.userDataDir) return launchContext(extensionPath, userDataDir, opts);
+  try {
+    return removedOnClose(await launchContext(extensionPath, userDataDir, opts), userDataDir);
+  } catch (error) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** The built extension's `manifest.json`, as a spec reads and rewrites it. */
+export type ExtensionManifest = Record<string, unknown> & { permissions: string[]; host_permissions?: string[] };
+
+/**
+ * Launches a copy of the built extension whose manifest `edit` rewrote (the grants or permissions a spec needs). The
+ * copy is removed once the context closes.
+ */
+export async function launchWithEditedManifest(
+  edit: (manifest: ExtensionManifest) => ExtensionManifest,
+  opts: Parameters<typeof launchWithExtension>[1] = {},
+): Promise<BrowserContext> {
+  const extension = mkdtempSync(path.join(tmpdir(), 'piwi-picker-ext-'));
+  try {
+    cpSync(EXTENSION_PATH, extension, { recursive: true });
+    const manifestPath = path.join(extension, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(edit(JSON.parse(readFileSync(manifestPath, 'utf8')))));
+    return removedOnClose(await launchWithExtension(extension, opts), extension);
+  } catch (error) {
+    rmSync(extension, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** Wraps `context.close` to remove `dir` once the browser has closed and released its files. */
+export function removedOnClose(context: BrowserContext, dir: string): BrowserContext {
+  const close = context.close.bind(context);
+  context.close = async (options) => {
+    try {
+      await close(options);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  return context;
+}
+
+async function launchContext(
+  extensionPath: string,
+  userDataDir: string,
+  opts: NonNullable<Parameters<typeof launchWithExtension>[1]>,
+): Promise<BrowserContext> {
   if (opts.developerMode) {
     mkdirSync(path.join(userDataDir, 'Default'));
     writeFileSync(

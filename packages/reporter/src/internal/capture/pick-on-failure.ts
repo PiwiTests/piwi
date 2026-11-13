@@ -201,25 +201,34 @@ export async function pickLocator(
 ): Promise<PickedLocator | null> {
   /** A wait for the overlay's answer polls in the page, left there by an `ended` that aborted it. */
   let polling = false;
-  /** Wait for the overlay to set `name`; false once `ended` aborts first. */
+  /**
+   * Wait for the overlay to set `name`; false once `ended` aborts first, or once the page shows a document without the
+   * overlay (it navigated away from it): the wait runs again in each new document, where no answer ever comes.
+   */
   const answered = async (name: string): Promise<boolean> => {
     const wait = page.waitForFunction(
       ([key, endedKey]) => {
         const g = globalThis as any;
-        if (g[endedKey] !== true) return g[key] !== undefined;
-        delete g[endedKey];
-        return true;
+        if (g[endedKey] === true) {
+          delete g[endedKey];
+          return true;
+        }
+        if (g[key] !== undefined) return true;
+        const shown = ['__piwiPickCleanup', '__piwiAnchorCleanup', '__piwiChoiceCleanup'].some(
+          (cleanup) => typeof g[cleanup] === 'function',
+        );
+        return shown ? false : 'gone';
       },
       [name, PICK_ENDED] as const,
       { timeout: 0, polling: 250 },
     );
     polling = true;
-    const done = await unlessEnded(
-      wait.then(() => true),
+    const outcome = await unlessEnded(
+      wait.then((handle) => handle.jsonValue()),
       ended,
     );
-    if (done) polling = false;
-    return !ended?.aborted;
+    if (outcome !== undefined) polling = false;
+    return !ended?.aborted && outcome !== 'gone';
   };
   try {
     const overlayArg: PickerOverlayArg = { transport: 'global', failing };

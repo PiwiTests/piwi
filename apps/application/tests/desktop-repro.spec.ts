@@ -21,7 +21,7 @@ interface FakeInvocation {
 
 declare global {
   interface Window {
-    __piwiFakeTauri: { invocations: FakeInvocation[] };
+    __piwiReproTauri: { invocations: FakeInvocation[] };
   }
 }
 
@@ -34,7 +34,7 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
       for (const cb of listeners) cb({ payload });
     };
     const state = { invocations: [] as FakeInvocation[], lastRunId: 20 };
-    Object.assign(window, { __piwiFakeTauri: state });
+    Object.assign(window, { __piwiReproTauri: state });
     Object.assign(window, {
       __TAURI__: {
         core: {
@@ -208,7 +208,7 @@ test.describe('Desktop repro request', () => {
     await expect(dialog.getByText(`<testDir>/piwi-repro/bug-${REQUEST_ID}.spec.ts --headed --trace=on`)).toBeVisible();
     // Nothing ran before the click.
     expect(
-      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_run_repro')),
+      await page.evaluate(() => window.__piwiReproTauri.invocations.some((i) => i.cmd === 'desktop_run_repro')),
     ).toBe(false);
 
     await dialog.getByRole('button', { name: 'Run with Playwright' }).click();
@@ -218,7 +218,7 @@ test.describe('Desktop repro request', () => {
     await expect(tray.getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect(page.getByText('Bug reproduced').first()).toBeVisible();
     const runs = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_run_repro'),
+      window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_run_repro'),
     );
     expect(runs).toEqual([
       {
@@ -252,7 +252,7 @@ test.describe('Desktop repro request', () => {
     await expect(dialog).toHaveCount(0);
     await expect.poll(() => patches).toEqual([{ status: 'declined' }]);
     expect(
-      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_run_repro')),
+      await page.evaluate(() => window.__piwiReproTauri.invocations.some((i) => i.cmd === 'desktop_run_repro')),
     ).toBe(false);
   });
 
@@ -282,13 +282,18 @@ test.describe('Desktop repro request', () => {
     await expect(dialog.getByText('from piwi.example.com')).toBeVisible();
     await expect(dialog.getByText('tests/cart.spec.ts:12 (chromium)')).toBeVisible();
     expect(
-      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_bisect_here')),
+      await page.evaluate(() => window.__piwiReproTauri.invocations.some((i) => i.cmd === 'desktop_bisect_here')),
     ).toBe(false);
 
     await dialog.getByRole('button', { name: 'Bisect', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here').length),
+      )
+      .toBe(1);
     const runs = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here'),
+      window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here'),
     );
     // The cluster belongs to the instance the job came from: it is not this app's, so only the job names the run.
     expect(runs).toEqual([
@@ -381,14 +386,21 @@ test.describe('Desktop repro request', () => {
     await expect(arms.getByRole('listitem')).toHaveCount(2);
     await expect(arms.getByText('delay GET /api/cart 1.8 s')).toBeVisible();
     expect(
-      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_flake_lab_job')),
+      await page.evaluate(() => window.__piwiReproTauri.invocations.some((i) => i.cmd === 'desktop_flake_lab_job')),
     ).toBe(false);
 
     await dialog.getByRole('button', { name: 'Run the lab', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     // The window names the project and the request only: the shell reads the commit and the plan itself.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job').length,
+        ),
+      )
+      .toBe(1);
     const runs = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job'),
+      window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job'),
     );
     expect(runs).toEqual([
       { cmd: 'desktop_flake_lab_job', args: { projectId: String(projectId), requestId: REQUEST_ID } },

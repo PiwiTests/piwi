@@ -23,6 +23,7 @@ Run from `apps/application/` unless noted:
 |---|---|
 | `npm run app:lint` | Lint (oxlint) |
 | `npm run app:typecheck` | TypeScript check |
+| `npm run app:typecheck:tests` | TypeScript check of the tests |
 | `npm run app:format:check` | Formatting (oxfmt) |
 | `npm run app:test:unit` | Unit tests (Vitest) |
 | `npm run app:test` | E2E tests (Playwright — needs browsers: `npx playwright install chromium`) |

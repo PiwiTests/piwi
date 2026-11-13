@@ -11,7 +11,7 @@ const parse = (archive: Buffer) => parseBlobReport(openArchive(archive).readEntr
 
 describe('parseBlobReport', () => {
   test("names the engine a project's devices preset sets, beside an explicit browserName", async () => {
-    const tests = [{ testId: 't', title: 'opens', line: 1, attempts: [{ status: 'passed', duration: 10 }] }];
+    const tests = [{ testId: 't', title: 'opens', line: 1, attempts: [{ status: 'passed' as const, duration: 10 }] }];
     const preset = await parse(
       buildBlobReport({ projectName: 'Polaris', projectUse: { defaultBrowserType: 'webkit' }, tests }),
     );

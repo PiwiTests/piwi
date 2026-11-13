@@ -106,14 +106,14 @@ beforeEach(async () => {
   await migrateToLatest(db);
   state.db = db;
   resetRunTargetEvents();
-  [admin, robin, sam] = await db
+  [admin, robin, sam] = (await db
     .insert(schema.users)
     .values([
       { username: 'alex', password: 'x', role: InstanceRole.ADMINISTRATOR, name: 'Alex' },
       { username: 'robin', password: 'x', role: InstanceRole.MEMBER, name: 'Robin' },
       { username: 'sam', password: 'x', role: InstanceRole.MEMBER, name: 'Sam' },
     ])
-    .returning();
+    .returning()) as [User, User, User];
   const [project] = await db.insert(schema.projects).values({ name: 'shop' }).returning();
   projectId = project!.id;
   await db.insert(schema.roleBindings).values([
