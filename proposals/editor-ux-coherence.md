@@ -591,7 +591,7 @@ the keyboard's reach, and the tooltip's '3 failed' faces the item's '2 failing' 
 2026.2.4.1 the click opens that popup (`PiwiStatusBar.kt:69-76, 171-223`). **(seen)** Fix: the click opens the status
 menu (a new `piwi.statusMenu` quick pick) in the popup's sections and order, the state's action preselected so Enter
 still refreshes, its run section replacing VS Code's control items while a run is live ([LR1](#lr1)); Connect only when
-not connected; one count in the tooltip ('3 failed in run #124 · 2 still failing'). Click or chord is open (§13).
+not connected; one count in the tooltip ('3 failed in run #124 · 2 still failing'). The click opens it (§13, question 6).
 ([M3](#m3), [LI4](#li4))
 
 <a id="hm2"></a>**HM2. VS Code paints the status item red all day for any failing test, CI failures the developer did
@@ -947,7 +947,7 @@ amber paused that means did not run elsewhere. **Depends on** nothing. **Revisit
 Six sections in a fixed order: Run, Record, Run Control (only while a Piwi run is live), Dashboard, Agents, Connection,
 each showing only what applies. The same shape fills Tools → Piwi as nested compact groups, a Piwi submenu in both
 editors' context menus and file trees, the status popup, a new VS Code status menu (a quick pick with the state's action
-preselected, so Enter still refreshes) and the tool window's gear; whether a chord also opens it is open (§13). **Lives
+preselected, so Enter still refreshes) and the tool window's gear; the click opens it (§13, question 6). **Lives
 in** the catalog's menu fields and both manifests (FSL); ids stay. **Replaces** 51 flat rows, nothing in either file
 tree, a VS Code status click that only refreshes. **Depends on** [LI1](#li1). **Revisits**
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md) M7 (a status popup in JetBrains only) and §3.6, which
@@ -1207,7 +1207,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step | Change | Scope | Findings |
 |---|---|---|---|
-| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): VS Code's status menu once §13's question 6 is settled, New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
+| <a id="m3"></a>M3 | **The rest of one Piwi menu** ([LI4](#li4)): VS Code's status menu, opened by the item's click with the state's action preselected (§13, question 6), New → Playwright Test (Recorded)… on config folders; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **The rest of the Piwi icon set generated with the brand assets** ([LI2](#li2)): record, and the glyphs Appendix A marks (new), as plugin SVGs and in VS Code's icon font | `ide` | [X2](#x2), [IC2](#ic2), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **Piwi Picker's waiting count in the pause bar's violet** ([LI3](#li3)), both JetBrains color schemes held by the same test, and the running ring animated | `extension` | [IC4](#ic4), [TL5](#tl5) |
 | <a id="m7"></a>M7 | **One action list per test line, from the service** (`piwi/testActions`), in JetBrains' result icon, VS Code's Testing menus and, with the Testing view off, `editor/lineNumber/context`; on failure nodes too, with Verify ×3 and Jump to Source | `ide` | [TL2](#tl2), [TL7](#tl7), [TL9](#tl9), [TL6](#tl6) |
@@ -1251,21 +1251,19 @@ whether M14's places are interim.
 1. **A debug session or not** ([LI10](#li10)): keep [run-control.md](../adr/run-control.md) §3.2's choice and give
    Piwi's controls the debugger's places ([LI9](#li9)), or an inline `DebugAdapter` and an `XDebugProcess`? To decide
    before 1.0 freezes the run-control ids D25 lists.
-2. **Caret or cursor**: the action catalog keeps each platform's word (`{cursor}` in `packages/editor/src/actions.ts`:
-   Run to the cursor in VS Code, Run to the caret in JetBrains, whose own action is Run to Cursor); does it take one
-   word in both clients instead?
-3. **Record's color, and two marks**: flaky takes the dashboard's fuchsia shuffle (§2 principle 3, [IC4](#ic4)). Is
-   Record's action icon red like Piwi Picker's dot, or gray, with red kept for the recording state as JetBrains' icon
-   style asks? Can VS Code's margin show the flaky mark beside the Testing view's glyph, and can
-   JetBrains' gutter animate the running ring ([TL5](#tl5))?
+2. **Caret or cursor**, decided: each platform's word, as the action catalog says it (`{cursor}` in
+   `packages/editor/src/actions.ts`: Run to the cursor in VS Code, Run to the caret in JetBrains).
+3. **Two marks**: flaky takes the dashboard's fuchsia shuffle (§2 principle 3, [IC4](#ic4)). Can VS Code's margin show
+   the flaky mark beside the Testing view's glyph, and can JetBrains' gutter animate the running ring ([TL5](#tl5))?
+   Record's action icon is decided: gray, with red kept for the recording state, as JetBrains' icon style asks.
 4. **Where the concept table lives** (the catalog and the settings registry are in `packages/editor`, [LI1](#li1),
    [LI11](#li11)): `packages/editor`, bundled by both clients, or `apps/application/shared` beside `piwi-features.ts`
    and `piwi-ecosystem.ts`? Both are FSL; `packages/core` is MIT and cannot take Piwi Picker's drawings. Are
    `package.json` and `plugin.xml` generated from them, or kept by hand under a test?
 5. **The codicons' floor**: the codicons Appendix A proposes exist in VS Code 1.143.1 and are unchecked against the
    1.91 engines floor.
-6. **VS Code's status click**: the status menu with the state's action preselected (Enter keeps today's refresh), or a
-   refresh while a chord opens the menu?
+6. **VS Code's status click**, decided: the status menu, with the state's action preselected so Enter keeps today's
+   refresh.
 7. **What turns the status item to its alarm** ([HM2](#hm2)): failures new against the baseline, only those a run
    started here or local edits produced, or both?
 8. **Where VS Code's Runs view lives**: in the Piwi panel beside Failures, matching JetBrains' Runs tab (this document's

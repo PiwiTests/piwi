@@ -109,7 +109,7 @@
       while they apply (below).
     -->
     <actions>
-        <group id="Piwi.Actions" text="Piwi" popup="true" compact="true">
+        <group id="Piwi.Actions" text="Piwi" icon="/icons/piwi.svg" popup="true" compact="true">
             <!--
               Six sections in this order, each showing only what applies: Run, Record, Run control (while a run is
               live), Dashboard, Agents, Connection.
@@ -363,7 +363,7 @@
           Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS
           Code extension's (run, record, a recording's controls), each entry shown only where it applies.
         -->
-        <group id="Piwi.EditorPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" popup="true">
+        <group id="Piwi.EditorPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" icon="/icons/piwi.svg" popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <reference ref="Piwi.RunTestAtCursor"/>
             <reference ref="Piwi.VerifyTestAtCursor"/>
@@ -378,7 +378,7 @@
             <reference ref="Piwi.ResumeRecording"/>
         </group>
         <!-- The project view's Piwi submenu on a file or a folder: run a spec, the tests that reach a file, record a new one. -->
-        <group id="Piwi.ProjectViewPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" popup="true">
+        <group id="Piwi.ProjectViewPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" icon="/icons/piwi.svg" popup="true">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <reference ref="Piwi.RunSpec"/>
             <reference ref="Piwi.RunTestsForFile"/>

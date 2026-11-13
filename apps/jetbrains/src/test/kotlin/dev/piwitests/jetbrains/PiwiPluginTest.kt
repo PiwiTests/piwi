@@ -115,6 +115,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for ((menu, piwi) in listOf("EditorPopupMenu" to "Piwi.EditorPopup", "ProjectViewPopupMenu" to "Piwi.ProjectViewPopup")) {
             assertEquals(menu, listOf(piwi), ids(menu).filter { it?.startsWith("Piwi.") == true })
         }
+        // Each Piwi menu shows Piwi's mark before its name.
+        for (menu in listOf("Piwi.Actions", "Piwi.EditorPopup", "Piwi.ProjectViewPopup")) {
+            assertNotNull(menu, actions.getAction(menu).templatePresentation.icon)
+        }
         // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
         val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
         fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
