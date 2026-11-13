@@ -259,7 +259,7 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
   (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel. So does the editor's
   run channel it names for a job in a throwaway checkout (`editor`, `desktop-editor-hub.ts`): never in a window's
-  stream (`tests/unit/desktop-editor-hub.test.ts`).
+  stream (`desktop-runs.test.ts`, "names an editor’s channel to the shell alone").
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
   its disk text, and refused once the file was written since the run's first connection opened.

@@ -349,6 +349,87 @@ describe('the run channel the shell names in a run', () => {
   );
 
   it.skipIf(process.platform === 'win32')(
+    'names an editor’s channel to the shell alone: never to a browser’s request, nor in a window’s stream',
+    async () => {
+      // The editor's own run channel, apart from the server's: a socket of this user's in a folder no other user enters.
+      const editorDir = fs.mkdtempSync(path.join(editors, 'channel-'));
+      fs.chmodSync(editorDir, 0o700);
+      const editorChannel = { path: path.join(editorDir, 'channel.sock'), token: 'Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed1_-Ed' };
+      const editorSocket = net.createServer();
+      await new Promise<void>((resolve) => editorSocket.listen(editorChannel.path, resolve));
+      vi.doMock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
+      vi.doMock('../../server/utils/desktop-runs', () => ({ desktopRuns: async () => runs }));
+      vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+      vi.stubGlobal('defineRouteMeta', () => {});
+      vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+      vi.stubGlobal('setResponseHeader', () => {});
+      vi.stubGlobal('getQuery', (e: { path: string }) =>
+        Object.fromEntries(new URL(e.path, 'http://127.0.0.1').searchParams),
+      );
+      const window = await openWindow();
+      onTestFinished(async () => {
+        window.close();
+        vi.doUnmock('../../server/utils/auth');
+        vi.doUnmock('../../server/utils/desktop-runs');
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+        await new Promise<void>((resolve) => editorSocket.close(() => resolve()));
+        fs.rmSync(editors, { recursive: true, force: true });
+        fs.mkdirSync(editors, { mode: 0o700 });
+      });
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.70.0',
+        client: 'Visual Studio Code',
+        startedAt: new Date().toISOString(),
+        roots: [folder],
+        hub: null,
+        runChannel: editorChannel,
+        recorderBundle: null,
+        unattended: true,
+        checkout: true,
+      });
+      const route = (await import('../../server/api/desktop/run-channel.get')).default as unknown as (
+        event: unknown,
+      ) => Promise<Record<string, unknown>>;
+      const ask = (headers: Record<string, string>) =>
+        route({
+          path: `/api/desktop/run-channel?folder=${encodeURIComponent(folder)}&attended=1`,
+          node: { req: { headers: { host: '127.0.0.1:3000', ...headers } }, res: {} },
+          context: {},
+        });
+
+      // The shell hears the editor's channel.
+      expect((await ask({ 'x-piwi-token': TOKEN })).editor).toEqual({
+        runChannel: `${editorChannel.path}#${editorChannel.token}`,
+        client: 'Visual Studio Code',
+      });
+      // A request a browser sends is refused, the editor's channel named nowhere in the refusal.
+      for (const browser of [{ origin: ORIGIN }, { 'sec-fetch-site': 'same-origin' }]) {
+        const refused = await ask({ 'x-piwi-token': TOKEN, ...browser }).then(
+          () => null,
+          (error: { statusCode?: number }) => error,
+        );
+        expect(refused?.statusCode, JSON.stringify(browser)).toBe(403);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.token);
+        expect(JSON.stringify(refused)).not.toContain(editorChannel.path);
+      }
+
+      // A job of the server's channel runs and stops as the window watches: nothing of the editor's channel reaches it.
+      const ref = 'desktop-7-at-abc1234';
+      const worker = new Worker(worktree).attach(ref);
+      worker.begin();
+      worker.stop(1);
+      await waitFor(() => window.session(ref)?.workers[0]?.stop);
+      worker.socket.destroy();
+      const heard = JSON.stringify([window.events, runs.editorRuns(), runs.live()]);
+      expect(heard).not.toContain(editorChannel.token);
+      expect(heard).not.toContain(editorChannel.path);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
     'is cleared as the server starts when a server that was killed left it, and kept while one listens',
     async () => {
       const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-tmp-')));
