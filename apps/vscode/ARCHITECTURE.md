@@ -666,14 +666,15 @@ the item's own action (a recording's controls follow it), which depends on the s
 
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:
 
-- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`);
+- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`),
+  ending with the tests still failing, the item's count, when later runs changed the run's (`· 2 still failing`);
 - the baseline, the local runs and the run in progress;
 - when the run was read, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every
   30 s);
 - the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and
   a hint when the desktop app runs but is not in use, or was chosen but does not run;
-- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, to `piwi.refresh`
-  (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
+- links to `piwi.openRun`, `piwi.openInDashboard` and `piwi.compareWith`, to `piwi.connect` only while not connected,
+  to `piwi.refresh` (**Retry**) while the instance does not answer, and to `piwi.showFlakyTests` with the config's folder while the
   failures view lists flaky tests for it (`flakyTestsByRoot`; the view draws the item again once it has read its tree),
   which selects and opens that config's **Flaky in this run** group (`FailuresView.revealFlaky`).
 

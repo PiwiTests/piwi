@@ -481,7 +481,7 @@ export function statusBarView(
     };
   }
   const hint = desktopHint(status, desktopChosen);
-  const connect = '[Connect](command:piwi.connect)';
+  const connect = '[Connect…](command:piwi.connect)';
   const which = configLine(contexts, shown, activeFile);
   if (!shown.connected && shown.problemKind === 'desktop-unproven') {
     return {
@@ -543,7 +543,7 @@ export function statusBarView(
   const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
   const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
-    const links = linksLine(liveLink(live), dashboard, compare, connect);
+    const links = linksLine(liveLink(live), dashboard, compare);
     if (run?.overlays) {
       // A developer's own runs alone, with no baseline.
       const failing = run.failingTests ?? run.failures;
@@ -579,8 +579,10 @@ export function statusBarView(
   // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
   const failing = run.failingTests ?? r.failedTests;
   const fixed = run.resolved ?? 0;
+  // The item's count, when later runs changed the run's: the tooltip says both, one after the other.
+  const still = failing !== r.failedTests ? ` · ${failing} still failing` : '';
   const tooltip = lines(
-    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${still}`,
     which,
     baseline,
     run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
@@ -595,7 +597,6 @@ export function statusBarView(
       flakyLink(connected.root, flakyListed(connected.root)),
       dashboard,
       compare,
-      connect,
     ),
   );
   const view = {
