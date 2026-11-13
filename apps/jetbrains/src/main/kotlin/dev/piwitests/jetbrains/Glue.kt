@@ -1012,13 +1012,22 @@ object Glue {
         val summary = connectionSummary(status, desktopChosen, startProblem, trusted)
         val contexts = status?.contexts.orEmpty()
         val connected = contexts.filter { it.connected }
-        val connection = when {
-            connected.isNotEmpty() && contexts.size > 1 -> "${contexts.size} Playwright configs"
-            connected.size == 1 -> connected[0].let { c -> (c.projectName ?: "Piwi") + (c.branch?.let { " on $it" } ?: "") }
-            else -> summary
+        val short = when {
+            connected.isEmpty() -> null
+            contexts.size > 1 -> "${connected.size} of ${contexts.size} Playwright configs connected"
+                .takeIf { connected.size < contexts.size } ?: "${contexts.size} Playwright configs"
+            else -> connected[0].let { c -> (c.projectName ?: "Piwi") + (c.branch?.let { " on $it" } ?: "") }
         }
+        // The desktop app's hint stays in sight: it says what Connect can switch to.
+        val connection = short?.let { s -> desktopHint(status, desktopChosen).ifEmpty { null }?.let { "$s. $it" } ?: s } ?: summary
         return ToolWindowHeader(connection, summary, baselineLine(result?.baseline?.label)?.let { "$it ▾" })
     }
+
+    /**
+     * Whether the status popup offers Open the latest run: not when a row of it already opens the page of the run in
+     * progress that the action would open (`pageIds`, the run pages the popup lists), whatever host each page names.
+     */
+    fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
 
     /** One sentence on the connection, for the tool window and the settings page. */
     fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {

@@ -80,6 +80,7 @@ import {
   resultsKey,
   resultsRunName,
   testItemExtras,
+  failuresViewDescription,
   testOutcome,
   testRunsOf,
   testTree,
@@ -2297,5 +2298,15 @@ describe('the status item while the editor service is not running', () => {
     expect(view.tooltip).toContain('[Restart the editor service](command:piwi.restartService)');
     expect(view.tooltip).toContain('[Open the log](command:piwi.openLog)');
     for (const command of ['piwi.restartService', 'piwi.openLog']) expect(STATUS_TOOLTIP_COMMANDS).toContain(command);
+  });
+});
+
+describe('the failures view’s description', () => {
+  test('says how it groups, and the baseline it compares with', () => {
+    expect(failuresViewDescription('file', undefined)).toBe('by file');
+    expect(failuresViewDescription('cluster', 'CI run #124 on main')).toBe(
+      'by cluster · Baseline: CI run #124 on main',
+    );
+    expect(failuresViewDescription('owner', '')).toBe('by owner');
   });
 });

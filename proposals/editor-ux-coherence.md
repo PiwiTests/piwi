@@ -23,23 +23,23 @@ and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Po
 `Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
 the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2); VS Code's run node opens its page from its menu too, and both
 say Open the screenshot (HM11). M2 is built; HM11's Verify ×3 and Jump to Source on failure nodes join M7's action list,
-and Open run #78 (running) beside the same run's page row is one entry per page now; its three new groups
-(`Piwi.RunControl`, `Piwi.StatusActions`, `Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in
-part: VS Code's outcome marks in the dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result
-icon and JetBrains' CI tab), and Piwi Picker's dots in the same palette, a running ring in both editors where they drew
-a run triangle, all held by `status-mark-colors.test.ts` (copies restated by hand, not generated); and the dashboard's
-Reproduce here as the editors' monitor (IC11); both CI views draw a test's outcome with its line's own mark, JetBrains'
-through one `PiwiIcons.outcome`. Q26, IC7 and Q9 in part: the JetBrains plugin draws a glyph of its own in `icons/` for
-the 13 actions that had none, Connect's plug and a CI run's cloud, its status item a shared run with Share live's
-broadcast; VS Code's Run the tests that reach this file and 'Piwi: unreachable' leave the glyphs of the Piwi mark and
-Disconnect, and its CI lists open a run with the run pages' globe; `menus.test.ts` and `PiwiPluginTest` fail on a glyph
-two concepts share but those they list (NF1). M5's tray and Runs window: the desktop tray's dot in the outcome palette,
-a run that waits in the pause bar's violet, Piwi Picker's Runs window counting failed and flaky in it, VS Code's flaky
-word after a line in fuchsia (`piwi.flakyForeground`) and the hover's flaky test with the word (IC4 in part). Q8: the
-Piwi tool window's header is one line, the connection a link to Settings (`3 Playwright configs` with several) and the
-baseline a link to Compare with…, the baseline in VS Code's failures view description too, and JetBrains' status popup
-offers one entry per page (HM12, HM3). Q16: VS Code's integration suite stops the editor service and starts it again
-through Restart the editor service (HM19 in part). Q29: Connect's failure words are one table in the editor service
+and the status popup takes one entry per run page (HM3); its three new groups (`Piwi.RunControl`, `Piwi.StatusActions`,
+`Piwi.FailureActions`) wait for NF10's register of group ids. M5 and Q2 in part: VS Code's outcome marks in the
+dashboard's colors and one flaky glyph, Piwi's shuffle, in both editors (the result icon and JetBrains' CI tab), and
+Piwi Picker's dots in the same palette, a running ring in both editors where they drew a run triangle, all held by
+`status-mark-colors.test.ts` (copies restated by hand, not generated); and the dashboard's Reproduce here as the
+editors' monitor (IC11); both CI views draw a test's outcome with its line's own mark, JetBrains' through one
+`PiwiIcons.outcome`. Q26, IC7 and Q9 in part: the JetBrains plugin draws a glyph of its own in `icons/` for the 13
+actions that had none, Connect's plug and a CI run's cloud, its status item a shared run with Share live's broadcast; VS
+Code's Run the tests that reach this file and 'Piwi: unreachable' leave the glyphs of the Piwi mark and Disconnect, and
+its CI lists open a run with the run pages' globe; `menus.test.ts` and `PiwiPluginTest` fail on a glyph two concepts
+share but those they list (NF1). M5's tray and Runs window: the desktop tray's dot in the outcome palette, a run that
+waits in the pause bar's violet, Piwi Picker's Runs window counting failed and flaky in it, VS Code's flaky word after a
+line in fuchsia (`piwi.flakyForeground`) and the hover's flaky test with the word (IC4 in part). Q8: the Piwi tool
+window's header is one line, the connection a link to Settings (`3 Playwright configs` with several) and the baseline a
+link to Compare with…, the baseline in VS Code's failures view description too, and JetBrains' status popup offers one
+entry per page (HM12, HM3). Q16: VS Code's integration suite stops the editor service and starts it again through
+Restart the editor service (HM19 in part). Q29: Connect's failure words are one table in the editor service
 (`connect-failures.json`), which VS Code reads and `GlueTest` holds the JetBrains plugin's copy to, JetBrains gaining
 the expired, not-yet-valid, other-name, not-HTTPS and page answers VS Code said (NF7). M6: the pause bar every headed
 stop shows draws each control's glyph, drawn anew in `picker-dom` (IC6). M20 in part: VS Code's Testing view shows each

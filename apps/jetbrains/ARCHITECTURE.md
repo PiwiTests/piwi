@@ -1085,8 +1085,7 @@ Marketplace's Plugin Verifier counts every use. The replacements in use:
 | `SimpleListCellRenderer.create`     | a `SimpleListCellRenderer` subclass                                                |
 | `CredentialAttributes(…)` in Kotlin | `PiwiCredentials.attributes`, in Java, so it binds to the one-argument constructor |
 
-To invoke an action from code, use `ActionManager.tryToExecute`, not `ActionUtil.invokeAction` (no code does either
-today).
+To invoke an action from code, use `ActionManager.tryToExecute`, not `ActionUtil.invokeAction`.
 
 What stays has no replacement in 2024.1:
 

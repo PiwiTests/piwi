@@ -2969,6 +2969,15 @@ class GlueTest {
     }
 
     @Test
+    fun `the status popup offers Open the latest run unless a row of it opens that run's page`() {
+        val live = LiveRun(runId = 78, url = "http://127.0.0.1:3000/test-runs/78")
+        assertTrue(Glue.latestRunOffered(null, listOf(78)))
+        assertTrue(Glue.latestRunOffered(live, listOf(77)))
+        // By the run's id, whatever host the reporter's page names.
+        assertFalse(Glue.latestRunOffered(live, listOf(78)))
+    }
+
+    @Test
     fun `Re-run the failing tests runs every config's failing tests, or one config's from its node`() {
         val shop = RunTestsArgs("file:///w/apps/shop/tests/a.spec.ts", listOf(7), root = "/w/apps/shop")
         val admin = RunTestsArgs("file:///w/apps/admin/tests/b.spec.ts", listOf(8), root = "/w/apps/admin")
@@ -2985,13 +2994,24 @@ class GlueTest {
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(null))
         // One line: the project and branch, the sentence in the tooltip; the run is the tree's own node.
         val header = Glue.toolWindowHeader(connected, treeFailures)
-        assertEquals(Glue.connectionSummary(connected), header.tooltip)
-        assertFalse(header.connection, header.connection.contains("Run #120"))
-        assertEquals(null, header.baseline)
-        // Several configs read as their count; not connected, as the sentence.
-        val several = connected.copy(contexts = connected.contexts!! + connected.contexts!!.first().copy(root = "/w/apps/admin"))
-        assertEquals("2 Playwright configs", Glue.toolWindowHeader(several, treeFailures).connection)
-        assertEquals(Glue.connectionSummary(null), Glue.toolWindowHeader(null, null).connection)
+        assertEquals(Glue.ToolWindowHeader("Acme on main", Glue.connectionSummary(connected), null), header)
+        // The desktop app's hint stays in sight.
+        assertEquals(
+            "Acme on main. The Piwi desktop app runs on this machine: Connect to use it.",
+            Glue.toolWindowHeader(connected.copy(desktopUrl = "http://127.0.0.1:3000"), null).connection,
+        )
+        // Several configs read as their count, and how many are connected when not all are.
+        val admin = connected.contexts!!.first().copy(root = "/w/apps/admin")
+        assertEquals("2 Playwright configs", Glue.toolWindowHeader(connected.copy(contexts = connected.contexts!! + admin), null).connection)
+        assertEquals(
+            "1 of 2 Playwright configs connected",
+            Glue.toolWindowHeader(connected.copy(contexts = connected.contexts!! + admin.copy(connected = false)), null).connection,
+        )
+        // Not connected, waiting for trust or a start that failed: the sentence itself.
+        val none = connected.copy(contexts = connected.contexts!!.map { it.copy(connected = false, problem = "No API key.") })
+        assertEquals(Glue.connectionSummary(none), Glue.toolWindowHeader(none, null).connection)
+        assertEquals(Glue.WAITING_FOR_TRUST, Glue.toolWindowHeader(null, null, trusted = false).connection)
+        assertEquals("Node.js 18 is too old", Glue.toolWindowHeader(null, null, startProblem = "Node.js 18 is too old").connection)
         assertEquals(
             RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
             Glue.failureRunArgs(editedFailure.copy(root = "/w/apps/admin", uri = "file:///w/shared/pages/admin.ts")),
