@@ -223,6 +223,8 @@
               not take the key (RunControlAction.givesWayTo). While a run is live they go first among the actions a
               keymap gives the same key (PiwiRunActionPromoter), and give way when they do not apply.
             -->
+            <!-- One group for a run's controls, page, code actions, sharing and Stop, in this order wherever they show. -->
+            <group id="Piwi.RunControl" text="Run control" compact="true">
             <action id="Piwi.PauseRun" class="dev.piwitests.jetbrains.PauseRunAction" text="Pause the run"
                     icon="AllIcons.Actions.Pause" use-shortcut-of="Pause"
                     description="Stop the tests of the run started from Piwi before their next call"/>
@@ -252,6 +254,9 @@
             <action id="Piwi.PauseAndWatch" class="dev.piwitests.jetbrains.PauseAndWatchAction"
                     text="Pause and watch a worker's test"
                     description="Stop a worker before its next call, and watch its page in the Piwi tool window"/>
+            <action id="Piwi.OpenTraceSoFar" class="dev.piwitests.jetbrains.OpenTraceSoFarAction"
+                    text="Open the trace so far" icon="AllIcons.FileTypes.Archive"
+                    description="Open the trace of the test the Worker tab watches, as far as it ran, in Playwright's trace viewer"/>
             <!-- The code actions at a stop: enabled while a stop offers them, with no shortcut. -->
             <action id="Piwi.PickAtStop" class="dev.piwitests.jetbrains.PickAtStopAction" text="Pick a locator at the stop"
                     icon="AllIcons.General.Locate"
@@ -292,6 +297,7 @@
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>
+            </group>
             <separator/>
             <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
                     icon="AllIcons.General.Settings"

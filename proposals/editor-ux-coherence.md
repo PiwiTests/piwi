@@ -20,11 +20,12 @@ in the Runs window and the desktop app, and the pause bar in the editors' order 
 the run page words it, and JetBrains' status item saying why a test stopped (LR15); and M2's stop popup, result icon
 menu and failures tree built from registered actions, the tree's as new `Piwi.Failure.*` ids, with Find Action synonyms,
 and the status popup's rows registered too (`Piwi.ShowStop` on Show Execution Point's key, `Piwi.OpenRunPage`,
-`Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`). §14 adds the findings the code that built the plan
-raised. The live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for
-leftovers its Status names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where
-each editor hosts a run and the debug-session question ([LI10](#li10)), the study the live model, its words and its
-phases. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
+`Piwi.OpenFailures`, `Piwi.NodeSettings`, `Piwi.GoToRecordedLines`), one `Piwi.RunControl` group for Tools → Piwi and
+the status popup, and `Piwi.OpenTraceSoFar` (AC6, NF2). §14 adds the findings the code that built the plan raised. The
+live-run study, [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status
+names, and part of P7 and P11, and §8 names what the editors still lack; this document owns where each editor hosts a
+run and the debug-session question ([LI10](#li10)), the study the live model, its words and its phases. Nothing here is
+on [`ROADMAP.md`](../ROADMAP.md) yet. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
@@ -41,8 +42,8 @@ fixes, and names it in this paragraph; the one that ships the last step moves th
 - **The data is shared and mostly right; everything around it differs.** One action has up to five names and two places,
   one outcome up to seven marks and four colors, one click means one thing in Rider and another in VS Code, and only the
   coverage colors and the stop words are held to one source by a test.
-- **Ten findings lead (§0)**, from one action spelled four ways and JetBrains popups that Find Action cannot reach to
-  Rider's keys colliding with Piwi's and a JetBrains plugin that misreports a stopped service.
+- **Nine findings lead (§0)**, from one action spelled four ways to Rider's keys colliding with Piwi's and a JetBrains
+  plugin that misreports a stopped service.
 - **Nine principles (§2):** one name, one glyph and one outcome palette per concept, held by tests; one menu shape and
   one home per editor; the IDE's own places first; the service words and decides, the clients draw; every entry
   registered and discoverable; quiet and switchable; checked where it is used, Rider included.
@@ -74,37 +75,33 @@ the **concept table** and the **outcome palette** (proposed in §2); the **live-
    sentence case** ([AC7](#ac7), [AC9](#ac9), [AC11](#ac11), [NF3](#nf3)). End the test has four spellings, the new
    actions are worded apart in each client, and the words both clients show are written twice with no test between them.
 
-2. **JetBrains popups are built from unregistered actions**, so their keys never show and Find Action cannot reach them:
-   the stop popup, the result icon's menu, the status popup's rows, the failures tree's menu, and the run page entry;
-   the trace so far is a button of the Worker tab alone ([AC6](#ac6), [NF2](#nf2)).
-
-3. **The status item behaves differently in each editor.** A click opens the status popup in JetBrains but refreshes in
+2. **The status item behaves differently in each editor.** A click opens the status popup in JetBrains but refreshes in
    VS Code, which paints the item red for CI failures the developer did not cause, shows up to nine run items, and
    counts one run twice in two wordings ([HM1](#hm1), [HM2](#hm2), [LR1](#lr1), [LR18](#lr18)).
 
-4. **A stopped Piwi run's controls are missing where JetBrains' debugger keeps its own**: no Run menu, editor menu or
+3. **A stopped Piwi run's controls are missing where JetBrains' debugger keeps its own**: no Run menu, editor menu or
    Run tab entries, no way back to the stopped line in VS Code and only unregistered status-popup rows in JetBrains, and
    no page per worker carrying the controls ([LR3](#lr3), [LR4](#lr4), [LR8](#lr8)).
 
-5. **From a test's own line, neither editor offers more than Run and Verify ×3, and nothing debugs it**: JetBrains'
+4. **From a test's own line, neither editor offers more than Run and Verify ×3, and nothing debugs it**: JetBrains'
    result icon opens a browser, VS Code's Testing menus have no Piwi entry and no Debug profile ([TL2](#tl2),
    [TL3](#tl3), [TL17](#tl17)).
 
-6. **A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the status bars**
+5. **A CI or teammate run reads as the developer's own on the test lines, and an agent's run in the status bars**
    ([NF4](#nf4), [LR10](#lr10)).
 
-7. **One concept has several glyphs, and some glyphs several meanings**: recording is the IDE's macro film strip, flaky
+6. **One concept has several glyphs, and some glyphs several meanings**: recording is the IDE's macro film strip, flaky
    is drawn seven ways, and the CI views reuse Step's, Run's and the paused page's glyphs ([IC2](#ic2), [IC4](#ic4),
    [NF1](#nf1)).
 
-8. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
+7. **In Rider, Piwi's chords collide with the Visual Studio, ReSharper and Visual Assist keymaps, and no check opens
    Rider** to see a spec beside the solution or a C# file ([AC12](#ac12), [RD3](#rd3), [RD4](#rd4)).
 
-9. **The settings differ in each editor, and JetBrains introduces Piwi with one balloon**: VS Code's list is
+8. **The settings differ in each editor, and JetBrains introduces Piwi with one balloon**: VS Code's list is
    alphabetical with code values, the scopes differ, the gutter icons, locator warnings and tint cannot be switched off,
    and JetBrains has no Get Started ([ST7](#st7), [ST8](#st8), [ST12](#st12), [ST1](#st1)).
 
-10. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
+9. **JetBrains misreports a stopped service, and many of its messages give no way out** ([NF5](#nf5), [HM8](#hm8)).
 
 The rest of this document is the evidence behind these and the smaller findings (§3 to §9 and §14), the larger
 items (§10), the defects still open (§11) and the ranked plan (§12).
@@ -152,7 +149,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
    client lacks.** ([AC11](#ac11), [HM8](#hm8), [HM16](#hm16))
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
-   has an icon and a when clause.** ([AC6](#ac6), [NF2](#nf2))
+   has an icon and a when clause.** ([HM11](#hm11))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
    interruption, and an off switch for every mark.** ([HM2](#hm2), [HM15](#hm15), [ST8](#st8), [TL4](#tl4))
 9. **Checked where it is used: both editors compared on the editor fixture without a JetBrains license, a Rider scene on
@@ -163,9 +160,8 @@ These rules hold them together; each larger item of §10 carries one or more.
 one to the other.** Each editor's manifest test fails on an action without an icon, but nothing compares
 `apps/vscode/package.json`'s 67 commands with `plugin.xml`'s 52 actions. End the test reads 'End the test here, skipping
 the rest of it' (`package.json:486`), 'End the Test' (`plugin.xml:238`), 'End Test' (`Glue.kt:2554`) and 'End test'
-(`apps/vscode/src/run-control.ts:1129`); JetBrains popups build unregistered actions ([AC6](#ac6)), and a stop's
-controls are chosen twice ([AC11](#ac11)). **(counted)** Fix: the action catalog of [LI1](#li1), tested against both
-manifests. ([M1](#m1), [LI1](#li1))
+(`apps/vscode/src/run-control.ts:1129`), and a stop's controls are chosen twice ([AC11](#ac11)). **(counted)** Fix: the
+action catalog of [LI1](#li1), tested against both manifests. ([M1](#m1), [LI1](#li1))
 
 <a id="x2"></a>**X2. The same concept is drawn differently in each Piwi tool, and no table or test ties the glyphs
 together.** Record is a gray film strip in JetBrains, `$(record)` in VS Code and a dot in Piwi Picker ([IC2](#ic2));
@@ -202,12 +198,11 @@ glyph.** The plugin's test lists the 13 actions that wait for a glyph Piwi draws
 Pause and Watch, Assert a Region and Mock a Request at the stop, Run the Tests That Reach This File, Reset the Runs' MCP
 Server Token, Show the Stopped Test's Browser, Share the Stopped Browser with Playwright Tools and the four live-sharing
 actions. At a stop, JetBrains' popup draws Assert a Region and Mock a Request as plain words under three iconed code
-actions (`PiwiIcons.kt:29`), and its own Show the Browser and Share with Playwright Tools bare too
-(`PiwiRunControl.kt:1756, 1766`, [NF2](#nf2)), where VS Code's Write code at the stop… draws all five
-(`apps/vscode/src/run-control.ts:1170-1211`). VS Code's Refresh, Run to the cursor, Pause and watch a worker's test and
-both Stop sharing commands have no `icon` (`apps/vscode/package.json:217, 474, 503, 562, 573`). **(read)** Fix: Appendix
-A's glyphs, as plugin SVGs for the 13 actions and the popup's rows and as codicons for the five commands. ([Q9](#q9),
-[M4](#m4), [LI2](#li2))
+actions (`PiwiIcons.kt:29`), and Show the browser and Share with Playwright tools bare too, as their registered actions
+wait for a glyph, where VS Code's Write code at the stop… draws all five (`apps/vscode/src/run-control.ts:1170-1211`).
+VS Code's Refresh, Run to the cursor, Pause and watch a worker's test and both Stop sharing commands have no `icon`
+(`apps/vscode/package.json:217, 474, 503, 562, 573`). **(read)** Fix: Appendix A's glyphs, as plugin SVGs for the 13
+actions and the popup's rows and as codicons for the five commands. ([Q9](#q9), [M4](#m4), [LI2](#li2))
 
 ### 3.2 Recording
 
@@ -308,11 +303,6 @@ on config folders only. ([M3](#m3), [M17](#m17), [LI4](#li4), [LI16](#li16))
 
 ### 4.3 Registered and discoverable
 
-<a id="ac6"></a>**AC6. A stop's controls are listed twice in JetBrains' popups, in two groups.** The stop popup and the
-status popup each list the registered controls themselves (`PiwiRunSessions.stopActions`, `PiwiStatusBar.RUN_ACTIONS`),
-in two orders ([NF2](#nf2)). **(read)** Fix: one `Piwi.RunControl` group wherever a stop's controls appear
-([LR3](#lr3)). ([M2](#m2), [LI1](#li1))
-
 ### 4.4 Names
 
 <a id="ac7"></a>**AC7. The two clients name at least thirteen shared actions differently, End the test has four
@@ -407,14 +397,13 @@ view results-only). ([L2](#l2), [LI8](#li8))
 <a id="tl2"></a>**TL2. From a test's own gutter icon, neither editor offers more than Run and Verify ×3: JetBrains' left
 click opens a browser, and VS Code's Testing menus have no Piwi entry.** A left click on the result icon runs the line's
 command, `piwi.openInDashboard` (`PiwiTestAnnotator.kt:112-118`, `packages/editor/src/server.ts:3143-3147`), and its
-right-click menu holds two anonymous actions (`PiwiTestAnnotator.kt:120-135`) duplicating `Piwi.RunTestAtCursor` and
-`Piwi.VerifyTestAtCursor`, so no key shows ([AC6](#ac6)). VS Code's Testing gutter offers Run Test and Execute Using
-Profile…, since `apps/vscode/package.json:590` declares no `testing/item/*` or `testing/message/*` menu, and the hover
-links Run and Open in dashboard (`apps/vscode/src/glue.ts:664-673`). From the gutter, nobody can open its trace, hand it
-to an agent, debug it or record into it, and in Rider the click that runs a test on the IDE run icon opens a browser on
-Piwi's. **(seen)** Fix: one ordered action list per test line from the service, in five groups ([LI7](#li7)), opened by
-either click in JetBrains from registered actions, and placed in VS Code's `testing/item/gutter`, `testing/item/context`
-and `testing/message/context`. ([M7](#m7), [LI7](#li7))
+right-click menu holds the registered `Piwi.RunTestAtCursor` and `Piwi.VerifyTestAtCursor` alone. VS Code's Testing
+gutter offers Run Test and Execute Using Profile…, since `apps/vscode/package.json:590` declares no `testing/item/*` or
+`testing/message/*` menu, and the hover links Run and Open in dashboard (`apps/vscode/src/glue.ts:664-673`). From the
+gutter, nobody can open its trace, hand it to an agent, debug it or record into it, and in Rider the click that runs a
+test on the IDE run icon opens a browser on Piwi's. **(seen)** Fix: one ordered action list per test line from the
+service, in five groups ([LI7](#li7)), opened by either click in JetBrains from registered actions, and placed in VS
+Code's `testing/item/gutter`, `testing/item/context` and `testing/message/context`. ([M7](#m7), [LI7](#li7))
 
 <a id="tl3"></a>**TL3. The IDE run icon on a JS test carries no Piwi action, so a test with no Piwi result yet cannot be
 run with Piwi from its line.** Without an instance, or for a test the catalog lacks, the service sends no result
@@ -1341,7 +1330,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 | Step | Change | Scope | Findings |
 |---|---|---|---|
 | <a id="m1"></a>M1 | **One action catalog, held against both manifests** ([LI1](#li1)), in sentence case in both editors, [NF3](#nf3)'s wordings included | `ide` | [X1](#x1), [AC7](#ac7), [AC9](#ac9), [AC10](#ac10), [NF3](#nf3) |
-| <a id="m2"></a>M2 | **One `Piwi.RunControl` group in every place**, and `Piwi.OpenTraceSoFar` in D25 | `ide` | [AC6](#ac6), [HM11](#hm11), [NF2](#nf2) |
+| <a id="m2"></a>M2 | **The failures trees' menus alike**: VS Code's run node actions in its menu too, one screenshot wording | `ide` | [HM11](#hm11) |
 | <a id="m3"></a>M3 | **One Piwi menu in every place** ([LI4](#li4)): Tools → Piwi in six sections, JetBrains' editor submenu with Record a new test file… as VS Code's has, the file trees and New → Playwright Test (Recorded)…, the status menu; after M1 and M2; Piwi Picker's popup and the tray take its order and words in their own pull requests | `ide` | [AC1](#ac1), [AC3](#ac3), [HM1](#hm1), [X3](#x3) |
 | <a id="m4"></a>M4 | **A Piwi icon set generated with the brand assets** ([LI2](#li2)), one failure-tree node table for both clients | `ide` | [X2](#x2), [IC2](#ic2), [IC7](#ic7), [IC8](#ic8), [IC9](#ic9), [LR14](#lr14) |
 | <a id="m5"></a>M5 | **One outcome palette, generated and tested** ([LI3](#li3)); the editors, Piwi Picker and the tray take it in their own pull requests | `ui` | [IC4](#ic4), [TL5](#tl5), [NF1](#nf1) |
@@ -1456,12 +1445,6 @@ is still the status item's live share beside Watch ([LR14](#lr14)), and "Open ru
 external link in the CI lists (`run-control.ts:2215`, `PiwiCiRuns.kt:248`). **(read)** Fix: the CI rows take the
 gutter's outcome marks and Appendix A's glyphs from one map per client, unreachable and the file's tests take glyphs of
 their own, and Appendix A gains the rows they lack. ([Q26](#q26), [M5](#m5))
-
-<a id="nf2"></a>**NF2. The trace so far has no registered action in JetBrains, and the run's controls come in two
-orders.** Open the trace so far is a button of the Worker tab alone (`PiwiRunControl.kt:2144`) while VS Code registers
-`piwi.openTraceSoFar` (`apps/vscode/package.json:508`). The status popup orders the run's actions otherwise than Tools →
-Piwi and leaves out sharing the project's runs (`PiwiStatusBar.kt:264-268`, `plugin.xml:222-290`). **(read)** Fix:
-`Piwi.OpenTraceSoFar` registered in D25, and one `Piwi.RunControl` group in both places. ([M2](#m2))
 
 <a id="nf3"></a>**NF3. The new actions are worded apart in the two clients, and the start options take two shapes.**
 Open Log and Open the log (`plugin.xml:126`, `apps/vscode/package.json:206`); Turn Hold Failures On or Off and Hold
@@ -1623,8 +1606,8 @@ What the slices and the two hands-on runs checked and found right, kept here so 
   tooltip starts with "Piwi:" (`PiwiDefault.xml:20-38`, `Glue.kt:789-810`); every Rider scheme derives from Default or
   Darcula, so the `PIWI_*` keys reach it **(read)**.
 - **The recording mark's menu** is built from the registered `Piwi.StopRecording`, `Piwi.PauseRecording` and
-  `Piwi.ResumeRecording` (`PiwiRecording.kt:258-260`), so it shows Ctrl+Alt+Shift+R: the pattern [AC6](#ac6) and
-  [TL2](#tl2) extend **(read)**.
+  `Piwi.ResumeRecording` (`PiwiRecording.kt:258-260`), so it shows Ctrl+Alt+Shift+R: the pattern every Piwi popup
+  follows **(read)**.
 - **JetBrains' status item** draws `TestError` and the error color for failing tests in Rider 2026.2.4.1 **(seen)**.
 - **Rider.** The plugin starts in Rider 2026.2.4.1 and its editor service answers the editor fixture's stub **(seen)**;
   it finds a config beside a solution through Git (`Glue.kt:218-231`, `GlueTest.kt:2391-2398`) **(read)**. The editor

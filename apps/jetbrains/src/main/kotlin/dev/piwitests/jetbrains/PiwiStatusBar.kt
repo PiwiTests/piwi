@@ -286,12 +286,16 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
 
     companion object {
-        /** The controls and code actions of a run started here, as the popup lists them while one is live. */
+        /**
+         * The `Piwi.RunControl` group's actions, in its order (its controls, the page, the code actions, sharing, Stop),
+         * which Tools → Piwi and this popup both list while a run is live.
+         */
         val RUN_ACTIONS = arrayOf(
-            "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowPausedPage",
-            "Piwi.PickAtStop", "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.ShareRunLive",
-            "Piwi.HoldFailures", "Piwi.StopRun",
+            "Piwi.PauseRun", "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest",
+            "Piwi.ShowPausedPage", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.OpenTraceSoFar", "Piwi.PickAtStop",
+            "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop", "Piwi.ShowBrowser",
+            "Piwi.ShareWithPlaywright", "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.ShareWindowLive",
+            "Piwi.StopSharingWindowLive", "Piwi.HoldFailures", "Piwi.StopRun",
         )
 
         /** The path of the selected editor's file, whose Playwright config the item speaks for; null with none open. */

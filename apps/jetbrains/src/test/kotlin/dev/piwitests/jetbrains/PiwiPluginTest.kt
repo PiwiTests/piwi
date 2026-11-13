@@ -102,6 +102,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))
         for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
+        // The status popup lists the run's actions as the one Piwi.RunControl group does, Tools → Piwi too.
+        val runControl = ActionManager.getInstance().getAction("Piwi.RunControl") as com.intellij.openapi.actionSystem.ActionGroup
+        assertEquals(PiwiStatusBarWidget.RUN_ACTIONS.toList(), runControl.getChildren(null).map { ActionManager.getInstance().getId(it) })
     }
 
     /**

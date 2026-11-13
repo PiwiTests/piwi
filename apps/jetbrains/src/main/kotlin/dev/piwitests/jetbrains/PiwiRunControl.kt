@@ -1395,6 +1395,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /** Whether the Worker tab's slot can open its test's trace now: its worker takes it, and no ask for it waits. */
+    fun traceOpenable(): Boolean {
+        val slot = laneTarget ?: return false
+        return slot !in traceAsking && Glue.canOpenTrace(Glue.laneShown(sessions[slot.first], slot.second, stops()).worker)
+    }
+
     /**
      * Open the trace so far as the Worker tab's slot stands: shown while its worker can open its test's trace, off while
      * that slot's own ask waits.
@@ -3350,6 +3356,18 @@ class EndTestAction : StopControlAction(Glue.StopControl.END) {
             .setItemChosenCallback { sessions.giveUp(it) }
             .createPopup()
             .showInBestPositionFor(e.dataContext)
+    }
+}
+
+/**
+ * **Open the trace so far** of the test the Worker tab watches: Playwright's trace viewer on the machine the run runs
+ * on, as the tab's button does; enabled while that test's worker can open it.
+ */
+class OpenTraceSoFarAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = sessions(e)?.traceOpenable() == true
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.openTrace()
     }
 }
 
