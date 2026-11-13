@@ -2,7 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
-import { fireDevtoolsEvent, openDevtoolsPage, selectElement } from './devtools-stub.js';
+import { fireDevtoolsEvent, openDevtoolsPage, openNetworkTab, selectElement } from './devtools-stub.js';
 
 /**
  * The intent "Record actions" parks while the browser asks for the site
@@ -181,7 +181,7 @@ test.describe('a parked Record actions intent', () => {
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop.page, {
       tabId: shop.tabId,
     });
-    await panel.getByRole('tab', { name: 'Network' }).click();
+    await openNetworkTab(panel);
     await fireDevtoolsEvent(panel, 'requestFinished', {
       request: { method: 'GET', url: `${site}/api/cart` },
       response: { status: 200, content: { mimeType: 'application/json' } },

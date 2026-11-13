@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { fireDevtoolsEvent, openDevtoolsPage } from './devtools-stub.js';
+import { fireDevtoolsEvent, openDevtoolsPage, openNetworkTab } from './devtools-stub.js';
 
 const ORIGIN = 'http://piwi-network.test';
 
@@ -13,13 +13,6 @@ const SHOP = `<!doctype html><html><body><output id="total">…</output><script>
 </script></body></html>`;
 
 /** The server's own answer; the recorded one below differs, so a mock that works shows. */
-/** Opens the panel's Network tab once the panel has its listeners, and waits for its list to be drawn. */
-async function openNetworkTab(panel: Page): Promise<void> {
-  await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
-  await panel.getByRole('tab', { name: 'Network' }).click();
-  await expect(panel.getByRole('list', { name: 'Network' })).toBeVisible();
-}
-
 async function serveShop(page: Page): Promise<void> {
   await page.context().route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
