@@ -325,6 +325,10 @@ export interface PiwiApi {
    * by `ask` in place of a notification.
    */
   openDebugLink(query: string, ask: DebugAsk): Promise<void>;
+  /** The status bar item's text and tooltip, as last drawn. */
+  statusItem(): { text: string; tooltip: string };
+  /** Stops the editor service's client, as a crash it gave up restarting leaves it. */
+  stopService(): Promise<void>;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -513,7 +517,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
       contentText: '  flaky',
-      color: new vscode.ThemeColor('editorWarning.foreground'),
+      color: new vscode.ThemeColor('piwi.flakyForeground'),
       fontStyle: 'italic',
     },
   });
@@ -1853,6 +1857,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     caretCount: () => runControl.caretCount(),
     agents: () => agents,
     openDebugLink: (query, ask) => debugFromLink(query, ask),
+    statusItem: () => ({
+      text: statusItem.text,
+      tooltip: typeof statusItem.tooltip === 'string' ? statusItem.tooltip : (statusItem.tooltip?.value ?? ''),
+    }),
+    stopService: () => lc.stop(),
   };
 }
 

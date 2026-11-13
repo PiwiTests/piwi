@@ -16,6 +16,8 @@
         --accent-fg: #6d28d9;
         --ok: #059669;
         --warn: #b45309;
+        --failed: #be123c;
+        --flaky: #a21caf;
         --stopped: #b45309;
         --running: #0369a1;
         --error: #dc2626;
@@ -32,6 +34,8 @@
           --accent-fg: #c4b5fd;
           --ok: #34d399;
           --warn: #fbbf24;
+          --failed: #fb7185;
+          --flaky: #e879f9;
           --stopped: #fbbf24;
           --running: #7dd3fc;
           --error: #f87171;
@@ -264,11 +268,12 @@
         font-size: 12px;
         color: var(--muted);
       }
+      /* The dashboard's outcome palette in text (STATUS_COLORS text, textDark in dark): status-mark-colors.test.ts. */
       .run-progress .failed {
-        color: var(--error);
+        color: var(--failed);
       }
       .run-progress .flaky {
-        color: var(--warn);
+        color: var(--flaky);
       }
       /* Who else has the run open, under its name, as its hub says. */
       .run-presence {

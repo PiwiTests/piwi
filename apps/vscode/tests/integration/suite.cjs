@@ -1688,6 +1688,27 @@ const tests = {
       await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     }
   },
+
+  // Last: it stops the editor service, which the tests above need running.
+  async 'says the editor service is not running once it stops, and Restart the editor service starts it again'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    await api.stopService();
+    // The item says so once the client stayed stopped for SERVICE_DOWN_MS, with Restart and the log in its tooltip.
+    const down = await waitFor(
+      () => (api.statusItem().text === '$(warning) Piwi: not running' ? api.statusItem() : null),
+      'the not running state',
+    );
+    assert.match(down.tooltip, /\[Restart the editor service\]\(command:piwi\.restartService\)/);
+    assert.match(down.tooltip, /command:piwi\.openLog/);
+    await vscode.commands.executeCommand('piwi.restartService');
+    await waitFor(() => api.statusItem().text !== '$(warning) Piwi: not running', 'the service to start again');
+    // The service answers again: the failures view reads its tree from it.
+    const roots = await waitFor(async () => {
+      const nodes = await api.failureChildren();
+      return nodes.length ? nodes : null;
+    }, 'the failures tree from the started service');
+    assert.ok(roots.length > 0);
+  },
 };
 
 exports.run = async function run() {

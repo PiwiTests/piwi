@@ -5,8 +5,8 @@ import { STATUS_COLORS } from '#shared/status-colors';
 
 /**
  * The outcome marks have one palette in the dashboard, the editors and Piwi Picker: the `fill` of `STATUS_COLORS`, which
- * the VS Code extension's outcome marks, the JetBrains plugin's flaky and running marks and Piwi Picker's dots restate,
- * since none of them can import it.
+ * the VS Code extension's outcome marks and flaky word, the JetBrains plugin's flaky and running marks, Piwi Picker's
+ * dots and Runs window counts, and the desktop tray's dot restate, since none of them can import it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
@@ -45,5 +45,52 @@ describe('the outcome marks', () => {
         expect(dot, `${file} ${status}`).toBe(STATUS_COLORS[status].fill);
       }
     }
+  });
+
+  test('are the desktop tray’s dot, a run that waits in the pause bar’s violet', () => {
+    const rust = read('apps/desktop/src-tauri/src/lib.rs');
+    const rgb = (name: string) => {
+      const m = new RegExp(`const ${name}: \\(u8, u8, u8\\) = \\((\\d+), (\\d+), (\\d+)\\);`).exec(rust);
+      return m
+        ? `#${m
+            .slice(1, 4)
+            .map((n) => Number(n).toString(16).padStart(2, '0'))
+            .join('')}`
+        : undefined;
+    };
+    expect(rgb('DOT_FAILED')).toBe(STATUS_COLORS.failed.fill);
+    expect(rgb('DOT_PASSED')).toBe(STATUS_COLORS.passed.fill);
+    expect(rgb('DOT_RUNNING')).toBe(STATUS_COLORS.running.fill);
+    expect(rgb('DOT_INTERRUPTED')).toBe(STATUS_COLORS.interrupted.fill);
+    const resume = /'background:(#[0-9a-f]{6});color:#fff;border:1px solid/.exec(
+      read('packages/picker-dom/src/overlay-pause.ts'),
+    )?.[1];
+    expect(resume).toMatch(/^#[0-9a-f]{6}$/);
+    expect(rgb('DOT_PAUSED')).toBe(resume);
+  });
+
+  test('color the failed and flaky counts of Piwi Picker’s Runs window and VS Code’s flaky word as text', () => {
+    const runs = read('apps/extension/runs.html');
+    const light = /:root \{([^}]*)\}/.exec(runs)?.[1] ?? '';
+    const dark = /prefers-color-scheme: dark\)[^{]*\{\s*:root \{([^}]*)\}/.exec(runs)?.[1] ?? '';
+    for (const status of ['failed', 'flaky'] as const) {
+      expect(runs, status).toContain(`.run-progress .${status} {\n        color: var(--${status});`);
+      expect(new RegExp(`--${status}: (#[0-9a-f]{6});`).exec(light)?.[1], `${status} light`).toBe(
+        STATUS_COLORS[status].text,
+      );
+      expect(new RegExp(`--${status}: (#[0-9a-f]{6});`).exec(dark)?.[1], `${status} dark`).toBe(
+        STATUS_COLORS[status].textDark,
+      );
+    }
+    const colors = JSON.parse(read('apps/vscode/package.json')).contributes.colors as Array<{
+      id: string;
+      defaults: Record<string, string>;
+    }>;
+    expect(colors.find((c) => c.id === 'piwi.flakyForeground')?.defaults).toEqual({
+      dark: STATUS_COLORS.flaky.textDark,
+      light: STATUS_COLORS.flaky.text,
+      highContrast: STATUS_COLORS.flaky.textDark,
+      highContrastLight: STATUS_COLORS.flaky.print,
+    });
   });
 });

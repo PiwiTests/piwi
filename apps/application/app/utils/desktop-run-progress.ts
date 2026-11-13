@@ -22,7 +22,7 @@ import { localRunOriginKind } from '~/utils/desktop-job';
 import { reproVerdictText } from '~/utils/repro-verdict';
 
 /** Mirrors the shell's `desktop_set_run_progress` `state` argument. */
-export type RunProgressState = 'none' | 'indeterminate' | 'normal' | 'error' | 'paused';
+export type RunProgressState = 'none' | 'indeterminate' | 'normal' | 'error' | 'paused' | 'interrupted';
 
 export interface AggregatedRunProgress {
   state: RunProgressState;
@@ -96,7 +96,7 @@ export const ACTIVE_RUN_STATUSES: ReadonlySet<string> = new Set(['running', 'ini
  * with none active it returns the cleared state (the plugin decides whether to
  * flash a finished run's outcome first). While tests wait at a stop for the
  * person (`waiting`, from the hub's runs: `runsAttention`), the shell shows that
- * first, amber (`paused`), whatever runs or failed: `1 test waits for you`.
+ * first, in the pause bar's violet (`paused`), whatever runs or failed: `1 test waits for you`.
  */
 export function aggregateRunProgress(runs: readonly RunCounts[], waiting = 0): AggregatedRunProgress {
   const active = runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status));
@@ -150,8 +150,8 @@ export interface FinishedRunFlash {
 /**
  * What the shell shows once the last active run ends with `status`, and for how
  * long, or `null` to clear the bar at once. A pass flashes green, an
- * interrupted run (stopped, or its reporter lost) amber, any other failure red;
- * a cancelled run clears without a flash.
+ * interrupted run (stopped, or its reporter lost) slate (`interrupted`), any
+ * other failure red; a cancelled run clears without a flash.
  */
 export function finishedRunFlash(status: string): FinishedRunFlash | null {
   switch (status) {
@@ -162,7 +162,7 @@ export function finishedRunFlash(status: string): FinishedRunFlash | null {
       };
     case 'interrupted':
       return {
-        progress: { state: 'paused', fraction: 1, label: 'Run interrupted', failing: false },
+        progress: { state: 'interrupted', fraction: 1, label: 'Run interrupted', failing: false },
         durationMs: FAIL_FLASH_MS,
       };
     case 'cancelled':
