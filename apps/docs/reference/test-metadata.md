@@ -418,7 +418,8 @@ its stack and the place it was thrown, named relative to the Playwright config's
 The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
 be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
-and the MCP `get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
+where **Collapse** folds them to one line (the browser keeps the choice) and **Expand** shows them again, and the MCP
+`get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
 the same way.
 
 ### Test output

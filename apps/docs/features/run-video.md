@@ -24,6 +24,10 @@ the screen without scrolling the page; only the list of tests scrolls.
 Only the final attempt of a test is listed. A test that has no video stays on the checklist and takes a small block on
 the bar. It is ticked as the reel moves on. The tab is off while the run is live.
 
+When the run has [errors outside the tests](/reference/test-metadata#errors-outside-the-tests), their block sits above
+the tabs. **Collapse** folds it to one line, the first error's message with its whole text on hover, so the video gets
+the height back; **Expand** shows every error again. The browser keeps the choice for every run.
+
 ## Open a video review from Evidence
 
 On a finished execution that has a video, the Evidence header has an **Open video review** button, beside **Open trace**.
