@@ -14,7 +14,7 @@
   <option name="PIWI_RECORDING_BLOCK">
     <value>
       <option name="BACKGROUND" value="2d3849"/>
-      <option name="ERROR_STRIPE_COLOR" value="355fa5"/>
+      <option name="ERROR_STRIPE_COLOR" value="3b82f6"/>
     </value>
   </option>
   <option name="PIWI_COVERAGE_RUN">

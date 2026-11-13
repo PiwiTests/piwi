@@ -188,8 +188,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
 - **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte**, in
-  `STATUS_COLORS`' fills, and both color schemes' failing and recording tints blend those fills over the scheme's
-  background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
+  `STATUS_COLORS`' fills, and both color schemes' failing and recording tints blend those fills over classic Default's
+  (`#ffffff`) or Darcula's (`#2b2b2b`) background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **`icons/testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg` and `reload.svg` are also VS Code's font glyphs**: after
   editing one, run `npm run app:generate:brand` (`apps/application/`), which draws them into
   `apps/vscode/media/piwi-icons.woff`.

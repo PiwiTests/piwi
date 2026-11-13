@@ -5,8 +5,9 @@ import { STATUS_COLORS } from '#shared/status-colors';
 
 /**
  * The outcome marks have one palette in the dashboard, the editors and Piwi Picker: the `fill` of `STATUS_COLORS`, which
- * the VS Code extension's outcome marks and flaky word, the JetBrains plugin's flaky and running marks, Piwi Picker's
- * dots and Runs window counts, and the desktop tray's dot restate, since none of them can import it.
+ * the VS Code extension's outcome marks, flaky word, failing and recording tints and held failure's arrow, the JetBrains
+ * plugin's flaky and running marks and color schemes, Piwi Picker's dots and Runs window counts, and the desktop tray's
+ * dot restate, since none of them can import it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
@@ -120,21 +121,33 @@ describe('the outcome marks', () => {
       id: string;
       defaults: Record<string, string>;
     }>;
-    const tinted: Record<string, string> = {
-      'piwi.failingTestBackground': STATUS_COLORS.failed.fill,
-      'piwi.failingLineBackground': STATUS_COLORS.failed.fill,
-      'piwi.failurePointBackground': STATUS_COLORS.failed.fill,
-      'piwi.recordingBlockBackground': STATUS_COLORS.running.fill,
+    // VS Code's tints: the fill at the alphas the JetBrains schemes blend it at, stronger in high contrast.
+    const faint = (fill: string) => ({
+      dark: `${fill}26`,
+      light: `${fill}1a`,
+      highContrast: `${fill}40`,
+      highContrastLight: `${fill}26`,
+    });
+    const strong = (fill: string) => ({
+      dark: `${fill}40`,
+      light: `${fill}33`,
+      highContrast: `${fill}66`,
+      highContrastLight: `${fill}40`,
+    });
+    const tinted: Record<string, Record<string, string>> = {
+      'piwi.failingTestBackground': faint(STATUS_COLORS.failed.fill),
+      'piwi.failingLineBackground': strong(STATUS_COLORS.failed.fill),
+      'piwi.failurePointBackground': strong(STATUS_COLORS.failed.fill),
+      'piwi.recordingBlockBackground': faint(STATUS_COLORS.running.fill),
     };
-    for (const [id, fill] of Object.entries(tinted)) {
-      for (const value of Object.values(colors.find((c) => c.id === id)!.defaults)) {
-        expect(value.slice(0, 7), id).toBe(fill);
-      }
+    for (const [id, defaults] of Object.entries(tinted)) {
+      expect(colors.find((c) => c.id === id)?.defaults, id).toEqual(defaults);
     }
     // A held failure's arrow in VS Code's gutter: the failed fill, outlined in its print color.
     expect(disc(read('apps/vscode/media/failure-point.svg'))).toBe(STATUS_COLORS.failed.fill);
     expect(read('apps/vscode/media/failure-point.svg')).toContain(`stroke="${STATUS_COLORS.failed.print}"`);
-    // A JetBrains scheme takes no alpha: the fill blended over the scheme's own background.
+    // A JetBrains scheme takes no alpha: the fill blended over classic Default's or Darcula's background, which the
+    // schemes derived from them inherit.
     const blend = (fill: string, ground: string, alpha: number) =>
       [1, 3, 5]
         .map((i) => {
@@ -159,7 +172,7 @@ describe('the outcome marks', () => {
       expect(option(xml, 'PIWI_FAILING_LINE', 'BACKGROUND'), scheme).toBe(blend(failed, ground, strong));
       expect(option(xml, 'PIWI_FAILING_LINE', 'ERROR_STRIPE_COLOR'), scheme).toBe(failed.slice(1));
       expect(option(xml, 'PIWI_RECORDING_BLOCK', 'BACKGROUND'), scheme).toBe(blend(running, ground, faint));
-      expect(option(xml, 'PIWI_RECORDING_BLOCK', 'ERROR_STRIPE_COLOR'), scheme).toBe(blend(running, ground, 0.6));
+      expect(option(xml, 'PIWI_RECORDING_BLOCK', 'ERROR_STRIPE_COLOR'), scheme).toBe(running.slice(1));
     }
   });
 });
