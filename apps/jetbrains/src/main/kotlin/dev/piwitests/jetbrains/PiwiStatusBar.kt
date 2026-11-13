@@ -226,16 +226,19 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
                 addAll(registered("Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording"))
                 addSeparator()
             }
-            // A run's page the share's entries open is not offered twice.
+            // One entry per page: a run's page the share's entries open is not offered twice, nor the run in progress
+            // Open the latest run would open; Open in dashboard is the editor's and the tree's.
             val opened = live.filter { it.kind == Glue.LiveEntryKind.OPEN_PAGE }.mapNotNull { it.ref }.toSet()
-            runs?.sessions?.let { Glue.runPages(it) }.orEmpty()
-                .filter { (ref, _) -> ref !in opened }
-                .forEach { (_, page) ->
-                    registeredWith("Piwi.OpenRunPage", "Open run #${page.id}") { it.add(RUN_PAGE, page) }?.let(::add)
-                }
+            val pages = runs?.sessions?.let { Glue.runPages(it) }.orEmpty().filter { (ref, _) -> ref !in opened }
+            for ((_, page) in pages) {
+                registeredWith("Piwi.OpenRunPage", "Open run #${page.id}") { it.add(RUN_PAGE, page) }?.let(::add)
+            }
+            val pageUrls = pages.map { (_, page) -> page.url } + live.mapNotNull { it.url }
+            val running = Glue.liveRun(service().status, service().runs, shownFile(project))?.url
             addAll(registered("Piwi.RerunFailing"))
             addAll(registered("Piwi.OpenFailures"))
-            addAll(registered("Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith"))
+            if (running == null || running !in pageUrls) addAll(registered("Piwi.OpenLatestRun"))
+            addAll(registered("Piwi.CompareWith"))
             addSeparator()
             addAll(registered("Piwi.RunTestAtCursor", "Piwi.RecordHere"))
             addSeparator()

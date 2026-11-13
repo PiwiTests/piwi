@@ -13,6 +13,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
+import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -28,6 +29,7 @@ import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
@@ -113,10 +115,20 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         })
         PopupHandler.installPopupMenu(tree, failureMenu(project, selected), "PiwiFailuresPopup")
 
-        val header = JBLabel().apply {
+        // One line: the connection, a link to the settings, and the baseline, a link to Compare with….
+        fun headerLink(actionId: String) = ActionLink("") { e ->
+            val action = ActionManager.getInstance().getAction(actionId) ?: return@ActionLink
+            ActionUtil.invokeAction(action, e.source as java.awt.Component, "PiwiToolWindow", null, null)
+        }.apply { putClientProperty("html.disable", true) }
+        val connectionLink = headerLink("Piwi.OpenSettings")
+        val baselineDot = JBLabel(" · ").apply { foreground = UIUtil.getContextHelpForeground() }
+        val baselineLink = headerLink("Piwi.CompareWith")
+        val header = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
             border = JBUI.Borders.empty(4, 8)
-            componentStyle = UIUtil.ComponentStyle.SMALL
-            foreground = UIUtil.getContextHelpForeground()
+            isOpaque = false
+            add(connectionLink)
+            add(baselineDot)
+            add(baselineLink)
         }
         /** The keys of the nodes shown last, and of those expanded: a refresh keeps both. */
         val known = mutableSetOf<String>()
@@ -181,9 +193,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
-            val run = Glue.runHeader(result)
-            header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
+            val line = Glue.toolWindowHeader(service.status, result, local.desktop, service.startProblem, service.trusted())
+            connectionLink.text = line.connection
+            connectionLink.toolTipText = Glue.htmlTooltip(line.tooltip)
+            baselineLink.text = line.baseline ?: ""
+            baselineDot.isVisible = line.baseline != null
+            baselineLink.isVisible = line.baseline != null
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
@@ -460,7 +475,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             return keys
         }
 
-        private fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     }
 }
 

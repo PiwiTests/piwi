@@ -640,19 +640,6 @@ object Glue {
     fun sameShape(a: List<FailureNode>, b: List<FailureNode>): Boolean =
         a.size == b.size && a.indices.all { a[it].key == b[it].key && sameShape(a[it].children, b[it].children) }
 
-    /**
-     * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
-     * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
-     * developer's own runs alone; the baseline alone when it found no run; null when the tree holds a node per
-     * Playwright config, each over its own run.
-     */
-    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? =
-        listOfNotNull(
-            result?.runLabel?.ifBlank { null },
-            result?.runLabel?.let { result.run?.startTime?.let { relativeTime(it, now) } },
-            baselineLine(result?.baseline?.label),
-        ).ifEmpty { null }?.joinToString(" · ")
-
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
 
@@ -1007,6 +994,30 @@ object Glue {
         } else {
             "Overridden by ${overriding.source}$of: Piwi reads ${overriding.serverUrl}$project, not the server URL below."
         }
+    }
+
+    /**
+     * The Piwi tool window's one line: the connection, short, a link to the settings (its sentence in the tooltip),
+     * and the baseline, a link to Compare with…; the run is the tree's own node.
+     */
+    data class ToolWindowHeader(val connection: String, val tooltip: String, val baseline: String?)
+
+    fun toolWindowHeader(
+        status: StatusResult?,
+        result: FailuresResult?,
+        desktopChosen: Boolean = false,
+        startProblem: String? = null,
+        trusted: Boolean = true,
+    ): ToolWindowHeader {
+        val summary = connectionSummary(status, desktopChosen, startProblem, trusted)
+        val contexts = status?.contexts.orEmpty()
+        val connected = contexts.filter { it.connected }
+        val connection = when {
+            connected.isNotEmpty() && contexts.size > 1 -> "${contexts.size} Playwright configs"
+            connected.size == 1 -> connected[0].let { c -> (c.projectName ?: "Piwi") + (c.branch?.let { " on $it" } ?: "") }
+            else -> summary
+        }
+        return ToolWindowHeader(connection, summary, baselineLine(result?.baseline?.label)?.let { "$it ▾" })
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */

@@ -215,8 +215,10 @@ Besides what the LSP client draws, every view is native, and all stay available 
 
 - Code Vision, from `piwi/fileSummary`;
 - the status bar, from `piwi/runStatus`, with the run in progress (`live`);
-- the **Piwi** tool window, from `piwi/failures` (the LSP client highlights open files only), with the connection from
-  `piwi/status` (`Glue.connectionSummary`) and the run (`Glue.runHeader`) in its header;
+- the **Piwi** tool window, from `piwi/failures` (the LSP client highlights open files only), with one header line
+  (`Glue.toolWindowHeader`): the connection from `piwi/status`, a link to the settings with `Glue.connectionSummary` in
+  its tooltip (`3 Playwright configs` with several), and the baseline, a link to Compare with…; the run is the tree's
+  own node;
 - the actions under **Tools → Piwi**.
 
 The service pushes each of the three answers when it changes (`piwi/statusChanged`, `piwi/runStatusChanged`,
@@ -251,7 +253,7 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
-  above its tree, and the header line names no run.
+  above its tree, and the header line counts them.
 - **The editor's own run in progress** shows on the run of its config (`liveRoot`), `running 4/9 · 1 failed`, counted
   as its own process tells the hub (`Glue.ownRunInProgress`, `RunSession.progress`, the instance's run matched to its
   session by ref alone), else as the instance does (`LiveRun`); the tree is drawn again as the run's sessions change.
@@ -315,7 +317,7 @@ The entries are:
 
 `PiwiProjectService.setBaseline` keeps the choice in `PiwiLocalSettings.baselines` (by config folder,
 `Glue.encodeBaseline`, the ladder as no entry) and sends `piwi/setBaseline`; `credentials()` sends them all as
-`baselines`. The header line names the baseline (`Glue.runHeader`). What the ladder is:
+`baselines`. The header line names the baseline, a link to Compare with… (`Glue.toolWindowHeader`). What the ladder is:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
 
@@ -362,9 +364,9 @@ A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi** do
 the group by `PiwiPluginTest`): the controls, the page and the trace so far (`Piwi.OpenTraceSoFar`), the code actions,
 sharing, then Stop. Every row that a registered action does is that action, the stops as `Piwi.ShowStop` and the run
 pages as `Piwi.OpenRunPage`, each wrapped to act on its stop or page (`registeredWith`). Then come the registered
-actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest run in the dashboard,
-Open in dashboard, Compare with…, Run the test at the caret, Record here, Reload Piwi, Connect (in this popup only while
-a config is not connected) and Settings. The popup is titled Piwi.
+actions, by id: Re-run the failing tests, Open the failures (the tool window), Open the latest run in the dashboard
+(unless a row above opens its page: one entry per page), Compare with…, Run the test at the caret, Record here, Reload
+Piwi, Connect (in this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
 run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project installs.

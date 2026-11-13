@@ -2966,8 +2966,6 @@ class GlueTest {
         assertEquals("running 4/9", admin.children.single().description)
         // A run node that names no config: the editor's own run shows on it.
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
-        // The header names no run: each config's node carries its own.
-        assertEquals(null, Glue.runHeader(several, treeNow))
     }
 
     @Test
@@ -2982,11 +2980,18 @@ class GlueTest {
     }
 
     @Test
-    fun `without a tree nothing is drawn, and the header names the run with or without a failure`() {
+    fun `without a tree nothing is drawn, and the header names the connection and the baseline, not the run`() {
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(FailuresResult(emptyList(), treeFailures.run)))
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(null))
-        assertEquals("Run #120 · CI · feature/x · 2 failing · 4 min ago", Glue.runHeader(treeFailures, treeNow))
-        assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
+        // One line: the project and branch, the sentence in the tooltip; the run is the tree's own node.
+        val header = Glue.toolWindowHeader(connected, treeFailures)
+        assertEquals(Glue.connectionSummary(connected), header.tooltip)
+        assertFalse(header.connection, header.connection.contains("Run #120"))
+        assertEquals(null, header.baseline)
+        // Several configs read as their count; not connected, as the sentence.
+        val several = connected.copy(contexts = connected.contexts!! + connected.contexts!!.first().copy(root = "/w/apps/admin"))
+        assertEquals("2 Playwright configs", Glue.toolWindowHeader(several, treeFailures).connection)
+        assertEquals(Glue.connectionSummary(null), Glue.toolWindowHeader(null, null).connection)
         assertEquals(
             RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
             Glue.failureRunArgs(editedFailure.copy(root = "/w/apps/admin", uri = "file:///w/shared/pages/admin.ts")),
@@ -3051,12 +3056,15 @@ class GlueTest {
         assertEquals(true, Glue.statusView(connected, ladder).tooltip.startsWith("Run #41 of Acme on main (feature/cart has no run yet)"))
         val label = "CI run #120 on feature/x"
         assertEquals(
-            "Run #120 · CI · feature/x · 2 failing · 4 min ago · Baseline: $label",
-            Glue.runHeader(treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label)), treeNow),
+            "Baseline: $label ▾",
+            Glue.toolWindowHeader(connected, treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label))).baseline,
         )
         assertEquals(
-            "Baseline: release (no run)",
-            Glue.runHeader(FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)"))),
+            "Baseline: release (no run) ▾",
+            Glue.toolWindowHeader(
+                connected,
+                FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)")),
+            ).baseline,
         )
     }
 
@@ -3070,7 +3078,7 @@ class GlueTest {
         assertEquals("Piwi: 1 failing", view.text)
         assertEquals(true, view.tooltip.startsWith("2 local runs of Acme on main, 1 test failing\nBaseline: your local runs only"))
         val alone = treeFailures.copy(run = null, baseline = local, runLabel = "Your local runs · 2 failing")
-        assertEquals("Your local runs · 2 failing · Baseline: your local runs only", Glue.runHeader(alone, treeNow))
+        assertEquals("Baseline: your local runs only ▾", Glue.toolWindowHeader(connected, alone).baseline)
     }
 
     @Test

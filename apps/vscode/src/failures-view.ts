@@ -17,7 +17,7 @@ import {
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
-import { FAILURES_GROUPINGS, failingRuns, failureNodes, type FailureNode } from './glue';
+import { FAILURES_GROUPINGS, baselineLine, failingRuns, failureNodes, type FailureNode } from './glue';
 
 const GROUPING = 'piwi.failuresGrouping';
 const FOLLOW = 'piwi.followEditor';
@@ -149,7 +149,14 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       ? { value: failing, tooltip: `${failing} failing ${failing === 1 ? 'test' : 'tests'}` }
       : undefined;
     const grouping = this.result?.grouping ?? this.grouping;
-    this.view.description = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)!.label.toLowerCase()}`;
+    // How the failures are grouped, and the baseline they are compared with: `by file · Baseline: CI run #124 on main`.
+    const baseline = baselineLine(this.result?.baseline?.label);
+    this.view.description = [
+      `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)!.label.toLowerCase()}`,
+      baseline,
+    ]
+      .filter(Boolean)
+      .join(' · ');
     const run = this.result?.run;
     // Without a run, the service's words name the instance or the branch above the welcome's buttons.
     const view = this.result?.view;
