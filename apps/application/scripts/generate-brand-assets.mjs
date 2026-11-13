@@ -108,17 +108,19 @@ function svg({ x, y, w, h }, body, { width = w, height = h, title = 'Piwi' } = {
 
 // The outline mark of the editors' icon sets, in New UI and codicon style: the body, the lens ring and the eye, with the
 // check in the lens from 20 px, where it reads. Drawn in a square view that leaves the platforms' padding around it (a
-// 14 px drawing in a 16 px icon), with strokes of 1.5 screen pixels at the size it is drawn at.
+// 14 px drawing in a 16 px icon), with the platforms' line weight: 1 px at 16 px, in proportion at other sizes.
 const IDE_VIEW = { x: -12, y: -42, w: 308, h: 308 };
 const IDE_CHECK = 'M104 121 L126 143 L168 96';
 /** A stroke of `px` screen pixels, in the view's units, for an icon drawn at `size` px. */
 const ideStroke = (size, px) => +((IDE_VIEW.w / size) * px).toFixed(2);
+/** The editors' line weight, in the view's units, the same at every size: 1 px at 16 px. */
+const IDE_LINE = ideStroke(16, 1);
 
 function outlineBody(color, size) {
-  const w = ideStroke(size, 1.5);
+  const w = IDE_LINE;
   return [
     `<path d="${OUTLINE}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linejoin="round"/>`,
-    `<path d="${LENS}" fill="none" stroke="${color}" stroke-width="${size >= 20 ? ideStroke(size, 1.25) : w}"/>`,
+    `<path d="${LENS}" fill="none" stroke="${color}" stroke-width="${w}"/>`,
     `<path d="${EYE_SMALL}" fill="${color}"/>`,
     size >= 20
       ? `<path d="${IDE_CHECK}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`
@@ -247,7 +249,7 @@ function strokeAsFill(d, width) {
  * at 0, as the font generator reads a glyph from its view's origin.
  */
 function outlineGlyph() {
-  const w = ideStroke(16, 1.5);
+  const w = IDE_LINE;
   const eye = disc(205.62, 52.7, 16, 24);
   const d = `${strokeAsFill(OUTLINE, w)}${strokeAsFill(LENS, w)}${eye}`.replace(
     /(-?[\d.]+) (-?[\d.]+)/g,
@@ -440,9 +442,9 @@ function markData(png) {
   };
 }
 
-// VS Code's product icon font: `$(piwi)` in the status item and the failures view, from the outline mark. Each glyph
+// VS Code's product icon font: `$(piwi-mark)` in the status item and the failures view, from the outline mark. Each glyph
 // has a fixed code point, so it keeps its character across runs; the font carries no build time.
-const ICON_FONT_GLYPHS = [{ name: 'piwi', codepoint: 0xe000, svg: outlineGlyph() }];
+const ICON_FONT_GLYPHS = [{ name: 'piwi-mark', codepoint: 0xe000, svg: outlineGlyph() }];
 
 /** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */
 async function iconFont(glyphs) {

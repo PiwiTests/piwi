@@ -55,7 +55,7 @@ Q13 in part: VS Code's run verdict ends with **Settings**, which opens `piwi.run
 part: one failure-tree node table for both editors, held to the protocol's icon keys by `PiwiPluginTest`, a cluster
 drawn as Lucide's `layers`, an owner as a person and a spec as a file, and Assert a region in the dashboard and the Runs
 window as the viewport corners; and the brand asset generator writes the editors' outline mark, the body, lens and eye
-at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMappings.json`, VS Code's `$(piwi)` in a
+at 16 px and with the check at 20 px: the JetBrains New UI's through `PiwiIconMappings.json`, VS Code's `$(piwi-mark)` in a
 product icon font built from the mark's strokes drawn as fills, drawn by the status item, both trees' run node and VS
 Code's views (IC8, IC9). §14 adds the findings the code that built the plan raised. The live-run study,
 [live-runs.md](../adr/live-runs.md), has built P0 to P6 and P8 to P10, each but for leftovers its Status names, and part
@@ -958,7 +958,7 @@ A concept table gives each concept its glyph in every tool's set (Appendix A).
 `apps/application/scripts/generate-brand-assets.mjs`, which already writes both editors' Piwi mark, also writes what the
 platforms lack, drawn once from Piwi Picker's outline set (`apps/extension/src/shared/icons.ts`): record, plug,
 flaky, region, mock, broadcast and the rest Appendix A marks (new), with `_dark` and `expui/` variants, and their VS Code
-glyphs in the icon font beside `$(piwi)`. A test reads every manifest and icon map and fails on a missing or different glyph. **Lives in**
+glyphs in the icon font beside `$(piwi-mark)`. A test reads every manifest and icon map and fails on a missing or different glyph. **Lives in**
 `packages/editor` or `apps/application/shared` (§13), FSL; the pause bar's glyphs are drawn anew in picker-dom (MIT).
 **Replaces** the film strip for record, the person for Connect, four glyphs with two meanings. **Depends on** nothing.
 **Revisits** [editor-local-runs.md](../adr/editor-local-runs.md) 6b and 6c (each editor chose its tree icons) and the
@@ -1306,7 +1306,7 @@ whether M14's places are interim.
    [LI11](#li11)): `packages/editor`, bundled by both clients, or `apps/application/shared` beside `piwi-features.ts`
    and `piwi-ecosystem.ts`? Both are FSL; `packages/core` is MIT and cannot take Piwi Picker's drawings. Are
    `package.json` and `plugin.xml` generated from them, or kept by hand under a test?
-5. **Which glyphs VS Code's icon font takes beyond `$(piwi)`**: the flaky mark, Pause and watch, Stop sharing, or a
+5. **Which glyphs VS Code's icon font takes beyond `$(piwi-mark)`**: the flaky mark, Pause and watch, Stop sharing, or a
    word ('flaky') where none fits? The codicons proposed exist in 1.143.1 and are unchecked against the 1.91 engines
    floor.
 6. **VS Code's status click**: the status menu with the state's action preselected (Enter keeps today's refresh), or a
@@ -1451,7 +1451,7 @@ such action.
 | A CI run of the branch | – | – | `$(cloud)` | `ciRun.svg` |
 | Pair | `link` | `link` | `$(link)` | `pair.svg` |
 | Open in dashboard | `external-link` | `external` | `$(link-external)` | `Ide.External_link_arrow` |
-| Latest run, run node | the Piwi mark | – | `$(piwi)` (new) | `piwi.svg`, 16 px outline (new) |
+| Latest run, run node | the Piwi mark | – | `$(piwi-mark)` (new) | `piwi.svg`, 16 px outline (new) |
 | Cluster | `layers` | – | `$(layers)` | `layers.svg` |
 | Owner | `user` | – | `$(person)` | `General.User` |
 | Trace | `file-archive` | – | `$(file-zip)` | `FileTypes.Archive` |
@@ -1487,7 +1487,7 @@ lucide `scan` sits close to `scan-line`, and `ban` to `circle-slash`. The deskto
 `mouse-pointer-click` (`apps/application/app/components/desktop/DesktopRunStopPage.vue:356`) where the dashboard's Pick
 draws `crosshair`, and Piwi Picker's recording bar stops with `stop`, the square
 (`apps/extension/src/content/record-panel.ts:673`). VS Code's `$(beaker)` stays the Piwi mark on the status item and the
-run node until `$(piwi)` is drawn.
+run node until `$(piwi-mark)` is drawn.
 
 ## Appendix B. Checked and found sound
 

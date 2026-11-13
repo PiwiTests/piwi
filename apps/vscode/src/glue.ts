@@ -382,7 +382,7 @@ export function statusBarView(
   const shown = statusContext(contexts, activeFile);
   if (!shown) {
     return {
-      text: '$(piwi) Piwi',
+      text: '$(piwi-mark) Piwi',
       tooltip: 'No Playwright config found',
       action: 'none',
       url: null,
@@ -477,7 +477,7 @@ export function statusBarView(
       };
     }
     return {
-      text: live ? liveText(live) : '$(piwi) Piwi: no run',
+      text: live ? liveText(live) : '$(piwi-mark) Piwi: no run',
       tooltip: lines(`No run of ${where} yet`, which, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
@@ -606,7 +606,7 @@ export interface FailureNode {
 /** The codicon of each icon of the service's tree, as the JetBrains plugin's `PiwiIcons.FAILURE_NODES` draws it. */
 const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
   context: 'root-folder',
-  run: 'piwi',
+  run: 'piwi-mark',
   history: 'history',
   failed: 'error',
   passed: 'pass',
