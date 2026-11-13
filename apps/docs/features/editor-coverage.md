@@ -116,7 +116,7 @@ options.
 | Editor | Command |
 |---|---|
 | VS Code | **Piwi: Toggle the coverage marks** |
-| JetBrains IDE | **Tools → Piwi → Show Coverage Marks** |
+| JetBrains IDE | **Tools → Piwi → Show coverage marks** |
 
 The command shows up once a file showed marks. The marks are shown by default; the choice is kept for the workspace in
 VS Code and in `.idea/workspace.xml` in a JetBrains IDE, on your machine only. The lenses and the hover stay.

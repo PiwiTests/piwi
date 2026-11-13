@@ -532,8 +532,8 @@ export function asideColumn(
 
 /**
  * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`, or,
- * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
- * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
+ * at a failure, how the test failed, `Held at its failure · Timed out 5000ms waiting for getByRole('button') · attempt
+ * 2`, in plain text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
 export function pausedText(
   stop: RunStop,
@@ -552,10 +552,11 @@ export function pausedText(
       : runner
         ? " · run by the editor's test runner"
         : ' · run in a terminal';
-  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  if (stop.reason === 'failure') {
+    return `${RUN_STOP_WORDS.failure} · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  }
   // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
-  const reason = stop.reason as Exclude<RunStop['reason'], 'failure'>;
-  const why = stop.by === 'agent' ? 'Paused by the agent' : (RUN_STOP_WORDS[reason] ?? RUN_STOP_WORDS.other);
+  const why = stop.by === 'agent' ? 'Paused by the agent' : (RUN_STOP_WORDS[stop.reason] ?? RUN_STOP_WORDS.other);
   return `${why} · ${stop.title}${attempt}${where}`;
 }
 
@@ -2461,18 +2462,19 @@ export interface CiNode {
   label: string;
   description: string;
   tooltip: string;
-  /** A codicon id. */
+  /** A codicon id, or `mark:<status>` for the gutter's outcome mark of that status (`media/test-<status>.svg`). */
   icon: string;
   open: CiOpen;
   children: CiNode[];
 }
 
+/** A CI test's outcome as the gutter draws it, the running one spinning. */
 const CI_TEST_ICONS: Record<CiTest['status'], string> = {
   running: 'sync~spin',
-  passed: 'pass',
-  failed: 'error',
-  flaky: 'warning',
-  skipped: 'debug-step-over',
+  passed: 'mark:passed',
+  failed: 'mark:failed',
+  flaky: 'mark:flaky',
+  skipped: 'mark:skipped',
 };
 
 /** A test's name in the view: its describe blocks, then its title, a title's own line breaks as spaces. */
@@ -2508,7 +2510,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         label: `Open run #${session.runId}`,
         description: 'on the dashboard',
         tooltip: `Open CI run #${session.runId} on the dashboard: ${session.url}`,
-        icon: 'link-external',
+        icon: 'globe',
         open: { url: session.url },
         children: [],
       };

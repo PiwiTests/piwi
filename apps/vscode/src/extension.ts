@@ -127,6 +127,7 @@ import { formatPairing } from '@piwitests/core/editor-send';
 import {
   API_KEY_SECRET_PREFIX,
   InstanceError,
+  connectFailure,
   apiKeySecret,
   listProjects,
   needsKey,
@@ -1088,7 +1089,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /** The CI runs of the branch while they run, read-only. */
-  const ciRuns = registerCiRuns();
+  const ciRuns = registerCiRuns(context.extensionUri);
   context.subscriptions.push(ciRuns);
 
   /** Where the runs started here stop, and their controls. */
@@ -1281,7 +1282,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         });
       await restarting;
     }),
-    // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
+    // The status bar item's click: the latest run and its failures alone, not the indexes Reload Piwi reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
       if (refreshing || !connectedOrSay()) return;
       refreshing = true;
@@ -2050,11 +2051,9 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
     }
     projects = await progress(`Piwi: listing the projects of ${base}…`, () => listProjects(base, apiKey));
   } catch (e) {
-    const reason =
-      e instanceof InstanceError && (e.status === 401 || e.status === 403)
-        ? `the instance refused the key (${e.status})`
-        : (e as Error).message;
-    void vscode.window.showErrorMessage(`Piwi: could not connect to ${base}: ${reason}`);
+    void vscode.window.showErrorMessage(
+      `Piwi: could not connect to ${base}: ${connectFailure(e, base, vscode.env.appName)}`,
+    );
     return false;
   }
   let project = '';

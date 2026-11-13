@@ -243,7 +243,8 @@ object Glue {
 
     /**
      * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
-     * reads the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     * reads the instance again (Reload Piwi), `NODE_SETTINGS` opens the Node.js settings, then starts the service
+     * again.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
 
@@ -333,7 +334,7 @@ object Glue {
         return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
-    /** The status bar text while the latest run is read again (**Refresh the Latest Run**, first in its popup). */
+    /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
     const val REFRESHING = "Piwi: refreshing…"
 
     /**
@@ -399,7 +400,7 @@ object Glue {
         }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
-            val tooltip = "$problem$config\nPiwi reads it again on its own; Refresh reads it now.$hint"
+            val tooltip = "$problem$config\nPiwi reads it again on its own; Reload Piwi reads it now.$hint"
             return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
         if (!shown.connected) {
@@ -462,7 +463,7 @@ object Glue {
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
-    const val NODE_SETTINGS_LINK = "Node.js Settings…"
+    const val NODE_SETTINGS_LINK = "Node.js settings…"
 
 
 
@@ -488,11 +489,14 @@ object Glue {
     const val NO_PLAYWRIGHT_RUNNER = "This IDE's JavaScript plugin has no Playwright runner, so the tests run in the " +
         "Run tool window's console."
 
-    /** Where the docs say which suites Piwi reads: **Learn More** on `DOTNET_PLAYWRIGHT_NOTE`. */
+    /** Where the docs say which suites Piwi reads: **Learn more** on `DOTNET_PLAYWRIGHT_NOTE`. */
     const val DOTNET_PLAYWRIGHT_DOCS_URL = "https://piwitests.dev/features/jetbrains#install-and-start"
 
-    /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
+    /** The editor extensions' documentation, which the first-run notification's **Learn more** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"
+
+    /** Piwi's page for the JetBrains IDEs, which the tool window's gear opens (**Documentation**). */
+    const val JETBRAINS_DOCS_URL = "https://piwitests.dev/features/jetbrains"
 
     /**
      * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a
@@ -621,7 +625,7 @@ object Glue {
     }
 
     /**
-     * What Re-run the Failing Tests runs: the tests still failing of every Playwright config, one run each
+     * What Re-run the failing tests runs: the tests still failing of every Playwright config, one run each
      * (`FailuresResult.rerun`), or of the config at `root` alone, run from its node in the tool window.
      */
     fun failingRuns(result: FailuresResult?, root: String? = null): List<RunTestsArgs> {
@@ -652,11 +656,11 @@ object Glue {
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
 
-    /** An entry of **Compare With…**: a baseline, or, with a null `choice`, a run by its id, asked for first. */
+    /** An entry of **Compare with…**: a baseline, or, with a null `choice`, a run by its id, asked for first. */
     data class BaselineEntry(val label: String, val detail: String, val current: Boolean, val choice: BaselineChoice?)
 
     /**
-     * What **Compare With…** offers for a context, as VS Code's Compare with… does: the ladder (`CI on the checked-out
+     * What **Compare with…** offers for a context, as VS Code's Compare with… does: the ladder (`CI on the checked-out
      * branch, else main (default)`), the default branch and each branch with runs, a run by its id, and the developer's
      * own runs only; `current` marks the choice in force.
      */
@@ -705,7 +709,7 @@ object Glue {
         else -> null
     }
 
-    /** What **Run This Test** runs for a failure: its test, from the Playwright config it belongs to. */
+    /** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
     fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
         val uri = failure.uri ?: return null
         val id = failure.testCaseId ?: return null
@@ -875,16 +879,22 @@ object Glue {
         else -> ""
     }
 
-    const val OPEN_FAILURES = "Open the Failures"
-    const val OPEN_IN_DASHBOARD = "Open in Dashboard"
-    const val RERUN_FAILING = "Re-run Failing"
+    const val OPEN_FAILURES = "Open the failures"
+    const val OPEN_IN_DASHBOARD = "Open in dashboard"
+    const val RERUN_FAILING = "Re-run failing"
 
     /** The action of a passing run's notice that keeps the next ones for runs that fail (`runNotifications`). */
-    const val ONLY_ON_FAILURE = "Only on Failure"
+    const val ONLY_ON_FAILURE = "Only on failure"
 
-    /** The confirmation once Only on Failure is chosen. */
+    /** The confirmation once Only on failure is chosen. */
     const val ONLY_ON_FAILURE_SET =
         "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
+
+    /** The title of a run's verdict balloon, which tells two runs' balloons apart: `Piwi: run #124`. */
+    fun runVerdictTitle(runId: Int): String = "Piwi: run #$runId"
+
+    /** A run's verdict under its balloon's title (`runVerdictTitle`): its sentence without the run it names. */
+    fun runVerdictBody(verdict: RunVerdict, runId: Int): String = verdict.text.removePrefix("Run #$runId · ")
 
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
@@ -897,7 +907,7 @@ object Glue {
     /**
      * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
      * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run Failing** when something fails, and **Only on Failure** when nothing does while `setting` is `always`.
+     * **Re-run failing** when something fails, and **Only on failure** when nothing does while `setting` is `always`.
      * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
      * `Run #124 · Failed 1 of 3`, whatever the setting.
      */
@@ -1042,19 +1052,19 @@ object Glue {
 
     /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
     const val SERVICE_NOT_RUNNING =
-        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Restart the Editor Service."
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Restart the editor service."
 
     /** What an action says when the running service did not answer it: the request failed, or took too long. */
     const val SERVICE_NO_ANSWER =
-        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open Log shows its log."
+        "The Piwi editor service did not answer in time, or the request failed: Tools → Piwi → Open log shows its log."
 
-    /** What Restart the Editor Service says with no service running and no test file open: the IDE starts it for one. */
+    /** What Restart the editor service says with no service running and no test file open: the IDE starts it for one. */
     const val SERVICE_NEEDS_A_FILE = "The Piwi editor service starts for a test file: open one of this project's."
 
     /** What the tool window says once the editor service that ran stopped, and nothing started it again. */
     const val SERVICE_STOPPED = "The Piwi editor service stopped."
 
-    /** What a message that the service does not run or did not answer offers: Restart the Editor Service and Open Log. */
+    /** What a message that the service does not run or did not answer offers: Restart the editor service and Open log. */
     val SERVICE_FIXES = listOf(EmptyLink.RESTART_SERVICE, EmptyLink.OPEN_LOG)
 
     /** Whether a message says the service does not run or did not answer: its balloon offers [SERVICE_FIXES]. */
@@ -1068,7 +1078,7 @@ object Glue {
         else -> EmptyText(NOT_STARTED)
     }
 
-    /** The Piwi tool window's tab that holds the editor service's log, which **Open Log** opens. */
+    /** The Piwi tool window's tab that holds the editor service's log, which **Open log** opens. */
     const val LOG_TAB = "Log"
 
     /** How many lines the log keeps: the oldest go first. */
@@ -1118,12 +1128,12 @@ object Glue {
 
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
-        RESTART_SERVICE("Restart the Editor Service", "Piwi.RestartService"),
-        OPEN_LOG("Open Log", "Piwi.OpenLog"),
+        RESTART_SERVICE("Restart the editor service", "Piwi.RestartService"),
+        OPEN_LOG("Open log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
         RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
-        COMPARE("Compare With…", "Piwi.CompareWith"),
+        COMPARE("Compare with…", "Piwi.CompareWith"),
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
@@ -1132,7 +1142,7 @@ object Glue {
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
      * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
-     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare With…; no connection,
+     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
      * with Connect…; else no failure in the run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
@@ -1152,6 +1162,17 @@ object Glue {
 
     /** What Disconnect says when nothing is saved to forget. */
     const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
+
+    /** What Test connection says when the field holds no http(s) URL. */
+    const val TEST_CONNECTION_NO_URL = "Type an http(s) URL first, such as https://piwi.example.com."
+
+    /** What Test connection says of an address that answered, before it is saved: and whether it asks for a key. */
+    fun testConnectionText(url: String, needsKey: Boolean): String =
+        if (needsKey) "$url answers. It asks for an API key: Connect… signs in or takes one."
+        else "$url answers, and lists its projects without a key."
+
+    /** What Test connection says of an address it could not use, in Connect's words. */
+    fun testConnectionFailure(url: String, reason: String): String = "Could not connect to $url: $reason"
 
     /**
      * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
@@ -1815,7 +1836,7 @@ object Glue {
 
     private fun slotKey(stop: ShownStop): String = slotKey(stop.ref, stop.slot)
 
-    /** How long the Paused Page tab and the focus wait for the next stop of a slot stepped or run to the caret. */
+    /** How long the Paused page tab and the focus wait for the next stop of a slot stepped or run to the caret. */
     const val RESERVED_MILLIS = 10_000L
 
     /**
@@ -1826,7 +1847,7 @@ object Glue {
 
     /**
      * What a change of the stops shows: the stops new to the IDE, in order, each opening its file at its line in its
-     * turn (`StopsShown.focusFor`, `StopsShown.opened`), and the stop whose page the Paused Page tab opens (null leaves
+     * turn (`StopsShown.focusFor`, `StopsShown.opened`), and the stop whose page the Paused page tab opens (null leaves
      * the tab as it is).
      */
     data class StopsChange(val open: List<ShownStop>, val page: ShownStop?)
@@ -1848,7 +1869,7 @@ object Glue {
         events.any { it.type == "text" || it.type == "wheel" || (it.action != "move" && it.action != "up") }
 
     /**
-     * Whether the Paused Page tab keeps Interact on as it shows `stop`: Interact is on (`interacting`) for the stop of
+     * Whether the Paused page tab keeps Interact on as it shows `stop`: Interact is on (`interacting`) for the stop of
      * the worker slot it showed (`shown`: a run's ref and a parallel index), Watch stays on, and the new stop of
      * that slot takes input on a live view.
      */
@@ -1856,7 +1877,7 @@ object Glue {
         interacting && watchLive && shown == (stop.ref to stop.slot) && "view" in stop.takes && "input" in stop.takes
 
     /**
-     * Whether a new page selects the Paused Page tab: unless the Worker tab is in sight, selected in a tool window that
+     * Whether a new page selects the Paused page tab: unless the Worker tab is in sight, selected in a tool window that
      * shows.
      */
     fun selectsPausedPage(workerTabSelected: Boolean, windowVisible: Boolean): Boolean = !(workerTabSelected && windowVisible)
@@ -1880,12 +1901,12 @@ object Glue {
      *   the slot the person is on, or while no other stop held had its file opened or left closed (`opened`, a tab
      *   closed since included). The slot the person is on is the one whose stop last took the focus, or that they last
      *   acted on: a control from the IDE (`answered`), a code action, or a press, a key, text, the wheel or a pick on
-     *   the Paused Page (`acted`, `actsOnPage`). Watching a slot in the Worker tab does not make it theirs.
-     * - After a Step or a Run to Caret from the IDE, until another stop of that slot opens, `RESERVED_MILLIS` at most
-     *   and while a worker of the run holds the slot, no stop of another slot takes the focus, and the Paused Page tab,
+     *   the Paused page (`acted`, `actsOnPage`). Watching a slot in the Worker tab does not make it theirs.
+     * - After a Step or a Run to caret from the IDE, until another stop of that slot opens, `RESERVED_MILLIS` at most
+     *   and while a worker of the run holds the slot, no stop of another slot takes the focus, and the Paused page tab,
      *   once its own stop of that slot went on, waits for it (`waitsUntil`, when the IDE asks again). An answer the run
      *   refuses undoes what it recorded that nothing changed since (`refused`).
-     * - The Paused Page tab keeps the stop it shows (`view`) while that stop is held, a stop of the slot the Worker tab
+     * - The Paused page tab keeps the stop it shows (`view`) while that stop is held, a stop of the slot the Worker tab
      *   watches included; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A
      *   tab that is closed opens the first new such stop.
      */
@@ -1896,7 +1917,7 @@ object Glue {
         private val seen = HashSet<String>()
         private var held: Set<String> = emptySet()
 
-        /** The stop the Paused Page tab shows, or showed last; null while it is closed. */
+        /** The stop the Paused page tab shows, or showed last; null while it is closed. */
         private var viewed: ShownStop? = null
 
         /**
@@ -1953,7 +1974,7 @@ object Glue {
             return StopsChange(open, open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar })
         }
 
-        /** The Paused Page tab shows `stop`'s page; null once it is closed. */
+        /** The Paused page tab shows `stop`'s page; null once it is closed. */
         fun view(stop: ShownStop?) {
             viewed = stop
         }
@@ -1985,7 +2006,7 @@ object Glue {
 
         /**
          * A control from the IDE answers `stop` (`action`), as it is sent: the person is on its slot, and after a Step
-         * or a Run to Caret the focus and the tab wait for its next stop. The token to settle the answer with
+         * or a Run to caret the focus and the tab wait for its next stop. The token to settle the answer with
          * (`refused`, `taken`).
          */
         fun answered(stop: ShownStop, action: String, now: Long = System.currentTimeMillis()): Int {
@@ -2060,8 +2081,8 @@ object Glue {
 
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
-     * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
-     * plain text: the gutter's icon marks the stop.
+     * or, at a failure, how the test failed, `Held at its failure · Timed out 5000ms waiting for getByRole('button') ·
+     * attempt 2`, in plain text: the gutter's icon marks the stop.
      */
     fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false, runner: Boolean = false, checkout: String? = null): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
@@ -2073,14 +2094,18 @@ object Glue {
             runner -> " · run by the editor's test runner"
             else -> " · run in a terminal"
         }
-        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
-        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
-        val why = if (stop.by == "agent") {
-            "Paused by the agent"
-        } else {
-            stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
-        }
-        return "$why · ${stop.title.orEmpty()}$attempt$where"
+        if (isFailure(stop)) return "${stopWhy(stop)} · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
+        return "${stopWhy(stop)} · ${stop.title.orEmpty()}$attempt$where"
+    }
+
+    /**
+     * Why a stop's test stands there: a stop an agent asked for (its Pause, Step or Run to) says so, for the person
+     * watching; else its reason's words (`RUN_STOP_WORDS`), a held failure's among them.
+     */
+    fun stopWhy(stop: RunStop): String = when {
+        isFailure(stop) -> RUN_STOP_WORDS.getValue("failure")
+        stop.by == "agent" -> "Paused by the agent"
+        else -> stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
     }
 
     /** What a stop says of why its test stands there, by its reason: the editor service's `RUN_STOP_WORDS`. */
@@ -2090,6 +2115,7 @@ object Glue {
         "pause" to "Paused",
         "run-to" to "Stopped at the line it ran to",
         "page-pause" to "Stopped at page.pause()",
+        "failure" to "Held at its failure",
         "other" to "Stopped",
     )
 
@@ -2107,7 +2133,7 @@ object Glue {
     fun canShare(stop: ShownStop): Boolean = "bind" in stop.takes
 
     /**
-     * Whether a stop's window can come to the front (Show the Browser): its pause bar shows, so its browser has a
+     * Whether a stop's window can come to the front (Show the browser): its pause bar shows, so its browser has a
      * window, and its reporter brings it forward.
      */
     fun canShowBrowser(stop: ShownStop): Boolean = stop.stop.bar && stop.showsWindow
@@ -2141,7 +2167,7 @@ object Glue {
             "the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
             "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can " +
             "open the run there can watch, and on an instance with authentication off, anyone who can reach it. " +
-            "Nothing is stored, and Stop Sharing ends it within seconds."
+            "Nothing is stored, and Stop sharing ends it within seconds."
     }
 
     /**
@@ -2355,7 +2381,7 @@ object Glue {
         presentAt(stop.stop, stop.takes, sessions[stop.ref]?.workers.orEmpty().firstOrNull { it.worker == stop.worker })
 
     /**
-     * The Paused Page tab's caption of a stop: what it runs and its place, then who drives it and who else watches its
+     * The Paused page tab's caption of a stop: what it runs and its place, then who drives it and who else watches its
      * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: Interact takes
      * control · Watched by Piwi Picker and you`).
      */
@@ -2406,29 +2432,29 @@ object Glue {
     data class LiveEntry(val kind: LiveEntryKind, val label: String, val ref: String? = null, val url: String? = null)
 
     /**
-     * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the Run Page**, **Copy the
-     * Run Page's Link** (while its page is known) and **Stop Sharing the Run…**, each naming its run when several are
-     * shared (`runLabel`); then **Stop Sharing This Project's Runs…** while the project's runs are shared. Both stops ask
+     * The status bar's menu on a share, in VS Code's order: for each run shared live, **Open the run page**, **Copy the
+     * run page's link** (while its page is known) and **Stop sharing the run…**, each naming its run when several are
+     * shared (`runLabel`); then **Stop sharing this project's runs…** while the project's runs are shared. Both stops ask
      * first ([stopSharingQuestion]).
      */
     fun liveMenu(sessions: Map<String, RunSession>, windowShared: Boolean): List<LiveEntry> {
         val shared = sharedRunsOf(sessions).filter { it.live.shared }
         val entries = shared.flatMap { run ->
-            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it) } else null
+            val name = if (shared.size > 1) sessions[run.ref]?.let { runLabel(it).replaceFirstChar { c -> c.lowercaseChar() } } else null
             listOfNotNull(
-                run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the Page of $n" } ?: "Open the Run Page", run.ref, it) },
-                run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the Link of $n" } ?: "Copy the Run Page's Link", run.ref, it) },
-                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop Sharing $it…" } ?: "Stop Sharing the Run…", run.ref),
+                run.live.page?.let { LiveEntry(LiveEntryKind.OPEN_PAGE, name?.let { n -> "Open the page of $n" } ?: "Open the run page", run.ref, it) },
+                run.live.page?.let { LiveEntry(LiveEntryKind.COPY_LINK, name?.let { n -> "Copy the link of $n" } ?: "Copy the run page's link", run.ref, it) },
+                LiveEntry(LiveEntryKind.STOP_SHARING, name?.let { "Stop sharing $it…" } ?: "Stop sharing the run…", run.ref),
             )
         }
-        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…") else entries
+        return if (windowShared) entries + LiveEntry(LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs…") else entries
     }
 
-    /** What Stop Sharing says, asking nothing, for a run that ended or is shared no more. */
+    /** What Stop sharing says, asking nothing, for a run that ended or is shared no more. */
     const val SHARE_ENDED = "That run is not shared live any more: it ended, or its share was stopped."
 
     /**
-     * What Stop Sharing asks before it stops: for a run (`live`), where it is shared and the views that end there; for
+     * What Stop sharing asks before it stops: for a run (`live`), where it is shared and the views that end there; for
      * the project's runs (`live` null), that the runs to come are not shared either.
      */
     fun stopSharingQuestion(live: RunLive?): String {
@@ -2451,7 +2477,7 @@ object Glue {
     }
 
     /**
-     * The run Share live (`on`) or Stop Sharing acts on: the only one it fits, else a choice; a run that cannot be
+     * The run Share live (`on`) or Stop sharing acts on: the only one it fits, else a choice; a run that cannot be
      * shared is asked anyway when no other can be, and the service says why.
      */
     fun liveTarget(sessions: Map<String, RunSession>, on: Boolean): LiveTarget {
@@ -2504,11 +2530,11 @@ object Glue {
         return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
     }
 
-    /** The Hold Failures action's text: what a click does to the only live run that has one; else a choice to come. */
+    /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
     fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
-        true -> "Turn Hold Failures Off"
-        false -> "Turn Hold Failures On"
-        null -> "Turn Hold Failures On or Off"
+        true -> "Turn hold failures off"
+        false -> "Turn hold failures on"
+        null -> "Turn hold failures on or off"
     }
 
     /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
@@ -2553,8 +2579,8 @@ object Glue {
     /**
      * What the controls offer: while a run is live (`active`), Stop for one this IDE started (`stoppable`; a run
      * started in a terminal is the terminal's to stop), Pause while a worker runs a test or is between tests and no
-     * Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a worker is
-     * stopped, End the Test where a stop takes it (`endable`), and the code actions some stop offers (`actions`).
+     * Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to caret and Finish while a worker is
+     * stopped, End the test where a stop takes it (`endable`), and the code actions some stop offers (`actions`).
      */
     data class RunControls(
         val active: Boolean,
@@ -2564,15 +2590,15 @@ object Glue {
         val actions: Set<StopAction> = emptySet(),
         /** A stop's browser can be shared with Playwright's own tools. */
         val shareable: Boolean = false,
-        /** A stop's window can come to the front: Show the Browser. */
+        /** A stop's window can come to the front: Show the browser. */
         val browserShowable: Boolean = false,
         val stoppable: Boolean = active,
         val endable: Boolean = false,
-        /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
+        /** A run is shared live (Stop sharing), and the views open of the shared runs; null for none. */
         val liveViewers: Int? = null,
-        /** A worker's reporter shows its page while its test runs: Watch a Worker's Test. */
+        /** A worker's reporter shows its page while its test runs: Watch a worker's test. */
         val watchable: Boolean = false,
-        /** The call a pausing worker's test waits in (the first such worker's): End the Test ends it there. */
+        /** The call a pausing worker's test waits in (the first such worker's): End the test ends it there. */
         val waiting: RunWaiting? = null,
         /** A live run has a Hold failures to turn over. */
         val holdable: Boolean = false,
@@ -2619,8 +2645,10 @@ object Glue {
     fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? {
         val shared = controls.liveViewers?.let { " · ${liveCount(it)}" }.orEmpty()
         return when {
-            stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
-            stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
+            stops.size == 1 -> stops.single().stop.let { stop ->
+                "Piwi: ${stopWhy(stop).replaceFirstChar { it.lowercaseChar() }} · ${stopPlace(stop)}$shared"
+            }
+            stops.size > 1 -> "Piwi: ${stops.size} tests stopped$shared"
             controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
             controls.pausing -> "Piwi: pausing…$shared"
             else -> null
@@ -2684,20 +2712,20 @@ object Glue {
     enum class StopControl(override val label: String, val action: String) : StopLink {
         RESUME("Resume", "resume"),
         STEP("Step", "step"),
-        RUN_TO_CARET("Run to Caret", "run-to"),
+        RUN_TO_CARET("Run to caret", "run-to"),
         FINISH("Finish", "finish"),
-        END("End Test", "end"),
+        END("End test", "end"),
     }
 
     /**
-     * The controls a stop offers: all of them, End Test where its reporter takes it (`canEnd`); at a failure, Resume
+     * The controls a stop offers: all of them, End test where its reporter takes it (`canEnd`); at a failure, Resume
      * alone, which lets the test end as it failed (Step, Finish and End do the same).
      */
     fun stopControls(stop: ShownStop): List<StopControl> =
         if (isFailure(stop.stop)) listOf(StopControl.RESUME)
         else StopControl.entries.filter { it != StopControl.END || canEnd(stop) }
 
-    /** Whether a stop can end its test (End the Test, `end`): its reporter takes it, and it is no failure. */
+    /** Whether a stop can end its test (End the test, `end`): its reporter takes it, and it is no failure. */
     fun canEnd(stop: ShownStop): Boolean = !isFailure(stop.stop) && "end" in stop.takes
 
     /**
@@ -2713,11 +2741,11 @@ object Glue {
         val takes: List<String>,
         val inPage: Boolean,
     ) : StopLink {
-        PICK("Pick a Locator", "Pick", "pick", listOf("pick"), true),
-        RECORD("Record Here", "Record", "record", listOf("record"), true),
+        PICK("Pick a locator", "Pick", "pick", listOf("pick"), true),
+        RECORD("Record here", "Record", "record", listOf("record"), true),
         ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
-        ASSERT_REGION("Assert a Region", "Assert Region", "assert-region", listOf("assert-region"), true),
-        MOCK("Mock a Request", "Mock", "mock", listOf("requests", "mock"), false),
+        ASSERT_REGION("Assert a region", "Assert region", "assert-region", listOf("assert-region"), true),
+        MOCK("Mock a request", "Mock", "mock", listOf("requests", "mock"), false),
     }
 
     /** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */
@@ -3765,18 +3793,18 @@ object Glue {
             (if (text.cut) " Cut at ${MAX_LANE_TEXT / 1024} K characters." else "")
     }
 
-    /** **Open the Trace So Far** in the Worker tab, and what its tooltip says it does. */
-    const val OPEN_TRACE = "Open the Trace So Far"
+    /** **Open the trace so far** in the Worker tab, and what its tooltip says it does. */
+    const val OPEN_TRACE = "Open the trace so far"
     const val OPEN_TRACE_TITLE = "Open this test’s trace up to now in Playwright’s trace viewer, on the machine the run runs on"
 
     /**
-     * Whether the Worker tab offers **Open the Trace So Far** for the worker in its slot: its reporter answers a trace
+     * Whether the Worker tab offers **Open the trace so far** for the worker in its slot: its reporter answers a trace
      * ask (`traces`) and it runs a test, as `canOpenTrace` of `@piwitests/run-model/stop` says for the Runs window.
      */
     fun canOpenTrace(worker: RunWorker?): Boolean = worker?.traces == true && worker.test != null
 
     /**
-     * What the answer to **Open the Trace So Far** for the slot `asked` (a run's ref and a lane) says: as it is while the
+     * What the answer to **Open the trace so far** for the slot `asked` (a run's ref and a lane) says: as it is while the
      * Worker tab shows that slot (`shown`), else with the name of the worker it is for in front.
      */
     fun traceAnswerText(asked: Pair<String, Int>, shown: Pair<String, Int>?, message: String): String =

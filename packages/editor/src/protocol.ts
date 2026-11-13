@@ -147,7 +147,7 @@ export interface TestAtResult {
   /**
    * The spec's tests: those Piwi knows (`testIds`), and the spec as a location without a line (`location`, relative to
    * the Playwright config's folder, as `RunTestsArgs.locations` takes it), which runs every test of the file as saved,
-   * known to Piwi or not, generated ones included: Run This Spec and the spec's lens run it. Null for a file that is not
+   * known to Piwi or not, generated ones included: Run this spec and the spec's lens run it. Null for a file that is not
    * a spec under a Playwright config's folder.
    */
   spec: { uri: string; testIds: number[]; location: string } | null;
@@ -192,6 +192,20 @@ export interface SpecTest {
   failure: TestFailure | null;
   /** Its page in the dashboard; null for a test Piwi does not know. */
   url: string | null;
+  /**
+   * The catalog's Playwright tags of the test, as Playwright writes them (`@smoke`); empty for a test Piwi does not
+   * know.
+   */
+  tags: string[];
+  /** Its `piwi:owner` annotation; null without one. */
+  owner: string | null;
+  /** Whether the project quarantines it. */
+  quarantined: boolean;
+  /**
+   * Its average duration over the runs the instance keeps, in ms; null for a test Piwi does not know or never saw
+   * end.
+   */
+  durationMs: number | null;
 }
 
 /** The tests of one spec. */
@@ -1683,14 +1697,15 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
 /**
  * What a stop says of why its test stands there, by its reason, as every surface says it: the editors here (the
  * JetBrains plugin's `Glue.RUN_STOP_WORDS` mirrors it), the run page, the desktop app and Piwi Picker
- * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure says how it failed instead.
+ * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure held for a look is named so, how it failed after.
  */
-export const RUN_STOP_WORDS: Record<Exclude<RunStopReason, 'failure'>, string> = {
+export const RUN_STOP_WORDS: Record<RunStopReason, string> = {
   breakpoint: 'Stopped at a breakpoint',
   step: 'Stopped after a step',
   pause: 'Paused',
   'run-to': 'Stopped at the line it ran to',
   'page-pause': 'Stopped at page.pause()',
+  failure: 'Held at its failure',
   other: 'Stopped',
 };
 

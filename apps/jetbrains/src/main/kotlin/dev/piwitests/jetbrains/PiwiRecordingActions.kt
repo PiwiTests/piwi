@@ -63,7 +63,7 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
-/** Piwi: Record Here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
+/** Piwi: Record here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -84,7 +84,7 @@ open class RecordHereAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Record Here… in the editor's Generate menu (Alt+Insert), shown only where a recording can start. */
+/** Piwi: Record here… in the editor's Generate menu (Alt+Insert), shown only where a recording can start. */
 class RecordHereGenerateAction : RecordHereAction() {
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabledAndVisible = canRecord(e)
@@ -92,7 +92,7 @@ class RecordHereGenerateAction : RecordHereAction() {
 }
 
 /**
- * Piwi: Record a New Test File… — a spec created where the service offers it (`piwi/newTestFile`: beside the spec at
+ * Piwi: Record a new test file… — a spec created where the service offers it (`piwi/newTestFile`: beside the spec at
  * hand in a test folder, else in the test folder of the config holding the file at hand), then recorded into.
  */
 class RecordNewFileAction : AnAction(), DumbAware {
@@ -121,7 +121,7 @@ class RecordNewFileAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Stop Recording — the browser closes; the recorded lines stay, one Undo away. */
+/** Piwi: Stop recording — the browser closes; the recorded lines stay, one Undo away. */
 class StopRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -135,7 +135,7 @@ class StopRecordingAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Pause Recording — what is done in the browser is not written until Resume. */
+/** Piwi: Pause recording — what is done in the browser is not written until Resume. */
 class PauseRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -150,7 +150,7 @@ class PauseRecordingAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Resume Recording — writes again, over the recorded lines as the browser has them. */
+/** Piwi: Resume recording — writes again, over the recorded lines as the browser has them. */
 class ResumeRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -166,8 +166,8 @@ class ResumeRecordingAction : AnAction(), DumbAware {
 }
 
 /**
- * Starts recordings. Record Here asks `piwi/pageCandidates` where the caret is: outside every test, function and class,
- * a new test; anywhere else, the steps there. Record a New Test File creates the spec first. Without an answer, the
+ * Starts recordings. Record here asks `piwi/pageCandidates` where the caret is: outside every test, function and class,
+ * a new test; anywhere else, the steps there. Record a new test file creates the spec first. Without an answer, the
  * recording does not start. Both ask for the start page and the page the steps run on, then send `piwi/record`, asking
  * for the Playwright project when it answers with several. The choices are remembered on this machine
  * (`PiwiLocalSettings`).
@@ -188,7 +188,7 @@ object PiwiRecordFlow {
     fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
 
     /**
-     * Record a New Test File: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
+     * Record a new test file: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
      * test folder, else in the test folder of the config holding the file at hand, under a name it does not hold yet),
      * then the name is asked there; a folder that does not exist yet is created with the file. `fallback` is the folder
      * when the service does not answer.
@@ -224,7 +224,7 @@ object PiwiRecordFlow {
         val typed = Messages.showInputDialog(
             project,
             "The new spec's name, in $directory. What you do in the browser is written into it as a test.",
-            "Piwi: Record a New Test File",
+            "Piwi: Record a new test file",
             null,
             offered,
             validator,
@@ -236,7 +236,7 @@ object PiwiRecordFlow {
                 folder.createChildData(this, name)
             }
         } catch (e: IOException) {
-            Messages.showErrorDialog(project, "Could not create $name: ${e.message}", "Piwi: Record a New Test File")
+            Messages.showErrorDialog(project, "Could not create $name: ${e.message}", "Piwi: Record a new test file")
             return
         }
         val editor = FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, file, 0), true) ?: return
@@ -245,7 +245,7 @@ object PiwiRecordFlow {
 
     /**
      * A test paused in a run started here asks to record from there (`piwi/recordRequested`): its file opens at the
-     * paused line and the recording starts as Record Here's does, in the test's own page, with no dialog. One that
+     * paused line and the recording starts as Record here's does, in the test's own page, with no dialog. One that
      * cannot start says why in a balloon; the test goes on.
      */
     fun recordFromTest(project: Project, asked: RecordRequested) {
@@ -516,7 +516,7 @@ private class RecordDialog(
                 }
             }
         }
-        title = if (into == "file") "Piwi: Record a New Test File" else "Piwi: Record Here"
+        title = if (into == "file") "Piwi: Record a new test file" else "Piwi: Record here"
         setOKButtonText("Record")
         init()
     }

@@ -364,7 +364,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * Two lines written above a stop: its mark follows the line, an editor opened later draws it there too, a control at
-     * the caret finds it there, and Run to Caret runs to the caret's line as the run's code has it.
+     * the caret finds it there, and Run to caret runs to the caret's line as the run's code has it.
      */
     fun testAStopFollowsTheEditsAboveItAndRunToCaretMapsTheCaretBack() {
         val file = file("tests/pages/checkout.page.ts", page)
@@ -421,7 +421,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * At a stop whose reporter takes them, the inlay and the actions offer the code actions: Assert starts at the
-     * caret's stop, and Mock a Request lists the responses, the latest first, and mocks the one chosen.
+     * caret's stop, and Mock a request lists the responses, the latest first, and mocks the one chosen.
      */
     fun testAStopOffersTheCodeActionsItsReporterTakes() {
         val file = file("tests/coupon.spec.ts", coupon)
@@ -432,7 +432,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
         assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
-        assertEquals(listOf("Resume", "Step", "Run to Caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
+        assertEquals(listOf("Resume", "Step", "Run to caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
 
         myFixture.openFileInEditor(file)
         val actions = ActionManager.getInstance()
@@ -452,7 +452,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(StopRequestsParams("ed-7", 0, since), listed.single())
         assertEquals(listOf(listOf(pay, cart)), offered.toList())
 
-        // At a headless stop, Mock a Request alone.
+        // At a headless stop, Mock a request alone.
         val headless = taking("ed-7", file, 4, "2026-10-25T10:00:07.500Z")
         hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
         assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
@@ -519,8 +519,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Share the Run Live asks what it sends the first time in the project alone, and shares nothing on a no; a run that
-     * cannot be shared is asked without the warning, and the service says why; Stop Sharing applies once a run is.
+     * Share the run live asks what it sends the first time in the project alone, and shares nothing on a no; a run that
+     * cannot be shared is asked without the warning, and the service says why; Stop sharing applies once a run is.
      */
     fun testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime() {
         val page = "https://piwi.example.com/test-runs/42"
@@ -560,7 +560,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
         hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
         assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(sessions.controls()))
-        // Stop Sharing asks first, and a no keeps the share.
+        // Stop sharing asks first, and a no keeps the share.
         val stopAsked = mutableListOf<String>()
         TestDialogManager.setTestDialog { message ->
             stopAsked += message
@@ -713,7 +713,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
     }
 
-    /** Stop Sharing for a run that ended or stopped being shared asks nothing, sends nothing and says so. */
+    /** Stop sharing for a run that ended or stopped being shared asks nothing, sends nothing and says so. */
     fun testStopSharingARunNoLongerSharedSaysSoAndAsksNothing() {
         val said = CopyOnWriteArrayList<String>()
         project.messageBus.connect(testRootDisposable).subscribe(
@@ -771,7 +771,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * The status bar's menu on a share leads with the run page, its link and Stop Sharing…, which stops the share only
+     * The status bar's menu on a share leads with the run page, its link and Stop sharing…, which stops the share only
      * once the person confirms; while a test is stopped, the share's entries follow the run's controls.
      */
     fun testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking() {
@@ -784,11 +784,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         fun entries() = statusBar.actions().getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }
         val first = entries().take(3)
         assertEquals(
-            listOf("Open the Run Page", "Copy the Run Page's Link", "Stop Sharing the Run…"),
+            listOf("Open the run page", "Copy the run page's link", "Stop sharing the run…"),
             first.map { it.templatePresentation.text },
         )
         // The run's page is offered once.
-        assertEquals(1, entries().count { it.templatePresentation.text == "Open Run #42" || it.templatePresentation.text == "Open the Run Page" })
+        assertEquals(1, entries().count { it.templatePresentation.text == "Open run #42" || it.templatePresentation.text == "Open the run page" })
         val event = AnActionEvent.createFromDataContext(ActionPlaces.STATUS_BAR_PLACE, null, SimpleDataContext.getProjectContext(project))
         first[1].actionPerformed(event)
         assertEquals(page, com.intellij.openapi.ide.CopyPasteManager.getInstance().getContents(java.awt.datatransfer.DataFlavor.stringFlavor))
@@ -812,7 +812,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(stopped("ed-live", file, 3, bar = true, since = "2026-10-25T10:00:04.000Z").copy(live = RunLive(true, null, page, 1)))
         statusBar.update()
         val labels = entries().map { it.templatePresentation.text }
-        assertTrue(labels.indexOf("Stop Sharing the Run…") > labels.indexOf("Stop the Run"))
+        assertTrue(labels.indexOf("Stop sharing the run…") > labels.indexOf("Stop the run"))
     }
 
     /**
@@ -880,13 +880,13 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-8", file, 5, "2026-10-25T10:00:08.000Z", "failure", "Failed: Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })"))
         val shown = sessions.shown()
         val renderer = shown.inlays.single().renderer as StopInlay
-        assertEquals("Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
+        assertEquals("Held at its failure · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
         assertEquals(listOf(Glue.StopControl.RESUME) + Glue.StopAction.entries, renderer.links)
         assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
         statusBar.update()
-        assertEquals("Piwi: failed · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
+        assertEquals("Piwi: held at its failure · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
     }
 
     /**
@@ -1076,7 +1076,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertFalse(sessions.stopRun("ed-6"))
     }
 
-    /** A stop no pause bar shows has its page in the Piwi tool window's Paused Page tab, until the run ends. */
+    /** A stop no pause bar shows has its page in the Piwi tool window's Paused page tab, until the run ends. */
     fun testAHeadlessStopShowsItsPage() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         try {
@@ -1111,8 +1111,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Watch a Worker's Test opens the Worker tab on a worker whose reporter shows its running test, its caption following
-     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused Page, selected
+     * Watch a worker's test opens the Worker tab on a worker whose reporter shows its running test, its caption following
+     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused page, selected
      * while the tool window does not show, and the run's end turns Watch off.
      */
     fun testAWorkersTestIsWatchedInTheWorkerTab() {
@@ -1131,7 +1131,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
             waitFor("the paused page asked") { pages.lastOrNull()?.takeIf { it.ref == "ed-7" } }
             assertNotNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
-            // The headless tool window never shows, so nobody sees the Worker tab: the Paused Page is selected. The
+            // The headless tool window never shows, so nobody sees the Worker tab: the Paused page is selected. The
             // Worker tab in sight keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
             assertFalse(window.isVisible)
             assertEquals(PiwiRunSessions.PAUSED_PAGE, sessions.shown().selectedTab)
@@ -1144,7 +1144,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Open the Trace So Far shows in the Worker tab while its slot's worker runs a test whose reporter answers trace
+     * Open the trace so far shows in the Worker tab while its slot's worker runs a test whose reporter answers trace
      * asks, asks the service for the tab's slot, and goes as the test ends.
      */
     fun testOpenTheTraceSoFarAsksForTheWorkerTabsSlot() {
@@ -1168,7 +1168,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Each slot's Open the Trace So Far waits for its own ask alone: while worker 1's ask waits, worker 2's tab offers it
+     * Each slot's Open the trace so far waits for its own ask alone: while worker 1's ask waits, worker 2's tab offers it
      * and asks for worker 2, and worker 1's answer, come while worker 2 shows, says which worker it is for.
      */
     fun testOpenTheTraceSoFarWaitsForEachSlotsOwnAskAndNamesTheWorkerOfALateAnswer() {
@@ -1265,7 +1265,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Interact on the Paused Page tab only routes the input, and going off gives back the stop it was last on for: with
+     * Interact on the Paused page tab only routes the input, and going off gives back the stop it was last on for: with
      * Escape, at another slot's stop and at the run's end. It stays selected for the next stop of the same worker slot
      * while Watch stays on, and a rerun under the same ref starts with it off.
      */
@@ -1484,7 +1484,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * A run started in a terminal: the service hears the IDE's breakpoints as they stand, which such a run starts with;
-     * its stop says where it runs, offers End the Test, which answers it, and no Stop, which is the terminal's.
+     * its stop says where it runs, offers End the test, which answers it, and no Stop, which is the terminal's.
      */
     fun testARunStartedInATerminalTakesTheBreakpointsAndEndsThere() {
         val type = TestLineBreakpointType()
@@ -1509,7 +1509,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val actions = ActionManager.getInstance()
             assertFalse("a terminal's run is the terminal's to stop", myFixture.testAction(actions.getAction("Piwi.StopRun")).isEnabled)
             assertTrue(myFixture.testAction(actions.getAction("Piwi.EndTest")).isEnabled)
-            assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the Test") { controls.firstOrNull() })
+            assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the test") { controls.firstOrNull() })
         } finally {
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
@@ -1519,14 +1519,14 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
     }
 
-    /** While a Pause waits for the call a test runs, End the Test ends it there: `give-up`, naming the worker and no stop. */
+    /** While a Pause waits for the call a test runs, End the test ends it there: `give-up`, naming the worker and no stop. */
     fun testEndTheTestWhileAPauseWaitsGivesUpTheCall() {
         val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
         val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", uri(spec), 1, null, true)
         hear(RunSession("ed-1", base.path, listOf(RunWorker(0, 0, "running", test(), pausing = true, waiting = waiting))))
         myFixture.openFileInEditor(spec)
         assertTrue(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.EndTest")).isEnabled)
-        assertEquals(RunControlParams("ed-1", 0, "give-up"), waitFor("End the Test") { controls.firstOrNull() })
+        assertEquals(RunControlParams("ed-1", 0, "give-up"), waitFor("End the test") { controls.firstOrNull() })
     }
 
     /** A line breakpoint any file takes, as the JavaScript debugger's takes a spec's lines. */

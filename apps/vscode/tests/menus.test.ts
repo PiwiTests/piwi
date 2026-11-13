@@ -125,6 +125,24 @@ describe("the commands' glyphs", () => {
     ]);
   });
 
+  test('gives a glyph one meaning: the commands that share one are one concept', () => {
+    const concepts = [
+      ['piwi.record', 'piwi.resumeRecording', 'piwi.recordAtStop'],
+      ['piwi.copyMcpConfiguration', 'piwi.copyRunsMcpConfiguration', 'piwi.copyAgentContext', 'piwi.copyText'],
+      ['piwi.runTests', 'piwi.runTest'],
+      ['piwi.openRun', 'piwi.openRunPage', 'piwi.openLiveRun'],
+      ['piwi.reproduceInDesktop', 'piwi.desktopJob'],
+      ['piwi.openTrace', 'piwi.openTraceSoFar'],
+      ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
+      // Follow the active editor and Watch a worker's test, still to settle.
+      ['piwi.stopFollowingEditor', 'piwi.watchWorker'],
+    ];
+    const byIcon = new Map<string, string[]>();
+    for (const c of commands.filter((c) => c.icon)) byIcon.set(c.icon!, [...(byIcon.get(c.icon!) ?? []), c.command]);
+    const shared = [...byIcon.values()].filter((group) => group.length > 1).map((group) => group.sort());
+    expect(shared.sort()).toEqual(concepts.map((group) => [...group].sort()).sort());
+  });
+
   test('draws each code action at a stop with its command’s glyph, in the palette and in the choice', () => {
     for (const a of STOP_ACTIONS) expect(commands.find((c) => c.command === a.command)?.icon, a.command).toBe(a.icon);
   });

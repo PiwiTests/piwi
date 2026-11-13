@@ -3,6 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
   apiKeySecret,
+  connectFailure,
+  InstanceError,
   listProjects,
   needsKey,
   normalizeServerUrl,
@@ -98,5 +100,60 @@ describe('Piwi: Connect', () => {
     const waiting = waitForSignIn(base, signIn, cancel.signal);
     cancel.abort(new Error('cancelled'));
     await expect(waiting).rejects.toThrow('cancelled');
+  });
+});
+
+describe('connectFailure', () => {
+  // The JetBrains plugin's Glue.connectFailure says the same, checked by GlueTest.
+  const url = 'https://piwi.corp:8443';
+  const fetchFailed = (cause: object) => Object.assign(new TypeError('fetch failed'), { cause });
+
+  test('names a refused key, an address that is not Piwi and another status', () => {
+    expect(connectFailure(new InstanceError(401), url)).toBe('the instance refused the key (401)');
+    expect(connectFailure(new InstanceError(404), url)).toBe(
+      "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+    );
+    expect(connectFailure(new InstanceError(502), url)).toBe('the instance answered 502');
+  });
+
+  test('names a certificate the editor does not trust by its host, and where to trust it', () => {
+    const reason = connectFailure(fetchFailed({ code: 'SELF_SIGNED_CERT_IN_CHAIN', message: 'self-signed' }), url);
+    expect(reason.startsWith('VS Code does not trust the certificate of piwi.corp.')).toBe(true);
+    expect(reason).toContain('NODE_EXTRA_CA_CERTS');
+  });
+
+  test('says why nothing answered, and falls back to the error’s own message', () => {
+    expect(connectFailure(fetchFailed({ code: 'ECONNREFUSED' }), 'http://localhost:3000')).toBe(
+      'nothing answers there. Is the instance running, on that port?',
+    );
+    expect(connectFailure(fetchFailed({ code: 'ENOTFOUND' }), 'https://piwi.example')).toBe(
+      'unknown host piwi.example',
+    );
+    expect(connectFailure(Object.assign(new Error('aborted'), { name: 'TimeoutError' }), url)).toBe(
+      'no answer in time',
+    );
+    expect(connectFailure(fetchFailed({ code: 'EAI_AGAIN' }), url)).toBe(
+      'the name piwi.corp could not be looked up now: is this machine online?',
+    );
+    // A cause it does not name says itself, rather than the bare 'fetch failed'.
+    expect(connectFailure(fetchFailed({ code: 'ECONNRESET', message: 'read ECONNRESET' }), url)).toBe(
+      'read ECONNRESET',
+    );
+    expect(connectFailure(new Error('boom'), url)).toBe('boom');
+  });
+
+  test('names a certificate that expired or names another address, and a page that is not Piwi', () => {
+    expect(connectFailure(fetchFailed({ code: 'CERT_HAS_EXPIRED' }), url)).toBe(
+      'the certificate of piwi.corp has expired',
+    );
+    expect(connectFailure(fetchFailed({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' }), url)).toBe(
+      'the certificate of piwi.corp names another address: use the address it was issued for',
+    );
+    expect(connectFailure(new SyntaxError("Unexpected token '<'"), url)).toBe(
+      "not a Piwi instance: the address answers with a page, not Piwi's requests",
+    );
+    expect(connectFailure(fetchFailed({ code: 'SELF_SIGNED_CERT_IN_CHAIN' }), url, 'Cursor')).toMatch(
+      /^Cursor does not trust/,
+    );
   });
 });

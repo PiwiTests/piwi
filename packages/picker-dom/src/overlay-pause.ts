@@ -102,52 +102,87 @@ export function showPauseBar(arg: PauseBarArg): void {
     delete g.__piwiPauseCleanup;
   };
 
-  const buttons: Array<[label: string, choice: string, hint: string, primary: boolean]> = [
+  type PauseButton = [label: string, choice: string, hint: string, primary: boolean];
+  // Each control's glyph on a 16 × 16 grid, drawn with the text's color: a stroke, or `fill:` for a filled shape.
+  const glyphs: Record<string, string[]> = {
+    resume: ['fill:M5 3.2v9.6l7.5-4.8z'],
+    step: ['M3 9.5a5 5 0 0 1 10 0', 'M11 7.7l2 2 2-2', 'fill:M6.9 13a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0z'],
+    finish: ['M8 11V3', 'M5 6l3-3 3 3', 'M4 13.5h8'],
+    end: ['M2.5 8a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0z', 'M4.1 4.1l7.8 7.8'],
+    pick: ['M2.5 8a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0z', 'fill:M6.5 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0z'],
+    record: ['fill:M3.5 8a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0z'],
+  };
+  const SVG = 'http://www.w3.org/2000/svg';
+  const glyph = (choice: string) => {
+    const svg = doc.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('data-piwi-glyph', choice);
+    // Inline styles, as the bar's other elements have, so that no rule of the page sizes or paints the glyph.
+    svg.style.cssText = 'flex:none;display:block;width:14px;height:14px;margin:0;padding:0;overflow:visible;';
+    for (const part of glyphs[choice] ?? []) {
+      const path = doc.createElementNS(SVG, 'path');
+      const filled = part.startsWith('fill:');
+      path.setAttribute('d', filled ? part.slice(5) : part);
+      path.style.cssText = filled
+        ? 'fill:currentColor;stroke:none;'
+        : 'fill:none;stroke:currentColor;stroke-width:1.5px;stroke-linecap:round;stroke-linejoin:round;';
+      svg.appendChild(path);
+    }
+    return svg;
+  };
+  // The controls first, in the editors' and the Runs window's order (Resume, Step, Finish, End the test), then, past a
+  // divider, the code the stop can write.
+  const steering: PauseButton[] = [
     arg.failure
       ? ['Resume', 'resume', 'Let the test end as it failed (Esc)', true]
       : ['Resume', 'resume', 'Run on to the next breakpoint (Esc)', true],
-    ...(arg.failure
-      ? []
-      : [['Step', 'step', 'Pause again before the next call', false] as [string, string, string, boolean]]),
-    ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
-    ...(arg.record
-      ? [
-          ['Record here', 'record', 'Record steps in this page: the editor writes them before this line', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
-        ]
-      : []),
+    ...(arg.failure ? [] : [['Step', 'step', 'Pause again before the next call', false] as PauseButton]),
     ...(arg.failure
       ? []
       : [
-          ['Finish', 'finish', 'Run the test on without stopping at a breakpoint again in this attempt', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
+          [
+            'Finish',
+            'finish',
+            'Run the test on without stopping at a breakpoint again in this attempt',
+            false,
+          ] as PauseButton,
         ]),
     ...(arg.end && !arg.failure
+      ? [['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as PauseButton]
+      : []),
+  ];
+  const code: PauseButton[] = [
+    ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
+    ...(arg.record
       ? [
-          ['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as [
-            string,
-            string,
-            string,
-            boolean,
-          ],
+          [
+            'Record here',
+            'record',
+            'Record steps in this page: the editor writes them before this line',
+            false,
+          ] as PauseButton,
         ]
       : []),
   ];
-  for (const [label, choice, hint, primary] of buttons) {
+  const buttons: Array<PauseButton | 'divider'> = [...steering, 'divider', ...code];
+  for (const entry of buttons) {
+    if (entry === 'divider') {
+      const divider = doc.createElement('span');
+      divider.setAttribute('aria-hidden', 'true');
+      divider.style.cssText = 'width:1px;align-self:stretch;margin:2px 4px;background:#374151;';
+      bar.appendChild(divider);
+      continue;
+    }
+    const [label, choice, hint, primary] = entry;
     const btn = doc.createElement('button');
     btn.type = 'button';
-    btn.textContent = label;
+    btn.appendChild(glyph(choice));
+    btn.appendChild(doc.createTextNode(label));
     btn.title = hint;
     btn.style.cssText =
-      'border-radius:6px;padding:4px 12px;cursor:pointer;font:600 12px/1.5 system-ui,sans-serif;' +
+      'display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:4px 12px 4px 10px;cursor:pointer;' +
+      'font:600 12px/1.5 system-ui,sans-serif;' +
       (primary
         ? 'background:#7c3aed;color:#fff;border:1px solid #7c3aed;'
         : 'background:#1f2937;color:#f3f4f6;border:1px solid #374151;');

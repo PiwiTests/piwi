@@ -186,7 +186,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             size="xs"
             color="primary"
             variant="solid"
-            icon="i-lucide-play"
+            icon="i-lucide-monitor"
             @click="reproduceHere"
           >
             Reproduce here

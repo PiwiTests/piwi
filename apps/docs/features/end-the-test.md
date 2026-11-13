@@ -20,8 +20,8 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 
 - **VS Code**: **End test** in the stopped line's hover, the status bar beside **Finish**, and **Piwi: End the test
   here, skipping the rest of it** in the palette. It has no key: bind one in **Preferences: Open Keyboard Shortcuts**
-  (search `piwi`). - **A JetBrains IDE**: **End Test** in the stopped line's inlay and the arrow's menu, **Tools → Piwi
-  → End the Test** and the status bar item's menu. Give it a key in **Settings → Keymap**. - **The [pause
+  (search `piwi`). - **A JetBrains IDE**: **End test** in the stopped line's inlay and the arrow's menu, **Tools → Piwi
+  → End the test** and the status bar item's menu. Give it a key in **Settings → Keymap**. - **The [pause
   bar](./editor-breakpoints#pause-a-run)**: **End the test**. - **Piwi Picker's [Runs window](./runs-window)** and the
   desktop app's [Local runs tray](./desktop-runs): **End the test**, beside **Finish**. - **An
   [agent](./agent-run-control)**: `run_control` with `end`, answered as the test ends.
@@ -33,7 +33,7 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 desktop app's tray say the call it waits in and, for a locator call, how long it has run, and offer **End the test**
 there. In VS Code, the status bar reads `Pausing… 12 s`, the call in its tooltip, with **End the test** beside it; in
 a JetBrains IDE, the status bar item reads `Piwi: pausing… · waits in` and the call, and **Tools → Piwi → End the
-Test** ends it:
+test** ends it:
 
 - **A locator call or an assertion**, with Playwright 1.62 or later, is given up at once, and the test is skipped.
 - **Another call** (a `waitForTimeout`, a navigation) finishes first, and the test is skipped at its next locator

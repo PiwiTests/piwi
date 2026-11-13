@@ -78,8 +78,8 @@ export const COVERAGE_CSS = `
   .badge.checked { color: #082f49; background: #7dd3fc; }
   .badge:hover, .badge:focus-visible { transform: scale(1.12); outline: none; }
   .badge .dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px #fff; }
-  .dot.failed { background: #e11d48; }
-  .dot.flaky { background: #9333ea; }
+  .dot.failed { background: #f43f5e; }
+  .dot.flaky { background: #d946ef; }
   .dot.passed { background: #10b981; }
   .dot.skipped { background: #a1a1aa; }
   .dot.unknown { background: #64748b; }

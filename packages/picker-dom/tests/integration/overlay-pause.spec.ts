@@ -29,23 +29,55 @@ test.describe('showPauseBar', () => {
     }
   });
 
+  // The controls come first, in the editors' order, then the code a stop can write.
   test('offers Record here only when the editor can record from the pause', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, ARG);
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator']);
     await page.evaluate(takePauseState);
     await page.evaluate(showPauseBar, { ...ARG, record: true });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Record here', 'Finish']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'Pick a locator', 'Record here']);
+    // Each button draws its control's glyph before its words, hidden from assistive technology.
+    const glyphs = bar.locator('button > svg[aria-hidden="true"]');
+    await expect(glyphs).toHaveCount(5);
+    expect(await glyphs.evaluateAll((all) => all.map((svg) => svg.getAttribute('data-piwi-glyph')))).toEqual([
+      'resume',
+      'step',
+      'finish',
+      'pick',
+      'record',
+    ]);
     await bar.getByRole('button', { name: 'Record here' }).click();
     expect(await page.evaluate(takePauseState)).toBe('record');
+  });
+
+  test('draws its glyphs at their own size and color whatever the page styles an svg with', async ({ page }) => {
+    await page.setContent(
+      '<!doctype html><html><head><style>svg{width:100%;height:auto} svg path{fill:red;stroke:none}</style></head>' +
+        '<body></body></html>',
+    );
+    await page.evaluate(showPauseBar, ARG);
+    const glyphs = page.getByRole('toolbar', { name: 'Piwi: test paused' }).locator('svg[data-piwi-glyph]');
+    for (const box of await glyphs.evaluateAll((all) => all.map((svg) => svg.getBoundingClientRect()))) {
+      expect([box.width, box.height]).toEqual([14, 14]);
+    }
+    const pick = glyphs.and(page.locator('[data-piwi-glyph="pick"]')).locator('path').first();
+    expect(await pick.evaluate((path) => [getComputedStyle(path).fill, getComputedStyle(path).stroke])).toEqual([
+      'none',
+      'rgb(243, 244, 246)',
+    ]);
+    await page.evaluate(takePauseState);
   });
 
   test('offers End the test only where the test can end there, and never at a failure', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
     await page.evaluate(showPauseBar, { ...ARG, end: true });
-    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish', 'End the test']);
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Pick a locator']);
+    await expect(bar.getByRole('button', { name: 'End the test' }).locator('svg[data-piwi-glyph="end"]')).toHaveCount(
+      1,
+    );
     await bar.getByRole('button', { name: 'End the test' }).click();
     expect(await page.evaluate(takePauseState)).toBe('end');
     await page.evaluate(showPauseBar, { ...ARG, end: true, failure: true });

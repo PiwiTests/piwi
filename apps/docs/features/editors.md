@@ -108,7 +108,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Command | What it does |
 |---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
-| Piwi: Refresh | Fetch the indexes and the latest run again |
+| Piwi: Reload Piwi | Fetch the indexes and the latest run again |
 | Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |

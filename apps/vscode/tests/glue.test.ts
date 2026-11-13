@@ -165,7 +165,7 @@ describe('statusBarView', () => {
       null,
     );
     expect(view).toEqual({
-      text: '$(debug-disconnect) Piwi: unreachable',
+      text: '$(server) Piwi: unreachable',
       tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect](command:piwi.connect)`,
       action: 'retry',
       url: null,
@@ -1891,6 +1891,10 @@ describe('the Testing view', () => {
     status: 'passed',
     failure: null,
     url: 'http://piwi/test-cases/1',
+    tags: [],
+    owner: null,
+    quarantined: false,
+    durationMs: null,
     ...over,
   });
   const answer: TestItemsResult = {
@@ -1990,6 +1994,10 @@ describe('the Testing view', () => {
       status,
       failure: null,
       url: null,
+      tags: [],
+      owner: null,
+      quarantined: false,
+      durationMs: null,
       root: '/w',
       uri: 'file:///w/checkout.spec.ts',
     });
@@ -1998,6 +2006,12 @@ describe('the Testing view', () => {
       expect(testItemExtras(test(status)), String(status)).toEqual({ description: undefined, tags: [] });
     }
     expect(testItemExtras(null)).toEqual({ description: undefined, tags: [] });
+    // Its quarantine, duration, Playwright tags and owner, as the catalog gives them.
+    const known = { ...test('flaky'), tags: ['@smoke'], owner: 'Ada L', quarantined: true, durationMs: 1234 };
+    expect(testItemExtras(known)).toEqual({
+      description: 'flaky · quarantined · ~1.2 s',
+      tags: ['flaky', 'quarantined', '@smoke', 'owner:Ada-L'],
+    });
   });
 
   test('shows a flaky test as passed, a failure with why and where, and nothing without a result', () => {
@@ -2023,6 +2037,10 @@ describe('the Testing view', () => {
       'Timed out\n\nThe line it failed at changed since the run.',
     );
     expect(testOutcome('failed', null)).toEqual({ state: 'failed', message: 'Failed', line: null });
+    // The diagnostic on the line says the headline: the Testing view's message gives the error alone.
+    expect(failureMessage({ ...failure, diagnosed: true })).toBe('Error: locator.click: Timeout 5000ms exceeded.');
+    expect(failureMessage({ ...failure, message: 'Timed out', diagnosed: true })).toBe('Timed out');
+    expect(failureMessage({ ...failure, message: '', diagnosed: true })).toBe('Failed');
   });
 
   test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {

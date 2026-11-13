@@ -398,7 +398,8 @@ A failure whose line changed since its run:
 The line above a failing line says `✗ Failed here`, and the headline after it only where no diagnostic on that line
 gives it (`TestFailure.diagnosed`: the diagnostic of the test's failure on any project is on that line, and
 `failureSeverity` is not `off`). The hover leaves out the headline of a failure whose diagnostic is on the hovered line,
-and gives it for every other failure of the call chain. VS Code asks for the lenses again as it hands new credentials.
+and gives it for every other failure of the call chain; VS Code's Testing view leaves it out of the failure's message
+the same way. VS Code asks for the lenses again as it hands new credentials.
 
 A failure whose test left its spec publishes nothing: its `test(…)` call was in the spec the run saw, and is not in the
 spec as it stands.

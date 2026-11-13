@@ -96,14 +96,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         private val uri: String?,
         private val at: RangeMarker,
     ) : GutterIconRenderer(), DumbAware {
-        override fun getIcon(): Icon = when (line.status) {
-            "failed" -> PiwiIcons.FAILED
-            "flaky" -> AllIcons.General.Warning
-            "passed" -> AllIcons.RunConfigurations.TestPassed
-            "skipped" -> AllIcons.RunConfigurations.TestIgnored
-            "running" -> AllIcons.RunConfigurations.TestState.Run
-            else -> AllIcons.RunConfigurations.TestNotRan
-        }
+        override fun getIcon(): Icon = PiwiIcons.outcome(line.status)
 
         override fun getTooltipText(): String = Glue.testResultTooltip(line.title)
 
@@ -118,20 +111,19 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         }
 
         override fun getPopupMenuActions(): ActionGroup? {
-            val file = uri ?: return null
+            if (uri == null) return null
             /** The 0-based line of the test's `test(…)` call as the file stands; null once its text was deleted. */
             fun lineNow(): Int? = at.takeIf { it.isValid }?.let { it.document.getLineNumber(it.startOffset) }
+            // The registered runs, their keys shown, acting on this test's line rather than the caret's.
+            val onLine = { builder: com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder ->
+                builder.add(TEST_LINE, lineNow() ?: -1)
+                Unit
+            }
             return DefaultActionGroup(
-                object : AnAction("Run with Piwi", "Run this test as Piwi runs it, its results on the instance", AllIcons.Actions.Execute), DumbAware {
-                    override fun actionPerformed(e: AnActionEvent) {
-                        PiwiCommands.runTestAt(project, file, lineNow() ?: return, 0, wholeSpec = false)
-                    }
-                },
-                object : AnAction("Verify ×3 with Piwi", "Run this test three times without retries", AllIcons.Actions.Rerun), DumbAware {
-                    override fun actionPerformed(e: AnActionEvent) {
-                        PiwiCommands.runTestAt(project, file, lineNow() ?: return, 0, wholeSpec = false, repeat = 3)
-                    }
-                },
+                listOfNotNull(
+                    registeredWith("Piwi.RunTestAtCursor", "Run with Piwi", AllIcons.Actions.Execute, data = onLine),
+                    registeredWith("Piwi.VerifyTestAtCursor", "Verify ×3 with Piwi", AllIcons.Actions.Rerun, data = onLine),
+                ),
             )
         }
 

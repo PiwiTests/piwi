@@ -74,6 +74,15 @@ class OpenSettingsAction : AnAction(), DumbAware {
     }
 }
 
+/** Documentation: Piwi's page for the JetBrains IDEs, in the browser. */
+class OpenDocumentationAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        com.intellij.ide.BrowserUtil.browse(Glue.JETBRAINS_DOCS_URL)
+    }
+}
+
 class RefreshAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -92,7 +101,7 @@ class RefreshAction : AnAction(), DumbAware {
 }
 
 /**
- * Restart the Editor Service: the service stopped and started again, or started for the open files when it does not run
+ * Restart the editor service: the service stopped and started again, or started for the open files when it does not run
  * (`PiwiProjectService.restartServer`). In a trusted project that holds a Playwright config.
  */
 class RestartServiceAction : AnAction(), DumbAware {
@@ -108,7 +117,7 @@ class RestartServiceAction : AnAction(), DumbAware {
     }
 }
 
-/** Open Log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
+/** Open log: the Piwi tool window's Log tab, the editor service's log ([PiwiLog]). While the tool window shows. */
 class OpenLogAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -122,7 +131,7 @@ class OpenLogAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Refresh the Latest Run — the latest run and its failures read again, not the indexes **Refresh** fetches
+ * Piwi: Refresh the latest run — the latest run and its failures read again, not the indexes **Refresh** fetches
  * (`PiwiProjectService.refreshRun`). Enabled while connected.
  */
 class RefreshRunAction : AnAction(), DumbAware {
@@ -162,7 +171,7 @@ class RunTestsForFileAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Run the Test at the Caret (`wholeSpec` false), Verify the Test at the Caret ×3 (`repeat`) or Run This Spec,
+ * Piwi: Run the test at the caret (`wholeSpec` false), Verify the test at the caret ×3 (`repeat`) or Run this spec,
  * through `piwi/testAt`, in the Run tool window with the IDE's breakpoints, which a verification leaves out. Offered in
  * a spec file of a project with a Playwright config.
  */
@@ -181,11 +190,58 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repea
         val project = e.project ?: return
         val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
         val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
-        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec, repeat)
+        val line = e.getData(TEST_LINE)
+        // A popup's test whose text was deleted has no line left: nothing runs.
+        if (line != null && line < 0) return
+        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat)
     }
 }
 
 class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+/** The 0-based line of the test a popup's run acts on (the result icon's), which the run reads before the caret's. */
+val TEST_LINE: DataKey<Int> = DataKey.create("piwi.testLine")
+
+/**
+ * The registered action `id` with `data` added to its data context when it runs, under `label` and `icon` where given:
+ * a popup offers the action itself, its key shown and Find Action's entry the same, acting on what the popup is about.
+ */
+fun registeredWith(
+    id: String,
+    label: String? = null,
+    icon: javax.swing.Icon? = null,
+    description: String? = null,
+    data: (com.intellij.openapi.actionSystem.impl.SimpleDataContext.Builder) -> Unit,
+): AnAction? {
+    val registered = com.intellij.openapi.actionSystem.ActionManager.getInstance().getAction(id) ?: return null
+    return object : com.intellij.openapi.actionSystem.AnActionWrapper(registered) {
+        init {
+            if (label != null) templatePresentation.setText(label, false)
+            if (icon != null) templatePresentation.icon = icon
+            if (description != null) templatePresentation.description = description
+        }
+
+        override fun getActionUpdateThread() = registered.actionUpdateThread
+
+        /**
+         * The registered action's own update, with the data: `AnActionWrapper.update` would read a popup's update
+         * session, which builds the delegate's event from the popup's context, without it.
+         */
+        override fun update(e: AnActionEvent) {
+            registered.update(e.withDataContext(withData(e.dataContext)))
+            if (label != null) e.presentation.setText(label, false)
+            if (icon != null) e.presentation.icon = icon
+            if (description != null) e.presentation.description = description
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            registered.actionPerformed(e.withDataContext(withData(e.dataContext)))
+        }
+
+        private fun withData(parent: com.intellij.openapi.actionSystem.DataContext) =
+            com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder().setParent(parent).also(data).build()
+    }
+}
 
 class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glue.VERIFY_REPEAT)
 
@@ -212,6 +268,11 @@ class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
+        // On a node of the Piwi tool window, the node's own page alone; elsewhere this file's test or the latest run.
+        if (e.getData(FAILURE_NODE) != null) {
+            e.presentation.isEnabledAndVisible = e.getData(DASHBOARD_URL) != null
+            return
+        }
         e.presentation.isEnabled = e.getData(DASHBOARD_URL) != null || piwiConnected(e.project)
     }
 
@@ -240,14 +301,14 @@ class OpenInDashboardAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Open the Latest Run in the Dashboard — the run the status bar shows. */
+/** Piwi: Open the latest run in the dashboard — the run the status bar shows. */
 class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
-        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the Latest Run in the Dashboard"
+        e.presentation.text = live?.let { "Open run #${it.runId} (running)" } ?: "Open the latest run in the dashboard"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -265,17 +326,30 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     }
 }
 
-/** Opens the page of a run started or followed here, on the instance it reports to: `Open Run #78`. */
-class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}", null, AllIcons.General.Web), DumbAware {
+/** The run page a popup's entry opens (`Piwi.OpenRunPage`). */
+val RUN_PAGE: DataKey<RunPage> = DataKey.create("piwi.runPage")
+
+/**
+ * **Open the run page**: the page of a run started or followed here, on the instance it reports to: the one a popup
+ * names (`RUN_PAGE`, `Open run #78`), else the only run's with a page.
+ */
+class OpenRunPageAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    private fun page(e: AnActionEvent): RunPage? = e.getData(RUN_PAGE)
+        ?: e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.sessions?.let { Glue.runPages(it) }?.singleOrNull()?.second
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = page(e) != null
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
-        BrowserUtil.browse(page.url)
+        page(e)?.let { BrowserUtil.browse(it.url) }
     }
 }
 
 /**
- * Piwi: Compare With… — the baseline the failures are read against for the Playwright config of the file at hand (or
+ * Piwi: Compare with… — the baseline the failures are read against for the Playwright config of the file at hand (or
  * the one connected): the ladder, a branch, a run by its id or your local runs only, kept on this machine.
  */
 class CompareWithAction : AnAction(), DumbAware {
@@ -305,14 +379,14 @@ class CompareWithAction : AnAction(), DumbAware {
             JBPopupFactory.getInstance()
                 .createPopupChooserBuilder(Glue.baselineEntries(run))
                 .setRenderer(textRenderer<Glue.BaselineEntry> { if (it.current) "${it.label} · current" else it.label })
-                .setTitle("Compare With… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
+                .setTitle("Compare with… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
                 .setItemChosenCallback { entry ->
                     val chosen = entry.choice
                     // A run by id: the service reads the id typed, and a text that is not one is said so.
                     val typed = if (chosen != null) "" else Messages.showInputDialog(
                         project,
                         "The id of the run to compare with (its page in the dashboard shows it):",
-                        "Compare With a Run",
+                        "Compare with a run",
                         null,
                         null,
                         object : InputValidator {
@@ -336,7 +410,7 @@ class CompareWithAction : AnAction(), DumbAware {
     }
 }
 
-/** Piwi: Re-run the Failing Tests — every test still failing, or edited since its run, in the Run tool window. */
+/** Piwi: Re-run the failing tests — every test still failing, or edited since its run, in the Run tool window. */
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -403,7 +477,7 @@ class RunSelectionAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Run Headed — every run Piwi starts in this project runs headed (`RunTestsArgs.headed`), a verification's too;
+ * Piwi: Run headed — every run Piwi starts in this project runs headed (`RunTestsArgs.headed`), a verification's too;
  * kept on this machine, as **Settings → Tools → Piwi** shows it.
  */
 class RunHeadedAction : ToggleAction(), DumbAware {
@@ -417,7 +491,7 @@ class RunHeadedAction : ToggleAction(), DumbAware {
 }
 
 /**
- * Piwi: Hold Failures from Each Run's Start… — Auto, On or Off for every run Piwi starts in this project
+ * Piwi: Hold failures from each run's start… — Auto, On or Off for every run Piwi starts in this project
  * (`Glue.HOLD_FAILURES_CHOICES`), kept on this machine, as **Settings → Tools → Piwi** shows it.
  */
 class RunHoldFailuresAction : AnAction(), DumbAware {
@@ -431,7 +505,7 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
             .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
             .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
             .setSelectedValue(current, true)
-            .setTitle("Hold Failures from Each Run's Start")
+            .setTitle("Hold failures from each run's start")
             .setItemChosenCallback { local.runHoldFailures = it }
             .createPopup()
             .showCenteredInCurrentWindow(project)
@@ -555,8 +629,8 @@ class ResetRunsMcpTokenAction : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val yes = MessageDialogBuilder.yesNo("Reset the Runs' MCP Server Token?", RESET_WARNING)
-            .yesText("Reset the Token")
+        val yes = MessageDialogBuilder.yesNo("Reset the runs' MCP server token?", RESET_WARNING)
+            .yesText("Reset the token")
             .noText("Cancel")
             .ask(project)
         if (!yes) return

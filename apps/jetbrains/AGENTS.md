@@ -51,7 +51,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   2026.2). `Lsp4jAccess` takes the lsp4j proxy from a `sendRequestSync` that sends nothing; `Lsp4jAccessTest` checks
   it. ([LSP integration](ARCHITECTURE.md#lsp-integration))
 - **A push from the service is never answered with a read of the same answer.** `PiwiProjectService` keeps each pushed
-  answer, and reads the three answers whole only at start, on Refresh, on Refresh the Latest Run and after new
+  answer, and reads the three answers whole only at start, on Reload Piwi, on Refresh the latest run and after new
   credentials (`refreshStatus`). ([Native views and pushes](ARCHITECTURE.md#native-views-and-pushes))
 - **Open files are drawn again with `DaemonCodeAnalyzer.restart(PsiFile)`, and only those a change shows in, never
   with the whole daemon's `restart()`** (`Glue.redraw`).
@@ -104,7 +104,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `PiwiRunControlTest`. ([MCP server configuration](ARCHITECTURE.md#mcp-server-configuration))
 - **A run is shared live on the team instance only from the person's action, after `Glue.shareLiveWarning` the first
   time in the project since it opened**, as the VS Code extension does (`PiwiRunSessions.shareLive`); only a run known
-  not to be shareable is asked without it, for the service to say why. Every Stop Sharing asks first
+  not to be shareable is asked without it, for the service to say why. Every Stop sharing asks first
   (`confirmStopSharing`). Checked by `PiwiRunControlTest`
   (`testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime`, `testARunNotHeardOfYetIsWarnedOfBeforeItIsShared`,
   `testTheStatusBarsMenuOnAShareOpensCopiesAndStopsAfterAsking`) and `GlueTest`.
@@ -123,18 +123,18 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
   plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
-  takes the key.** From the keyboard, Resume, Step, Run to Caret and Finish give way to a suspended debug session, Pause
+  takes the key.** From the keyboard, Resume, Step, Run to caret and Finish give way to a suspended debug session, Pause
   to a running one, Stop to any (`givesWayTo`); `PiwiRunActionPromoter` puts them first only while a run is live.
   Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control at a
-  stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
+  stop passes the stop's `since` (End the test while a Pause waits, `give-up`, answers none); Run to caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
 - **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
-  control, a code action, a press, key or pick on the Paused Page, never a pointer moving; never one only watched), or
-  while no other held stop's file was opened or left closed and no Step or Run to Caret from the IDE waits,
+  control, a code action, a press, key or pick on the Paused page, never a pointer moving; never one only watched), or
+  while no other held stop's file was opened or left closed and no Step or Run to caret from the IDE waits,
   `Glue.RESERVED_MILLIS` at most. While an editor is in use, any other stays closed (2024.1 opens no file without
-  selecting it), counts as opened and is listed in the status bar item's menu. The Paused Page tab keeps a held stop,
+  selecting it), counts as opened and is listed in the status bar item's menu. The Paused page tab keeps a held stop,
   then waits as long for the stepped slot, and is selected unless the Worker tab is in sight.** `Glue.StopsShown`
   decides (a refusal, `ok: false`, undoing what nothing changed since), with `Glue.selectsPausedPage`, and
   `PiwiRunSessions.draw` opens, drawing again as a wait ends (an `Alarm`), after a refusal and after acting that ends a
@@ -172,10 +172,19 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **One undo step per recording.** A `StartMarkAction` in a command of its own just before the first write, and a
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
-- **Every action but a toggle draws its concept's platform icon, one with a New UI glyph on 2024.1, or is listed as
-  waiting for Piwi's glyph.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`; the failed mark, Open in
-  Dashboard, the hand-offs and the stop's code actions drawn in code come from `PiwiIcons`. Checked by `PiwiPluginTest`
-  (`testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph`); the New UI glyph, by hand.
+- **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
+  is about (`STOP`, `TEST_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
+  gets an id in D25.
+- **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
+  on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`
+  lists them; `PiwiIcons` holds those drawn in code. Checked by `PiwiPluginTest` (`testEveryActionHasAnIconButToggles`,
+  which lists the actions that share one); the New UI glyph, by hand.
+- **Every label is in sentence case, as the VS Code extension's**: actions, buttons, dialog and popup titles, tabs and
+  settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
+  Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
+  for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
+- **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte**, in
+  `STATUS_COLORS`' fills. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
 
 ## Workflow
@@ -213,7 +222,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
   page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
-  `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI Run tab, the CI positions).
+  `CaretCountInlay`). `PiwiCiRuns.kt`: the CI runs of the branch, read-only (the CI run tab, the CI positions).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.

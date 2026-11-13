@@ -720,6 +720,12 @@ function fenced(text: string): string {
   return `${fence}text\n${text}\n${fence}`;
 }
 
+/** A catalog's tags as Playwright writes them, `@` first (`@smoke`), each once. */
+function playwrightTags(tags: unknown[] | null | undefined): string[] {
+  const named = (tags ?? []).filter((tag): tag is string => typeof tag === 'string' && tag.trim() !== '');
+  return [...new Set(named.map((tag) => `@${tag.trim().replace(/^@/, '')}`))];
+}
+
 function testCounts(tests: Array<{ status: string | null }>): string {
   const failing = tests.filter((t) => t.status === 'failed').length;
   const flaky = tests.filter((t) => t.status === 'flaky').length;
@@ -3249,7 +3255,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           reasons.push({
             line: failure.line,
             title: 'Screenshot',
-            command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+            command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
           });
         }
         if (failed.traces.length) {
@@ -3269,7 +3275,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            // Every test of the spec as saved, by its path, as Run This Spec runs it.
+            // Every test of the spec as saved, by its path, as Run this spec runs it.
             command: {
               title: 'Run every test of this spec with Piwi',
               command: 'piwi.runTests',
@@ -3434,6 +3440,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           status,
           failure: failure ?? null,
           url: found ? (context.client?.testUrl(found.id) ?? null) : null,
+          tags: playwrightTags(found?.tags),
+          owner: found?.owner?.trim() || null,
+          quarantined: found ? context.quarantined.has(found.id) : false,
+          durationMs: typeof found?.avgDuration === 'number' ? Math.round(found.avgDuration) : null,
         }),
       );
       specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);

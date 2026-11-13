@@ -63,7 +63,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures", "Piwi.RestartService", "Piwi.OpenLog")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenDocumentation")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
         // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
@@ -102,32 +102,90 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))
         for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
+        // The status popup lists the run's actions as the one Piwi.RunControl group does, Tools → Piwi too.
+        val runControl = ActionManager.getInstance().getAction("Piwi.RunControl") as com.intellij.openapi.actionSystem.ActionGroup
+        assertEquals(PiwiStatusBarWidget.RUN_ACTIONS.toList(), runControl.getChildren(null).map { ActionManager.getInstance().getId(it) })
     }
 
     /**
-     * Every action draws a platform icon, but a toggle (its menu row shows a check mark) and those waiting for a glyph
-     * Piwi draws; a stop's code actions draw the same in its popups (`PiwiIcons.stopAction`).
+     * Every action draws a platform icon or a glyph Piwi draws, but a toggle (its menu row shows a check mark); a stop's
+     * code actions draw the same in its popups (`PiwiIcons.stopAction`), and a glyph has one meaning.
      */
-    fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
+    fun testEveryActionHasAnIconButToggles() {
         val actions = ActionManager.getInstance()
         val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
-        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
-        val awaiting = setOf(
-            "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
-            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.ShareWindowLive", "Piwi.StopSharingWindowLive",
-        )
         val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
         val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
-        assertEquals(toggles + awaiting, bare)
+        assertEquals(toggles, bare)
         for (id in toggles) assertTrue(id, actions.getAction(id) is com.intellij.openapi.actionSystem.ToggleAction)
         val registered = mapOf(
             Glue.StopAction.PICK to "Piwi.PickAtStop", Glue.StopAction.RECORD to "Piwi.RecordAtStop",
             Glue.StopAction.ASSERT to "Piwi.AssertAtStop", Glue.StopAction.ASSERT_REGION to "Piwi.AssertRegionAtStop",
             Glue.StopAction.MOCK to "Piwi.MockAtStop",
         )
-        for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
+        for ((action, id) in registered) assertEquals(id, glyph(PiwiIcons.stopAction(action)), glyph(actions.getAction(id).templatePresentation.icon))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
+        assertEquals(glyph(PiwiIcons.CONNECT), glyph(actions.getAction("Piwi.Connect").templatePresentation.icon))
+        // Each glyph Piwi draws is a file of the plugin, with its dark copy.
+        for (id in ids.filter { it !in toggles }) {
+            val path = glyph(actions.getAction(id).templatePresentation.icon)
+            if (!path.startsWith("icons/")) continue
+            assertNotNull(id, PiwiIcons::class.java.getResource("/$path"))
+            assertNotNull(id, PiwiIcons::class.java.getResource("/${path.removeSuffix(".svg")}_dark.svg"))
+        }
+        // The actions that share a glyph are one concept.
+        val concepts = setOf(
+            setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
+            setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
+            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
+            setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
+            setOf(
+                "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
+                "Piwi.Failure.CopyContext",
+            ),
+            setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate"),
+            setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
+            setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
+            setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
+            // Pause, Resume and Stop of a recording and of a run, still to settle.
+            setOf("Piwi.StopRecording", "Piwi.StopRun"),
+            setOf("Piwi.PauseRecording", "Piwi.PauseRun"),
+            setOf("Piwi.ResumeRecording", "Piwi.ResumeRun"),
+        )
+        val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
+            .values.filter { it.size > 1 }.map { it.toSet() }.toSet()
+        assertEquals(concepts, shared)
+    }
+
+    /** The resource an icon is loaded from, however it was asked for: `icons/region.svg`. */
+    private fun glyph(icon: javax.swing.Icon?): String =
+        icon.toString().substringAfterLast("path=").takeWhile { it !in ",])" }.removePrefix("/")
+
+    /** A popup's registered action updates with what the popup is about: a run page's row is enabled for its page. */
+    fun testAPopupsRegisteredActionUpdatesWithItsData() {
+        val page = registeredWith("Piwi.OpenRunPage", "Open run #78") { it.add(RUN_PAGE, RunPage(78, "https://piwi.example/runs/78")) }!!
+        val shown = myFixture.testAction(page)
+        assertTrue(shown.isEnabled)
+        assertEquals("Open run #78", shown.text)
+        // With no page named and no run of this project, there is nothing to open.
+        assertFalse(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.OpenRunPage")).isEnabled)
+    }
+
+    /**
+     * Every registered action's text is in sentence case, as the VS Code extension's: it starts with a capital, and a
+     * later word takes one only in a proper noun. Texts set while the IDE runs are not read here.
+     */
+    fun testEveryActionsTextIsInSentenceCase() {
+        val actions = ActionManager.getInstance()
+        val proper = listOf("Piwi Picker", "Claude Code", "Flake Lab", "Piwi", "Playwright", "MCP", "Cursor", "Node.js", "CI", "Rider", "I")
+        for (id in actions.getActionIdList("Piwi.")) {
+            val text = actions.getAction(id).templatePresentation.text ?: continue
+            val sentence = text.removePrefix("Piwi: ")
+            assertTrue("$id: $text", sentence.first().isUpperCase())
+            val rest = proper.fold(sentence.substringAfter(' ', "")) { s, noun -> s.replace(Regex("(?<!\\w)${Regex.escape(noun)}(?!\\w)"), "") }
+            val capitals = rest.split(' ').filter { word -> word.trimStart('(', '\'', '"').firstOrNull()?.isUpperCase() == true }
+            assertTrue("$id: $text", capitals.isEmpty())
+        }
     }
 
     /**
@@ -507,7 +565,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            assertEquals(listOf("Connect…", "Open the failures", "Learn more"), shown.single().actions.map { it.templateText })
             // Each kind has its group, the requests' sticky, a confirmation fading on its own.
             val groups = com.intellij.notification.NotificationGroupManager.getInstance()
             assertEquals(
@@ -567,8 +625,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * The actions that read the instance are enabled only while a context is connected; Open in Dashboard also on the
-     * page of what the tool window has selected, and Re-run the Failing Tests while failures are listed.
+     * The actions that read the instance are enabled only while a context is connected; Open in dashboard also on the
+     * page of what the tool window has selected, and Re-run the failing tests while failures are listed.
      */
     fun testTheActionsThatReadTheInstanceWaitForAConnection() {
         val actions = ActionManager.getInstance()
@@ -593,7 +651,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
     }
 
-    /** Run Headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
+    /** Run headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
     fun testRunHeadedIsKeptForEveryRunOfTheProject() {
         val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
             .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
@@ -726,7 +784,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(
                 listOf(
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
-                    "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
+                    "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
                 ),

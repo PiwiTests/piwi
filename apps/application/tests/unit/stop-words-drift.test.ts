@@ -23,8 +23,8 @@ function pairsIn(text: string, start: string, end: string, pattern: RegExp): Rec
   return Object.fromEntries([...block.matchAll(pattern)].map((m) => [m[1]!, m[2]!]));
 }
 
-/** The reasons every surface words, the failure's own sentence apart. */
-const REASONS = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause'] as const;
+/** The reasons every surface words. */
+const REASONS = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'] as const;
 
 describe('the words of a stop', () => {
   const dashboard = Object.fromEntries(REASONS.map((r) => [r, STOP_WORDS[r]]));
@@ -58,6 +58,8 @@ describe('the words of a stop', () => {
   test('are the terminal’s words', () => {
     const reporter = read('packages/reporter/src/internal/capture/run-channel.ts');
     const line = pairsIn(reporter, 'const STOP_LINE_WORDS', '\n};', /'?([\w-]+)'?: '([^']+)'/g);
-    expect(line).toEqual(dashboard);
+    // The terminal says a failure in the reporter's own line, apart.
+    const { failure: _failure, ...stopped } = dashboard;
+    expect(line).toEqual(stopped);
   });
 });

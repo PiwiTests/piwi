@@ -165,7 +165,7 @@ class GlueTest {
         assertEquals(
             Glue.StatusView(
                 "Piwi: unreachable",
-                "$problem\nPiwi reads it again on its own; Refresh reads it now.",
+                "$problem\nPiwi reads it again on its own; Reload Piwi reads it now.",
                 null,
                 Glue.StatusAction.RETRY,
                 Glue.StatusIcon.UNREACHABLE,
@@ -748,7 +748,7 @@ class GlueTest {
             Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
         )
         assertEquals("The test went on.", Glue.sharedText(StopBindResult(false, "The test went on.")))
-        assertEquals("Piwi: paused · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals("Piwi: stopped at a breakpoint · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(null, Glue.runControlStatus(Glue.runControls(running), emptyList()))
     }
 
@@ -761,7 +761,7 @@ class GlueTest {
         assertTrue(warning.contains("each stop of its tests: the call, its file and line, and the test's title, even while nobody watches"))
         assertTrue(warning.contains("images of its test's page go there too, each with its call and the test's title"))
         assertTrue(warning.contains("on an instance with authentication off, anyone who can reach it"))
-        assertTrue(warning.endsWith("Stop Sharing ends it within seconds."))
+        assertTrue(warning.endsWith("Stop sharing ends it within seconds."))
         assertTrue(Glue.shareLiveWarning(null).contains("the Piwi instance it reports to"))
         assertEquals("piwi.example.com", Glue.liveInstance(page))
         assertEquals("127.0.0.1:7494", Glue.liveInstance("http://127.0.0.1:7494/test-runs/5"))
@@ -819,7 +819,7 @@ class GlueTest {
         assertEquals("Piwi: 2 of 2 · 1 ended at a stop", Glue.runProgressText(mapOf("ed-3" to endedAtAStop)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
-            "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
+            "Piwi: stopped at a breakpoint · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
     }
@@ -832,32 +832,32 @@ class GlueTest {
         assertEquals(emptyList<Glue.LiveEntry>(), Glue.liveMenu(mapOf("ed-2" to ready), windowShared = false))
         assertEquals(
             listOf(
-                Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the Run Page", "ed-1", page),
-                Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the Run Page's Link", "ed-1", page),
-                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1"),
+                Glue.LiveEntry(Glue.LiveEntryKind.OPEN_PAGE, "Open the run page", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.COPY_LINK, "Copy the run page's link", "ed-1", page),
+                Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run…", "ed-1"),
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-2" to ready), windowShared = false),
         )
-        // A run shared before its page is known offers Stop Sharing alone.
+        // A run shared before its page is known offers Stop sharing alone.
         assertEquals(
-            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop Sharing the Run…", "ed-1")),
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING, "Stop sharing the run…", "ed-1")),
             Glue.liveMenu(mapOf("ed-1" to shared.copy(live = RunLive(true, null, null, 0))), windowShared = false),
         )
         // Several shared runs are each named; the project's runs shared add their own stop.
         val other = RunSession("ed-3", root = "/w/admin", live = RunLive(true, null, "https://piwi.example.com/test-runs/43", 0))
         assertEquals(
             listOf(
-                "Open the Page of Run #78", "Copy the Link of Run #78", "Stop Sharing Run #78…",
-                "Open the Page of Run in admin (ed-3)", "Copy the Link of Run in admin (ed-3)", "Stop Sharing Run in admin (ed-3)…",
-                "Stop Sharing This Project's Runs…",
+                "Open the page of run #78", "Copy the link of run #78", "Stop sharing run #78…",
+                "Open the page of run in admin (ed-3)", "Copy the link of run in admin (ed-3)", "Stop sharing run in admin (ed-3)…",
+                "Stop sharing this project's runs…",
             ),
             Glue.liveMenu(mapOf("ed-1" to shared, "ed-3" to other), windowShared = true).map { it.label },
         )
         assertEquals(
-            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop Sharing This Project's Runs…")),
+            listOf(Glue.LiveEntry(Glue.LiveEntryKind.STOP_SHARING_PROJECT, "Stop sharing this project's runs…")),
             Glue.liveMenu(emptyMap(), windowShared = true),
         )
-        // What Stop Sharing asks first.
+        // What Stop sharing asks first.
         assertEquals(
             "Stop sharing the run live on piwi.example.com? The 2 views open there end, and nothing more goes there until you share it again.",
             Glue.stopSharingQuestion(shared.live),
@@ -969,7 +969,7 @@ class GlueTest {
         assertEquals("Piwi Picker drives this stop", Glue.driverText(stop.copy(driver = picker), interact = true))
         assertEquals("An agent drives this stop", Glue.driverText(stop.copy(driver = agent)))
         assertEquals("An agent drives this stop: your input takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
-        // The Paused Page tab's and the Worker tab's captions.
+        // The Paused page tab's and the Worker tab's captions.
         val stopped = RunWorker(5, 1, "stopped", runTest(), stop.copy(by = "agent", driver = agent), takes = listOf("input"), watchers = listOf(picker, me))
         val sessions = mapOf("ed-1" to session("ed-1", stopped))
         val shown = Glue.stopsOf(sessions).single()
@@ -989,7 +989,7 @@ class GlueTest {
     }
 
     @Test
-    fun `a Pause that waits for a call says which, and End the Test ends the test there`() {
+    fun `a Pause that waits for a call says which, and End the test ends the test there`() {
         val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", specUri, 4, "2026-10-25T10:00:00.000Z", true)
         val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting)))
         val controls = Glue.runControls(sessions)
@@ -1034,7 +1034,7 @@ class GlueTest {
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
         assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · Worker 2", Glue.stopLabel(stops[1]))
-        assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
+        assertEquals("Piwi: 2 tests stopped", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 
     /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`, or with the pause bar for `bar`. */
@@ -1217,8 +1217,8 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE gives a stop of the slot the Worker tab watches the Paused Page for its input, but not the focus`() {
-        // The Worker tab only watches slot 1: its stop is any other worker's to the focus and the Paused Page tab.
+    fun `the IDE gives a stop of the slot the Worker tab watches the Paused page for its input, but not the focus`() {
+        // The Worker tab only watches slot 1: its stop is any other worker's to the focus and the Paused page tab.
         val pushes = Pushes()
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
@@ -1266,7 +1266,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE makes the slot the person acted on theirs - a code action, input or a pick on the Paused Page`() {
+    fun `the IDE makes the slot the person acted on theirs - a code action, input or a pick on the Paused page`() {
         val pushes = Pushes()
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
@@ -1455,7 +1455,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the Paused Page keeps Interact for the next stop of its worker slot that takes input, while Watch stays on`() {
+    fun `the Paused page keeps Interact for the next stop of its worker slot that takes input, while Watch stays on`() {
         val live = listOf("view", "input", "pick-at")
         fun at(ref: String, slot: Int, takes: List<String>, line: Int = 7) =
             Glue.ShownStop(ref, slot + 4, stopAt(specUri, line), runTest(), takes, slot = slot)
@@ -1474,7 +1474,7 @@ class GlueTest {
     }
 
     @Test
-    fun `a new page selects the Paused Page tab unless the Worker tab is selected in a tool window that shows`() {
+    fun `a new page selects the Paused page tab unless the Worker tab is selected in a tool window that shows`() {
         assertFalse(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = true))
         assertTrue(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = false))
         assertTrue(Glue.selectsPausedPage(workerTabSelected = false, windowVisible = true))
@@ -1496,12 +1496,12 @@ class GlueTest {
     @Test
     fun `a failure held for the IDE says how the test failed and offers Resume alone among the controls`() {
         val failed = stopAt(specUri, 5).copy(reason = "failure", title = "Failed: Timed out 5000ms waiting for click")
-        assertEquals("Failed · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
+        assertEquals("Held at its failure · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
         val shown = { stop: RunStop, takes: List<String> -> Glue.ShownStop("ed-1", 0, stop, runTest(), takes) }
         assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(shown(failed, listOf("end"))))
         assertEquals(Glue.StopControl.entries - Glue.StopControl.END, Glue.stopControls(shown(stopAt(specUri, 5), allTakes)))
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), failed, takes = allTakes)))
-        assertEquals("Piwi: failed · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals("Piwi: held at its failure · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(Glue.StopAction.entries.toSet(), Glue.runControls(stopped).actions)
     }
 
@@ -1577,7 +1577,7 @@ class GlueTest {
     }
 
     @Test
-    fun `Mock a Request lists the responses latest first, with their status, type, size and time`() {
+    fun `Mock a request lists the responses latest first, with their status, type, size and time`() {
         val cart = StopRequest(1, "GET", "http://localhost:3000/api/cart", 200, "application/json", 12, 840.0)
         val pay = StopRequest(2, "POST", "http://localhost:3000/api/pay", 402, "", null, 12_400.0)
         assertEquals(listOf(pay, cart), Glue.requestsToMock(listOf(cart, pay)))
@@ -1916,11 +1916,11 @@ class GlueTest {
         assertEquals("Hold failures on: a failed test waits at its line, as an agent set it", Glue.holdText(RunHoldFailures(true, "agent")))
         // The action is offered only while a run has one, and says what a click does to the only one.
         assertEquals(false, Glue.runControls(mapOf("lab-1" to unattended)).holdable)
-        assertEquals("Turn Hold Failures Off", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", true)))))
-        assertEquals("Turn Hold Failures On", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", false)))))
+        assertEquals("Turn hold failures off", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", true)))))
+        assertEquals("Turn hold failures on", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", false)))))
         val two = Glue.runControls(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true)))
         assertEquals(true, two.holdable)
-        assertEquals("Turn Hold Failures On or Off", Glue.holdActionText(two))
+        assertEquals("Turn hold failures on or off", Glue.holdActionText(two))
         // The chooser names each run apart: its page, else its folder and ref.
         assertEquals("Run #42", Glue.runLabel(held("ed-1", true).copy(page = RunPage(42, "https://piwi.example/test-runs/42"))))
         assertEquals("Run in shop (ed-2)", Glue.runLabel(held("ed-2", true).copy(root = "/work/shop")))
@@ -2145,6 +2145,26 @@ class GlueTest {
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
         assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
+    }
+
+    @Test
+    fun `test connection says whether the typed address answers and asks for a key, or why it does not`() {
+        assertEquals(
+            "https://piwi.example.com answers. It asks for an API key: Connect… signs in or takes one.",
+            Glue.testConnectionText("https://piwi.example.com", needsKey = true),
+        )
+        assertEquals("http://127.0.0.1:3000 answers, and lists its projects without a key.", Glue.testConnectionText("http://127.0.0.1:3000", false))
+        assertEquals(
+            "Could not connect to https://piwi.example: nothing answers there. Is the instance running, on that port?",
+            Glue.testConnectionFailure(
+                "https://piwi.example",
+                Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "https://piwi.example"),
+            ),
+        )
+        assertEquals(
+            "Could not connect to https://example.com: not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+            Glue.testConnectionFailure("https://example.com", Glue.connectFailure(Exception(), 404, "https://example.com")),
+        )
     }
 
     @Test
@@ -2914,7 +2934,7 @@ class GlueTest {
     }
 
     @Test
-    fun `Re-run the Failing Tests runs every config's failing tests, or one config's from its node`() {
+    fun `Re-run the failing tests runs every config's failing tests, or one config's from its node`() {
         val shop = RunTestsArgs("file:///w/apps/shop/tests/a.spec.ts", listOf(7), root = "/w/apps/shop")
         val admin = RunTestsArgs("file:///w/apps/admin/tests/b.spec.ts", listOf(8), root = "/w/apps/admin")
         val result = treeFailures.copy(rerun = listOf(shop, admin))
@@ -2937,7 +2957,7 @@ class GlueTest {
     }
 
     @Test
-    fun `Compare With offers the ladder, the branches with runs, a run by id and the local runs`() {
+    fun `Compare with offers the ladder, the branches with runs, a run by id and the local runs`() {
         val run = RunStatus(root = "/w", branch = "main", run = passed, branches = listOf("main", "feature/x"))
         val entries = Glue.baselineEntries(run)
         assertEquals(
@@ -3033,12 +3053,12 @@ class GlueTest {
     )
 
     @Test
-    fun `a run's verdict counts the CI failures it fixed and names those still failing, with Re-run Failing`() {
+    fun `a run's verdict counts the CI failures it fixed and names those still failing, with Re-run failing`() {
         assertEquals(
             Glue.RunVerdict(
                 true,
                 "Run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
-                listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"),
+                listOf("Open the failures", "Open in dashboard", "Re-run failing"),
             ),
             Glue.runVerdict(ended),
         )
@@ -3060,12 +3080,12 @@ class GlueTest {
             Glue.RunVerdict(
                 false,
                 "Run #124 · 1 of 1 CI failure fixed",
-                listOf("Open the Failures", "Open in Dashboard", "Only on Failure"),
+                listOf("Open the failures", "Open in dashboard", "Only on failure"),
             ),
             Glue.runVerdict(passing),
         )
-        // Only on Failure is offered while every run says what it changed, and on a run that fails nothing.
-        assertEquals(listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"), Glue.runVerdict(ended)?.actions)
+        // Only on failure is offered while every run says what it changed, and on a run that fails nothing.
+        assertEquals(listOf("Open the failures", "Open in dashboard", "Re-run failing"), Glue.runVerdict(ended)?.actions)
         assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
         // The skipped that were ended at a stop are named beside them.
         assertEquals(
@@ -3087,11 +3107,14 @@ class GlueTest {
     @Test
     fun `a run of each test three times says how many of its runs passed, whatever the setting`() {
         assertEquals(
-            Glue.RunVerdict(true, "Run #124 · Failed 1 of 3", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.RunVerdict(true, "Run #124 · Failed 1 of 3", listOf("Open the failures", "Open in dashboard")),
             Glue.runVerdict(ended.copy(repeat = RepeatVerdict("Failed 1 of 3", failed = true)), "never"),
         )
         val passed = ended.copy(failed = 0, repeat = RepeatVerdict("Passed 3 of 3", failed = false))
-        assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the Failures", "Open in Dashboard")), Glue.runVerdict(passed, "failures"))
+        assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the failures", "Open in dashboard")), Glue.runVerdict(passed, "failures"))
+        // The balloon is titled by its run, so two runs' balloons read apart.
+        assertEquals("Piwi: run #124", Glue.runVerdictTitle(124))
+        assertEquals("Passed 3 of 3", Glue.runVerdict(passed, "failures")?.let { Glue.runVerdictBody(it, 124) })
     }
 
     @Test
