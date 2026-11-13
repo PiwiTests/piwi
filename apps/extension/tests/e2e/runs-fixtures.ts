@@ -147,37 +147,42 @@ export async function pairedExtension(
     }),
     options,
   );
-  const worker = await extensionWorker(context);
-  if (options.desktop) {
-    await worker.evaluate(
-      (desktop) =>
-        new Promise<void>((resolve, reject) => {
-          const open = indexedDB.open('piwi-secrets', 1);
-          open.onupgradeneeded = () => {
-            if (!open.result.objectStoreNames.contains('secrets')) open.result.createObjectStore('secrets');
-          };
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const transaction = open.result.transaction('secrets', 'readwrite');
-            transaction.objectStore('secrets').put(desktop, 'desktop');
-            transaction.oncomplete = () => {
-              open.result.close();
-              // As the settings page says a pairing changed: the worker asks the app for its runs' hub.
-              void chrome.storage.local.set({ piwiDesktopPairedAt: Date.now() }).then(() => resolve());
+  try {
+    const worker = await extensionWorker(context);
+    if (options.desktop) {
+      await worker.evaluate(
+        (desktop) =>
+          new Promise<void>((resolve, reject) => {
+            const open = indexedDB.open('piwi-secrets', 1);
+            open.onupgradeneeded = () => {
+              if (!open.result.objectStoreNames.contains('secrets')) open.result.createObjectStore('secrets');
             };
-            transaction.onerror = () => reject(transaction.error);
-          };
-        }),
-      { url: options.desktop.origin, token: DESKTOP_TOKEN },
-    );
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const transaction = open.result.transaction('secrets', 'readwrite');
+              transaction.objectStore('secrets').put(desktop, 'desktop');
+              transaction.oncomplete = () => {
+                open.result.close();
+                // As the settings page says a pairing changed: the worker asks the app for its runs' hub.
+                void chrome.storage.local.set({ piwiDesktopPairedAt: Date.now() }).then(() => resolve());
+              };
+              transaction.onerror = () => reject(transaction.error);
+            };
+          }),
+        { url: options.desktop.origin, token: DESKTOP_TOKEN },
+      );
+    }
+    if (editor) {
+      await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
+        url: `${editor.origin}/piwi/send`,
+        token: PAIRING_TOKEN,
+      });
+    }
+    return { context, worker, extensionId: worker.url().split('/')[2]! };
+  } catch (error) {
+    await context.close();
+    throw error;
   }
-  if (editor) {
-    await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
-      url: `${editor.origin}/piwi/send`,
-      token: PAIRING_TOKEN,
-    });
-  }
-  return { context, worker, extensionId: worker.url().split('/')[2]! };
 }
 
 /** The paired desktop app's token, which its hub takes in `hello`. */

@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
 import { REVEAL_EXPRESSION } from '../../src/shared/devtools-selection.js';
 import { launchWithEditedManifest, removedOnClose } from './fixtures.js';
 
@@ -59,13 +59,17 @@ test('the real DevTools loads the devtools page, and $0 reaches the ranking scri
 
   // The site's grant, as a person gives it from the sidebar's Allow button.
   const userDataDir = mkdtempSync(path.join(tmpdir(), 'piwi-devtools-profile-'));
-  const context = removedOnClose(
-    await launchWithEditedManifest((manifest) => ({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }), {
-      userDataDir,
-      args: ['--auto-open-devtools-for-tabs', '--remote-debugging-port=0'],
-    }),
-    userDataDir,
-  );
+  let launched: BrowserContext;
+  try {
+    launched = await launchWithEditedManifest(
+      (manifest) => ({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+      { userDataDir, args: ['--auto-open-devtools-for-tabs', '--remote-debugging-port=0'] },
+    );
+  } catch (error) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
+  const context = removedOnClose(launched, userDataDir);
   try {
     const page = await context.newPage();
     await page.goto(url);
