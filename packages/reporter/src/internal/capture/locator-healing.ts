@@ -37,8 +37,6 @@ export type {
   ElementAttributes,
   LocatorSnapshot,
   RankedLocator,
-  RolePosition,
-  SelectorCounts,
 } from '@piwitests/core/locator-healing-types';
 
 import type { LocatorSnapshot } from '@piwitests/core/locator-healing-types';
