@@ -37,6 +37,7 @@ import org.jetbrains.ide.BuiltInServerManager
 import org.jetbrains.ide.HttpRequestHandler
 import org.jetbrains.ide.HttpRequestHandler.OriginCheckResult
 import java.awt.datatransfer.StringSelection
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.URI
 import java.nio.file.Path
@@ -70,8 +71,9 @@ object PiwiSendToken {
 /**
  * `POST /api/piwi/send` on the IDE's built-in server: what Piwi Picker sends, inserted at the
  * caret of the focused project's editor, or into a new scratch file while no editor is open. A
- * locator picked while a run was paused at a breakpoint replaces the locator of its line instead
- * (`piwi/applyPick`), and goes to the caret when the line holds none. Each request is served on
+ * locator picked while a run was paused at a breakpoint goes to the project whose run made it, and
+ * replaces the locator of its line there instead (`piwi/applyPick`), or goes to the caret when the
+ * line holds none. Each request is served on
  * a pooled thread, where the token, the file and its document are read; the server's I/O thread
  * reads nothing from the password safe or the disk, and only the write runs on the event thread.
  * With the same token, `GET /api/piwi/live` lists the hubs of every editor service running on
@@ -162,15 +164,15 @@ class PiwiSendHandler : HttpRequestHandler() {
     }
 
     /**
-     * Inserts the payload in the focused project and answers the path of the file written, null for a scratch file. A
+     * Inserts the payload in its project ([targetProject]) and answers the path of the file written, null for a scratch file. A
      * pick at a line goes through `piwi/applyPick`; a recorded flow is rendered by the editor service for the caret,
      * its page expression and its line's indentation, with its import edit apart. On a pooled thread.
      */
     private fun insert(payload: Glue.SendPayload): String? {
-        val project = targetProject() ?: throw IllegalStateException("no project is open")
-        var outcome: Glue.PickOutcome? = null
         val picked = payload as? Glue.SendPayload.Locator
         val at = picked?.at
+        val project = targetProject(at) ?: throw IllegalStateException("no project is open")
+        var outcome: Glue.PickOutcome? = null
         if (picked != null && at != null) {
             val server = project.service<PiwiProjectService>().server()
             val answer = server?.applyPick(ApplyPickParams(file = at.file, line = at.line - 1, locator = picked.text))?.orNull()
@@ -214,9 +216,24 @@ class PiwiSendHandler : HttpRequestHandler() {
         return onEventThread { insertAtCaret(project, insertion) }
     }
 
-    private fun targetProject(): Project? =
-        IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
-            ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDefault }
+    /**
+     * The project a payload goes to: for a pick at a stop, the project whose run made it ([Glue.pickProject]: the one
+     * stopped in its file, else the one holding its file); else, and when none does, the project focused last.
+     */
+    private fun targetProject(at: Glue.SendPlace?): Project? {
+        val open = ProjectManager.getInstance().openProjects.filter { !it.isDefault && !it.isDisposed }
+        val focused = IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project ?: open.firstOrNull()
+        return Glue.pickProject(at, open.map(::pickCandidate), focused) { File(it).isFile }
+    }
+
+    /** What a pick's place is matched with in [project]: its configs' folders, and the files its runs are stopped in. */
+    private fun pickCandidate(project: Project): Glue.PickCandidate<Project> {
+        val service = project.getServiceIfCreated(PiwiProjectService::class.java)
+        val roots = service?.status?.contexts.orEmpty().mapNotNull { it.root } +
+            service?.playwrightConfigDirs().orEmpty().map { it.toString() }
+        val stopped = project.getServiceIfCreated(PiwiRunSessions::class.java)?.stops().orEmpty().mapNotNull { Glue.fileKey(it.stop.uri) }
+        return Glue.PickCandidate(project, roots.distinct(), stopped)
+    }
 
     /** What goes in, and what the balloon says once it did: where a pick went and why, else what was inserted. */
     private class Insertion(

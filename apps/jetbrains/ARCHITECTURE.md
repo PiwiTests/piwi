@@ -882,6 +882,11 @@ A request without the token is a 401; one whose token cannot be read, or whose f
 service writes the files: [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor
 service's reference.
 
+**Which project.** The endpoint is the IDE's, so every project's runs name it. A locator with `at` goes to the project
+whose run made it (`Glue.pickProject`): the open project with a run stopped in the file `at` names under one of its
+config folders, else the one holding that file, the focused one first among several; else, and for anything else sent,
+the project focused last.
+
 **What it inserts.**
 
 - A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range of

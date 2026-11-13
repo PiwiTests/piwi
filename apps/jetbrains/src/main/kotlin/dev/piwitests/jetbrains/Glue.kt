@@ -1585,6 +1585,33 @@ object Glue {
 
     data class SendPlace(val file: String, val line: Int)
 
+    /**
+     * An open project a pick may go to: the folders a run's paths start from (its Playwright configs' folders) and the
+     * files its runs are stopped in now, as paths.
+     */
+    data class PickCandidate<P>(val project: P, val roots: List<String>, val stoppedFiles: List<String>)
+
+    /**
+     * The project a pick at `at` goes to, the run's: the project a run is stopped in the file `at` names (relative to
+     * one of its roots), else the project holding that file (`exists`), else the focused one. Among several, the
+     * focused one, else the first. Without `at`, the focused project.
+     */
+    fun <P> pickProject(at: SendPlace?, candidates: List<PickCandidate<P>>, focused: P?, exists: (String) -> Boolean): P? {
+        if (at == null) return focused
+        fun named(candidate: PickCandidate<P>) = candidate.roots.mapNotNull { root ->
+            runCatching { Path.of(root).resolve(at.file).normalize() }.getOrNull()
+        }
+        fun preferred(matching: List<PickCandidate<P>>) =
+            (matching.firstOrNull { it.project == focused } ?: matching.firstOrNull())?.project
+        val stopped = candidates.filter { candidate ->
+            val stops = candidate.stoppedFiles.mapNotNull { runCatching { Path.of(it).normalize() }.getOrNull() }
+            named(candidate).any { it in stops }
+        }
+        if (stopped.isNotEmpty()) return preferred(stopped)
+        val holding = candidates.filter { candidate -> named(candidate).any { exists(it.toString()) } }
+        return preferred(holding) ?: focused
+    }
+
     const val MAX_SEND_TEXT = 4000
     const val MAX_SEND_BYTES = 2_000_000
 

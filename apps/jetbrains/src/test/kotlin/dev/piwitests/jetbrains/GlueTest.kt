@@ -596,6 +596,27 @@ class GlueTest {
     }
 
     @Test
+    fun `a picked locator goes to the project whose run made it, not the one focused last`() {
+        val at = Glue.SendPlace("tests/cart.spec.ts", 12)
+        val shop = Glue.PickCandidate("shop", listOf("/work/shop/e2e"), listOf("/work/shop/e2e/tests/cart.spec.ts"))
+        val blog = Glue.PickCandidate("blog", listOf("/work/blog"), emptyList())
+        val files = setOf("/work/shop/e2e/tests/cart.spec.ts", "/work/blog/tests/cart.spec.ts")
+        val exists = { path: String -> path in files }
+        assertEquals("the project stopped in the file", "shop", Glue.pickProject(at, listOf(blog, shop), "blog", exists))
+        // With no run stopped there, the project holding the file.
+        val idle = shop.copy(stoppedFiles = emptyList())
+        assertEquals("shop", Glue.pickProject(at, listOf(idle, blog.copy(roots = listOf("/work/elsewhere"))), "blog", exists))
+        // Two projects hold such a file: the focused one.
+        assertEquals("blog", Glue.pickProject(at, listOf(idle, blog), "blog", exists))
+        // No project holds it, or the pick names no place: the focused one.
+        assertEquals("blog", Glue.pickProject(Glue.SendPlace("tests/none.spec.ts", 1), listOf(idle, blog), "blog", exists))
+        assertEquals("blog", Glue.pickProject(null, listOf(shop, blog), "blog", exists))
+        // A stop in the same file of a project the run's path is not under does not count.
+        val other = Glue.PickCandidate("other", listOf("/work/other"), listOf("/work/shop/e2e/tests/cart.spec.ts"))
+        assertEquals("blog", Glue.pickProject(at, listOf(other, blog), "blog", exists))
+    }
+
+    @Test
     fun `a recording writes only into a script under a Playwright config folder`() {
         val root = Files.createTempDirectory("piwi-config").toRealPath()
         val dirs = listOf(root.resolve("e2e"))
