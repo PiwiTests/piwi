@@ -6,7 +6,7 @@ lang: en-US
 
 # Record tests from the editor
 
-**Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
+**Piwi: Record here…** opens a browser through your project's own Playwright and writes what you do there at the cursor,
 as you do it: steps inside a test, a page object's method or a helper function, a new test anywhere else in a spec. It
 works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 [Piwi plugin](./jetbrains), and needs no instance, no desktop app and no browser extension.
@@ -20,8 +20,8 @@ works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 
 | Editor | Record at the cursor | Record a new test file |
 |---|---|---|
-| VS Code | **Piwi: Record here**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title; any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file** |
-| JetBrains IDE | **Tools → Piwi → Record here**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **File → New → Record a new test file…** |
+| VS Code | **Piwi: Record here…**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title; any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file…**, also in the explorer's **Piwi** submenu |
+| JetBrains IDE | **Tools → Piwi → Record here…**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **File → New → Record a new test file…**, or the project view's **Piwi** submenu |
 
 Before the browser opens, the editor asks for:
 

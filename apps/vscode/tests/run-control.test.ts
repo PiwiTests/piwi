@@ -1023,7 +1023,7 @@ describe('the Live item’s menu', () => {
     },
   });
 
-  test('offers the run page, its link and Stop sharing… for the run shared', () => {
+  test('offers the run page, its link and Stop sharing for the run shared', () => {
     expect(liveMenu(sessionsOf(shared('ed-1', 42, 2)))).toEqual([
       {
         label: 'Open the run page',
@@ -1035,7 +1035,7 @@ describe('the Live item’s menu', () => {
       },
       { label: "Copy the run page's link", detail: null, action: 'copy', ref: 'ed-1', url: page, question: null },
       {
-        label: 'Stop sharing…',
+        label: 'Stop sharing',
         detail: 'Shared live on piwi.example.com: 2 views open',
         action: 'stop',
         ref: 'ed-1',
@@ -1059,15 +1059,15 @@ describe('the Live item’s menu', () => {
     expect(liveMenu(two).map((item) => [item.label, item.action, item.ref])).toEqual([
       ['Open run #42’s page', 'open', 'ed-1'],
       ['Copy run #42’s link', 'copy', 'ed-1'],
-      ['Stop sharing run #42…', 'stop', 'ed-1'],
+      ['Stop sharing run #42', 'stop', 'ed-1'],
       ['Open run #43’s page', 'open', 'ed-2'],
       ['Copy run #43’s link', 'copy', 'ed-2'],
-      ['Stop sharing run #43…', 'stop', 'ed-2'],
+      ['Stop sharing run #43', 'stop', 'ed-2'],
     ]);
     expect(liveMenu(sessionsOf(shared('ed-1', 42)), true).map((item) => [item.label, item.action])).toEqual([
       ['Open the run page', 'open'],
       ["Copy the run page's link", 'copy'],
-      ["Stop sharing this window's runs…", 'stop-window'],
+      ["Stop sharing this window's runs", 'stop-window'],
     ]);
     expect(liveMenu(new Map(), true).map((item) => item.action)).toEqual(['stop-window']);
     // A run shared without a page on the instance offers Stop sharing alone.
@@ -2044,7 +2044,7 @@ describe('a failure held for the editor', () => {
   test('offers the code actions as any stop does', () => {
     expect(stopActions(shown(failed)).map((a) => a.title)).toEqual([
       'Pick a locator',
-      'Record here',
+      'Record',
       'Assert',
       'Assert a region',
       'Mock a request',

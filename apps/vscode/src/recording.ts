@@ -1,5 +1,5 @@
 /**
- * Recording a test from the editor. **Piwi: Record here** and **Piwi: Record a new test file** ask the editor service
+ * Recording a test from the editor. **Piwi: Record here…** and **Piwi: Record a new test file…** ask the editor service
  * to open a browser (`piwi/record`); each `piwi/recordingChanged` then rewrites the recorded block in the file, with
  * the import lines it needs in the same edit. While it records, the block is tinted, its controls are a CodeLens
  * above it and the recording is in the status bar; its warnings are diagnostics on their lines, which offer, once it
@@ -8,6 +8,7 @@
  * a run started here can ask to record from there (`piwi/recordRequested`): the recording then starts in its file, in
  * the test's own page, without a question.
  */
+import { setContextKey } from './context-keys';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
@@ -166,12 +167,8 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   /** The status bar item and the context keys of the menus, for the current recording. */
   const refresh = () => {
     const s = current();
-    void vscode.commands.executeCommand('setContext', 'piwi.recording', !!s);
-    void vscode.commands.executeCommand(
-      'setContext',
-      'piwi.recordingPaused',
-      !!s && (s.edited || s.state === 'paused'),
-    );
+    setContextKey('piwi.recording', !!s);
+    setContextKey('piwi.recordingPaused', !!s && (s.edited || s.state === 'paused'));
     lensesChanged.fire();
     if (!s) {
       statusItem.hide();

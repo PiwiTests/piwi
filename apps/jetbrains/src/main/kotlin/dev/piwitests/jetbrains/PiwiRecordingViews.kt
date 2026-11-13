@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.intention.IntentionAction
-import com.intellij.icons.AllIcons
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.ExternalAnnotator
 import com.intellij.lang.annotation.HighlightSeverity
@@ -30,7 +29,7 @@ class PiwiRecordingNotificationProvider : EditorNotificationProvider, DumbAware 
         val command = session.command
         return Function { fileEditor ->
             EditorNotificationPanel(fileEditor, EditorNotificationPanel.Status.Info).apply {
-                icon(AllIcons.Ide.Macro.Recording_1)
+                icon(PiwiIcons.recording(session.state, session.edited))
                 text(view.text)
                 for (action in view.actions) {
                     when (action) {

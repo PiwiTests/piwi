@@ -43,6 +43,30 @@ describe("the editor's context menu", () => {
   });
 });
 
+describe("the explorer's context menu", () => {
+  test('holds one Piwi submenu, as the JetBrains project view’s: run a spec or what reaches a file, record a new one', () => {
+    expect(manifest.contributes.submenus).toContainEqual({ id: 'piwi.explorerContext', label: 'Piwi' });
+    expect(menus['explorer/context']!.filter((e) => (e.command ?? e.submenu)?.startsWith('piwi.'))).toEqual([
+      expect.objectContaining({ submenu: 'piwi.explorerContext' }),
+    ]);
+    expect(menus['explorer/context']![0]!.when).toBe('piwi.active && resourceScheme =~ /^(file|vscode-remote)$/');
+    expect(menus['piwi.explorerContext']!.map((e) => [e.group!.split('@')[0], e.command])).toEqual([
+      ['1_run', 'piwi.runSpec'],
+      ['1_run', 'piwi.runTestsForFile'],
+      ['2_record', 'piwi.recordFile'],
+    ]);
+  });
+
+  test('runs a spec or what reaches a file on a file alone, as the editor’s submenu offers them', () => {
+    const whenOf = (menu: string, command: string) => menus[menu]!.find((e) => e.command === command)!.when!;
+    for (const command of ['piwi.runSpec', 'piwi.runTestsForFile']) {
+      const when = whenOf('piwi.explorerContext', command);
+      expect(when.startsWith('!explorerResourceIsFolder && ')).toBe(true);
+      expect(whenOf('piwi.editorContext', command)).toContain(when.replace('!explorerResourceIsFolder && ', ''));
+    }
+  });
+});
+
 describe("a spec's editor title", () => {
   const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
   const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
@@ -94,7 +118,7 @@ describe("a spec's editor title", () => {
       const icon = iconOf(command);
       expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
       const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
-      // Record, Resume recording and Record here at a stop are one concept, with one glyph.
+      // Record, Resume recording and Record at the stop are one concept, with one glyph.
       expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording', 'piwi.recordAtStop'] : []);
     }
   });

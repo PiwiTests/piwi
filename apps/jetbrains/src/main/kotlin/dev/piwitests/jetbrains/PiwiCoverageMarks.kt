@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap
  * the marks it placed again (`piwi/coverageChanged`); the service's hover names the tests behind a line, and a mark's
  * tooltip, in the gutter and the scroll bar, says what the marks mean. Only the marks a new answer changes are taken
  * off or drawn. A renamed or moved file is asked again under its new URI. A file without line coverage shows none.
- * **Tools → Piwi → Show coverage marks** hides them, on this machine only (`PiwiLocalSettings.coverageMarks`), and is
+ * **Tools → Piwi → Show or hide the coverage marks** hides them, on this machine only (`PiwiLocalSettings.coverageMarks`), and is
  * offered once a file showed some.
  */
 @Service(Service.Level.PROJECT)
@@ -278,7 +278,7 @@ internal class CoverageGutterMark(
 }
 
 /**
- * **Tools → Piwi → Show coverage marks**: the marks of the lines the tests ran, shown by default. Hidden from the menu
+ * **Tools → Piwi → Show or hide the coverage marks**: the marks of the lines the tests ran, shown by default. Hidden from the menu
  * until a file showed marks: a project without coverage shows nothing of it.
  */
 class ToggleCoverageMarksAction : ToggleAction(), DumbAware {

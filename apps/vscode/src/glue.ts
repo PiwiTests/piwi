@@ -44,6 +44,7 @@ import type {
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 import { laneDuration } from './run-control';
@@ -104,9 +105,98 @@ export interface StatusBarView {
   error: boolean;
   /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
   ownLive?: boolean;
+  /** The config the item speaks for, while the failures view lists flaky tests for it. */
+  flakyRoot?: string | null;
 }
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
+
+/** What the status menu offers depends on. */
+export interface StatusMenuState {
+  /** The item's own action, the menu's first row, so Enter does what a click on the item did. */
+  action: StatusBarView['action'];
+  recording: 'recording' | 'paused' | null;
+  run: { active: boolean; stopped: boolean; failed: boolean; pausable: boolean; stoppable: boolean; page: boolean };
+  failing: boolean;
+  /** The config whose flaky tests the failures view lists, for the item's config. */
+  flakyRoot: string | null;
+  connected: boolean;
+  /** The latest run's page is known: Open the latest run opens it. */
+  latestRun: boolean;
+  /** The active editor holds a spec. */
+  spec: boolean;
+}
+
+/** A row of the status menu: a command, its arguments and its title, or a separator naming the section after it. */
+export type StatusMenuEntry = { command: string; label: string; args?: unknown[] } | { separator: string };
+
+/**
+ * The status menu, in the JetBrains plugin's status popup's sections: the item's action first (with Open the log beside
+ * a restart, and a recording's controls after it while one runs), the run's controls while a run is live, the failures
+ * and the dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action
+ * catalog, and offered only where its command acts.
+ */
+export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
+  const title = (command: string) => {
+    const action = EDITOR_ACTIONS.find((a) => a.vscode === command);
+    return action ? actionTitle(action, 'vscode') : command;
+  };
+  const sections: Array<[string, Array<string | false>]> = [
+    [
+      '',
+      [
+        {
+          refresh: 'piwi.refreshRun',
+          retry: 'piwi.refresh',
+          connect: 'piwi.connect',
+          restart: 'piwi.restartService',
+          none: false as const,
+        }[state.action],
+        state.action === 'restart' && 'piwi.openLog',
+        !!state.recording && 'piwi.stopRecording',
+        state.recording === 'paused' && 'piwi.resumeRecording',
+        state.recording === 'recording' && 'piwi.pauseRecording',
+      ],
+    ],
+    [
+      'Run control',
+      state.run.active
+        ? [
+            state.run.stopped && 'piwi.resumeRun',
+            state.run.stopped && !state.run.failed && 'piwi.stepRun',
+            state.run.stopped && 'piwi.showPausedPage',
+            state.run.pausable && 'piwi.pauseRun',
+            state.run.page && 'piwi.openRunPage',
+            state.run.stoppable && 'piwi.stopRun',
+          ]
+        : [],
+    ],
+    [
+      'Dashboard',
+      [
+        state.failing && 'piwi.rerunFailing',
+        state.flakyRoot !== null && 'piwi.showFlakyTests',
+        state.connected && state.latestRun && 'piwi.openRun',
+        state.connected && 'piwi.compareWith',
+      ],
+    ],
+    ['Run and record', [state.spec && 'piwi.runTestAtCursor', state.spec && !state.recording && 'piwi.record']],
+    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.openSettings']],
+  ];
+  const seen = new Set<string>();
+  const entries: StatusMenuEntry[] = [];
+  for (const [name, commands] of sections) {
+    const shown = commands.filter((c): c is string => !!c && !seen.has(c));
+    if (!shown.length) continue;
+    if (entries.length) entries.push({ separator: name });
+    for (const command of shown) {
+      seen.add(command);
+      const args = command === 'piwi.showFlakyTests' && state.flakyRoot !== null ? [state.flakyRoot] : undefined;
+      entries.push({ command, label: title(command), ...(args ? { args } : {}) });
+    }
+  }
+  return entries;
+}
 
 /** The commands the status bar item's tooltip links to. */
 export const STATUS_TOOLTIP_COMMANDS = [
@@ -508,7 +598,14 @@ export function statusBarView(
       connect,
     ),
   );
-  const view = { tooltip, action: 'refresh' as const, url: r.url, liveUrl, error: false };
+  const view = {
+    tooltip,
+    action: 'refresh' as const,
+    url: r.url,
+    liveUrl,
+    error: false,
+    flakyRoot: flakyListed(connected.root) > 0 ? connected.root : null,
+  };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
@@ -1320,17 +1417,17 @@ export function recordingView(
   const resume: RecordingAction = { title: 'Resume', command: 'piwi.resumeRecording' };
   if (edited) {
     return {
-      title: `$(debug-pause) Paused while you edit · ${count}`,
+      title: `$(circle-large-outline) Paused while you edit · ${count}`,
       actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
-      status: `$(debug-pause) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: paused · ${count}`,
       tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
     };
   }
   if (state === 'paused') {
     return {
-      title: `$(debug-pause) Paused · ${count}`,
+      title: `$(circle-large-outline) Paused · ${count}`,
       actions: [stop, resume],
-      status: `$(debug-pause) Piwi: paused · ${count}`,
+      status: `$(circle-large-outline) Piwi: paused · ${count}`,
       tooltip: `The recording into ${file} is paused. Click to stop.`,
     };
   }

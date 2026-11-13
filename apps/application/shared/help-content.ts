@@ -640,7 +640,7 @@ export const HELP_TOPICS = {
       'This run is on a developer’s machine: its workers send nothing until the developer shares it, and its running tests then offer **Watch**. Sharing is theirs to start:',
       '',
       '- **VS Code** — `Piwi: Share the run live on the team instance`, or the status bar’s broadcast icon.',
-      '- **JetBrains IDEs** — **Tools → Piwi → Share the run live**.',
+      '- **JetBrains IDEs** — **Tools → Piwi → Share the run live on the team instance**.',
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
       '- **Terminal** — `PIWI_SHARE_LIVE=1` shares a run from its start.',

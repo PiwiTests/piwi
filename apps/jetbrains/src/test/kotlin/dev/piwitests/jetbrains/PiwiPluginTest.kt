@@ -92,22 +92,33 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures", "Piwi.RestartService", "Piwi.OpenLog", "Piwi.OpenDocumentation")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
-        // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
-        // extension's order: run, record, a recording's controls.
+        // Tools → Piwi leaves out what does not apply, in six sections; the editor's context menu and the project view
+        // have one Piwi submenu each, in the VS Code extension's order: run, record, a recording's controls.
         val actions = ActionManager.getInstance()
+        fun ids(group: String) = (actions.getAction(group) as com.intellij.openapi.actionSystem.DefaultActionGroup)
+            .childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) }
         assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
+        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControl", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
+        assertEquals(sections.flatMap { listOf(it, null) }.dropLast(1), ids("Piwi.Actions"))
+        for (section in sections) assertTrue(section, actions.getAction(section) is com.intellij.openapi.actionSystem.CompactActionGroup)
         val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
             listOf(
                 "Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
-                "Piwi.RecordHere", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
+                "Piwi.RecordHere", "Piwi.RecordNewFile", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
             ),
-            popup.childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) },
+            ids("Piwi.EditorPopup"),
         )
-        val editorMenu = actions.getAction("EditorPopupMenu") as com.intellij.openapi.actionSystem.DefaultActionGroup
-        val piwiInEditorMenu = editorMenu.childActionsOrStubs.map { actions.getId(it) }.filter { it?.startsWith("Piwi.") == true }
-        assertEquals(listOf("Piwi.EditorPopup"), piwiInEditorMenu)
+        assertEquals(listOf("Piwi.RunSpec", "Piwi.RunTestsForFile", null, "Piwi.RecordNewFile"), ids("Piwi.ProjectViewPopup"))
+        assertTrue(actions.getAction("Piwi.ProjectViewPopup") is com.intellij.openapi.actionSystem.CompactActionGroup)
+        for ((menu, piwi) in listOf("EditorPopupMenu" to "Piwi.EditorPopup", "ProjectViewPopupMenu" to "Piwi.ProjectViewPopup")) {
+            assertEquals(menu, listOf(piwi), ids(menu).filter { it?.startsWith("Piwi.") == true })
+        }
+        // Each Piwi menu shows Piwi's mark before its name.
+        for (menu in listOf("Piwi.Actions", "Piwi.EditorPopup", "Piwi.ProjectViewPopup")) {
+            assertNotNull(menu, actions.getAction(menu).templatePresentation.icon)
+        }
         // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
         val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
         fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
@@ -174,8 +185,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
             setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
-            // Pause, Resume and Stop of a recording and of a run, still to settle.
-            setOf("Piwi.StopRecording", "Piwi.StopRun"),
+            // Pause and Resume of a recording and of a run, still to settle.
             setOf("Piwi.PauseRecording", "Piwi.PauseRun"),
             setOf("Piwi.ResumeRecording", "Piwi.ResumeRun"),
         )

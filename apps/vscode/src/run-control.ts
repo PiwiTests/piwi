@@ -1300,8 +1300,8 @@ export interface LiveMenuItem {
 
 /**
  * The Live item's menu: for each run shared live, **Open the run page** and **Copy the run page's link** while it has
- * a page on the team instance, and **Stop sharing…**, which asks to confirm; each run named by its number when several
- * are shared. While this window's runs are shared, **Stop sharing this window's runs…** in place of each run's.
+ * a page on the team instance, and **Stop sharing**, which asks to confirm; each run named by its number when several
+ * are shared. While this window's runs are shared, **Stop sharing this window's runs** in place of each run's.
  */
 export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem[] {
   const shared = liveRunsOf(sessions).filter((r) => r.live.shared);
@@ -1333,7 +1333,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
       ? []
       : [
           {
-            label: several ? `Stop sharing ${run}…` : 'Stop sharing…',
+            label: several ? `Stop sharing ${run}` : 'Stop sharing',
             detail: liveText(live),
             action: 'stop',
             ref,
@@ -1345,7 +1345,7 @@ export function liveMenu(sessions: Sessions, windowShared = false): LiveMenuItem
   });
   if (windowShared) {
     items.push({
-      label: "Stop sharing this window's runs…",
+      label: "Stop sharing this window's runs",
       detail: null,
       action: 'stop-window',
       ref: null,
@@ -1451,7 +1451,7 @@ export interface StopAction extends StopControl {
 }
 
 /**
- * The code actions, in the order a stop offers them: the pause bar's Pick a locator and Record here, and Assert and
+ * The code actions, in the order a stop offers them: the pause bar's Pick a locator and Record, and Assert and
  * Assert a region, in the test's window, so at a stop the bar shows; Mock a request at any stop. Each is offered only
  * when the stopped worker's reporter takes it (`RunWorker.takes`).
  */
@@ -1467,7 +1467,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'record',
     icon: '$(record)',
-    title: 'Record here',
+    title: 'Record',
     command: RUN_COMMANDS.record,
     key: 'piwi.runCanRecord',
     detail: "Record what you do in the test's window above the stopped line",
