@@ -7,6 +7,7 @@ import {
   failuresAnswer,
   failuresDrawn,
   failuresView,
+  flakyTestLab,
   type ContextViewState,
   parseFailuresGrouping,
   rerunFailingArgs,
@@ -259,6 +260,23 @@ describe('the failures tree', () => {
     const [alone] = failureTree({ ...result, items: [], flaky }, 'file');
     expect(alone!.children.map((c) => c.key)).toEqual(['runs', 'flaky']);
     expect(failureTree({ ...result, items: [], flaky: [] }, 'file')).toEqual([]);
+  });
+
+  test('a flaky test says Flake Lab’s rate and line while Flake Lab shows one, else offers its Flakiness tab alone', () => {
+    const tab = { title: 'Open its Flakiness tab', command: 'piwi.openInDashboard' as const, arguments: ['http://f'] };
+    const reproduce = { title: 'Reproduce this flake', command: 'piwi.runCommand' as const, arguments: [{}] };
+    expect(
+      flakyTestLab(
+        [
+          { line: 0, title: 'flaky 18% · reproduced by delay', command: tab },
+          { line: 0, title: 'Reproduce this flake', command: reproduce },
+        ],
+        'flaky 18%',
+        'http://f',
+      ),
+    ).toEqual({ rate: 'flaky 18%', flakeLab: 'flaky 18% · reproduced by delay', actions: [tab, reproduce] });
+    // An entry Flake Lab shows no line for, such as a fix that holds, says no rate either.
+    expect(flakyTestLab([], 'flaky 1%', 'http://f')).toEqual({ rate: null, flakeLab: null, actions: [tab] });
   });
 
   test('without a failure, nothing; without a run, the groups alone', () => {

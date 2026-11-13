@@ -15,6 +15,7 @@ import type {
   FailureTreeNode,
   ProblemKind,
   RunTestsArgs,
+  SummaryLine,
   WorkspaceFailure,
 } from './protocol.js';
 
@@ -173,6 +174,26 @@ export type FailuresInput = Pick<FailuresResult, 'items' | 'run' | 'overlays' | 
   /** The run's flaky tests, placed on their specs. */
   flaky?: FailuresFlaky[];
 };
+
+/**
+ * What a flaky test of the tree says of Flake Lab and what looks into it, from its Flake Lab lines (`flakeLabLines`):
+ * the rate (`rate`, as `flakeRateText` says it) and the line while Flake Lab shows one, its Flakiness tab first and the
+ * lines' commands after; else its Flakiness tab alone.
+ */
+export function flakyTestLab(
+  lines: SummaryLine[],
+  rate: string | null,
+  flakinessUrl: string,
+): Pick<FailuresFlaky, 'rate' | 'flakeLab' | 'actions'> {
+  if (!lines.length) {
+    return {
+      rate: null,
+      flakeLab: null,
+      actions: [{ title: 'Open its Flakiness tab', command: 'piwi.openInDashboard', arguments: [flakinessUrl] }],
+    };
+  }
+  return { rate, flakeLab: lines[0]!.title, actions: lines.flatMap((l) => (l.command ? [l.command] : [])) };
+}
 
 /** The run's flaky tests under one group, closed, each at its `test(…)` line; none without a flaky test. */
 function flakyGroup(flaky: FailuresFlaky[] | undefined): FailureTreeNode[] {

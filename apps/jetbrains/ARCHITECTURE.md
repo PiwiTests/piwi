@@ -284,7 +284,8 @@ registered `Piwi.Failure.*` actions (`FailureNodeAction`, the `Piwi.FailureActio
   `Glue.FailureNode.root`);
 - on a run's node: choose its baseline and open its run;
 - on a flaky test: its page, then its `Glue.FailureNode.actions` (`FlakeActions`, built from the service's
-  `PiwiCommand`s and run through `PiwiCommands.execute`): its Flakiness tab and its Flake Lab commands.
+  `PiwiCommand`s and run through `PiwiCommands.execute`): its Flakiness tab and its Flake Lab commands, each with the
+  glyph of what it does (Open in dashboard's, Reproduce in the desktop app's, `AllIcons.Actions.Execute` for a command).
 
 **Icons.** Every action of `plugin.xml` draws its concept's glyph from the concept table of
 [editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft): a platform

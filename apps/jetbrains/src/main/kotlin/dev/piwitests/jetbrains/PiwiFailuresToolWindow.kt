@@ -390,13 +390,21 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
     }
 
-    /** A flaky test's actions, as the service lists them: its Flakiness tab, then the Flake Lab commands it can run. */
+    /**
+     * A flaky test's actions, as the service lists them: its Flakiness tab, then the Flake Lab commands it can run, each
+     * with the glyph of what it does (the page, the desktop app's job, a command).
+     */
     private class FlakeActions(private val project: Project, private val selected: () -> Glue.FailureNode?) : ActionGroup(), DumbAware {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun getChildren(e: AnActionEvent?): Array<AnAction> =
             selected()?.takeIf { it.kind == "flaky" }?.actions.orEmpty().map { command ->
-                DumbAwareAction.create(command.title.orEmpty()) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) }
+                val icon = when (command.command) {
+                    "piwi.openInDashboard" -> PiwiIcons.OPEN_IN_DASHBOARD
+                    "piwi.desktopJob" -> PiwiIcons.REPRODUCE
+                    else -> AllIcons.Actions.Execute
+                }
+                DumbAwareAction.create(command.title.orEmpty(), icon) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) }
             }.toTypedArray()
     }
 

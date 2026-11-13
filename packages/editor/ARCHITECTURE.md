@@ -279,7 +279,9 @@ The answer always holds:
   failures grouped as the last `piwi/failures` asked (`grouping`), and the run's flaky tests under `Flaky in this run`
   (the instance's `flaky`, each placed at its `test(…)` line as the spec stands, its leaf carrying `uri` and `line`;
   none from an instance that sends none). A flaky leaf says Flake Lab's rate (`flakeRateText`) and carries `actions`:
-  its Flakiness tab, then the commands of its Flake Lab lines (`flakeLabLines`), which the clients offer in its menu. The service keeps that grouping for what it pushes.
+  its Flakiness tab, then the commands of its Flake Lab lines (`flakeLabLines`), which the clients offer in its menu
+  (`flakyTestLab`, built once per Flake Lab read, so placing the failures again on an edit reads no file). The service
+  keeps that grouping for what it pushes.
 - `runLabel`: the run as the tree's root names it.
 - `failing`: how many tests still fail.
 - `rerun`: what **Re-run the failing tests** runs.

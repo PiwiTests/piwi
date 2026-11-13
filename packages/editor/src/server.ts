@@ -133,6 +133,7 @@ import {
 import {
   failuresAnswer,
   failuresView,
+  flakyTestLab,
   parseFailuresGrouping,
   type ContextFailures,
   type ContextViewState,
@@ -1217,6 +1218,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /** One placeable per flaky test of an answer, so the placer's caches, keyed by it, hold across passes. */
+  /**
+   * A flaky test's Flake Lab part of the tree (`flakyTestLab`), built once per Flake Lab read: its commands read the
+   * desktop app's discovery file and the `.env`, which placing the failures again on an edit does not.
+   */
+  const flakyLabs = new WeakMap<FlakeLabEntry, ReturnType<typeof flakyTestLab>>();
+  const flakyLab = (context: PiwiContext, testCaseId: number, client: PiwiClient) => {
+    const entry = context.flakeLab.get(testCaseId);
+    const kept = entry && flakyLabs.get(entry);
+    if (kept) return kept;
+    const lines = entry ? flakeLabLines(context, testCaseId, 0, env, desktopJobs.available(context)) : [];
+    const lab = flakyTestLab(lines, flakeRateText(entry?.flakeRate), client.flakinessUrl(testCaseId));
+    if (entry) flakyLabs.set(entry, lab);
+    return lab;
+  };
   const flakyPlaceables = new WeakMap<BranchFlaky, Placeable>();
   const flakyPlaceable = (f: BranchFlaky, runId: number): Placeable => {
     let placeable = flakyPlaceables.get(f);
@@ -1300,7 +1315,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             const placeable = flakyPlaceable(f, run.id);
             const at = pass.place(context, placeable);
             if (!at || at.state === 'gone') return [];
-            const lab = flakeLabLines(context, f.testCaseId, at.line - 1, env, desktopJobs.available(context));
+            const lab = flakyLab(context, f.testCaseId, client);
             return [
               {
                 testCaseId: f.testCaseId,
@@ -1311,17 +1326,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                 browserName: f.browserName,
                 retries: f.retries,
                 url: client.executionUrl(f.executionId),
-                rate: flakeRateText(context.flakeLab.get(f.testCaseId)?.flakeRate),
-                flakeLab: lab[0]?.title ?? null,
-                actions: lab.length
-                  ? lab.flatMap((l) => (l.command ? [l.command] : []))
-                  : [
-                      {
-                        title: 'Open its Flakiness tab',
-                        command: 'piwi.openInDashboard',
-                        arguments: [client.flakinessUrl(f.testCaseId)],
-                      },
-                    ],
+                ...lab,
               },
             ];
           })

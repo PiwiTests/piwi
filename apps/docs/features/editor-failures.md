@@ -67,7 +67,8 @@ follows each failing line through your changes, saved or not:
 - Add or remove lines above a failing line, and its error moves with it, in the Problems panel, the lines above the
   test and the failures view.
 - Rewrite the failing line, and the error turns into an information marker, *Edited since run #120: …*: the run said
-  nothing about the new line. The reason above the line reads *✎ edited since run #120*. The test keeps its failing mark until a run says otherwise.
+  nothing about the new line. The reason above the line reads *✎ edited since run #120*. The test keeps its failing mark
+  until a run says otherwise.
 - Delete the test, and its failure leaves the editor.
 
 The next run that covers the test says what is true: a failure there is an error again, and a pass takes it away.
