@@ -39,9 +39,10 @@ shared with the desktop app:
 - **The keychain service**: `Piwi Runner run requests`, so an entry written by one app is never read by the other.
 
 The Release workflow builds it with the same steps: the host, the window and the staging, then tauri-action with
-`--features runner --config src-tauri/runner.conf.json`, and attaches the installers to the tag's release under
-`ASSET_NAME_PATTERN` ("Piwi-Runner_<arch>", no version), beside the desktop app's "Piwi-Desktop_…". Off a tag it keeps
-them as the run's artifacts.
+`--features runner --config src-tauri/runner.conf.json`, which only builds. `scripts/release-files.mjs` copies the
+installers and their signatures to the names `ASSET_NAME_PATTERN` gives them ("Piwi-Runner_<arch>", no version), and
+`gh release upload --clobber` attaches them to the tag's release, beside the desktop app's "Piwi-Desktop_…", printing
+GitHub's answer to an attempt that fails. Off a tag it keeps them as the run's artifacts.
 
 The two apps install side by side: each has its own identifier, product name, binary, sidecar, install folder, Linux
 package name, MSI upgrade code and keychain service, so neither installer replaces the other.

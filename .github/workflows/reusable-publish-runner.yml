@@ -18,7 +18,8 @@ permissions:
   contents: read
 
 # The release's file names: "Piwi-Runner_<arch>[-setup].<ext>", beside the desktop app's "Piwi-Desktop_…", with no
-# version: the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs).
+# version: the docs' download links read them from releases/latest/download/ (apps/application/shared/app-downloads.mjs),
+# and apps/runner/scripts/release-files.mjs renders it for the files the job uploads.
 env:
   ASSET_NAME_PATTERN: 'Piwi-Runner_[arch][setup][ext]'
 
@@ -114,31 +115,12 @@ jobs:
         working-directory: apps/desktop
         run: npx tauri icon ../runner/app-icon.svg --output src-tauri/icons-runner
 
-      # tauri-action gets the release's id, not its tag: with a tag it also rewrites the release's name and body, to
-      # its empty releaseBody; with an id it only uploads.
-      - name: Find the release
-        id: release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if ! id=$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id); then
-            echo "::error::No GitHub release for $TAG: release-please creates it with the tag"
-            exit 1
-          fi
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-
-      # The action reads the product name and version from the base config with runner.conf.json merged over it
-      # (utils.ts getInfo). With the signing key, a tag's build also merges runner.updater.conf.json (its endpoint is
-      # latest-runner.json) and uploads each package's .sig; uploadUpdaterJson stays false, so the desktop app's
-      # latest.json stays its own. Off a tag releaseId is empty, and tauri-action only builds.
-      - name: Build & release Piwi Runner
+      # tauri-action only builds: with no release id it uploads nothing, and the steps below upload the files. With the
+      # signing key, a tag's build also merges runner.updater.conf.json (its endpoint is latest-runner.json), and the
+      # bundler signs each package.
+      - name: Build Piwi Runner
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The desktop app's key: one key signs both apps' updates, and runner.updater.conf.json holds its public half.
           TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
@@ -147,11 +129,9 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         with:
           projectPath: apps/desktop
+          # Retries the build, whose bundler downloads WiX, NSIS and linuxdeploy.
           retryAttempts: 3
-          uploadUpdaterJson: false
-          releaseAssetNamePattern: ${{ env.ASSET_NAME_PATTERN }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/runner.updater.conf.json' || '' }}
-          releaseId: ${{ steps.release.outputs.id }}
 
       # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
       # damaged, and the Node sidecar the bundler re-signed must still run the host: start it from the bundle, as the
@@ -192,21 +172,49 @@ jobs:
           echo "::error::The bundled host did not answer /api/health"
           exit 1
 
-      # Dry-run only: make the built installers downloadable as a workflow artifact (they are not attached to any
-      # release unless this was a tag build).
+      # The installers and their signatures under the names the release carries (apps/runner/scripts/release-files.mjs),
+      # on every build, so a pull request's dry run checks them too. A signed build must have every signature.
+      - name: Stage the release files
+        shell: bash
+        env:
+          BUNDLE: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle
+          OUT: ${{ runner.temp }}/release-files
+          SIGNED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--signed' || '' }}
+        run: node apps/runner/scripts/release-files.mjs --bundle "$BUNDLE" --target ${{ matrix.target }} --out "$OUT" $SIGNED
+
+      # gh prints GitHub's answer to each attempt that fails, and --clobber replaces a file an earlier attempt or run
+      # left, so a retry, or a re-run of the job, uploads the whole set again.
+      - name: Upload to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          OUT: ${{ runner.temp }}/release-files
+        run: |
+          if ! gh release view "$TAG" --repo "$REPO" --json tagName > /dev/null; then
+            echo "::error::No GitHub release for $TAG: release-please creates it with the tag"
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$TAG" "$OUT"/* --repo "$REPO" --clobber; then
+              exit 0
+            fi
+            echo "::warning::Upload attempt $attempt of 5 to $TAG failed"
+            if [[ $attempt -lt 5 ]]; then sleep $((attempt * 20)); fi
+          done
+          echo "::error::The Piwi Runner files did not reach the $TAG release: GitHub's answers are above"
+          exit 1
+
+      # Dry-run only: the files the release would carry, as the run's artifact.
       - name: Upload installers (dry-run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: piwi-runner-${{ matrix.target }}
-          path: |
-            apps/desktop/src-tauri/target/**/release/bundle/**/*.msi
-            apps/desktop/src-tauri/target/**/release/bundle/**/*-setup.exe
-            apps/desktop/src-tauri/target/**/release/bundle/**/*.dmg
-            apps/desktop/src-tauri/target/**/release/bundle/**/*.deb
-            apps/desktop/src-tauri/target/**/release/bundle/**/*.rpm
-            apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
-          if-no-files-found: warn
+          path: ${{ runner.temp }}/release-files
+          if-no-files-found: error
           retention-days: 7
 
   # latest-runner.json, from the signed packages the legs uploaded (apps/runner/scripts/update-manifest.mjs): one entry
