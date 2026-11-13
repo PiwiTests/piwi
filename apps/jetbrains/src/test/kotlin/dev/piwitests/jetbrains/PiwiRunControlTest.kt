@@ -886,7 +886,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
         statusBar.update()
-        assertEquals("Piwi: failed · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
+        assertEquals("Piwi: held at its failure · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
     }
 
     /**
