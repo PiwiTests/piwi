@@ -36,7 +36,7 @@ Resources tab) and S8 in part (each new leak in the pull-request comment with it
 
 Not built: R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S8's
 servers and processes and its line for a leak the change fixed, S9, the failure timeline's object lanes, and §6's
-larger items. All of R1 to R4 and S1 to S8 were filed as PiwiTests/piwi#1174.
+larger items. All of R1 to R4 and S1 to S9 were filed as PiwiTests/piwi#1174.
 
 ## 0. The findings that matter most
 
@@ -290,7 +290,7 @@ held time. Servers and processes left running are never listed, and there is no 
 - **Analytics**: no rollup column or widget for leaks over time.
 - **MCP**: `list_resource_findings` gives no fix. `detail` and `growth` are never stored, so a handle finding names
   no test, and a piling finding has no numbers.
-- **The demo**: its handle finding has no line, and nothing in it is fixed or reopened.
+- **The demo**: nothing in it is fixed or reopened.
 
 ## 5. The lifetime model
 

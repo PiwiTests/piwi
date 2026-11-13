@@ -164,9 +164,17 @@ export interface PrNewLeaks {
 /** Max new leaks listed in the pull-request comment. */
 const MAX_LEAKS_LISTED = 10;
 
+/** How the reporter's detail of a probable leak names one only hooks opened (`resource-verdicts.ts`). */
+export const HOOK_OPENED = 'a beforeAll or afterAll hook';
+
 /** A leak that `leakCheck: 'fail'` fails its test on: one a test opened itself, past its test. */
 function isTestLeak(finding: WireResourceFinding): boolean {
-  return finding.verdict === 'leaked' && finding.scope !== 'describe' && !finding.where.startsWith('fixture "');
+  return (
+    finding.verdict === 'leaked' &&
+    finding.scope !== 'describe' &&
+    !finding.where.startsWith('fixture "') &&
+    !finding.closedByPiwi
+  );
 }
 
 /**
@@ -176,14 +184,10 @@ function isTestLeak(finding: WireResourceFinding): boolean {
  */
 function leakFix(finding: WireResourceFinding): string {
   if (finding.verdict === 'leaked' && finding.where.startsWith('fixture "')) {
-    return 'close it in the fixture’s teardown, after `use()`';
+    return "close it in the fixture's teardown, after `use()`";
   }
-  if (finding.verdict === 'leaked' && finding.scope === 'describe') {
-    return 'close it in an `afterAll` of its describe block';
-  }
-  if (finding.verdict === 'probable' && finding.detail?.endsWith('a beforeAll or afterAll hook')) {
-    return 'close it in an `afterAll`';
-  }
+  if (finding.verdict === 'leaked' && finding.scope === 'describe') return 'close it in an `afterAll`';
+  if (finding.verdict === 'probable' && finding.detail?.endsWith(HOOK_OPENED)) return 'close it in an `afterAll`';
   return 'close it before its test ends';
 }
 
@@ -202,7 +206,7 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
     const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
     return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
   });
-  const leakCheck = listed.some(isTestLeak)
+  const leakCheck = nl.leaks.some(isTestLeak)
     ? " Set `leakCheck: 'fail'` to catch the next one a test leaves open, locally."
     : '';
   const blocks = [

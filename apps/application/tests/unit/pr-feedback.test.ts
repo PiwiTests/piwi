@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test, expect } from 'vitest';
 import {
   buildChangeCoverageStatus,
@@ -9,6 +11,7 @@ import {
   DEFAULT_PR_FEEDBACK,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
+  HOOK_OPENED,
   renderChangeCoverage,
   resolvePrFeedbackSettings,
   type PrChangeCoverage,
@@ -773,10 +776,10 @@ describe('new leaks', () => {
     expect(body).toContain('Never seen on `main`.\n\n');
     expect(body).not.toContain('leakCheck');
     expect(body).toContain(
-      '- **Leaked context** · `tests/admin.spec.ts:8` · admin · 1 test · open 3.0 s past its describe block · close it in an `afterAll` of its describe block',
+      '- **Leaked context** · `tests/admin.spec.ts:8` · admin · 1 test · open 3.0 s past its describe block · close it in an `afterAll`',
     );
     expect(body).toContain(
-      '- **Leaked context** · `fixture "adminContext" at tests/fixtures.ts:14` · 2 contexts · with 2 pages · 2 tests · open 5.0 s past its test · close it in the fixture’s teardown, after `use()`',
+      '- **Leaked context** · `fixture "adminContext" at tests/fixtures.ts:14` · 2 contexts · with 2 pages · 2 tests · open 5.0 s past its test · close it in the fixture\'s teardown, after `use()`',
     );
     expect(body).toContain(
       '- **Probable leak context** · `tests/bare.spec.ts:5` · left open by its test · close it before its test ends',
@@ -784,6 +787,36 @@ describe('new leaks', () => {
     expect(body).toContain(
       '- **Probable leak browser** · `tests/bare.spec.ts:3` · left open by a beforeAll or afterAll hook · close it in an `afterAll`',
     );
+  });
+
+  test("offers leakCheck for a test's leak past the ten listed, never for one Piwi closed", () => {
+    const leak = (n: number, more: Record<string, unknown> = {}) => ({
+      verdict: 'leaked' as const,
+      kind: 'context' as const,
+      where: `fixture "ctx${n}" at tests/fixtures.ts:${n}`,
+      site: `tests/fixtures.ts:${n}`,
+      scope: 'test' as const,
+      tests: 1,
+      count: 1,
+      ...more,
+    });
+    const fixtures = Array.from({ length: 10 }, (_, i) => leak(i + 1));
+    const testLeak = leak(11, { where: 'tests/cart.spec.ts:12', site: 'tests/cart.spec.ts:12' });
+    const body = (leaks: ReturnType<typeof leak>[]) =>
+      buildPrComment(summary({ newLeaks: { baseBranch: 'main', leaks } }));
+    expect(body([...fixtures, testLeak])).toContain("Set `leakCheck: 'fail'`");
+    expect(body([...fixtures, testLeak])).toContain('…and 1 more');
+    expect(body([{ ...testLeak, closedByPiwi: true }])).not.toContain('leakCheck');
+  });
+
+  test("reads a hook's probable leak in the reporter's own words", () => {
+    const verdicts = readFileSync(
+      fileURLToPath(
+        new URL('../../../../packages/reporter/src/internal/collect/resource-verdicts.ts', import.meta.url),
+      ),
+      'utf8',
+    );
+    expect(verdicts).toContain(`'${HOOK_OPENED}'`);
   });
 
   test('adds nothing when the branch introduced no leak', () => {
